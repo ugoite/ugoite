@@ -21,6 +21,7 @@ import {
 } from "~/lib/composition-api";
 import { TextComponent } from "~/components/composition/TextComponent";
 import type { CompositionSourcePageState } from "~/lib/composition-query-handle";
+import { compositionParameterDisplayName } from "~/lib/composition-parameter-name";
 
 export type CompositionFieldNames = (
   formId: string,
@@ -104,13 +105,15 @@ export const compositionDiagnosticMessage = (
   if (!knownDiagnosticCodes.has(diagnostic.code)) {
     return t("composition.detailFailed");
   }
-  const parameter = parameterDefinitions.find((definition) =>
-    definition.id === diagnostic.parameter_id
-  );
   return t(
     `composition.diagnostic.${diagnostic.code}` as TranslationKey,
     diagnostic.parameter_id
-      ? { parameter: parameter?.label ?? diagnostic.parameter_id }
+      ? {
+        parameter: compositionParameterDisplayName(
+          parameterDefinitions,
+          diagnostic.parameter_id,
+        ),
+      }
       : undefined,
   );
 };
@@ -512,7 +515,8 @@ export function CompositionMetric(props: {
       : undefined;
   };
   const needsEdit = () =>
-    serverResult()?.diagnostics?.[0]?.code === "metric_scalar_expected_one_row" &&
+    serverResult()?.diagnostics?.[0]?.code ===
+      "metric_scalar_expected_one_row" &&
     props.metricQueryContext?.onEdit !== undefined;
 
   return (

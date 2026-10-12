@@ -531,6 +531,58 @@ describe("Composition revision flow layout", () => {
     expect(screen.getByRole("cell", { name: "Travel" })).toBeInTheDocument();
   });
 
+  it("uses declaration order for localized ordinals when placement order differs", async () => {
+    const parameters = (lintDocument.spec.parameters ?? []).map(({
+      label: _label,
+      ...parameter
+    }) => parameter);
+    const layout = lintDocument.spec.layout;
+    const controls = layout.rows.find((row) => row.id === "controls");
+    const reorderedLayout = {
+      ...layout,
+      rows: [
+        {
+          ...controls!,
+          items: [{ kind: "parameter" as const, parameter: "region" }],
+        },
+        ...layout.rows.filter((row) => row.id !== "controls"),
+      ],
+    };
+    vi.mocked(compositionApi.lint).mockResolvedValueOnce({
+      ok: true,
+      value: {
+        document: {
+          ...lintDocument,
+          spec: { ...lintDocument.spec, parameters, layout: reorderedLayout },
+        },
+        canonical_yaml: "canonical",
+        fingerprint: "fingerprint",
+      },
+    });
+    vi.mocked(compositionApi.resolve).mockResolvedValueOnce({
+      ok: true,
+      parameter_definitions: [...parameters].reverse(),
+      plan: flowPlan,
+    });
+    const { container } = render(() => <CompositionRevisionRoute />);
+
+    expect(await screen.findByLabelText("Parameter 1")).toHaveValue(
+      "2026-10-01",
+    );
+    expect(await screen.findByLabelText("Parameter 2")).toBeInTheDocument();
+    expect(container.querySelector(".compositionFlowRow")).toHaveTextContent(
+      "Parameter 2",
+    );
+    expect(container.querySelector(".compositionFlowRow")).not
+      .toHaveTextContent("Parameter 1");
+    expect(screen.queryByLabelText("month")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("region")).not.toBeInTheDocument();
+
+    setLocale("ja");
+    expect(screen.getByLabelText("パラメーター1")).toHaveValue("2026-10-01");
+    expect(screen.getByLabelText("パラメーター2")).toBeInTheDocument();
+  });
+
   it("keeps unplaced parameters editable outside the flow without duplication", async () => {
     render(() => <CompositionRevisionRoute />);
 

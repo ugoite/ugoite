@@ -383,9 +383,10 @@ describe("CompositionDesignCanvas", () => {
     const dialog = screen.getByRole("dialog", { name: "Add to design" });
     fireEvent.click(
       Array.from(dialog.querySelectorAll(".designPaletteItem")).find((entry) =>
-        entry.textContent === "region"
+        entry.textContent === "Parameter 1"
       ) as HTMLElement,
     );
+    expect(screen.queryByText("region")).not.toBeInTheDocument();
 
     expect(harnessCalls.draft).toHaveLength(1);
     const next = harnessCalls.draft[0];
@@ -400,6 +401,36 @@ describe("CompositionDesignCanvas", () => {
     expect(harnessCalls.selected).toEqual([
       designBlockIdForParameter("region"),
     ]);
+  });
+
+  it("uses localized ordinals for unlabeled parameter palette entries", () => {
+    let draft = createEmptyDraft("Studio");
+    for (const id of ["month_key", "region_key"]) {
+      const parameter = addParameter(draft, {
+        id,
+        type: "string",
+        required: false,
+      });
+      if (!parameter.ok) throw new Error("expected parameter");
+      draft = parameter.draft;
+    }
+    renderHarness(draft);
+
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Add to design" })[0],
+    );
+    expect(screen.getByRole("button", { name: "Place Parameter 1" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Place Parameter 2" }))
+      .toBeInTheDocument();
+    expect(screen.queryByText("month_key")).not.toBeInTheDocument();
+    expect(screen.queryByText("region_key")).not.toBeInTheDocument();
+
+    setLocale("ja");
+    expect(screen.getByRole("button", { name: "パラメーター1を配置" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "パラメーター2を配置" }))
+      .toBeInTheDocument();
   });
 
   it("reorders rows and items with keyboard-operable buttons", () => {

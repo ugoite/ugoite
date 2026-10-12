@@ -342,8 +342,8 @@ test.describe("Composition Stale Response", () => {
       { waitUntil: "domcontentloaded" },
     );
 
-    await page.getByLabel("month_start").fill(PARAM_A_START);
-    await page.getByLabel("month_end").fill(PARAM_A_END);
+    await page.getByLabel("Parameter 1").fill(PARAM_A_START);
+    await page.getByLabel("Parameter 2").fill(PARAM_A_END);
     await page.waitForFunction(
       () => {
         const probe = (window as ProbeWindow).__compositionStaleProbe;
@@ -353,8 +353,8 @@ test.describe("Composition Stale Response", () => {
       { timeout: 30_000 },
     );
 
-    await page.getByLabel("month_start").fill(PARAM_B_START);
-    await page.getByLabel("month_end").fill(PARAM_B_END);
+    await page.getByLabel("Parameter 1").fill(PARAM_B_START);
+    await page.getByLabel("Parameter 2").fill(PARAM_B_END);
     await expectUi(page, {
       metric: String(CURRENT_AMOUNT),
       alerts: [],

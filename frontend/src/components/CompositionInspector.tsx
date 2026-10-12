@@ -14,6 +14,7 @@ import {
 } from "~/lib/composition-draft";
 import type { CompositionFieldNames } from "~/components/CompositionRenderer";
 import { displayDefaultName } from "~/lib/composition-display-name";
+import { compositionParameterDisplayName } from "~/lib/composition-parameter-name";
 import { t } from "~/lib/i18n";
 
 const PARAMETER_BLOCK_PREFIX = "param:";
@@ -101,10 +102,10 @@ export function CompositionInspector(props: CompositionInspectorProps) {
               const parameterId = (entry() as {
                 parameterId: string;
               }).parameterId;
-              const name =
-                props.draft.parameters.find((parameter) =>
-                  parameter.id === parameterId
-                )?.label ?? t("composition.studioParameters");
+              const name = compositionParameterDisplayName(
+                props.draft.parameters,
+                parameterId,
+              );
               const label = t("composition.studioUnplaceParameter", { name });
               return (
                 <IconButton

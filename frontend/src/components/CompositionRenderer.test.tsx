@@ -8,8 +8,12 @@ import {
 } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CompositionRenderer } from "./CompositionRenderer";
+import {
+  compositionDiagnosticMessage,
+  CompositionRenderer,
+} from "./CompositionRenderer";
 import { compositionApi } from "~/lib/composition-api";
+import { setLocale } from "~/lib/i18n";
 import type {
   CompositionMetricQueryResponse,
   CompositionResolvePlan,
@@ -58,7 +62,27 @@ const sources = {
 };
 
 describe("CompositionRenderer", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    setLocale("en");
+  });
+
+  it("uses localized parameter names instead of binding keys in diagnostics", () => {
+    const unknown = compositionDiagnosticMessage({
+      code: "parameter_unknown",
+      parameter_id: "internal_key",
+    });
+    expect(unknown).toBe("Unknown parameter: Parameter.");
+    expect(unknown).not.toContain("internal_key");
+
+    setLocale("ja");
+    const missing = compositionDiagnosticMessage(
+      { code: "parameter_missing", parameter_id: "month" },
+      [{ id: "month" }],
+    );
+    expect(missing).toBe("パラメーター1 の値を入力してください。");
+    expect(missing).not.toContain("month");
+  });
 
   it("queries an exact integer metric through the bounded server operation", async () => {
     const query = vi.spyOn(compositionApi, "queryMetric").mockResolvedValue({

@@ -472,6 +472,34 @@ describe("CompositionInspector", () => {
     ]);
   });
 
+  it("uses localized ordinal labels for unlabeled parameter placement", () => {
+    const labeled = seedDraft();
+    const draft = {
+      ...labeled,
+      parameters: labeled.parameters.map(({ label: _label, ...parameter }) =>
+        parameter
+      ),
+    };
+    renderHarness(designBlockIdForParameter("month"), draft);
+
+    expect(screen.getByRole("heading", { name: "Parameter 1" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Unplace Parameter 1" }))
+      .toBeInTheDocument();
+    const options = screen.getAllByRole("option").map((option) =>
+      option.textContent
+    );
+    expect(options).toEqual(["Parameter 1", "Parameter 2"]);
+    expect(screen.queryByText("month")).not.toBeInTheDocument();
+    expect(screen.queryByText("region")).not.toBeInTheDocument();
+
+    setLocale("ja");
+    expect(screen.getByRole("heading", { name: "パラメーター1" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "パラメーター1の配置を解除" }))
+      .toBeInTheDocument();
+  });
+
   it("exposes a data jump for the selected block source", () => {
     renderHarness("disp-1");
 

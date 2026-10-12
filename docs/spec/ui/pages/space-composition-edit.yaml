@@ -73,7 +73,8 @@ components:
       scope: data-mode-parameters-tab-renders-only-with-at-least-one-source
       source: draft parameters provisioned from Saved SQL variable types and restored from the lint-normalized document
       selection: rows-with-inline-editors
-      row_label: declared-human-label-then-user-authored-parameter-name
+      row_label: authored-human-label-else-localized-ordinal-by-declaration-order
+      binding_key: internal-reference-only-never-a-display-fallback
       row_metadata: parameter-type
       remove: guarded-remove-with-short-referenced-reason
       binding: existing-composition-parameter-grammar-by-reference

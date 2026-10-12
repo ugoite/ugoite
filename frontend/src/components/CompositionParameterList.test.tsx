@@ -82,7 +82,8 @@ describe("composition parameter list", () => {
         onRemove={() => undefined}
       />
     ));
-    expect(screen.getByText("month")).toBeInTheDocument();
+    expect(screen.getByText("Parameter 1")).toBeInTheDocument();
+    expect(screen.queryByText("month")).not.toBeInTheDocument();
 
     const idInput = screen.getByLabelText("Parameter name");
     fireEvent.input(idInput, { target: { value: "region" } });
@@ -93,9 +94,41 @@ describe("composition parameter list", () => {
       required: true,
     });
 
-    const defaultInput = screen.getByLabelText("Default for month");
+    const defaultInput = screen.getByLabelText("Default for Parameter 1");
     fireEvent.change(defaultInput, { target: { value: "2026-10-01" } });
     expect(onUpdate).toHaveBeenCalledWith({ ...month, default: "2026-10-01" });
+  });
+
+  it("uses localized ordinal labels instead of unlabeled parameter keys", () => {
+    const region: DraftParameter = {
+      id: "region_key",
+      type: "string",
+      required: false,
+    };
+    render(() => (
+      <CompositionParameterList
+        parameters={[month, region]}
+        headingId="params"
+        onAdd={() => {}}
+        onUpdate={() => {}}
+        onRemove={() => undefined}
+      />
+    ));
+
+    expect(screen.getByText("Parameter 1")).toBeInTheDocument();
+    expect(screen.getByText("Parameter 2")).toBeInTheDocument();
+    expect(screen.queryByText("month")).not.toBeInTheDocument();
+    expect(screen.queryByText("region_key")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Default for Parameter 2"))
+      .toBeInTheDocument();
+
+    setLocale("ja");
+    expect(screen.getByText("パラメーター1")).toBeInTheDocument();
+    expect(screen.getByText("パラメーター2")).toBeInTheDocument();
+    expect(screen.getByLabelText("パラメーター2の既定値"))
+      .toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "パラメーター1を削除" }))
+      .toBeInTheDocument();
   });
 
   it("uses the declared label while keeping the parameter name for updates and removal", () => {
@@ -148,7 +181,9 @@ describe("composition parameter list", () => {
         onRemove={onRemove}
       />
     ));
-    fireEvent.click(screen.getByRole("button", { name: "Remove month" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove Parameter 1" }),
+    );
     expect(onRemove).toHaveBeenCalledWith("month");
     expect(
       screen.getByText("This parameter is used by a data source."),
