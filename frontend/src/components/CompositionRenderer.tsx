@@ -271,7 +271,9 @@ const formatMetricValue = (
   if (typeof value !== "string" && typeof value !== "number") {
     return displayCell(value);
   }
-  let formatted = expandScientificNotation(String(value));
+  let formatted = type === "float" && typeof value === "number"
+    ? expandScientificNotation(String(value))
+    : String(value);
   if (
     presentation?.kind === "number" &&
     (type === "integer" || type === "decimal" || type === "float")

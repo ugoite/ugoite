@@ -419,6 +419,49 @@ describe("CompositionRenderer", () => {
       .toBeInTheDocument();
   });
 
+  it("preserves string metric values that resemble scientific notation", async () => {
+    vi.spyOn(compositionApi, "queryMetric").mockResolvedValue({
+      ok: true,
+      result: {
+        component_id: "total",
+        operation: "sql_scalar",
+        source_kind: "saved_sql",
+        result_type: "string",
+        value: "1e3",
+      },
+    });
+    const metricPlan = {
+      ...plan,
+      component_bindings: [{
+        ...plan.component_bindings[0],
+        expected_result_type: "string" as const,
+      }],
+    };
+    render(() => (
+      <CompositionRenderer
+        plan={metricPlan}
+        sources={{}}
+        metricQueryContext={{
+          spaceId: "space-1",
+          target: {
+            kind: "saved_revision",
+            composition_id: "tool-1",
+            revision_id: "revision-1",
+          },
+          parameters: {},
+        }}
+        onNext={() => {}}
+        onPrevious={() => {}}
+        onRetry={() => {}}
+      />
+    ));
+
+    expect(await screen.findByText("1e3", { selector: "output" }))
+      .toBeInTheDocument();
+    expect(screen.queryByText("1000", { selector: "output" }))
+      .not.toBeInTheDocument();
+  });
+
   it("rejects malformed successful metric responses instead of rendering their values", async () => {
     vi.spyOn(compositionApi, "queryMetric").mockResolvedValue({
       ok: true,
