@@ -64,6 +64,49 @@ optional display label. It stores no second value, arbitrary input type,
 setter, or event expression. Multiple Inputs may reference the same variable.
 Variable IDs are stable references, not primary UI labels.
 
+#### 2.1 Typed Input values are bounded and locale-independent
+
+Use these lexical and value constraints consistently in Domain, Core, Native,
+WASM, CLI, and Browser. A variable's optional display-format hint never
+changes its accepted type or lexical grammar. A value outside its constraint
+stays visible as raw invalid Input state, is never truncated or coerced, and
+cannot trigger a SQL request. Defaults are validated by the same value rules
+before a Composition can be saved.
+
+- `string`: at most 4,096 UTF-8 bytes. Reject Unicode Cc control characters
+  except horizontal tab, line feed, and carriage return. Preserve accepted text
+  exactly; do not trim, normalize, or truncate it.
+- `boolean`: the typed value is JSON `true` or `false`; textual input accepts
+  only the exact lowercase tokens `true` and `false`.
+- `integer`: accept the ASCII token `[+-]?[0-9]+`, at most 17 bytes including
+  its optional sign, with no surrounding whitespace. Leading zeroes are
+  accepted. Parse decimal digits with checked integer arithmetic before any
+  JavaScript Number conversion, then require the value to be in the safe
+  integer interval `[-9007199254740991, 9007199254740991]`. Reject decimal
+  points, exponents, and out-of-range values.
+- `float`: accept the ASCII grammar
+  `[+-]?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?`, at most 64
+  bytes including sign and exponent, with no surrounding whitespace. Require a
+  finite IEEE-754 binary64 result. Reject overflow and a nonzero token that
+  underflows to zero. This accepts `1`, `1.25`, `.5`, and `1e3`; it rejects
+  `1.`, `1,25`, `NaN`, `Infinity`, overflow, and underflow to zero. Finite
+  binary64 rounding is the declared `float` type's numeric behavior.
+- `date`: accept exactly ten ASCII characters in `YYYY-MM-DD` form, with a
+  four-digit year from 0001 through 9999, and require a real Gregorian date.
+  Do not accept whitespace, reduced precision, or a date-time value.
+- `timestamp`: accept the RFC 3339 profile
+  `YYYY-MM-DDTHH:MM:SS[.fraction](Z|±HH:MM)`, with uppercase `T`/`Z`, one to
+  nine fractional digits when present, a valid calendar date and time with
+  seconds from `00` through `59` (leap seconds are not accepted), and an
+  explicit numeric offset or `Z`. Reject offset-free local times and `-00:00`,
+  which does not identify a known offset. Do not parse through the browser's
+  locale or local time zone.
+
+The accepted timestamp string is passed as a typed SQL parameter without
+rewriting SQL text. Browser controls must preserve the explicit offset; a
+`datetime-local` value by itself is not a valid timestamp variable. Empty raw
+Input means unset, not an empty-string value, zero, or SQL NULL.
+
 Composition source values use one reference form: {variable: id}. A Saved SQL
 source maps each SQL parameter name to a Composition variable. Core checks
 exact type agreement with the pinned Saved SQL revision before mapping the
@@ -193,6 +236,8 @@ changes.
 | A22 | composition_inputs_are_accessible_at_mobile_width | Use at 390px with keyboard and screen reader | Inputs and invalid/loading/result states are operable; IDs are not primary labels. |
 | A23 | studio_preview_drops_stale_draft_and_variable_generation | Change draft and variables while Studio preview is in flight | Only matching draft fingerprint and variable generation can update preview. |
 | A24 | composition_runtime_isolation_includes_space_and_principal | Use same IDs/values in different Spaces or principals | Responses, cache identity, and authorization never cross-contaminate. |
+| A25 | typed_variable_lexical_limits_and_temporal_values_are_strict | Exercise each typed Input at its accepted boundary and one value outside it | String byte/control limits, exact boolean tokens, signed integer token and safe-range boundaries, float tokens at 64/65 bytes, finite overflow, and underflow to zero, real calendar dates, and explicit-offset RFC 3339 timestamps are enforced consistently; raw invalid text is preserved without SQL execution. |
+| A26 | variable_filter_changes_golden_aggregate_values | Run the expense journey with minimum 0, then 20 | The [10, 20, 30] fixture yields count 3 / sum 60, then count 2 / sum 50; the separate no-filter NULL aggregate case remains unchanged. |
 
 ## Delivery order
 
