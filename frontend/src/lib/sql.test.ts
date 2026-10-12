@@ -3,6 +3,9 @@ import {
   buildSqlSchema,
   buildSqlStarterQuery,
   normalizeSqlVariables,
+  buildSqlAggregateQuery,
+  sqlAggregateFieldOptions,
+  sqlFilterFieldOptions,
   sqlLintDiagnostics,
 } from "./sql";
 import type { Form } from "./types";
@@ -104,6 +107,72 @@ describe("sql helpers", () => {
     expect(buildSqlStarterQuery("form_entry")).toBe(
       'SELECT * FROM "form_entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50',
     );
+  });
+
+  it.each([
+    ["count-rows", "", 'SELECT COUNT(*) AS "value" FROM "Orders"'],
+    ["count-values", "Amount", 'SELECT COUNT("field_amount") AS "value" FROM "Orders"'],
+    ["sum", "Amount", 'SELECT SUM("field_amount") AS "value" FROM "Orders"'],
+    ["average", "Amount", 'SELECT AVG("field_amount") AS "value" FROM "Orders"'],
+    ["minimum", "Amount", 'SELECT MIN("field_amount") AS "value" FROM "Orders"'],
+    ["maximum", "Amount", 'SELECT MAX("field_amount") AS "value" FROM "Orders"'],
+  ] as const)("builds the %s aggregate query", (operation, fieldKey, expected) => {
+    expect(buildSqlAggregateQuery(aggregateForm, operation, fieldKey).sql)
+      .toBe(expected);
+  });
+
+  it("quotes Form and SQL column identifiers and keeps filter values parameterized", () => {
+    const quotedForm = {
+      ...aggregateForm,
+      name: 'Orders "Daily"',
+      fields: {
+        ...aggregateForm.fields,
+        Amount: {
+          ...aggregateForm.fields.Amount,
+          sql_column: 'field "amount"',
+        },
+      },
+    };
+    expect(buildSqlAggregateQuery(quotedForm, "sum", "Amount", "Category"))
+      .toEqual({
+        sql:
+          'SELECT SUM("field ""amount""") AS "value" FROM "Orders ""Daily""" WHERE "field_category" = {{filter_value}}',
+        parameter: {
+          name: "filter_value",
+          type: "string",
+          description: "Category",
+        },
+      });
+  });
+
+  it("limits aggregate and filter fields to current compatible human labels", () => {
+    expect(sqlAggregateFieldOptions(aggregateForm, "sum").map((field) =>
+      field.label
+    )).toEqual(["Amount", "Long value"]);
+    expect(sqlAggregateFieldOptions(aggregateForm, "count-values").map((field) =>
+      field.label
+    )).toEqual(["Amount", "Category", "Long value", "Starts at"]);
+    expect(sqlAggregateFieldOptions(aggregateForm, "minimum").map((field) =>
+      field.label
+    )).toEqual(["Amount", "Long value", "Starts at"]);
+    expect(sqlFilterFieldOptions(aggregateForm).map((field) => [
+      field.label,
+      field.parameterType,
+    ])).toEqual([
+      ["Amount", "integer"],
+      ["Category", "string"],
+    ]);
+  });
+
+  it("rejects aggregate and filter fields unavailable in the current Form", () => {
+    expect(() => buildSqlAggregateQuery(aggregateForm, "sum", "Category"))
+      .toThrow("The aggregate field is unavailable");
+    expect(() =>
+      buildSqlAggregateQuery(aggregateForm, "count-rows", "", "LongValue")
+    ).toThrow("The filter field is unavailable");
+    expect(() =>
+      buildSqlAggregateQuery(aggregateForm, "count-rows", "", "StartsAt")
+    ).toThrow("The filter field is unavailable");
   });
 
   it("does not extract placeholders from SQL literals or comments", () => {
@@ -286,3 +355,114 @@ describe("sql helpers", () => {
     }
   });
 });
+
+const aggregateForm: Form = {
+  id: "form-id",
+  name: "Orders",
+  sql_relation: "form_internal_relation",
+  version: 1,
+  template: "",
+  fields: {
+    Amount: {
+      id: 1,
+      type: "integer",
+      required: false,
+      label: "Amount",
+      sql_column: "field_amount",
+      query_capability: {
+        field: { kind: "property", field_id: 1 },
+        name: "Amount",
+        field_type: "integer",
+        filterable: true,
+        sortable: true,
+        projectable: true,
+        supported_operators: ["equals", "gt"],
+      },
+    },
+    Category: {
+      id: 2,
+      type: "string",
+      required: false,
+      label: "Category",
+      sql_column: "field_category",
+      query_capability: {
+        field: { kind: "property", field_id: 2 },
+        name: "Category",
+        field_type: "string",
+        filterable: true,
+        sortable: true,
+        projectable: true,
+        supported_operators: ["equals", "contains"],
+      },
+    },
+    LongValue: {
+      id: 3,
+      type: "long",
+      required: false,
+      label: "Long value",
+      sql_column: "field_long",
+      query_capability: {
+        field: { kind: "property", field_id: 3 },
+        name: "Long value",
+        field_type: "long",
+        filterable: true,
+        sortable: true,
+        projectable: true,
+        supported_operators: ["equals"],
+      },
+    },
+    Unavailable: {
+      id: 4,
+      type: "float",
+      required: false,
+      label: "Unavailable",
+      sql_column: "field_unavailable",
+      query_capability: {
+        field: { kind: "property", field_id: 4 },
+        name: "Unavailable",
+        field_type: "float",
+        filterable: false,
+        sortable: false,
+        projectable: false,
+        supported_operators: [],
+      },
+    },
+    MissingColumn: {
+      id: 5,
+      type: "integer",
+      required: false,
+      label: "Missing column",
+    },
+    StartsAt: {
+      id: 7,
+      type: "timestamp_tz",
+      required: false,
+      label: "Starts at",
+      sql_column: "field_starts_at",
+      query_capability: {
+        field: { kind: "property", field_id: 7 },
+        name: "Starts at",
+        field_type: "timestamp_tz",
+        filterable: true,
+        sortable: true,
+        projectable: true,
+        supported_operators: ["equals"],
+      },
+    },
+    "00000000-0000-4000-8000-000000000006": {
+      id: 6,
+      type: "string",
+      required: false,
+      sql_column: "field_opaque",
+      query_capability: {
+        field: { kind: "property", field_id: 6 },
+        name: "Field 6",
+        field_type: "string",
+        filterable: true,
+        sortable: true,
+        projectable: true,
+        supported_operators: ["equals"],
+      },
+    },
+  },
+};
