@@ -448,6 +448,10 @@ run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2
 [tasks."test:e2e:asset-owned"]
 run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:asset-owned"
 
+[tasks."test:e2e:composition-metric-authoring"]
+description = "Run Form aggregate Metric authoring and saved lifecycle acceptance"
+run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:composition-metric-authoring"
+
 [tasks."test:e2e:smoke-and-asset-owned"]
 env = { PLAYWRIGHT_JUNIT_OUTPUT_FILE = "test-results/smoke-and-asset-owned-junit.xml", PLAYWRIGHT_OUTPUT_DIR = "test-results/smoke-and-asset-owned-results" }
 run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:smoke-and-asset-owned"
@@ -616,6 +620,7 @@ description = "Run merge-gated docsite and browser E2E checks sequentially"
 run = [
   { task = "test:docsite:e2e:navigation" },
   { task = "test:e2e:smoke-and-asset-owned" },
+  { task = "test:e2e:composition-metric-authoring" },
   { task = "test:e2e:navigation" },
   { task = "test:e2e:mobile-ui" },
   { task = "test:e2e:owner-recovery" },
@@ -632,9 +637,10 @@ run = [
 ]
 
 [tasks."ci:lane:e2e-smoke-mobile"]
-description = "Run the smoke/Asset, navigation recovery, and mobile E2E group against the loaded CI image"
+description = "Run smoke/Asset, Composition Metric, navigation recovery, and mobile E2E against the loaded CI image"
 run = [
   { task = "test:e2e:smoke-and-asset-owned" },
+  { task = "test:e2e:composition-metric-authoring" },
   { task = "test:e2e:navigation" },
   { task = "test:e2e:mobile-ui" },
 ]
