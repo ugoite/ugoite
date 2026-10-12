@@ -444,7 +444,7 @@ unrelated Composition persistence and query contracts.
 
 ## ADR-022 — Composition Metrics present Saved SQL results
 
-**Status: Accepted target for pre-release Metric work; implementation pending.**
+**Status: Accepted; pre-release implementation is in progress. This ADR does not authorize a release.**
 This ruling replaces the Metric-specific design in ADR-020 and ADR-021 before
 Metric release. It does not change Saved SQL, SQL execution, Space Knowledge,
 EntryQuery Table, or `sql.query.count` contracts, and it does not authorize a
@@ -510,7 +510,15 @@ flowchart LR
 The source/result contract is shared; components do not implement query
 semantics. Metric uses bounded row consumption while Table keeps its page
 contract. Source sharing does not imply that a Table page determines a Metric
-value or require a result cache.
+value or require a result cache. The common SQL execution contract owns
+read-only planning, exact-revision lookup, current authorization, typed result
+metadata, and resource bounds. Its result is the ordered output schema and
+rows produced by ordinary Saved SQL. A Metric adapter may request a bounded
+two-row probe from this same execution path to prove scalar cardinality; it
+only selects and validates the declared column. It does not introduce another
+SQL engine, aggregation semantics, or a Metric-specific source authority.
+Future Text and Chart consumers can use the same Saved SQL source and result
+contract without depending on `composition.metric.query`.
 
 ### Impact map and order
 
