@@ -491,6 +491,8 @@ features:
         anchor: REQ-COMP-002#criterion.typed-metric-definition
       - kind: evidences
         anchor: REQ-COMP-002#criterion.typed-entry-aggregate-execution
+      - kind: evidences
+        anchor: REQ-API-015#criterion.checked-numeric-aggregates
   - id: aggregate-result-type-evidence
     role: evidence
     facet: core-tests
