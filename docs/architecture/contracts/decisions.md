@@ -400,9 +400,12 @@ count, fetch a continuation, or infer a value from a table page. A table
 sharing the source continues to use `sql.query` independently.
 
 The response reports one typed value or stable Composition diagnostics. A
-present JSON `null` is a successful scalar result; zero rows are a distinct
-`metric_result_empty` diagnostic. Transport adapters do not expose backend
-SQL text, storage paths, or source identifiers in metric diagnostics. The
+present JSON `null` is a successful scalar result. A Saved SQL scalar that
+returns zero rows or multiple rows produces the same
+`metric_scalar_expected_one_row` diagnostic; it never selects a prefix value.
+Typed EntryQuery aggregates retain their aggregate empty-set behavior. Transport
+adapters do not expose backend SQL text, storage paths, or source identifiers
+in metric diagnostics. The
 operation is additive: the existing `composition.resolve`,
 `composition.preview`, and `sql.query` contracts keep their meanings and
 remain available.

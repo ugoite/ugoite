@@ -188,7 +188,9 @@ pub fn evaluate_saved_sql_metric_probe(
         .ok_or_else(|| diagnostic(CompositionDiagnosticCode::InvalidComposition))?;
 
     if probe.rows.is_empty() {
-        return Err(diagnostic(CompositionDiagnosticCode::MetricResultEmpty));
+        return Err(diagnostic(
+            CompositionDiagnosticCode::MetricScalarExpectedOneRow,
+        ));
     }
     if probe.rows.len() > 1 {
         return Err(diagnostic(
@@ -320,7 +322,7 @@ mod tests {
     }
 
     #[test]
-    fn sql_scalar_probe_distinguishes_empty_and_multiple_row_results() {
+    fn sql_scalar_probe_requires_exactly_one_result_row() {
         assert_eq!(
             evaluate_saved_sql_metric_probe(
                 &binding(CompositionResultFieldType::Integer),
@@ -328,7 +330,7 @@ mod tests {
             )
             .unwrap_err()
             .code,
-            CompositionDiagnosticCode::MetricResultEmpty
+            CompositionDiagnosticCode::MetricScalarExpectedOneRow
         );
         assert_eq!(
             evaluate_saved_sql_metric_probe(

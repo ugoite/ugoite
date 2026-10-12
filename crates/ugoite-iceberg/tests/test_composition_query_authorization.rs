@@ -576,12 +576,12 @@ async fn typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe()
     let empty = service
         .query_composition_metric_local(&space_id, query("sql_empty"))
         .await
-        .context("probing an empty Saved SQL scalar should return a diagnostic")?;
+        .context("probing an empty Saved SQL scalar should return a one-row diagnostic")?;
     assert!(!empty.ok);
     assert!(empty.result.is_none());
     assert_eq!(
         empty.diagnostics[0].code,
-        ugoite_domain::composition::CompositionDiagnosticCode::MetricResultEmpty
+        ugoite_domain::composition::CompositionDiagnosticCode::MetricScalarExpectedOneRow
     );
 
     let multiple = service
@@ -1296,7 +1296,7 @@ async fn authorized_composition_metrics_recheck_current_entry_and_saved_sql_acce
     assert!(entry_revoked.result.is_none());
     assert_eq!(
         entry_revoked.diagnostics[0].code,
-        ugoite_domain::composition::CompositionDiagnosticCode::MetricResultEmpty
+        ugoite_domain::composition::CompositionDiagnosticCode::MetricScalarExpectedOneRow
     );
     let entry_aggregate_revoked = service
         .query_composition_metric_authorized_for_principals(
