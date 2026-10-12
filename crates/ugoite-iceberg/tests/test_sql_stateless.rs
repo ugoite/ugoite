@@ -408,6 +408,89 @@ async fn saved_sql_revision_uses_fixed_form_binding_and_continuation_identity() 
     Ok(())
 }
 
+#[tokio::test]
+async fn composition_scalar_probe_reads_at_most_two_rows_from_exact_saved_revision() -> Result<()> {
+    let space = setup_sql_space("memory://sql-composition-scalar-probe", "sqlscalarprobe").await?;
+    async fn save_revision(space: &SqlSpace, id: &str, sql: String) -> Result<Value> {
+        space
+            .service
+            .create_saved_sql(
+                &space.space_id,
+                Some(id),
+                &SqlPayload {
+                    name: Some(id.to_string()),
+                    kind: SqlKind::UserQuery,
+                    metadata: None,
+                    sql,
+                    variables: json!([]),
+                },
+                "owner",
+            )
+            .await
+    }
+    let select = |predicate: &str| {
+        format!(
+            "SELECT {} AS status FROM \"{}\" WHERE {} ORDER BY \"_ugoite_id\"",
+            space.status_column, space.form_name, predicate
+        )
+    };
+    let empty = save_revision(
+        &space,
+        "empty",
+        select(&format!("{} = 999", space.priority_column)),
+    )
+    .await?;
+    let one = save_revision(
+        &space,
+        "one",
+        select(&format!("{} = 1", space.priority_column)),
+    )
+    .await?;
+    let many = save_revision(
+        &space,
+        "many",
+        select(&format!("{} >= 1", space.priority_column)),
+    )
+    .await?;
+
+    let probe = |id: &str, saved: &Value| SqlQueryRequest {
+        sql: String::new(),
+        parameters: Map::new(),
+        parameter_types: BTreeMap::new(),
+        include_exact_integer_values: false,
+        limit: 2,
+        continuation: None,
+        saved_sql: Some(SavedSqlRevisionRef {
+            id: id.to_string(),
+            revision_id: saved["revision_id"]
+                .as_str()
+                .expect("Saved SQL revision id")
+                .to_string(),
+        }),
+    };
+
+    let zero = space
+        .service
+        .probe_sql_scalar_local(&space.space_id, probe("empty", &empty))
+        .await?;
+    assert!(zero.rows.is_empty());
+
+    let one_row = space
+        .service
+        .probe_sql_scalar_local(&space.space_id, probe("one", &one))
+        .await?;
+    assert_eq!(one_row.rows.len(), 1);
+    assert_eq!(one_row.rows[0]["status"], "open");
+
+    let multiple = space
+        .service
+        .probe_sql_scalar_local(&space.space_id, probe("many", &many))
+        .await?;
+    assert_eq!(multiple.rows.len(), 2);
+    assert_eq!(multiple.columns, ["status"]);
+    Ok(())
+}
+
 fn base_sql(space: &SqlSpace) -> String {
     format!(
         "SELECT \"_ugoite_id\" FROM \"{}\" ORDER BY \"_ugoite_id\"",

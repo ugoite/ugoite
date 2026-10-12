@@ -432,6 +432,22 @@ features:
       claims:
       - kind: satisfies
         criterion: REQ-COMP-002#criterion.typed-entry-aggregate-execution
+  - id: composition-metric-query-runtime
+    role: implementation
+    facet: service
+    responsibility: Dispatch typed EntryQuery aggregate and exact Saved SQL scalar definitions through the Composition Metric query service; execute aggregates over the authorized full matching set and probe the pinned SQL revision with bounded row consumption.
+    targets:
+    - id: composition-metric-query-service-module
+      adapter: rust
+      path: crates/ugoite-iceberg/src/service/composition_metric_query.rs
+      selector: { kind: file }
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.typed-metric-definition
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.typed-entry-aggregate-execution
+      - kind: satisfies
+        criterion: REQ-COMP-004#criterion.current-authorization
   - id: entry-query-aggregate-evidence
     role: evidence
     facet: iceberg-tests
@@ -446,6 +462,33 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.typed-entry-aggregate-execution
+  - id: composition-metric-query-evidence
+    role: evidence
+    facet: iceberg-tests
+    responsibility: Verify Composition Metric execution uses the full EntryQuery matching set, a bounded probe of the exact Saved SQL revision, and current authorization for the Composition, Form entries, and Saved SQL source.
+    targets:
+    - id: typed-metric-query-execution-case
+      adapter: rust
+      path: crates/ugoite-iceberg/tests/test_composition_query_authorization.rs
+      selector:
+        kind: test
+        name: typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.typed-metric-definition
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.typed-entry-aggregate-execution
+    - id: metric-current-authorization-case
+      adapter: rust
+      path: crates/ugoite-iceberg/tests/test_composition_query_authorization.rs
+      selector:
+        kind: test
+        name: authorized_metric_scalar_rechecks_current_form_and_saved_sql_access
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.current-authorization
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.typed-metric-definition
   - id: aggregate-result-type-evidence
     role: evidence
     facet: core-tests
@@ -554,6 +597,8 @@ features:
     kind: custom
     source: FEAT-COMP-001#binding.contract/target.composition-contract
     participants:
+    - target: FEAT-COMP-001#binding.typed-metric-definition-domain/target.metric-definition-type
+      role: domain
     - target: FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.aggregate-result-type
       role: domain
     - target: FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.matching-set-contract
@@ -564,5 +609,9 @@ features:
       role: service
     - target: FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.canonical-aggregate-matching-set
       role: index
+    - target: FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module
+      role: service
     guarantees:
     - REQ-COMP-002#criterion.typed-entry-aggregate-execution
+    - REQ-COMP-002#criterion.typed-metric-definition
+    - REQ-COMP-004#criterion.current-authorization

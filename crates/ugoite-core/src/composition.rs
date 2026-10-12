@@ -952,14 +952,6 @@ fn resolve_composition_parts(
     let mut metric_sql_columns_by_source: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
     let mut metric_diagnostics = Vec::new();
     for component in &render_components {
-        // The authorized aggregate executor is available, but the public
-        // Composition metric-query operation does not dispatch to it yet.
-        // Keep typed definitions fail-closed until that operation is wired.
-        if component.metric_definition().is_some() {
-            return Err(vec![CompositionDiagnostic::without_parameter(
-                CompositionDiagnosticCode::InvalidComposition,
-            )]);
-        }
         match component.metric_definition() {
             Some(CompositionMetricDefinition::Aggregate {
                 source, field_id, ..
@@ -978,13 +970,50 @@ fn resolve_composition_parts(
                         .or_default()
                         .push(*field_id);
                 }
+                continue;
             }
-            // Saved SQL scalar cardinality is implemented by the following
-            // query-runtime slice. Keep that definition closed here.
-            Some(CompositionMetricDefinition::SqlScalar { .. }) => {
-                return Err(vec![CompositionDiagnostic::without_parameter(
-                    CompositionDiagnosticCode::InvalidComposition,
-                )]);
+            Some(CompositionMetricDefinition::SqlScalar { source, column }) => {
+                if !matches!(
+                    sources_by_id.get(source.as_str()),
+                    Some(CompositionSource::SavedSql { .. })
+                ) || component.source_id() != Some(source.as_str())
+                {
+                    return Err(vec![CompositionDiagnostic::without_parameter(
+                        CompositionDiagnosticCode::InvalidComposition,
+                    )]);
+                }
+                let Some(CompositionSource::SavedSql {
+                    expected_result, ..
+                }) = sources_by_id.get(source.as_str()).copied()
+                else {
+                    unreachable!("validated Saved SQL source")
+                };
+                let mut matching_columns = expected_result
+                    .iter()
+                    .filter(|result_column| result_column.name == *column);
+                let Some(result_column) = matching_columns.next() else {
+                    metric_diagnostics.push(CompositionDiagnostic::without_parameter(
+                        CompositionDiagnosticCode::MetricResultColumnMissing,
+                    ));
+                    continue;
+                };
+                if matching_columns.next().is_some() {
+                    metric_diagnostics.push(CompositionDiagnostic::without_parameter(
+                        CompositionDiagnosticCode::MetricResultColumnAmbiguous,
+                    ));
+                    continue;
+                }
+                if let Err(code) =
+                    validate_composition_metric_result_type(result_column.result_type)
+                {
+                    metric_diagnostics.push(CompositionDiagnostic::without_parameter(code.into()));
+                    continue;
+                }
+                metric_sql_columns_by_source
+                    .entry(source)
+                    .or_default()
+                    .insert(column.clone());
+                continue;
             }
             None => {}
         }
@@ -1217,6 +1246,41 @@ fn resolve_component_bindings(
                         Some(*operation),
                         field.map(|field| field.name.clone()),
                         Some(expected_result_type),
+                    )
+                }
+                Some(CompositionMetricDefinition::SqlScalar { source, column })
+                    if source == source_id =>
+                {
+                    let CompositionSource::SavedSql {
+                        expected_result, ..
+                    } = source_definition
+                    else {
+                        return Err(vec![CompositionDiagnostic::without_parameter(
+                            CompositionDiagnosticCode::InvalidComposition,
+                        )]);
+                    };
+                    let mut matching_columns = expected_result
+                        .iter()
+                        .filter(|result_column| result_column.name == *column);
+                    let Some(result_column) = matching_columns.next() else {
+                        return Err(vec![CompositionDiagnostic::without_parameter(
+                            CompositionDiagnosticCode::MetricResultColumnMissing,
+                        )]);
+                    };
+                    if matching_columns.next().is_some() {
+                        return Err(vec![CompositionDiagnostic::without_parameter(
+                            CompositionDiagnosticCode::MetricResultColumnAmbiguous,
+                        )]);
+                    }
+                    validate_composition_metric_result_type(result_column.result_type).map_err(
+                        |code| vec![CompositionDiagnostic::without_parameter(code.into())],
+                    )?;
+                    (
+                        ResolvedComponentKind::Metric,
+                        None,
+                        None,
+                        Some(column.clone()),
+                        Some(result_column.result_type),
                     )
                 }
                 Some(CompositionMetricDefinition::Aggregate { .. })
@@ -1547,14 +1611,14 @@ mod tests {
     use serde_json::{json, Value};
     use std::collections::BTreeMap;
     use ugoite_domain::composition::{
-        CompositionComponent, CompositionDiagnosticCode, CompositionFieldSchemaEntry,
-        CompositionLiteral, CompositionMetricValueField, CompositionParameter,
-        CompositionParameterFormat, CompositionParameterReference, CompositionParameterType,
-        CompositionQueryOperator, CompositionResultColumn, CompositionResultFieldType,
-        CompositionSortDirection, CompositionSource, CompositionSpec, CompositionValue,
-        DashboardFlowLayout, EntryQueryDisplaySystemField, EntryQueryFilterTemplate,
-        EntryQueryProjectionTemplate, EntryQuerySortTemplate, EntryQueryTemplate, FlowItem,
-        FlowLayoutKind, FlowRow, TextStyle,
+        CompositionAggregateOperation, CompositionComponent, CompositionDiagnosticCode,
+        CompositionFieldSchemaEntry, CompositionLiteral, CompositionMetricValueField,
+        CompositionParameter, CompositionParameterFormat, CompositionParameterReference,
+        CompositionParameterType, CompositionQueryOperator, CompositionResultColumn,
+        CompositionResultFieldType, CompositionSortDirection, CompositionSource, CompositionSpec,
+        CompositionValue, DashboardFlowLayout, EntryQueryDisplaySystemField,
+        EntryQueryFilterTemplate, EntryQueryProjectionTemplate, EntryQuerySortTemplate,
+        EntryQueryTemplate, FlowItem, FlowLayoutKind, FlowRow, TextStyle,
     };
     use ugoite_domain::form::{
         FieldType, FormDefinition, FormField, FormVersion, ListItemDefinition,
@@ -1868,18 +1932,68 @@ mod tests {
     }
 
     #[test]
-    fn typed_metric_definitions_fail_closed_until_query_execution_is_available() {
+    fn typed_metric_definitions_resolve_to_server_metric_bindings() {
         let document = ugoite_domain::composition::parse_composition_yaml(TYPED_METRIC_DEFINITIONS)
             .expect("typed metric grammar is accepted by the domain");
+        let mut current_form = form(&[
+            (100, FieldType::String),
+            (102, FieldType::Double),
+            (103, FieldType::String),
+            (104, FieldType::Date),
+            (105, FieldType::Timestamp),
+        ]);
+        current_form.id =
+            FormId::from(uuid::Uuid::parse_str("00000000-0000-7000-8000-000000000010").unwrap());
+        let sql_entry_id =
+            EntryId::from(uuid::Uuid::parse_str("00000000-0000-7000-8000-000000000020").unwrap());
+        let sql_revision_id = RevisionId::from(
+            uuid::Uuid::parse_str("00000000-0000-7000-8000-000000000021").unwrap(),
+        );
+        let sql_metadata = saved_sql_metadata(sql_entry_id, sql_revision_id, BTreeMap::new());
+        let current_sources = [
+            CurrentSourceDescriptor::EntryQuery {
+                source_id: "expense_rows",
+                current_form: Some(&current_form),
+            },
+            CurrentSourceDescriptor::SavedSql {
+                source_id: "monthly_total",
+                current_revision: Some(&sql_metadata),
+            },
+        ];
 
-        let diagnostics = diagnostic_codes(resolve_composition_preview(
+        let plan = resolve_composition_preview(
             &document.spec,
             &BTreeMap::new(),
-            &[],
+            &current_sources,
             "typed-metric-draft".to_owned(),
-        ));
+        )
+        .expect("typed metric definitions resolve against their exact sources");
 
-        assert_eq!(diagnostics, [CompositionDiagnosticCode::InvalidComposition]);
+        let count = plan
+            .component_bindings
+            .iter()
+            .find(|binding| binding.component_id == "expense_count")
+            .expect("CountRows binding");
+        assert_eq!(
+            count.aggregate_operation,
+            Some(CompositionAggregateOperation::CountRows)
+        );
+        assert_eq!(
+            count.expected_result_type,
+            Some(CompositionResultFieldType::Integer)
+        );
+
+        let total = plan
+            .component_bindings
+            .iter()
+            .find(|binding| binding.component_id == "total")
+            .expect("SQL Scalar binding");
+        assert_eq!(total.source_id.as_deref(), Some("monthly_total"));
+        assert_eq!(total.result_property_key.as_deref(), Some("total"));
+        assert_eq!(
+            total.expected_result_type,
+            Some(CompositionResultFieldType::Decimal)
+        );
     }
 
     fn diagnostic_codes<T>(

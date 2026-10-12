@@ -160,6 +160,8 @@ use ugoite_storage::{
     SpaceCatalogStore, StorageBackend,
 };
 
+#[path = "service/composition_metric_query.rs"]
+mod composition_metric_query;
 mod composition_resolver;
 pub use composition_resolver::CompositionPreview;
 pub use composition_resolver::CompositionResolution;
@@ -6684,12 +6686,75 @@ impl UgoiteService {
     }
 
     /// Aggregates the complete current matching set of a Form-scoped
+    /// EntryQuery for the trusted local operator boundary.
+    pub async fn aggregate_entries_local(
+        &self,
+        space_id: &str,
+        request: EntryQueryAggregateRequest,
+    ) -> Result<EntryQueryAggregateResult> {
+        request.validate().map_err(entry_query_contract_error)?;
+        self.validate_complete_space(space_id).await?;
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let publication = workspace.current_publication().await?;
+        let checkpoint = workspace.resolve_publication(&publication).await?;
+        let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
+        let relation_scopes = forms
+            .iter()
+            .map(|form| (sql_relation_name(form.id), EntryScope::AllCurrent))
+            .collect::<BTreeMap<_, _>>();
+        index::aggregate_entry_query_at_checkpoint(
+            &self.operator,
+            &self.workspace_path(space_id),
+            checkpoint,
+            &forms,
+            &relation_scopes,
+            &request,
+        )
+        .await
+    }
+
+    /// Aggregates the complete current matching set of a Form-scoped
     /// EntryQuery. Authorization and publication are rebuilt for every call;
     /// page projection, sorting, and page limits are not part of the request.
     pub async fn aggregate_entries_authorized_for_principals(
         &self,
         space_id: &str,
         principal_ids: &[Uuid],
+        request: EntryQueryAggregateRequest,
+    ) -> Result<EntryQueryAggregateResult> {
+        self.aggregate_entries_authorized_for_principals_with_composition_access(
+            space_id,
+            principal_ids,
+            None,
+            request,
+        )
+        .await
+    }
+
+    /// Aggregates a Composition Metric while the exact Composition read ACL
+    /// is checked under the same authorization lease as the full-set query.
+    pub async fn aggregate_entries_authorized_for_composition_metric(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        composition_id: &str,
+        request: EntryQueryAggregateRequest,
+    ) -> Result<EntryQueryAggregateResult> {
+        self.aggregate_entries_authorized_for_principals_with_composition_access(
+            space_id,
+            principal_ids,
+            Some(composition_id),
+            request,
+        )
+        .await
+    }
+
+    async fn aggregate_entries_authorized_for_principals_with_composition_access(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        composition_id: Option<&str>,
         request: EntryQueryAggregateRequest,
     ) -> Result<EntryQueryAggregateResult> {
         request.validate().map_err(entry_query_contract_error)?;
@@ -6716,6 +6781,15 @@ impl UgoiteService {
         let publication = workspace.current_publication().await?;
         let checkpoint = workspace.resolve_publication(&publication).await?;
         let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
+        if let Some(composition_id) = composition_id {
+            let composition_scopes =
+                Self::authorized_form_entry_scopes_for_forms(&state, principal_ids, forms.clone())?;
+            require_composition_entry_read_scope(
+                &composition_scopes,
+                parse_entry_id(composition_id)?,
+                composition_id,
+            )?;
+        }
         let Some(form) = forms.iter().find(|form| form.id == *form_id) else {
             return Err(AppError::not_found(ErrorCode::FormNotFound, "Form not found").into());
         };

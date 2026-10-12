@@ -412,14 +412,14 @@ features:
   - id: typed-metric-runtime-evidence
     role: evidence
     facet: core-tests
-    responsibility: Verify typed metric definitions remain fail-closed until the Composition metric-query operation dispatches aggregate and SQL scalar definitions.
+    responsibility: Verify typed aggregate and SQL scalar definitions resolve into server metric bindings.
     targets:
-    - id: core-typed-metric-fail-closed
+    - id: core-typed-metric-binding-resolution
       adapter: rust
       path: crates/ugoite-core/src/composition.rs
       selector:
         kind: symbol
-        name: tests::typed_metric_definitions_fail_closed_until_query_execution_is_available
+        name: tests::typed_metric_definitions_resolve_to_server_metric_bindings
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.typed-metric-definition

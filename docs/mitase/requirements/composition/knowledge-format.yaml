@@ -88,18 +88,32 @@ requirements:
       - id: typed-metric-definition-validation
         role: verification
         facet: verification
-        responsibility: Verify typed definitions remain fail-closed until query dispatch is available, operation-specific aggregate result types, matching-set semantics, projection-independent aggregate FieldIds, and native/WASM canonical parity.
+        responsibility: Verify typed aggregate and SQL scalar definitions resolve into server metric bindings and execute through the Composition Metric query operation with exact Saved SQL revision and current authorization. Companion targets verify operation-specific aggregate result types, matching-set semantics, projection-independent aggregate FieldIds, and native/WASM canonical parity.
         targets:
-          - id: typed-metric-fail-closed-case
+          - id: typed-metric-binding-resolution-case
             adapter: rust
             path: crates/ugoite-core/src/composition.rs
-            selector: { kind: symbol, name: tests::typed_metric_definitions_fail_closed_until_query_execution_is_available }
+            selector: { kind: symbol, name: tests::typed_metric_definitions_resolve_to_server_metric_bindings }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.typed-metric-definition
                 covers:
                   - FEAT-COMP-001#binding.typed-metric-definition-domain/target.metric-definition-type
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::typed_metric_definitions_fail_closed_until_query_execution_is_available } }
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::typed_metric_definitions_resolve_to_server_metric_bindings } }
+          - id: typed-metric-query-execution-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_query_authorization.rs
+            selector: { kind: test, name: typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe }
+            claims:
+              - { kind: verifies, criterion: REQ-COMP-002#criterion.typed-metric-definition, covers: [FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe } } }
+              - { kind: verifies, criterion: REQ-COMP-002#criterion.typed-entry-aggregate-execution, covers: [FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.aggregate-entry-query, FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe } } }
+          - id: typed-metric-current-authorization-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_query_authorization.rs
+            selector: { kind: test, name: authorized_metric_scalar_rechecks_current_form_and_saved_sql_access }
+            claims:
+              - { kind: verifies, criterion: REQ-COMP-002#criterion.typed-metric-definition, covers: [FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: authorized_metric_scalar_rechecks_current_form_and_saved_sql_access } } }
+              - { kind: verifies, criterion: REQ-COMP-004#criterion.current-authorization, covers: [FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: authorized_metric_scalar_rechecks_current_form_and_saved_sql_access } } }
           - id: matching-set-contract-case
             adapter: rust
             path: crates/ugoite-core/src/entry_query.rs
@@ -864,7 +878,26 @@ requirements:
         governed_by: [POL-002#rule.governance, POL-007#rule.governance]
       - id: typed-metric-definition
         kind: behavior
-        statement: Composition v1 accepts typed EntryQuery aggregate definitions for count_rows, count_values, sum, avg, min, and max, and exact Saved SQL scalar columns, with strict operation-specific fields and optional display-only presentation. count_rows has no field_id; count_values counts non-NULL values, and the other field-based operations require a stable FieldId. sum and avg require numeric fields; min and max accept numeric, date, and timestamp fields, excluding time-only fields. Numeric presentation metadata is optional; date and timestamp min/max omit it and use type-based rendering. A typed aggregate FieldId is resolved from the source schema even when it is absent from the table projection; aggregate results use the full source matching set and are independent of table page size, page, sort, and display projection. EntryQuery aggregates execute through the current authorized matching-set path; wiring those results into Composition query operations and executing exact Saved SQL scalar definitions remain separate runtime work. Existing source plus value_field documents remain readable with unchanged meaning in the current v0.x series, and their retirement is reserved for a next-minor contract change without migration.
+        statement: >-
+          Composition v1 Metric components use one typed definition:
+          EntryQuery aggregates count_rows, count_values, sum, avg, min, and
+          max, or an exact Saved SQL scalar column. The definition has strict
+          operation-specific fields and optional display-only presentation.
+          count_rows has no field_id; count_values counts non-NULL values, and
+          the other field-based operations require a stable FieldId. sum and
+          avg require numeric fields; min and max accept numeric, date, and
+          timestamp fields, excluding time-only fields. Numeric presentation
+          metadata is optional; date and timestamp min/max omit it and use
+          type-based rendering. A typed aggregate FieldId is resolved from the
+          source schema even when it is absent from the table projection;
+          aggregate results use the full source matching set and are
+          independent of table page size, page, sort, and display projection.
+          EntryQuery aggregates execute through the current authorized
+          matching-set path and Composition metric query operation. Exact
+          Saved SQL scalar definitions bind to a specific saved revision and
+          execute through a bounded scalar probe. This redesign does not
+          require compatibility parsing or migration for the unreleased
+          source plus value_field metric form.
         governed_by: [POL-002#rule.governance, POL-007#rule.governance]
       - id: typed-entry-aggregate-execution
         kind: behavior
@@ -932,10 +965,8 @@ requirements:
           property fields returned by preview. A typed aggregate may reference
           a field outside the table projection without widening or rewriting
           that projection, and execution revalidates the FieldId and type
-          against the current authorized Form schema. Legacy scalar metrics
-          using source plus value_field still require an explicit source
-          projection; Preview does not promise a scalar result field for one.
-          The snapshot includes List item and RowReference target
+          against the current authorized Form schema. The snapshot includes
+          List item and RowReference target
           metadata when present. When text search is present, it also includes
           every text-searchable property field under existing EntryQuery
           semantics, excluding binary, list, object_list, and asset_reference

@@ -23,6 +23,7 @@ pub enum CompositionMetricDiagnosticCode {
     MetricResultColumnMissing,
     MetricResultColumnAmbiguous,
     MetricResultPageIncomplete,
+    MetricScalarExpectedOneRow,
 }
 
 impl CompositionMetricDiagnosticCode {
@@ -35,6 +36,7 @@ impl CompositionMetricDiagnosticCode {
             Self::MetricResultColumnMissing => "metric_result_column_missing",
             Self::MetricResultColumnAmbiguous => "metric_result_column_ambiguous",
             Self::MetricResultPageIncomplete => "metric_result_page_incomplete",
+            Self::MetricScalarExpectedOneRow => "metric_scalar_expected_one_row",
         }
     }
 }
@@ -58,6 +60,9 @@ impl From<CompositionMetricDiagnosticCode> for CompositionDiagnosticCode {
             }
             CompositionMetricDiagnosticCode::MetricResultPageIncomplete => {
                 Self::MetricResultPageIncomplete
+            }
+            CompositionMetricDiagnosticCode::MetricScalarExpectedOneRow => {
+                Self::MetricScalarExpectedOneRow
             }
         }
     }
@@ -142,6 +147,56 @@ pub fn validate_composition_metric_result_type(
     } else {
         Err(CompositionMetricDiagnosticCode::MetricResultNotScalar)
     }
+}
+
+/// Validate one nullable scalar returned by a typed SQL Scalar metric.
+///
+/// The query layer must first establish row and column cardinality. SQL NULL
+/// is valid for every scalar result type; non-null values must retain their
+/// exact portable representation.
+pub fn validate_composition_metric_scalar_value(
+    expected_type: CompositionResultFieldType,
+    value: &Value,
+) -> Result<(), CompositionMetricDiagnosticCode> {
+    validate_composition_metric_result_type(expected_type)?;
+    if value.is_null() {
+        return Ok(());
+    }
+    if matches!(value, Value::Array(_) | Value::Object(_)) {
+        return Err(CompositionMetricDiagnosticCode::MetricResultNotScalar);
+    }
+
+    let matches_expected_type = match expected_type {
+        CompositionResultFieldType::String => value.is_string(),
+        CompositionResultFieldType::Boolean => value.is_boolean(),
+        CompositionResultFieldType::Integer => value
+            .as_str()
+            .is_some_and(is_normalized_composition_metric_integer),
+        CompositionResultFieldType::Float => value.as_f64().is_some_and(f64::is_finite),
+        CompositionResultFieldType::Decimal => value
+            .as_str()
+            .is_some_and(is_normalized_composition_metric_decimal),
+        CompositionResultFieldType::Date => value
+            .as_str()
+            .is_some_and(is_normalized_composition_metric_date),
+        CompositionResultFieldType::Timestamp => value
+            .as_str()
+            .is_some_and(is_normalized_composition_metric_timestamp),
+        CompositionResultFieldType::Json => false,
+    };
+    if matches_expected_type {
+        Ok(())
+    } else {
+        Err(CompositionMetricDiagnosticCode::MetricResultTypeMismatch)
+    }
+}
+
+fn is_normalized_composition_metric_integer(value: &str) -> bool {
+    let unsigned = value.strip_prefix('-').unwrap_or(value);
+    !unsigned.is_empty()
+        && unsigned.bytes().all(|byte| byte.is_ascii_digit())
+        && (unsigned == "0" || !unsigned.starts_with('0'))
+        && !(value.starts_with('-') && unsigned == "0")
 }
 
 /// The metadata needed to evaluate a selected metric value from one query page.
@@ -286,7 +341,8 @@ mod tests {
     use super::{
         composition_aggregate_result_type, composition_metric_result_type,
         evaluate_composition_metric_page, validate_composition_metric_result_type,
-        CompositionMetricDiagnosticCode as Code, CompositionMetricPage,
+        validate_composition_metric_scalar_value, CompositionMetricDiagnosticCode as Code,
+        CompositionMetricPage,
     };
     use crate::composition::{
         CompositionAggregateOperation as Operation, CompositionDiagnosticCode,
@@ -401,6 +457,59 @@ mod tests {
         assert_eq!(
             validate_composition_metric_result_type(CompositionResultFieldType::Json),
             Err(Code::MetricResultNotScalar)
+        );
+    }
+
+    #[test]
+    fn validates_nullable_scalar_results_and_exact_numeric_representations() {
+        for result_type in [
+            CompositionResultFieldType::String,
+            CompositionResultFieldType::Boolean,
+            CompositionResultFieldType::Integer,
+            CompositionResultFieldType::Float,
+            CompositionResultFieldType::Decimal,
+            CompositionResultFieldType::Date,
+            CompositionResultFieldType::Timestamp,
+        ] {
+            assert_eq!(
+                validate_composition_metric_scalar_value(result_type, &json!(null)),
+                Ok(())
+            );
+        }
+
+        for value in ["0", "42", "-42", "9007199254740993"] {
+            assert_eq!(
+                validate_composition_metric_scalar_value(
+                    CompositionResultFieldType::Integer,
+                    &json!(value)
+                ),
+                Ok(())
+            );
+        }
+        for value in ["", "01", "-0", "1.0", "1e3"] {
+            assert_eq!(
+                validate_composition_metric_scalar_value(
+                    CompositionResultFieldType::Integer,
+                    &json!(value)
+                ),
+                Err(Code::MetricResultTypeMismatch)
+            );
+        }
+        for value in ["0", "0.00", "12.3400", "-12.34"] {
+            assert_eq!(
+                validate_composition_metric_scalar_value(
+                    CompositionResultFieldType::Decimal,
+                    &json!(value)
+                ),
+                Ok(())
+            );
+        }
+        assert_eq!(
+            validate_composition_metric_scalar_value(
+                CompositionResultFieldType::Decimal,
+                &json!(12.34)
+            ),
+            Err(Code::MetricResultTypeMismatch)
         );
     }
 
