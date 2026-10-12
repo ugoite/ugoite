@@ -25,14 +25,14 @@ pub enum CompositionMetricQueryTarget {
     Draft { yaml: String },
 }
 
-/// Request to evaluate one metric component with current parameters.
+/// Request to evaluate one metric component with the current variable snapshot.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompositionMetricQueryRequest {
     pub target: CompositionMetricQueryTarget,
     pub component_id: String,
     #[serde(default)]
-    pub parameters: BTreeMap<String, Value>,
+    pub variables: BTreeMap<String, Value>,
 }
 
 /// One successfully evaluated metric value and its portable meaning.
@@ -66,7 +66,7 @@ pub fn encode_composition_metric_value(
             _ => {
                 return Err(CompositionDiagnostic {
                     code: CompositionDiagnosticCode::MetricResultTypeMismatch,
-                    parameter_id: None,
+                    variable_id: None,
                 });
             }
         }
@@ -76,7 +76,7 @@ pub fn encode_composition_metric_value(
     validate_composition_metric_scalar_value(result_type, &encoded).map_err(|code| {
         CompositionDiagnostic {
             code: code.into(),
-            parameter_id: None,
+            variable_id: None,
         }
     })?;
     Ok(encoded)
@@ -90,7 +90,7 @@ pub struct CompositionMetricQueryDiagnostic {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub component_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parameter_id: Option<String>,
+    pub variable_id: Option<String>,
 }
 
 /// Result of one metric query. A successful SQL `NULL` is represented as a
@@ -121,7 +121,7 @@ impl CompositionMetricQueryResponse {
                 .map(|diagnostic| CompositionMetricQueryDiagnostic {
                     code: diagnostic.code,
                     component_id: None,
-                    parameter_id: diagnostic.parameter_id,
+                    variable_id: diagnostic.variable_id,
                 })
                 .collect(),
         }
@@ -135,7 +135,7 @@ pub fn evaluate_saved_sql_metric_probe(
 ) -> Result<Value, CompositionDiagnostic> {
     let diagnostic = |code| CompositionDiagnostic {
         code,
-        parameter_id: None,
+        variable_id: None,
     };
     if binding.kind != ResolvedComponentKind::Metric {
         return Err(diagnostic(CompositionDiagnosticCode::InvalidComposition));
@@ -222,6 +222,7 @@ mod tests {
             kind: ResolvedComponentKind::Metric,
             label: Some("合計".to_owned()),
             source_id: Some("monthly_sql".to_owned()),
+            variable_id: None,
             result_property_key: Some("total".to_owned()),
             expected_result_type: Some(result_type),
             presentation: None,
