@@ -13,6 +13,10 @@ requirements:
         kind: behavior
         statement: The frontend renders current Entry records as titled cards and exposes their available Form and property values without failing on missing properties.
         governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: identifier-not-label
+        kind: behavior
+        statement: Entry cards do not render the stable Entry identifier as visible text when an Entry lacks a human-authored title or name.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
     bindings:
       - id: entry-list-display-verification
         role: verification
@@ -46,6 +50,19 @@ requirements:
                 criterion: REQ-FE-004#criterion.display
                 covers: [FEAT-FE-002#binding.frontend/target.list-panel]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/ListPanel.test.tsx, test: "should render entries list" } }
+              - kind: verifies
+                criterion: REQ-FE-004#criterion.identifier-not-label
+                covers: [FEAT-FE-002#binding.frontend/target.list-panel]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/ListPanel.test.tsx, test: "should render entries list" } }
+          - id: entry-list-identifier-not-label
+            adapter: typescript
+            path: frontend/src/components/EntryList.test.tsx
+            selector: { kind: test, name: "should render generic Entry labels without exposing IDs in controlled mode" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-004#criterion.identifier-not-label
+                covers: [FEAT-FE-002#binding.frontend/target.entry-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryList.test.tsx, test: "should render generic Entry labels without exposing IDs in controlled mode" } }
           - id: form-entries-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx"

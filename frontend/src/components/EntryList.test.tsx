@@ -38,32 +38,36 @@ describe("EntryList", () => {
       expect(screen.getByText(/no entries/i)).toBeInTheDocument();
     });
 
-    it("should render generic Entry labels without exposing IDs", async () => {
-      const record1: EntryRecord = {
-        id: "entry-1",
-        updated_at: "2025-01-01T00:00:00Z",
-        properties: {},
-        tags: [],
-      };
-      const record2: EntryRecord = {
-        id: "entry-2",
-        updated_at: "2025-01-02T00:00:00Z",
-        properties: { Status: "Active" },
-        tags: [],
-      };
+    it(
+      "should render generic Entry labels without exposing IDs in controlled mode",
+      async () => {
+        const record1: EntryRecord = {
+          id: "entry-1",
+          updated_at: "2025-01-01T00:00:00Z",
+          properties: {},
+          tags: [],
+        };
+        const record2: EntryRecord = {
+          id: "entry-2",
+          updated_at: "2025-01-02T00:00:00Z",
+          properties: { Status: "Active" },
+          tags: [],
+        };
 
-      const { entries, loading, error } = createControlledProps([
-        record1,
-        record2,
-      ]);
-      render(() => (
-        <EntryList entries={entries} loading={loading} error={error} />
-      ));
+        const { entries, loading, error } = createControlledProps([
+          record1,
+          record2,
+        ]);
+        render(() => (
+          <EntryList entries={entries} loading={loading} error={error} />
+        ));
 
-      expect(screen.getAllByText("Entry")).toHaveLength(2);
-      expect(screen.queryByText("entry-1")).not.toBeInTheDocument();
-      expect(screen.queryByText("entry-2")).not.toBeInTheDocument();
-    });
+        expect(screen.getAllByText("Entry")).toHaveLength(2);
+        const cards = screen.getAllByTestId("entry-item");
+        expect(cards[0]).not.toHaveTextContent(record1.id);
+        expect(cards[1]).not.toHaveTextContent(record2.id);
+      },
+    );
 
     it("should display extracted properties in entry cards", async () => {
       const record: EntryRecord = {
