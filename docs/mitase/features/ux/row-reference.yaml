@@ -1,0 +1,34 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: ux
+category: Row Reference identifier presentation
+features:
+  - id: FEAT-UX-021
+    title: Human-Readable Row Reference Labels
+    summary: Keep stable Entry IDs as Row Reference field values while showing human-readable previews or localized neutral states in the interface.
+    status: implemented
+    bindings:
+      - id: row-reference-implementation
+        role: implementation
+        facet: frontend
+        responsibility: Keep Row Reference candidate, selected, and unavailable labels free of stable Entry IDs while retaining confirmed IDs as field values.
+        targets:
+          - id: row-reference-select
+            adapter: typescript
+            path: frontend/src/components/fields/RowReferenceSelect.tsx
+            selector: { kind: symbol, name: RowReferenceSelect }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-ROWREF-001#criterion.human-readable-labels
+      - id: row-reference-ui-contract
+        role: contract-source
+        facet: frontend
+        responsibility: Define Row Reference labels, the stable-ID presentation boundary, and confirm-only value storage.
+        targets:
+          - id: row-reference-select-specification
+            adapter: declared
+            path: docs/spec/ui/components/row-reference-select.yaml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-UX-ROWREF-001#criterion.human-readable-labels

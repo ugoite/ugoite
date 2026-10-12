@@ -35,8 +35,10 @@ opaque challenge boundary are described in `components/step-up.yaml`. The
 shared compact utility toolbar is
 described in `components/action-icon-bar.yaml`; the EntryBrowser result-table
 contract is in `components/entry-browser.yaml`, and the editable Form-scoped
-table contract is in `components/form-table.yaml`. The invitation Join surface
-is described in `components/invitation-join.yaml`; page files live under
+table contract is in `components/form-table.yaml`. Row Reference selected and
+candidate labels and their stable-ID boundary are described in
+`components/row-reference-select.yaml`. The invitation Join surface is
+described in `components/invitation-join.yaml`; page files live under
 `pages/`. The persistent shell owns visible section context on Space-scoped
 routes: pages must not restate the active section identity. Pages own nested
 object or task identity. The mobile bottom bar changes the navigation mechanism

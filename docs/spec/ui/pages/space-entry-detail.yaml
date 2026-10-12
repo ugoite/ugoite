@@ -75,13 +75,15 @@ components:
       visibility: form-defined-entry
       items:
         - typed-form-fields
-      description: Form fields only. A Form-defined Title or Name renders as a normal field with no Entry-level semantics; a Markdown field stays multiline and adds an icon-only preview dialog. Row Reference feedback uses a resolved Form name or localized unknown-Form label for wrong-Form and unavailable-target states; it never renders an unresolved stable Form UUID.
+      description: Form fields only. A Form-defined Title or Name renders as a normal field with no Entry-level semantics; a Markdown field stays multiline and adds an icon-only preview dialog. Row Reference feedback uses a resolved Form name or localized unknown-Form label for wrong-Form and unavailable-target states; it never renders an unresolved stable Form UUID or stable Entry ID.
       field_controls:
         boolean: free-form-text-input
         date: native-date-input
         list: multiline-input
         markdown: multiline-input-with-icon-preview-dialog
-        row_reference: searchable-entry-picker
+        row_reference:
+          type: searchable-entry-picker
+          contract: ../components/row-reference-select.yaml
         string: single-row-autogrowing-textarea
         string_view: preserve-line-breaks
         time: native-time-input

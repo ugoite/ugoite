@@ -1,0 +1,48 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: ux
+category: Row Reference Entry identifier presentation
+requirements:
+  - id: REQ-UX-ROWREF-001
+    title: ID-Free Row Reference Labels
+    description: Row Reference fields retain stable Entry IDs as values while presenting human-readable previews or localized neutral states to users.
+    priority: high
+    status: implemented
+    criteria:
+      - id: human-readable-labels
+        kind: behavior
+        statement: Candidate and selected Row Reference labels use human-readable Entry previews or localized neutral states and never include stable Entry IDs in visible content or accessible names; confirming a candidate writes the corresponding stable Entry ID to the field value.
+        governed_by: [POL-UI-005#rule.governance]
+    bindings:
+      - id: row-reference-identifier-verification
+        role: verification
+        facet: verification
+        responsibility: Verify that resolved, unavailable, and candidate Row Reference labels hide stable Entry IDs while confirmation preserves the selected ID.
+        targets:
+          - id: resolved-reference-preview
+            adapter: typescript
+            path: frontend/src/components/fields/fields.test.tsx
+            selector: { kind: test, name: "REQ-UX-ROWREF-001: shows a resolved Row Reference preview without its stable Entry ID" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ROWREF-001#criterion.human-readable-labels
+                covers: [FEAT-UX-021#binding.row-reference-implementation/target.row-reference-select]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/fields/fields.test.tsx, test: "REQ-UX-ROWREF-001: shows a resolved Row Reference preview without its stable Entry ID" } }
+          - id: unavailable-reference-label
+            adapter: typescript
+            path: frontend/src/components/fields/fields.test.tsx
+            selector: { kind: test, name: "REQ-UX-ROWREF-001: keeps a deleted Row Reference ID out of the unavailable state" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ROWREF-001#criterion.human-readable-labels
+                covers: [FEAT-UX-021#binding.row-reference-implementation/target.row-reference-select]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/fields/fields.test.tsx, test: "REQ-UX-ROWREF-001: keeps a deleted Row Reference ID out of the unavailable state" } }
+          - id: candidate-reference-label
+            adapter: typescript
+            path: frontend/src/components/fields/fields.test.tsx
+            selector: { kind: test, name: "REQ-UX-ROWREF-001: keeps candidate Entry IDs out of labels and stores them only on confirm" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ROWREF-001#criterion.human-readable-labels
+                covers: [FEAT-UX-021#binding.row-reference-implementation/target.row-reference-select]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/fields/fields.test.tsx, test: "REQ-UX-ROWREF-001: keeps candidate Entry IDs out of labels and stores them only on confirm" } }
