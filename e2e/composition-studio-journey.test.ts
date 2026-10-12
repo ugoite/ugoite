@@ -248,8 +248,8 @@ async function addCanvasDisplay(
   value?: string | { label: string },
   label?: string,
 ): Promise<void> {
-  // Canvas insertion path: a gap "+" opens the design palette, and the
-  // palette Display entry delegates to the picker at the recorded target.
+  // A gap opens the design palette; its Data entry opens the shared
+  // Table/Metric source picker at the recorded target.
   await page.getByRole("button", { name: "Add to design", exact: true }).first()
     .click();
   const palette = page.getByRole("dialog", {
@@ -257,9 +257,9 @@ async function addCanvasDisplay(
     exact: true,
   });
   await expect(palette).toBeVisible();
-  await palette.getByRole("button", { name: "Display", exact: true }).click();
+  await palette.getByRole("button", { name: "Data", exact: true }).click();
   const dialog = page.getByRole("dialog", {
-    name: "Add display",
+    name: "Add data component",
     exact: true,
   });
   await expect(dialog).toBeVisible();
@@ -267,16 +267,36 @@ async function addCanvasDisplay(
     await dialog.evaluate((element) => getComputedStyle(element).width),
   );
   expect(dialogWidth).toBeGreaterThan(600);
-  await dialog.getByRole("tab", { name: kind, exact: true }).click();
+  const kindTabs = dialog.getByRole("tablist", {
+    name: "Data component type",
+  });
+  await kindTabs.getByRole("tab", { name: kind, exact: true }).click();
   const source = dialog.getByRole("button", { name: sourceName, exact: true });
   await source.click();
-  await expect(source).toHaveAttribute("aria-pressed", "true");
-  if (kind === "Metric") {
-    await dialog.getByLabel("Value", { exact: true }).selectOption(value!);
-    await dialog.getByLabel("Label", { exact: true }).fill(label!);
+  if (kind === "Table") {
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    return;
   }
-  await dialog.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(source).toHaveAttribute("aria-pressed", "true");
+  if (typeof value === "string") {
+    await dialog.getByLabel("Column", { exact: true }).selectOption(value);
+  } else {
+    await dialog.getByLabel("Operation", { exact: true }).selectOption("sum");
+    const field = dialog.getByLabel("Field", { exact: true });
+    await expect.poll(() => field.locator("option").allTextContents()).toEqual(
+      expect.arrayContaining([value!.label]),
+    );
+    await field.selectOption({ label: value!.label });
+  }
+  await dialog.getByRole("button", { name: "Preview metric", exact: true })
+    .click();
+  await expect(dialog.locator("output.compositionMetricPreview"))
+    .toBeVisible();
+  await dialog.getByRole("button", { name: "Insert", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  if (label) {
+    await page.getByLabel("Label", { exact: true }).fill(label);
+  }
 }
 
 async function addMetricDisplay(
@@ -481,19 +501,23 @@ test.describe("Composition Studio Journey", () => {
         name: "Add to design",
         exact: true,
       });
-      await palette.getByRole("button", { name: "Display", exact: true })
+      await palette.getByRole("button", { name: "Data", exact: true })
         .click();
       const metricPicker = page.getByRole("dialog", {
-        name: "Add display",
+        name: "Add data component",
         exact: true,
       });
-      await metricPicker.getByRole("tab", { name: "Metric", exact: true })
-        .click();
+      const kindTabs = metricPicker.getByRole("tablist", {
+        name: "Data component type",
+      });
+      await kindTabs.getByRole("tab", { name: "Metric", exact: true }).click();
       await metricPicker.getByRole("button", {
         name: seed.formName,
         exact: true,
       }).click();
-      const valueOptions = metricPicker.getByLabel("Value", { exact: true })
+      await metricPicker.getByLabel("Operation", { exact: true })
+        .selectOption("sum");
+      const valueOptions = metricPicker.getByLabel("Field", { exact: true })
         .locator("option");
       await expect.poll(() => valueOptions.allTextContents()).toEqual(
         expect.arrayContaining(["Amount", "Quantity"]),
@@ -797,10 +821,10 @@ test.describe("Composition Studio Journey", () => {
         name: "Add to design",
         exact: true,
       });
-      await palette.getByRole("button", { name: "Display", exact: true })
+      await palette.getByRole("button", { name: "Data", exact: true })
         .click();
       const picker = page.getByRole("dialog", {
-        name: "Add display",
+        name: "Add data component",
         exact: true,
       });
       await expect(picker).toBeVisible();
@@ -810,21 +834,20 @@ test.describe("Composition Studio Journey", () => {
       );
       expect(pickerWidth).toBeLessThanOrEqual(viewportWidth - 32);
       const displayTabs = picker.getByRole("tablist", {
-        name: "Display type",
+        name: "Data component type",
       });
       const tableTab = displayTabs.getByRole("tab", { name: "Table" });
       await expect(tableTab).toHaveAttribute("aria-selected", "true");
+      const metricTab = displayTabs.getByRole("tab", { name: "Metric" });
+      await metricTab.click();
       const source = picker.getByRole("button", {
         name: seed.savedSqlName,
         exact: true,
       });
       await source.click();
       await expect(source).toHaveAttribute("aria-pressed", "true");
-      const metricTab = displayTabs.getByRole("tab", { name: "Metric" });
-      await metricTab.click();
       await expect(metricTab).toHaveAttribute("aria-selected", "true");
-      await expect(source).toHaveAttribute("aria-pressed", "true");
-      await expect(picker.getByLabel("Value", { exact: true })).toBeVisible();
+      await expect(picker.getByLabel("Column", { exact: true })).toBeVisible();
       await picker.getByRole("button", { name: "Cancel", exact: true })
         .click();
       await expect(page.getByRole("dialog")).toHaveCount(0);
