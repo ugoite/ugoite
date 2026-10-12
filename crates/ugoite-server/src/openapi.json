@@ -16166,7 +16166,6 @@
       "CompositionMetricOperation": {
         "type": "string",
         "enum": [
-          "entry_scalar",
           "sql_scalar",
           "count_rows",
           "count_values",

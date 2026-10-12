@@ -1663,6 +1663,18 @@ fn openapi_documents_bounded_composition_metric_queries() {
         metric["responses"]["413"]["description"],
         "The JSON request body exceeds the 256 KiB bound"
     );
+    assert_eq!(
+        snapshot["components"]["schemas"]["CompositionMetricOperation"]["enum"],
+        serde_json::json!([
+            "sql_scalar",
+            "count_rows",
+            "count_values",
+            "sum",
+            "avg",
+            "min",
+            "max"
+        ])
+    );
     assert!(metric["description"]
         .as_str()
         .expect("bounded metric description")
