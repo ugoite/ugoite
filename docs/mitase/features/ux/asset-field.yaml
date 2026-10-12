@@ -11,7 +11,7 @@ features:
       - id: asset-reference-field
         role: implementation
         facet: frontend
-        responsibility: Render each persisted Asset reference by file name and localized type/size while retaining the stable Asset ID only in the Form value.
+        responsibility: Render each persisted Asset reference by file name and file-type label with locale-formatted size while retaining the stable Asset ID only in the Form value.
         targets:
           - id: asset-field
             adapter: typescript
