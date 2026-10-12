@@ -1003,7 +1003,7 @@ async fn source_resolution_and_continuation_recheck_current_authorization() -> R
 }
 
 #[tokio::test]
-async fn authorized_metric_scalar_rechecks_current_form_and_saved_sql_access() -> Result<()> {
+async fn authorized_composition_metrics_recheck_current_entry_and_saved_sql_access() -> Result<()> {
     use ugoite_core::composition_metric::{
         CompositionMetricQueryRequest, CompositionMetricQueryTarget,
     };
@@ -1036,7 +1036,7 @@ async fn authorized_metric_scalar_rechecks_current_form_and_saved_sql_access() -
         .await?;
 
     let form_name = "metric-amount";
-    service
+    let form = service
         .upsert_form_result(
             &space_id,
             &json!({
@@ -1047,7 +1047,8 @@ async fn authorized_metric_scalar_rechecks_current_form_and_saved_sql_access() -
             }),
         )
         .await?;
-    let amount_column = ugoite_domain::form::sql_column_name(ugoite_domain::id::FieldId::new(101)?);
+    let amount_field_id = ugoite_domain::id::FieldId::new(101)?;
+    let amount_column = ugoite_domain::form::sql_column_name(amount_field_id);
     for (id, amount) in [
         ("metric-amount-visible", 7_i64),
         ("metric-amount-other", 8_i64),
@@ -1090,34 +1091,73 @@ async fn authorized_metric_scalar_rechecks_current_form_and_saved_sql_access() -
         tags: Vec::new(),
         spec: CompositionSpec {
             parameters: Vec::new(),
-            sources: vec![CompositionSource::SavedSql {
-                id: "amount_sql".to_string(),
-                entry_id: serde_json::from_value(saved_sql["id"].clone())?,
-                revision_id: serde_json::from_value(saved_sql["revision_id"].clone())?,
-                expected_result: vec![CompositionResultColumn {
-                    name: "total".to_string(),
-                    result_type: CompositionResultFieldType::Integer,
-                }],
-                variables: BTreeMap::new(),
-            }],
-            components: vec![CompositionComponent::Metric {
-                id: "amount_metric".to_string(),
-                label: None,
-                source: None,
-                value_field: None,
-                definition: Some(CompositionMetricDefinition::SqlScalar {
-                    source: "amount_sql".to_string(),
-                    column: "total".to_string(),
-                }),
-                presentation: None,
-            }],
+            sources: vec![
+                CompositionSource::SavedSql {
+                    id: "amount_sql".to_string(),
+                    entry_id: serde_json::from_value(saved_sql["id"].clone())?,
+                    revision_id: serde_json::from_value(saved_sql["revision_id"].clone())?,
+                    expected_result: vec![CompositionResultColumn {
+                        name: "total".to_string(),
+                        result_type: CompositionResultFieldType::Integer,
+                    }],
+                    variables: BTreeMap::new(),
+                },
+                CompositionSource::EntryQuery {
+                    id: "amount_entries".to_string(),
+                    form_id: form.form_id,
+                    field_schema: vec![CompositionFieldSchemaEntry {
+                        field_id: amount_field_id,
+                        field_type: FieldType::Long,
+                        reference_form: None,
+                        list_item: None,
+                    }],
+                    query: EntryQueryTemplate {
+                        text: None,
+                        filters: Vec::new(),
+                        sort: Vec::new(),
+                        page_limit: 1,
+                        projection: EntryQueryProjectionTemplate::Preview,
+                        display_system_fields: Vec::new(),
+                    },
+                },
+            ],
+            components: vec![
+                CompositionComponent::Metric {
+                    id: "amount_metric".to_string(),
+                    label: None,
+                    source: None,
+                    value_field: None,
+                    definition: Some(CompositionMetricDefinition::SqlScalar {
+                        source: "amount_sql".to_string(),
+                        column: "total".to_string(),
+                    }),
+                    presentation: None,
+                },
+                CompositionComponent::Metric {
+                    id: "entry_amount_total".to_string(),
+                    label: None,
+                    source: None,
+                    value_field: None,
+                    definition: Some(CompositionMetricDefinition::Aggregate {
+                        source: "amount_entries".to_string(),
+                        operation: CompositionAggregateOperation::Sum,
+                        field_id: Some(amount_field_id),
+                    }),
+                    presentation: None,
+                },
+            ],
             layout: DashboardFlowLayout {
                 kind: FlowLayoutKind::Flow,
                 rows: vec![FlowRow {
                     id: "main".to_string(),
-                    items: vec![FlowItem::Component {
-                        component: "amount_metric".to_string(),
-                    }],
+                    items: vec![
+                        FlowItem::Component {
+                            component: "amount_metric".to_string(),
+                        },
+                        FlowItem::Component {
+                            component: "entry_amount_total".to_string(),
+                        },
+                    ],
                 }],
             },
         },
@@ -1142,6 +1182,11 @@ async fn authorized_metric_scalar_rechecks_current_form_and_saved_sql_access() -
         component_id: "amount_metric".to_string(),
         parameters: BTreeMap::new(),
     };
+    let aggregate_request = CompositionMetricQueryRequest {
+        target: metric_request.target.clone(),
+        component_id: "entry_amount_total".to_string(),
+        parameters: BTreeMap::new(),
+    };
 
     let visible = service
         .query_composition_metric_authorized_for_principals(
@@ -1157,6 +1202,24 @@ async fn authorized_metric_scalar_rechecks_current_form_and_saved_sql_access() -
     assert_eq!(
         visible.result.context("authorized metric value")?.value,
         json!("7")
+    );
+    let visible_aggregate = service
+        .query_composition_metric_authorized_for_principals(
+            &space_id,
+            &[viewer],
+            aggregate_request.clone(),
+        )
+        .await?;
+    assert!(
+        visible_aggregate.ok,
+        "viewer should be able to read the Entry aggregate: {visible_aggregate:?}"
+    );
+    assert_eq!(
+        visible_aggregate
+            .result
+            .context("authorized Entry aggregate")?
+            .value,
+        json!("15")
     );
 
     authorizer
@@ -1234,6 +1297,50 @@ async fn authorized_metric_scalar_rechecks_current_form_and_saved_sql_access() -
     assert_eq!(
         entry_revoked.diagnostics[0].code,
         ugoite_domain::composition::CompositionDiagnosticCode::MetricResultEmpty
+    );
+    let entry_aggregate_revoked = service
+        .query_composition_metric_authorized_for_principals(
+            &space_id,
+            &[viewer],
+            aggregate_request.clone(),
+        )
+        .await?;
+    assert!(entry_aggregate_revoked.ok);
+    assert_eq!(
+        entry_aggregate_revoked
+            .result
+            .context("remaining authorized Entry aggregate")?
+            .value,
+        json!("8"),
+        "the Entry denied by the current ACL must not contribute to SUM"
+    );
+
+    for (entry_id, amount) in [
+        ("metric-amount-overflow-max", i64::MAX),
+        ("metric-amount-overflow-one", 1),
+    ] {
+        service
+            .create_structured_entry_with_receipt(
+                &space_id,
+                entry_id,
+                form_name.to_string(),
+                Vec::new(),
+                BTreeMap::from([("amount".to_string(), json!(amount))]),
+                BTreeMap::new(),
+                "owner",
+            )
+            .await?;
+    }
+    let aggregate_overflow = service
+        .query_composition_metric_authorized_for_principals(&space_id, &[viewer], aggregate_request)
+        .await
+        .expect_err("aggregate overflow must not return a partial metric value");
+    let app_error = aggregate_overflow
+        .downcast_ref::<ugoite_core::error::AppError>()
+        .expect("aggregate overflow maps to a stable application error");
+    assert_eq!(
+        app_error.code(),
+        ugoite_core::error::ErrorCode::SqlAggregateOverflow
     );
 
     authorizer
