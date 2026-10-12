@@ -55,8 +55,6 @@ export function ParameterControl(props: {
               class="ui-input"
               type={props.definition.type === "date"
                 ? "date"
-                : props.definition.type === "timestamp"
-                ? "datetime-local"
                 : props.definition.type === "integer" ||
                     props.definition.type === "float"
                 ? "number"

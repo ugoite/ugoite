@@ -246,3 +246,31 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.dependency-driven-execution
+      - id: browser-typed-input-control
+        role: implementation
+        facet: frontend
+        responsibility: Present timezone-bearing timestamps in an editable text control so their declared lexical form can be preserved.
+        targets:
+          - id: parameter-control
+            adapter: typescript
+            path: frontend/src/components/composition/ParameterControl.tsx
+            selector:
+              kind: symbol
+              name: ParameterControl
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+      - id: browser-typed-input-control-evidence
+        role: evidence
+        facet: frontend-tests
+        responsibility: Verify timezone-bearing Timestamp values remain visible and their raw text reaches the typed Input change path unchanged.
+        targets:
+          - id: timestamp-input-preservation
+            adapter: typescript
+            path: frontend/src/components/composition/ParameterControl.test.tsx
+            selector:
+              kind: test
+              name: preserves timezone-bearing timestamp values in a text input
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-input-lexical-contract

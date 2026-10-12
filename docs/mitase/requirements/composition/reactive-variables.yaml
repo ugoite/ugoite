@@ -129,6 +129,15 @@ requirements:
                 criterion: REQ-COMP-007#criterion.typed-source-binding
                 covers: [FEAT-COMP-008#binding.typed-variable-domain/target.source-variable-reference-model]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::unknown_variable_source_references_are_invalid } }
+          - id: timestamp-input-preservation-case
+            adapter: typescript
+            path: frontend/src/components/composition/ParameterControl.test.tsx
+            selector: { kind: test, name: preserves timezone-bearing timestamp values in a text input }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+                covers: [FEAT-COMP-008#binding.browser-typed-input-control/target.parameter-control]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/composition/ParameterControl.test.tsx, test: preserves timezone-bearing timestamp values in a text input } }
       - id: typed-variable-core-verification
         role: verification
         facet: verification
