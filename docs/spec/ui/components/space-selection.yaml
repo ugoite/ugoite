@@ -1,0 +1,41 @@
+version: "0.1"
+updated: "2026-10-13"
+component_group:
+  id: space-selection
+  title: Global Space Selection
+  routes: [/spaces]
+  notes: GlobalShell owns site navigation. A Space UID is used for routing and selection; the page does not render it as user-facing content.
+components:
+  - id: authorized-space-list
+    type: list
+    implementation: frontend/src/routes/spaces/index.tsx
+    tests: frontend/src/routes/spaces/index.test.tsx
+    source: space.list
+    states: [loading, populated, empty, error]
+    row:
+      activation: full-row-link
+      primary_label: name-then-slug-then-localized-untitled
+      destination: /spaces/{space_uid}/dashboard
+      secondary_action: settings-icon-only-with-localized-accessible-name
+    identity:
+      displays_space_uid: false
+      space_uid_use: routing-and-selection
+  - id: create-space-form
+    type: form
+    implementation: frontend/src/routes/spaces/index.tsx
+    tests: frontend/src/routes/spaces/index.test.tsx
+    fields:
+      - space-name
+      - user-chosen-space-slug
+    slug:
+      purpose: user-chosen-route-identifier
+      label: spacesPage.spaceSlug
+    submission: explicit-user-action
+    created_space_uid: server-issued-route-value-not-rendered
+  - id: global-space-actions
+    type: toolbar
+    implementation: frontend/src/routes/spaces/index.tsx
+    tests: frontend/src/routes/spaces/index.test.tsx
+    actions:
+      - join: /spaces/join
+      - create: explicit-create-action
