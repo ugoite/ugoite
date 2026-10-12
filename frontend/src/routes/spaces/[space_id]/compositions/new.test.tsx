@@ -241,7 +241,11 @@ describe("Composition studio shell", () => {
       has_more: false,
       result_schema: [{ name: "total", type: "float" }],
     });
-    queryMetricMock.mockResolvedValue({ ok: true, result: { value: 1 } });
+    queryMetricMock.mockResolvedValue({
+      ok: true,
+      draft_fingerprint: "fingerprint",
+      result: { value: 1 },
+    });
   });
 
   afterEach(() => cleanup());
