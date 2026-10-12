@@ -173,7 +173,7 @@ fn composition_collection_limits_hold(document: &CompositionDocument) -> bool {
     let max_items = super::MAX_COMPOSITION_COLLECTION_ITEMS;
     let spec = &document.spec;
     if document.tags.len() > max_items
-        || spec.parameters.len() > max_items
+        || spec.variables.len() > max_items
         || spec.sources.len() > max_items
         || spec.components.len() > max_items
         || spec.layout.rows.len() > max_items
@@ -295,7 +295,7 @@ mod tests {
         assert!(result
             .document
             .spec
-            .parameters
+            .variables
             .iter()
             .all(|parameter| parameter.label.is_none()));
         assert!(result
@@ -304,7 +304,8 @@ mod tests {
             .components
             .iter()
             .all(|component| match component {
-                super::super::CompositionComponent::Text { label, .. }
+                super::super::CompositionComponent::Input { label, .. }
+                | super::super::CompositionComponent::Text { label, .. }
                 | super::super::CompositionComponent::Metric { label, .. }
                 | super::super::CompositionComponent::Table { label, .. } => label.is_none(),
             }));
@@ -326,9 +327,9 @@ mod tests {
             )
             .trim()
         );
-        assert_eq!(result.document.spec.parameters[0].id, "month_start");
+        assert_eq!(result.document.spec.variables[0].id, "month_start");
         assert_eq!(
-            result.document.spec.parameters[0].label.as_deref(),
+            result.document.spec.variables[0].label.as_deref(),
             Some("Start month")
         );
         assert!(result
@@ -457,8 +458,8 @@ mod tests {
             1,
             )
             .replacen(
-                "      variables:\n        month_start:\n          parameter: month_start\n        month_end:\n          parameter: month_end",
-                "      variables:\n        month_end:\n          parameter: month_end\n        month_start:\n          parameter: month_start",
+                "      variables:\n        month_start:\n          variable: month_start\n        month_end:\n          variable: month_end",
+                "      variables:\n        month_end:\n          variable: month_end\n        month_start:\n          variable: month_start",
                 1,
             );
 

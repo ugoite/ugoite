@@ -4,7 +4,7 @@ name: Monthly expenses
 kind: dashboard
 tags: []
 spec:
-  parameters:
+  variables:
     - id: month_start
       label: Start month
       type: date
@@ -31,11 +31,11 @@ spec:
           - field_id: 100
             operator: gte
             value:
-              parameter: month_start
+              variable: month_start
           - field_id: 100
             operator: lt
             value:
-              parameter: month_end
+              variable: month_end
         sort:
           - field_id: 100
             direction: desc
@@ -51,13 +51,21 @@ spec:
           type: float
       variables:
         month_start:
-          parameter: month_start
+          variable: month_start
         month_end:
-          parameter: month_end
+          variable: month_end
   components:
+    - id: month_start_input
+      kind: input
+      variable: month_start
+    - id: month_end_input
+      kind: input
+      variable: month_end
     - id: summary_title
       kind: text
-      text: Monthly summary
+      content:
+        kind: literal
+        text: Monthly summary
       style: heading
     - id: total
       label: Monthly total
@@ -73,10 +81,10 @@ spec:
     rows:
       - id: main
         items:
-          - kind: parameter
-            parameter: month_start
-          - kind: parameter
-            parameter: month_end
+          - kind: component
+            component: month_start_input
+          - kind: component
+            component: month_end_input
           - kind: component
             component: summary_title
           - kind: component
