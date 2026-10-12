@@ -1482,6 +1482,7 @@ fn openapi_documents_composition_lint_request_response_and_diagnostics() {
             "metric_result_column_missing",
             "metric_result_column_ambiguous",
             "metric_result_page_incomplete",
+            "metric_scalar_expected_one_row",
         ])
     );
 }
@@ -1724,6 +1725,19 @@ fn openapi_documents_composition_resolve_metric_result_type() {
     assert_eq!(
         binding["properties"]["expected_result_type"]["$ref"],
         "#/components/schemas/CompositionResultFieldType"
+    );
+    assert_eq!(
+        binding["properties"]["presentation"]["$ref"],
+        "#/components/schemas/CompositionMetricPresentation"
+    );
+    assert!(!binding["required"]
+        .as_array()
+        .expect("required component fields")
+        .contains(&serde_json::json!("presentation")));
+    assert_eq!(
+        snapshot["components"]["schemas"]["CompositionMetricPresentation"]["oneOf"][0]
+            ["properties"]["fraction_digits"]["maximum"],
+        255
     );
     assert!(!binding["required"]
         .as_array()

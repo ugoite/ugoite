@@ -785,7 +785,9 @@ features:
       role: implementation
     - target: FEAT-COMP-002#binding.metric-page-validation/target.saved-sql-metric-page-adapter
       role: implementation
-    - target: FEAT-COMP-004#binding.browser-query-runtime/target.browser-shared-metric-evaluator
+    - target: FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module
+      role: implementation
+    - target: FEAT-COMP-004#binding.browser-query-runtime/target.browser-composition-api
       role: client
     - target: FEAT-COMP-004#binding.browser-query-runtime/target.browser-composition-renderer
       role: client

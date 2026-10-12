@@ -362,7 +362,7 @@ describe("CompositionSourcePicker", () => {
     });
   });
 
-  it("maps decimal SQL result columns to the supported JSON type", async () => {
+  it("preserves decimal SQL result columns as decimal", async () => {
     sqlQueryMock.mockResolvedValueOnce({
       columns: ["total"],
       rows: [["12345678901234567890.012300"]],
@@ -385,7 +385,7 @@ describe("CompositionSourcePicker", () => {
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({
       kind: "saved_sql",
       seed: expect.objectContaining({
-        expectedResult: [{ name: "total", type: "json" }],
+        expectedResult: [{ name: "total", type: "decimal" }],
       }),
     }));
   });

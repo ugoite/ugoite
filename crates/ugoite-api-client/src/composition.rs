@@ -28,6 +28,7 @@ pub enum CompositionDiagnosticCode {
     MetricResultColumnMissing,
     MetricResultColumnAmbiguous,
     MetricResultPageIncomplete,
+    MetricScalarExpectedOneRow,
 }
 
 impl CompositionDiagnosticCode {
@@ -50,6 +51,7 @@ impl CompositionDiagnosticCode {
             Self::MetricResultColumnMissing => "metric_result_column_missing",
             Self::MetricResultColumnAmbiguous => "metric_result_column_ambiguous",
             Self::MetricResultPageIncomplete => "metric_result_page_incomplete",
+            Self::MetricScalarExpectedOneRow => "metric_scalar_expected_one_row",
         }
     }
 
@@ -72,6 +74,7 @@ impl CompositionDiagnosticCode {
             "metric_result_column_missing" => Some(Self::MetricResultColumnMissing),
             "metric_result_column_ambiguous" => Some(Self::MetricResultColumnAmbiguous),
             "metric_result_page_incomplete" => Some(Self::MetricResultPageIncomplete),
+            "metric_scalar_expected_one_row" => Some(Self::MetricScalarExpectedOneRow),
             _ => None,
         }
     }
@@ -447,6 +450,18 @@ pub enum CompositionResolvedComponentKind {
     Text,
 }
 
+/// Explicit display-only formatting for numeric Composition metrics.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CompositionMetricPresentation {
+    Number {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        unit: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fraction_digits: Option<u8>,
+    },
+}
+
 /// Portable logical result type selected by the resolver for a metric.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -479,6 +494,8 @@ pub struct CompositionResolvedComponentBinding {
     pub result_property_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expected_result_type: Option<CompositionResultFieldType>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<CompositionMetricPresentation>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

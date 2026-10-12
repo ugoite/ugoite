@@ -16,7 +16,7 @@ pub use composition::{
     CompositionDiagnosticCode, CompositionEntryIntegrity, CompositionEntryMetadata,
     CompositionHistoryPage, CompositionLintError, CompositionLintResponse, CompositionLintValue,
     CompositionListItem, CompositionListPage, CompositionMetricOperation,
-    CompositionMetricQueryDiagnostic, CompositionMetricQueryRequest,
+    CompositionMetricPresentation, CompositionMetricQueryDiagnostic, CompositionMetricQueryRequest,
     CompositionMetricQueryResponse, CompositionMetricQueryTarget, CompositionMetricQueryValue,
     CompositionMetricSourceKind, CompositionParameterDefinition, CompositionParameterFormat,
     CompositionParameterType, CompositionPreviewPlan, CompositionPreviewRequest,
@@ -3213,6 +3213,10 @@ mod tests {
             (
                 CompositionDiagnosticCode::MetricResultPageIncomplete,
                 "metric_result_page_incomplete",
+            ),
+            (
+                CompositionDiagnosticCode::MetricScalarExpectedOneRow,
+                "metric_scalar_expected_one_row",
             ),
         ] {
             assert_eq!(code.as_str(), expected);

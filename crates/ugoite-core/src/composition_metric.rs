@@ -265,6 +265,7 @@ mod tests {
             aggregate_operation: None,
             result_property_key: Some("total".to_owned()),
             expected_result_type: Some(result_type),
+            presentation: None,
         }
     }
 
