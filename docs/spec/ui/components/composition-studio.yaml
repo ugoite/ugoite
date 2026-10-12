@@ -332,7 +332,6 @@ components:
       data: existing-source-picker-only
       calculation: supported-Form-aggregate-or-Saved-SQL-scalar
       value: operation-compatible-Form-field-or-exact-SQL-output-column
-      legacy_scalar_metric: preserve-existing-source-and-value_field-until-explicit-retarget
       display_format: optional-unit-and-fraction-digits-without-value-inference
       entry_field_candidates: operation-compatible-Form-schema-fields-from-shared-Rust-Domain-capability-through-WASM
       entry_field_label: transient-form-label-for-selectable-values-never-id

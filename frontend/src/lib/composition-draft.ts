@@ -150,18 +150,6 @@ export type DraftMetricDefinition =
   }
   | { kind: "sql_scalar"; column?: string };
 
-/** Existing v0.x scalar Metrics remain editable until the next minor grammar. */
-export type DraftLegacyMetricDefinition = {
-  kind: "legacy_value_field";
-  valueField:
-    | { kind: "entry_field"; fieldId: number }
-    | { kind: "sql_column"; name: string };
-};
-
-export type DraftMetricDisplayDefinition =
-  | DraftMetricDefinition
-  | DraftLegacyMetricDefinition;
-
 export interface DraftMetricPresentation {
   kind: "number";
   unit?: string;
@@ -180,7 +168,7 @@ export type DraftDisplay =
     draftId: string;
     sourceDraftId: string;
     label?: string;
-    definition: DraftMetricDisplayDefinition;
+    definition: DraftMetricDefinition;
     presentation?: DraftMetricPresentation;
   }
   | {
@@ -323,15 +311,6 @@ export interface CompositionStudioDocument {
           unit?: string;
           fraction_digits?: number;
         };
-      }
-      | {
-        kind: "metric";
-        id: string;
-        label?: string;
-        source: string;
-        value_field:
-          | { kind: "entry_field"; field_id: number }
-          | { kind: "sql_column"; name: string };
       }
       | {
         kind: "text";
@@ -1286,10 +1265,7 @@ export const setMetricPresentation = (
     entry.draftId === current.sourceDraftId
   );
   if (!source) return { ok: false, error: "unknown-source" };
-  if (
-    current.definition.kind === "legacy_value_field" ||
-    !metricDefinitionHasNumericResult(source, current.definition)
-  ) {
+  if (!metricDefinitionHasNumericResult(source, current.definition)) {
     return { ok: false, error: "invalid-query" };
   }
   const unit = presentation.unit;
@@ -1593,18 +1569,6 @@ export const toStudioDocument = (
           style: display.style,
         };
       }
-      if (display.definition.kind === "legacy_value_field") {
-        const valueField = display.definition.valueField;
-        return {
-          kind: "metric" as const,
-          id: display.draftId,
-          ...(display.label ? { label: display.label } : {}),
-          source: display.sourceDraftId,
-          value_field: valueField.kind === "entry_field"
-            ? { kind: "entry_field" as const, field_id: valueField.fieldId }
-            : { kind: "sql_column" as const, name: valueField.name },
-        };
-      }
       return {
         kind: "metric" as const,
         id: display.draftId,
@@ -1667,7 +1631,7 @@ export const toStudioDocument = (
 /**
  * Rebuild an editable draft from a server-normalized Composition document.
  * Structural mapping only: lint already normalized, so no validation logic
- * lives here. Unknown source, component, or value-field kinds throw
+ * lives here. Unknown source, component, or Metric definition kinds throw
  * fail-closed instead of approximating. Human names come from `sourceNames`
  * (keyed by document source id); unavailable names use the source kind label.
  */
@@ -1759,7 +1723,7 @@ export const draftFromDocument = (
       const componentSourceId = component.kind === "metric"
         ? ("definition" in component
           ? component.definition.source
-          : component.source)
+          : fail("metric definition"))
         : component.source;
       const sourceDraftId = sourceDraftIds.get(componentSourceId);
       if (sourceDraftId === undefined) {
@@ -1774,37 +1738,6 @@ export const draftFromDocument = (
         };
       }
       if (component.kind === "metric") {
-        if (!("definition" in component)) {
-          const valueField = component.value_field;
-          if (!valueField) return fail("legacy metric value field is missing");
-          const source = document.spec.sources.find((entry) =>
-            entry.id === component.source
-          );
-          if (!source) return fail("metric source is missing");
-          const legacyValueField = valueField.kind === "entry_field" &&
-              source.kind === "entry_query" &&
-              Number.isSafeInteger(valueField.field_id) &&
-              valueField.field_id > 0
-            ? { kind: "entry_field" as const, fieldId: valueField.field_id }
-            : valueField.kind === "sql_column" &&
-                source.kind === "saved_sql" &&
-                valueField.name.trim().length > 0
-            ? { kind: "sql_column" as const, name: valueField.name }
-            : undefined;
-          if (!legacyValueField) {
-            return fail("legacy metric value field is invalid for its source");
-          }
-          return {
-            kind: "metric",
-            draftId,
-            sourceDraftId,
-            ...(component.label ? { label: component.label } : {}),
-            definition: {
-              kind: "legacy_value_field",
-              valueField: legacyValueField,
-            },
-          };
-        }
         const definition = component.definition;
         const source = document.spec.sources.find((entry) =>
           entry.id === definition.source

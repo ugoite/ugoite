@@ -378,8 +378,8 @@ describe("composition draft model", () => {
     expect(toStudioDocument(draft)).toEqual(document);
   });
 
-  it("restores and preserves existing scalar Metric value fields on edit", () => {
-    const document: CompositionStudioDocument = {
+  it("rejects legacy Metric definitions without conversion", () => {
+    const legacyDocument = {
       format: "ugoite.composition",
       format_version: 1,
       kind: "dashboard",
@@ -387,119 +387,32 @@ describe("composition draft model", () => {
       tags: [],
       spec: {
         parameters: [],
-        sources: [
-          {
-            kind: "entry_query",
-            id: "entries",
-            form_id: "11111111-1111-4111-8111-111111111111",
-            field_schema: [{ field_id: 12, field_type: "integer" }],
-            query: { filters: [], sort: [], projection: { kind: "preview" } },
-          },
-          {
-            kind: "saved_sql",
-            id: "report",
-            entry_id: "sql-entry",
-            revision_id: "sql-revision",
-            expected_result: [{ name: "total", type: "float" }],
-            variables: {},
-          },
-        ],
-        components: [
-          {
-            kind: "metric",
-            id: "entry-total",
-            source: "entries",
-            value_field: { kind: "entry_field", field_id: 12 },
-          },
-          {
-            kind: "metric",
-            id: "sql-total",
-            source: "report",
-            value_field: { kind: "sql_column", name: "total" },
-          },
-        ],
+        sources: [{
+          kind: "entry_query",
+          id: "entries",
+          form_id: "11111111-1111-4111-8111-111111111111",
+          field_schema: [{ field_id: 12, field_type: "integer" }],
+          query: { filters: [], sort: [], projection: { kind: "preview" } },
+        }],
+        components: [{
+          kind: "metric",
+          id: "entry-total",
+          source: "entries",
+          value_field: { kind: "entry_field", field_id: 12 },
+        }],
         layout: {
           kind: "flow",
-          rows: [
-            {
-              id: "entry-row",
-              items: [{ kind: "component", component: "entry-total" }],
-            },
-            {
-              id: "sql-row",
-              items: [{ kind: "component", component: "sql-total" }],
-            },
-          ],
+          rows: [{
+            id: "main",
+            items: [{ kind: "component", component: "entry-total" }],
+          }],
         },
       },
-    };
+    } as unknown as Parameters<typeof draftFromDocument>[0];
 
-    const restored = draftFromDocument(document, {
-      entries: "Expenses",
-      report: "Monthly totals",
-    });
-    expect(
-      restored.displays.map((display) =>
-        display.kind === "metric" ? display.definition : undefined
-      ),
-    ).toEqual([
-      {
-        kind: "legacy_value_field",
-        valueField: { kind: "entry_field", fieldId: 12 },
-      },
-      {
-        kind: "legacy_value_field",
-        valueField: { kind: "sql_column", name: "total" },
-      },
-    ]);
-    expect(draftSaveReadiness(restored)).toEqual({ ready: true });
-    const serialized = toStudioDocument(restored);
-    expect(serialized.spec.components).toEqual([
-      {
-        kind: "metric",
-        id: "disp-1",
-        source: "src-1",
-        value_field: { kind: "entry_field", field_id: 12 },
-      },
-      {
-        kind: "metric",
-        id: "disp-2",
-        source: "src-2",
-        value_field: { kind: "sql_column", name: "total" },
-      },
-    ]);
-    expect(serialized.spec.sources.map((source) => source.id)).toEqual([
-      "src-1",
-      "src-2",
-    ]);
-    expect(displayDefaultName(
-      restored.displays[0],
-      restored.sources,
-      (_formId, fieldId) => fieldId === 12 ? "Amount" : undefined,
-    )).toBe("Expenses / Amount");
-    expect(displayDefaultName(
-      restored.displays[1],
-      restored.sources,
-    )).toBe("Monthly totals / total");
-
-    const renamed = setDisplayLabel(restored, "disp-1", "Monthly entry total");
-    expect(renamed.ok).toBe(true);
-    if (!renamed.ok) throw new Error("expected label edit");
-    expect(toStudioDocument(renamed.draft).spec.components).toEqual([
-      {
-        kind: "metric",
-        id: "disp-1",
-        label: "Monthly entry total",
-        source: "src-1",
-        value_field: { kind: "entry_field", field_id: 12 },
-      },
-      {
-        kind: "metric",
-        id: "disp-2",
-        source: "src-2",
-        value_field: { kind: "sql_column", name: "total" },
-      },
-    ]);
+    expect(() => draftFromDocument(legacyDocument, {})).toThrow(
+      "Unsupported Composition document metric definition",
+    );
   });
 
   it("drops empty layout rows when emitting the document", () => {

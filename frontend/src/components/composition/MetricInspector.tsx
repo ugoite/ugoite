@@ -60,8 +60,6 @@ export function MetricInspector(props: {
   const sourceId = () => metric()?.sourceDraftId ?? "";
   const source = () =>
     props.draft.sources.find((entry) => entry.draftId === sourceId());
-  const isLegacyMetric = () =>
-    metric()?.definition.kind === "legacy_value_field";
   const operation = () => {
     const definition = metric()?.definition;
     return definition?.kind === "aggregate" ? definition.operation : undefined;
@@ -130,10 +128,7 @@ export function MetricInspector(props: {
   const supportsNumberPresentation = () => {
     const currentMetric = metric();
     const currentSource = source();
-    if (
-      !currentMetric || !currentSource ||
-      currentMetric.definition.kind === "legacy_value_field"
-    ) return false;
+    if (!currentMetric || !currentSource) return false;
     return metricDefinitionHasNumericResult(
       currentSource,
       currentMetric.definition,
@@ -231,7 +226,7 @@ export function MetricInspector(props: {
               fieldId={`studio-inspector-source-${entry().draftId}`}
               onPick={pickSource}
             />
-            <Show when={!isLegacyMetric() && source()?.kind === "entry_query"}>
+            <Show when={source()?.kind === "entry_query"}>
               <div class="ui-field">
                 <label
                   class="ui-label"
@@ -283,7 +278,7 @@ export function MetricInspector(props: {
                 </div>
               </Show>
             </Show>
-            <Show when={!isLegacyMetric() && source()?.kind === "saved_sql"}>
+            <Show when={source()?.kind === "saved_sql"}>
               <div class="ui-field">
                 <label
                   class="ui-label"
