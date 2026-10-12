@@ -1,0 +1,15 @@
+version: "0.1"
+updated: "2026-10-12"
+component:
+  id: searchable-select
+  title: Searchable Select
+  implementation: frontend/src/components/fields/SearchableSelect.tsx
+  behavior:
+    input: searchable-combobox
+    option_identity: stable-id
+    option_visible_label: title
+    option_accessible_name: title
+    selected_visible_label: title
+    selected_accessible_name: title
+    stable_id_rendering: none
+    selection_callback: original-option

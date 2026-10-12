@@ -1,0 +1,55 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: ux
+category: Searchable Select identity presentation
+features:
+  - id: FEAT-UX-020
+    title: Human-Readable Searchable Select Options
+    summary: Render searchable options and the selected value by human-readable title while retaining stable IDs only for selection behavior.
+    status: implemented
+    bindings:
+      - id: searchable-select-presentation
+        role: implementation
+        facet: frontend
+        responsibility: Keep stable option IDs available to selection behavior without rendering them in candidate or selected content.
+        targets:
+          - id: searchable-select
+            adapter: typescript
+            path: frontend/src/components/fields/SearchableSelect.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-SEARCHABLE-001#criterion.human-readable-labels
+      - id: searchable-select-verification
+        role: verification
+        facet: verification
+        responsibility: Verify candidate and selected labels omit stable IDs while selection still returns the original option.
+        targets:
+          - id: option-labels
+            adapter: typescript
+            path: frontend/src/components/fields/SearchableSelect.test.tsx
+            selector:
+              kind: test
+              name: "REQ-UX-SEARCHABLE-001: renders human titles without option IDs"
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-SEARCHABLE-001#criterion.human-readable-labels
+                covers:
+                  - FEAT-UX-020#binding.searchable-select-presentation/target.searchable-select
+                runner:
+                  runner: frontend-vitest-file
+                  arguments:
+                    file: src/components/fields/SearchableSelect.test.tsx
+                    test: "REQ-UX-SEARCHABLE-001: renders human titles without option IDs"
+      - id: searchable-select-ui-specification
+        role: documentation
+        facet: documentation
+        responsibility: Record the searchable option and selected-value label contract in the UI component specification.
+        targets:
+          - id: searchable-select-ui-contract
+            adapter: declared
+            path: docs/spec/ui/components/searchable-select.yaml
+            selector: { kind: file }
+            claims:
+              - kind: documents
+                anchor: REQ-UX-SEARCHABLE-001#criterion.human-readable-labels
