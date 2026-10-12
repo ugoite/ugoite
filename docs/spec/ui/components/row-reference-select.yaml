@@ -1,0 +1,25 @@
+version: "0.1"
+updated: "2026-10-12"
+component_group:
+  id: row-reference-select
+  title: Row Reference Select
+components:
+  - id: row-reference-select
+    type: searchable-entry-picker
+    implementation: frontend/src/components/fields/RowReferenceSelect.tsx
+    tests: frontend/src/components/fields/fields.test.tsx
+    candidate_label:
+      content: human-readable-entry-preview
+      visible_or_accessible_entry_id: false
+      selection_action: localized-icon-only-confirmation
+    selected_value:
+      content: resolved-entry-preview-or-localized-neutral-state
+      visible_or_accessible_entry_id: false
+      stored_value: stable-entry-id
+    commit:
+      when: explicit-confirmation
+      value: stable-entry-id
+    invalid_reference:
+      wrong_form: localized-message-with-resolved-form-name-or-neutral-fallback
+      unavailable: localized-message-without-stable-identifiers
+      visible_or_accessible_entry_id: false

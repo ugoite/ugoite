@@ -382,7 +382,7 @@ describe("shared RowReferenceSelect", () => {
 });
 
 describe("RowReferenceSelect point hydration", () => {
-  it("shows the Preview for a stored id outside the candidate page", async () => {
+  it("REQ-UX-ROWREF-001: shows a resolved Row Reference preview without its stable Entry ID", async () => {
     const getEntry = vi.spyOn(entryApi, "get").mockResolvedValue(
       projectEntry(),
     );
@@ -401,9 +401,13 @@ describe("RowReferenceSelect point hydration", () => {
       .toBeInTheDocument();
     expect(getEntry).toHaveBeenCalledWith("default", "entry-off-page");
     expect(screen.queryByText("entry-off-page")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Select entry" }))
+      .toHaveAccessibleName("Select entry");
+    expect(screen.queryByRole("button", { name: /entry-off-page/ }))
+      .not.toBeInTheDocument();
   });
 
-  it("shows a safe unavailable state for deleted references", async () => {
+  it("REQ-UX-ROWREF-001: keeps a deleted Row Reference ID out of the unavailable state", async () => {
     vi.spyOn(entryApi, "get").mockRejectedValue(new Error("not found"));
     render(() => (
       <RowReferenceSelect
@@ -419,6 +423,8 @@ describe("RowReferenceSelect point hydration", () => {
     expect(await screen.findByText(/no longer have access/))
       .toBeInTheDocument();
     expect(screen.queryByText("entry-deleted")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /entry-deleted/ }))
+      .not.toBeInTheDocument();
   });
 
   it("names the actual Form for wrong-Form references without raw ids", async () => {
@@ -556,12 +562,19 @@ describe("RowReferenceSelect picker dialog", () => {
     expect(document.activeElement).toBe(confirm);
   });
 
-  it("commits the stable id only on confirm, never on row click", async () => {
+  it("REQ-UX-ROWREF-001: keeps candidate Entry IDs out of labels and stores them only on confirm", async () => {
     const { onChange, onPendingChange } = renderPicker();
     await openPicker();
 
+    const candidate = screen.getByRole("row", { name: /Project Alpha/ });
+    expect(candidate).not.toHaveAccessibleName(/project-alpha/);
+    expect(screen.getByRole("button", { name: "Use this entry" }))
+      .toHaveAccessibleName("Use this entry");
+    expect(screen.queryByText("project-alpha")).not.toBeInTheDocument();
+
     fireEvent.click(screen.getByRole("button", { name: "Use this entry" }));
     expect(onChange).not.toHaveBeenCalled();
+    expect(screen.queryByText("project-alpha")).not.toBeInTheDocument();
     expect(onPendingChange).toHaveBeenCalledWith(true);
     expect(screen.getByRole("button", { name: "Confirm" })).toBeEnabled();
 
