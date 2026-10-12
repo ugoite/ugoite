@@ -62,7 +62,7 @@ requirements:
       - id: display-label-verification
         role: verification
         facet: verification
-        responsibility: Verify optional display labels round-trip through canonical YAML and the fingerprint natively and in WASM, typed metric references canonicalize, and typed Metric definitions canonicalize identically through native and WASM paths while rejecting invalid shapes.
+        responsibility: Verify optional display labels round-trip through canonical YAML and the fingerprint natively and in WASM, and typed Metric definitions canonicalize identically through native and WASM paths while rejecting the former source/value_field shape and other invalid definitions.
         targets:
           - id: case
             adapter: rust
@@ -74,11 +74,6 @@ requirements:
                 covers:
                   - FEAT-COMP-001#binding.display-label-domain/target.parameter-display-label
                   - FEAT-COMP-001#binding.display-label-domain/target.component-display-label
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::composition_canonicalization_matches_the_native_domain_contract } }
-              - kind: verifies
-                criterion: REQ-COMP-002#criterion.typed-metric-value-field
-                covers:
-                  - FEAT-COMP-001#binding.metric-value-field-domain/target.metric-value-field-type
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::composition_canonicalization_matches_the_native_domain_contract } }
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.typed-metric-definition
@@ -726,7 +721,7 @@ requirements:
       - id: edit-round-trip-verification
         role: verification
         facet: verification
-        responsibility: Verify restoring a lint-normalized document into the draft keeps multi-row layout order with text content and style plus parameter placement against the labeled shape, entry_query sources with omitted empty filters/sort default like the domain, and unknown future component, layout, and value-field kinds with invalid text shapes fail closed.
+        responsibility: Verify restoring a lint-normalized document into the draft keeps multi-row layout order with text content and style plus parameter placement against the labeled shape, entry_query sources with omitted empty filters/sort default like the domain, and unknown future component, layout, and metric definition kinds with invalid text shapes fail closed.
         targets:
           - id: edit-round-trip-omitted-query-case
             adapter: typescript
@@ -761,23 +756,23 @@ requirements:
           - id: edit-round-trip-unknown-kinds-case
             adapter: typescript
             path: frontend/src/lib/composition-draft.test.ts
-            selector: { kind: test, name: "refuses unknown future component, layout, and value-field kinds instead of approximating" }
+            selector: { kind: test, name: "refuses unknown future component, layout, and metric definition kinds instead of approximating" }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.ordered-component-layout
                 covers:
                   - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-round-trip
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "refuses unknown future component, layout, and value-field kinds instead of approximating" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "refuses unknown future component, layout, and metric definition kinds instead of approximating" } }
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.text-style-enum
                 covers:
                   - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-round-trip
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "refuses unknown future component, layout, and value-field kinds instead of approximating" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "refuses unknown future component, layout, and metric definition kinds instead of approximating" } }
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.parameter-placement
                 covers:
                   - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-round-trip
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "refuses unknown future component, layout, and value-field kinds instead of approximating" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "refuses unknown future component, layout, and metric definition kinds instead of approximating" } }
       - id: metric-value-verification
         role: verification
         facet: verification
@@ -803,31 +798,6 @@ requirements:
                 covers:
                   - FEAT-COMP-001#binding.metric-runtime-value-domain/target.metric-runtime-value-validator
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition_metric::tests::rejects_malformed_or_non_normalized_composition_metric_dates_and_timestamps } }
-      - id: metric-page-verification
-        role: verification
-        facet: verification
-        responsibility: Verify exact one-row complete-page validation for EntryQuery and Saved SQL metric results through the Core adapters.
-        targets:
-          - id: entry-case
-            adapter: rust
-            path: crates/ugoite-core/src/composition.rs
-            selector: { kind: symbol, name: tests::entry_metric_page_adapter_checks_one_complete_scalar_row }
-            claims:
-              - kind: verifies
-                criterion: REQ-COMP-002#criterion.metric-runtime-values
-                covers:
-                  - FEAT-COMP-002#binding.metric-page-validation/target.entry-metric-page-adapter
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::entry_metric_page_adapter_checks_one_complete_scalar_row } }
-          - id: saved-sql-case
-            adapter: rust
-            path: crates/ugoite-core/src/composition.rs
-            selector: { kind: symbol, name: tests::saved_sql_metric_page_adapter_checks_exact_alias_and_scalar_shape }
-            claims:
-              - kind: verifies
-                criterion: REQ-COMP-002#criterion.metric-runtime-values
-                covers:
-                  - FEAT-COMP-002#binding.metric-page-validation/target.saved-sql-metric-page-adapter
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_metric_page_adapter_checks_exact_alias_and_scalar_shape } }
       - id: browser-metric-verification
         role: verification
         facet: frontend-tests
@@ -872,10 +842,6 @@ requirements:
         kind: behavior
         statement: Composition parameters and Metric/Table components may carry optional display labels; present labels round-trip through canonical YAML and the semantic fingerprint, do not replace stable IDs or change source and query binding semantics, and absent labels remain omitted from canonical output.
         governed_by: [POL-002#rule.governance, POL-007#rule.governance]
-      - id: typed-metric-value-field
-        kind: behavior
-        statement: A metric value reference distinguishes an EntryQuery property by stable FieldId from a Saved SQL output column by its exact result name; resolution requires the value-field kind to match its source.
-        governed_by: [POL-002#rule.governance, POL-007#rule.governance]
       - id: typed-metric-definition
         kind: behavior
         statement: >-
@@ -895,9 +861,9 @@ requirements:
           EntryQuery aggregates execute through the current authorized
           matching-set path and Composition metric query operation. Exact
           Saved SQL scalar definitions bind to a specific saved revision and
-          execute through a bounded scalar probe. This redesign does not
-          require compatibility parsing or migration for the unreleased
-          source plus value_field metric form.
+          execute through a bounded scalar probe. Metric documents using the
+          former source plus value_field form are rejected; no compatibility
+          parser or migration is provided.
         governed_by: [POL-002#rule.governance, POL-007#rule.governance]
       - id: typed-entry-aggregate-execution
         kind: behavior

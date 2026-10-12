@@ -138,30 +138,14 @@
         "status": "gap",
         "reason": "No live run, no browser memory data. Not recorded as a number."
       }
-    },
-    {
-      "id": "metric-scalar-evaluation",
-      "description": "Metric scalar evaluation timing",
-      "provenance": "measured",
-      "precision": "Focused unit-test wall time for in-memory single-page metric evaluation (evaluate_entry_metrics over one page via the shared core page evaluator). Informational; single-shape, dev profile.",
-      "command": "env -u CARGO_TARGET_DIR CARGO_BUILD_JOBS=1 cargo test -p ugoite-cli --locked --lib cli_metric_output_uses_the_shared_core_page_evaluator",
-      "test": "commands::composition::tests::cli_metric_output_uses_the_shared_core_page_evaluator (crates/ugoite-cli/src/commands/composition.rs)",
-      "result": "ok, 1 passed, 128 filtered out",
-      "test_body_wall_s": 0.01,
-      "outer_command_wall_s": 102.62,
-      "outer_build_note": "outer wall includes ~1m42s incremental dev-profile build of the ugoite-cli lib test target; it is NOT metric-evaluation time",
-      "related_core_coverage": "crates/ugoite-core/src/composition.rs entry_metric_page_adapter_checks_one_complete_scalar_row and saved_sql_metric_page_adapter_checks_exact_alias_and_scalar_shape cover the core page evaluator; not separately timed here",
-      "peak_memory": {
-        "status": "gap",
-        "reason": "No peak-RSS instrumentation available. Not recorded as a number."
-      }
     }
   ],
   "gaps_summary": [
     "peak memory: not recorded for any item (no /usr/bin/time, no allocator metering in this box)",
     "browser 100-row live render: not measured here (containerized Playwright stack impractical); contract page_limit=100 + prior golden-journey junit timings recorded as derived",
     "no composition resolve benches exist; resolver timing is a focused-test wall time (includes setup), informational only",
-    "save/get timing is a focused CLI journey test wall time (includes setup + multiple operations), informational only"
+    "save/get timing is a focused CLI journey test wall time (includes setup + multiple operations), informational only",
+    "Composition Metric query timing is not measured here; the removed page-evaluator microbenchmark does not represent the bounded query operation"
   ],
   "honesty_statement": "Every number above comes from the listed command output or a cited evidence file. Measured vs derived vs gap is explicit per item. No thresholds or SLA semantics are attached."
 }

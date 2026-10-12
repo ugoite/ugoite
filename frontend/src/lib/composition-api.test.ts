@@ -16,7 +16,6 @@ vi.mock("./sql-api", () => ({ sqlApi: { query: vi.fn() } }));
 vi.mock("./ugoite-client/protocol", () => ({
   protocolFetch: vi.fn(),
   canonicalizeCompositionDocument: vi.fn(),
-  evaluateCompositionMetricPage: vi.fn(),
 }));
 
 const signal = new AbortController().signal;

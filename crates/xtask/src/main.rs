@@ -566,6 +566,12 @@ fn contains_identifier(source: &str, identifier: &str) -> bool {
     })
 }
 
+fn contains_physical_table_type(source: &str) -> bool {
+    source
+        .replace("CompositionComponent::Table", "")
+        .contains("Table")
+}
+
 fn architecture_check() -> Result<()> {
     let mut violations = Vec::new();
     let server_manifest = fs::read_to_string("crates/ugoite-server/Cargo.toml")
@@ -625,6 +631,10 @@ fn architecture_check() -> Result<()> {
                 // `SearchOperator` and `CompositionQueryOperator` do not trip
                 // this physical adapter type guard.
                 contains_identifier(&content, forbidden)
+            } else if forbidden == "Table" {
+                // `CompositionComponent::Table` is a portable Domain variant,
+                // not a storage/query adapter type.
+                contains_physical_table_type(&content)
             } else {
                 content.contains(forbidden)
             };
@@ -2141,6 +2151,15 @@ mod gate_contract_tests {
         assert!(contains_identifier("let _: Operator = value;", "Operator"));
         assert!(!contains_identifier("SearchOperator", "Operator"));
         assert!(!contains_identifier("CompositionQueryOperator", "Operator"));
+    }
+
+    #[test]
+    fn physical_table_guard_allows_domain_component_variant_only() {
+        assert!(!contains_physical_table_type(
+            "matches!(component, CompositionComponent::Table { .. })"
+        ));
+        assert!(contains_physical_table_type("use iceberg::table::Table;"));
+        assert!(contains_physical_table_type("let _: Table = value;"));
     }
 
     const GOOD_SPACE_SOURCE: &str = r#"

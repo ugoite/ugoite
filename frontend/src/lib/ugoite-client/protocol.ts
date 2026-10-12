@@ -1,6 +1,6 @@
 import initializeWasm from "../generated/ugoite_wasm.wasm?init";
 import { apiFetch, type ApiFetchOptions } from "../api";
-import type { AssetReference, SqlResultColumnType } from "../types";
+import type { AssetReference } from "../types";
 import {
   classifyMutationOutcome,
   MUTATION_ERROR_CODES,
@@ -243,46 +243,6 @@ export const compositionAggregateCapability = async (
       ...(fieldType === undefined ? {} : { field_type: fieldType }),
     },
   });
-
-export type CompositionMetricPageRequest = {
-  expected_result_type: Exclude<SqlResultColumnType, "decimal">;
-  is_complete: boolean;
-  row_count: number;
-  selected_column_count: number;
-  selected_value?: unknown;
-};
-
-export type CompositionMetricPageEvaluation =
-  | { ok: true; value: unknown }
-  | {
-    ok: false;
-    error: { kind: "composition_diagnostic"; code: string };
-  };
-
-/** Evaluate one already-fetched metric page with the shared Rust domain rule. */
-export const evaluateCompositionMetricPage = async (
-  value: CompositionMetricPageRequest,
-): Promise<CompositionMetricPageEvaluation> => {
-  try {
-    const result = await invokeProtocol<unknown>({
-      action: "domain.evaluate_composition_metric_page",
-      value,
-    });
-    return { ok: true, value: result };
-  } catch (error) {
-    if (
-      error instanceof UgoiteApiError &&
-      error.kind === "composition_diagnostic" &&
-      error.code
-    ) {
-      return {
-        ok: false,
-        error: { kind: "composition_diagnostic", code: error.code },
-      };
-    }
-    throw error;
-  }
-};
 
 export type CompositionDocumentCanonicalization = {
   document: unknown;

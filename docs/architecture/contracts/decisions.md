@@ -415,3 +415,19 @@ vocabulary and Core evaluation rules. Local CLI execution uses the same
 bounded service probe without requiring a server. Browser execution sends
 current parameters and exact revision identity for each query; metric values
 are query results, not stored Composition authority.
+
+## ADR-021 — Typed-only Composition Metrics
+
+**Accepted.** Composition Metrics use the required typed `definition` shape:
+EntryQuery aggregates bind stable `FieldId`s through the source schema, and
+Saved SQL scalar metrics bind an exact output column on an exact saved
+revision. The former `source` plus `value_field` shape is rejected; no legacy
+reader or migration is provided. Metric evaluation uses the bounded
+Composition Metric query operation: aggregates use the authorized full
+matching set, and Saved SQL metrics use a bounded scalar probe. The shared
+Domain layer validates returned scalar values, not query pages. The
+`composition.md` contract and Mitase bindings describe this current behavior.
+
+This accepted next-minor contract ruling retires the earlier compatibility
+statements in ADR-017 through ADR-019. It does not authorize release or change
+unrelated Composition persistence and query contracts.

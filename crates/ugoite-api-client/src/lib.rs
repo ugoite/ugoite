@@ -3195,12 +3195,8 @@ mod tests {
                 "metric_result_type_mismatch",
             ),
             (
-                CompositionDiagnosticCode::MetricResultEmpty,
-                "metric_result_empty",
-            ),
-            (
-                CompositionDiagnosticCode::MetricResultMultipleRows,
-                "metric_result_multiple_rows",
+                CompositionDiagnosticCode::MetricScalarExpectedOneRow,
+                "metric_scalar_expected_one_row",
             ),
             (
                 CompositionDiagnosticCode::MetricResultColumnMissing,
@@ -3209,14 +3205,6 @@ mod tests {
             (
                 CompositionDiagnosticCode::MetricResultColumnAmbiguous,
                 "metric_result_column_ambiguous",
-            ),
-            (
-                CompositionDiagnosticCode::MetricResultPageIncomplete,
-                "metric_result_page_incomplete",
-            ),
-            (
-                CompositionDiagnosticCode::MetricScalarExpectedOneRow,
-                "metric_scalar_expected_one_row",
             ),
         ] {
             assert_eq!(code.as_str(), expected);

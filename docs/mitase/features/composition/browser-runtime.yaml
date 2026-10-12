@@ -270,7 +270,7 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.exact-composition-revision
-    - id: browser-metric-page-rendering
+    - id: browser-metric-query-rendering
       adapter: typescript
       path: frontend/src/components/CompositionRenderer.test.tsx
       selector:
@@ -306,21 +306,12 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.metric-runtime-values
-    - id: browser-metric-empty-saved-sql-action
+    - id: browser-metric-saved-sql-row-cardinality-action
       adapter: typescript
       path: frontend/src/components/CompositionRenderer.test.tsx
       selector:
         kind: test
-        name: offers direct edit for an empty Saved SQL metric result
-      claims:
-      - kind: evidences
-        anchor: REQ-COMP-002#criterion.metric-runtime-values
-    - id: browser-metric-multiple-saved-sql-action
-      adapter: typescript
-      path: frontend/src/components/CompositionRenderer.test.tsx
-      selector:
-        kind: test
-        name: offers direct edit for a multi-row Saved SQL metric result
+        name: offers direct edit when a Saved SQL metric returns a non-scalar row count
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.metric-runtime-values

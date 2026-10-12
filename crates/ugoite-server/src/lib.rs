@@ -16207,12 +16207,10 @@ mod authentication_regression_tests {
                 components: vec![CompositionComponent::Metric {
                     id: "parameter_total".to_string(),
                     label: None,
-                    source: None,
-                    value_field: None,
-                    definition: Some(CompositionMetricDefinition::SqlScalar {
+                    definition: CompositionMetricDefinition::SqlScalar {
                         source: "metric_sql".to_string(),
                         column: "total".to_string(),
-                    }),
+                    },
                     presentation: Some(CompositionMetricPresentation::Number {
                         unit: Some("USD".to_string()),
                         fraction_digits: Some(2),
@@ -16393,12 +16391,12 @@ mod authentication_regression_tests {
     async fn composition_resolve_uses_exact_requested_revision_with_newer_revision_available(
     ) -> anyhow::Result<()> {
         use ugoite_domain::composition::{
-            CompositionComponent, CompositionDocument, CompositionFieldSchemaEntry,
-            CompositionKind, CompositionMetricValueField, CompositionParameter,
-            CompositionParameterReference, CompositionParameterType, CompositionQueryOperator,
-            CompositionSource, CompositionSpec, CompositionValue, DashboardFlowLayout,
-            EntryQueryFilterTemplate, EntryQueryProjectionTemplate, EntryQueryTemplate, FlowItem,
-            FlowLayoutKind, FlowRow, TextStyle,
+            CompositionAggregateOperation, CompositionComponent, CompositionDocument,
+            CompositionFieldSchemaEntry, CompositionKind, CompositionMetricDefinition,
+            CompositionParameter, CompositionParameterReference, CompositionParameterType,
+            CompositionQueryOperator, CompositionSource, CompositionSpec, CompositionValue,
+            DashboardFlowLayout, EntryQueryFilterTemplate, EntryQueryProjectionTemplate,
+            EntryQueryTemplate, FlowItem, FlowLayoutKind, FlowRow, TextStyle,
         };
         use ugoite_domain::{form::FieldType, id::FieldId};
 
@@ -16540,11 +16538,11 @@ mod authentication_regression_tests {
             CompositionComponent::Metric {
                 id: "monthly_total".to_string(),
                 label: Some("Monthly total".to_string()),
-                source: Some("older_entries".to_string()),
-                value_field: Some(CompositionMetricValueField::EntryField {
-                    field_id: value_field_id,
-                }),
-                definition: None,
+                definition: CompositionMetricDefinition::Aggregate {
+                    source: "older_entries".to_string(),
+                    operation: CompositionAggregateOperation::Sum,
+                    field_id: Some(value_field_id),
+                },
                 presentation: None,
             },
             CompositionComponent::Table {
@@ -16724,15 +16722,11 @@ mod authentication_regression_tests {
             DomainCode::MissingField,
             DomainCode::FieldTypeChanged,
             DomainCode::SourceSchemaChanged,
-            DomainCode::MetricFieldNotProjected,
             DomainCode::MetricResultNotScalar,
             DomainCode::MetricResultTypeMismatch,
-            DomainCode::MetricResultEmpty,
-            DomainCode::MetricResultMultipleRows,
+            DomainCode::MetricScalarExpectedOneRow,
             DomainCode::MetricResultColumnMissing,
             DomainCode::MetricResultColumnAmbiguous,
-            DomainCode::MetricResultPageIncomplete,
-            DomainCode::MetricScalarExpectedOneRow,
         ];
         for domain in domain_codes {
             let api = api_composition_diagnostic_code(domain)
@@ -16741,20 +16735,12 @@ mod authentication_regression_tests {
             assert_eq!(serde_json::to_value(api)?, json!(domain.as_str()));
         }
 
-        assert_eq!(
-            ApiCompositionDiagnosticCode::MetricFieldNotProjected.as_str(),
-            "metric_field_not_projected"
-        );
-        assert_eq!(
-            ApiCompositionDiagnosticCode::from_code("metric_field_not_projected"),
-            Some(ApiCompositionDiagnosticCode::MetricFieldNotProjected)
-        );
-        assert_eq!(
-            serde_json::to_value(ApiCompositionDiagnosticCode::MetricFieldNotProjected)?,
-            json!("metric_field_not_projected")
-        );
         // Removed existence-revealing codes must stay out of the portable API.
         for removed in [
+            "metric_field_not_projected",
+            "metric_result_empty",
+            "metric_result_multiple_rows",
+            "metric_result_page_incomplete",
             "missing_form",
             "saved_sql_revision_missing",
             "not_authorized",
@@ -16775,12 +16761,8 @@ mod authentication_regression_tests {
                 "metric_result_type_mismatch",
             ),
             (
-                ApiCompositionDiagnosticCode::MetricResultEmpty,
-                "metric_result_empty",
-            ),
-            (
-                ApiCompositionDiagnosticCode::MetricResultMultipleRows,
-                "metric_result_multiple_rows",
+                ApiCompositionDiagnosticCode::MetricScalarExpectedOneRow,
+                "metric_scalar_expected_one_row",
             ),
             (
                 ApiCompositionDiagnosticCode::MetricResultColumnMissing,
@@ -16789,14 +16771,6 @@ mod authentication_regression_tests {
             (
                 ApiCompositionDiagnosticCode::MetricResultColumnAmbiguous,
                 "metric_result_column_ambiguous",
-            ),
-            (
-                ApiCompositionDiagnosticCode::MetricResultPageIncomplete,
-                "metric_result_page_incomplete",
-            ),
-            (
-                ApiCompositionDiagnosticCode::MetricScalarExpectedOneRow,
-                "metric_scalar_expected_one_row",
             ),
         ];
         for &(api, expected) in &metric_codes {

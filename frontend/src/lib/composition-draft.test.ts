@@ -56,7 +56,6 @@ vi.mock("./ugoite-client", () => ({
   entryApi: { query: vi.fn() },
   sqlApi: { query: vi.fn() },
   protocolFetch: vi.fn(),
-  evaluateCompositionMetricPage: vi.fn(),
 }));
 
 const sqlSeed = () => ({
@@ -763,7 +762,7 @@ describe("composition draft model", () => {
     expect(draftSaveReadiness(draft)).toEqual({ ready: true });
   });
 
-  it("refuses unknown future component, layout, and value-field kinds instead of approximating", () => {
+  it("refuses unknown future component, layout, and metric definition kinds instead of approximating", () => {
     const base = (): CompositionStudioDocument => ({
       format: "ugoite.composition",
       format_version: 1,

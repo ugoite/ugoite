@@ -215,9 +215,7 @@ async fn typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe()
     let metric = |id: &str, definition| CompositionComponent::Metric {
         id: id.to_string(),
         label: None,
-        source: None,
-        value_field: None,
-        definition: Some(definition),
+        definition,
         presentation: None,
     };
     let entry_source_id = "entries";
@@ -1125,24 +1123,20 @@ async fn authorized_composition_metrics_recheck_current_entry_and_saved_sql_acce
                 CompositionComponent::Metric {
                     id: "amount_metric".to_string(),
                     label: None,
-                    source: None,
-                    value_field: None,
-                    definition: Some(CompositionMetricDefinition::SqlScalar {
+                    definition: CompositionMetricDefinition::SqlScalar {
                         source: "amount_sql".to_string(),
                         column: "total".to_string(),
-                    }),
+                    },
                     presentation: None,
                 },
                 CompositionComponent::Metric {
                     id: "entry_amount_total".to_string(),
                     label: None,
-                    source: None,
-                    value_field: None,
-                    definition: Some(CompositionMetricDefinition::Aggregate {
+                    definition: CompositionMetricDefinition::Aggregate {
                         source: "amount_entries".to_string(),
                         operation: CompositionAggregateOperation::Sum,
                         field_id: Some(amount_field_id),
-                    }),
+                    },
                     presentation: None,
                 },
             ],
