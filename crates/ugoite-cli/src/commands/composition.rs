@@ -12,14 +12,22 @@ use ugoite_api_client::{
     prepare_request, CompositionDiagnosticCode as ApiCompositionDiagnosticCode,
     CompositionEntryIntegrity, CompositionEntryMetadata, CompositionHistoryPage,
     CompositionLintError, CompositionLintResponse, CompositionLintValue, CompositionListItem,
-    CompositionListPage, CompositionPublicationReceipt, CompositionRawRevision,
-    CompositionResolvePlan, CompositionResolveResponse, CompositionResolvedSource,
-    CompositionRestoreRequest, CompositionRestoreResponse, CompositionRevisionMetadata,
+    CompositionListPage, CompositionMetricOperation as ApiCompositionMetricOperation,
+    CompositionMetricQueryRequest as ApiCompositionMetricQueryRequest,
+    CompositionMetricQueryResponse as ApiCompositionMetricQueryResponse,
+    CompositionMetricQueryTarget as ApiCompositionMetricQueryTarget,
+    CompositionMetricSourceKind as ApiCompositionMetricSourceKind, CompositionPublicationReceipt,
+    CompositionRawRevision, CompositionResolvePlan, CompositionResolveResponse,
+    CompositionResolvedSource, CompositionRestoreRequest, CompositionRestoreResponse,
+    CompositionResultFieldType as ApiCompositionResultFieldType, CompositionRevisionMetadata,
     CompositionSaveRequest as ApiCompositionSaveRequest, CompositionSaveResponse,
 };
 use ugoite_core::composition::{
-    evaluate_entry_metric_page, evaluate_saved_sql_metric_page, ResolvedComponentKind,
-    ResolvedCompositionPlan, ResolvedSourceRequest,
+    ResolvedComponentKind, ResolvedCompositionPlan, ResolvedSourceRequest,
+};
+use ugoite_core::composition_metric::{
+    CompositionMetricQueryRequest as CoreCompositionMetricQueryRequest,
+    CompositionMetricQueryTarget as CoreCompositionMetricQueryTarget,
 };
 use ugoite_core::entry_query::EntryPage;
 use ugoite_core::sql_query::SqlQueryPage;
@@ -672,13 +680,16 @@ struct CompositionQueryOutput {
 struct CompositionQuerySourceOutput {
     source_id: String,
     kind: &'static str,
-    page: Value,
+    page: Option<Value>,
     metrics: Vec<CompositionQueryMetricOutput>,
 }
 
 #[derive(Serialize)]
 struct CompositionQueryMetricOutput {
     component_id: String,
+    operation: ApiCompositionMetricOperation,
+    source_kind: ApiCompositionMetricSourceKind,
+    result_type: ApiCompositionResultFieldType,
     value: Value,
 }
 
@@ -729,7 +740,7 @@ async fn query_composition(
         target_space_id(target),
         composition_id,
         &composition.revision.revision_id,
-        parameter_values,
+        parameter_values.clone(),
         local_service.as_ref(),
     )
     .await?;
@@ -751,6 +762,11 @@ async fn query_composition(
         "portable and Core Composition source counts diverged"
     );
 
+    let metric_context = CompositionMetricQueryContext {
+        composition_id,
+        composition_revision_id: &composition.revision.revision_id,
+        parameters: &parameter_values,
+    };
     let mut sources = Vec::with_capacity(plan.portable.sources.len());
     let mut diagnostics = Vec::new();
     for (portable_source, core_source) in plan.portable.sources.iter().zip(plan.core.sources.iter())
@@ -761,6 +777,7 @@ async fn query_composition(
             core_source,
             &plan.core,
             local_service.as_ref(),
+            &metric_context,
         )
         .await?;
         sources.push(source);
@@ -774,6 +791,26 @@ async fn query_composition(
         diagnostics,
     });
     Ok(())
+}
+
+struct CompositionMetricQueryContext<'a> {
+    composition_id: &'a str,
+    composition_revision_id: &'a str,
+    parameters: &'a BTreeMap<String, Value>,
+}
+
+fn composition_metric_query_request(
+    context: &CompositionMetricQueryContext<'_>,
+    component_id: &str,
+) -> ApiCompositionMetricQueryRequest {
+    ApiCompositionMetricQueryRequest {
+        target: ApiCompositionMetricQueryTarget::SavedRevision {
+            composition_id: context.composition_id.to_string(),
+            revision_id: context.composition_revision_id.to_string(),
+        },
+        component_id: component_id.to_string(),
+        parameters: context.parameters.clone(),
+    }
 }
 
 async fn resolve_composition(
@@ -937,6 +974,7 @@ async fn execute_composition_source(
     core_source: &ResolvedSourceRequest,
     plan: &ResolvedCompositionPlan,
     local_service: Option<&UgoiteService>,
+    metric_context: &CompositionMetricQueryContext<'_>,
 ) -> Result<(
     CompositionQuerySourceOutput,
     Vec<CompositionQueryDiagnostic>,
@@ -952,6 +990,7 @@ async fn execute_composition_source(
         source_id == core_source_id,
         "portable and Core Composition source order diverged"
     );
+    let needs_table_page = composition_source_needs_table_page(plan, source_id);
 
     let (page, metrics, diagnostics) = match (target, portable_source, core_source) {
         (
@@ -959,12 +998,19 @@ async fn execute_composition_source(
             CompositionResolvedSource::EntryQuery { .. },
             ResolvedSourceRequest::EntryQuery { source_id, .. },
         ) => {
-            let page_value =
-                http::execute_for_target(target, operation, arguments, Some(request.clone()))
+            let page_value = if needs_table_page {
+                let page_value =
+                    http::execute_for_target(target, operation, arguments, Some(request.clone()))
+                        .await?;
+                let _: EntryPage = serde_json::from_value(page_value.clone())
+                    .context("entry.query returned an invalid Composition page")?;
+                Some(page_value)
+            } else {
+                None
+            };
+            let (metrics, diagnostics) =
+                execute_composition_metrics(target, plan, source_id, metric_context, local_service)
                     .await?;
-            let page: EntryPage = serde_json::from_value(page_value.clone())
-                .context("entry.query returned an invalid Composition page")?;
-            let (metrics, diagnostics) = evaluate_entry_metrics(plan, source_id, &page);
             (page_value, metrics, diagnostics)
         }
         (
@@ -972,12 +1018,19 @@ async fn execute_composition_source(
             CompositionResolvedSource::SavedSql { .. },
             ResolvedSourceRequest::SavedSql { source_id, .. },
         ) => {
-            let page_value =
-                http::execute_for_target(target, operation, arguments, Some(request.clone()))
+            let page_value = if needs_table_page {
+                let page_value =
+                    http::execute_for_target(target, operation, arguments, Some(request.clone()))
+                        .await?;
+                let _: SqlQueryPage = serde_json::from_value(page_value.clone())
+                    .context("sql.query returned an invalid Composition page")?;
+                Some(page_value)
+            } else {
+                None
+            };
+            let (metrics, diagnostics) =
+                execute_composition_metrics(target, plan, source_id, metric_context, local_service)
                     .await?;
-            let page: SqlQueryPage = serde_json::from_value(page_value.clone())
-                .context("sql.query returned an invalid Composition page")?;
-            let (metrics, diagnostics) = evaluate_saved_sql_metrics(plan, source_id, &page);
             (page_value, metrics, diagnostics)
         }
         (
@@ -987,12 +1040,18 @@ async fn execute_composition_source(
                 source_id, request, ..
             },
         ) => {
-            let page = local_service
-                .context("local Composition query service is unavailable")?
-                .query_entry_page(space_id, request.clone())
-                .await?;
-            let page_value = serde_json::to_value(&page)?;
-            let (metrics, diagnostics) = evaluate_entry_metrics(plan, source_id, &page);
+            let page_value = if needs_table_page {
+                let page = local_service
+                    .context("local Composition query service is unavailable")?
+                    .query_entry_page(space_id, request.clone())
+                    .await?;
+                Some(serde_json::to_value(&page)?)
+            } else {
+                None
+            };
+            let (metrics, diagnostics) =
+                execute_composition_metrics(target, plan, source_id, metric_context, local_service)
+                    .await?;
             (page_value, metrics, diagnostics)
         }
         (
@@ -1002,12 +1061,18 @@ async fn execute_composition_source(
                 source_id, request, ..
             },
         ) => {
-            let page = local_service
-                .context("local Composition query service is unavailable")?
-                .query_sql(space_id, request.clone())
-                .await?;
-            let page_value = serde_json::to_value(&page)?;
-            let (metrics, diagnostics) = evaluate_saved_sql_metrics(plan, source_id, &page);
+            let page_value = if needs_table_page {
+                let page = local_service
+                    .context("local Composition query service is unavailable")?
+                    .query_sql(space_id, request.clone())
+                    .await?;
+                Some(serde_json::to_value(&page)?)
+            } else {
+                None
+            };
+            let (metrics, diagnostics) =
+                execute_composition_metrics(target, plan, source_id, metric_context, local_service)
+                    .await?;
             (page_value, metrics, diagnostics)
         }
         _ => anyhow::bail!("portable and Core Composition source kinds diverged"),
@@ -1024,64 +1089,92 @@ async fn execute_composition_source(
     ))
 }
 
-fn evaluate_entry_metrics(
-    plan: &ResolvedCompositionPlan,
-    source_id: &str,
-    page: &EntryPage,
-) -> (
-    Vec<CompositionQueryMetricOutput>,
-    Vec<CompositionQueryDiagnostic>,
-) {
-    let mut metrics = Vec::new();
-    let mut diagnostics = Vec::new();
-    for binding in plan.component_bindings.iter().filter(|binding| {
+fn composition_source_needs_table_page(plan: &ResolvedCompositionPlan, source_id: &str) -> bool {
+    plan.component_bindings.iter().any(|binding| {
         binding.source_id.as_deref() == Some(source_id)
-            && binding.kind == ResolvedComponentKind::Metric
-    }) {
-        match evaluate_entry_metric_page(binding, page) {
-            Ok(value) => metrics.push(CompositionQueryMetricOutput {
-                component_id: binding.component_id.clone(),
-                value,
-            }),
-            Err(diagnostic) => diagnostics.push(CompositionQueryDiagnostic {
-                code: diagnostic.code.as_str().to_string(),
-                parameter_id: None,
-                source_id: Some(source_id.to_string()),
-                component_id: Some(binding.component_id.clone()),
-            }),
-        }
-    }
-    (metrics, diagnostics)
+            && binding.kind == ResolvedComponentKind::Tabular
+    })
 }
 
-fn evaluate_saved_sql_metrics(
+async fn execute_composition_metrics(
+    target: &SpaceTarget,
     plan: &ResolvedCompositionPlan,
     source_id: &str,
-    page: &SqlQueryPage,
-) -> (
+    context: &CompositionMetricQueryContext<'_>,
+    local_service: Option<&UgoiteService>,
+) -> Result<(
     Vec<CompositionQueryMetricOutput>,
     Vec<CompositionQueryDiagnostic>,
-) {
+)> {
     let mut metrics = Vec::new();
     let mut diagnostics = Vec::new();
     for binding in plan.component_bindings.iter().filter(|binding| {
         binding.source_id.as_deref() == Some(source_id)
             && binding.kind == ResolvedComponentKind::Metric
     }) {
-        match evaluate_saved_sql_metric_page(binding, page) {
-            Ok(value) => metrics.push(CompositionQueryMetricOutput {
-                component_id: binding.component_id.clone(),
-                value,
-            }),
-            Err(diagnostic) => diagnostics.push(CompositionQueryDiagnostic {
-                code: diagnostic.code.as_str().to_string(),
-                parameter_id: None,
-                source_id: Some(source_id.to_string()),
-                component_id: Some(binding.component_id.clone()),
-            }),
+        let request = composition_metric_query_request(context, &binding.component_id);
+        let response = match target {
+            SpaceTarget::Remote { .. } => {
+                let value = http::execute_for_target(
+                    target,
+                    "composition.metric.query",
+                    json!({"space_id": target_space_id(target)}),
+                    Some(serde_json::to_value(&request)?),
+                )
+                .await?;
+                serde_json::from_value::<ApiCompositionMetricQueryResponse>(value)
+                    .context("decode Composition Metric query response")?
+            }
+            SpaceTarget::Core { .. } => {
+                let core_request = CoreCompositionMetricQueryRequest {
+                    target: CoreCompositionMetricQueryTarget::SavedRevision {
+                        composition_id: context.composition_id.to_string(),
+                        revision_id: context.composition_revision_id.to_string(),
+                    },
+                    component_id: binding.component_id.clone(),
+                    parameters: context.parameters.clone(),
+                };
+                let response = local_service
+                    .context("local Composition Metric query service is unavailable")?
+                    .query_composition_metric_local(target_space_id(target), core_request)
+                    .await?;
+                serde_json::from_value(serde_json::to_value(response)?)
+                    .context("decode local Composition Metric query response")?
+            }
+        };
+        if response.ok {
+            let result = response
+                .result
+                .context("Composition Metric query succeeded without a result")?;
+            anyhow::ensure!(
+                result.component_id == binding.component_id,
+                "Composition Metric query returned a different component"
+            );
+            metrics.push(CompositionQueryMetricOutput {
+                component_id: result.component_id,
+                operation: result.operation,
+                source_kind: result.source_kind,
+                result_type: result.result_type,
+                value: result.value,
+            });
+        } else {
+            anyhow::ensure!(
+                !response.diagnostics.is_empty(),
+                "Composition Metric query failed without diagnostics"
+            );
+            diagnostics.extend(response.diagnostics.into_iter().map(|diagnostic| {
+                CompositionQueryDiagnostic {
+                    code: diagnostic.code.as_str().to_string(),
+                    parameter_id: diagnostic.parameter_id,
+                    source_id: Some(source_id.to_string()),
+                    component_id: diagnostic
+                        .component_id
+                        .or_else(|| Some(binding.component_id.clone())),
+                }
+            }));
         }
     }
-    (metrics, diagnostics)
+    Ok((metrics, diagnostics))
 }
 
 fn composition_source_dispatch(
@@ -1295,13 +1388,13 @@ fn diagnostic_response(code: CompositionDiagnosticCode) -> CompositionLintRespon
 mod tests {
     use super::{
         composition_get_arguments, composition_history_arguments, composition_list_arguments,
-        composition_query_plan_from_core, composition_query_plan_from_portable,
-        composition_resolve_body, composition_source_dispatch, evaluate_entry_metrics,
-        evaluate_saved_sql_metrics, export_composition, lint_file, lint_yaml_bytes,
-        list_compositions, local_raw_revision_to_api, parse_cli_parameter_value,
-        parse_cli_parameter_values, raw_spec_output, read_composition, read_composition_history,
-        write_raw_spec_to_path, CompositionParameter, DomainCompositionParameterType,
-        RawSpecOutput,
+        composition_metric_query_request, composition_query_plan_from_core,
+        composition_query_plan_from_portable, composition_resolve_body,
+        composition_source_dispatch, composition_source_needs_table_page, export_composition,
+        lint_file, lint_yaml_bytes, list_compositions, local_raw_revision_to_api,
+        parse_cli_parameter_value, parse_cli_parameter_values, raw_spec_output, read_composition,
+        read_composition_history, write_raw_spec_to_path, CompositionParameter,
+        CompositionQueryMetricOutput, DomainCompositionParameterType, RawSpecOutput,
     };
     use crate::cli_config::SpaceTarget;
     use anyhow::Result;
@@ -1310,12 +1403,11 @@ mod tests {
     use std::io::Write;
     use ugoite_api_client::{
         prepare_request, CompositionDiagnosticCode, CompositionHistoryPage, CompositionListPage,
-        CompositionResolvePlan, CompositionResolvedSource, HttpMethod, RequestBodyKind,
+        CompositionMetricOperation, CompositionMetricSourceKind, CompositionResolvePlan,
+        CompositionResolvedSource, CompositionResultFieldType, HttpMethod, RequestBodyKind,
     };
+    use ugoite_core::composition::ResolvedCompositionPlan;
     use ugoite_core::error::{AppError, ErrorCode};
-    use ugoite_core::{
-        composition::ResolvedCompositionPlan, entry_query::EntryPage, sql_query::SqlQueryPage,
-    };
     use ugoite_domain::composition::MAX_COMPOSITION_YAML_BYTES;
     use ugoite_domain::entry::{EntryMetadata, EntryOperation, EntryRevision, FieldValue};
     use ugoite_domain::form::FormVersion;
@@ -1607,69 +1699,70 @@ mod tests {
     }
 
     #[test]
-    fn cli_metric_output_uses_the_shared_core_page_evaluator() {
-        let plan: ResolvedCompositionPlan = serde_json::from_value(json!({
-            "composition_revision": {
-                "entry_id": "00000000-0000-0000-0000-000000000001",
-                "revision_id": "00000000-0000-0000-0000-000000000002"
-            },
-            "sources": [],
-            "component_bindings": [{
-                "component_id": "total",
-                "kind": "metric",
-                "source_id": "entries",
-                "metric_field_id": 101,
-                "result_property_key": "amount",
-                "expected_result_type": "integer"
-            }]
-        }))
-        .expect("Core plan with a typed metric binding");
-        let page: EntryPage = serde_json::from_value(json!({
-            "rows": [{
-                "id": "00000000-0000-0000-0000-00000000002a",
-                "form_id": "00000000-0000-0000-0000-00000000002c",
-                "revision_id": "00000000-0000-0000-0000-00000000002b",
-                "created_at_micros": 0,
-                "updated_at_micros": 0,
-                "properties": {"amount": 42}
-            }],
-            "has_more": false
-        }))
-        .expect("one bounded Entry page");
+    fn composition_metric_output_includes_operation_source_and_result_type() {
+        let output = CompositionQueryMetricOutput {
+            component_id: "count".to_string(),
+            operation: CompositionMetricOperation::CountRows,
+            source_kind: CompositionMetricSourceKind::EntryQuery,
+            result_type: CompositionResultFieldType::Integer,
+            value: json!("3"),
+        };
 
-        let (metrics, diagnostics) = evaluate_entry_metrics(&plan, "entries", &page);
-        assert!(diagnostics.is_empty());
-        assert_eq!(metrics.len(), 1);
-        assert_eq!(metrics[0].component_id, "total");
-        assert_eq!(metrics[0].value, json!(42));
-
-        let incomplete_page: EntryPage = serde_json::from_value(json!({
-            "rows": [{
-                "id": "00000000-0000-0000-0000-00000000002a",
-                "form_id": "00000000-0000-0000-0000-00000000002c",
-                "revision_id": "00000000-0000-0000-0000-00000000002b",
-                "created_at_micros": 0,
-                "updated_at_micros": 0,
-                "properties": {"amount": 42}
-            }],
-            "has_more": true,
-            "next": "continuation-2"
-        }))
-        .expect("bounded page with continuation");
-        let (metrics, diagnostics) = evaluate_entry_metrics(&plan, "entries", &incomplete_page);
-        assert!(metrics.is_empty());
-        assert_eq!(diagnostics.len(), 1);
         assert_eq!(
-            diagnostics[0].code,
-            ugoite_domain::composition::CompositionDiagnosticCode::MetricResultPageIncomplete
-                .as_str()
+            serde_json::to_value(output).expect("metric JSON output"),
+            json!({
+                "component_id": "count",
+                "operation": "count_rows",
+                "source_kind": "entry_query",
+                "result_type": "integer",
+                "value": "3"
+            })
         );
-        assert_eq!(diagnostics[0].component_id.as_deref(), Some("total"));
     }
 
     #[test]
-    fn cli_saved_sql_metric_output_uses_the_shared_core_page_evaluator() {
-        let plan: ResolvedCompositionPlan = serde_json::from_value(json!({
+    fn saved_sql_metric_query_uses_the_exact_composition_revision_and_parameters() {
+        let parameters = BTreeMap::from([
+            ("month".to_string(), json!("2026-10")),
+            ("include_archived".to_string(), json!(false)),
+        ]);
+        let context = super::CompositionMetricQueryContext {
+            composition_id: "composition-entry-1",
+            composition_revision_id: "composition-revision-9",
+            parameters: &parameters,
+        };
+        let request = composition_metric_query_request(&context, "total");
+        let body = serde_json::to_value(request).expect("portable metric request");
+
+        assert_eq!(
+            body,
+            json!({
+                "target": {
+                    "kind": "saved_revision",
+                    "composition_id": "composition-entry-1",
+                    "revision_id": "composition-revision-9"
+                },
+                "component_id": "total",
+                "parameters": {
+                    "month": "2026-10",
+                    "include_archived": false
+                }
+            })
+        );
+        let prepared = prepare_request(
+            "composition.metric.query",
+            &json!({"space_id":"demo"}),
+            Some(&body),
+        )
+        .expect("portable metric query operation");
+        assert_eq!(prepared.method, HttpMethod::Post);
+        assert_eq!(prepared.path, "/spaces/demo/compositions/metric-query");
+        assert_eq!(prepared.body_kind, RequestBodyKind::Json);
+    }
+
+    #[test]
+    fn metric_only_sources_do_not_require_a_table_page() {
+        let mut plan: ResolvedCompositionPlan = serde_json::from_value(json!({
             "composition_revision": {
                 "entry_id": "00000000-0000-0000-0000-000000000001",
                 "revision_id": "00000000-0000-0000-0000-000000000002"
@@ -1681,21 +1774,30 @@ mod tests {
                 "source_id": "summary",
                 "result_property_key": "total",
                 "expected_result_type": "float"
+            }, {
+                "component_id": "entry-total",
+                "kind": "metric",
+                "source_id": "entries",
+                "metric_field_id": 42,
+                "result_property_key": "amount",
+                "expected_result_type": "integer"
             }]
         }))
-        .expect("Core plan with a typed Saved SQL metric binding");
-        let page: SqlQueryPage = serde_json::from_value(json!({
-            "columns": ["total"],
-            "rows": [{"total": 42.5}],
-            "has_more": false
-        }))
-        .expect("one bounded SQL page");
+        .expect("Core plan with typed Saved SQL and EntryQuery metric bindings");
 
-        let (metrics, diagnostics) = evaluate_saved_sql_metrics(&plan, "summary", &page);
-        assert!(diagnostics.is_empty());
-        assert_eq!(metrics.len(), 1);
-        assert_eq!(metrics[0].component_id, "total");
-        assert_eq!(metrics[0].value, json!(42.5));
+        assert!(!composition_source_needs_table_page(&plan, "summary"));
+        assert!(!composition_source_needs_table_page(&plan, "entries"));
+
+        plan.component_bindings.push(
+            serde_json::from_value(json!({
+                "component_id": "rows",
+                "kind": "table",
+                "source_id": "summary"
+            }))
+            .expect("Saved SQL table binding"),
+        );
+        assert!(composition_source_needs_table_page(&plan, "summary"));
+        assert!(!composition_source_needs_table_page(&plan, "entries"));
     }
 
     #[test]
@@ -2030,7 +2132,8 @@ mod tests {
             let request = String::from_utf8_lossy(&request[..bytes_read]).to_string();
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                response_body.len(), response_body
+                response_body.len(),
+                response_body
             );
             stream
                 .write_all(response.as_bytes())
@@ -2163,7 +2266,8 @@ mod tests {
             let body = response_body;
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                body.len(), body
+                body.len(),
+                body
             );
             stream
                 .write_all(response.as_bytes())
@@ -2349,7 +2453,8 @@ mod tests {
             let body = response_body;
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                body.len(), body
+                body.len(),
+                body
             );
             stream
                 .write_all(response.as_bytes())

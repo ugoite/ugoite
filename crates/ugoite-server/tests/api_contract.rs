@@ -1648,6 +1648,70 @@ fn openapi_documents_composition_preview_without_publication() {
 }
 
 #[test]
+fn openapi_documents_bounded_composition_metric_queries() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    let metric = &snapshot["paths"]["/spaces/{space_id}/compositions/metric-query"]["post"];
+    assert_eq!(
+        metric["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/CompositionMetricQueryRequest"
+    );
+    assert_eq!(
+        metric["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/CompositionMetricQueryResponse"
+    );
+    assert_eq!(
+        metric["responses"]["413"]["description"],
+        "The JSON request body exceeds the 256 KiB bound"
+    );
+    assert_eq!(
+        snapshot["components"]["schemas"]["CompositionMetricOperation"]["enum"],
+        serde_json::json!([
+            "sql_scalar",
+            "count_rows",
+            "count_values",
+            "sum",
+            "avg",
+            "min",
+            "max"
+        ])
+    );
+    assert!(metric["description"]
+        .as_str()
+        .expect("bounded metric description")
+        .contains("at most two rows"));
+
+    let request = &snapshot["components"]["schemas"]["CompositionMetricQueryRequest"];
+    assert_eq!(request["additionalProperties"], false);
+    assert_eq!(
+        request["required"],
+        serde_json::json!(["target", "component_id"])
+    );
+    assert_eq!(
+        request["properties"]["target"]["$ref"],
+        "#/components/schemas/CompositionMetricQueryTarget"
+    );
+    assert_eq!(
+        snapshot["components"]["schemas"]["CompositionMetricQueryTarget"]["oneOf"]
+            .as_array()
+            .map(Vec::len),
+        Some(2)
+    );
+
+    let response = &snapshot["components"]["schemas"]["CompositionMetricQueryResponse"];
+    assert_eq!(response["oneOf"].as_array().map(Vec::len), Some(2));
+    assert_eq!(response["oneOf"][0]["properties"]["ok"]["const"], true);
+    assert_eq!(response["oneOf"][1]["properties"]["ok"]["const"], false);
+    assert_eq!(
+        response["oneOf"][0]["properties"]["result"]["$ref"],
+        "#/components/schemas/CompositionMetricQueryValue"
+    );
+    assert_eq!(
+        response["oneOf"][1]["properties"]["diagnostics"]["items"]["$ref"],
+        "#/components/schemas/CompositionMetricQueryDiagnostic"
+    );
+}
+
+#[test]
 fn openapi_documents_composition_resolve_metric_result_type() {
     let snapshot = ugoite_server::openapi_snapshot();
     let resolve = &snapshot["paths"]["/spaces/{space_id}/compositions/{entry_id}/resolve"]["post"];
