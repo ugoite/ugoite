@@ -72,8 +72,8 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.optional-display-labels
                 covers:
-                  - FEAT-COMP-001#binding.display-label-domain/target.parameter-display-label
-                  - FEAT-COMP-001#binding.display-label-domain/target.component-display-label
+                  - FEAT-COMP-001#binding.composition-display-domain/target.parameter-display-label
+                  - FEAT-COMP-001#binding.composition-display-domain/target.composition-component-contract
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::composition_canonicalization_matches_the_native_domain_contract } }
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation
