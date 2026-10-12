@@ -190,6 +190,55 @@ describe("UI spec YAML registry", () => {
     });
   });
 
+  it("REQ-FE-040: declares global Space selection identity boundaries", () => {
+    const selectionPath = path.join(
+      componentsDir,
+      "space-selection.yaml",
+    );
+    const selection = parse(readFileSync(selectionPath, "utf8")) as {
+      component_group?: Record<string, unknown>;
+      components?: Array<Record<string, unknown>>;
+    };
+    const components = selection.components ?? [];
+    const spaces = components.find(({ id }) =>
+      id === "authorized-space-list"
+    );
+    const create = components.find(({ id }) => id === "create-space-form");
+    const actions = components.find(({ id }) => id === "global-space-actions");
+
+    expect(selection.component_group).toMatchObject({
+      id: "space-selection",
+      routes: ["/spaces"],
+    });
+    expect(spaces).toMatchObject({
+      type: "list",
+      source: "space.list",
+      row: {
+        activation: "full-row-link",
+        primary_label: "name-then-slug-then-localized-untitled",
+        secondary_action: "settings-icon-only-with-localized-accessible-name",
+      },
+      identity: {
+        displays_space_uid: false,
+        space_uid_use: "routing-and-selection",
+      },
+    });
+    expect(create).toMatchObject({
+      type: "form",
+      fields: ["space-name", "user-chosen-space-slug"],
+      slug: { purpose: "user-chosen-route-identifier" },
+      submission: "explicit-user-action",
+      created_space_uid: "server-issued-route-value-not-rendered",
+    });
+    expect(actions).toMatchObject({
+      type: "toolbar",
+      actions: [
+        { join: "/spaces/join" },
+        { create: "explicit-create-action" },
+      ],
+    });
+  });
+
   it("REQ-FE-040: declares account security identifier boundaries", () => {
     const securityPath = path.join(
       componentsDir,

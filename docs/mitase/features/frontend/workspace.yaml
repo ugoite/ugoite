@@ -68,6 +68,20 @@ features:
                 criterion: REQ-FE-002#criterion.explicit-create-action
               - kind: satisfies
                 criterion: REQ-FE-056#criterion.contextual-auth
+      - id: space-selection-contract
+        role: documentation
+        facet: documentation
+        responsibility: Document the global Space list, user-chosen slug, server-issued Space UID, and create/join actions.
+        targets:
+          - id: spaces-index-contract
+            adapter: declared
+            path: docs/spec/ui/components/space-selection.yaml
+            selector: { kind: file }
+            claims:
+              - kind: documents
+                anchor: REQ-FE-001#criterion.human-readable-labels
+              - kind: documents
+                anchor: REQ-FE-002#criterion.explicit-create-action
   - id: FEAT-FE-002
     title: Entry browsing and selection
     summary: Connect Entry browsing, selection, and human-readable Dashboard Recent labels to exact frontend verification evidence.

@@ -173,6 +173,13 @@
   linked_requirements:
   - REQCAT-FRONTEND
   - REQCAT-FORM
+- id: SPEC-UI-SPACE-SELECTION
+  source_file: ui/components/space-selection.yaml
+  linked_policies:
+  - POL-006
+  - POL-UI-005
+  linked_requirements:
+  - REQCAT-FRONTEND
 - id: SPEC-SECURITY-OVERVIEW
   source_file: ../architecture/security/overview.md
   linked_policies:

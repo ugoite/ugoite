@@ -9,6 +9,10 @@ under `frontend/src/routes`; it does not imply browser-local persistence. The
 global account Security surface is specified in
 `components/account-security.yaml`.
 
+The global `/spaces` list and create surface, including the boundary between
+user-chosen slugs and internal Space UIDs, is specified in
+`components/space-selection.yaml`.
+
 FormTable's Form-field columns, optional timestamps, and accessible column
 picker are described in `components/form-table.yaml`.
 The Form-owned asset reference field's human labels and hidden Asset ID boundary
