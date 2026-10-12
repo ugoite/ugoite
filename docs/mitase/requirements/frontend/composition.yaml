@@ -35,7 +35,7 @@ requirements:
         governed_by: [POL-UI-002#rule.governance, POL-UI-006#rule.governance]
       - id: metric-authoring
         kind: behavior
-        statement: Metric creation follows source, calculation, a compatible field or column when required, preview, then insertion. Form metrics support count_rows, count_values, sum, avg, min, and max; count_rows has no field, count_values counts non-NULL values, and field compatibility is decided by the shared Rust Domain capability exposed through WASM. Saved SQL metrics use sql_scalar against an exact saved revision and selected output column. The Inspector edits the metric name, source, calculation, field or column, and optional display format. Numeric results support an explicit unit and minimum decimal places as presentation-only metadata; these do not change query semantics and are cleared when a result becomes nonnumeric. Draft preview calls composition.metric.query with a draft target; saved metric rendering resolves against its saved revision. Both use the server metric query operation, not browser aggregation. Labels use human Form names and user-authored SQL column names; opaque identifiers never render, and steady-state surfaces contain no explanatory paragraphs.
+        statement: Metric creation follows source, calculation, a compatible field or column when required, preview, then insertion. Form metrics support count_rows, count_values, sum, avg, min, and max; count_rows has no field, count_values counts non-NULL values, and field compatibility is decided by the shared Rust Domain capability exposed through WASM. Saved SQL metrics use sql_scalar against an exact saved revision and selected output column. The Inspector edits the metric name, source, calculation, field or column, and optional display format. Save stays disabled until every Metric has its required field or output column, and incomplete edits remain available without reaching canonicalization. Numeric results support an explicit unit and minimum decimal places as presentation-only metadata; these do not change query semantics and are cleared when a result becomes nonnumeric. Draft preview calls composition.metric.query with a draft target; saved metric rendering resolves against its saved revision. Both use the server metric query operation, not browser aggregation. Labels use human Form names and user-authored SQL column names; opaque identifiers never render, and steady-state surfaces contain no explanatory paragraphs.
         governed_by: [POL-UI-001#rule.governance, POL-UI-002#rule.governance, POL-UI-005#rule.governance, POL-UI-006#rule.governance, POL-UI-007#rule.governance]
       - id: metric-result-presentation
         kind: behavior
@@ -380,6 +380,33 @@ requirements:
                 criterion: REQ-FE-070#criterion.structure-first-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: separates text content from the block action bar with token spacing } }
+          - id: studio-metric-save-readiness
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: blocks saves until aggregate fields and Saved SQL columns are selected }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.metric-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: blocks saves until aggregate fields and Saved SQL columns are selected } }
+          - id: studio-metric-save-button-readiness
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: disables Save when a Metric operation requires an unselected field }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.metric-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: disables Save when a Metric operation requires an unselected field } }
+          - id: studio-saved-sql-metric-save-readiness
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: disables Save when a Saved SQL Metric has no output column }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.metric-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: disables Save when a Saved SQL Metric has no output column } }
       - id: studio-parameter-verification
         role: verification
         facet: verification

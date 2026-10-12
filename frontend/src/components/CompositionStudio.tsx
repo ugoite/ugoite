@@ -327,6 +327,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
         return t("composition.studioSaveNeedsBlock");
       case "refs":
         return t("composition.studioSaveNeedsRefs");
+      case "metric":
+        return t("composition.studioSaveNeedsMetric");
       default:
         return undefined;
     }
