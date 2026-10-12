@@ -15,11 +15,19 @@ requirements:
         governed_by: [POL-000#rule.foundation-precedence]
       - id: input-component-binding
         kind: behavior
-        statement: An Input component references one declared variable and owns no persisted value or setter expression. Multiple Inputs bound to the same variable display the same current value, and each placed Input is an ordinary Component referenced once by Layout.
+        statement: An Input component references one declared variable and owns no persisted value or setter expression. A required variable without a default has a placed Input, and each placed Input is an ordinary Component referenced once by Layout.
+        governed_by: [POL-000#rule.foundation-precedence]
+      - id: input-runtime-synchronization
+        kind: behavior
+        statement: Multiple Inputs bound to the same variable display one shared current raw value and validation state; editing any bound Input updates every other bound Input in the same UI cycle.
         governed_by: [POL-000#rule.foundation-precedence]
       - id: direct-text-binding
         kind: behavior
-        statement: Text content is either a literal string or a direct reference to a declared string variable. A valid variable change updates dependent Text synchronously; Text evaluates no expressions, implicit conversions, or SQL results.
+        statement: Text content is either a literal string or a direct reference to a declared string variable. Text evaluates no expressions, implicit conversions, or SQL results.
+        governed_by: [POL-000#rule.foundation-precedence]
+      - id: direct-text-reactivity
+        kind: behavior
+        statement: A valid change to a string variable updates each dependent Text in the same reactive UI cycle without issuing SQL.
         governed_by: [POL-000#rule.foundation-precedence]
       - id: typed-source-binding
         kind: security
@@ -27,7 +35,11 @@ requirements:
         governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
       - id: dependency-driven-execution
         kind: behavior
-        statement: Dependency references, not component or Layout order, determine updates. A valid variable change immediately invalidates only dependent SQL Sources and their Metric/Table consumers; an unrelated variable does not issue another SQL request. Debounce, if any, affects only SQL issuing, not input, validation, Text, or stale-result invalidation.
+        statement: Core resolves variable-to-Input/Text/Source and Source-to-Metric/Table dependencies independently of component declaration or Layout order; layout edits do not alter the dependency graph.
+        governed_by: [POL-004#rule.governance]
+      - id: selective-source-refresh
+        kind: behavior
+        statement: A valid variable change immediately invalidates only dependent SQL Sources and their Metric/Table consumers; an unrelated variable does not issue another SQL request. Debounce, if any, affects only SQL issuing, not input, validation, Text, or stale-result invalidation.
         governed_by: [POL-004#rule.governance]
       - id: stale-result-and-state-safety
         kind: security
@@ -49,3 +61,113 @@ requirements:
         kind: quality
         statement: At 390px width, variable Inputs, labels, invalid/loading/results states, and recovery actions remain understandable and operable by keyboard and screen reader; internal variable IDs are not primary labels.
         governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance, POL-UI-005#rule.governance]
+    bindings:
+      - id: typed-variable-domain-verification
+        role: verification
+        facet: verification
+        responsibility: Verify exact typed Input parsing and defaults, declared Input references and placement, direct string-variable Text references, and variable-form source references in the portable Domain contract.
+        targets:
+          - id: typed-input-parser-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::typed_input_parser_enforces_the_pinned_lexical_contract }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-variable-declarations
+                covers: [FEAT-COMP-008#binding.typed-variable-domain/target.variable-declaration-and-input-parser]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::typed_input_parser_enforces_the_pinned_lexical_contract } }
+          - id: typed-variable-default-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::variable_defaults_must_match_the_type_and_lexical_contract }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-variable-declarations
+                covers: [FEAT-COMP-008#binding.typed-variable-domain/target.variable-declaration-and-input-parser]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::variable_defaults_must_match_the_type_and_lexical_contract } }
+          - id: repeated-input-reference-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::multiple_inputs_can_reference_one_variable }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.input-component-binding
+                covers: [FEAT-COMP-008#binding.typed-variable-domain/target.input-component-model]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::multiple_inputs_can_reference_one_variable } }
+          - id: declared-input-reference-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::unknown_input_variable_is_invalid }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.input-component-binding
+                covers: [FEAT-COMP-008#binding.typed-variable-domain/target.input-component-model]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::unknown_input_variable_is_invalid } }
+          - id: direct-text-reference-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::variable_text_requires_a_declared_string_variable }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.direct-text-binding
+                covers: [FEAT-COMP-008#binding.typed-variable-domain/target.direct-text-reference-model]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::variable_text_requires_a_declared_string_variable } }
+          - id: declared-source-variable-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::unknown_variable_source_references_are_invalid }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-source-binding
+                covers: [FEAT-COMP-008#binding.typed-variable-domain/target.source-variable-reference-model]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::unknown_variable_source_references_are_invalid } }
+      - id: typed-variable-core-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Core rejects invalid runtime values without fallback, preserves exact SQL variable types, resolves Input/Text references locally, and indexes only semantic variable and source dependencies independent of Layout order.
+        targets:
+          - id: invalid-runtime-value-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::invalid_supplied_value_does_not_fall_back_to_a_default }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-variable-declarations
+                covers: [FEAT-COMP-008#binding.core-typed-variable-resolution/target.runtime-variable-binding]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::invalid_supplied_value_does_not_fall_back_to_a_default } }
+          - id: exact-sql-variable-type-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::saved_sql_source_checks_variable_types_and_literal_values }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-source-binding
+                covers: [FEAT-COMP-008#binding.core-typed-variable-resolution/target.typed-saved-sql-variable-binding]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_source_checks_variable_types_and_literal_values } }
+          - id: local-input-value-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::input_components_resolve_through_semantic_variable_values }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.input-component-binding
+                covers: [FEAT-COMP-008#binding.core-typed-variable-resolution/target.local-components-and-dependency-index]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::input_components_resolve_through_semantic_variable_values } }
+          - id: local-text-reference-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::dependency_index_is_semantic_and_independent_of_layout_order }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.direct-text-binding
+                covers: [FEAT-COMP-008#binding.core-typed-variable-resolution/target.local-components-and-dependency-index]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::dependency_index_is_semantic_and_independent_of_layout_order } }
+          - id: semantic-dependency-index-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::dependency_index_is_semantic_and_independent_of_layout_order }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.dependency-driven-execution
+                covers: [FEAT-COMP-008#binding.core-typed-variable-resolution/target.local-components-and-dependency-index]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::dependency_index_is_semantic_and_independent_of_layout_order } }

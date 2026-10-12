@@ -261,7 +261,7 @@ requirements:
       - id: layout-resolver-verification
         role: verification
         facet: verification
-        responsibility: Verify layout-ordered bindings stay identical across saved-revision and draft-preview resolution, layout-only additions preserve compiled source requests, sourceless text bindings add no query work, and draft preview exposes placed parameters in layout order.
+        responsibility: Verify layout-ordered bindings stay identical across saved-revision and draft-preview resolution, layout-only additions preserve compiled source requests, sourceless Text and Input components add no query work, and draft preview exposes variable definitions in declaration order.
         targets:
           - id: layout-additions-case
             adapter: rust
@@ -283,16 +283,16 @@ requirements:
                 covers:
                   - FEAT-COMP-002#binding.layout-order-resolver/target.layout-component-bindings
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::text_components_emit_layout_ordered_bindings_without_source_requests } }
-          - id: preview-placement-order-case
+          - id: preview-variable-definition-order-case
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_composition_preview.rs
-            selector: { kind: test, name: preview_exposes_placed_parameters_in_layout_order }
+            selector: { kind: test, name: preview_exposes_variable_definitions_in_declaration_order }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.draft-preview
                 covers:
                   - FEAT-COMP-002#binding.preview-resolver/target.resolve-composition-preview
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: preview_exposes_placed_parameters_in_layout_order } }
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: preview_exposes_variable_definitions_in_declaration_order } }
     criteria:
       - id: entry-query-translation
         kind: behavior

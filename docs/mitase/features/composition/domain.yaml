@@ -289,12 +289,12 @@ features:
     facet: domain
     responsibility: Represent optional Composition display labels and SQL-column-only Metric bindings while keeping calculations outside display components.
     targets:
-    - id: parameter-display-label
+    - id: variable-display-label
       adapter: rust
       path: crates/ugoite-domain/src/composition.rs
       selector:
         kind: symbol
-        name: CompositionParameter
+        name: CompositionVariable
       claims:
       - kind: satisfies
         criterion: REQ-COMP-002#criterion.optional-display-labels
@@ -461,7 +461,7 @@ features:
   - id: component-layout-domain
     role: implementation
     facet: domain
-    responsibility: Expose flow-layout row and item placement with text components and parameter controls,
+    responsibility: Expose flow-layout row and item placement with text and Input components,
       and reject incomplete or ambiguous component layouts during canonicalization.
     targets:
     - id: ordered-components
@@ -486,6 +486,8 @@ features:
         criterion: REQ-COMP-002#criterion.ordered-component-layout
       - kind: satisfies
         criterion: REQ-COMP-002#criterion.empty-layout-rejected
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.parameter-placement
     - id: flow-layout
       adapter: rust
       path: crates/ugoite-domain/src/composition.rs
@@ -516,7 +518,7 @@ features:
         name: FlowItem
       claims:
       - kind: satisfies
-        criterion: REQ-COMP-002#criterion.parameter-placement
+        criterion: REQ-COMP-002#criterion.ordered-component-layout
     - id: text-style
       adapter: rust
       path: crates/ugoite-domain/src/composition.rs
@@ -526,20 +528,11 @@ features:
       claims:
       - kind: satisfies
         criterion: REQ-COMP-002#criterion.text-style-enum
-    - id: ordered-parameters
-      adapter: rust
-      path: crates/ugoite-domain/src/composition.rs
-      selector:
-        kind: symbol
-        name: parameters_in_placement_order
-      claims:
-      - kind: satisfies
-        criterion: REQ-COMP-002#criterion.parameter-placement
   - id: component-layout-domain-tests
     role: evidence
     facet: domain-tests
-    responsibility: Exercise layout row and item ordering, complete and unique component and parameter
-      references, required-parameter control placement, the text style enum, rejection of empty layouts
+    responsibility: Exercise layout row and item ordering, complete and unique component and variable
+      references, required-variable Input placement, the text style enum, rejection of empty layouts
       and rows, canonical rejection of invalid layouts, and native/WASM diagnostic parity.
     targets:
     - id: layout-reference-order
@@ -547,10 +540,12 @@ features:
       path: crates/ugoite-domain/src/composition.rs
       selector:
         kind: symbol
-        name: components_follow_layout_row_and_item_order
+        name: components_follow_layout_row_and_item_order_independent_of_declarations
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.ordered-component-layout
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.parameter-placement
     - id: empty-layout
       adapter: rust
       path: crates/ugoite-domain/src/composition.rs
@@ -614,48 +609,30 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.ordered-component-layout
-    - id: unknown-parameter-reference
+    - id: unknown-input-variable
       adapter: rust
       path: crates/ugoite-domain/src/composition.rs
       selector:
         kind: symbol
-        name: unknown_parameter_references_are_invalid
+        name: unknown_input_variable_is_invalid
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.parameter-placement
-    - id: duplicate-parameter-placement
+    - id: duplicate-input-placement
       adapter: rust
       path: crates/ugoite-domain/src/composition.rs
       selector:
         kind: symbol
-        name: duplicate_parameter_placements_are_invalid
+        name: duplicate_input_placements_are_invalid
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.parameter-placement
-    - id: required-parameter-control
+    - id: required-variable-input
       adapter: rust
       path: crates/ugoite-domain/src/composition.rs
       selector:
         kind: symbol
-        name: required_parameter_without_default_needs_a_layout_control
-      claims:
-      - kind: evidences
-        anchor: REQ-COMP-002#criterion.parameter-placement
-    - id: placed-parameter-order
-      adapter: rust
-      path: crates/ugoite-domain/src/composition.rs
-      selector:
-        kind: symbol
-        name: placed_parameters_come_first_in_layout_order
-      claims:
-      - kind: evidences
-        anchor: REQ-COMP-002#criterion.parameter-placement
-    - id: invalid-parameter-placement-order
-      adapter: rust
-      path: crates/ugoite-domain/src/composition.rs
-      selector:
-        kind: symbol
-        name: unknown_and_duplicate_parameter_placements_have_no_order
+        name: required_variable_without_default_needs_a_layout_input
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.parameter-placement
@@ -753,9 +730,9 @@ features:
     kind: custom
     source: FEAT-COMP-001#binding.contract/target.composition-contract
     participants:
-    - target: FEAT-COMP-001#binding.component-layout-domain/target.flow-item
+    - target: FEAT-COMP-001#binding.component-layout-domain/target.canonical-layout-validation
       role: implementation
-    - target: FEAT-COMP-001#binding.component-layout-domain/target.ordered-parameters
+    - target: FEAT-COMP-001#binding.component-layout-domain/target.ordered-components
       role: implementation
     - target: FEAT-COMP-004#binding.browser-query-runtime/target.browser-parameter-control
       role: client

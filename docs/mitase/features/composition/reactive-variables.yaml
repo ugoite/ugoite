@@ -24,11 +24,17 @@ features:
               - kind: documents
                 anchor: REQ-COMP-007#criterion.input-component-binding
               - kind: documents
+                anchor: REQ-COMP-007#criterion.input-runtime-synchronization
+              - kind: documents
                 anchor: REQ-COMP-007#criterion.direct-text-binding
+              - kind: documents
+                anchor: REQ-COMP-007#criterion.direct-text-reactivity
               - kind: documents
                 anchor: REQ-COMP-007#criterion.typed-source-binding
               - kind: documents
                 anchor: REQ-COMP-007#criterion.dependency-driven-execution
+              - kind: documents
+                anchor: REQ-COMP-007#criterion.selective-source-refresh
               - kind: documents
                 anchor: REQ-COMP-007#criterion.stale-result-and-state-safety
               - kind: documents
@@ -39,3 +45,180 @@ features:
                 anchor: REQ-COMP-007#criterion.code-free-studio-authoring
               - kind: documents
                 anchor: REQ-COMP-007#criterion.responsive-accessible-inputs
+      - id: typed-variable-domain
+        role: implementation
+        facet: domain
+        responsibility: Represent exact typed variable declarations, raw Input parse outcomes, direct string-variable Text references, and Input component references in the portable Composition model.
+        targets:
+          - id: variable-declaration-and-input-parser
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector:
+              kind: symbol
+              name: CompositionVariableType::parse_input
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.typed-variable-declarations
+          - id: input-component-model
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector:
+              kind: symbol
+              name: CompositionComponent
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.input-component-binding
+          - id: direct-text-reference-model
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector:
+              kind: symbol
+              name: CompositionTextContent
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.direct-text-binding
+          - id: source-variable-reference-model
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector:
+              kind: symbol
+              name: CompositionSource
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.typed-source-binding
+      - id: typed-variable-domain-evidence
+        role: evidence
+        facet: domain-tests
+        responsibility: Verify the locale-independent typed Input boundaries, exact defaults, repeated Input references, direct string-only Text references, and declared variable references in portable Composition documents.
+        targets:
+          - id: exact-input-lexical-contract
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector:
+              kind: symbol
+              name: tests::typed_input_parser_enforces_the_pinned_lexical_contract
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-variable-declarations
+          - id: exact-variable-defaults
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector:
+              kind: symbol
+              name: tests::variable_defaults_must_match_the_type_and_lexical_contract
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-variable-declarations
+          - id: repeated-input-reference
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector:
+              kind: symbol
+              name: tests::multiple_inputs_can_reference_one_variable
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.input-component-binding
+          - id: direct-text-requires-string-variable
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector:
+              kind: symbol
+              name: tests::variable_text_requires_a_declared_string_variable
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.direct-text-binding
+          - id: declared-source-variable-reference
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector:
+              kind: symbol
+              name: tests::unknown_variable_source_references_are_invalid
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-source-binding
+      - id: core-typed-variable-resolution
+        role: implementation
+        facet: core
+        responsibility: Bind transient variable values without coercion, preserve exact Saved SQL variable types in the existing typed SQL request, resolve Input and Text locally, and build dependency edges independently of Layout order.
+        targets:
+          - id: runtime-variable-binding
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector:
+              kind: symbol
+              name: bind_variables
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.typed-variable-declarations
+          - id: typed-saved-sql-variable-binding
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector:
+              kind: symbol
+              name: compile_saved_sql_source
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.typed-source-binding
+          - id: local-components-and-dependency-index
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector:
+              kind: symbol
+              name: resolve_composition_parts
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.input-component-binding
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.direct-text-binding
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.dependency-driven-execution
+      - id: core-typed-variable-resolution-evidence
+        role: evidence
+        facet: core-tests
+        responsibility: Verify exact runtime type checks, unchanged typed Saved SQL request parameters, local Input and Text bindings without extra source work, deterministic dependency edges, and isolation of affected Saved SQL requests.
+        targets:
+          - id: runtime-value-validation
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector:
+              kind: symbol
+              name: tests::invalid_supplied_value_does_not_fall_back_to_a_default
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-variable-declarations
+          - id: saved-sql-exact-variable-types
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector:
+              kind: symbol
+              name: tests::saved_sql_source_checks_variable_types_and_literal_values
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-source-binding
+          - id: local-input-binding
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector:
+              kind: symbol
+              name: tests::input_components_resolve_through_semantic_variable_values
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.input-component-binding
+          - id: local-text-binding
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector:
+              kind: symbol
+              name: tests::text_components_emit_layout_ordered_bindings_without_source_requests
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.direct-text-binding
+          - id: semantic-dependency-index
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector:
+              kind: symbol
+              name: tests::dependency_index_is_semantic_and_independent_of_layout_order
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.dependency-driven-execution

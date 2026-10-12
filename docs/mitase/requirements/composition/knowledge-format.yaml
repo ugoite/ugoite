@@ -55,7 +55,7 @@ requirements:
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: "surfaces a stale base conflict with a recovery link to history" } }
   - id: REQ-COMP-002
     title: Restricted portable Composition format
-    description: The v0.2.2 Composition exchange format is restricted `.ugcomp.yaml` v1, with a typed envelope and spec, dashboard as its only executable kind, and Rust semantics shared by native and WASM surfaces.
+    description: The unreleased Composition v1 exchange format is restricted `.ugcomp.yaml` with a typed envelope and spec, dashboard as its only executable kind, and Rust semantics shared by native and WASM surfaces.
     priority: high
     status: implemented
     bindings:
@@ -72,7 +72,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.optional-display-labels
                 covers:
-                  - FEAT-COMP-001#binding.composition-display-domain/target.parameter-display-label
+                  - FEAT-COMP-001#binding.composition-display-domain/target.variable-display-label
                   - FEAT-COMP-001#binding.composition-display-domain/target.composition-component-contract
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::composition_canonicalization_matches_the_native_domain_contract } }
               - kind: verifies
@@ -257,7 +257,7 @@ requirements:
       - id: flow-layout-verification
         role: verification
         facet: verification
-        responsibility: Verify empty layouts and rows, duplicate row IDs, parameter control placement, and the text style enum through the shared domain unit tests.
+        responsibility: Verify empty layouts and rows, duplicate row IDs, Input placement, and the text style enum through the shared Domain unit tests.
         targets:
           - id: empty-layout-case
             adapter: rust
@@ -291,37 +291,47 @@ requirements:
                   - FEAT-COMP-001#binding.component-layout-domain/target.flow-row
                   - FEAT-COMP-001#binding.component-layout-domain/target.flow-layout
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::duplicate_row_ids_are_rejected } }
-          - id: required-parameter-control-case
+          - id: layout-item-order-case
             adapter: rust
             path: crates/ugoite-domain/src/composition.rs
-            selector: { kind: symbol, name: tests::required_parameter_without_default_needs_a_layout_control }
+            selector: { kind: symbol, name: tests::components_follow_layout_row_and_item_order_independent_of_declarations }
             claims:
               - kind: verifies
-                criterion: REQ-COMP-002#criterion.parameter-placement
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
                 covers:
-                  - FEAT-COMP-001#binding.component-layout-domain/target.flow-item
                   - FEAT-COMP-001#binding.component-layout-domain/target.ordered-components
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::required_parameter_without_default_needs_a_layout_control } }
-          - id: unknown-parameter-case
+                  - FEAT-COMP-001#binding.component-layout-domain/target.flow-item
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::components_follow_layout_row_and_item_order_independent_of_declarations } }
+          - id: required-variable-input-case
             adapter: rust
             path: crates/ugoite-domain/src/composition.rs
-            selector: { kind: symbol, name: tests::unknown_parameter_references_are_invalid }
+            selector: { kind: symbol, name: tests::required_variable_without_default_needs_a_layout_input }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.parameter-placement
                 covers:
-                  - FEAT-COMP-001#binding.component-layout-domain/target.flow-item
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::unknown_parameter_references_are_invalid } }
-          - id: duplicate-parameter-case
+                  - FEAT-COMP-001#binding.component-layout-domain/target.ordered-components
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::required_variable_without_default_needs_a_layout_input } }
+          - id: unknown-input-variable-case
             adapter: rust
             path: crates/ugoite-domain/src/composition.rs
-            selector: { kind: symbol, name: tests::duplicate_parameter_placements_are_invalid }
+            selector: { kind: symbol, name: tests::unknown_input_variable_is_invalid }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.parameter-placement
                 covers:
-                  - FEAT-COMP-001#binding.component-layout-domain/target.flow-item
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::duplicate_parameter_placements_are_invalid } }
+                  - FEAT-COMP-001#binding.component-layout-domain/target.canonical-layout-validation
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::unknown_input_variable_is_invalid } }
+          - id: duplicate-input-placement-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::duplicate_input_placements_are_invalid }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-001#binding.component-layout-domain/target.canonical-layout-validation
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::duplicate_input_placements_are_invalid } }
           - id: text-style-case
             adapter: rust
             path: crates/ugoite-domain/src/composition.rs
@@ -342,51 +352,31 @@ requirements:
                 covers:
                   - FEAT-COMP-001#binding.component-layout-domain/target.text-style
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::unknown_text_styles_and_layout_kinds_are_rejected } }
-          - id: placement-order-case
-            adapter: rust
-            path: crates/ugoite-domain/src/composition.rs
-            selector: { kind: symbol, name: tests::placed_parameters_come_first_in_layout_order }
-            claims:
-              - kind: verifies
-                criterion: REQ-COMP-002#criterion.parameter-placement
-                covers:
-                  - FEAT-COMP-001#binding.component-layout-domain/target.ordered-parameters
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::placed_parameters_come_first_in_layout_order } }
-          - id: invalid-placement-order-case
-            adapter: rust
-            path: crates/ugoite-domain/src/composition.rs
-            selector: { kind: symbol, name: tests::unknown_and_duplicate_parameter_placements_have_no_order }
-            claims:
-              - kind: verifies
-                criterion: REQ-COMP-002#criterion.parameter-placement
-                covers:
-                  - FEAT-COMP-001#binding.component-layout-domain/target.ordered-parameters
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::unknown_and_duplicate_parameter_placements_have_no_order } }
       - id: layout-binding-verification
         role: verification
         facet: verification
-        responsibility: Verify layout-ordered component bindings with interleaved text and parameter items and semantic parameter values for placed controls through the Core resolver exercising the shared Domain ordering.
+        responsibility: Verify layout-ordered component bindings with interleaved Text, Input, and data components and semantic variable values through the Core resolver exercising the shared Domain ordering.
         targets:
           - id: interleaved-order-case
             adapter: rust
             path: crates/ugoite-core/src/composition.rs
-            selector: { kind: symbol, name: tests::layout_order_interleaves_text_and_parameter_items_across_rows }
+            selector: { kind: symbol, name: tests::layout_order_interleaves_inputs_text_and_data_components_across_rows }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.ordered-component-layout
                 covers:
                   - FEAT-COMP-001#binding.component-layout-domain/target.ordered-components
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::layout_order_interleaves_text_and_parameter_items_across_rows } }
-          - id: parameter-values-case
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::layout_order_interleaves_inputs_text_and_data_components_across_rows } }
+          - id: input-values-case
             adapter: rust
             path: crates/ugoite-core/src/composition.rs
-            selector: { kind: symbol, name: tests::parameter_items_resolve_through_semantic_parameter_values }
+            selector: { kind: symbol, name: tests::input_components_resolve_through_semantic_variable_values }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.parameter-placement
                 covers:
                   - FEAT-COMP-001#binding.component-layout-domain/target.ordered-components
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::parameter_items_resolve_through_semantic_parameter_values } }
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::input_components_resolve_through_semantic_variable_values } }
       - id: flow-renderer-verification
         role: verification
         facet: verification
@@ -816,7 +806,7 @@ requirements:
     criteria:
       - id: typed-dashboard-model
         kind: behavior
-        statement: The Composition v1 model represents its fixed envelope marker, version, name, Entry tags, dashboard kind, parameters, sources, components, and flow layout as typed Rust domain values.
+        statement: The Composition v1 model represents its fixed envelope marker, version, name, Entry tags, dashboard kind, typed variables, sources, components, and flow layout as typed Rust domain values.
         governed_by: [POL-002#rule.governance, POL-007#rule.governance]
       - id: composition-tags
         kind: behavior
@@ -832,7 +822,7 @@ requirements:
         governed_by: [POL-002#rule.governance, POL-007#rule.governance]
       - id: optional-display-labels
         kind: behavior
-        statement: Composition parameters and Metric/Table components may carry optional display labels; present labels round-trip through canonical YAML and the semantic fingerprint, do not replace stable IDs or change source and query binding semantics, and absent labels remain omitted from canonical output.
+        statement: Composition variables and Metric/Table components may carry optional display labels; present labels round-trip through canonical YAML and the semantic fingerprint, do not replace stable IDs or change source and query binding semantics, and absent labels remain omitted from canonical output.
         governed_by: [POL-002#rule.governance, POL-007#rule.governance]
       - id: saved-sql-metric-presentation
         kind: behavior
@@ -878,7 +868,7 @@ requirements:
         governed_by: [POL-002#rule.governance, POL-007#rule.governance]
       - id: parameter-placement
         kind: behavior
-        statement: The layout places parameter controls bound to declared parameter IDs; unknown or duplicate parameter references produce invalid_composition, and a required parameter without a default and without a layout control produces invalid_composition.
+        statement: The layout places Input components that reference declared variable IDs; unknown variables, duplicate component placement, or a required variable without a default and without a placed Input produce invalid_composition. Variable definitions remain in declaration order; Input placement follows Layout order.
         governed_by: [POL-002#rule.governance, POL-007#rule.governance]
       - id: empty-layout-rejected
         kind: behavior
