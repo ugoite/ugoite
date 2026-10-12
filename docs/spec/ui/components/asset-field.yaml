@@ -1,0 +1,28 @@
+version: "0.1"
+updated: "2026-10-13"
+component_group:
+  id: asset-reference-field
+  title: Form Asset Reference Field
+components:
+  - id: asset-reference-field
+    type: typed-form-field
+    implementation: frontend/src/components/AssetField.tsx
+    tests: frontend/src/components/AssetField.test.tsx
+    value:
+      scalar: asset_reference
+      multiple: list<asset_reference>
+      identity: stable-asset-id-retained-in-form-value
+      persistence: entry-save
+    reference_rows:
+      visible_primary: file-name
+      visible_metadata: localized-file-type-and-size
+      action_names: localized-action-and-file-name
+      stable_asset_id: never-in-visible-content-or-accessible-names
+    preview:
+      availability: supported-media-types
+      title: file-name
+      focus: trap-and-return-to-trigger
+    editing:
+      choose: [file-picker, drag-and-drop]
+      multiple: ordered-list-with-item-replace-remove-and-move-actions
+      read_only: mutation-actions-hidden

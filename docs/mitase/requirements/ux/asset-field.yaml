@@ -1,0 +1,19 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: ux
+category: Asset reference identity presentation
+requirements:
+  - id: REQ-UX-ASSET-001
+    title: Human-Readable Asset References
+    description: Form Asset fields identify referenced files by name while retaining stable Asset IDs only for reference behavior.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: visible-file-identity
+        kind: behavior
+        statement: Persisted Asset reference rows show the file name and localized type/size metadata, and preview/download controls use a localized action name containing that file name.
+        governed_by: [POL-UI-005#rule.governance]
+      - id: hidden-stable-id
+        kind: behavior
+        statement: The exact stable Asset ID remains in the Form reference value but never appears in visible content, accessible names, or tooltips.
+        governed_by: [POL-UI-005#rule.governance]
