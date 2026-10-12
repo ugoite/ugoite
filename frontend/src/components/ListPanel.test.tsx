@@ -135,8 +135,9 @@ describe("ListPanel", () => {
         />
       ));
       expect(screen.getAllByText("Entry")).toHaveLength(2);
-      expect(screen.queryByText("entry-1")).not.toBeInTheDocument();
-      expect(screen.queryByText("entry-2")).not.toBeInTheDocument();
+      const cards = screen.getAllByTestId("entry-item");
+      expect(cards[0]).not.toHaveTextContent(mockEntries[0].id);
+      expect(cards[1]).not.toHaveTextContent(mockEntries[1].id);
     });
 
     it("does not coerce structured properties into object text", () => {

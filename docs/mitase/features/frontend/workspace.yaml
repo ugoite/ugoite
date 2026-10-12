@@ -86,6 +86,8 @@ features:
               - kind: satisfies
                 criterion: REQ-FE-004#criterion.display
               - kind: satisfies
+                criterion: REQ-FE-004#criterion.identifier-not-label
+              - kind: satisfies
                 criterion: REQ-FE-008#criterion.selection
           - id: list-panel
             adapter: typescript
@@ -94,6 +96,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-004#criterion.display
+              - kind: satisfies
+                criterion: REQ-FE-004#criterion.identifier-not-label
               - kind: satisfies
                 criterion: REQ-FE-008#criterion.selection
               - kind: satisfies
