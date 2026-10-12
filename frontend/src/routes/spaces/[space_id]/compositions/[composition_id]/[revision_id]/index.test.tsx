@@ -602,9 +602,9 @@ describe("resolveCompositionFieldName", () => {
     );
   });
 
-  it("uses the Form field key when a Form field has no explicit label", () => {
+  it("uses Form field keys and leaves fields without Form metadata unnamed", () => {
     expect(
-      resolveCompositionFieldName(forms(), "form-1", 102, [{ field_id: 102 }]),
+      resolveCompositionFieldName(forms(), "form-1", 102),
     ).toBe("visits");
   });
 

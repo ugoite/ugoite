@@ -263,15 +263,6 @@ export function SavedSqlSourceViewer(props: SavedSqlSourceViewerProps) {
                 onRetry={() => props.onRetry(props.source.draftId)}
               />
             </section>
-
-            <details class="ui-stack-sm">
-              <summary>{props.source.name}</summary>
-              <p class="ui-muted">
-                {t("composition.studioRevisionDetail", {
-                  revision: props.source.revisionId,
-                })}
-              </p>
-            </details>
           </>
         )}
       </Show>

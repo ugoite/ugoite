@@ -38,6 +38,7 @@ const entrySeed = () => ({
   fieldSchema: [
     { field_id: 1, field_type: "string" },
     { field_id: 2, field_type: "double" },
+    { field_id: 3, field_type: "date" },
   ],
   query: { filters: [], sort: [], projection: { kind: "preview" as const } },
 });
@@ -67,7 +68,7 @@ const seedDraft = (): CompositionDraft => {
   const metric = addMetricDisplay(
     draft,
     "src-1",
-    { column: "total" },
+    { kind: "sql_scalar", column: "total" },
     "Total",
   );
   if (!metric.ok) throw new Error("expected metric block");
@@ -94,7 +95,7 @@ function Harness(
     initial: CompositionDraft;
     selectedId: string | null;
     fieldNames?: (formId: string, fieldId: number) => string | undefined;
-    fieldProjectable?: (formId: string, fieldId: number) => boolean | undefined;
+    fieldNamesLoading?: boolean;
   },
 ) {
   const [draft, setDraft] = createSignal(props.initial);
@@ -103,7 +104,7 @@ function Harness(
       draft={draft()}
       selectedId={props.selectedId}
       fieldNames={props.fieldNames}
-      fieldProjectable={props.fieldProjectable}
+      fieldNamesLoading={props.fieldNamesLoading}
       onDraftChange={(next) => {
         harnessCalls.draft.push(next);
         setDraft(next);
@@ -118,17 +119,12 @@ const renderHarness = (
   selectedId: string | null,
   initial?: CompositionDraft,
   fieldNames?: (formId: string, fieldId: number) => string | undefined,
-  fieldProjectable?: (
-    formId: string,
-    fieldId: number,
-  ) => boolean | undefined,
 ) =>
   render(() => (
     <Harness
       initial={initial ?? seedDraft()}
       selectedId={selectedId}
       fieldNames={fieldNames}
-      fieldProjectable={fieldProjectable}
     />
   ));
 
@@ -193,8 +189,12 @@ describe("CompositionInspector", () => {
     expect(harnessCalls.remove).toEqual(["param:month"]);
   });
 
-  it("shows only resolved Form labels for metric values", () => {
-    const added = addMetricDisplay(seedDraft(), "src-2", { fieldId: 1 });
+  it("shows only resolved Form labels for metric values", async () => {
+    const added = addMetricDisplay(seedDraft(), "src-2", {
+      kind: "aggregate",
+      operation: "count_values",
+      fieldId: 1,
+    });
     if (!added.ok || !added.draftId) throw new Error("expected metric block");
 
     render(() => (
@@ -209,62 +209,80 @@ describe("CompositionInspector", () => {
       />
     ));
 
-    const valueSelect = screen.getByLabelText("Value");
-    const options = Array.from(valueSelect.querySelectorAll("option")).map(
+    await screen.findByRole("option", { name: "Expense type" });
+    const fieldSelect = screen.getByLabelText("Field");
+    const options = Array.from(fieldSelect.querySelectorAll("option")).map(
       (option) => option.textContent,
     );
-    expect(options).toEqual(["Expense type"]);
+    expect(options).toEqual(["Choose a field", "Expense type"]);
     expect(options.join(" ")).not.toContain("1");
     expect(options.join(" ")).not.toContain("2");
   });
 
-  it("maps metric source changes to component source and value field", () => {
+  it("maps metric source, operation, field, and SQL column edits", async () => {
     renderHarness(
       "disp-1",
       undefined,
       (_formId, fieldId) =>
-        fieldId === 1
-          ? "Expense type"
-          : fieldId === 2
-          ? "Unprojectable amount"
-          : undefined,
-      (_formId, fieldId) => fieldId !== 2,
+        fieldId === 1 ? "Expense type" : fieldId === 2 ? "Amount" : undefined,
     );
 
-    // The entry source shares no value field: first schema field wins.
     fireEvent.change(screen.getByLabelText("Source"), {
       target: { value: "src-2" },
     });
     expect(harnessCalls.draft).toHaveLength(1);
     expect(metricComponent(harnessCalls.draft[0], "disp-1")).toMatchObject({
       kind: "metric",
-      source: "src-2",
-      value_field: { kind: "entry_field", field_id: 1 },
+      definition: {
+        kind: "aggregate",
+        source: "src-2",
+        operation: "count_rows",
+      },
     });
+    fireEvent.change(screen.getByLabelText("Operation"), {
+      target: { value: "sum" },
+    });
+    await screen.findByRole("option", { name: "Amount" });
+    fireEvent.change(screen.getByLabelText("Field"), {
+      target: { value: "2" },
+    });
+    expect(metricComponent(harnessCalls.draft.at(-1)!, "disp-1"))
+      .toMatchObject({
+        definition: {
+          kind: "aggregate",
+          source: "src-2",
+          operation: "sum",
+          field_id: 2,
+        },
+      });
     expect(
-      Array.from(screen.getByLabelText("Value").querySelectorAll("option"))
+      Array.from(screen.getByLabelText("Field").querySelectorAll("option"))
         .map((option) => option.textContent),
-    ).toEqual(["Expense type"]);
+    ).toEqual(["Choose a field", "Amount"]);
 
-    // The backup SQL source still declares total: the value field is kept.
-    fireEvent.change(screen.getByLabelText("Source"), {
-      target: { value: "src-1" },
-    });
+    // A source change starts with the SQL scalar operation, and the column
+    // label remains the result name rather than an internal source id.
     fireEvent.change(screen.getByLabelText("Source"), {
       target: { value: "src-3" },
+    });
+    fireEvent.change(screen.getByLabelText("Column"), {
+      target: { value: "total" },
     });
     const last = harnessCalls.draft[harnessCalls.draft.length - 1];
     expect(metricComponent(last, "disp-1")).toMatchObject({
       kind: "metric",
-      source: "src-3",
-      value_field: { kind: "sql_column", name: "total" },
+      definition: {
+        kind: "sql_scalar",
+        source: "src-3",
+        column: "total",
+      },
     });
   });
 
-  it("maps metric value changes to the typed value field", () => {
+  it("maps Saved SQL column changes to a typed scalar definition", () => {
     renderHarness("disp-1");
 
-    fireEvent.change(screen.getByLabelText("Value"), {
+    fireEvent.change(screen.getByLabelText("Column"), {
       target: { value: "count" },
     });
 
@@ -272,9 +290,75 @@ describe("CompositionInspector", () => {
     const next = harnessCalls.draft[0];
     expect(metricComponent(next, "disp-1")).toMatchObject({
       kind: "metric",
-      source: "src-1",
-      value_field: { kind: "sql_column", name: "count" },
+      definition: {
+        kind: "sql_scalar",
+        source: "src-1",
+        column: "count",
+      },
     });
+  });
+
+  it("edits optional numeric presentation without changing source bindings", () => {
+    const initial = seedDraft();
+    const before = documentSources(initial);
+    renderHarness("disp-1", initial);
+
+    const unitInput = screen.getByLabelText("Unit");
+    fireEvent.input(unitInput, { target: { value: "US " } });
+    expect(unitInput).toHaveValue("US ");
+    fireEvent.input(unitInput, { target: { value: "US dollars" } });
+    fireEvent.blur(unitInput);
+    fireEvent.input(screen.getByLabelText("Minimum decimal places"), {
+      target: { value: "2" },
+    });
+
+    const formatted = harnessCalls.draft.at(-1)!;
+    expect(metricComponent(formatted, "disp-1")).toMatchObject({
+      kind: "metric",
+      definition: {
+        kind: "sql_scalar",
+        source: "src-1",
+        column: "total",
+      },
+      presentation: {
+        kind: "number",
+        unit: "US dollars",
+        fraction_digits: 2,
+      },
+    });
+    expect(documentSources(formatted)).toBe(before);
+
+    fireEvent.input(screen.getByLabelText("Unit"), {
+      target: { value: "" },
+    });
+    fireEvent.input(screen.getByLabelText("Minimum decimal places"), {
+      target: { value: "" },
+    });
+    expect(metricComponent(harnessCalls.draft.at(-1)!, "disp-1"))
+      .not.toHaveProperty("presentation");
+  });
+
+  it("hides numeric presentation controls for date Metrics", () => {
+    const added = addMetricDisplay(seedDraft(), "src-2", {
+      kind: "aggregate",
+      operation: "max",
+      fieldId: 3,
+    });
+    if (!added.ok || !added.draftId) throw new Error("expected Metric block");
+
+    renderHarness(added.draftId, added.draft);
+
+    expect(screen.queryByLabelText("Unit")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Minimum decimal places"))
+      .not.toBeInTheDocument();
+  });
+
+  it("localizes numeric presentation control names", () => {
+    setLocale("ja");
+    renderHarness("disp-1");
+
+    expect(screen.getByLabelText("単位")).toBeInTheDocument();
+    expect(screen.getByLabelText("小数部の最低桁数")).toBeInTheDocument();
   });
 
   it("binds table label and source edits to the draft display", () => {

@@ -129,7 +129,12 @@ const seedDraft = (): CompositionDraft => {
   });
   if (!month.ok) throw new Error("expected month parameter");
   draft = month.draft;
-  const metric = addMetricDisplay(draft, "src-1", { column: "total" }, "Total");
+  const metric = addMetricDisplay(
+    draft,
+    "src-1",
+    { kind: "sql_scalar", column: "total" },
+    "Total",
+  );
   if (!metric.ok) throw new Error("expected metric block");
   draft = metric.draft;
   const table = addTableDisplay(draft, "src-2", "Details");
@@ -168,22 +173,27 @@ const okPreview = (fingerprint: string) => ({
   },
 });
 
-const metricPreview = (fingerprint: string) => {
-  const response = okPreview(fingerprint);
-  return {
-    ...response,
-    plan: {
-      ...response.plan,
-      component_bindings: [{
-        component_id: "disp-1",
-        kind: "metric",
-        source_id: "src-1",
-        result_property_key: "total",
-        expected_result_type: "integer",
-      }],
-    },
-  };
-};
+const okMetricPreview = (fingerprint: string) => ({
+  ok: true,
+  draft_fingerprint: fingerprint,
+  parameter_definitions: [],
+  plan: {
+    draft_fingerprint: fingerprint,
+    sources: [{
+      source_id: "src-1",
+      request: {},
+      source_schema_fingerprint: "fp",
+      kind: "saved_sql",
+    }],
+    component_bindings: [{
+      component_id: "disp-1",
+      kind: "metric",
+      label: "Total",
+      source_id: "src-1",
+      expected_result_type: "float",
+    }],
+  },
+});
 
 const renderStudio = (initial?: CompositionDraft) =>
   render(() => (
@@ -226,6 +236,17 @@ describe("CompositionStudioSync", () => {
       kind: "entry_query",
       page: { rows: [], has_more: false },
     }));
+    queryMetricMock.mockResolvedValue({
+      ok: true,
+      draft_fingerprint: "fp-studio",
+      result: {
+        component_id: "disp-1",
+        operation: "sql_scalar",
+        source_kind: "saved_sql",
+        result_type: "float",
+        value: 128400,
+      },
+    });
     sqlGetMock.mockResolvedValue({
       id: "sql-1",
       name: "Monthly totals",
@@ -323,49 +344,38 @@ describe("CompositionStudioSync", () => {
     expect(canonicalizeMock).toHaveBeenCalledTimes(1);
   });
 
-  it("passes the current draft and parameter values through the design canvas metric", async () => {
-    previewMock.mockImplementation(async () => metricPreview("fp-draft"));
-    queryMetricMock.mockResolvedValue({
-      ok: true,
-      draft_fingerprint: "fp-draft",
-      result: {
-        component_id: "disp-1",
-        operation: "sql_scalar",
-        source_kind: "saved_sql",
-        result_type: "integer",
-        value: "128400",
-      },
-    });
-    const initial = seedDraft();
-    initial.parameters = initial.parameters.map((parameter) => ({
-      ...parameter,
-      default: parameter.id === "month" ? "2026-10-01" : parameter.default,
-    }));
-
-    renderStudio(initial);
-
-    expect(await screen.findByText("128400", { selector: "output" }))
-      .toBeInTheDocument();
-    expect(queryMetricMock).toHaveBeenCalledTimes(1);
-    const [spaceId, request] = queryMetricMock.mock.calls[0] as [
-      string,
-      {
-        target: { kind: string; yaml?: string };
-        component_id: string;
-        parameters: Record<string, unknown>;
-      },
-      AbortSignal,
-    ];
-    expect(spaceId).toBe("space-1");
-    expect(request).toMatchObject({
-      target: { kind: "draft" },
-      component_id: "disp-1",
-      parameters: { month: "2026-10-01" },
-    });
-    expect(request.target.yaml).toBe(
-      (previewMock.mock.calls[0] as unknown[])[1],
+  it("queries a typed draft metric with its exact preview and current parameter values", async () => {
+    previewMock.mockImplementationOnce(async () =>
+      okMetricPreview("fp-studio")
     );
-    expect(queryMetricMock.mock.calls[0]?.[2]).toBeInstanceOf(AbortSignal);
+    const draft = seedDraft();
+    const withParameterDefault = {
+      ...draft,
+      parameters: draft.parameters.map((parameter) => ({
+        ...parameter,
+        default: parameter.id === "month" ? "2026-10-01" : parameter.default,
+      })),
+    };
+
+    renderStudio(withParameterDefault);
+
+    await waitFor(() => {
+      expect(queryMetricMock).toHaveBeenCalledTimes(1);
+    });
+    const previewYaml = (previewMock.mock.calls[0] as unknown[])[1];
+    expect(queryMetricMock).toHaveBeenCalledWith(
+      "space-1",
+      {
+        target: { kind: "draft", yaml: previewYaml },
+        component_id: "disp-1",
+        parameters: { month: "2026-10-01" },
+      },
+      expect.any(AbortSignal),
+    );
+    // A matching server fingerprint is required before the draft result is shown.
+    expect(
+      await screen.findByText("128400", { selector: "output" }),
+    ).toBeInTheDocument();
   });
 
   it("auto-selects the block source in Data and keeps text and parameter selections", async () => {

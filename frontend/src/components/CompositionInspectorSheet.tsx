@@ -14,7 +14,7 @@ export interface CompositionInspectorSheetProps {
   /** Transient canvas selection; the sheet renders the block only. */
   selectedId: string | null;
   fieldNames?: CompositionFieldNames;
-  fieldProjectable?: (formId: string, fieldId: number) => boolean | undefined;
+  fieldNamesLoading?: boolean;
   /** Single draft mutation channel shared with the canvas. */
   onDraftChange: (draft: CompositionDraft) => void;
   onRemove: () => void;
@@ -104,7 +104,7 @@ export function CompositionInspectorSheet(
               draft={props.draft}
               selectedId={props.selectedId}
               fieldNames={props.fieldNames}
-              fieldProjectable={props.fieldProjectable}
+              fieldNamesLoading={props.fieldNamesLoading}
               onDraftChange={props.onDraftChange}
               onRemove={props.onRemove}
               onDataJump={props.onDataJump}

@@ -321,6 +321,43 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.entry-query-translation
+    - id: browser-data-entry-query-metric-projection-independent
+      adapter: typescript
+      path: frontend/src/lib/composition-draft.test.ts
+      selector:
+        kind: test
+        name: keeps metric aggregate fields independent from table projection
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.display-authoring
+    - id: browser-data-entry-query-metric-projection-independent-workspace
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: keeps EntryQuery aggregate fields independent from table projection
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.display-authoring
+    - id: browser-data-entry-query-projection-initial-cap
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: caps the initial fields projection to the supported limit
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.source-authoring
+    - id: browser-data-entry-query-projection-capacity
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: disables unselected projection fields at the limit and re-enables them after freeing a slot
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.source-authoring
+
     - id: browser-data-entry-query-dialog-bindings
       adapter: typescript
       path: frontend/src/components/CompositionDataWorkspace.test.tsx
@@ -357,7 +394,7 @@ features:
       path: frontend/src/components/CompositionDataWorkspace.test.tsx
       selector:
         kind: test
-        name: uses localized field ordinals while form metadata is loading
+        name: hides field identifiers and synthetic names while Form metadata is loading
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.entry-query-translation
@@ -395,7 +432,7 @@ features:
       path: frontend/src/components/CompositionDataWorkspace.test.tsx
       selector:
         kind: test
-        name: uses field ordinals when the form is absent
+        name: hides field identifiers and synthetic names when the Form is absent
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.entry-query-translation
@@ -410,12 +447,12 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-FE-070#criterion.entry-query-field-labels
-    - id: browser-data-entry-query-stale-field-labels
+    - id: browser-data-entry-query-unnamed-fields
       adapter: typescript
       path: frontend/src/components/CompositionDataWorkspace.test.tsx
       selector:
         kind: test
-        name: 'REQ-FE-070: uses distinct localized labels for fields missing from the schema snapshot'
+        name: 'REQ-FE-070: hides identifiers and generated ordinals for unnamed fields'
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.entry-query-translation
@@ -428,7 +465,7 @@ features:
       path: frontend/src/components/CompositionDataWorkspace.test.tsx
       selector:
         kind: test
-        name: "REQ-FE-070: skips localized fallback labels used by live Form fields"
+        name: does not show generated Form field ordinals when a key is available
       claims:
       - kind: evidences
         anchor: REQ-FE-070#criterion.entry-query-field-labels
@@ -534,13 +571,15 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
-    - id: browser-data-saved-sql-revision-disclosure
+    - id: browser-data-saved-sql-identifiers-hidden
       adapter: typescript
       path: frontend/src/components/CompositionDataWorkspace.test.tsx
       selector:
         kind: test
-        name: keeps the saved sql revision in its closed disclosure
+        name: does not render saved sql source identifiers
       claims:
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.display-authoring
       - kind: evidences
         anchor: REQ-FE-070#criterion.no-persistent-explanatory-copy
     - id: browser-data-saved-sql-exact-revision

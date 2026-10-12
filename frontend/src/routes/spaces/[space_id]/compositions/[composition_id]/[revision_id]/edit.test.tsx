@@ -347,6 +347,38 @@ describe("Composition edit route", () => {
     expect(screen.queryByLabelText("Name")).not.toBeInTheDocument();
   });
 
+  it("refuses legacy Metric definitions without converting them", async () => {
+    const document = {
+      ...lintDocument,
+      spec: {
+        ...lintDocument.spec,
+        components: [{
+          kind: "metric",
+          id: "legacy-total",
+          source: "src-1",
+          value_field: { kind: "sql_column", name: "total" },
+        }],
+      },
+    } as unknown as typeof lintDocument;
+    lintMock.mockResolvedValueOnce({
+      ok: true,
+      value: { document, canonical_yaml: storedYaml, fingerprint: "fp" },
+    });
+    render(() => <CompositionEditRoute />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This revision cannot be edited.",
+    );
+    expect(screen.getByRole("link", { name: "Back to revision" }))
+      .toHaveAttribute(
+        "href",
+        "/spaces/space-1/compositions/tool-1/revision-1",
+      );
+    expect(screen.queryByLabelText("Name")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save" }))
+      .not.toBeInTheDocument();
+  });
+
   it("saves an update with base revision identity and a stable retry key", async () => {
     render(() => <CompositionEditRoute />);
     expect(await screen.findByLabelText("Name")).toHaveValue("Monthly review");
@@ -480,8 +512,11 @@ describe("Composition edit route", () => {
                 kind: "metric",
                 id: "total",
                 label: "Monthly total",
-                source: "month_total",
-                value_field: { kind: "sql_column", name: "total" },
+                definition: {
+                  kind: "sql_scalar",
+                  source: "month_total",
+                  column: "total",
+                },
               },
             ],
             layout: {

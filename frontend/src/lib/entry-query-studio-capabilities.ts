@@ -10,6 +10,7 @@ import type {
   EntryQueryCompositionSort,
 } from "./entry-query-composition";
 import type { Form } from "./types";
+import { compositionFormFieldName } from "./composition-field-name";
 import { formApi } from "./ugoite-client";
 
 /**
@@ -63,30 +64,37 @@ export const studioFieldNames = (
 ): Map<number, string> => {
   const names = new Map<number, string>();
   if (!form) return names;
-  for (const [key, definition] of Object.entries(form.fields ?? {})) {
+  for (const definition of Object.values(form.fields ?? {})) {
     const id = definition.query_capability?.field.field_id ?? definition.id;
     if (typeof id !== "number") continue;
-    if (!names.has(id)) names.set(id, definition.query_capability?.name ?? key);
+    if (!names.has(id)) {
+      const name = compositionFormFieldName([form], form.id, id);
+      if (name) names.set(id, name);
+    }
   }
   return names;
 };
 
 /**
  * Dialog capabilities from the transient Form definition. Fields without
- * backend capability metadata keep their record-key name with the full
- * operator set, matching the previous blind-pick behavior for legacy forms.
+ * backend capability metadata keep the full operator set, matching the
+ * previous blind-pick behavior for legacy forms. Unresolvable names use the
+ * caller's localized fallback instead of exposing opaque keys or ordinals.
  */
 export const studioCapabilitiesFromForm = (
   form: Form,
+  unavailableName = "",
 ): EntryFieldCapability[] => {
   const capabilities: EntryFieldCapability[] = [];
-  for (const [key, definition] of Object.entries(form.fields ?? {})) {
+  for (const definition of Object.values(form.fields ?? {})) {
     const id = definition.query_capability?.field.field_id ?? definition.id;
     if (typeof id !== "number") continue;
     const capability = definition.query_capability;
+    const name = compositionFormFieldName([form], form.id, id) ??
+      unavailableName;
     capabilities.push({
       field: { kind: "property", field_id: id },
-      name: capability?.name ?? key,
+      name,
       field_type: capability?.field_type ?? definition.type,
       filterable: capability?.filterable ?? true,
       sortable: capability?.sortable ?? true,

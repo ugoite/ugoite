@@ -8,22 +8,28 @@ export const displayValueName = (
 ): string => {
   if (display.kind === "text") return "";
   if (display.kind === "table") return "";
-  if ("column" in display.valueField) return display.valueField.column;
+  if (display.definition.kind === "sql_scalar") {
+    return display.definition.column ?? t("composition.studioValue");
+  }
+  const operation = t(
+    `composition.metricOperation.${display.definition.operation}` as
+      | "composition.metricOperation.count_rows"
+      | "composition.metricOperation.count_values"
+      | "composition.metricOperation.sum"
+      | "composition.metricOperation.avg"
+      | "composition.metricOperation.min"
+      | "composition.metricOperation.max",
+  );
+  if (display.definition.operation === "count_rows") return operation;
   const source = sources.find((entry) =>
     entry.draftId === display.sourceDraftId
   );
-  if (source?.kind !== "entry_query") return t("composition.studioValue");
-  const field = source.fieldSchema.find((entry) =>
-    entry.field_id === display.valueField.fieldId
-  );
-  return fieldNames?.(source.formId, display.valueField.fieldId) ??
-    t("composition.studioFieldIndex", {
-      index: field
-        ? source.fieldSchema.findIndex((entry) =>
-          entry.field_id === field.field_id
-        ) + 1
-        : 1,
-    });
+  if (
+    source?.kind !== "entry_query" || display.definition.fieldId === undefined
+  ) {
+    return operation;
+  }
+  return fieldNames?.(source.formId, display.definition.fieldId) ?? operation;
 };
 
 const sourceName = (

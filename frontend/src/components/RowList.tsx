@@ -118,6 +118,7 @@ export function RowListLink(props: RowListLinkProps) {
 interface RowListButtonProps extends RowListMainProps {
   onActivate: () => void;
   selected?: boolean;
+  disabled?: boolean;
 }
 
 /** Full-row button activation for caller-driven navigation/selection. */
@@ -126,6 +127,7 @@ export function RowListButton(props: RowListButtonProps) {
     <button
       type="button"
       class="rowListMain"
+      disabled={props.disabled}
       onClick={() => props.onActivate()}
       aria-label={props.ariaLabel}
       aria-pressed={props.selected}

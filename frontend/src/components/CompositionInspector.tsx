@@ -25,7 +25,7 @@ export interface CompositionInspectorProps {
   /** Transient canvas selection; the inspector renders one block only. */
   selectedId: string | null;
   fieldNames?: CompositionFieldNames;
-  fieldProjectable?: (formId: string, fieldId: number) => boolean | undefined;
+  fieldNamesLoading?: boolean;
   /** Single draft mutation channel shared with the canvas. */
   onDraftChange: (draft: CompositionDraft) => void;
   /** Remove the selected display or unplace the selected parameter control. */
@@ -60,7 +60,7 @@ const resolveSelection = (
 
 /**
  * Inspector for the selected canvas block only. Metric edits bind label,
- * source, and value field; table edits bind label and source; text edits
+ * source, operation, and field; table edits bind label and source; text edits
  * bind content and fixed style; parameter controls show the owned parameter
  * ref and retarget placement without any label override. Every edit flows
  * through draft updaters into the shared debounced preview; text, label,
@@ -86,7 +86,7 @@ export function CompositionInspector(props: CompositionInspectorProps) {
               draft={props.draft}
               display={(entry() as { display: DraftDisplay }).display}
               fieldNames={props.fieldNames}
-              fieldProjectable={props.fieldProjectable}
+              fieldNamesLoading={props.fieldNamesLoading}
               onDraftChange={props.onDraftChange}
               onRemove={props.onRemove}
               onDataJump={props.onDataJump}
@@ -126,7 +126,7 @@ function ComponentInspector(props: {
   draft: CompositionDraft;
   display: DraftDisplay;
   fieldNames?: CompositionFieldNames;
-  fieldProjectable?: (formId: string, fieldId: number) => boolean | undefined;
+  fieldNamesLoading?: boolean;
   onDraftChange: (draft: CompositionDraft) => void;
   onRemove: () => void;
   onDataJump: (jump: CompositionInspectorDataJump) => void;
@@ -172,7 +172,7 @@ function ComponentInspector(props: {
             draft={props.draft}
             display={display()}
             fieldNames={props.fieldNames}
-            fieldProjectable={props.fieldProjectable}
+            fieldNamesLoading={props.fieldNamesLoading}
             apply={apply}
             actions={removeAction()}
             onDataJump={props.onDataJump}

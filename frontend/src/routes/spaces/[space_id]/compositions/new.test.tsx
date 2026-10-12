@@ -17,6 +17,7 @@ const {
   saveMock,
   previewMock,
   querySourceMock,
+  queryMetricMock,
   formListMock,
   sqlListMock,
   sqlGetMock,
@@ -27,6 +28,7 @@ const {
   saveMock: vi.fn(),
   previewMock: vi.fn(),
   querySourceMock: vi.fn(),
+  queryMetricMock: vi.fn(),
   formListMock: vi.fn(),
   sqlListMock: vi.fn(),
   sqlGetMock: vi.fn(),
@@ -75,6 +77,8 @@ vi.mock("~/lib/composition-api", () => ({
       (previewMock as (...call: unknown[]) => unknown)(...args),
     querySource: (...args: unknown[]) =>
       (querySourceMock as (...call: unknown[]) => unknown)(...args),
+    queryMetric: (...args: unknown[]) =>
+      (queryMetricMock as (...call: unknown[]) => unknown)(...args),
   },
   canCreateSavedSqlComposition: (entry: { kind: string }) =>
     entry.kind === "user-query",
@@ -82,7 +86,7 @@ vi.mock("~/lib/composition-api", () => ({
     typeof value === "string" && value.trim() ? value.trim() : "Composition",
   compositionResultTypeFromSql: (resultType: string | undefined) =>
     ["string", "boolean", "integer", "float", "date", "timestamp", "json"]
-      .includes(resultType ?? "")
+        .includes(resultType ?? "")
       ? resultType
       : "json",
 }));
@@ -205,6 +209,13 @@ describe("Composition studio shell", () => {
     });
     fireEvent.click(within(picker).getByRole("tab", { name: "Metric" }));
     fireEvent.click(within(picker).getByRole("button", { name: sourceName }));
+    fireEvent.change(within(picker).getByLabelText("Column"), {
+      target: { value: "total" },
+    });
+    fireEvent.click(within(picker).getByRole("button", { name: "Preview" }));
+    expect(await within(picker).findByLabelText("Metric result"))
+      .toHaveTextContent("1");
+    fireEvent.click(within(picker).getByRole("button", { name: "Add" }));
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
@@ -230,6 +241,7 @@ describe("Composition studio shell", () => {
       has_more: false,
       result_schema: [{ name: "total", type: "float" }],
     });
+    queryMetricMock.mockResolvedValue({ ok: true, result: { value: 1 } });
   });
 
   afterEach(() => cleanup());
@@ -372,9 +384,15 @@ describe("Composition studio shell", () => {
     showDataMode();
 
     fireEvent.click(await screen.findByRole("button", { name: "Add source" }));
-    const picker = await screen.findByRole("dialog", { name: "Choose a source" });
-    fireEvent.click(await within(picker).findByRole("button", { name: "Tasks" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    const picker = await screen.findByRole("dialog", {
+      name: "Choose a source",
+    });
+    fireEvent.click(
+      await within(picker).findByRole("button", { name: "Tasks" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    );
 
     expect(await screen.findByRole("heading", { name: "Tasks" }))
       .toBeInTheDocument();
@@ -634,7 +652,7 @@ describe("Composition studio shell", () => {
     expect(saveMock).not.toHaveBeenCalled();
   });
 
-  it("adds a new one-column Saved SQL metric without a field-pick step", async () => {
+  it("previews a new one-column Saved SQL metric before adding it", async () => {
     const { container } = render(() => <CompositionNewRoute />);
 
     fireEvent.input(screen.getByLabelText("Name"), {
@@ -662,6 +680,24 @@ describe("Composition studio shell", () => {
       await within(sourcePicker).findByRole("tab", { name: "Saved SQL" }),
     );
     fireEvent.click(await screen.findByRole("button", { name: "Monthly" }));
+
+    const metricPicker = await screen.findByRole("dialog", {
+      name: "Add data component",
+    });
+    fireEvent.change(within(metricPicker).getByLabelText("Column"), {
+      target: { value: "total" },
+    });
+    expect(within(metricPicker).getByRole("button", { name: "Add" }))
+      .toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "Select Monthly / total" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(
+      within(metricPicker).getByRole("button", { name: "Preview" }),
+    );
+    expect(await within(metricPicker).findByLabelText("Metric result"))
+      .toHaveTextContent("1");
+    fireEvent.click(within(metricPicker).getByRole("button", { name: "Add" }));
 
     expect(
       await screen.findByRole("button", { name: "Select Monthly / total" }),

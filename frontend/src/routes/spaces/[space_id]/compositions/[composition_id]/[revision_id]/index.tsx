@@ -52,9 +52,10 @@ const findCompositionFormField = (
  * Display-only Form field-name lookup for Composition entry_query tables.
  * Matches the stable Form id only; display names never participate so a
  * Form rename cannot change which fields resolve. Form field keys provide
- * their display names when no explicit label exists. Query semantics never
- * depend on this helper, and missing Form metadata stays unlabeled instead of
- * exposing a generated field ordinal or identifier.
+ * their display names when no explicit label exists. Unresolved names remain
+ * absent so the table can use its current row keys; missing Form metadata stays
+ * unlabeled instead of exposing a generated field ordinal or identifier.
+ * Query semantics never depend on this helper.
  */
 export const resolveCompositionFieldName = (
   forms: readonly Form[] | undefined,
@@ -240,12 +241,8 @@ export default function CompositionRevisionRoute() {
     ) return undefined;
     return document;
   };
-  const fieldNames: CompositionFieldNames = (
-    formId,
-    fieldId,
-  ) => {
-    return resolveCompositionFieldName(forms(), formId, fieldId);
-  };
+  const fieldNames: CompositionFieldNames = (formId, fieldId) =>
+    resolveCompositionFieldName(forms(), formId, fieldId);
   const fieldKeys: CompositionFieldKeys = (formId, fieldId) =>
     resolveCompositionFieldKey(forms(), formId, fieldId);
   const fieldTypes: CompositionFieldTypeLookup = (_formId, fieldId, sourceId) =>

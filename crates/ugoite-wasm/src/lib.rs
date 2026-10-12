@@ -227,6 +227,33 @@ fn invoke_domain(request: serde_json::Value) -> String {
             .cloned()
             .ok_or_else(|| "value is required".to_string())?;
         match action {
+            "domain.composition_aggregate_capability" => {
+                let operation: ugoite_domain::composition::CompositionAggregateOperation =
+                    serde_json::from_value(
+                        payload
+                            .get("operation")
+                            .cloned()
+                            .ok_or_else(|| "operation is required".to_string())?,
+                    )
+                    .map_err(|error| error.to_string())?;
+                let field_type: Option<ugoite_domain::form::FieldType> = payload
+                    .get("field_type")
+                    .filter(|value| !value.is_null())
+                    .cloned()
+                    .map(serde_json::from_value)
+                    .transpose()
+                    .map_err(|error| error.to_string())?;
+                match ugoite_domain::composition_metric::composition_aggregate_result_type(
+                    operation,
+                    field_type.as_ref(),
+                ) {
+                    Ok(result_type) => Ok(serde_json::json!({
+                        "supported": true,
+                        "result_type": result_type,
+                    })),
+                    Err(_) => Ok(serde_json::json!({"supported": false})),
+                }
+            }
             "domain.encode_spreadsheet_csv" => {
                 let rows: Vec<Vec<String>> =
                     serde_json::from_value(payload).map_err(|error| error.to_string())?;
@@ -707,6 +734,51 @@ mod tests {
         let response: Value = serde_json::from_str(&response).unwrap();
         assert_eq!(response["ok"], true, "{response}");
         assert_eq!(response["value"]["protocol_version"], 1);
+    }
+
+    #[test]
+    fn composition_aggregate_capability_matches_the_domain_contract() {
+        let cases = [
+            ("count_rows", None),
+            ("count_rows", Some("integer")),
+            ("count_values", Some("list")),
+            ("sum", Some("integer")),
+            ("sum", Some("date")),
+            ("avg", Some("long")),
+            ("min", Some("date")),
+            ("max", Some("time")),
+        ];
+
+        for (operation, field_type) in cases {
+            let mut value = serde_json::json!({"operation": operation});
+            if let Some(field_type) = field_type {
+                value["field_type"] = serde_json::json!(field_type);
+            }
+            let request = serde_json::json!({
+                "action": "domain.composition_aggregate_capability",
+                "value": value,
+            });
+            let response: Value =
+                serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+            let operation: ugoite_domain::composition::CompositionAggregateOperation =
+                serde_json::from_value(serde_json::json!(operation)).unwrap();
+            let field_type: Option<ugoite_domain::form::FieldType> = field_type
+                .map(|field_type| serde_json::from_value(serde_json::json!(field_type)).unwrap());
+            let expected =
+                match ugoite_domain::composition_metric::composition_aggregate_result_type(
+                    operation,
+                    field_type.as_ref(),
+                ) {
+                    Ok(result_type) => serde_json::json!({
+                        "supported": true,
+                        "result_type": result_type,
+                    }),
+                    Err(_) => serde_json::json!({"supported": false}),
+                };
+
+            assert_eq!(response["ok"], true, "{response}");
+            assert_eq!(response["value"], expected, "{operation:?} {field_type:?}");
+        }
     }
 
     #[test]
