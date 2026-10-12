@@ -916,6 +916,22 @@ describe("CompositionStudioSync", () => {
     expect(previewMock).toHaveBeenCalledTimes(1);
   });
 
+  it("uses authored parameter labels in studio diagnostics", async () => {
+    previewMock.mockImplementation(async () => ({
+      ok: false,
+      draft_fingerprint: "fp-bad",
+      diagnostics: [{ code: "parameter_missing", parameter_id: "month" }],
+    }));
+    renderStudio();
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert", { name: "Diagnostics" }))
+        .toHaveTextContent("Enter a value for Month.");
+    });
+    expect(screen.getByRole("alert", { name: "Diagnostics" }))
+      .not.toHaveTextContent("month");
+  });
+
   it("saves through one visible text button with the blocked reason in its name", () => {
     renderStudio(createEmptyDraft(""));
     // Single control: visible text, never an icon-only button.

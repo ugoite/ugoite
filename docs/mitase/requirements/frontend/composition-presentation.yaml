@@ -11,7 +11,7 @@ requirements:
     criteria:
       - id: parameter-display-names
         kind: behavior
-        statement: Composition parameter surfaces use an authored human label when present and otherwise a localized ordinal based on declaration order. Stable parameter keys remain binding-only and never appear as labels in the parameter list, design palette, placement inspector, runtime control, or saved revision.
+        statement: Composition parameter surfaces use an authored human label when present and otherwise a localized ordinal based on declaration order. Diagnostic messages use the same label and a generic localized parameter name for unknown keys. Stable parameter keys remain binding-only and never appear in the parameter list, design palette, placement inspector, runtime control, diagnostics, or saved revision.
         governed_by: [POL-UI-002#rule.governance, POL-UI-005#rule.governance]
       - id: history-hides-revision-identifiers
         kind: behavior
@@ -62,12 +62,30 @@ requirements:
           - id: parameter-saved-revision-ordinal-label
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
-            selector: { kind: test, name: uses localized ordinals for unlabeled placed and unplaced parameters }
+            selector: { kind: test, name: uses declaration order for localized ordinals when placement order differs }
             claims:
               - kind: verifies
                 criterion: REQ-FE-077#criterion.parameter-display-names
                 covers: [FEAT-FE-014#binding.frontend/target.composition-use-surface]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: uses localized ordinals for unlabeled placed and unplaced parameters } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: uses declaration order for localized ordinals when placement order differs } }
+          - id: parameter-diagnostic-labels
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.test.tsx
+            selector: { kind: test, name: uses localized parameter names instead of binding keys in diagnostics }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-077#criterion.parameter-display-names
+                covers: [FEAT-FE-014#binding.frontend/target.composition-diagnostic-message]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: uses localized parameter names instead of binding keys in diagnostics } }
+          - id: parameter-studio-diagnostic-labels
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: uses authored parameter labels in studio diagnostics }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-077#criterion.parameter-display-names
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: uses authored parameter labels in studio diagnostics } }
           - id: history-revision-identifiers-hidden
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx

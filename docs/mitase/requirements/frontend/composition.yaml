@@ -47,7 +47,7 @@ requirements:
         governed_by: [POL-UI-009#rule.governance]
       - id: typed-parameter-binding
         kind: behavior
-        statement: Parameters use the existing Composition parameter grammar with labels, defaults, and date/month/timestamp inputs. Parameter name surfaces show the authored human label or a localized ordinal based on declaration order; stable parameter keys remain binding-only and never serve as label fallbacks. Saved SQL variables and EntryQuery filter values bind to parameters by reference, and type compatibility is decided by the Rust-owned capability and diagnostics, never by Browser inference.
+        statement: Parameters use the existing Composition parameter grammar with labels, defaults, and date/month/timestamp inputs. Parameter name surfaces show the authored human label or a localized ordinal based on declaration order; diagnostic messages use the same name and a generic localized parameter noun for unknown keys. Stable parameter keys remain binding-only and never serve as label fallbacks. Saved SQL variables and EntryQuery filter values bind to parameters by reference, and type compatibility is decided by the Rust-owned capability and diagnostics, never by Browser inference.
         governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
       - id: side-effect-free-preview
         kind: behavior

@@ -140,6 +140,8 @@ type DashboardFlowRendererProps = {
   texts: Readonly<DashboardFlowTexts>;
   /** Semantic parameter definitions; layout-placed controls come first. */
   parameterDefinitions: readonly CompositionParameterDefinition[];
+  /** Declaration-order definitions used only for localized display names. */
+  parameterDisplayDefinitions?: readonly CompositionParameterDefinition[];
   /** Transient parameter values owned by the composition query handle. */
   parameterValues: Readonly<Record<string, unknown>>;
   onParameterChange: (parameterId: string, value: unknown | undefined) => void;
@@ -220,7 +222,8 @@ export function DashboardFlowRenderer(props: DashboardFlowRendererProps) {
                       parameterDisplayName={item.kind === "parameter" &&
                           item.parameter
                         ? compositionParameterDisplayName(
-                          props.parameterDefinitions,
+                          props.parameterDisplayDefinitions ??
+                            props.parameterDefinitions,
                           item.parameter,
                         )
                         : undefined}

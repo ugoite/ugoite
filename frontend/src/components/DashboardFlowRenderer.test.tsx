@@ -135,7 +135,10 @@ const renderFlow = (
   ));
 
 describe("DashboardFlowRenderer", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    setLocale("en");
+  });
 
   it("renders rows in order with parameter controls interleaved", async () => {
     const query = vi.spyOn(compositionApi, "queryMetric").mockImplementation(

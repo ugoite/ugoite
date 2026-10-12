@@ -13,7 +13,7 @@ export const compositionParameterDisplayName = (
   const index = parameters.findIndex((parameter) =>
     parameter.id === parameterId
   );
-  if (index < 0) return t("composition.studioParameters");
+  if (index < 0) return t("composition.parameterFallback");
   const parameter = parameters[index];
   const label = parameter.label?.trim();
   return label || t("composition.parameterOrdinal", { number: index + 1 });

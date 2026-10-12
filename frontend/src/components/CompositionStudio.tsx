@@ -1020,7 +1020,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
       <Show when={previewDiagnostics()}>
         {(diagnostics) => (
           <>
-            <CompositionDiagnostics diagnostics={diagnostics()} />
+            <CompositionDiagnostics
+              diagnostics={diagnostics()}
+              parameterDefinitions={draft().parameters}
+            />
             <button
               class="ui-button ui-button-secondary"
               type="button"

@@ -242,6 +242,30 @@ export default function CompositionRevisionRoute() {
     ) return undefined;
     return document;
   };
+  const parameterDisplayDefinitions = () => {
+    const resolved = definitions();
+    const declarations = layoutDocument()?.spec.parameters;
+    if (!declarations) {
+      return resolved.map((definition) => ({
+        ...definition,
+        label: definition.label?.trim() || t("composition.parameterFallback"),
+      }));
+    }
+    const byId = new Map(resolved.map((definition) => [
+      definition.id,
+      definition,
+    ]));
+    const declarationIds = new Set(
+      declarations.map((definition) => definition.id),
+    );
+    return [
+      ...declarations.flatMap((declaration) => {
+        const definition = byId.get(declaration.id);
+        return definition ? [definition] : [];
+      }),
+      ...resolved.filter((definition) => !declarationIds.has(definition.id)),
+    ];
+  };
   const fieldNames: CompositionFieldNames = (formId, fieldId) =>
     resolveCompositionFieldName(forms(), formId, fieldId);
   const fieldKeys: CompositionFieldKeys = (formId, fieldId) =>
@@ -294,7 +318,9 @@ export default function CompositionRevisionRoute() {
       return definitions();
     }
     const placed = placedParameterIds();
-    return definitions().filter((definition) => !placed.has(definition.id));
+    return parameterDisplayDefinitions().filter((definition) =>
+      !placed.has(definition.id)
+    );
   };
 
   return (
@@ -370,7 +396,7 @@ export default function CompositionRevisionRoute() {
                   <ParameterControl
                     definition={definition}
                     displayName={compositionParameterDisplayName(
-                      definitions(),
+                      parameterDisplayDefinitions(),
                       definition.id,
                     )}
                     value={handle.parameters()[definition.id]}
@@ -387,7 +413,7 @@ export default function CompositionRevisionRoute() {
       <Show when={diagnostics().length > 0}>
         <CompositionDiagnostics
           diagnostics={diagnostics()}
-          parameterDefinitions={definitions()}
+          parameterDefinitions={parameterDisplayDefinitions()}
         />
       </Show>
       <Show when={current().resolving}>
@@ -418,6 +444,7 @@ export default function CompositionRevisionRoute() {
                 plan={plan()}
                 texts={flowTexts()}
                 parameterDefinitions={definitions()}
+                parameterDisplayDefinitions={parameterDisplayDefinitions()}
                 parameterValues={handle.parameters()}
                 onParameterChange={(parameterId, value) =>
                   handle.setParameter(parameterId, value)}

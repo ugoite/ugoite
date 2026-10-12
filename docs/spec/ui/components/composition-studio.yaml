@@ -229,6 +229,9 @@ components:
     title: Diagnostics
     status: implemented
     ownership: shared-resolve-and-preview-diagnostics-in-every-mode
+    parameter_names: authored-label-or-localized-declaration-ordinal
+    unknown_parameter_names: generic-localized-parameter
+    binding_keys: never-render-in-diagnostics
     source: debounced-shared-preview-handle-only-no-second-path
     rendering:
       mode: shared-composition-diagnostics-with-structural-alert-roles
