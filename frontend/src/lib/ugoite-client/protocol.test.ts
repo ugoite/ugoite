@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildSpreadsheetCsvRequest,
   canonicalizeCompositionDocument,
+  compositionAggregateCapability,
+  type CompositionAggregateOperation,
   type CompositionMetricPageRequest,
   encodeSpreadsheetCsv,
   evaluateCompositionMetricPage,
@@ -84,6 +86,28 @@ describe("portable Ugoite API protocol WASM", () => {
       "revision_id: 00000000-0000-7000-8000-000000000021",
     );
     expect(canonical.fingerprint).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("resolves aggregate candidates through the Rust Domain contract", async () => {
+    const capability = (
+      operation: CompositionAggregateOperation,
+      fieldType?: string,
+    ) => compositionAggregateCapability(operation, fieldType);
+
+    await expect(capability("sum", "integer"))
+      .resolves.toEqual({ supported: true, result_type: "integer" });
+    await expect(capability("sum", "date"))
+      .resolves.toEqual({ supported: false });
+    await expect(capability("avg", "long"))
+      .resolves.toEqual({ supported: true, result_type: "float" });
+    await expect(capability("min", "date"))
+      .resolves.toEqual({ supported: true, result_type: "date" });
+    await expect(capability("max", "time"))
+      .resolves.toEqual({ supported: false });
+    await expect(capability("count_values", "list"))
+      .resolves.toEqual({ supported: true, result_type: "integer" });
+    await expect(capability("count_rows"))
+      .resolves.toEqual({ supported: true, result_type: "integer" });
   });
 
   it("uses the shared spreadsheet-safe CSV encoder", async () => {

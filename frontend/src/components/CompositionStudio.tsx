@@ -46,6 +46,7 @@ import {
   createEmptyDraft,
   defaultParameterValues,
   type DraftInsertTarget,
+  type DraftMetricDefinition,
   type DraftParameter,
   type DraftSaveBlockedReason,
   draftSaveReadiness,
@@ -141,10 +142,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const [displayPickerSourceId, setDisplayPickerSourceId] = createSignal<
     string | null
   >(null);
-  const [
-    displayPickerAutoAddSingleCandidate,
-    setDisplayPickerAutoAddSingleCandidate,
-  ] = createSignal(false);
   const [sourcePickerKind, setSourcePickerKind] = createSignal<
     "table" | "metric" | null
   >(null);
@@ -296,15 +293,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const fieldNames: CompositionFieldNames = (formId, fieldId) => {
     return compositionFormFieldName(forms(), formId, fieldId);
   };
-  const fieldProjectable = (formId: string, fieldId: number) => {
-    const form = forms()?.find((entry) => entry.id === formId);
-    if (!form) return undefined;
-    const field = Object.values(form.fields ?? {}).find((entry) =>
-      (entry.query_capability?.field.field_id ?? entry.id) === fieldId
-    );
-    return field?.query_capability?.projectable ?? true;
-  };
-
   const previewHandle = createCompositionPreviewHandle();
   onCleanup(previewHandle.dispose);
 
@@ -420,7 +408,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
     // missing ones from the server-declared types so the draft previews
     // without dangling references.
     const provisioned = seed.kind === "saved_sql" && seed.seed.variableTypes
-      ? ensureParametersForVariables(added.draft, seed.seed.variableTypes)
+      ? ensureParametersForVariables(
+        added.draft,
+        seed.seed.variableTypes,
+        seed.seed.variableDefaults,
+      )
       : added.draft;
     return { draft: provisioned, draftId: added.draftId };
   };
@@ -481,7 +473,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
       : addMetricDisplay(
         draft(),
         seed.sourceDraftId,
-        seed.valueField,
+        seed.definition,
         seed.label,
         target,
       );
@@ -497,7 +489,61 @@ export function CompositionStudio(props: CompositionStudioProps) {
     setPendingInsert(null);
     setDisplayPickerOpen(false);
     setDisplayPickerSourceId(null);
-    setDisplayPickerAutoAddSingleCandidate(false);
+  };
+
+  const previewMetric = async (seed: {
+    sourceDraftId: string;
+    definition: DraftMetricDefinition;
+  }) => {
+    try {
+      const snapshot = draft();
+      const source = snapshot.sources.find((entry) =>
+        entry.draftId === seed.sourceDraftId
+      );
+      if (!source) {
+        return { ok: false, error: t("composition.metricUnavailable") };
+      }
+
+      // Canonicalize an isolated one-metric draft so unfinished inspector
+      // edits elsewhere cannot block the explicit picker preview.
+      const scratch: CompositionDraft = {
+        ...createEmptyDraft("Metric preview"),
+        sources: [source],
+        parameters: snapshot.parameters.map((parameter) => ({ ...parameter })),
+        nextSourceSeq: snapshot.nextSourceSeq,
+      };
+      const metric = addMetricDisplay(
+        scratch,
+        source.draftId,
+        seed.definition,
+      );
+      if (!metric.ok || !metric.draftId) {
+        return { ok: false, error: t("composition.metricUnavailable") };
+      }
+
+      const canonical = await canonicalizeDraft(metric.draft);
+      const availableValues = {
+        ...defaultParameterValues(snapshot),
+        ...previewHandle.parameters(),
+      };
+      const parameters = Object.fromEntries(
+        metric.draft.parameters.flatMap((parameter) => {
+          const value = availableValues[parameter.id];
+          return value === undefined ? [] : [[parameter.id, value]];
+        }),
+      );
+      const response = await compositionApi.queryMetric(spaceId(), {
+        target: { kind: "draft", yaml: canonical.canonical_yaml },
+        component_id: metric.draftId,
+        parameters,
+      });
+      if (!response.ok || !response.result) {
+        return { ok: false, error: t("composition.metricUnavailable") };
+      }
+      return { ok: true, value: response.result.value };
+    } catch {
+      return { ok: false, error: t("composition.metricUnavailable") };
+    }
   };
 
   const chooseSourceForDisplay = (kind: "table" | "metric") => {
@@ -530,15 +576,12 @@ export function CompositionStudio(props: CompositionStudioProps) {
       setPendingInsert(null);
       setPickerOpen(false);
       setSourcePickerKind(null);
-      setDisplayPickerAutoAddSingleCandidate(false);
       return;
     }
-    // A metric needs a specific scalar field. Add the selected source first,
-    // then return to the metric picker with that source selected so the next
-    // action chooses its human-named field.
+    // Add the source, then configure and preview the typed metric before it
+    // enters the canvas layout.
     setDraft(sourceDraft);
     setDisplayPickerSourceId(draftId);
-    setDisplayPickerAutoAddSingleCandidate(true);
     setPickerOpen(false);
     setSourcePickerKind(null);
     setDisplayPickerKind("metric");
@@ -1003,7 +1046,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
             draft={draft()}
             selectedId={selectedId()}
             fieldNames={fieldNames}
-            fieldProjectable={fieldProjectable}
+            fieldNamesLoading={forms.loading}
             onDraftChange={setDraft}
             onRemove={removeSelectedBlock}
             onDataJump={jumpToSource}
@@ -1016,7 +1059,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
             draft={draft()}
             selectedId={activeId()}
             fieldNames={fieldNames}
-            fieldProjectable={fieldProjectable}
+            fieldNamesLoading={forms.loading}
             onDraftChange={setDraft}
             onRemove={removeSelectedBlock}
             onDataJump={jumpToSource}
@@ -1235,27 +1278,24 @@ export function CompositionStudio(props: CompositionStudioProps) {
             setPickerOpen(false);
             setDataSourcePickerOpen(false);
             setSourcePickerKind(null);
-            setDisplayPickerAutoAddSingleCandidate(false);
           }}
         />
       </Show>
 
       <Show when={displayPickerOpen()}>
         <CompositionDisplayPicker
-          sources={draft().sources}
+          draft={draft()}
           fieldNames={fieldNames}
-          fieldProjectable={fieldProjectable}
           fieldNamesLoading={forms.loading}
           initialKind={displayPickerKind()}
           initialSourceDraftId={displayPickerSourceId()}
-          autoAddSingleCandidate={displayPickerAutoAddSingleCandidate()}
           onAdd={addDisplaySeed}
+          onPreview={previewMetric}
           onChooseSource={chooseSourceForDisplay}
           onClose={() => {
             setPendingInsert(null);
             setDisplayPickerSourceId(null);
             setDisplayPickerOpen(false);
-            setDisplayPickerAutoAddSingleCandidate(false);
           }}
         />
       </Show>

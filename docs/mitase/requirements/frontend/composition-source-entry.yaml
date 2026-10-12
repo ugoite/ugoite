@@ -11,7 +11,37 @@ requirements:
     criteria:
       - id: source-design-entry
         kind: behavior
-        statement: "Design insertion always offers Text and Data, including on an empty canvas. Data opens Table and Metric choices and lists sources already referenced by the Composition before catalog sources. Selecting an existing source in Table mode immediately inserts a table without a label step. Browsing a Form or exact Saved SQL revision in Table mode adds that source and its table together. Metric remains a distinct insertion choice; its authoring semantics are specified by REQ-FE-070#criterion.metric-authoring. Opaque source, Form, Entry, revision, and field identifiers never appear in labels. Component labels are omitted during insertion and remain optional Inspector edits after selection. New Form sources initially project up to 64 projectable Form fields and omit Created and Updated system fields, while their snapshot includes every Composition-expressible Form field up to the document collection limit so later projection, filter, and sort edits stay resolvable. Filter and sort choices are limited to fields present in the source snapshot. Projection choices include only projectable snapshot fields, while already-selected nonprojectable fields remain available for removal. Preview remains the fallback when no Form field is projectable, and can be selected only when the source snapshot covers every current Form field. The Data Sources sidebar lists only Composition-referenced sources; one footer action opens the Form or Saved SQL picker to add a source without creating a display, and the selected source can be removed only while no display references it."
+        statement: >-
+          Design insertion always offers Text and Data, including on an empty
+          canvas. Data opens Table and Metric choices and lists sources already
+          referenced by the Composition before catalog sources. Selecting an
+          existing source in Table mode immediately inserts a table without a
+          label step. Browsing a Form or exact Saved SQL revision in Table mode
+          adds that source and its table together. Metric mode offers typed Form
+          aggregate operations (`count_rows`, `count_values`, `sum`, `avg`, `min`,
+          and `max`) or a declared Saved SQL scalar column. `count_rows` needs no
+          field; other Form operations require a supported field with a resolved
+          human Form name. A newly browsed metric source enters the same setup
+          flow. The user previews the configured Metric through the server before
+          insertion; a failed preview does not add a display. Saved SQL Metrics
+          require exactly one row and one column. EntryQuery Metric fields never
+          change the source's table projection. Metric choices never show field
+          IDs or generated ordinals. Component labels are omitted during
+          insertion and remain optional Inspector edits after selection. New
+          Form sources initially project up to 64 projectable Form fields and
+          omit Created and Updated system fields, while their snapshot includes
+          every Composition-expressible Form field up to the document collection
+          limit so later projection, filter, and sort edits stay resolvable.
+          Filter and sort choices are limited to fields present in the source
+          snapshot. Projection choices include only projectable snapshot fields,
+          while already-selected nonprojectable fields remain available for
+          removal. Preview remains the fallback when no Form field is projectable,
+          and can be selected only when the source snapshot covers every current
+          Form field. The Data Sources sidebar lists only Composition-referenced
+          sources; one footer action opens the Form or Saved SQL picker to add a
+          source without creating a display, and the selected source can be
+          removed only while no display references it.
+
         governed_by: [
           POL-UI-002#rule.governance,
           POL-UI-006#rule.governance,
@@ -241,5 +271,24 @@ requirements:
                   arguments: {
                     file: "src/routes/spaces/[space_id]/compositions/new.test.tsx",
                     test: adds a source and its initial table together from Design,
+                  },
+                }
+          - id: new-source-single-metric
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+            selector:
+              kind: test
+              name: previews a new one-column Saved SQL metric before adding it
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-074#criterion.source-design-entry
+                covers: [
+                  FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-mode,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: "src/routes/spaces/[space_id]/compositions/new.test.tsx",
+                    test: previews a new one-column Saved SQL metric before adding it,
                   },
                 }

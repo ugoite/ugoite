@@ -253,6 +253,67 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.optional-display-labels
+    - id: browser-inspector-metric-source
+      adapter: typescript
+      path: frontend/src/components/CompositionInspector.test.tsx
+      selector:
+        kind: test
+        name: maps metric source, operation, field, and SQL column edits
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.typed-metric-value-field
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.typed-metric-definition
+    - id: browser-metric-picker-form-aggregate
+      adapter: typescript
+      path: frontend/src/components/CompositionDisplayPicker.test.tsx
+      selector:
+        kind: test
+        name: configures Form sum by operation and human field name before insertion
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.metric-authoring
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.entry-query-field-labels
+    - id: browser-metric-picker-saved-sql-scalar
+      adapter: typescript
+      path: frontend/src/components/CompositionDisplayPicker.test.tsx
+      selector:
+        kind: test
+        name: previews an exact Saved SQL scalar before inserting it
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.metric-authoring
+    - id: browser-metric-aggregate-capability-protocol
+      adapter: typescript
+      path: frontend/src/lib/ugoite-client/protocol.test.ts
+      selector:
+        kind: test
+        name: resolves aggregate candidates through the Rust Domain contract
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.metric-authoring
+    - id: browser-inspector-metric-number-presentation
+      adapter: typescript
+      path: frontend/src/components/CompositionInspector.test.tsx
+      selector:
+        kind: test
+        name: edits optional numeric presentation without changing source bindings
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.typed-metric-definition
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.display-authoring
+    - id: browser-inspector-metric-number-presentation-locale
+      adapter: typescript
+      path: frontend/src/components/CompositionInspector.test.tsx
+      selector:
+        kind: test
+        name: localizes numeric presentation control names
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.display-authoring
+
     - id: browser-inspector-table-edits
       adapter: typescript
       path: frontend/src/components/CompositionInspector.test.tsx
@@ -307,6 +368,16 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-inspector-draft-metric-source
+      adapter: typescript
+      path: frontend/src/lib/composition-draft.test.ts
+      selector:
+        kind: test
+        name: retargets metric source and typed definition
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.typed-metric-definition
+
     - id: browser-inspector-draft-text-edits
       adapter: typescript
       path: frontend/src/lib/composition-draft.test.ts
@@ -660,6 +731,16 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-FE-074#criterion.source-design-entry
+    - id: browser-studio-new-source-single-metric
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+      selector:
+        kind: test
+        name: previews a new one-column Saved SQL metric before adding it
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-074#criterion.source-design-entry
+
     - id: browser-studio-source-picker-current-sources
       adapter: typescript
       path: frontend/src/components/CompositionSourcePicker.test.tsx

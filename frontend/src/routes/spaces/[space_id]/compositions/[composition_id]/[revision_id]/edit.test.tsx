@@ -480,8 +480,11 @@ describe("Composition edit route", () => {
                 kind: "metric",
                 id: "total",
                 label: "Monthly total",
-                source: "month_total",
-                value_field: { kind: "sql_column", name: "total" },
+                definition: {
+                  kind: "sql_scalar",
+                  source: "month_total",
+                  column: "total",
+                },
               },
             ],
             layout: {

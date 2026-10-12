@@ -5,7 +5,7 @@ category: Frontend Space selection and preference surfaces
 features:
   - id: FEAT-FE-014
     title: Composition Studio contract
-    summary: Connect the planned Composition Studio authoring contract (structure-first multi-source authoring, aggregate Form and Saved SQL scalar metrics, typed parameter binding, side-effect-free preview, exact-revision edit) to its declarative component specification while implementation and verification land in later changes.
+    summary: Connect the Composition Studio authoring contract to its declarative component specification; metric authoring is implemented, while result presentation and saved-journey verification remain planned.
     status: planned
     bindings:
       - id: frontend
@@ -97,6 +97,20 @@ features:
                 criterion: REQ-FE-070#criterion.display-authoring
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.structure-first-authoring
+          - id: composition-aggregate-capability-client
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.ts
+            selector: { kind: symbol, name: compositionAggregateCapability }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.display-authoring
+          - id: composition-metric-capability
+            adapter: typescript
+            path: frontend/src/lib/composition-metric-capability.ts
+            selector: { kind: symbol, name: supportedCompositionAggregateFieldTypes }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.display-authoring
           - id: composition-inspector
             adapter: typescript
             path: frontend/src/components/CompositionInspector.tsx
@@ -257,6 +271,7 @@ features:
                 criterion: REQ-FE-070#criterion.source-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-source-navigator]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "keeps long navigator names available without exposing source identifiers" } }
+
       - id: composition-picker-name-verification
         role: verification
         facet: verification
@@ -300,5 +315,28 @@ features:
                   arguments: {
                     file: src/components/CompositionDisplayPicker.test.tsx,
                     test: "keeps full source names available for selectable and unavailable rows",
+                  },
+                }
+      - id: metric-preview-freshness-verification
+        role: verification
+        facet: verification
+        responsibility: Verify a preview result for an earlier Metric definition cannot authorize insertion after the definition changes.
+        targets:
+          - id: changed-definition-discards-preview
+            adapter: typescript
+            path: frontend/src/components/CompositionDisplayPicker.test.tsx
+            selector: {
+              kind: test,
+              name: "discards a late preview when the Metric definition changes",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/CompositionDisplayPicker.test.tsx,
+                    test: "discards a late preview when the Metric definition changes",
                   },
                 }

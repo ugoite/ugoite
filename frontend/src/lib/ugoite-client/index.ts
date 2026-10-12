@@ -31,6 +31,9 @@ export { RevisionConflictError } from "../entry-api";
 export {
   buildSpreadsheetCsvRequest,
   canonicalizeCompositionDocument,
+  compositionAggregateCapability,
+  type CompositionAggregateCapability,
+  type CompositionAggregateOperation,
   type CompositionDocumentCanonicalization,
   type CompositionMetricPageEvaluation,
   type CompositionMetricPageRequest,

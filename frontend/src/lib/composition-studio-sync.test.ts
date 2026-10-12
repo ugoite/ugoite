@@ -53,7 +53,7 @@ const seedDraft = (): CompositionDraft => {
   const metric = addMetricDisplay(
     draft,
     "src-1",
-    { column: "total" },
+    { kind: "sql_scalar", column: "total" },
     "Total",
   );
   if (!metric.ok) throw new Error("expected metric block");

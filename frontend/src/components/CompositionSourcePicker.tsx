@@ -179,7 +179,12 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
     try {
       const projectionFields = [];
       const selectedFields = new Set<number>();
-      for (const capability of studioCapabilitiesFromForm(form)) {
+      for (
+        const capability of studioCapabilitiesFromForm(
+          form,
+          t("composition.studioFieldNameUnavailable"),
+        )
+      ) {
         if (
           !capability.projectable || capability.field.kind !== "property" ||
           selectedFields.has(capability.field.field_id)

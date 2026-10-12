@@ -130,6 +130,30 @@ const expenseForm = (): Form => ({
   },
 });
 
+const projectionForm = (count: number): Form => {
+  const form = expenseForm();
+  form.fields = Object.fromEntries(
+    Array.from({ length: count }, (_, index) => {
+      const fieldId = index + 1;
+      return [`field_${fieldId}`, {
+        id: fieldId,
+        type: "string" as const,
+        required: false,
+        query_capability: {
+          field: { kind: "property" as const, field_id: fieldId },
+          name: `Field ${fieldId}`,
+          field_type: "string",
+          filterable: false,
+          sortable: false,
+          projectable: true,
+          supported_operators: [],
+        },
+      }];
+    }),
+  );
+  return form;
+};
+
 /** Form whose fields carry no filter or sort capability at all. */
 const incapableForm = (): Form => ({
   id: "11111111-1111-4111-8111-111111111111",
@@ -682,25 +706,34 @@ describe("CompositionDataWorkspace", () => {
     });
   });
 
-  it("keeps the preview projection unavailable while an EntryQuery metric uses a field", async () => {
+  it("keeps EntryQuery aggregate fields independent from table projection", async () => {
     formApiListMock.mockResolvedValue([expenseForm()]);
     const base = twoSourceDraft();
-    const metric = addMetricDisplay(base, "src-2", { fieldId: 100 });
+    const metric = addMetricDisplay(base, "src-2", {
+      kind: "aggregate",
+      operation: "count_values",
+      fieldId: 100,
+    });
     if (!metric.ok) throw new Error("expected metric");
     const harness = renderWorkspace(metric.draft);
     fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
     const editor = harness.editor();
     await within(editor).findByRole("radio", { name: "Selected fields" });
 
-    expect(
-      within(editor).getByRole("radio", { name: "Preview" }),
-    ).toBeDisabled();
-    expect(
-      within(editor).getByRole("radio", { name: "Selected fields" }),
-    ).toBeChecked();
+    expect(within(editor).getByRole("radio", { name: "Preview" }))
+      .toBeEnabled();
+    fireEvent.click(within(editor).getByRole("radio", { name: "Preview" }));
     expect(harness.current().sources[1]).toMatchObject({
       kind: "entry_query",
-      query: { projection: { kind: "fields", fields: [100] } },
+      query: { projection: { kind: "preview" } },
+    });
+    expect(harness.current().displays[0]).toMatchObject({
+      kind: "metric",
+      definition: {
+        kind: "aggregate",
+        operation: "count_values",
+        fieldId: 100,
+      },
     });
   });
 
@@ -831,6 +864,7 @@ describe("CompositionDataWorkspace", () => {
   });
 
   it("caps the initial fields projection to the supported limit", async () => {
+    formApiListMock.mockResolvedValue([projectionForm(65)]);
     const fields = Array.from({ length: 65 }, (_, index) => ({
       field_id: index + 1,
       field_type: "string",
@@ -857,232 +891,15 @@ describe("CompositionDataWorkspace", () => {
       },
     });
     const columns = await openColumnDialog(editor);
-    expect(
-      within(columns).getByRole("checkbox", { name: "Field 65" }),
-    ).toBeDisabled();
-  });
-
-  it("reserves metric fields when initializing a capped projection", async () => {
-    const fields = Array.from({ length: 65 }, (_, index) => ({
-      field_id: index + 1,
-      field_type: "string",
-    }));
-    const added = addEntryQuerySource(createEmptyDraft("Tool"), {
-      ...entrySeed(),
-      fieldSchema: fields,
+    const unnamed = within(columns).getAllByRole("checkbox", {
+      name: "Field name unavailable",
     });
-    const metric = addMetricDisplay(added.draft, added.draftId, {
-      fieldId: 65,
-    });
-    if (!metric.ok) throw new Error("expected metric");
-    const previewDraft = {
-      ...metric.draft,
-      sources: metric.draft.sources.map((source) =>
-        source.draftId === added.draftId && source.kind === "entry_query"
-          ? {
-            ...source,
-            query: {
-              ...source.query,
-              projection: { kind: "preview" as const },
-            },
-          }
-          : source
-      ),
-    };
-    const harness = renderWorkspace(previewDraft);
-    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
-    const editor = harness.editor();
-
-    fireEvent.click(
-      await within(editor).findByRole("radio", { name: "Selected fields" }),
-    );
-    const columns = await openColumnDialog(editor);
-    expect(harness.current().sources[0]).toMatchObject({
-      kind: "entry_query",
-      query: {
-        projection: {
-          kind: "fields",
-          fields: [65, ...Array.from({ length: 63 }, (_, index) => index + 1)],
-        },
-      },
-    });
-    expect(
-      within(columns).getByRole("checkbox", { name: "Field 65" }),
-    ).toBeChecked();
-    expect(
-      within(columns).getByRole("checkbox", { name: "Field 65" }),
-    ).toBeDisabled();
-    expect(
-      within(columns).getByRole("checkbox", { name: "Field 64" }),
-    ).toBeDisabled();
-  });
-
-  it("requires a free slot before adding an unprojected metric field at capacity", async () => {
-    const fields = Array.from({ length: 65 }, (_, index) => ({
-      field_id: index + 1,
-      field_type: "string",
-    }));
-    const added = addEntryQuerySource(createEmptyDraft("Tool"), {
-      ...entrySeed(),
-      fieldSchema: fields,
-    });
-    const metric = addMetricDisplay(added.draft, added.draftId, {
-      fieldId: 65,
-    });
-    if (!metric.ok) throw new Error("expected metric");
-    const fullProjectionDraft = {
-      ...metric.draft,
-      sources: metric.draft.sources.map((source) =>
-        source.draftId === added.draftId && source.kind === "entry_query"
-          ? {
-            ...source,
-            query: {
-              ...source.query,
-              projection: {
-                kind: "fields" as const,
-                fields: fields.slice(0, 64).map((field) => field.field_id),
-              },
-            },
-          }
-          : source
-      ),
-    };
-    const harness = renderWorkspace(fullProjectionDraft);
-    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
-    const editor = harness.editor();
-    const columns = await openColumnDialog(editor);
-    const requiredField = await within(columns).findByRole("checkbox", {
-      name: "Field 65",
-    });
-
-    expect(requiredField).toBeDisabled();
-    expect(requiredField).toHaveAttribute(
-      "title",
-      "The maximum of 64 fields is selected.",
-    );
-    fireEvent.click(
-      within(columns).getByRole("checkbox", { name: "Field 64" }),
-    );
-    fireEvent.click(within(columns).getByRole("button", { name: "Apply" }));
-    expect(harness.current().sources[0]).toMatchObject({
-      kind: "entry_query",
-      query: {
-        projection: {
-          kind: "fields",
-          fields: [...Array.from({ length: 63 }, (_, index) => index + 1), 65],
-        },
-      },
-    });
-    const updatedColumns = await openColumnDialog(editor);
-    const updatedRequiredField = within(updatedColumns).getByRole("checkbox", {
-      name: "Field 65",
-    });
-    expect(updatedRequiredField).toBeChecked();
-    expect(updatedRequiredField).toBeDisabled();
-  });
-
-  it("disables projection edits when several missing metric fields exceed capacity", async () => {
-    const fields = Array.from({ length: 66 }, (_, index) => ({
-      field_id: index + 1,
-      field_type: "string",
-    }));
-    const added = addEntryQuerySource(createEmptyDraft("Tool"), {
-      ...entrySeed(),
-      fieldSchema: fields,
-    });
-    const firstMetric = addMetricDisplay(added.draft, added.draftId, {
-      fieldId: 65,
-    });
-    if (!firstMetric.ok) throw new Error("expected first metric");
-    const secondMetric = addMetricDisplay(
-      firstMetric.draft,
-      added.draftId,
-      { fieldId: 66 },
-    );
-    if (!secondMetric.ok) throw new Error("expected second metric");
-    const overbookedDraft = {
-      ...secondMetric.draft,
-      sources: secondMetric.draft.sources.map((source) =>
-        source.draftId === added.draftId && source.kind === "entry_query"
-          ? {
-            ...source,
-            query: {
-              ...source.query,
-              projection: {
-                kind: "fields" as const,
-                fields: fields.slice(0, 64).map((field) => field.field_id),
-              },
-            },
-          }
-          : source
-      ),
-    };
-    const harness = renderWorkspace(overbookedDraft);
-    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
-    const editor = harness.editor();
-    const columns = await openColumnDialog(editor);
-
-    for (const field of ["Field 1", "Field 64", "Field 65", "Field 66"]) {
-      const checkbox = await within(columns).findByRole("checkbox", {
-        name: field,
-      });
-      expect(checkbox).toBeDisabled();
-      expect(checkbox).toHaveAttribute(
-        "title",
-        "Edit metric bindings to fit within the 64-field limit.",
-      );
-    }
-  });
-
-  it("disables projection controls when metric bindings require more than 64 fields", async () => {
-    const fields = Array.from({ length: 65 }, (_, index) => ({
-      field_id: index + 1,
-      field_type: "string",
-    }));
-    const added = addEntryQuerySource(createEmptyDraft("Tool"), {
-      ...entrySeed(),
-      fieldSchema: fields,
-      query: {
-        filters: [],
-        sort: [],
-        projection: {
-          kind: "fields",
-          fields: fields.slice(0, 64).map((field) => field.field_id),
-        },
-      },
-    });
-    const draft = {
-      ...added.draft,
-      displays: fields.map((field, index) => ({
-        kind: "metric" as const,
-        draftId: `disp-${index + 1}`,
-        sourceDraftId: added.draftId,
-        valueField: { fieldId: field.field_id },
-      })),
-    };
-    const harness = renderWorkspace(draft);
-    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
-    const editor = harness.editor();
-    const selectedFields = await within(editor).findByRole("radio", {
-      name: "Selected fields",
-    });
-    expect(selectedFields).toBeDisabled();
-    expect(selectedFields).toHaveAttribute(
-      "title",
-      "Edit metric bindings to fit within the 64-field limit.",
-    );
-    const columns = await openColumnDialog(editor);
-    const field64 = within(columns).getByRole("checkbox", {
-      name: "Field 64",
-    });
-    expect(field64).toBeDisabled();
-    expect(field64).toHaveAttribute(
-      "title",
-      "Edit metric bindings to fit within the 64-field limit.",
-    );
+    expect(unnamed).toHaveLength(65);
+    expect(unnamed[64]).toBeDisabled();
   });
 
   it("disables unselected projection fields at the limit and re-enables them after freeing a slot", async () => {
+    formApiListMock.mockResolvedValue([projectionForm(65)]);
     const fields = Array.from({ length: 65 }, (_, index) => ({
       field_id: index + 1,
       field_type: "string",
@@ -1099,29 +916,22 @@ describe("CompositionDataWorkspace", () => {
         },
       },
     });
-    const metric = addMetricDisplay(added.draft, added.draftId, {
-      fieldId: 1,
-    });
-    if (!metric.ok) throw new Error("expected metric");
-    const harness = renderWorkspace(metric.draft);
+    const harness = renderWorkspace(added.draft);
     fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
     const editor = harness.editor();
     const columns = await openColumnDialog(editor);
 
-    const checkbox65 = await within(columns).findByRole("checkbox", {
-      name: "Field 65",
+    const unnamed = await within(columns).findAllByRole("checkbox", {
+      name: "Field name unavailable",
     });
+    expect(unnamed).toHaveLength(65);
+    const checkbox65 = unnamed[64];
     expect(checkbox65).toBeDisabled();
     expect(checkbox65).toHaveAttribute(
       "title",
       "The maximum of 64 fields is selected.",
     );
-    expect(
-      within(columns).getByRole("checkbox", { name: "Field 1" }),
-    ).toBeDisabled();
-    const checkbox64 = within(columns).getByRole("checkbox", {
-      name: "Field 64",
-    });
+    const checkbox64 = unnamed[63];
     expect(checkbox64).toBeEnabled();
 
     fireEvent.click(checkbox64);
@@ -1136,9 +946,10 @@ describe("CompositionDataWorkspace", () => {
       },
     });
     const updatedColumns = await openColumnDialog(editor);
-    expect(
-      within(updatedColumns).getByRole("checkbox", { name: "Field 65" }),
-    ).toBeEnabled();
+    const updatedUnnamed = within(updatedColumns).getAllByRole("checkbox", {
+      name: "Field name unavailable",
+    });
+    expect(updatedUnnamed[64]).toBeEnabled();
   });
 
   it("hides incapable fields behind the shared dialog gating", async () => {
@@ -1356,7 +1167,7 @@ describe("CompositionDataWorkspace", () => {
     });
   });
 
-  it("uses localized field ordinals while form metadata is loading", async () => {
+  it("hides field identifiers and synthetic names while Form metadata is loading", async () => {
     setLocale("ja");
     formApiListMock.mockReturnValue(new Promise(() => {}));
     let draft = createEmptyDraft("Tool");
@@ -1373,11 +1184,10 @@ describe("CompositionDataWorkspace", () => {
     await screen.findByRole("heading", { name: "Expenses" });
     const editor = harness.editor();
 
-    expect((await within(editor).findAllByText("項目 1")).length)
+    expect((await within(editor).findAllByText("フィールド名なし")).length)
       .toBeGreaterThan(0);
-    expect(within(editor).getAllByText("項目 2").length).toBeGreaterThan(0);
-    expect(editor.textContent).toContain("項目 1 一致する lunch");
-    expect(editor.textContent).toContain("項目 2 · 降順");
+    expect(editor.textContent).toContain("フィールド名なし 一致する lunch");
+    expect(editor.textContent).toContain("フィールド名なし · 降順");
     expect(within(editor).queryByText("100", { exact: true })).toBeNull();
     expect(within(editor).queryByText("101", { exact: true })).toBeNull();
     expect(harness.current().sources[0]).toMatchObject({
@@ -1390,20 +1200,23 @@ describe("CompositionDataWorkspace", () => {
     });
   });
 
-  it("uses field ordinals when the form is absent", async () => {
+  it("hides field identifiers and synthetic names when the Form is absent", async () => {
+    setLocale("en");
     formApiListMock.mockResolvedValue([]);
     const harness = renderWorkspace(twoSourceDraft());
     fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
     await screen.findByRole("heading", { name: "Expenses" });
     const editor = harness.editor();
 
-    expect(await within(editor).findByText("Field 1")).toBeInTheDocument();
-    expect(within(editor).getByText("Field 2")).toBeInTheDocument();
+    expect(
+      (await within(editor).findAllByText("Field name unavailable"))
+        .length,
+    ).toBeGreaterThan(0);
     expect(within(editor).queryByText("100", { exact: true })).toBeNull();
     expect(within(editor).queryByText("101", { exact: true })).toBeNull();
   });
 
-  it("REQ-FE-070: uses distinct localized labels for fields missing from the schema snapshot", async () => {
+  it("REQ-FE-070: hides identifiers and generated ordinals for unnamed fields", async () => {
     setLocale("ja");
     formApiListMock.mockResolvedValue([]);
     let draft = createEmptyDraft("Tool");
@@ -1423,9 +1236,9 @@ describe("CompositionDataWorkspace", () => {
     await screen.findByRole("heading", { name: "Expenses" });
     const editor = harness.editor();
 
-    expect(editor.textContent).toContain("項目 3 一致する first");
-    expect(editor.textContent).toContain("項目 4 一致する second");
-    expect(editor.textContent).toContain("項目 4 · 降順");
+    expect(editor.textContent).toContain("フィールド名なし 一致する first");
+    expect(editor.textContent).toContain("フィールド名なし 一致する second");
+    expect(editor.textContent).toContain("フィールド名なし · 降順");
     expect(within(editor).queryByText("108", { exact: true })).toBeNull();
     expect(within(editor).queryByText("109", { exact: true })).toBeNull();
     expect(harness.current().sources[0]).toMatchObject({
@@ -1441,7 +1254,7 @@ describe("CompositionDataWorkspace", () => {
     });
   });
 
-  it("REQ-FE-070: skips localized fallback labels used by live Form fields", async () => {
+  it("does not show generated Form field ordinals when a key is available", async () => {
     setLocale("ja");
     const form = expenseForm();
     form.fields.ordinal_label = {
@@ -1450,7 +1263,7 @@ describe("CompositionDataWorkspace", () => {
       required: false,
       query_capability: {
         field: { kind: "property", field_id: 108 },
-        name: "項目 3",
+        name: "フィールド 3",
         field_type: "string",
         filterable: true,
         sortable: true,
@@ -1482,9 +1295,11 @@ describe("CompositionDataWorkspace", () => {
     const editor = harness.editor();
 
     await waitFor(() => {
-      expect(editor.textContent).toContain("項目 3 一致する known");
-      expect(editor.textContent).toContain("項目 4 一致する schema-missing");
-      expect(editor.textContent).toContain("項目 5 一致する missing");
+      expect(editor.textContent).toContain("ordinal_label 一致する known");
+      expect(editor.textContent).toContain(
+        "フィールド名なし 一致する schema-missing",
+      );
+      expect(editor.textContent).toContain("フィールド名なし 一致する missing");
     });
     expect(within(editor).queryByText("103", { exact: true })).toBeNull();
     expect(within(editor).queryByText("108", { exact: true })).toBeNull();
@@ -1537,12 +1352,13 @@ describe("CompositionDataWorkspace", () => {
     const editor = harness.editor();
 
     await waitFor(() => expect(editor.textContent).toContain("Tax code"));
-    expect(editor.textContent).toContain("Field 3");
+    expect(editor.textContent).toContain("Field name unavailable");
     expect(within(editor).queryByText("108", { exact: true })).toBeNull();
     expect(within(editor).queryByText("109", { exact: true })).toBeNull();
   });
 
   it("falls back to schema fields without a form definition", async () => {
+    setLocale("en");
     formApiListMock.mockRejectedValue(new Error("denied"));
     const harness = renderWorkspace(twoSourceDraft());
     fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
@@ -1556,9 +1372,9 @@ describe("CompositionDataWorkspace", () => {
     expect(
       within(editor).getByRole("button", { name: "Add filter" }),
     ).toBeEnabled();
-    // Fallback labels stay human-readable while IDs remain in query data.
-    expect(within(editor).getByText("Field 1")).toBeInTheDocument();
-    expect(within(editor).getByText("Field 2")).toBeInTheDocument();
+    // No schema ordinal or stored field identity reaches the interface.
+    expect(within(editor).getAllByText("Field name unavailable").length)
+      .toBeGreaterThan(0);
     expect(within(editor).queryByText("100", { exact: true })).toBeNull();
     expect(within(editor).queryByText("101", { exact: true })).toBeNull();
 
@@ -1570,7 +1386,7 @@ describe("CompositionDataWorkspace", () => {
       within(within(dialog).getByLabelText("Filter field 1"))
         .getAllByRole("option")
         .map((option) => option.textContent),
-    ).toEqual(["Field 1", "Field 2"]);
+    ).toEqual(["Field name unavailable", "Field name unavailable"]);
     fireEvent.input(within(dialog).getByLabelText("Value"), {
       target: { value: "2026-10-01" },
     });

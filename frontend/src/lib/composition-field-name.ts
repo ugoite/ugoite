@@ -1,5 +1,9 @@
 import type { Form, FormField } from "./types";
 
+const generatedOrdinal = /^(?:field|フィールド|項目)[\s_-]*\d+$/iu;
+const opaqueFieldKey =
+  /^(?:\d+|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/iu;
+
 /** Display-only Form field name shared by Composition authoring and rendering. */
 export const compositionFormFieldName = (
   forms: readonly Form[] | undefined,
@@ -16,5 +20,10 @@ export const compositionFormFieldName = (
   const label = field.label?.trim();
   if (label) return label;
   const capabilityName = field.query_capability?.name.trim();
-  return capabilityName || key;
+  if (capabilityName && !generatedOrdinal.test(capabilityName)) {
+    return capabilityName;
+  }
+  return opaqueFieldKey.test(key) || generatedOrdinal.test(key)
+    ? undefined
+    : key;
 };

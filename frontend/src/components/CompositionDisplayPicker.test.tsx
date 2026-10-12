@@ -1,6 +1,4 @@
 import "@testing-library/jest-dom/vitest";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import {
   cleanup,
   fireEvent,
@@ -10,8 +8,17 @@ import {
 } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
-import type { DraftSource } from "~/lib/composition-draft";
-import { CompositionDisplayPicker } from "./CompositionDisplayPicker";
+import { createEmptyDraft, type DraftSource } from "~/lib/composition-draft";
+const { compositionAggregateCapabilityMock } = vi.hoisted(() => ({
+  compositionAggregateCapabilityMock: vi.fn(),
+}));
+vi.mock("~/lib/ugoite-client", () => ({
+  compositionAggregateCapability: compositionAggregateCapabilityMock,
+}));
+import {
+  CompositionDisplayPicker,
+  savedSqlScalarCandidates,
+} from "./CompositionDisplayPicker";
 
 const sqlSource: DraftSource = {
   kind: "saved_sql",
@@ -33,54 +40,75 @@ const entrySource: DraftSource = {
   name: "Tasks",
   fieldSchema: [
     { field_id: 100, field_type: "string" },
-    { field_id: 101, field_type: "asset_reference" },
-    { field_id: 102, field_type: "binary" },
+    { field_id: 101, field_type: "double" },
   ],
-  query: { filters: [], sort: [], projection: { kind: "preview" } },
+  query: {
+    filters: [],
+    sort: [],
+    projection: { kind: "preview" },
+  },
 };
 
 const jsonOnlySource: DraftSource = {
-  kind: "saved_sql",
+  ...sqlSource,
   draftId: "src-3",
-  entryId: "sql-2",
-  revisionId: "sql-rev-2",
   name: "Blobs",
   expectedResult: [{ name: "payload", type: "json" }],
-  variables: {},
 };
 
 const rowReferenceOnlySource: DraftSource = {
   ...entrySource,
-  draftId: "src-row-reference",
+  draftId: "src-4",
   name: "Relations",
   fieldSchema: [{ field_id: 102, field_type: "row_reference" }],
 };
 
-const stylesheet = () => readFileSync(join(__dirname, "..", "app.css"), "utf8");
+const draftWithSources = (...sources: DraftSource[]) => ({
+  ...createEmptyDraft("Studio"),
+  sources,
+});
 
 describe("CompositionDisplayPicker", () => {
-  beforeEach(() => setLocale("en"));
-  afterEach(() => cleanup());
+  beforeEach(() => {
+    setLocale("en");
+    compositionAggregateCapabilityMock.mockImplementation(
+      async (operation: string, fieldType?: string) => {
+        const supported = operation === "count_values" ||
+          operation === "min" &&
+            (fieldType === "double" || fieldType === "date") ||
+          operation === "sum" && fieldType === "double";
+        return supported
+          ? { supported: true, result_type: "integer" }
+          : { supported: false };
+      },
+    );
+  });
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
 
-  it("adds a table as soon as an existing source is selected", () => {
+  it("omits ambiguous Saved SQL result names", () => {
+    expect(savedSqlScalarCandidates([
+      { name: "total", type: "float" },
+      { name: "total", type: "integer" },
+      { name: "payload", type: "json" },
+    ])).toEqual([]);
+  });
+
+  it("adds a table immediately when a human-named source is selected", () => {
     const onAdd = vi.fn();
     render(() => (
       <CompositionDisplayPicker
-        sources={[sqlSource, entrySource]}
+        draft={draftWithSources(sqlSource, entrySource)}
         onAdd={onAdd}
         onClose={() => {}}
       />
     ));
 
     const dialog = screen.getByRole("dialog", { name: "Add data component" });
-    const tabs = within(dialog).getByRole("tablist", {
-      name: "Data component type",
-    });
-    expect(within(tabs).getByRole("tab", { name: "Table" }))
-      .toHaveAttribute("aria-selected", "true");
     fireEvent.click(within(dialog).getByRole("button", { name: "Monthly" }));
 
-    expect(onAdd).toHaveBeenCalledOnce();
     expect(onAdd).toHaveBeenCalledWith({
       kind: "table",
       sourceDraftId: sqlSource.draftId,
@@ -88,236 +116,286 @@ describe("CompositionDisplayPicker", () => {
     expect(dialog).not.toHaveTextContent(sqlSource.draftId);
     expect(dialog).not.toHaveTextContent(sqlSource.entryId);
     expect(dialog).not.toHaveTextContent(sqlSource.revisionId);
-    expect(within(dialog).queryByLabelText("Label")).toBeNull();
-    expect(within(dialog).queryByRole("button", { name: "Add" })).toBeNull();
   });
 
-  it("adds a single-candidate metric on source selection and hides JSON fields", () => {
+  it("previews an exact Saved SQL scalar before inserting it", async () => {
     const onAdd = vi.fn();
+    const onPreview = vi.fn().mockResolvedValue({
+      ok: true,
+      value: "9007199254740993.125",
+    });
     render(() => (
       <CompositionDisplayPicker
-        sources={[jsonOnlySource, sqlSource]}
+        draft={draftWithSources(sqlSource, jsonOnlySource)}
+        initialKind="metric"
         onAdd={onAdd}
+        onPreview={onPreview}
         onClose={() => {}}
       />
     ));
 
     const dialog = screen.getByRole("dialog", { name: "Add data component" });
-    fireEvent.click(within(dialog).getByRole("tab", { name: "Metric" }));
     expect(within(dialog).getByRole("button", { name: "Blobs" }))
       .toBeDisabled();
     fireEvent.click(within(dialog).getByRole("button", { name: "Monthly" }));
+    expect(within(dialog).getByLabelText("Column")).toHaveValue("");
+    expect(onAdd).not.toHaveBeenCalled();
+    fireEvent.change(within(dialog).getByLabelText("Column"), {
+      target: { value: "total" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Preview" }));
 
+    expect(await within(dialog).findByText("9007199254740993.125"))
+      .toBeInTheDocument();
+    expect(onPreview).toHaveBeenCalledWith({
+      sourceDraftId: sqlSource.draftId,
+      definition: { kind: "sql_scalar", column: "total" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
     expect(onAdd).toHaveBeenCalledWith({
       kind: "metric",
       sourceDraftId: sqlSource.draftId,
-      valueField: { column: "total" },
+      definition: { kind: "sql_scalar", column: "total" },
     });
     expect(dialog).not.toHaveTextContent("payload");
+    expect(dialog).not.toHaveTextContent("sql-rev-1");
   });
 
-  it("auto-adds one preselected metric candidate after catalog selection", () => {
+  it("configures Form sum by operation and human field name before insertion", async () => {
     const onAdd = vi.fn();
+    const onPreview = vi.fn().mockResolvedValue({ ok: true, value: "42" });
     render(() => (
       <CompositionDisplayPicker
-        sources={[sqlSource]}
+        draft={draftWithSources(entrySource)}
         initialKind="metric"
-        initialSourceDraftId={sqlSource.draftId}
-        autoAddSingleCandidate
-        onAdd={onAdd}
-        onClose={() => {}}
-      />
-    ));
-
-    expect(onAdd).toHaveBeenCalledOnce();
-    expect(onAdd).toHaveBeenCalledWith({
-      kind: "metric",
-      sourceDraftId: sqlSource.draftId,
-      valueField: { column: "total" },
-    });
-  });
-
-  it("selects EntryQuery metrics by their human Form field names", () => {
-    const onAdd = vi.fn();
-    render(() => (
-      <CompositionDisplayPicker
-        sources={[entrySource]}
-        fieldNames={(_formId, fieldId) =>
-          fieldId === 100
-            ? "Title"
-            : fieldId === 102
-            ? "Attachment"
-            : undefined}
-        onAdd={onAdd}
-        onClose={() => {}}
-      />
-    ));
-
-    const dialog = screen.getByRole("dialog", { name: "Add data component" });
-    fireEvent.click(within(dialog).getByRole("tab", { name: "Metric" }));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Tasks" }));
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: "Attachment, Tasks" }),
-    );
-
-    expect(onAdd).toHaveBeenCalledWith({
-      kind: "metric",
-      sourceDraftId: entrySource.draftId,
-      valueField: { fieldId: 102 },
-    });
-    expect(dialog).not.toHaveTextContent(entrySource.formId);
-    expect(dialog).not.toHaveTextContent("100");
-    expect(dialog).not.toHaveTextContent("102");
-  });
-
-  it("omits Form fields the server marks as non-projectable", () => {
-    const source: DraftSource = {
-      ...entrySource,
-      fieldSchema: [
-        { field_id: 100, field_type: "string" },
-        { field_id: 102, field_type: "binary" },
-        { field_id: 103, field_type: "integer" },
-      ],
-    };
-    render(() => (
-      <CompositionDisplayPicker
-        sources={[source]}
         fieldNames={(_formId, fieldId) =>
           fieldId === 100
             ? "Task title"
-            : fieldId === 102
-            ? "Private note"
-            : fieldId === 103
+            : fieldId === 101
             ? "Amount"
             : undefined}
-        fieldProjectable={(_formId, fieldId) => fieldId !== 102}
-        onAdd={() => {}}
+        onAdd={onAdd}
+        onPreview={onPreview}
         onClose={() => {}}
       />
     ));
 
     const dialog = screen.getByRole("dialog", { name: "Add data component" });
-    fireEvent.click(within(dialog).getByRole("tab", { name: "Metric" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Tasks" }));
-
+    expect(within(dialog).getByLabelText("Operation")).toHaveValue(
+      "count_rows",
+    );
+    fireEvent.change(within(dialog).getByLabelText("Operation"), {
+      target: { value: "sum" },
+    });
+    await vi.waitFor(() =>
+      expect(compositionAggregateCapabilityMock).toHaveBeenCalled()
+    );
+    expect(compositionAggregateCapabilityMock.mock.calls).toEqual([
+      ["sum", "string"],
+      ["sum", "double"],
+    ]);
+    await within(dialog).findByRole("option", { name: "Amount" });
+    expect(compositionAggregateCapabilityMock).toHaveBeenCalledWith(
+      "sum",
+      "string",
+    );
+    expect(compositionAggregateCapabilityMock).toHaveBeenCalledWith(
+      "sum",
+      "double",
+    );
+    const field = within(dialog).getByLabelText("Field");
+    expect(field).toHaveValue("");
     expect(
-      within(dialog).getByRole("button", {
-        name: "Task title, Tasks",
-      }),
-    ).toBeInTheDocument();
-    expect(
-      within(dialog).getByRole("button", {
-        name: "Amount, Tasks",
-      }),
-    ).toBeInTheDocument();
-    expect(
-      within(dialog).queryByRole("button", {
-        name: "Private note, Tasks",
-      }),
-    ).toBeNull();
-    expect(dialog).not.toHaveTextContent("102");
+      Array.from(field.querySelectorAll("option")).map((entry) =>
+        entry.textContent
+      ),
+    ).toEqual(["Choose a field", "Amount"]);
+    expect(within(dialog).getByRole("button", { name: "Preview" }))
+      .toBeDisabled();
+    fireEvent.change(field, { target: { value: "101" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Preview" }));
+    expect(await within(dialog).findByText("42")).toBeInTheDocument();
+    expect(onPreview).toHaveBeenCalledWith({
+      sourceDraftId: entrySource.draftId,
+      definition: { kind: "aggregate", operation: "sum", fieldId: 101 },
+    });
+    expect(dialog).not.toHaveTextContent(entrySource.formId);
+    expect(dialog).not.toHaveTextContent("100");
+    expect(dialog).not.toHaveTextContent("101");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    expect(onAdd).toHaveBeenCalledWith({
+      kind: "metric",
+      sourceDraftId: entrySource.draftId,
+      definition: { kind: "aggregate", operation: "sum", fieldId: 101 },
+    });
   });
 
-  it("adds the only projectable metric field when the source is selected", () => {
-    const onAdd = vi.fn();
+  it("uses the Rust capability contract for named Form field choices", async () => {
     const source: DraftSource = {
       ...entrySource,
       fieldSchema: [
         { field_id: 100, field_type: "string" },
-        { field_id: 102, field_type: "binary" },
+        { field_id: 101, field_type: "double" },
+        { field_id: 102, field_type: "date" },
+        { field_id: 103, field_type: "row_reference" },
+        { field_id: 104, field_type: "list" },
       ],
     };
+    const names = new Map([
+      [100, "Task title"],
+      [101, "Amount"],
+      [102, "Started at"],
+      [103, "Parent task"],
+      [104, "Steps"],
+    ]);
     render(() => (
       <CompositionDisplayPicker
-        sources={[source]}
-        fieldNames={(_formId, fieldId) =>
-          fieldId === 100 ? "Task title" : "File size"}
-        fieldProjectable={(_formId, fieldId) => fieldId === 100}
-        onAdd={onAdd}
+        draft={draftWithSources(source)}
+        initialKind="metric"
+        fieldNames={(_formId, fieldId) => names.get(fieldId)}
+        onAdd={() => {}}
+        onPreview={async () => ({ ok: true, value: "1" })}
         onClose={() => {}}
       />
     ));
 
     const dialog = screen.getByRole("dialog", { name: "Add data component" });
-    fireEvent.click(within(dialog).getByRole("tab", { name: "Metric" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Tasks" }));
+    const operation = within(dialog).getByLabelText("Operation");
+    fireEvent.change(operation, { target: { value: "min" } });
+    const field = within(dialog).getByLabelText("Field");
+    await within(dialog).findByRole("option", { name: "Started at" });
+    expect(compositionAggregateCapabilityMock).toHaveBeenCalledWith(
+      "min",
+      "row_reference",
+    );
+    expect(
+      Array.from(field.querySelectorAll("option")).map((option) =>
+        option.textContent
+      ),
+    ).toEqual(["Choose a field", "Amount", "Started at"]);
+    expect(dialog).not.toHaveTextContent("103");
+    expect(dialog).not.toHaveTextContent("104");
 
-    expect(onAdd).toHaveBeenCalledWith({
-      kind: "metric",
-      sourceDraftId: source.draftId,
-      valueField: { fieldId: 100 },
-    });
-    expect(dialog).not.toHaveTextContent("File size");
-    expect(dialog).not.toHaveTextContent("102");
+    fireEvent.change(operation, { target: { value: "count_values" } });
+    await within(dialog).findByRole("option", { name: "Steps" });
+    expect(compositionAggregateCapabilityMock).toHaveBeenCalledWith(
+      "count_values",
+      "list",
+    );
+    expect(
+      Array.from(field.querySelectorAll("option")).map((option) =>
+        option.textContent
+      ),
+    ).toEqual([
+      "Choose a field",
+      "Task title",
+      "Amount",
+      "Started at",
+      "Parent task",
+      "Steps",
+    ]);
   });
 
-  it("does not show field ordinals or IDs when Form names are unavailable", () => {
+  it("keeps successful NULL distinct from zero in the preview", async () => {
+    const onPreview = vi.fn().mockResolvedValue({ ok: true, value: null });
     render(() => (
       <CompositionDisplayPicker
-        sources={[entrySource]}
+        draft={draftWithSources(entrySource)}
+        initialKind="metric"
         onAdd={() => {}}
+        onPreview={onPreview}
+        onClose={() => {}}
+      />
+    ));
+    const dialog = screen.getByRole("dialog", { name: "Add data component" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Tasks" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Preview" }));
+    const noData = await within(dialog).findByLabelText("No data");
+    expect(noData).toHaveTextContent("—");
+    expect(within(dialog).getByRole("button", { name: "Add" })).toBeEnabled();
+  });
+
+  it("discards a late preview when the Metric definition changes", async () => {
+    let resolvePreview:
+      | ((result: { ok: boolean; value?: unknown; error?: string }) => void)
+      | undefined;
+    const onPreview = vi.fn(() =>
+      new Promise<{ ok: boolean; value?: unknown; error?: string }>(
+        (resolve) => resolvePreview = resolve,
+      )
+    );
+    render(() => (
+      <CompositionDisplayPicker
+        draft={draftWithSources(entrySource)}
+        initialKind="metric"
+        fieldNames={(_formId, fieldId) =>
+          fieldId === 101 ? "Amount" : undefined}
+        onAdd={() => {}}
+        onPreview={onPreview}
         onClose={() => {}}
       />
     ));
 
     const dialog = screen.getByRole("dialog", { name: "Add data component" });
-    fireEvent.click(within(dialog).getByRole("tab", { name: "Metric" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Tasks" }));
+    const operation = within(dialog).getByLabelText("Operation");
+    fireEvent.change(operation, { target: { value: "sum" } });
+    await within(dialog).findByRole("option", { name: "Amount" });
+    fireEvent.change(within(dialog).getByLabelText("Field"), {
+      target: { value: "101" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Preview" }));
+    expect(onPreview).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(operation, { target: { value: "count_values" } });
+    expect(resolvePreview).toBeDefined();
+    resolvePreview?.({ ok: true, value: "42" });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(within(dialog).queryByText("42")).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Add" }))
+      .toBeDisabled();
+  });
+
+  it("keeps Forms selectable when names are unavailable without showing IDs", () => {
+    render(() => (
+      <CompositionDisplayPicker
+        draft={draftWithSources(entrySource)}
+        initialKind="metric"
+        onAdd={() => {}}
+        onPreview={async () => ({ ok: true, value: "1" })}
+        onClose={() => {}}
+      />
+    ));
+    const dialog = screen.getByRole("dialog", { name: "Add data component" });
     const source = within(dialog).getByRole("button", { name: "Tasks" });
-    expect(source).toBeDisabled();
-    expect(source).toHaveTextContent("Form field names unavailable");
+    expect(source).toBeEnabled();
+    fireEvent.click(source);
+    fireEvent.change(within(dialog).getByLabelText("Operation"), {
+      target: { value: "sum" },
+    });
+    expect(within(dialog).getByLabelText("Field")).toHaveValue("");
+    expect(within(dialog).getByRole("button", { name: "Preview" }))
+      .toBeDisabled();
     expect(dialog).not.toHaveTextContent(entrySource.formId);
     expect(dialog).not.toHaveTextContent("100");
+    expect(dialog).not.toHaveTextContent("101");
     expect(dialog).not.toHaveTextContent("Field 1");
-  });
-
-  it("only offers fields that fit the source projection limit", () => {
-    const source: DraftSource = {
-      ...entrySource,
-      fieldSchema: Array.from({ length: 65 }, (_, index) => ({
-        field_id: index + 1,
-        field_type: "integer",
-      })),
-      query: {
-        filters: [],
-        sort: [],
-        projection: {
-          kind: "fields",
-          fields: Array.from({ length: 63 }, (_, index) => index + 1),
-        },
-      },
-    };
-    render(() => (
-      <CompositionDisplayPicker
-        sources={[source]}
-        fieldNames={(_formId, fieldId) => `Name ${fieldId}`}
-        onAdd={() => {}}
-        onClose={() => {}}
-      />
-    ));
-
-    const dialog = screen.getByRole("dialog", { name: "Add data component" });
-    fireEvent.click(within(dialog).getByRole("tab", { name: "Metric" }));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Tasks" }));
-    const fields = within(dialog).getAllByRole("button").filter((button) =>
-      button.getAttribute("aria-label")?.includes(", Tasks")
-    );
-
-    expect(fields).toHaveLength(64);
-    expect(fields.at(-1)).toHaveTextContent("Name 64");
-    expect(dialog).not.toHaveTextContent("Name 65");
   });
 
   it("routes catalog browsing with the selected data kind", () => {
     const onChooseSource = vi.fn();
     render(() => (
       <CompositionDisplayPicker
-        sources={[]}
+        draft={createEmptyDraft()}
         onAdd={() => {}}
         onChooseSource={onChooseSource}
         onClose={() => {}}
       />
     ));
-
     const dialog = screen.getByRole("dialog", { name: "Add data component" });
     fireEvent.click(within(dialog).getByRole("tab", { name: "Metric" }));
     fireEvent.click(
@@ -325,43 +403,18 @@ describe("CompositionDisplayPicker", () => {
         name: "Choose a Form or Saved SQL",
       }),
     );
-
     expect(onChooseSource).toHaveBeenCalledWith("metric");
   });
 
-  it("keeps full source names and the dialog usable in a narrow viewport", () => {
-    const longName = "Monthly source with a long human name ".repeat(4).trim();
+  it("keeps kind tabs keyboard-operable and permits non-scalar Tables", () => {
+    const onAdd = vi.fn();
     render(() => (
       <CompositionDisplayPicker
-        sources={[{ ...sqlSource, name: longName }]}
-        onAdd={() => {}}
+        draft={draftWithSources(rowReferenceOnlySource)}
+        onAdd={onAdd}
         onClose={() => {}}
       />
     ));
-
-    const dialog = screen.getByRole("dialog", { name: "Add data component" });
-    const source = within(dialog).getByRole("button", { name: longName });
-    expect(source).toHaveAttribute("title", longName);
-    expect(source.querySelector(".rowListName")).toHaveTextContent(longName);
-    expect(source.outerHTML).not.toContain("src-1");
-    expect(source.outerHTML).not.toContain("sql-1");
-    expect(stylesheet()).toMatch(
-      /\.rowListName\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-width:\s*0;[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/,
-    );
-    expect(stylesheet()).toMatch(
-      /\.ui-dialog\.composition-display-picker[\s\S]*?max-height:\s*calc\(100dvh - 32px\);[\s\S]*?overflow-y:\s*auto;/,
-    );
-  });
-
-  it("keeps kind tabs keyboard-operable", () => {
-    render(() => (
-      <CompositionDisplayPicker
-        sources={[sqlSource]}
-        onAdd={() => {}}
-        onClose={() => {}}
-      />
-    ));
-
     const dialog = screen.getByRole("dialog", { name: "Add data component" });
     const metric = within(dialog).getByRole("tab", { name: "Metric" });
     const table = within(dialog).getByRole("tab", { name: "Table" });
@@ -371,22 +424,7 @@ describe("CompositionDisplayPicker", () => {
     fireEvent.keyDown(metric, { key: "ArrowLeft" });
     expect(table).toHaveFocus();
     expect(table).toHaveAttribute("aria-selected", "true");
-  });
-
-  it("allows a non-scalar source in Table mode", () => {
-    const onAdd = vi.fn();
-    render(() => (
-      <CompositionDisplayPicker
-        sources={[rowReferenceOnlySource]}
-        onAdd={onAdd}
-        onClose={() => {}}
-      />
-    ));
-
-    const dialog = screen.getByRole("dialog", { name: "Add data component" });
-    const source = within(dialog).getByRole("button", { name: "Relations" });
-    expect(source).toBeEnabled();
-    fireEvent.click(source);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Relations" }));
     expect(onAdd).toHaveBeenCalledWith({
       kind: "table",
       sourceDraftId: rowReferenceOnlySource.draftId,

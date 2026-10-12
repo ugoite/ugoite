@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js";
+import { createResource, For, Show } from "solid-js";
 import type { JSX } from "solid-js";
 import {
   type CompositionInspectorDataJump,
@@ -8,105 +8,202 @@ import {
   InspectorShell,
   InspectorSourceField,
 } from "~/components/composition/InspectorFields";
-import { displayValueName } from "~/lib/composition-display-name";
 import {
-  type DisplayScalarCandidate,
-  displayScalarCandidates,
+  entryQueryAggregateCandidates,
+  savedSqlScalarCandidates,
 } from "~/components/CompositionDisplayPicker";
 import {
   type CompositionDraft,
+  type DraftAggregateOperation,
   type DraftDisplay,
-  type DraftMetricValueField,
+  type DraftMetricPresentation,
+  metricDefinitionHasNumericResult,
+  setMetricDefinition,
+  setMetricPresentation,
   setMetricSource,
-  setMetricValueField,
 } from "~/lib/composition-draft";
+import { supportedCompositionAggregateFieldTypes } from "~/lib/composition-metric-capability";
 import { t } from "~/lib/i18n";
 
-const sameValueField = (
-  left: DraftMetricValueField,
-  right: DraftMetricValueField,
-): boolean =>
-  "fieldId" in left
-    ? "fieldId" in right && left.fieldId === right.fieldId
-    : "column" in right && left.column === right.column;
+const aggregateOperations: readonly DraftAggregateOperation[] = [
+  "count_rows",
+  "count_values",
+  "sum",
+  "avg",
+  "min",
+  "max",
+];
 
-const candidateIdForValueField = (
-  valueField: DraftMetricValueField,
-): string =>
-  "fieldId" in valueField ? String(valueField.fieldId) : valueField.column;
+const operationLabel = (operation: DraftAggregateOperation) =>
+  t(
+    `composition.metricOperation.${operation}` as
+      | "composition.metricOperation.count_rows"
+      | "composition.metricOperation.count_values"
+      | "composition.metricOperation.sum"
+      | "composition.metricOperation.avg"
+      | "composition.metricOperation.min"
+      | "composition.metricOperation.max",
+  );
 
-/**
- * Metric inspector: label input, data source picker over the draft's
- * existing sources, and a value selector over entry fields (form schema) or
- * SQL columns (expected_result) with no type inference. Changing the source
- * keeps the value field when it stays valid and otherwise takes the new
- * source's first scalar candidate; a candidate-less source keeps the stale
- * value so resolve diagnostics stay visible instead of guessing.
- */
+/** Operation-oriented metric editor. IDs remain bindings and never become labels. */
 export function MetricInspector(props: {
   draft: CompositionDraft;
   display: DraftDisplay;
   fieldNames?: (formId: string, fieldId: number) => string | undefined;
-  fieldProjectable?: (formId: string, fieldId: number) => boolean | undefined;
+  fieldNamesLoading?: boolean;
   apply: InspectorApply;
   onDataJump: (jump: CompositionInspectorDataJump) => void;
   actions?: JSX.Element;
 }) {
   const metric = () =>
     props.display.kind === "metric" ? props.display : undefined;
-  const sourceId = () => (metric() as { sourceDraftId: string }).sourceDraftId;
-  const candidates = (): DisplayScalarCandidate[] => {
-    const source = props.draft.sources.find((entry) =>
-      entry.draftId === sourceId()
-    );
-    return source
-      ? displayScalarCandidates(
-        source,
+  const sourceId = () => metric()?.sourceDraftId ?? "";
+  const source = () =>
+    props.draft.sources.find((entry) => entry.draftId === sourceId());
+  const operation = () => {
+    const definition = metric()?.definition;
+    return definition?.kind === "aggregate" ? definition.operation : undefined;
+  };
+  const [fieldCapabilities] = createResource(
+    () => {
+      const currentSource = source();
+      const currentOperation = operation();
+      if (
+        currentSource?.kind !== "entry_query" ||
+        currentOperation === undefined || currentOperation === "count_rows"
+      ) return undefined;
+      return {
+        sourceDraftId: currentSource.draftId,
+        operation: currentOperation,
+        fieldSchema: currentSource.fieldSchema,
+      };
+    },
+    async ({ sourceDraftId, operation, fieldSchema }) => ({
+      sourceDraftId,
+      operation,
+      supportedFieldTypes: await supportedCompositionAggregateFieldTypes(
+        operation,
+        fieldSchema.map((field) => field.field_type),
+      ),
+    }),
+  );
+  const currentSupportedFieldTypes = (): ReadonlySet<string> => {
+    const result = fieldCapabilities();
+    return result?.sourceDraftId === sourceId() &&
+        result.operation === operation()
+      ? result.supportedFieldTypes
+      : new Set<string>();
+  };
+  const fieldCandidates = () => {
+    const currentSource = source();
+    const currentOperation = operation();
+    return currentSource?.kind === "entry_query" && currentOperation &&
+        currentOperation !== "count_rows"
+      ? entryQueryAggregateCandidates(
+        currentSource.fieldSchema,
+        currentSource.formId,
+        currentOperation,
+        currentSupportedFieldTypes(),
         props.fieldNames,
-        props.fieldProjectable,
       )
       : [];
   };
-  const currentValueId = () =>
-    candidateIdForValueField(
-      (metric() as { valueField: DraftMetricValueField }).valueField,
-    );
-  const matchedValueId = () =>
-    candidates().some((candidate) => candidate.id === currentValueId())
-      ? currentValueId()
+  const sqlCandidates = () => {
+    const currentSource = source();
+    return currentSource?.kind === "saved_sql"
+      ? savedSqlScalarCandidates(currentSource.expectedResult)
+      : [];
+  };
+  const fieldValue = () => {
+    const definition = metric()?.definition;
+    return definition?.kind === "aggregate" &&
+        definition.fieldId !== undefined
+      ? String(definition.fieldId)
       : "";
-
-  const pickSource = (nextSourceId: string) => {
-    const current = metric();
-    if (!current || nextSourceId === current.sourceDraftId) return;
-    const next = props.draft.sources.find((entry) =>
-      entry.draftId === nextSourceId
-    );
-    if (!next) return;
-    const nextCandidates = displayScalarCandidates(
-      next,
-      props.fieldNames,
-      props.fieldProjectable,
-    );
-    const kept =
-      nextCandidates.some((candidate) =>
-          sameValueField(candidate.valueField, current.valueField)
-        )
-        ? current.valueField
-        : nextCandidates[0]?.valueField ?? current.valueField;
-    props.apply(
-      setMetricSource(props.draft, current.draftId, nextSourceId, kept),
+  };
+  const columnValue = () => {
+    const definition = metric()?.definition;
+    return definition?.kind === "sql_scalar" ? definition.column ?? "" : "";
+  };
+  const supportsNumberPresentation = () => {
+    const currentMetric = metric();
+    const currentSource = source();
+    if (!currentMetric || !currentSource) return false;
+    return metricDefinitionHasNumericResult(
+      currentSource,
+      currentMetric.definition,
     );
   };
 
-  const pickValue = (valueId: string) => {
+  const updatePresentation = (
+    values: Omit<DraftMetricPresentation, "kind">,
+  ) => {
     const current = metric();
     if (!current) return;
-    const candidate = candidates().find((entry) => entry.id === valueId);
-    if (!candidate || candidate.id === currentValueId()) return;
     props.apply(
-      setMetricValueField(props.draft, current.draftId, candidate.valueField),
+      setMetricPresentation(props.draft, current.draftId, {
+        kind: "number",
+        ...(values.unit === undefined ? {} : { unit: values.unit }),
+        ...(values.fractionDigits === undefined
+          ? {}
+          : { fractionDigits: values.fractionDigits }),
+      }),
     );
+  };
+
+  const pickUnit = (unit: string) => {
+    const fractionDigits = metric()?.presentation?.fractionDigits;
+    updatePresentation({
+      unit,
+      ...(fractionDigits === undefined ? {} : { fractionDigits }),
+    });
+  };
+
+  const pickFractionDigits = (value: string) => {
+    const unit = metric()?.presentation?.unit;
+    updatePresentation({
+      ...(unit === undefined ? {} : { unit }),
+      ...(value === "" ? {} : { fractionDigits: Number(value) }),
+    });
+  };
+
+  const pickSource = (nextSourceDraftId: string) => {
+    const current = metric();
+    if (!current || nextSourceDraftId === current.sourceDraftId) return;
+    props.apply(
+      setMetricSource(props.draft, current.draftId, nextSourceDraftId),
+    );
+  };
+
+  const pickOperation = (nextOperation: DraftAggregateOperation) => {
+    const current = metric();
+    if (!current) return;
+    props.apply(setMetricDefinition(props.draft, current.draftId, {
+      kind: "aggregate",
+      operation: nextOperation,
+    }));
+  };
+
+  const pickField = (fieldId: string) => {
+    const current = metric();
+    const currentOperation = operation();
+    if (!current || !currentOperation || currentOperation === "count_rows") {
+      return;
+    }
+    props.apply(setMetricDefinition(props.draft, current.draftId, {
+      kind: "aggregate",
+      operation: currentOperation,
+      ...(fieldId ? { fieldId: Number(fieldId) } : {}),
+    }));
+  };
+
+  const pickColumn = (column: string) => {
+    const current = metric();
+    if (!current) return;
+    props.apply(setMetricDefinition(props.draft, current.draftId, {
+      kind: "sql_scalar",
+      ...(column ? { column } : {}),
+    }));
   };
 
   return (
@@ -129,35 +226,120 @@ export function MetricInspector(props: {
               fieldId={`studio-inspector-source-${entry().draftId}`}
               onPick={pickSource}
             />
-            <div class="ui-field">
-              <label
-                class="ui-label"
-                for={`studio-inspector-value-${entry().draftId}`}
-              >
-                {t("composition.studioValue")}
-              </label>
-              <select
-                id={`studio-inspector-value-${entry().draftId}`}
-                class="ui-input"
-                value={matchedValueId()}
-                onChange={(event) => pickValue(event.currentTarget.value)}
-              >
-                <Show when={!matchedValueId()}>
-                  <option value="" disabled>
-                    {displayValueName(
-                      entry(),
-                      props.draft.sources,
-                      props.fieldNames,
+            <Show when={source()?.kind === "entry_query"}>
+              <div class="ui-field">
+                <label
+                  class="ui-label"
+                  for={`studio-inspector-operation-${entry().draftId}`}
+                >
+                  {t("composition.studioOperation")}
+                </label>
+                <select
+                  id={`studio-inspector-operation-${entry().draftId}`}
+                  class="ui-input"
+                  value={operation() ?? "count_rows"}
+                  onChange={(event) =>
+                    pickOperation(
+                      event.currentTarget.value as DraftAggregateOperation,
                     )}
+                >
+                  <For each={aggregateOperations}>
+                    {(value) => (
+                      <option value={value}>{operationLabel(value)}</option>
+                    )}
+                  </For>
+                </select>
+              </div>
+              <Show when={operation() && operation() !== "count_rows"}>
+                <div class="ui-field">
+                  <label
+                    class="ui-label"
+                    for={`studio-inspector-field-${entry().draftId}`}
+                  >
+                    {t("composition.studioField")}
+                  </label>
+                  <select
+                    id={`studio-inspector-field-${entry().draftId}`}
+                    class="ui-input"
+                    value={fieldValue()}
+                    disabled={props.fieldNamesLoading ||
+                      fieldCapabilities.loading}
+                    onChange={(event) => pickField(event.currentTarget.value)}
+                  >
+                    <option value="" disabled>
+                      {t("composition.studioChooseField")}
+                    </option>
+                    <For each={fieldCandidates()}>
+                      {(candidate) => (
+                        <option value={candidate.id}>{candidate.name}</option>
+                      )}
+                    </For>
+                  </select>
+                </div>
+              </Show>
+            </Show>
+            <Show when={source()?.kind === "saved_sql"}>
+              <div class="ui-field">
+                <label
+                  class="ui-label"
+                  for={`studio-inspector-column-${entry().draftId}`}
+                >
+                  {t("composition.studioColumn")}
+                </label>
+                <select
+                  id={`studio-inspector-column-${entry().draftId}`}
+                  class="ui-input"
+                  value={columnValue()}
+                  onChange={(event) => pickColumn(event.currentTarget.value)}
+                >
+                  <option value="" disabled>
+                    {t("composition.studioChooseColumn")}
                   </option>
-                </Show>
-                <For each={candidates()}>
-                  {(candidate) => (
-                    <option value={candidate.id}>{candidate.name}</option>
-                  )}
-                </For>
-              </select>
-            </div>
+                  <For each={sqlCandidates()}>
+                    {(candidate) => (
+                      <option value={candidate.id}>{candidate.name}</option>
+                    )}
+                  </For>
+                </select>
+              </div>
+            </Show>
+            <Show when={supportsNumberPresentation()}>
+              <div class="ui-field">
+                <label
+                  class="ui-label"
+                  for={`studio-inspector-metric-unit-${entry().draftId}`}
+                >
+                  {t("composition.studioMetricUnit")}
+                </label>
+                <input
+                  id={`studio-inspector-metric-unit-${entry().draftId}`}
+                  class="ui-input"
+                  value={entry().presentation?.unit ?? ""}
+                  onInput={(event) => pickUnit(event.currentTarget.value)}
+                  onBlur={(event) =>
+                    pickUnit(event.currentTarget.value.trim())}
+                />
+              </div>
+              <div class="ui-field">
+                <label
+                  class="ui-label"
+                  for={`studio-inspector-metric-fraction-digits-${entry().draftId}`}
+                >
+                  {t("composition.studioMetricFractionDigits")}
+                </label>
+                <input
+                  id={`studio-inspector-metric-fraction-digits-${entry().draftId}`}
+                  class="ui-input"
+                  type="number"
+                  min="0"
+                  max="255"
+                  step="1"
+                  value={entry().presentation?.fractionDigits?.toString() ?? ""}
+                  onInput={(event) =>
+                    pickFractionDigits(event.currentTarget.value)}
+                />
+              </div>
+            </Show>
             <InspectorDataJumpButton
               sourceDraftId={sourceId()}
               onDataJump={props.onDataJump}

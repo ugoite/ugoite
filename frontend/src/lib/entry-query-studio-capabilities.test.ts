@@ -151,6 +151,53 @@ describe("entry-query-studio-capabilities", () => {
     });
   });
 
+  it("hides generated capability ordinals and opaque field keys", () => {
+    const form: Form = {
+      id: "form-ordinal",
+      name: "Expenses",
+      version: 1,
+      template: "",
+      fields: {
+        amount: {
+          id: 201,
+          type: "number",
+          required: false,
+          query_capability: {
+            field: { kind: "property", field_id: 201 },
+            name: "項目 3",
+            field_type: "number",
+            filterable: true,
+            sortable: true,
+            projectable: true,
+            supported_operators: ["equals"],
+          },
+        },
+        "101": {
+          id: 202,
+          type: "number",
+          required: false,
+          query_capability: {
+            field: { kind: "property", field_id: 202 },
+            name: "Field 9",
+            field_type: "number",
+            filterable: true,
+            sortable: true,
+            projectable: true,
+            supported_operators: ["equals"],
+          },
+        },
+      },
+    };
+
+    expect(studioFieldNames(form).get(201)).toBe("amount");
+    expect(studioFieldNames(form).has(202)).toBe(false);
+    const capabilities = studioCapabilitiesFromForm(form, "Name unavailable");
+    expect(capabilities.find((field) => field.field.field_id === 201)?.name)
+      .toBe("amount");
+    expect(capabilities.find((field) => field.field.field_id === 202)?.name)
+      .toBe("Name unavailable");
+  });
+
   it("keeps schema field IDs while using supplied fallback labels", () => {
     expect(studioFieldNames(undefined).size).toBe(0);
     expect(

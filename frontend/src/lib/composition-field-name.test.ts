@@ -14,7 +14,12 @@ describe("compositionFormFieldName", () => {
   it("prefers the explicit Form label", () => {
     expect(
       compositionFormFieldName(
-        [form({ id: 1, type: "number", required: false, label: "Amount spent" })],
+        [form({
+          id: 1,
+          type: "number",
+          required: false,
+          label: "Amount spent",
+        })],
         "form-1",
         1,
       ),
@@ -52,6 +57,55 @@ describe("compositionFormFieldName", () => {
         1,
       ),
     ).toBe("amount");
+  });
+
+  it("falls back from generated ordinals to human keys, not opaque IDs", () => {
+    for (const name of ["項目 1", "フィールド 3", "Field 4"]) {
+      const generated = form({
+        id: 1,
+        type: "number",
+        required: false,
+        query_capability: {
+          field: { kind: "property", field_id: 1 },
+          name,
+          field_type: "number",
+          filterable: true,
+          sortable: true,
+          projectable: true,
+          supported_operators: [],
+        },
+      });
+      expect(compositionFormFieldName([generated], "form-1", 1)).toBe(
+        "amount",
+      );
+    }
+    const ordinal = form({
+      id: 1,
+      type: "number",
+      required: false,
+      query_capability: {
+        field: { kind: "property", field_id: 1 },
+        name: "項目 1",
+        field_type: "number",
+        filterable: true,
+        sortable: true,
+        projectable: true,
+        supported_operators: [],
+      },
+    });
+    expect(compositionFormFieldName([ordinal], "form-1", 1)).toBe("amount");
+    expect(
+      compositionFormFieldName(
+        [{
+          ...ordinal,
+          fields: {
+            "101": { id: 1, type: "number", required: false } as never,
+          },
+        }],
+        "form-1",
+        1,
+      ),
+    ).toBeUndefined();
   });
 
   it("does not resolve a different Form by its display name", () => {

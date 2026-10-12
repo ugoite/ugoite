@@ -149,7 +149,12 @@ const seedDraft = (): CompositionDraft => {
   });
   if (!month.ok) throw new Error("expected month parameter");
   draft = month.draft;
-  const metric = addMetricDisplay(draft, "src-1", { column: "total" }, "Total");
+  const metric = addMetricDisplay(
+    draft,
+    "src-1",
+    { kind: "sql_scalar", column: "total" },
+    "Total",
+  );
   if (!metric.ok) throw new Error("expected metric block");
   draft = metric.draft;
   const table = addTableDisplay(draft, "src-2", "Details");

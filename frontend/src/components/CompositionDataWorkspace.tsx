@@ -92,25 +92,14 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
     props.draft.sources.find((source) =>
       source.draftId === props.selectedSourceId
     );
-  const metricFieldIds = (
-    sourceDraftId: string,
-  ): number[] => [
-    ...new Set(
-      props.draft.displays.flatMap((display) =>
-        display.kind === "metric" && display.sourceDraftId === sourceDraftId &&
-          "fieldId" in display.valueField
-          ? [display.valueField.fieldId]
-          : []
-      ),
-    ),
-  ];
   const selectedSourceIndex = () =>
     props.draft.sources.findIndex((source) =>
       source.draftId === props.selectedSourceId
     );
   const selectedSourceUsedByDisplay = () =>
     props.draft.displays.some((display) =>
-      display.kind !== "text" && display.sourceDraftId === props.selectedSourceId
+      display.kind !== "text" &&
+      display.sourceDraftId === props.selectedSourceId
     );
 
   const closeNavigator = () => {
@@ -131,7 +120,9 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
   });
 
   onMount(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    if (
+      typeof window === "undefined" || typeof window.matchMedia !== "function"
+    ) {
       return;
     }
     const media = window.matchMedia("(max-width: 560px)");
@@ -162,8 +153,8 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
         "dataWorkspace--navigator-collapsed": !navigatorOpen(),
         "dataWorkspace--mobile": narrowViewport(),
         "dataWorkspace--collapsible": props.collapsible,
-        "dataWorkspace--mobile-navigator-open":
-          narrowViewport() && navigatorOpen(),
+        "dataWorkspace--mobile-navigator-open": narrowViewport() &&
+          navigatorOpen(),
       }}
     >
       <aside
@@ -224,10 +215,8 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
           <button
             type="button"
             class="pill iconpill icononly"
-            disabled={
-              selectedSourceIndex() < 0 ||
-              selectedSourceIndex() === props.draft.sources.length - 1
-            }
+            disabled={selectedSourceIndex() < 0 ||
+              selectedSourceIndex() === props.draft.sources.length - 1}
             aria-label={t("composition.studioMoveDown", {
               name: selectedSource()?.name ?? t("composition.studioSource"),
             })}
@@ -321,9 +310,6 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
                 <EntryQuerySourceEditor
                   spaceId={props.spaceId}
                   source={source() as EntryQuerySource}
-                  requiredMetricFieldIds={metricFieldIds(
-                    (source() as EntryQuerySource).draftId,
-                  )}
                   onFilters={(filters) =>
                     props.onEntryQueryFilters(
                       (source() as EntryQuerySource).draftId,

@@ -54,7 +54,7 @@ components:
       title: Data
       source: >-
         draft sources restored from the lint-normalized document with human names
-        only; use localized ordinal labels when current source metadata is
+        only; use a localized source-kind label when current source metadata is
         unavailable instead of exposing document source identifiers
       selection: full-row-activate
       reorder: keyboard-operable-move-up-down
@@ -86,7 +86,8 @@ components:
       type: dialog
       title: Choose a source
       source: Forms through form.list and Saved SQL through sql.list
-      selection: full-row-activate; table adds immediately; metric continues to source-calculation-field-preview-insert when needed
+      selection: full-row-activate; table adds immediately; metric opens operation or column setup then server preview before insertion
+
       rendering: human-name-only rows with loading, empty, and error states
       row_name_overflow: ellipsis-with-full-name-native-title
       internal_identifiers: form-source-draft-entry-revision-ids-never-rendered
@@ -99,14 +100,18 @@ components:
       type: dialog
       title: Add data component
       kind_selection: Table/Metric tabs inside the picker
-      sequence: kind, then source, calculation, compatible field-or-column-when-required, preview, insert
-      selection: table adds on source selection; metric adds only after a valid preview
+      sequence: kind, source, Form operation or Saved SQL column, server preview, insert
+      selection: table adds on source selection; Metric inserts only after successful preview
       label: omitted during insertion; optional edit in Inspector after selection
       source_selection: catalog browse preserves selected Table or Metric kind
       entry_query_field_labels: resolved human Form labels only; no field ID or ordinal fallback
-      entry_query_metric_field: stored_in_the_metric_definition_without_changing_table_projection
-      entry_query_metric_candidates: operation_compatible_form_schema_fields_from_shared_rust_domain_via_wasm
-      saved_sql_metric_column: selected_from_an_exact_saved_revision
+      entry_query_metric_field: independent_of_table_projection
+      entry_query_metric_candidates: operation-specific-supported-types-with-human-Form-name-only
+      saved_sql_metric_candidates: declared-non-json-result-columns
+      metric_preview: server-side-exact-value-before-insertion
+      projection_initialization: schema-order-up-to-64-projectable-fields
+      projection_capacity: table-projection-limit-does-not-limit-metric-fields
+
       internal_field_ids: never rendered
       sizing: 720px maximum width and viewport-capped vertical scrolling
     - id: studio-tags

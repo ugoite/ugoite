@@ -219,6 +219,31 @@ export const validateAssetReference = async (
     value,
   });
 
+export type CompositionAggregateOperation =
+  | "count_rows"
+  | "count_values"
+  | "sum"
+  | "avg"
+  | "min"
+  | "max";
+
+export type CompositionAggregateCapability =
+  | { supported: true; result_type: string }
+  | { supported: false };
+
+/** Resolve one aggregate × Form field type through the Rust Domain contract. */
+export const compositionAggregateCapability = async (
+  operation: CompositionAggregateOperation,
+  fieldType?: string,
+): Promise<CompositionAggregateCapability> =>
+  await invokeProtocol<CompositionAggregateCapability>({
+    action: "domain.composition_aggregate_capability",
+    value: {
+      operation,
+      ...(fieldType === undefined ? {} : { field_type: fieldType }),
+    },
+  });
+
 export type CompositionMetricPageRequest = {
   expected_result_type: Exclude<SqlResultColumnType, "decimal">;
   is_complete: boolean;
