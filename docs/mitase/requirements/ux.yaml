@@ -457,12 +457,12 @@ requirements:
           - id: account-security-credential-identifiers
             adapter: typescript
             path: frontend/src/routes/settings/security.test.tsx
-            selector: { kind: test, name: "REQ-UX-LIST-001: never renders passkey or session identifiers" }
+            selector: { kind: test, name: "REQ-UX-LIST-001: hides passkey and session identifiers from credential lists" }
             claims:
               - kind: verifies
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
                 covers: [FEAT-UX-009#binding.auth-form-implementation/target.security-surface]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/settings/security.test.tsx, test: "REQ-UX-LIST-001: never renders passkey or session identifiers" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/settings/security.test.tsx, test: "REQ-UX-LIST-001: hides passkey and session identifiers from credential lists" } }
       - id: history-row-verification
         role: verification
         facet: verification

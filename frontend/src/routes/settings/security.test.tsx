@@ -102,7 +102,7 @@ describe("SecuritySettingsRoute", () => {
     expect(screen.queryByRole("tab", { name: "CLI / MCP" })).toBeNull();
   });
 
-  it("REQ-UX-LIST-001: keeps passkey IDs out of Security settings and revokes by exact credential identity", async () => {
+  it("REQ-UX-LIST-001: keeps passkey IDs out of the Passkeys list and revokes by exact credential identity", async () => {
     setLocale("ja");
     const credentialIds = ["credential-private-1", "credential-private-2"];
     vi.mocked(authApi.listPasskeys).mockResolvedValue([{
@@ -143,7 +143,7 @@ describe("SecuritySettingsRoute", () => {
     );
   });
 
-  it("REQ-UX-LIST-001: keeps session IDs out of Security settings and revokes by exact session identity", async () => {
+  it("REQ-UX-LIST-001: keeps session IDs out of the Sessions list and revokes by exact session identity", async () => {
     setLocale("ja");
     searchParams.tab = "sessions";
     const sessionIds = ["session-private-1", "session-private-2"];
@@ -220,7 +220,7 @@ describe("SecuritySettingsRoute", () => {
       .not.toBeInTheDocument();
   });
 
-  it("REQ-UX-LIST-001: never renders passkey or session identifiers", async () => {
+  it("REQ-UX-LIST-001: hides passkey and session identifiers from credential lists", async () => {
     const credentialId = "passkey-internal-id";
     const secondCredentialId = "passkey-second-internal-id";
     const sessionId = "session-internal-id";
