@@ -298,6 +298,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
   onCleanup(previewHandle.dispose);
 
   let previewTimer: ReturnType<typeof setTimeout> | undefined;
+  let previewGeneration = 0;
 
   let pendingSave: PendingCompositionSaveAttempt | undefined;
 
@@ -342,21 +343,29 @@ export function CompositionStudio(props: CompositionStudioProps) {
   };
 
   onCleanup(() => {
+    previewGeneration += 1;
     if (previewTimer !== undefined) clearTimeout(previewTimer);
   });
 
   const schedulePreview = (snapshot: CompositionDraft) => {
+    const generation = ++previewGeneration;
     if (previewTimer !== undefined) clearTimeout(previewTimer);
     previewTimer = undefined;
     previewTimer = setTimeout(() => {
       previewTimer = undefined;
       void (async () => {
+        if (generation !== previewGeneration) return;
         if (!draftMetricsReady(snapshot) || !draftMetricsReady(draft())) {
           previewHandle.invalidate();
           return;
         }
         try {
           const canonical = await canonicalizeDraft(snapshot);
+          if (generation !== previewGeneration) return;
+          if (!draftMetricsReady(snapshot) || !draftMetricsReady(draft())) {
+            previewHandle.invalidate();
+            return;
+          }
           // Scope resolves against the latest draft at fire time so block,
           // source, and mode changes during an in-flight preview never
           // resurrect a stale fetch set; the generation guard drops the
@@ -387,6 +396,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
     if (!draftMetricsReady(draft())) return;
     const current = previewHandle.state();
     if (!current.yaml || !current.spaceId) return;
+    previewGeneration += 1;
     if (previewTimer !== undefined) clearTimeout(previewTimer);
     previewTimer = undefined;
     void previewHandle.preview(current.spaceId, current.yaml, {
@@ -400,6 +410,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
   createEffect(() => {
     const snapshot = draft();
     if (snapshot.sources.length === 0 || !draftMetricsReady(snapshot)) {
+      previewGeneration += 1;
       if (previewTimer !== undefined) {
         clearTimeout(previewTimer);
         previewTimer = undefined;

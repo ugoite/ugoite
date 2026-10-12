@@ -703,6 +703,31 @@ describe("CompositionStudioSync", () => {
       .not.toBeInTheDocument();
   });
 
+  it("does not preview a canonicalization that resolves after a Metric becomes incomplete", async () => {
+    vi.useFakeTimers();
+    let finishCanonicalize!: (value: { canonical_yaml: string }) => void;
+    canonicalizeMock.mockImplementationOnce(
+      () => new Promise((resolve) => finishCanonicalize = resolve),
+    );
+    renderStudio(rowCountMetricDraft());
+
+    await vi.advanceTimersByTimeAsync(401);
+    expect(canonicalizeMock).toHaveBeenCalledTimes(1);
+    expect(previewMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Select Count" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Operation" }), {
+      target: { value: "sum" },
+    });
+    finishCanonicalize({ canonical_yaml: "yaml:stale" });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(canonicalizeMock).toHaveBeenCalledTimes(1);
+    expect(previewMock).not.toHaveBeenCalled();
+    expect(queryMetricMock).not.toHaveBeenCalled();
+  });
+
   it("disables Save when a Saved SQL Metric has no output column", () => {
     renderStudio(incompleteSavedSqlMetricDraft());
 

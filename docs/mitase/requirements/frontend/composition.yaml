@@ -407,6 +407,15 @@ requirements:
                 criterion: REQ-FE-070#criterion.metric-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: skips canonicalization and clears preview when a Metric edit is incomplete } }
+          - id: studio-stale-metric-canonicalization
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: does not preview a canonicalization that resolves after a Metric becomes incomplete }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.metric-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: does not preview a canonicalization that resolves after a Metric becomes incomplete } }
           - id: studio-saved-sql-metric-save-readiness
             adapter: typescript
             path: frontend/src/components/CompositionStudioSync.test.tsx
