@@ -88,20 +88,29 @@ The dependency graph is:
                                       |-> Table rows
     Input B -> Variable heading -> Text heading
 
-Resolve variable references into a dependency index. A valid value change
-updates the single Variables Store and all bound Inputs and Text immediately.
-It also immediately marks only dependent SQL-backed components pending and
-invalidates their previous results. Re-execute only Sources whose referenced
-variable subset changed. A variable used only by Text must not issue SQL.
-Reordering components or rows must not change results.
+Resolve variable references into a dependency index. Each declared variable
+has one entry in the transient Variables Store containing its raw input buffer,
+validation state, and (when valid) typed value. Every Input bound to that
+variable renders the same raw buffer and validation state. Editing any bound
+Input synchronously updates that one entry and all other bound Inputs and Text;
+there are no per-Input copies of a variable's value. A valid value change also
+immediately marks only dependent SQL-backed components pending and invalidates
+their previous results. Re-execute only Sources whose referenced variable
+subset changed. A variable used only by Text must not issue SQL. Reordering
+components or rows must not change results.
 
-On every input event, preserve raw text and validation status. An incomplete or
-invalid value, such as a lone minus sign in an integer input, does not become a
-guessed typed value and does not issue SQL. Required unset or invalid values
-make dependent components unavailable without presenting an old success as
-current. SQL issuing may use a short debounce (about 100–150 ms) to coalesce
-calls; input, Text, validation, and stale/pending invalidation are never
-debounced.
+On every input event, preserve the raw buffer and validation status in the
+single variable entry. An incomplete or invalid value, such as a lone minus
+sign in an integer input, does not become a guessed typed value and does not
+issue SQL. All Inputs bound to that variable continue to display the same raw
+buffer and validation status. Required unset or invalid values make dependent
+components unavailable without presenting an old success as current. SQL
+issuing may use a short debounce (about 100–150 ms) to coalesce calls; input,
+Text, validation, and stale/pending invalidation are never debounced. Tests for
+out-of-order handling must dispatch at least two requests for one Source while
+an earlier request is still unresolved (for example, advance a fake debounce
+timer between edits), then resolve them in reverse order. This keeps the
+generation check observable even when normal rapid edits are coalesced.
 
 Abort older requests when possible. Independently increment a per-Source
 generation and accept a response only if its generation, Composition revision,
@@ -162,15 +171,15 @@ changes.
 | --- | --- | --- | --- |
 | A01 | heading_input_updates_text_synchronously_without_query | Change a string heading through Input | Text updates in the same UI cycle; SQL call count is unchanged. |
 | A02 | typed_source_dependency_invalidates_before_requery | Change an integer used by SQL | Text is immediate; dependent Metric/Table becomes pending immediately and only the newest result is shown. |
-| A03 | shared_variable_inputs_stay_synchronized | Edit one of two Inputs bound to one variable | The other Input updates immediately; one authoritative value exists. |
+| A03 | shared_variable_inputs_stay_synchronized | Edit one of two Inputs bound to one variable, first validly and then with an incomplete value | Both Inputs synchronously show the same raw buffer and validation state; the single variable entry is authoritative and holds a typed value only while valid. |
 | A04 | layout_order_does_not_affect_dependency_results | Reorder Input and Metric in Layout | Values and query results stay identical. |
 | A05 | sql_aggregates_preserve_null_and_empty_semantics | Aggregate [10, 20, NULL] | COUNT(*)=3, COUNT(Amount)=2, SUM(Amount)=30, AVG(Amount)=15. Test aggregate-without-WHERE separately from variable-filter behavior. |
 | A06 | shared_saved_sql_columns_bind_to_separate_metrics | One-row, two-column Saved SQL result | Two Metrics select separate columns from the same Source. |
 | A07 | multiple_sql_rows_reject_metric_but_page_in_table | Saved SQL returns two rows | Metric rejects scalar cardinality; Table still pages rows; no first-row fallback. |
 | A08 | scalar_result_distinguishes_zero_rows_null_and_zero | Compare zero rows, one-row NULL, numeric 0 | Three distinct states/results are preserved. |
 | A09 | unrelated_variable_does_not_requery_source | Change variable unused by a SQL Source | That Source is not requested again; Table paging is unchanged. |
-| A10 | rapid_input_keeps_only_latest_source_generation | Enter 1, 2, 3 rapidly; return responses out of order | Only generation for 3 is accepted. |
-| A11 | invalid_raw_input_blocks_query_and_stale_result | Enter incomplete/invalid integer such as -, empty, or 1.5 | Raw input remains visible, no SQL runs, and prior success is not current. |
+| A10 | rapid_input_keeps_only_latest_source_generation | Dispatch two or more requests for one Source while an earlier request remains unresolved (advance fake debounce timers if needed); resolve responses in reverse order | Only the response for the latest Source generation is accepted; earlier responses are discarded. |
+| A11 | invalid_raw_input_blocks_query_and_stale_result | With two Inputs bound to one integer variable, first establish a successful result, then enter incomplete/invalid input such as -, empty, or 1.5 in either Input | Both Inputs show the same raw invalid buffer, no SQL runs, dependent output is unavailable, and prior success is not current. |
 | A12 | sql_variable_binding_rejects_implicit_type_conversion | Bind string to SQL date or float to SQL integer | Exact type mismatch; no implicit conversion. |
 | A13 | invalid_variable_grammar_fails_lint_and_save | Duplicate/unknown IDs, invalid defaults, unknown references, unbound required variable | Lint/save fails deterministically. |
 | A14 | sql_source_uses_typed_parameter_binding | Bind $minimum as a typed SQL parameter | SQL text is unchanged and the value cannot become SQL syntax. |
