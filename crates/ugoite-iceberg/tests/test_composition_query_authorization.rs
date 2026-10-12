@@ -285,6 +285,18 @@ async fn typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe()
             )
         };
     let mut components = components;
+    components.push(metric_aggregate(
+        "entry_count_rows",
+        entry_source_id,
+        CompositionAggregateOperation::CountRows,
+        None,
+    ));
+    components.push(metric_aggregate(
+        "entry_count_values",
+        entry_source_id,
+        CompositionAggregateOperation::CountValues,
+        Some(amount_field_id),
+    ));
     for (id, operation) in [
         ("all_null_sum", CompositionAggregateOperation::Sum),
         ("all_null_avg", CompositionAggregateOperation::Avg),
@@ -499,6 +511,8 @@ async fn typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe()
     assert_eq!(aggregate_result.value, json!("9007199254740994"));
 
     for (component_id, expected_value) in [
+        ("entry_count_rows", json!("3")),
+        ("entry_count_values", json!("2")),
         ("all_null_sum", Value::Null),
         ("all_null_avg", Value::Null),
         ("all_null_min", Value::Null),
@@ -642,6 +656,21 @@ async fn typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe()
         .result
         .context("revisiting the same Composition should see current data")?;
     assert_eq!(updated.value, json!("9007199254740996"));
+
+    for (component_id, expected_value) in [
+        ("entry_count_rows", json!("4")),
+        ("entry_count_values", json!("3")),
+    ] {
+        let updated_count = service
+            .query_composition_metric_local(&space_id, query(component_id))
+            .await
+            .with_context(|| {
+                format!("requerying {component_id} after an Entry write should succeed")
+            })?
+            .result
+            .with_context(|| format!("revisiting {component_id} should return a scalar"))?;
+        assert_eq!(updated_count.value, expected_value, "{component_id}");
+    }
 
     let changed_parameter = CompositionMetricQueryRequest {
         target: CompositionMetricQueryTarget::SavedRevision {
