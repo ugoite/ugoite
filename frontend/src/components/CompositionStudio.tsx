@@ -47,6 +47,7 @@ import {
   defaultParameterValues,
   type DraftInsertTarget,
   type DraftMetricDefinition,
+  draftMetricsReady,
   type DraftParameter,
   type DraftSaveBlockedReason,
   draftSaveReadiness,
@@ -297,6 +298,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
   onCleanup(previewHandle.dispose);
 
   let previewTimer: ReturnType<typeof setTimeout> | undefined;
+  let previewGeneration = 0;
 
   let pendingSave: PendingCompositionSaveAttempt | undefined;
 
@@ -307,9 +309,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const isCurrentSaveRoute = (attempt: PendingCompositionSaveAttempt) =>
     attempt.spaceId === spaceId() && attempt.routePath === location.pathname;
   // Save readiness mirrors the shared canonical contract: a non-empty name,
-  // valid refs with exactly-once placement and no dangling refs, and at
-  // least one layout item. A source-only draft reports `layout` and cannot
-  // save. Canonical parsing itself stays async in the save handler below.
+  // complete Metric definitions, valid refs with exactly-once placement and
+  // no dangling refs, and at least one layout item. A source-only draft
+  // reports `layout` and cannot save. Canonical parsing stays async below.
   const readiness = () => draftSaveReadiness(draft());
   const canSave = () => readiness().ready && !saving();
   const saveBlockedReason = (): DraftSaveBlockedReason | undefined =>
@@ -327,6 +329,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
         return t("composition.studioSaveNeedsBlock");
       case "refs":
         return t("composition.studioSaveNeedsRefs");
+      case "metric":
+        return t("composition.studioSaveNeedsMetric");
       default:
         return undefined;
     }
@@ -339,17 +343,29 @@ export function CompositionStudio(props: CompositionStudioProps) {
   };
 
   onCleanup(() => {
+    previewGeneration += 1;
     if (previewTimer !== undefined) clearTimeout(previewTimer);
   });
 
   const schedulePreview = (snapshot: CompositionDraft) => {
+    const generation = ++previewGeneration;
     if (previewTimer !== undefined) clearTimeout(previewTimer);
     previewTimer = undefined;
     previewTimer = setTimeout(() => {
       previewTimer = undefined;
       void (async () => {
+        if (generation !== previewGeneration) return;
+        if (!draftMetricsReady(snapshot) || !draftMetricsReady(draft())) {
+          previewHandle.invalidate();
+          return;
+        }
         try {
           const canonical = await canonicalizeDraft(snapshot);
+          if (generation !== previewGeneration) return;
+          if (!draftMetricsReady(snapshot) || !draftMetricsReady(draft())) {
+            previewHandle.invalidate();
+            return;
+          }
           // Scope resolves against the latest draft at fire time so block,
           // source, and mode changes during an in-flight preview never
           // resurrect a stale fetch set; the generation guard drops the
@@ -377,8 +393,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
   });
 
   const retryPreview = () => {
+    if (!draftMetricsReady(draft())) return;
     const current = previewHandle.state();
     if (!current.yaml || !current.spaceId) return;
+    previewGeneration += 1;
     if (previewTimer !== undefined) clearTimeout(previewTimer);
     previewTimer = undefined;
     void previewHandle.preview(current.spaceId, current.yaml, {
@@ -386,15 +404,18 @@ export function CompositionStudio(props: CompositionStudioProps) {
     }, previewScope());
   };
 
-  // Live preview follows the draft with a bounded debounce. Preview needs
-  // sources only; the tool name gates saving, never previewing.
+  // Live preview follows the draft with a bounded debounce. Partial layout
+  // and naming states remain previewable, but incomplete Metrics never reach
+  // canonicalization; prior preview state is invalidated until they are fixed.
   createEffect(() => {
     const snapshot = draft();
-    if (snapshot.sources.length === 0) {
+    if (snapshot.sources.length === 0 || !draftMetricsReady(snapshot)) {
+      previewGeneration += 1;
       if (previewTimer !== undefined) {
         clearTimeout(previewTimer);
         previewTimer = undefined;
       }
+      previewHandle.invalidate();
       return;
     }
     schedulePreview(snapshot);
@@ -857,11 +878,15 @@ export function CompositionStudio(props: CompositionStudioProps) {
   });
   const readySources = (): Record<string, CompositionSourcePageState> => {
     const current = previewState();
-    return current.preview?.ok && hasSources() ? current.sources : {};
+    return current.preview?.ok && hasSources() && draftMetricsReady(draft())
+      ? current.sources
+      : {};
   };
   const readyPlan = () => {
     const current = previewState();
-    if (!current.preview?.ok || !hasSources()) return undefined;
+    if (
+      !current.preview?.ok || !hasSources() || !draftMetricsReady(draft())
+    ) return undefined;
     return {
       sources: current.preview.plan?.sources ?? [],
       component_bindings: current.preview.plan?.component_bindings ?? [],
@@ -871,7 +896,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
     const current = previewState();
     if (
       !current.preview?.ok || !current.spaceId || !current.yaml ||
-      !current.identity
+      !current.identity || !draftMetricsReady(draft())
     ) return undefined;
     return {
       spaceId: current.spaceId,
@@ -882,7 +907,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
   };
   const previewDiagnostics = () => {
     const current = previewState();
-    return !current.preview?.ok && hasSources()
+    return !current.preview?.ok && hasSources() && draftMetricsReady(draft())
       ? current.preview?.diagnostics
       : undefined;
   };

@@ -1781,4 +1781,58 @@ describe("composition draft model", () => {
     if (!placed.ok) throw new Error("expected parameter placement");
     expect(draftSaveReadiness(placed.draft)).toEqual({ ready: true });
   });
+
+  it("blocks saves until aggregate fields and Saved SQL columns are selected", () => {
+    let formDraft = addEntryQuerySource(createEmptyDraft("Monthly"), {
+      ...entrySeed(),
+      fieldSchema: [{ field_id: 2, field_type: "integer" }],
+    }).draft;
+    const aggregate = addMetricDisplay(formDraft, "src-1", {
+      kind: "aggregate",
+      operation: "count_rows",
+    });
+    if (!aggregate.ok || !aggregate.draftId) {
+      throw new Error("expected row-count metric");
+    }
+    formDraft = aggregate.draft;
+    expect(draftSaveReadiness(formDraft)).toEqual({ ready: true });
+
+    const missingAggregateField = setMetricDefinition(
+      formDraft,
+      aggregate.draftId,
+      { kind: "aggregate", operation: "sum" },
+    );
+    if (!missingAggregateField.ok) {
+      throw new Error("expected incomplete aggregate to remain editable");
+    }
+    expect(draftSaveReadiness(missingAggregateField.draft)).toEqual({
+      ready: false,
+      reason: "metric",
+    });
+
+    let sqlDraft = addSavedSqlSource(createEmptyDraft("Monthly"), sqlSeed())
+      .draft;
+    const scalar = addMetricDisplay(sqlDraft, "src-1", {
+      kind: "sql_scalar",
+      column: "total",
+    });
+    if (!scalar.ok || !scalar.draftId) {
+      throw new Error("expected scalar metric");
+    }
+    sqlDraft = scalar.draft;
+    expect(draftSaveReadiness(sqlDraft)).toEqual({ ready: true });
+
+    const missingSqlColumn = setMetricDefinition(
+      sqlDraft,
+      scalar.draftId,
+      { kind: "sql_scalar" },
+    );
+    if (!missingSqlColumn.ok) {
+      throw new Error("expected incomplete SQL scalar to remain editable");
+    }
+    expect(draftSaveReadiness(missingSqlColumn.draft)).toEqual({
+      ready: false,
+      reason: "metric",
+    });
+  });
 });

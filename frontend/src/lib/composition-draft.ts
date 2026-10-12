@@ -884,6 +884,12 @@ export const metricDefinitionReady = (
     metricDefinitionFitsSource(source, definition, true);
 };
 
+export const draftMetricsReady = (draft: CompositionDraft): boolean =>
+  draft.displays.every((display) =>
+    display.kind !== "metric" ||
+    metricDefinitionReady(draft, display.sourceDraftId, display.definition)
+  );
+
 const numericMetricFieldTypes = new Set(["integer", "long", "float", "double"]);
 const numericMetricResultTypes = new Set([
   "integer",
@@ -1847,7 +1853,12 @@ export const draftFromDocument = (
 };
 
 /** Save-blocking reason for a draft that is not save-ready. */
-export type DraftSaveBlockedReason = "name" | "sources" | "layout" | "refs";
+export type DraftSaveBlockedReason =
+  | "name"
+  | "sources"
+  | "layout"
+  | "refs"
+  | "metric";
 
 export interface DraftSaveReadiness {
   readonly ready: boolean;
@@ -1858,10 +1869,10 @@ export interface DraftSaveReadiness {
  * Browser save-readiness gate for Composition drafts. Mirrors the shared
  * canonical contract synchronously: a non-empty name, at least one source,
  * valid refs with every component placed exactly once and no dangling
- * refs, required parameters without a default placed as controls, and at
- * least one layout item. A source-only draft reports `layout` and cannot
- * save. Canonical parsing itself stays async in `canonicalizeDraft`; the
- * save handler fails closed on its diagnostics.
+ * refs, required parameters without a default placed as controls, complete
+ * Metric definitions, and at least one layout item. A source-only draft
+ * reports `layout` and cannot save. Canonical parsing itself stays async in
+ * `canonicalizeDraft`; the save handler fails closed on its diagnostics.
  *
  * Deliberately unchecked here (and left to canonicalize): duplicate row
  * IDs and empty rows. Row IDs are system-generated with a taken-set, so no
@@ -1884,6 +1895,7 @@ export const draftSaveReadiness = (
       return { ready: false, reason: "refs" };
     }
   }
+  if (!draftMetricsReady(draft)) return { ready: false, reason: "metric" };
   const placedComponents = new Map<string, number>();
   const placedParameters = new Set<string>();
   for (const row of draft.layoutRows) {

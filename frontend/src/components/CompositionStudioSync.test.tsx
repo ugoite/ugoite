@@ -21,6 +21,7 @@ import {
   type CompositionDraft,
   createEmptyDraft,
   placeParameterControl,
+  setMetricDefinition,
 } from "~/lib/composition-draft";
 import { setLocale } from "~/lib/i18n";
 
@@ -157,6 +158,47 @@ const sourceOnlyDraft = (): CompositionDraft =>
     variables: {},
   }).draft;
 
+const rowCountMetricDraft = (): CompositionDraft => {
+  const source = addEntryQuerySource(createEmptyDraft("Studio"), {
+    formId: "11111111-1111-4111-8111-111111111111",
+    name: "Expenses",
+    fieldSchema: [{ field_id: 1, field_type: "integer" }],
+    query: {
+      filters: [],
+      sort: [],
+      projection: { kind: "preview" as const },
+    },
+  });
+  const metric = addMetricDisplay(source.draft, source.draftId, {
+    kind: "aggregate",
+    operation: "count_rows",
+  }, "Count");
+  if (!metric.ok) throw new Error("expected row-count metric");
+  return metric.draft;
+};
+
+const incompleteSavedSqlMetricDraft = (): CompositionDraft => {
+  const source = addSavedSqlSource(createEmptyDraft("Studio"), {
+    entryId: "sql-1",
+    revisionId: "sql-rev-1",
+    name: "Monthly totals",
+    expectedResult: [{ name: "total", type: "float" as const }],
+    variables: {},
+  });
+  const metric = addMetricDisplay(source.draft, source.draftId, {
+    kind: "sql_scalar",
+    column: "total",
+  });
+  if (!metric.ok || !metric.draftId) {
+    throw new Error("expected Saved SQL metric");
+  }
+  const incomplete = setMetricDefinition(metric.draft, metric.draftId, {
+    kind: "sql_scalar",
+  });
+  if (!incomplete.ok) throw new Error("expected incomplete Saved SQL metric");
+  return incomplete.draft;
+};
+
 const okPreview = (fingerprint: string) => ({
   ok: true,
   draft_fingerprint: fingerprint,
@@ -275,7 +317,10 @@ describe("CompositionStudioSync", () => {
     sqlListMock.mockResolvedValue([]);
   });
 
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
 
   it("switches the workspace arrangement through one Design Data Split control", () => {
     const { container } = renderStudio();
@@ -606,6 +651,91 @@ describe("CompositionStudioSync", () => {
       "Save, Add a block to the canvas to save.",
     );
     fireEvent.click(saveButton);
+    expect(canonicalizeMock).not.toHaveBeenCalled();
+    expect(saveMock).not.toHaveBeenCalled();
+  });
+
+  it("disables Save when a Metric operation requires an unselected field", async () => {
+    renderStudio(rowCountMetricDraft());
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(save).toBeEnabled();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Select Count" }),
+    );
+    fireEvent.change(screen.getByRole("combobox", { name: "Operation" }), {
+      target: { value: "sum" },
+    });
+
+    const blockedSave = screen.getByRole("button", {
+      name: "Save, Complete the metric settings to save.",
+    });
+    expect(blockedSave).toBeDisabled();
+    fireEvent.click(blockedSave);
+    expect(canonicalizeMock).not.toHaveBeenCalled();
+    expect(saveMock).not.toHaveBeenCalled();
+  });
+
+  it("skips canonicalization and clears preview when a Metric edit is incomplete", async () => {
+    vi.useFakeTimers();
+    previewMock.mockImplementationOnce(async () =>
+      okMetricPreview("fp-studio")
+    );
+    renderStudio(rowCountMetricDraft());
+
+    await vi.advanceTimersByTimeAsync(401);
+    expect(canonicalizeMock).toHaveBeenCalledTimes(1);
+    expect(previewMock).toHaveBeenCalledTimes(1);
+    expect(queryMetricMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("128400", { selector: "output" }))
+      .toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Select Count" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Operation" }), {
+      target: { value: "sum" },
+    });
+
+    await vi.advanceTimersByTimeAsync(401);
+    expect(canonicalizeMock).toHaveBeenCalledTimes(1);
+    expect(previewMock).toHaveBeenCalledTimes(1);
+    expect(queryMetricMock).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("128400", { selector: "output" }))
+      .not.toBeInTheDocument();
+  });
+
+  it("does not preview a canonicalization that resolves after a Metric becomes incomplete", async () => {
+    vi.useFakeTimers();
+    let finishCanonicalize!: (value: { canonical_yaml: string }) => void;
+    canonicalizeMock.mockImplementationOnce(
+      () => new Promise((resolve) => finishCanonicalize = resolve),
+    );
+    renderStudio(rowCountMetricDraft());
+
+    await vi.advanceTimersByTimeAsync(401);
+    expect(canonicalizeMock).toHaveBeenCalledTimes(1);
+    expect(previewMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Select Count" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Operation" }), {
+      target: { value: "sum" },
+    });
+    finishCanonicalize({ canonical_yaml: "yaml:stale" });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(canonicalizeMock).toHaveBeenCalledTimes(1);
+    expect(previewMock).not.toHaveBeenCalled();
+    expect(queryMetricMock).not.toHaveBeenCalled();
+  });
+
+  it("disables Save when a Saved SQL Metric has no output column", () => {
+    renderStudio(incompleteSavedSqlMetricDraft());
+
+    const save = screen.getByRole("button", {
+      name: "Save, Complete the metric settings to save.",
+    });
+    expect(save).toBeDisabled();
+    fireEvent.click(save);
     expect(canonicalizeMock).not.toHaveBeenCalled();
     expect(saveMock).not.toHaveBeenCalled();
   });
