@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { createSignal } from "solid-js";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -363,6 +364,93 @@ describe("DashboardFlowRenderer", () => {
     );
     expect(screen.getByRole("table")).toBeInTheDocument();
     expect(screen.getByRole("cell", { name: "42" })).toBeInTheDocument();
+  });
+
+  it("keeps a server metric stable when its table advances to another page", async () => {
+    const query = vi.spyOn(compositionApi, "queryMetric").mockResolvedValue({
+      ok: true,
+      result: {
+        component_id: "total",
+        operation: "sql_scalar",
+        source_kind: "saved_sql",
+        result_type: "integer",
+        value: "42",
+      },
+    });
+    const firstPage = {
+      summary: {
+        status: "ready" as const,
+        cursorStack: [undefined],
+        page: {
+          kind: "saved_sql" as const,
+          page: {
+            columns: ["total", "count"],
+            rows: [{ total: 42, count: 7 }],
+            has_more: true,
+            next: "page-2",
+          },
+        },
+      },
+    };
+    const secondPage = {
+      summary: {
+        status: "ready" as const,
+        cursorStack: [undefined, "page-2"],
+        cursor: "page-2",
+        page: {
+          kind: "saved_sql" as const,
+          page: {
+            columns: ["total", "count"],
+            rows: [{ total: 84, count: 14 }],
+            has_more: false,
+          },
+        },
+      },
+    };
+    const [sources, setSources] = createSignal(firstPage);
+    render(() => (
+      <DashboardFlowRenderer
+        layout={{
+          rows: [{
+            id: "summary",
+            items: [
+              { kind: "component", component: "total" },
+              { kind: "component", component: "rows" },
+            ],
+          }],
+        }}
+        plan={plan}
+        texts={texts}
+        parameterDefinitions={definitions}
+        parameterValues={{ month: "2026-10-01" }}
+        onParameterChange={() => {}}
+        metricQueryContext={{
+          spaceId: "space-1",
+          target: {
+            kind: "saved_revision",
+            composition_id: "tool-1",
+            revision_id: "revision-1",
+          },
+          parameters: { month: "2026-10-01" },
+        }}
+        sources={sources()}
+        onNext={() => setSources(secondPage)}
+        onPrevious={() => {}}
+        onRetry={() => {}}
+      />
+    ));
+
+    expect(await screen.findByText("42", { selector: "output" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "42" })).toBeInTheDocument();
+    expect(query).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => {
+      expect(screen.getByRole("cell", { name: "84" })).toBeInTheDocument();
+    });
+    expect(screen.getByText("42", { selector: "output" })).toBeInTheDocument();
+    expect(query).toHaveBeenCalledTimes(1);
   });
 
   it("passes saved field types to an all-null Entry table in flow layout", () => {
