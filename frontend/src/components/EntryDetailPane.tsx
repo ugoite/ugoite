@@ -845,6 +845,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     }
   };
 
+  let entryEditorRoot: HTMLDivElement | undefined;
   const handleSaveShortcut = (event: KeyboardEvent) => {
     const matchesSaveShortcut =
       (event.metaKey || event.ctrlKey) &&
@@ -853,11 +854,19 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       event.key.toLowerCase() === "s";
     if (!matchesSaveShortcut || event.defaultPrevented) return;
 
-    event.preventDefault();
     if (
       event.target instanceof Element &&
       event.target.closest('[role="dialog"][aria-modal="true"]')
+    ) {
+      event.preventDefault();
+      return;
+    }
+    if (
+      !(event.target instanceof Node) ||
+      !entryEditorRoot?.contains(event.target)
     ) return;
+
+    event.preventDefault();
     if (saveReady()) void handleSave();
   };
 
@@ -1015,7 +1024,13 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 
   /* v8 ignore start */
   return (
-    <div class="ui-entry-page" aria-busy={entryLoading() || undefined}>
+    <div
+      ref={(element) => {
+        entryEditorRoot = element;
+      }}
+      class="ui-entry-page"
+      aria-busy={entryLoading() || undefined}
+    >
       {
         /* Panel-local spinner only: fields stay mounted and visible during
           refetch. No full-screen overlay, no visible loading text. */

@@ -11,7 +11,7 @@ requirements:
     criteria:
       - id: edit-preview-save
         kind: behavior
-        statement: The Markdown editor exposes editable content, a rendered preview, and explicit save behavior including the supported keyboard shortcut.
+        statement: The Markdown editor exposes editable content, a rendered preview, and explicit save behavior including the supported keyboard shortcut while focus is within the Entry editor or its associated action area; unrelated shell controls do not trigger or consume that shortcut.
         governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
       - id: safe-preview
         kind: security
