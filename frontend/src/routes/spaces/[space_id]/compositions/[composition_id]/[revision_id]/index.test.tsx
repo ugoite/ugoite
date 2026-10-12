@@ -608,10 +608,10 @@ describe("resolveCompositionFieldName", () => {
     ).toBe("visits");
   });
 
-  it("uses the source schema ordinal when Form metadata is unavailable", () => {
+  it("does not invent a field label when Form metadata is unavailable", () => {
     expect(
-      resolveCompositionFieldName(undefined, "form-1", 102, [{ field_id: 102 }]),
-    ).toBe("Field 1");
+      resolveCompositionFieldName(undefined, "form-1", 102),
+    ).toBeUndefined();
   });
 
   it("does not resolve by display name", () => {

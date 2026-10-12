@@ -15,10 +15,7 @@ import type {
 import {
   canonicalizeCompositionDocument,
   type CompositionDocumentCanonicalization,
-  type CompositionMetricPageEvaluation,
-  type CompositionMetricPageRequest,
   entryApi,
-  evaluateCompositionMetricPage,
   protocolFetch,
   sqlApi,
 } from "./ugoite-client";
@@ -112,14 +109,20 @@ export interface CompositionLintDocument {
     }>;
     components: Array<
       | {
-        kind: string;
+        kind: "metric";
+        id: string;
+        label?: string;
+        definition: CompositionMetricDefinition;
+        presentation?: CompositionMetricPresentation;
+      }
+      | {
+        kind: "table";
         id: string;
         label?: string;
         source: string;
-        value_field?: { kind: string; field_id?: number; name?: string };
       }
       | {
-        kind: string;
+        kind: "text";
         id: string;
         label?: string;
         text: string;
@@ -243,6 +246,7 @@ export type CompositionResultType =
   | "boolean"
   | "integer"
   | "float"
+  | "decimal"
   | "date"
   | "timestamp"
   | "json";
@@ -261,6 +265,7 @@ export function compositionResultTypeFromSql(
     case "boolean":
     case "integer":
     case "float":
+    case "decimal":
     case "date":
     case "timestamp":
     case "json":
@@ -269,6 +274,29 @@ export function compositionResultTypeFromSql(
       return "json";
   }
 }
+
+export type CompositionAggregateOperation =
+  | "count_rows"
+  | "count_values"
+  | "sum"
+  | "avg"
+  | "min"
+  | "max";
+
+export type CompositionMetricDefinition =
+  | {
+    kind: "aggregate";
+    source: string;
+    operation: CompositionAggregateOperation;
+    field_id?: number;
+  }
+  | { kind: "sql_scalar"; source: string; column: string };
+
+export type CompositionMetricPresentation = {
+  kind: "number";
+  unit?: string;
+  fraction_digits?: number;
+};
 
 export interface CompositionResolveDiagnostic {
   code: string;
@@ -310,6 +338,7 @@ export type CompositionResolvedComponentBinding =
     metric_field_id?: number;
     result_property_key?: string;
     expected_result_type: CompositionResultType;
+    presentation?: CompositionMetricPresentation;
   })
   | (CompositionResolvedComponentBase & {
     kind: "table";
@@ -345,6 +374,50 @@ export interface CompositionPreviewResponse {
   parameter_definitions?: CompositionParameterDefinition[];
   plan?: CompositionPreviewPlan;
   diagnostics?: CompositionResolveDiagnostic[];
+}
+
+export type CompositionMetricQueryTarget =
+  | {
+    kind: "saved_revision";
+    composition_id: string;
+    revision_id: string;
+  }
+  | { kind: "draft"; yaml: string };
+
+export interface CompositionMetricQueryRequest {
+  target: CompositionMetricQueryTarget;
+  component_id: string;
+  parameters: Record<string, unknown>;
+}
+
+export type CompositionMetricOperation =
+  | "sql_scalar"
+  | "count_rows"
+  | "count_values"
+  | "sum"
+  | "avg"
+  | "min"
+  | "max";
+
+export interface CompositionMetricQueryValue {
+  component_id: string;
+  operation: CompositionMetricOperation;
+  source_kind: "entry_query" | "saved_sql";
+  result_type: CompositionResultType | "decimal";
+  value: unknown;
+}
+
+export interface CompositionMetricQueryDiagnostic {
+  code: string;
+  component_id?: string;
+  parameter_id?: string;
+}
+
+export interface CompositionMetricQueryResponse {
+  ok: boolean;
+  draft_fingerprint?: string;
+  result?: CompositionMetricQueryValue;
+  diagnostics?: CompositionMetricQueryDiagnostic[];
 }
 
 export type CompositionSourcePage =
@@ -390,9 +463,8 @@ export const buildSavedSqlCompositionDocument = (
   });
   const sourceId = "sql_results";
   const componentId = "results_table";
-  // Composition currently supports a narrower result type set than SQL.
-  // Keep the server descriptor authoritative while mapping unsupported
-  // SQL types, including Decimal, to the JSON fallback.
+  // Keep the server descriptor authoritative and map only result types that
+  // Composition represents explicitly. Unknown types use the JSON fallback.
   const schemaByName = new Map(
     (resultSchema ?? []).map((column) => [column.name, column.type]),
   );
@@ -588,10 +660,18 @@ export const compositionApi = {
     );
   },
 
-  async evaluateMetricPage(
-    request: CompositionMetricPageRequest,
-  ): Promise<CompositionMetricPageEvaluation> {
-    return await evaluateCompositionMetricPage(request);
+  /** Execute one metric through the bounded, current-authorized operation. */
+  async queryMetric(
+    spaceId: string,
+    request: CompositionMetricQueryRequest,
+    signal?: AbortSignal,
+  ): Promise<CompositionMetricQueryResponse> {
+    return await protocolFetch<CompositionMetricQueryResponse>(
+      "composition.metric.query",
+      { space_id: spaceId },
+      request,
+      { signal },
+    );
   },
 
   async querySource(
@@ -621,5 +701,3 @@ export const compositionApi = {
 
 export const compositionDisplayName = (value: unknown): string =>
   typeof value === "string" && value.trim() ? value.trim() : "Composition";
-
-export type { CompositionMetricPageEvaluation, CompositionMetricPageRequest };

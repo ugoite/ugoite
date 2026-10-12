@@ -5,7 +5,9 @@ import {
   type CompositionFieldNames,
   type CompositionFieldTypeLookup,
   CompositionMetric,
+  type CompositionMetricQueryContext,
   CompositionSavedSqlTable,
+  usesServerMetricQuery,
 } from "~/components/CompositionRenderer";
 import { ParameterControl } from "~/components/composition/ParameterControl";
 import { TextComponent } from "~/components/composition/TextComponent";
@@ -41,6 +43,7 @@ export const flowSourceStatusOwner = (
       if (item.kind !== "component" || !item.component) continue;
       const binding = bindings.get(item.component);
       if (!binding || binding.kind === "text") continue;
+      if (usesServerMetricQuery(binding)) continue;
       if (sources.has(binding.source_id) && !owners.has(binding.source_id)) {
         owners.set(binding.source_id, binding.component_id);
       }
@@ -68,6 +71,7 @@ export interface DashboardFlowItemProps {
   fieldNames?: CompositionFieldNames;
   fieldKeys?: CompositionFieldKeys;
   fieldTypes?: CompositionFieldTypeLookup;
+  metricQueryContext?: CompositionMetricQueryContext;
   onNext: (sourceId: string) => void;
   onPrevious: (sourceId: string) => void;
   onRetry: (sourceId: string) => void;
@@ -109,6 +113,7 @@ export function DashboardFlowItem(props: DashboardFlowItemProps) {
           fieldNames={props.fieldNames}
           fieldKeys={props.fieldKeys}
           fieldTypes={props.fieldTypes}
+          metricQueryContext={props.metricQueryContext}
           onNext={props.onNext}
           onPrevious={props.onPrevious}
           onRetry={props.onRetry}
@@ -139,6 +144,7 @@ type DashboardFlowRendererProps = {
   fieldNames?: CompositionFieldNames;
   fieldKeys?: CompositionFieldKeys;
   fieldTypes?: CompositionFieldTypeLookup;
+  metricQueryContext?: CompositionMetricQueryContext;
   onNext: (sourceId: string) => void;
   onPrevious: (sourceId: string) => void;
   onRetry: (sourceId: string) => void;
@@ -169,7 +175,11 @@ export function DashboardFlowRenderer(props: DashboardFlowRendererProps) {
   // One block owns each source status: the first binding in row and item
   // order, so shared sources show a single loading or error state.
   const sourceStatusOwner = () =>
-    flowSourceStatusOwner(props.layout.rows, bindingById(), sourceById());
+    flowSourceStatusOwner(
+      props.layout.rows,
+      bindingById(),
+      sourceById(),
+    );
 
   return (
     <div class="compositionFlow">
@@ -212,6 +222,7 @@ export function DashboardFlowRenderer(props: DashboardFlowRendererProps) {
                       fieldNames={props.fieldNames}
                       fieldKeys={props.fieldKeys}
                       fieldTypes={props.fieldTypes}
+                      metricQueryContext={props.metricQueryContext}
                       onNext={props.onNext}
                       onPrevious={props.onPrevious}
                       onRetry={props.onRetry}
@@ -239,6 +250,7 @@ function DashboardFlowComponent(props: {
   fieldNames?: CompositionFieldNames;
   fieldKeys?: CompositionFieldKeys;
   fieldTypes?: CompositionFieldTypeLookup;
+  metricQueryContext?: CompositionMetricQueryContext;
   onNext: (sourceId: string) => void;
   onPrevious: (sourceId: string) => void;
   onRetry: (sourceId: string) => void;
@@ -277,10 +289,7 @@ function DashboardFlowComponent(props: {
                     CompositionResolvedComponentBinding,
                     { kind: "metric" }
                   >}
-                  source={entry()}
-                  sourceState={sourceState()}
-                  ownsSourceStatus={props.ownsSourceStatus}
-                  onRetry={() => props.onRetry(sourced().source_id)}
+                  metricQueryContext={props.metricQueryContext}
                 />
               </div>
             )

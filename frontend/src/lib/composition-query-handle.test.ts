@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { compositionApi } from "./composition-api";
+import {
+  compositionApi,
+  type CompositionResolveResponse,
+} from "./composition-api";
 import {
   type CompositionQueryApi,
   createCompositionQueryHandle,
@@ -47,7 +50,11 @@ const resolved = (parameter: unknown) => ({
         limit: 10,
       },
     }],
-    component_bindings: [],
+    component_bindings: [{
+      component_id: "entry_rows",
+      kind: "table" as const,
+      source_id: "entries",
+    }],
   },
   diagnostics: [],
 });
@@ -92,7 +99,11 @@ const resolvedSavedSql = (monthStart: string) => ({
         saved_sql: { id: "sql-1", revision_id: "sql-revision-4" },
       },
     }],
-    component_bindings: [],
+    component_bindings: [{
+      component_id: "sql_rows",
+      kind: "table" as const,
+      source_id: "sql_results",
+    }],
   },
   diagnostics: [],
 });
@@ -342,6 +353,126 @@ describe("CompositionQueryHandle", () => {
     expect(handle.state().sources.sql_results?.cursorStack).toEqual([
       undefined,
     ]);
+    handle.dispose();
+  });
+
+  it("skips paged SQL queries when a source is used only by metrics", async () => {
+    const response = resolvedSavedSql(
+      "2026-03-01",
+    ) as CompositionResolveResponse;
+    response.plan!.component_bindings = [{
+      component_id: "total",
+      kind: "metric",
+      source_id: "sql_results",
+      result_property_key: "amount",
+      expected_result_type: "integer",
+    }];
+    const querySource = vi.fn();
+    const api: CompositionQueryApi = {
+      get: vi.fn().mockResolvedValue({
+        revision: {
+          entry_id: identity.compositionId,
+          revision_id: identity.revisionId,
+        },
+        fields: { name: "Budget" },
+        unmapped_field_values: {},
+      }),
+      resolve: vi.fn().mockResolvedValue(response),
+      querySource,
+    };
+    const handle = createCompositionQueryHandle(api);
+
+    await handle.open(identity);
+
+    expect(api.resolve).toHaveBeenCalledWith(
+      identity.spaceId,
+      identity.compositionId,
+      identity.revisionId,
+      {},
+      expect.any(AbortSignal),
+    );
+    expect(response.plan!.sources[0]).toMatchObject({
+      kind: "saved_sql",
+      request: { saved_sql: { id: "sql-1", revision_id: "sql-revision-4" } },
+    });
+    expect(querySource).not.toHaveBeenCalled();
+    expect(handle.state().sources).toEqual({});
+    handle.dispose();
+  });
+
+  it("skips paged Entry queries when a source is used only by metrics", async () => {
+    const response = resolved("2026-03") as CompositionResolveResponse;
+    response.plan!.component_bindings = [{
+      component_id: "total",
+      kind: "metric",
+      source_id: "entries",
+      metric_field_id: 7,
+      expected_result_type: "integer",
+    }];
+    const querySource = vi.fn();
+    const api: CompositionQueryApi = {
+      get: vi.fn().mockResolvedValue({
+        revision: {
+          entry_id: identity.compositionId,
+          revision_id: identity.revisionId,
+        },
+        fields: { name: "Budget" },
+        unmapped_field_values: {},
+      }),
+      resolve: vi.fn().mockResolvedValue(response),
+      querySource,
+    };
+    const handle = createCompositionQueryHandle(api);
+
+    await handle.open(identity);
+
+    expect(querySource).not.toHaveBeenCalled();
+    expect(handle.state().sources).toEqual({});
+    handle.dispose();
+  });
+
+  it("keeps paged SQL queries when a metric shares its source with a table", async () => {
+    const response = resolvedSavedSql(
+      "2026-03-01",
+    ) as CompositionResolveResponse;
+    response.plan!.component_bindings = [{
+      component_id: "total",
+      kind: "metric",
+      source_id: "sql_results",
+      result_property_key: "amount",
+      expected_result_type: "integer",
+    }, {
+      component_id: "details",
+      kind: "table",
+      source_id: "sql_results",
+    }];
+    const querySource = vi.fn().mockResolvedValue(savedSqlPage("17"));
+    const api: CompositionQueryApi = {
+      get: vi.fn().mockResolvedValue({
+        revision: {
+          entry_id: identity.compositionId,
+          revision_id: identity.revisionId,
+        },
+        fields: { name: "Budget" },
+        unmapped_field_values: {},
+      }),
+      resolve: vi.fn().mockResolvedValue(response),
+      querySource,
+    };
+    const handle = createCompositionQueryHandle(api);
+
+    await handle.open(identity);
+
+    expect(querySource).toHaveBeenCalledWith(
+      identity.spaceId,
+      response.plan!.sources[0],
+      undefined,
+      expect.any(AbortSignal),
+    );
+    expect(handle.state().sources.sql_results).toMatchObject({
+      status: "ready",
+      page: savedSqlPage("17"),
+    });
     handle.dispose();
   });
 

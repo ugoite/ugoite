@@ -26,6 +26,7 @@ export const OPENAPI_SCHEMA_NAMES = [
   "CompositionListItem",
   "CompositionListPage",
   "CompositionMetricOperation",
+  "CompositionMetricPresentation",
   "CompositionMetricQueryDiagnostic",
   "CompositionMetricQueryRequest",
   "CompositionMetricQueryResponse",

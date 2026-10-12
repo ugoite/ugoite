@@ -1725,6 +1725,19 @@ fn openapi_documents_composition_resolve_metric_result_type() {
         binding["properties"]["expected_result_type"]["$ref"],
         "#/components/schemas/CompositionResultFieldType"
     );
+    assert_eq!(
+        binding["properties"]["presentation"]["$ref"],
+        "#/components/schemas/CompositionMetricPresentation"
+    );
+    assert!(!binding["required"]
+        .as_array()
+        .expect("required component fields")
+        .contains(&serde_json::json!("presentation")));
+    assert_eq!(
+        snapshot["components"]["schemas"]["CompositionMetricPresentation"]["oneOf"][0]
+            ["properties"]["fraction_digits"]["maximum"],
+        255
+    );
     assert!(!binding["required"]
         .as_array()
         .expect("required component fields")

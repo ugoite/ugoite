@@ -52,23 +52,16 @@ const findCompositionFormField = (
  * Display-only Form field-name lookup for Composition entry_query tables.
  * Matches the stable Form id only; display names never participate so a
  * Form rename cannot change which fields resolve. Form field keys provide
- * their display names when no explicit label exists; the matching source's
- * saved schema order is the final fallback. Query semantics never depend on
- * this helper.
+ * their display names when no explicit label exists. Query semantics never
+ * depend on this helper, and missing Form metadata stays unlabeled instead of
+ * exposing a generated field ordinal or identifier.
  */
 export const resolveCompositionFieldName = (
   forms: readonly Form[] | undefined,
   formId: string,
   fieldId: number,
-  fieldSchema?: readonly { field_id: number }[],
 ): string | undefined => {
-  const name = compositionFormFieldName(forms, formId, fieldId);
-  if (name) return name;
-  const index = fieldSchema?.findIndex((entry) => entry.field_id === fieldId) ??
-    -1;
-  return index < 0
-    ? undefined
-    : t("composition.studioFieldIndex", { index: index + 1 });
+  return compositionFormFieldName(forms, formId, fieldId);
 };
 
 export const resolveCompositionFieldKey = (
@@ -179,6 +172,28 @@ export default function CompositionRevisionRoute() {
   onCleanup(handle.dispose);
 
   const current = () => handle.state();
+  const metricQueryContext = () => {
+    const identity = current().identity;
+    return identity
+      ? {
+        spaceId: identity.spaceId,
+        target: {
+          kind: "saved_revision" as const,
+          composition_id: identity.compositionId,
+          revision_id: identity.revisionId,
+        },
+        parameters: handle.parameters(),
+        onEdit: () =>
+          navigate(
+            spaceCompositionEditPath(
+              identity.spaceId,
+              identity.compositionId,
+              identity.revisionId,
+            ),
+          ),
+      }
+      : undefined;
+  };
   const composition = () => current().composition;
   const name = () =>
     compositionDisplayName(
@@ -228,18 +243,8 @@ export default function CompositionRevisionRoute() {
   const fieldNames: CompositionFieldNames = (
     formId,
     fieldId,
-    sourceId,
   ) => {
-    const source = layoutDocument()?.spec.sources.find((entry) =>
-      entry.id === sourceId && entry.kind === "entry_query" &&
-      entry.form_id === formId
-    );
-    return resolveCompositionFieldName(
-      forms(),
-      formId,
-      fieldId,
-      source?.field_schema,
-    );
+    return resolveCompositionFieldName(forms(), formId, fieldId);
   };
   const fieldKeys: CompositionFieldKeys = (formId, fieldId) =>
     resolveCompositionFieldKey(forms(), formId, fieldId);
@@ -398,6 +403,7 @@ export default function CompositionRevisionRoute() {
                 fieldNames={fieldNames}
                 fieldKeys={fieldKeys}
                 fieldTypes={fieldTypes}
+                metricQueryContext={metricQueryContext()}
                 onNext={handle.next}
                 onPrevious={handle.previous}
                 onRetry={handle.retry}
@@ -418,6 +424,7 @@ export default function CompositionRevisionRoute() {
                 fieldNames={fieldNames}
                 fieldKeys={fieldKeys}
                 fieldTypes={fieldTypes}
+                metricQueryContext={metricQueryContext()}
                 onNext={handle.next}
                 onPrevious={handle.previous}
                 onRetry={handle.retry}

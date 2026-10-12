@@ -227,6 +227,38 @@ describe("compositionApi", () => {
     );
   });
 
+  it("queries one metric through the bounded portable operation", async () => {
+    const request = {
+      target: {
+        kind: "draft" as const,
+        yaml: "format: ugoite.composition\n",
+      },
+      component_id: "sql_total",
+      parameters: { month: "2026-10" },
+    };
+    vi.mocked(protocolFetch).mockResolvedValue({
+      ok: true,
+      draft_fingerprint: "draft-fingerprint",
+      result: {
+        component_id: "sql_total",
+        operation: "sql_scalar",
+        source_kind: "saved_sql",
+        result_type: "decimal",
+        value: "12345678901234567890.012300",
+      },
+    });
+
+    const result = await compositionApi.queryMetric("space-1", request, signal);
+
+    expect(result.ok).toBe(true);
+    expect(protocolFetch).toHaveBeenCalledWith(
+      "composition.metric.query",
+      { space_id: "space-1" },
+      request,
+      { signal },
+    );
+  });
+
   it("builds a typed table tool bound to the exact Saved SQL revision", () => {
     const entry = {
       id: "sql-1",
@@ -311,7 +343,7 @@ describe("compositionApi", () => {
     ]);
   });
 
-  it("maps decimal SQL result types to the supported JSON Composition type", () => {
+  it("preserves Decimal SQL result types in Composition sources", () => {
     const entry = {
       id: "sql-1",
       name: "Exact total",
@@ -332,7 +364,7 @@ describe("compositionApi", () => {
     );
 
     expect(document.spec.sources[0].expected_result).toEqual([
-      { name: "total", type: "json" },
+      { name: "total", type: "decimal" },
     ]);
   });
 

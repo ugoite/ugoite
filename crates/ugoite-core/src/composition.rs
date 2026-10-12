@@ -18,10 +18,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use ugoite_domain::composition::{
     CompositionAggregateOperation, CompositionComponent, CompositionDiagnosticCode,
     CompositionFieldSchemaEntry, CompositionLiteral, CompositionMetricDefinition,
-    CompositionMetricValueField, CompositionParameter, CompositionParameterType,
-    CompositionQueryOperator, CompositionResultFieldType, CompositionSortDirection,
-    CompositionSource, CompositionSpec, CompositionValue, EntryQueryDisplaySystemField,
-    EntryQueryProjectionTemplate, EntryQueryTemplate, DEFAULT_COMPOSITION_PAGE_LIMIT,
+    CompositionMetricPresentation, CompositionMetricValueField, CompositionParameter,
+    CompositionParameterType, CompositionQueryOperator, CompositionResultFieldType,
+    CompositionSortDirection, CompositionSource, CompositionSpec, CompositionValue,
+    EntryQueryDisplaySystemField, EntryQueryProjectionTemplate, EntryQueryTemplate,
+    DEFAULT_COMPOSITION_PAGE_LIMIT,
 };
 use ugoite_domain::composition_metric::{
     composition_aggregate_result_type, composition_metric_result_type,
@@ -849,6 +850,9 @@ pub struct ResolvedComponentBinding {
     /// Portable logical result type for scalar metric components.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expected_result_type: Option<CompositionResultFieldType>,
+    /// Display-only metric formatting carried through the resolution plan.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<CompositionMetricPresentation>,
 }
 
 /// Complete plan for one immutable Composition revision.
@@ -1192,6 +1196,7 @@ fn resolve_component_bindings(
                 aggregate_operation: None,
                 result_property_key: None,
                 expected_result_type: None,
+                presentation: None,
             });
             continue;
         };
@@ -1200,6 +1205,10 @@ fn resolve_component_bindings(
                 CompositionDiagnosticCode::InvalidComposition,
             )]
         })?;
+        let presentation = match component {
+            CompositionComponent::Metric { presentation, .. } => presentation.clone(),
+            CompositionComponent::Text { .. } | CompositionComponent::Table { .. } => None,
+        };
         let (kind, metric_field_id, aggregate_operation, result_property_key, expected_result_type) =
             match component.metric_definition() {
                 Some(CompositionMetricDefinition::Aggregate {
@@ -1372,6 +1381,7 @@ fn resolve_component_bindings(
             aggregate_operation,
             result_property_key,
             expected_result_type,
+            presentation,
         });
     }
     Ok(resolved)
@@ -1850,6 +1860,7 @@ mod tests {
             aggregate_operation: None,
             result_property_key: Some(property_key.to_owned()),
             expected_result_type: Some(expected_result_type),
+            presentation: None,
         }
     }
 

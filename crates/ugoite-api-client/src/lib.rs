@@ -16,7 +16,7 @@ pub use composition::{
     CompositionDiagnosticCode, CompositionEntryIntegrity, CompositionEntryMetadata,
     CompositionHistoryPage, CompositionLintError, CompositionLintResponse, CompositionLintValue,
     CompositionListItem, CompositionListPage, CompositionMetricOperation,
-    CompositionMetricQueryDiagnostic, CompositionMetricQueryRequest,
+    CompositionMetricPresentation, CompositionMetricQueryDiagnostic, CompositionMetricQueryRequest,
     CompositionMetricQueryResponse, CompositionMetricQueryTarget, CompositionMetricQueryValue,
     CompositionMetricSourceKind, CompositionParameterDefinition, CompositionParameterFormat,
     CompositionParameterType, CompositionPreviewPlan, CompositionPreviewRequest,

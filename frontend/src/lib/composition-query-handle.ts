@@ -4,6 +4,7 @@ import {
   type CompositionListItem,
   type CompositionParameterDefinition,
   type CompositionRawRevision,
+  type CompositionResolvedComponentBinding,
   type CompositionResolvedSource,
   type CompositionResolveResponse,
   type CompositionSourcePage,
@@ -60,6 +61,14 @@ const sourcePageNext = (page: CompositionSourcePage | undefined) => {
   if (!page) return undefined;
   return page.page.next;
 };
+
+const sourceNeedsPage = (
+  source: CompositionResolvedSource,
+  bindings: readonly CompositionResolvedComponentBinding[],
+): boolean =>
+  bindings.some((binding) =>
+    binding.kind === "table" && binding.source_id === source.source_id
+  );
 
 /** Client-held Composition Work. It owns no saved state or query authority. */
 export function createCompositionQueryHandle(
@@ -191,15 +200,23 @@ export function createCompositionQueryHandle(
         resolving: false,
         resolved,
         sources: Object.fromEntries(
-          (resolved.ok ? resolved.plan?.sources ?? [] : []).map((source) => [
-            source.source_id,
-            { status: "loading", cursorStack: [undefined] },
-          ]),
+          (resolved.ok ? resolved.plan?.sources ?? [] : [])
+            .filter((source) =>
+              sourceNeedsPage(
+                source,
+                resolved.plan?.component_bindings ?? [],
+              )
+            ).map((source) => [
+              source.source_id,
+              { status: "loading", cursorStack: [undefined] },
+            ]),
         ),
       }));
       if (resolved.ok && resolved.plan) {
         await Promise.all(
-          resolved.plan.sources.map((source) =>
+          resolved.plan.sources.filter((source) =>
+            sourceNeedsPage(source, resolved.plan!.component_bindings)
+          ).map((source) =>
             requestSource(
               requestGeneration,
               identity.spaceId,

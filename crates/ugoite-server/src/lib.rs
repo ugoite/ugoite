@@ -49,6 +49,7 @@ use ugoite_api_client::{
     CompositionEntryMetadata, CompositionHistoryPage, CompositionLintError,
     CompositionLintResponse, CompositionLintValue, CompositionListItem, CompositionListPage,
     CompositionMetricOperation as ApiCompositionMetricOperation,
+    CompositionMetricPresentation as ApiCompositionMetricPresentation,
     CompositionMetricQueryDiagnostic as ApiCompositionMetricQueryDiagnostic,
     CompositionMetricQueryRequest, CompositionMetricQueryResponse,
     CompositionMetricQueryTarget as ApiCompositionMetricQueryTarget,
@@ -78,6 +79,7 @@ use ugoite_core::composition_metric::{
 };
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
 use ugoite_domain::composition::{
+    CompositionMetricPresentation as DomainCompositionMetricPresentation,
     CompositionParameter as DomainCompositionParameter,
     CompositionParameterFormat as DomainCompositionParameterFormat,
     CompositionParameterType as DomainCompositionParameterType,
@@ -11667,6 +11669,20 @@ fn api_composition_result_field_type(
     }
 }
 
+fn api_composition_metric_presentation(
+    presentation: DomainCompositionMetricPresentation,
+) -> ApiCompositionMetricPresentation {
+    match presentation {
+        DomainCompositionMetricPresentation::Number {
+            unit,
+            fraction_digits,
+        } => ApiCompositionMetricPresentation::Number {
+            unit,
+            fraction_digits,
+        },
+    }
+}
+
 fn api_composition_metric_query_response(
     response: CoreCompositionMetricQueryResponse,
 ) -> ApiResult<CompositionMetricQueryResponse> {
@@ -11844,6 +11860,9 @@ fn api_composition_sources_and_bindings(
             expected_result_type: binding
                 .expected_result_type
                 .map(api_composition_result_field_type),
+            presentation: binding
+                .presentation
+                .map(api_composition_metric_presentation),
         })
         .collect();
     Ok((sources, component_bindings))
@@ -16095,10 +16114,10 @@ mod authentication_regression_tests {
     ) -> anyhow::Result<()> {
         use ugoite_domain::composition::{
             CompositionComponent, CompositionDocument, CompositionFormat, CompositionKind,
-            CompositionMetricDefinition, CompositionParameter, CompositionParameterReference,
-            CompositionParameterType, CompositionResultColumn, CompositionResultFieldType,
-            CompositionSource, CompositionSpec, CompositionValue, DashboardFlowLayout, FlowItem,
-            FlowLayoutKind, FlowRow,
+            CompositionMetricDefinition, CompositionMetricPresentation, CompositionParameter,
+            CompositionParameterReference, CompositionParameterType, CompositionResultColumn,
+            CompositionResultFieldType, CompositionSource, CompositionSpec, CompositionValue,
+            DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow,
         };
         use ugoite_domain::id::{EntryId, RevisionId};
 
@@ -16194,7 +16213,10 @@ mod authentication_regression_tests {
                         source: "metric_sql".to_string(),
                         column: "total".to_string(),
                     }),
-                    presentation: None,
+                    presentation: Some(CompositionMetricPresentation::Number {
+                        unit: Some("USD".to_string()),
+                        fraction_digits: Some(2),
+                    }),
                 }],
                 layout: DashboardFlowLayout {
                     kind: FlowLayoutKind::Flow,
@@ -16297,6 +16319,29 @@ mod authentication_regression_tests {
         assert_eq!(saved_body["result"]["source_kind"], "saved_sql");
         assert_eq!(saved_body["result"]["result_type"], "integer");
         assert_eq!(saved_body["result"]["value"], "42");
+
+        let (resolve_status, resolve_body) = route_json(
+            route.clone(),
+            Request::post(format!(
+                "/spaces/{space_id}/compositions/{}/resolve",
+                original.entry_id
+            ))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                json!({
+                    "revision_id": original.revision_id.to_string(),
+                    "parameters": {"minimum": 42}
+                })
+                .to_string(),
+            ))?,
+        )
+        .await?;
+        assert_eq!(resolve_status, StatusCode::OK, "{resolve_body}");
+        assert_eq!(resolve_body["ok"], true);
+        assert_eq!(
+            resolve_body["plan"]["component_bindings"][0]["presentation"],
+            json!({"kind": "number", "unit": "USD", "fraction_digits": 2})
+        );
 
         let draft_yaml = ugoite_domain::composition::canonicalize_composition(&metric_document(
             "Unsaved metric",

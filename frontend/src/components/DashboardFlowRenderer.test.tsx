@@ -53,7 +53,7 @@ const plan: CompositionResolvePlan = {
       label: "Total",
       source_id: "summary",
       result_property_key: "total",
-      expected_result_type: "float",
+      expected_result_type: "integer",
     },
     {
       component_id: "count",
@@ -136,11 +136,30 @@ describe("DashboardFlowRenderer", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("renders rows in order with parameter controls interleaved", async () => {
-    vi.spyOn(compositionApi, "evaluateMetricPage").mockResolvedValue({
-      ok: true,
-      value: 42,
+    const query = vi.spyOn(compositionApi, "queryMetric").mockImplementation(
+      (_spaceId, request) =>
+        Promise.resolve({
+          ok: true,
+          result: {
+            component_id: request.component_id,
+            operation: "sql_scalar",
+            source_kind: "saved_sql",
+            result_type: "integer",
+            value: request.component_id === "total" ? "42" : "7",
+          },
+        }),
+    );
+    const { container } = renderFlow({
+      metricQueryContext: {
+        spaceId: "space-1",
+        target: {
+          kind: "saved_revision",
+          composition_id: "tool-1",
+          revision_id: "revision-1",
+        },
+        parameters: { month: "2026-10-01" },
+      },
     });
-    const { container } = renderFlow();
 
     const rows = Array.from(
       container.querySelectorAll(".compositionFlowRow"),
@@ -159,16 +178,30 @@ describe("DashboardFlowRenderer", () => {
     // Unplaced optional parameters render no in-flow control.
     expect(screen.queryByLabelText("Region")).toBeNull();
 
-    // Metrics share the source without aggregation; the table delegates to
+    // Metrics query the bounded server operation; the table delegates to
     // the source-native presenter.
-    expect(await screen.findAllByText("42", { selector: "output" }))
-      .toHaveLength(2);
+    expect(await screen.findByText("42", { selector: "output" }))
+      .toBeInTheDocument();
+    expect(await screen.findByText("7", { selector: "output" }))
+      .toBeInTheDocument();
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(query).toHaveBeenCalledWith(
+      "space-1",
+      expect.objectContaining({
+        target: {
+          kind: "saved_revision",
+          composition_id: "tool-1",
+          revision_id: "revision-1",
+        },
+        parameters: { month: "2026-10-01" },
+      }),
+      expect.any(AbortSignal),
+    );
     expect(screen.getByRole("table")).toBeInTheDocument();
   });
 
   it("renders each text style without fetching sources", async () => {
-    const evaluate = vi.spyOn(compositionApi, "evaluateMetricPage")
-      .mockResolvedValue({ ok: true, value: 1 });
+    const query = vi.spyOn(compositionApi, "queryMetric");
     renderFlow({
       layout: {
         rows: [{
@@ -206,7 +239,7 @@ describe("DashboardFlowRenderer", () => {
     );
     expect(screen.getByText("Settled monthly.")).toHaveClass("flowText--body");
     expect(screen.getByText("Unaudited.")).toHaveClass("flowText--caption");
-    await waitFor(() => expect(evaluate).not.toHaveBeenCalled());
+    await waitFor(() => expect(query).not.toHaveBeenCalled());
   });
 
   it("binds parameter changes to transient work state", () => {
@@ -237,8 +270,16 @@ describe("DashboardFlowRenderer", () => {
   });
 
   it("delegates flow metrics and tables to source-native presenters", async () => {
-    const evaluate = vi.spyOn(compositionApi, "evaluateMetricPage")
-      .mockResolvedValue({ ok: true, value: 42 });
+    const query = vi.spyOn(compositionApi, "queryMetric").mockResolvedValue({
+      ok: true,
+      result: {
+        component_id: "total",
+        operation: "sql_scalar",
+        source_kind: "saved_sql",
+        result_type: "integer",
+        value: "42",
+      },
+    });
     renderFlow({
       layout: {
         rows: [{
@@ -249,19 +290,77 @@ describe("DashboardFlowRenderer", () => {
           ],
         }],
       },
+      metricQueryContext: {
+        spaceId: "space-1",
+        target: {
+          kind: "saved_revision",
+          composition_id: "tool-1",
+          revision_id: "revision-1",
+        },
+        parameters: { month: "2026-10-01" },
+      },
     });
 
-    await waitFor(() =>
-      expect(evaluate).toHaveBeenCalledWith({
-        expected_result_type: "float",
-        is_complete: true,
-        row_count: 1,
-        selected_column_count: 1,
-        selected_value: 42,
-      })
-    );
     expect(await screen.findByText("42", { selector: "output" }))
       .toBeInTheDocument();
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledWith(
+      "space-1",
+      expect.objectContaining({ component_id: "total" }),
+      expect.any(AbortSignal),
+    );
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "42" })).toBeInTheDocument();
+  });
+
+  it("uses exact-revision scalar queries in flow layout and preserves the table page", async () => {
+    const query = vi.spyOn(compositionApi, "queryMetric").mockResolvedValue({
+      ok: true,
+      result: {
+        component_id: "total",
+        operation: "sql_scalar",
+        source_kind: "saved_sql",
+        result_type: "integer",
+        value: "42",
+      },
+    });
+    renderFlow({
+      layout: {
+        rows: [{
+          id: "summary",
+          items: [
+            { kind: "component", component: "total" },
+            { kind: "component", component: "rows" },
+          ],
+        }],
+      },
+      metricQueryContext: {
+        spaceId: "space-1",
+        target: {
+          kind: "saved_revision",
+          composition_id: "tool-1",
+          revision_id: "revision-1",
+        },
+        parameters: { month: "2026-10-01" },
+      },
+    });
+
+    expect(await screen.findByText("42", { selector: "output" }))
+      .toBeInTheDocument();
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledWith(
+      "space-1",
+      {
+        target: {
+          kind: "saved_revision",
+          composition_id: "tool-1",
+          revision_id: "revision-1",
+        },
+        component_id: "total",
+        parameters: { month: "2026-10-01" },
+      },
+      expect.any(AbortSignal),
+    );
     expect(screen.getByRole("table")).toBeInTheDocument();
     expect(screen.getByRole("cell", { name: "42" })).toBeInTheDocument();
   });
@@ -277,7 +376,10 @@ describe("DashboardFlowRenderer", () => {
           filters: [],
           sort: [],
         },
-        projection: { kind: "fields", fields: [{ kind: "property", field_id: 9 }] },
+        projection: {
+          kind: "fields",
+          fields: [{ kind: "property", field_id: 9 }],
+        },
         limit: 1,
       },
     };

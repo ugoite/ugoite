@@ -15461,9 +15461,38 @@
           },
           "expected_result_type": {
             "$ref": "#/components/schemas/CompositionResultFieldType"
+          },
+          "presentation": {
+            "$ref": "#/components/schemas/CompositionMetricPresentation"
           }
         },
         "additionalProperties": false
+      },
+      "CompositionMetricPresentation": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "number"
+              },
+              "unit": {
+                "type": "string"
+              },
+              "fraction_digits": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0,
+                "maximum": 255
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
       },
       "CompositionEntryQuerySystemField": {
         "type": "string",

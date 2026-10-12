@@ -828,29 +828,27 @@ requirements:
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_metric_page_adapter_checks_exact_alias_and_scalar_shape } }
       - id: browser-metric-verification
         role: verification
-        facet: verification
-        responsibility: Verify metric protocol envelopes adapt to scalar and diagnostic results and the Browser renders the shared metric result with continuation guards.
+        facet: frontend-tests
+        responsibility: Verify the bounded metric operation and exact server-result rendering without client aggregation.
         targets:
-          - id: protocol-case
+          - id: query-case
             adapter: typescript
-            path: frontend/src/lib/ugoite-client/protocol.test.ts
-            selector: { kind: test, name: adapts metric protocol envelopes to scalar and diagnostic results }
+            path: frontend/src/lib/composition-api.test.ts
+            selector: { kind: test, name: queries one metric through the bounded portable operation }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.metric-runtime-values
-                covers:
-                  - FEAT-COMP-004#binding.browser-query-runtime/target.browser-shared-metric-evaluator
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/ugoite-client/protocol.test.ts, test: adapts metric protocol envelopes to scalar and diagnostic results } }
+                covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-composition-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-api.test.ts, test: queries one metric through the bounded portable operation } }
           - id: renderer-case
             adapter: typescript
             path: frontend/src/components/CompositionRenderer.test.tsx
-            selector: { kind: test, name: renders section order and displays the shared WASM metric result }
+            selector: { kind: test, name: queries an exact integer metric through the bounded server operation }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.metric-runtime-values
-                covers:
-                  - FEAT-COMP-004#binding.browser-query-runtime/target.browser-composition-renderer
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: renders section order and displays the shared WASM metric result } }
+                covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-composition-renderer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: queries an exact integer metric through the bounded server operation } }
     criteria:
       - id: typed-dashboard-model
         kind: behavior
