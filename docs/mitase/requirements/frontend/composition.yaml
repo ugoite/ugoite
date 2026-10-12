@@ -425,6 +425,19 @@ requirements:
                 criterion: REQ-FE-070#criterion.metric-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: disables Save when a Saved SQL Metric has no output column } }
+          - id: metric-preview-fingerprint-mismatch
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: rejects a successful metric preview with a different draft fingerprint }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.metric-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: rejects a successful metric preview with a different draft fingerprint } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.side-effect-free-preview
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: rejects a successful metric preview with a different draft fingerprint } }
       - id: studio-parameter-verification
         role: verification
         facet: verification
@@ -903,24 +916,6 @@ requirements:
                 criterion: REQ-FE-070#criterion.side-effect-free-preview
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: renders resolve diagnostics in the strip in every mode without refetch } }
-      - id: studio-metric-preview-fingerprint-verification
-        role: verification
-        facet: verification
-        responsibility: Verify that a successful Composition Metric draft response is displayed or inserted only when its fingerprint matches the canonical draft sent to the query operation.
-        targets:
-          - id: metric-preview-fingerprint-mismatch
-            adapter: typescript
-            path: frontend/src/components/CompositionStudioSync.test.tsx
-            selector: { kind: test, name: rejects a successful metric preview with a different draft fingerprint }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-070#criterion.metric-authoring
-                covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: rejects a successful metric preview with a different draft fingerprint } }
-              - kind: verifies
-                criterion: REQ-FE-070#criterion.side-effect-free-preview
-                covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: rejects a successful metric preview with a different draft fingerprint } }
       - id: studio-entry-query-field-label-verification
         role: verification
         facet: verification
