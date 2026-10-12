@@ -673,17 +673,18 @@ describe("Composition studio shell", () => {
     });
     fireEvent.click(within(dataPicker).getByRole("tab", { name: "Metric" }));
     fireEvent.click(
-      within(dataPicker).getByRole("button", {
-        name: "Choose a Form or Saved SQL",
-      }),
+      within(dataPicker).getByRole("button", { name: "Saved SQL" }),
     );
     const sourcePicker = await screen.findByRole("dialog", {
       name: "Choose a source",
     });
+    expect(await within(sourcePicker).findByRole("list", { name: "Saved SQL" }))
+      .toBeInTheDocument();
+    expect(within(sourcePicker).queryByRole("tablist")).not
+      .toBeInTheDocument();
     fireEvent.click(
-      await within(sourcePicker).findByRole("tab", { name: "Saved SQL" }),
+      await within(sourcePicker).findByRole("button", { name: "Monthly" }),
     );
-    fireEvent.click(await screen.findByRole("button", { name: "Monthly" }));
 
     const metricPicker = await screen.findByRole("dialog", {
       name: "Add data component",

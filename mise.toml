@@ -463,7 +463,7 @@ env = { PLAYWRIGHT_JUNIT_OUTPUT_FILE = "test-results/mobile-ui-junit.xml", PLAYW
 run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:mobile-ui"
 
 [tasks."test:e2e:composition-metric"]
-description = "Run saved SQL Composition Metric authoring and cardinality E2E"
+description = "Run saved SQL Composition Metric lifecycle, paging, and cardinality E2E"
 env = { PLAYWRIGHT_JUNIT_OUTPUT_FILE = "test-results/composition-metric-junit.xml", PLAYWRIGHT_OUTPUT_DIR = "test-results/composition-metric-results" }
 run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:composition-metric"
 

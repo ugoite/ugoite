@@ -287,8 +287,7 @@ features:
   - id: display-label-domain
     role: implementation
     facet: domain
-    responsibility: Represent optional Composition display labels without changing stable IDs or source
-      and query binding semantics.
+    responsibility: Represent optional Composition display labels and the SQL-column-only Metric shape without changing stable IDs or source and query binding semantics.
     targets:
     - id: parameter-display-label
       adapter: rust
@@ -308,6 +307,8 @@ features:
       claims:
       - kind: satisfies
         criterion: REQ-COMP-002#criterion.optional-display-labels
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation
   - id: display-label-domain-tests
     role: evidence
     facet: domain-tests
@@ -396,20 +397,6 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.used-field-schema-snapshot
-  - id: saved-sql-metric-presentation-domain
-    role: implementation
-    facet: domain
-    responsibility: Represent a Metric as one Saved SQL source ID, one declared output column, and optional display-only presentation settings. Multiple Metrics may select different columns from the same Saved SQL source.
-    targets:
-    - id: metric-component
-      adapter: rust
-      path: crates/ugoite-domain/src/composition.rs
-      selector:
-        kind: symbol
-        name: CompositionComponent
-      claims:
-      - kind: satisfies
-        criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation
   - id: saved-sql-metric-runtime-evidence
     role: evidence
     facet: core-tests

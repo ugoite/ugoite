@@ -425,7 +425,7 @@ features:
     kind: custom
     source: FEAT-COMP-001#binding.contract/target.composition-contract
     participants:
-    - target: FEAT-COMP-001#binding.saved-sql-metric-presentation-domain/target.metric-component
+    - target: FEAT-COMP-001#binding.display-label-domain/target.component-display-label
       role: domain
     - target: FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module
       role: service

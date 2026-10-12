@@ -78,7 +78,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation
                 covers:
-                  - FEAT-COMP-001#binding.saved-sql-metric-presentation-domain/target.metric-component
+                  - FEAT-COMP-001#binding.display-label-domain/target.component-display-label
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::composition_canonicalization_matches_the_native_domain_contract } }
       - id: saved-sql-metric-presentation-validation
         role: verification
@@ -93,7 +93,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation
                 covers:
-                  - FEAT-COMP-001#binding.saved-sql-metric-presentation-domain/target.metric-component
+                  - FEAT-COMP-001#binding.display-label-domain/target.component-display-label
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_columns_resolve_to_shared_metric_bindings } }
           - id: metric-row-cardinality-diagnostics
             adapter: rust
@@ -118,18 +118,43 @@ requirements:
             claims:
               - { kind: verifies, criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation, covers: [FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: authorized_composition_metrics_recheck_current_entry_and_saved_sql_access } } }
               - { kind: verifies, criterion: REQ-COMP-004#criterion.current-authorization, covers: [FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: authorized_composition_metrics_recheck_current_entry_and_saved_sql_access } } }
+          - id: saved-sql-metric-live-update-and-table-paging
+            adapter: typescript
+            path: e2e/composition-metric-journey.test.ts
+            selector: { kind: test, name: Browser updates a Saved SQL metric after Entry changes independently of Table pagination }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation
+                covers:
+                  - FEAT-COMP-001#binding.display-label-domain/target.component-display-label
+                  - FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-metric-journey.test.ts, test: "Browser updates a Saved SQL metric after Entry changes independently of Table pagination" } }
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.exact-saved-sql-revision
+                covers:
+                  - FEAT-COMP-002#binding.saved-sql-resolver/target.compile-exact-saved-sql-source
+                  - FEAT-COMP-004#binding.browser-query-runtime/target.browser-saved-sql-viewer
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-metric-journey.test.ts, test: "Browser updates a Saved SQL metric after Entry changes independently of Table pagination" } }
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+                covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-query-handle]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-metric-journey.test.ts, test: "Browser updates a Saved SQL metric after Entry changes independently of Table pagination" } }
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.source-native-composition-rendering
+                covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-entry-query-table]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-metric-journey.test.ts, test: "Browser updates a Saved SQL metric after Entry changes independently of Table pagination" } }
           - id: cli-canonical-case
             adapter: rust
             path: crates/ugoite-cli/src/commands/composition.rs
             selector: { kind: symbol, name: tests::lint_file_preserves_saved_sql_metric_columns_and_shared_fingerprint }
             claims:
-              - { kind: verifies, criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation, covers: [FEAT-COMP-001#binding.saved-sql-metric-presentation-domain/target.metric-component], runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: commands::composition::tests::lint_file_preserves_saved_sql_metric_columns_and_shared_fingerprint } } }
+              - { kind: verifies, criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation, covers: [FEAT-COMP-001#binding.display-label-domain/target.component-display-label], runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: commands::composition::tests::lint_file_preserves_saved_sql_metric_columns_and_shared_fingerprint } } }
           - id: domain-canonical-case
             adapter: rust
             path: crates/ugoite-domain/src/composition.rs
             selector: { kind: symbol, name: tests::multiple_metrics_select_columns_from_one_saved_sql_source }
             claims:
-              - { kind: verifies, criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation, covers: [FEAT-COMP-001#binding.saved-sql-metric-presentation-domain/target.metric-component], runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::multiple_metrics_select_columns_from_one_saved_sql_source } } }
+              - { kind: verifies, criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation, covers: [FEAT-COMP-001#binding.display-label-domain/target.component-display-label], runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::multiple_metrics_select_columns_from_one_saved_sql_source } } }
       - id: decimal-metric-value-case
         role: verification
         facet: verification

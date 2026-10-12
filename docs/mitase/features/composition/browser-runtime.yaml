@@ -311,7 +311,7 @@ features:
       path: frontend/src/components/CompositionRenderer.test.tsx
       selector:
         kind: test
-        name: offers direct edit when a Saved SQL metric returns a non-scalar row count
+        name: sends a multi-row Saved SQL metric directly to edit
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.metric-runtime-values
@@ -320,12 +320,27 @@ features:
       path: e2e/composition-metric-journey.test.ts
       selector:
         kind: test
-        name: Browser reopens a metric tool at its exact revision and surfaces the stable multiple-rows diagnostic without aggregation
+        name: Browser reopens a Saved SQL metric at its exact revision and reports multiple matching rows
       claims:
       - kind: evidences
         anchor: REQ-FE-070#criterion.metric-result-presentation
       - kind: evidences
         anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
+    - id: e2e-saved-sql-metric-live-update-and-table-paging
+      adapter: typescript
+      path: e2e/composition-metric-journey.test.ts
+      selector:
+        kind: test
+        name: Browser updates a Saved SQL metric after Entry changes independently of Table pagination
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.saved-sql-metric-presentation
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
+      - kind: evidences
+        anchor: REQ-FE-068#criterion.controller-owned-paging
+      - kind: evidences
+        anchor: REQ-FE-068#criterion.source-native-composition-rendering
     - id: browser-metric-draft-query
       adapter: typescript
       path: frontend/src/components/CompositionRenderer.test.tsx
