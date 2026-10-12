@@ -284,10 +284,10 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.bounded-parser
-  - id: display-label-domain
+  - id: composition-display-domain
     role: implementation
     facet: domain
-    responsibility: Represent optional Composition display labels and the SQL-column-only Metric shape without changing stable IDs or source and query binding semantics.
+    responsibility: Represent optional Composition display labels and SQL-column-only Metric bindings while keeping calculations outside display components.
     targets:
     - id: parameter-display-label
       adapter: rust
@@ -298,7 +298,7 @@ features:
       claims:
       - kind: satisfies
         criterion: REQ-COMP-002#criterion.optional-display-labels
-    - id: component-display-label
+    - id: composition-component-contract
       adapter: rust
       path: crates/ugoite-domain/src/composition.rs
       selector:

@@ -72,13 +72,13 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.optional-display-labels
                 covers:
-                  - FEAT-COMP-001#binding.display-label-domain/target.parameter-display-label
-                  - FEAT-COMP-001#binding.display-label-domain/target.component-display-label
+                  - FEAT-COMP-001#binding.composition-display-domain/target.parameter-display-label
+                  - FEAT-COMP-001#binding.composition-display-domain/target.composition-component-contract
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::composition_canonicalization_matches_the_native_domain_contract } }
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation
                 covers:
-                  - FEAT-COMP-001#binding.display-label-domain/target.component-display-label
+                  - FEAT-COMP-001#binding.composition-display-domain/target.composition-component-contract
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::composition_canonicalization_matches_the_native_domain_contract } }
       - id: saved-sql-metric-presentation-validation
         role: verification
@@ -93,7 +93,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation
                 covers:
-                  - FEAT-COMP-001#binding.display-label-domain/target.component-display-label
+                  - FEAT-COMP-001#binding.composition-display-domain/target.composition-component-contract
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_columns_resolve_to_shared_metric_bindings } }
           - id: metric-row-cardinality-diagnostics
             adapter: rust
@@ -147,13 +147,13 @@ requirements:
             path: crates/ugoite-cli/src/commands/composition.rs
             selector: { kind: symbol, name: tests::lint_file_preserves_saved_sql_metric_columns_and_shared_fingerprint }
             claims:
-              - { kind: verifies, criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation, covers: [FEAT-COMP-001#binding.display-label-domain/target.component-display-label], runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: commands::composition::tests::lint_file_preserves_saved_sql_metric_columns_and_shared_fingerprint } } }
+              - { kind: verifies, criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation, covers: [FEAT-COMP-001#binding.composition-display-domain/target.composition-component-contract], runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: commands::composition::tests::lint_file_preserves_saved_sql_metric_columns_and_shared_fingerprint } } }
           - id: domain-canonical-case
             adapter: rust
             path: crates/ugoite-domain/src/composition.rs
             selector: { kind: symbol, name: tests::multiple_metrics_select_columns_from_one_saved_sql_source }
             claims:
-              - { kind: verifies, criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation, covers: [FEAT-COMP-001#binding.display-label-domain/target.component-display-label], runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::multiple_metrics_select_columns_from_one_saved_sql_source } } }
+              - { kind: verifies, criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation, covers: [FEAT-COMP-001#binding.composition-display-domain/target.composition-component-contract], runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::multiple_metrics_select_columns_from_one_saved_sql_source } } }
       - id: decimal-metric-value-case
         role: verification
         facet: verification
