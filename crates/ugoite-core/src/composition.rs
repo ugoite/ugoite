@@ -799,8 +799,8 @@ pub struct ResolvedComponentBinding {
     pub source_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metric_field_id: Option<FieldId>,
-    /// Typed EntryQuery operation. Legacy scalar metrics and SQL scalar
-    /// metrics leave this absent.
+    /// Typed EntryQuery aggregate operation. SQL scalar metrics use
+    /// `result_property_key` instead.
     #[serde(skip)]
     pub aggregate_operation: Option<CompositionAggregateOperation>,
     /// Current EntryResult property key or exact Saved SQL output alias.
