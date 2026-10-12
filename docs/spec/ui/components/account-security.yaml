@@ -1,10 +1,15 @@
 version: "0.1"
-updated: "2026-10-09"
+updated: "2026-10-13"
 component_group:
   id: account-security
   title: Account Security
   routes: [/settings/security]
-  notes: GlobalShell owns navigation; credential and session identifiers are not rendered, while revoke actions retain them internally.
+  notes: >-
+    GlobalShell owns navigation. The Passkeys and Sessions lists never render
+    their identifiers; revoke actions keep them internal. The Audit Log tab
+    uses NodeAuditLogViewer and follows the shared Audit Log Viewer contract.
+    Audit Log event identifiers appear only in collapsed details (see
+    audit-log-viewer.yaml).
 components:
   - id: credential-tabs
     type: tab-bar
@@ -20,7 +25,7 @@ components:
     tests: frontend/src/routes/settings/security.test.tsx
     primary_label: localized-numbered-passkey-and-last-used
     missing_activity: localized-never
-    identifier_visibility: never-rendered
+    identifier_visibility: never-rendered-in-list
     action:
       trigger: revoke-passkey
       visible_label: settings.revoke
@@ -33,7 +38,7 @@ components:
     primary_label: localized-numbered-browser-session-and-last-seen
     missing_activity: localized-never
     revoked_status: localized-revoked
-    identifier_visibility: never-rendered
+    identifier_visibility: never-rendered-in-list
     action:
       trigger: revoke-active-session
       visible_label: settings.revoke

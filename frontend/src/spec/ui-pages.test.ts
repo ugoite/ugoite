@@ -196,6 +196,7 @@ describe("UI spec YAML registry", () => {
       "account-security.yaml",
     );
     const security = parse(readFileSync(securityPath, "utf8")) as {
+      component_group?: { notes?: string };
       components?: Array<Record<string, unknown>>;
     };
     const passkeys = security.components?.find(({ id }) =>
@@ -205,13 +206,20 @@ describe("UI spec YAML registry", () => {
       id === "session-list"
     );
 
+    expect(security.component_group?.notes).toContain(
+      "Passkeys and Sessions lists never render their identifiers",
+    );
+    expect(security.component_group?.notes).toContain(
+      "Audit Log event identifiers appear only in collapsed details",
+    );
+
     expect(passkeys).toMatchObject({
       type: "list",
       implementation: "frontend/src/routes/settings/security.tsx",
       tests: "frontend/src/routes/settings/security.test.tsx",
       primary_label: "localized-numbered-passkey-and-last-used",
       missing_activity: "localized-never",
-      identifier_visibility: "never-rendered",
+      identifier_visibility: "never-rendered-in-list",
       action: {
         trigger: "revoke-passkey",
         visible_label: "settings.revoke",
@@ -226,7 +234,7 @@ describe("UI spec YAML registry", () => {
       primary_label: "localized-numbered-browser-session-and-last-seen",
       missing_activity: "localized-never",
       revoked_status: "localized-revoked",
-      identifier_visibility: "never-rendered",
+      identifier_visibility: "never-rendered-in-list",
       action: {
         trigger: "revoke-active-session",
         visible_label: "settings.revoke",
@@ -251,7 +259,7 @@ describe("UI spec YAML registry", () => {
       "utf8",
     );
     expect(securityTests).toContain(
-      "REQ-UX-LIST-001: never renders passkey or session identifiers",
+      "REQ-UX-LIST-001: hides passkey and session identifiers from credential lists",
     );
     const uiIndex = readFileSync(
       path.join(repoRoot, "docs/spec/ui/index.md"),
