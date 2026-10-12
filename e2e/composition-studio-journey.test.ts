@@ -308,7 +308,7 @@ function buildMobileStudioYaml(
   monthEnd: string,
 ): string {
   // Same single-row source as the seeded Saved SQL: one Metric on the amount
-  // column plus a table, with the month range carried as parameter defaults
+  // column plus a table, with the month range carried as variable defaults
   // so the tool resolves without caller input.
   return [
     "format: ugoite.composition",
@@ -317,7 +317,7 @@ function buildMobileStudioYaml(
     "kind: dashboard",
     "tags: []",
     "spec:",
-    "  parameters:",
+    "  variables:",
     "    - id: month_start",
     "      type: date",
     "      required: true",
@@ -338,9 +338,9 @@ function buildMobileStudioYaml(
     "          type: float",
     "      variables:",
     "        month_start:",
-    "          parameter: month_start",
+    "          variable: month_start",
     "        month_end:",
-    "          parameter: month_end",
+    "          variable: month_end",
     "  components:",
     "    - id: total",
     "      kind: metric",
