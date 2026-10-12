@@ -3613,6 +3613,7 @@ mod tests {
         );
         spec.components = vec![
             input_component("filter-input", "query_term"),
+            input_component("filter-input-secondary", "query_term"),
             CompositionComponent::Text {
                 id: "heading-text".to_owned(),
                 label: None,
@@ -3636,6 +3637,7 @@ mod tests {
                 "controls",
                 vec![
                     component_item("filter-input"),
+                    component_item("filter-input-secondary"),
                     component_item("heading-text"),
                 ],
             ),
@@ -3708,6 +3710,7 @@ mod tests {
                 "controls",
                 vec![
                     component_item("heading-text"),
+                    component_item("filter-input-secondary"),
                     component_item("filter-input"),
                 ],
             ),
@@ -3719,7 +3722,10 @@ mod tests {
         assert_eq!(first.sources.len(), 2);
         assert_eq!(
             first.dependencies.variable_consumers["query_term"].input_component_ids,
-            BTreeSet::from(["filter-input".to_owned()])
+            BTreeSet::from([
+                "filter-input".to_owned(),
+                "filter-input-secondary".to_owned()
+            ])
         );
         assert_eq!(
             first.dependencies.variable_consumers["query_term"].source_ids,
