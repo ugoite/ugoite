@@ -77,13 +77,17 @@ can be saved.
   exactly; do not trim, normalize, or truncate it.
 - `boolean`: the typed value is JSON `true` or `false`; textual input accepts
   only the exact lowercase tokens `true` and `false`.
-- `integer`: accept a base-10 signed integer and require the value to be in the
-  JavaScript safe integer interval `[-9007199254740991, 9007199254740991]`.
-  Parse the digits before converting to a JavaScript Number; reject fractions,
-  exponents, non-finite values, and out-of-range integers.
-- `float`: parse locale-independent ASCII decimal syntax (including an optional
-  exponent), with at most 64 bytes, and require a finite IEEE-754 binary64
-  result. Reject NaN, infinities, locale separators, and overflow.
+- `integer`: accept the ASCII token `[+-]?[0-9]+`, at most 17 bytes including
+  its optional sign, with no surrounding whitespace. Leading zeroes are
+  accepted. Parse decimal digits with checked integer arithmetic before any
+  JavaScript Number conversion, then require the value to be in the safe
+  integer interval `[-9007199254740991, 9007199254740991]`. Reject decimal
+  points, exponents, and out-of-range values.
+- `float`: accept the ASCII grammar
+  `[+-]?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?`, at most 64
+  bytes including sign and exponent, with no surrounding whitespace. Require a
+  finite IEEE-754 binary64 result. This accepts `1`, `1.25`, `.5`, and `1e3`;
+  it rejects `1.`, `1,25`, `NaN`, `Infinity`, and overflow.
 - `date`: accept exactly ten ASCII characters in `YYYY-MM-DD` form, with a
   four-digit year from 0001 through 9999, and require a real Gregorian date.
   Do not accept whitespace, reduced precision, or a date-time value.
@@ -229,7 +233,7 @@ changes.
 | A22 | composition_inputs_are_accessible_at_mobile_width | Use at 390px with keyboard and screen reader | Inputs and invalid/loading/result states are operable; IDs are not primary labels. |
 | A23 | studio_preview_drops_stale_draft_and_variable_generation | Change draft and variables while Studio preview is in flight | Only matching draft fingerprint and variable generation can update preview. |
 | A24 | composition_runtime_isolation_includes_space_and_principal | Use same IDs/values in different Spaces or principals | Responses, cache identity, and authorization never cross-contaminate. |
-| A25 | typed_variable_lexical_limits_and_temporal_values_are_strict | Exercise each typed Input at its accepted boundary and one value outside it | String byte/control limits, exact boolean tokens, safe-integer edges, finite float parsing, real calendar dates, and explicit-offset RFC 3339 timestamps are enforced consistently; raw invalid text is preserved without SQL execution. |
+| A25 | typed_variable_lexical_limits_and_temporal_values_are_strict | Exercise each typed Input at its accepted boundary and one value outside it | String byte/control limits, exact boolean tokens, signed integer token and safe-range boundaries, float tokens at 64/65 bytes and finite overflow, real calendar dates, and explicit-offset RFC 3339 timestamps are enforced consistently; raw invalid text is preserved without SQL execution. |
 | A26 | variable_filter_changes_golden_aggregate_values | Run the expense journey with minimum 0, then 20 | The [10, 20, 30] fixture yields count 3 / sum 60, then count 2 / sum 50; the separate no-filter NULL aggregate case remains unchanged. |
 
 ## Delivery order
