@@ -419,7 +419,7 @@ test.describe("Composition Metric Journey", () => {
     }
   });
 
-  test("Browser updates a Saved SQL metric after Entry changes independently of Table pagination", async ({ browser, context, request }) => {
+  test("Browser reevaluates a Saved SQL metric after reload when an Entry is added independently of Table pagination", async ({ browser, context, request }) => {
     test.setTimeout(120_000);
     await waitForServers(request);
     const updateSeed = await seedMetricUpdateComposition(request);

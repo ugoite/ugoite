@@ -23,12 +23,13 @@ are never added to `properties`. System Form identity likewise remains in the
 dedicated `form_id` field. This keeps user properties distinct from system
 values even when their names overlap.
 
-An EntryQuery matching set contains only scope, text, and filters. Aggregate
-requests consume that complete set against one current Form publication and
-current authorization boundary; sort, cursor, page limit, and visible table
-projection do not affect the result. Composition aggregate execution reuses
-the canonical EntryQuery text and filter compiler, and a metric field does not
-widen the table projection.
+An EntryQuery matching set contains only scope, text, and filters. The
+`entry.query.count` operation consumes that complete set against one current
+Form publication and current authorization boundary; sort, cursor, page limit,
+and visible table projection do not affect the result. It reuses the canonical
+EntryQuery filter compiler. Composition Metrics do not execute EntryQuery
+aggregates or bind EntryQuery fields; each Metric selects a scalar result column
+from a Saved SQL source.
 
 The cursor is signed and contains the Space identity, immutable PublicationRef,
 query fingerprint, current-authorization fingerprint, typed sort tuple, Form

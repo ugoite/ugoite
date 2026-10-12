@@ -62,10 +62,10 @@ or an exact Saved SQL revision. Components refer to named sources, and layout
 rows carry ordered component and parameter-control items that reference them.
 Parameters keep their semantic definition under `spec.parameters`; the layout
 only places controls bound to parameter IDs. An `entry_query` source carries a sorted `field_schema` snapshot for
-property fields used by that query. A preview projection uses all current
-property fields; an explicit projection, filter, sort, or text search adds the
-fields it uses. Metric bindings do not use EntryQuery fields or change the
-EntryQuery projection. When text search is present, the snapshot includes
+property fields used by that query. An `entry_query` source defines the Table
+query only; Metrics bind a Saved SQL source and never consume EntryQuery fields.
+A preview projection uses all current property fields; an explicit projection,
+filter, sort, or text search adds the fields it uses. When text search is present, the snapshot includes
 every text-searchable property field under existing EntryQuery semantics. The text-search expansion excludes `binary`, `list`, `object_list`, and
 `asset_reference` fields. A field of those types still appears when the query
 otherwise uses it, such as in a projection. Each snapshot row contains

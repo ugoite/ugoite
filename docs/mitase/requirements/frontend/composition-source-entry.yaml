@@ -17,16 +17,18 @@ requirements:
           referenced by the Composition before catalog sources. Selecting an
           existing source in Table mode immediately inserts a table without a
           label step. Browsing a Form or exact Saved SQL revision in Table mode
-          adds that source and its table together. Metric mode offers typed Form
-          aggregate operations (`count_rows`, `count_values`, `sum`, `avg`, `min`,
-          and `max`) or a declared Saved SQL scalar column. `count_rows` needs no
-          field; other Form operations require a supported field with a resolved
-          human Form name. A newly browsed metric source enters the same setup
-          flow. The user previews the configured Metric through the server before
-          insertion; a failed preview does not add a display. Saved SQL Metrics
-          require exactly one row and one column. EntryQuery Metric fields never
-          change the source's table projection. Metric choices never show field
-          IDs or generated ordinals. Component labels are omitted during
+          adds that source and its table together. Metric mode offers Saved SQL
+          sources and lets the user choose one declared displayable output
+          column. Form-assisted summaries, when offered, create an ordinary
+          Saved SQL source before Metric selection; calculations never become
+          Metric settings. A newly browsed Saved SQL source enters the same
+          setup flow. The user previews the configured Metric through the server
+          before insertion; a failed preview does not add a display. A Saved SQL
+          Metric requires exactly one result row, and the chosen column must be
+          a displayable scalar; other columns in that row may be used by other
+          Metrics or a Table. EntryQuery sources remain Table queries and do not
+          supply Metric values. Metric choices never show field IDs or generated
+          ordinals. Component labels are omitted during
           insertion and remain optional Inspector edits after selection. New
           Form sources initially project up to 64 projectable Form fields and
           omit Created and Updated system fields, while their snapshot includes
@@ -72,6 +74,7 @@ requirements:
                     test: puts current Composition sources first and activates them by hidden draft identity,
                   },
                 }
+
           - id: current-source-reuse
             adapter: typescript
             path: frontend/src/components/CompositionStudioSync.test.tsx
@@ -292,3 +295,22 @@ requirements:
                     test: previews a new one-column Saved SQL metric before adding it,
                   },
                 }
+
+  - id: REQ-FE-077
+    title: Form-assisted Saved SQL Summary Authoring
+    description: A no-code summary flow helps users create ordinary Saved SQL from a Form and then use its declared result column in a Metric.
+    priority: medium
+    status: planned
+    criteria:
+      - id: form-summary-is-saved-sql
+        kind: behavior
+        statement: >-
+          When Studio offers Form-assisted summary authoring, the user can choose
+          a Form, a supported SQL calculation, and its field when required. The
+          flow creates and saves an ordinary SQL query as Space Knowledge, then
+          selects its exact Saved SQL revision and declared result column for the
+          Metric. No operation, Form FieldId, generated expression, or hidden
+          aggregation setting is persisted in the Metric. The same Saved SQL
+          result remains available to Table and future result-display
+          components.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-006#rule.governance]
