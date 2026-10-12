@@ -61,12 +61,13 @@ components, and a first-class dashboard flow `layout`. A source identifies eithe
 or an exact Saved SQL revision. Components refer to named sources, and layout
 rows carry ordered component and parameter-control items that reference them.
 Parameters keep their semantic definition under `spec.parameters`; the layout
-only places controls bound to parameter IDs. An `entry_query` source carries a sorted `field_schema` snapshot for
-property fields used by that query. An `entry_query` source defines the Table
-query only; Metrics bind a Saved SQL source and never consume EntryQuery fields.
-A preview projection uses all current property fields; an explicit projection,
-filter, sort, or text search adds the fields it uses. When text search is present, the snapshot includes
-every text-searchable property field under existing EntryQuery semantics. The text-search expansion excludes `binary`, `list`, `object_list`, and
+only places controls bound to parameter IDs. An `entry_query` source carries a
+sorted `field_schema` snapshot for property fields used by that query. It defines
+the Table query only; Metrics bind a Saved SQL source and never consume
+EntryQuery fields. A preview projection uses all current property fields; an
+explicit projection, filter, sort, or text search adds the fields it uses. When
+text search is present, the snapshot includes every text-searchable property
+field under existing EntryQuery semantics. The text-search expansion excludes `binary`, `list`, `object_list`, and
 `asset_reference` fields. A field of those types still appears when the query
 otherwise uses it, such as in a projection. Each snapshot row contains
 `field_id` and `field_type`, plus `reference_form` for a RowReference or
@@ -217,10 +218,10 @@ Each `entry_query` source has a narrower source-schema fingerprint. The core
 resolver computes it from only the source `FormId` and the normalized schema
 snapshot for fields that the resolved EntryQuery uses. This includes
 projection fields (all property fields for preview), filter and sort fields,
-and fields searched under existing EntryQuery text-search semantics. A metric
-field is covered when it is part of the explicit source projection; a metric
-cannot add a field to the query or its fingerprint. The
-snapshot is unique and normalized by `FieldId`; each field contributes its
+and fields searched under existing EntryQuery text-search semantics. Metrics
+bind Saved SQL columns and do not consume EntryQuery fields, so they never add
+fields to this query snapshot or its fingerprint. The snapshot is unique and
+normalized by `FieldId`; each field contributes its
 logical type, List item metadata, and RowReference target metadata. Unrelated
 Form fields, labels, and the rest of the Composition document do not affect
 this fingerprint. In particular, text search alone does not make List fields
@@ -231,10 +232,12 @@ tests in `crates/ugoite-core/src/composition.rs`.
 
 Each `saved_sql` result fingerprint includes its exact Saved SQL Entry and
 Revision, the normalized ordered `expected_result` descriptor, the used
-variable schema, and the selected result column when the component is a metric.
-Changing the declared output names, logical types, order, or metric selector
-changes this fingerprint. Saved SQL revision selection remains exact and does
-not fall back to a newer revision.
+variable schema. It is independent of display components and selected Metric
+columns so multiple displays can share one source fingerprint. Changing the
+declared output names, logical types, order, used variables, or exact revision
+changes this fingerprint; selecting another column changes the Composition
+document fingerprint but not the source fingerprint. Saved SQL revision
+selection remains exact and does not fall back to a newer revision.
 
 The shared native/WASM fixture can be executed with
 `deno run -A crates/ugoite-wasm/tests/composition_parity.ts`.
