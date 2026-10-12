@@ -26,6 +26,7 @@ import { setLocale } from "~/lib/i18n";
 
 const {
   previewMock,
+  queryMetricMock,
   querySourceMock,
   canonicalizeMock,
   saveMock,
@@ -36,6 +37,7 @@ const {
   navigateMock,
 } = vi.hoisted(() => ({
   previewMock: vi.fn(),
+  queryMetricMock: vi.fn(),
   querySourceMock: vi.fn(),
   canonicalizeMock: vi.fn(),
   saveMock: vi.fn(),
@@ -61,7 +63,7 @@ vi.mock("@solidjs/router", () => ({
 vi.mock("~/lib/composition-api", () => ({
   compositionResultTypeFromSql: (resultType: string | undefined) =>
     ["string", "boolean", "integer", "float", "date", "timestamp", "json"]
-      .includes(resultType ?? "")
+        .includes(resultType ?? "")
       ? resultType
       : "json",
   canCreateSavedSqlComposition: (entry: { kind: string }) =>
@@ -71,6 +73,8 @@ vi.mock("~/lib/composition-api", () => ({
       (canonicalizeMock as (...call: unknown[]) => unknown)(...args),
     preview: (...args: unknown[]) =>
       (previewMock as (...call: unknown[]) => unknown)(...args),
+    queryMetric: (...args: unknown[]) =>
+      (queryMetricMock as (...call: unknown[]) => unknown)(...args),
     querySource: (...args: unknown[]) =>
       (querySourceMock as (...call: unknown[]) => unknown)(...args),
     save: (...args: unknown[]) =>
@@ -163,6 +167,23 @@ const okPreview = (fingerprint: string) => ({
     component_bindings: [],
   },
 });
+
+const metricPreview = (fingerprint: string) => {
+  const response = okPreview(fingerprint);
+  return {
+    ...response,
+    plan: {
+      ...response.plan,
+      component_bindings: [{
+        component_id: "disp-1",
+        kind: "metric",
+        source_id: "src-1",
+        result_property_key: "total",
+        expected_result_type: "integer",
+      }],
+    },
+  };
+};
 
 const renderStudio = (initial?: CompositionDraft) =>
   render(() => (
@@ -300,6 +321,51 @@ describe("CompositionStudioSync", () => {
     await sleep(700);
     expect(previewMock).toHaveBeenCalledTimes(1);
     expect(canonicalizeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes the current draft and parameter values through the design canvas metric", async () => {
+    previewMock.mockImplementation(async () => metricPreview("fp-draft"));
+    queryMetricMock.mockResolvedValue({
+      ok: true,
+      draft_fingerprint: "fp-draft",
+      result: {
+        component_id: "disp-1",
+        operation: "sql_scalar",
+        source_kind: "saved_sql",
+        result_type: "integer",
+        value: "128400",
+      },
+    });
+    const initial = seedDraft();
+    initial.parameters = initial.parameters.map((parameter) => ({
+      ...parameter,
+      default: parameter.id === "month" ? "2026-10-01" : parameter.default,
+    }));
+
+    renderStudio(initial);
+
+    expect(await screen.findByText("128400", { selector: "output" }))
+      .toBeInTheDocument();
+    expect(queryMetricMock).toHaveBeenCalledTimes(1);
+    const [spaceId, request] = queryMetricMock.mock.calls[0] as [
+      string,
+      {
+        target: { kind: string; yaml?: string };
+        component_id: string;
+        parameters: Record<string, unknown>;
+      },
+      AbortSignal,
+    ];
+    expect(spaceId).toBe("space-1");
+    expect(request).toMatchObject({
+      target: { kind: "draft" },
+      component_id: "disp-1",
+      parameters: { month: "2026-10-01" },
+    });
+    expect(request.target.yaml).toBe(
+      (previewMock.mock.calls[0] as unknown[])[1],
+    );
+    expect(queryMetricMock.mock.calls[0]?.[2]).toBeInstanceOf(AbortSignal);
   });
 
   it("auto-selects the block source in Data and keeps text and parameter selections", async () => {

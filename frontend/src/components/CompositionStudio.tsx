@@ -1228,8 +1228,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
         <CompositionSourcePicker
           spaceId={spaceId()}
           onSelect={(seed) =>
-            dataSourcePickerOpen() ? addDataSource(seed) : addSourceForDisplay(seed)
-          }
+            dataSourcePickerOpen()
+              ? addDataSource(seed)
+              : addSourceForDisplay(seed)}
           onClose={() => {
             setPickerOpen(false);
             setDataSourcePickerOpen(false);
