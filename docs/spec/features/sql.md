@@ -43,6 +43,10 @@ accept numeric values; and `MIN`/`MAX` accept comparable scalar values. `SUM`,
 `AVG`, and floating aggregate results use checked accumulation: integer and
 decimal overflow, unsupported numeric types, and non-finite floating results
 fail the query instead of returning a wrapped, partial, or non-finite value.
+Integer `AVG` returns `Float64`: integer inputs are accumulated exactly, then
+the result follows IEEE-754 Float64 precision and may round near large integer
+boundaries. `AVG` over Decimal input stays Decimal with its declared output
+scale; cast to Decimal when fixed base-10 precision is required.
 `COUNT`, checked `SUM`, and checked `AVG` preserve SQL `DISTINCT` semantics.
 Window functions are not part of this read-only aggregate policy.
 `sql.query.count` remains the count of rows in the SQL result and is distinct

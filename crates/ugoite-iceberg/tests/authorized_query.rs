@@ -503,6 +503,31 @@ async fn sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts
         .expect("AVG of Long returns Float64")
         .value(0);
     assert!((average - 62.5).abs() < 1e-12);
+    let integer_average_precision_boundary = context
+        .execute(
+            "SELECT AVG(CASE WHEN field_101 >= 100 THEN \
+             CAST(9007199254740992 AS BIGINT) ELSE \
+             CAST(9007199254740993 AS BIGINT) END) AS average FROM tasks",
+        )
+        .await?;
+    assert_eq!(
+        integer_average_precision_boundary[0]
+            .schema()
+            .field(0)
+            .data_type(),
+        &arrow_schema::DataType::Float64,
+        "AVG over integer values has an explicit Float64 result type"
+    );
+    assert_eq!(
+        integer_average_precision_boundary[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<arrow_array::Float64Array>()
+            .expect("integer AVG returns Float64")
+            .value(0),
+        9_007_199_254_740_992.0,
+        "the exact midpoint at 2^53 rounds to the even Float64 value"
+    );
     let mean = context
         .execute("SELECT MEAN(field_101) AS mean FROM tasks")
         .await?;
