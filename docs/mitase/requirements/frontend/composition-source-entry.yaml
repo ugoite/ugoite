@@ -306,7 +306,8 @@ requirements:
         kind: behavior
         statement: >-
           When Studio offers Form-assisted summary authoring, the user can choose
-          a Form, a supported SQL calculation, and its field when required. The
+          a Form, a common calculation such as COUNT, SUM, or AVG, and its field
+          when required. The
           flow creates and saves an ordinary SQL query as Space Knowledge, then
           selects its exact Saved SQL revision and declared result column for the
           Metric. No operation, Form FieldId, generated expression, or hidden
