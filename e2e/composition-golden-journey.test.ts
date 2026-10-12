@@ -261,7 +261,8 @@ async function openSavedCompositionFromHome(
   await page.goto(getFrontendUrl(`/spaces/${spaceId}/dashboard`), {
     waitUntil: "domcontentloaded",
   });
-  const link = page.getByRole("link", { name: new RegExp(compositionName) });
+  const savedTools = page.getByRole("list", { name: "Saved tools" });
+  const link = savedTools.getByRole("link", { name: compositionName });
   await expect(link).toHaveAttribute("href", path);
   await link.click();
   await expect(page).toHaveURL(new RegExp(`${path.replaceAll("/", "\\/")}$`));
