@@ -1,4 +1,6 @@
-# ADR-023 — Typed reactive Composition variables
+---
+title: "ADR-023 — Typed reactive Composition variables"
+---
 
 **Status: Accepted target for pre-release Composition; implementation pending.**
 This decision authorizes a breaking change to the unreleased Composition v1
