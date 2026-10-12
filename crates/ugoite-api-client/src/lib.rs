@@ -15,17 +15,17 @@ pub mod composition;
 pub use composition::{
     CompositionDiagnosticCode, CompositionEntryIntegrity, CompositionEntryMetadata,
     CompositionHistoryPage, CompositionLintError, CompositionLintResponse, CompositionLintValue,
-    CompositionListItem, CompositionListPage, CompositionMetricOperation,
-    CompositionMetricPresentation, CompositionMetricQueryDiagnostic, CompositionMetricQueryRequest,
+    CompositionListItem, CompositionListPage, CompositionMetricPresentation,
+    CompositionMetricQueryDiagnostic, CompositionMetricQueryRequest,
     CompositionMetricQueryResponse, CompositionMetricQueryTarget, CompositionMetricQueryValue,
-    CompositionMetricSourceKind, CompositionParameterDefinition, CompositionParameterFormat,
-    CompositionParameterType, CompositionPreviewPlan, CompositionPreviewRequest,
-    CompositionPreviewResponse, CompositionPublicationReceipt, CompositionRawRevision,
-    CompositionResolveDiagnostic, CompositionResolvePlan, CompositionResolveRequest,
-    CompositionResolveResponse, CompositionResolvedComponentBinding,
-    CompositionResolvedComponentKind, CompositionResolvedSource, CompositionRestoreRequest,
-    CompositionRestoreResponse, CompositionResultFieldType, CompositionRevisionMetadata,
-    CompositionRevisionReference, CompositionSaveRequest, CompositionSaveResponse,
+    CompositionParameterDefinition, CompositionParameterFormat, CompositionParameterType,
+    CompositionPreviewPlan, CompositionPreviewRequest, CompositionPreviewResponse,
+    CompositionPublicationReceipt, CompositionRawRevision, CompositionResolveDiagnostic,
+    CompositionResolvePlan, CompositionResolveRequest, CompositionResolveResponse,
+    CompositionResolvedComponentBinding, CompositionResolvedComponentKind,
+    CompositionResolvedSource, CompositionRestoreRequest, CompositionRestoreResponse,
+    CompositionResultFieldType, CompositionRevisionMetadata, CompositionRevisionReference,
+    CompositionSaveRequest, CompositionSaveResponse,
 };
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -3052,7 +3052,6 @@ mod tests {
                     "kind": "metric",
                     "label": "Total",
                     "source_id": "monthly-total",
-                    "metric_field_id": 202,
                     "result_property_key": "total_amount",
                     "expected_result_type": "integer"
                 }]
@@ -3195,8 +3194,12 @@ mod tests {
                 "metric_result_type_mismatch",
             ),
             (
-                CompositionDiagnosticCode::MetricScalarExpectedOneRow,
-                "metric_scalar_expected_one_row",
+                CompositionDiagnosticCode::MetricScalarNoRows,
+                "metric_scalar_no_rows",
+            ),
+            (
+                CompositionDiagnosticCode::MetricScalarMultipleRows,
+                "metric_scalar_multiple_rows",
             ),
             (
                 CompositionDiagnosticCode::MetricResultColumnMissing,
@@ -3220,6 +3223,11 @@ mod tests {
                 json!({"ok": false, "diagnostics": [{"code": expected}]})
             );
         }
+        assert_eq!(
+            CompositionDiagnosticCode::from_code("metric_scalar_expected_one_row"),
+            None,
+            "row cardinality diagnostics must remain distinct",
+        );
 
         let lint_success = json!({
             "ok": true,

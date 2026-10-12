@@ -12,7 +12,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::fmt;
-use ugoite_domain::composition::CompositionAggregateOperation;
 use ugoite_domain::form::FieldType;
 use ugoite_domain::id::{EntryId, FieldId, FormId, RevisionId, SpaceId};
 use ugoite_domain::publication_ref::PublicationRef;
@@ -290,53 +289,6 @@ impl EntryQuery {
         let bytes = serde_json::to_vec(self).map_err(EntryQueryError::Serialize)?;
         Ok(hex::encode(Sha256::digest(bytes)))
     }
-
-    /// Returns the full matching set without its page-ordering clauses.
-    /// Aggregates consume this set directly, so sort and page mechanics never
-    /// change their result.
-    pub fn matching_set(&self) -> EntryQueryMatchingSet {
-        EntryQueryMatchingSet {
-            scope: self.scope.clone(),
-            text: self.text.clone(),
-            filters: self.filters.clone(),
-        }
-    }
-}
-
-/// The complete logical set of Entries selected by an EntryQuery before
-/// ordering, projection, or pagination. This is the shared input for counts
-/// and Composition aggregates.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct EntryQueryMatchingSet {
-    pub scope: EntryQueryScope,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub text: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub filters: Vec<EntryFilter>,
-}
-
-impl EntryQueryMatchingSet {
-    pub fn validate(&self) -> Result<(), EntryQueryError> {
-        EntryQuery {
-            scope: self.scope.clone(),
-            text: self.text.clone(),
-            filters: self.filters.clone(),
-            sort: Vec::new(),
-        }
-        .validate()
-    }
-
-    /// Reconstructs the canonical query shape used by the shared storage
-    /// matching compiler. The empty sort is deliberate.
-    pub fn as_entry_query(&self) -> EntryQuery {
-        EntryQuery {
-            scope: self.scope.clone(),
-            text: self.text.clone(),
-            filters: self.filters.clone(),
-            sort: Vec::new(),
-        }
-    }
 }
 
 /// Requested visible columns. The compiler may always include hidden control
@@ -455,44 +407,6 @@ pub struct EntryPage {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct EntryCount {
     pub count: u64,
-}
-
-/// A typed aggregate over the complete matching set of one Form-scoped
-/// EntryQuery. It deliberately carries no sort, projection, cursor, or page
-/// limit.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct EntryQueryAggregateRequest {
-    pub matching_set: EntryQueryMatchingSet,
-    pub operation: CompositionAggregateOperation,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub field_id: Option<FieldId>,
-}
-
-impl EntryQueryAggregateRequest {
-    pub fn validate(&self) -> Result<(), EntryQueryError> {
-        self.matching_set.validate()?;
-        if !matches!(self.matching_set.scope, EntryQueryScope::Form { .. }) {
-            return Err(EntryQueryError::Invalid(
-                "Entry aggregates require a single Form scope".to_string(),
-            ));
-        }
-        let field_required = !matches!(self.operation, CompositionAggregateOperation::CountRows);
-        if self.field_id.is_some() != field_required {
-            return Err(EntryQueryError::Invalid(
-                "Entry aggregate field does not match its operation".to_string(),
-            ));
-        }
-        Ok(())
-    }
-}
-
-/// One scalar returned from a bounded aggregate. `None` represents an empty
-/// or all-null result for sum, average, minimum, or maximum.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct EntryQueryAggregateResult {
-    pub value: Option<Value>,
 }
 
 /// Query capability derived from a Form definition. Frontends and CLIs render
@@ -790,17 +704,6 @@ mod tests {
         };
         request.validate().expect("request");
         assert_eq!(first, request.query.fingerprint().expect("fingerprint"));
-    }
-
-    #[test]
-    fn matching_set_preserves_scope_text_and_filters_but_drops_sort() {
-        let query = query();
-        let matching_set = query.matching_set();
-
-        assert_eq!(matching_set.scope, query.scope);
-        assert_eq!(matching_set.text, query.text);
-        assert_eq!(matching_set.filters, query.filters);
-        assert!(matching_set.as_entry_query().sort.is_empty());
     }
 
     #[test]

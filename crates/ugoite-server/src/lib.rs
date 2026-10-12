@@ -48,13 +48,11 @@ use ugoite_api_client::{
     CompositionDiagnosticCode as ApiCompositionDiagnosticCode, CompositionEntryIntegrity,
     CompositionEntryMetadata, CompositionHistoryPage, CompositionLintError,
     CompositionLintResponse, CompositionLintValue, CompositionListItem, CompositionListPage,
-    CompositionMetricOperation as ApiCompositionMetricOperation,
     CompositionMetricPresentation as ApiCompositionMetricPresentation,
     CompositionMetricQueryDiagnostic as ApiCompositionMetricQueryDiagnostic,
     CompositionMetricQueryRequest, CompositionMetricQueryResponse,
     CompositionMetricQueryTarget as ApiCompositionMetricQueryTarget,
-    CompositionMetricQueryValue as ApiCompositionMetricQueryValue,
-    CompositionMetricSourceKind as ApiCompositionMetricSourceKind, CompositionParameterDefinition,
+    CompositionMetricQueryValue as ApiCompositionMetricQueryValue, CompositionParameterDefinition,
     CompositionParameterFormat as ApiCompositionParameterFormat,
     CompositionParameterType as ApiCompositionParameterType, CompositionPreviewPlan,
     CompositionPreviewRequest, CompositionPreviewResponse, CompositionPublicationReceipt,
@@ -71,11 +69,9 @@ use ugoite_core::composition::{
     ResolvedComponentKind, ResolvedCompositionPlan,
 };
 use ugoite_core::composition_metric::{
-    CompositionMetricOperation as CoreCompositionMetricOperation,
     CompositionMetricQueryRequest as CoreCompositionMetricQueryRequest,
     CompositionMetricQueryResponse as CoreCompositionMetricQueryResponse,
     CompositionMetricQueryTarget as CoreCompositionMetricQueryTarget,
-    CompositionMetricSourceKind as CoreCompositionMetricSourceKind,
 };
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
 use ugoite_domain::composition::{
@@ -11690,29 +11686,6 @@ fn api_composition_metric_query_response(
         .result
         .map(|result| ApiCompositionMetricQueryValue {
             component_id: result.component_id,
-            operation: match result.operation {
-                CoreCompositionMetricOperation::SqlScalar => {
-                    ApiCompositionMetricOperation::SqlScalar
-                }
-                CoreCompositionMetricOperation::CountRows => {
-                    ApiCompositionMetricOperation::CountRows
-                }
-                CoreCompositionMetricOperation::CountValues => {
-                    ApiCompositionMetricOperation::CountValues
-                }
-                CoreCompositionMetricOperation::Sum => ApiCompositionMetricOperation::Sum,
-                CoreCompositionMetricOperation::Avg => ApiCompositionMetricOperation::Avg,
-                CoreCompositionMetricOperation::Min => ApiCompositionMetricOperation::Min,
-                CoreCompositionMetricOperation::Max => ApiCompositionMetricOperation::Max,
-            },
-            source_kind: match result.source_kind {
-                CoreCompositionMetricSourceKind::EntryQuery => {
-                    ApiCompositionMetricSourceKind::EntryQuery
-                }
-                CoreCompositionMetricSourceKind::SavedSql => {
-                    ApiCompositionMetricSourceKind::SavedSql
-                }
-            },
             result_type: api_composition_result_field_type(result.result_type),
             value: result.value,
         });
@@ -11855,7 +11828,6 @@ fn api_composition_sources_and_bindings(
             },
             label: binding.label,
             source_id: binding.source_id,
-            metric_field_id: binding.metric_field_id.map(|field_id| field_id.get()),
             result_property_key: binding.result_property_key,
             expected_result_type: binding
                 .expected_result_type
@@ -16114,10 +16086,10 @@ mod authentication_regression_tests {
     ) -> anyhow::Result<()> {
         use ugoite_domain::composition::{
             CompositionComponent, CompositionDocument, CompositionFormat, CompositionKind,
-            CompositionMetricDefinition, CompositionMetricPresentation, CompositionParameter,
-            CompositionParameterReference, CompositionParameterType, CompositionResultColumn,
-            CompositionResultFieldType, CompositionSource, CompositionSpec, CompositionValue,
-            DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow,
+            CompositionMetricPresentation, CompositionParameter, CompositionParameterReference,
+            CompositionParameterType, CompositionResultColumn, CompositionResultFieldType,
+            CompositionSource, CompositionSpec, CompositionValue, DashboardFlowLayout, FlowItem,
+            FlowLayoutKind, FlowRow,
         };
         use ugoite_domain::id::{EntryId, RevisionId};
 
@@ -16207,10 +16179,8 @@ mod authentication_regression_tests {
                 components: vec![CompositionComponent::Metric {
                     id: "parameter_total".to_string(),
                     label: None,
-                    definition: CompositionMetricDefinition::SqlScalar {
-                        source: "metric_sql".to_string(),
-                        column: "total".to_string(),
-                    },
+                    source: "metric_sql".to_string(),
+                    column: "total".to_string(),
                     presentation: Some(CompositionMetricPresentation::Number {
                         unit: Some("USD".to_string()),
                         fraction_digits: Some(2),
@@ -16313,8 +16283,8 @@ mod authentication_regression_tests {
         assert_eq!(saved_status, StatusCode::OK, "{saved_body}");
         assert_eq!(saved_body["ok"], true);
         assert_eq!(saved_body["result"]["component_id"], "parameter_total");
-        assert_eq!(saved_body["result"]["operation"], "sql_scalar");
-        assert_eq!(saved_body["result"]["source_kind"], "saved_sql");
+        assert!(saved_body["result"].get("operation").is_none());
+        assert!(saved_body["result"].get("source_kind").is_none());
         assert_eq!(saved_body["result"]["result_type"], "integer");
         assert_eq!(saved_body["result"]["value"], "42");
 
@@ -16391,10 +16361,10 @@ mod authentication_regression_tests {
     async fn composition_resolve_uses_exact_requested_revision_with_newer_revision_available(
     ) -> anyhow::Result<()> {
         use ugoite_domain::composition::{
-            CompositionAggregateOperation, CompositionComponent, CompositionDocument,
-            CompositionFieldSchemaEntry, CompositionKind, CompositionMetricDefinition,
-            CompositionParameter, CompositionParameterReference, CompositionParameterType,
-            CompositionQueryOperator, CompositionSource, CompositionSpec, CompositionValue,
+            CompositionComponent, CompositionDocument, CompositionFieldSchemaEntry,
+            CompositionKind, CompositionParameter, CompositionParameterReference,
+            CompositionParameterType, CompositionQueryOperator, CompositionResultColumn,
+            CompositionResultFieldType, CompositionSource, CompositionSpec, CompositionValue,
             DashboardFlowLayout, EntryQueryFilterTemplate, EntryQueryProjectionTemplate,
             EntryQueryTemplate, FlowItem, FlowLayoutKind, FlowRow, TextStyle,
         };
@@ -16495,6 +16465,31 @@ mod authentication_regression_tests {
             format: None,
         };
         let value_field_id = FieldId::new(101)?;
+        let metric_sql = state
+            .service
+            .create_saved_sql(
+                &space_id,
+                None,
+                &saved_sql::SqlPayload {
+                    name: Some("Exact revision metric".to_string()),
+                    kind: saved_sql::SqlKind::UserQuery,
+                    metadata: None,
+                    sql: "SELECT CAST(1 AS BIGINT) AS total_amount".to_string(),
+                    variables: json!([]),
+                },
+                "owner",
+            )
+            .await?;
+        let older_metric_source = CompositionSource::SavedSql {
+            id: "older_summary".to_string(),
+            entry_id: serde_json::from_value(metric_sql["id"].clone())?,
+            revision_id: serde_json::from_value(metric_sql["revision_id"].clone())?,
+            expected_result: vec![CompositionResultColumn {
+                name: "total_amount".to_string(),
+                result_type: CompositionResultFieldType::Integer,
+            }],
+            variables: BTreeMap::new(),
+        };
         let older_source = CompositionSource::EntryQuery {
             id: "older_entries".to_string(),
             form_id: ugoite_domain::id::FormId::from_uuid(source_form_id),
@@ -16532,17 +16527,14 @@ mod authentication_regression_tests {
         let mut older_document = document(
             "Older exact revision",
             vec![month_parameter(), unlabelled_parameter()],
-            vec![older_source],
+            vec![older_source, older_metric_source],
         );
         older_document.spec.components = vec![
             CompositionComponent::Metric {
                 id: "monthly_total".to_string(),
                 label: Some("Monthly total".to_string()),
-                definition: CompositionMetricDefinition::Aggregate {
-                    source: "older_entries".to_string(),
-                    operation: CompositionAggregateOperation::Sum,
-                    field_id: Some(value_field_id),
-                },
+                source: "older_summary".to_string(),
+                column: "total_amount".to_string(),
                 presentation: None,
             },
             CompositionComponent::Table {
@@ -16664,8 +16656,7 @@ mod authentication_regression_tests {
                     "component_id":"monthly_total",
                     "kind":"metric",
                     "label":"Monthly total",
-                    "source_id":"older_entries",
-                    "metric_field_id":value_field_id.get(),
+                    "source_id":"older_summary",
                     "result_property_key":"total_amount",
                     "expected_result_type":"integer"
                 }
@@ -16724,7 +16715,8 @@ mod authentication_regression_tests {
             DomainCode::SourceSchemaChanged,
             DomainCode::MetricResultNotScalar,
             DomainCode::MetricResultTypeMismatch,
-            DomainCode::MetricScalarExpectedOneRow,
+            DomainCode::MetricScalarNoRows,
+            DomainCode::MetricScalarMultipleRows,
             DomainCode::MetricResultColumnMissing,
             DomainCode::MetricResultColumnAmbiguous,
         ];
@@ -16761,8 +16753,12 @@ mod authentication_regression_tests {
                 "metric_result_type_mismatch",
             ),
             (
-                ApiCompositionDiagnosticCode::MetricScalarExpectedOneRow,
-                "metric_scalar_expected_one_row",
+                ApiCompositionDiagnosticCode::MetricScalarNoRows,
+                "metric_scalar_no_rows",
+            ),
+            (
+                ApiCompositionDiagnosticCode::MetricScalarMultipleRows,
+                "metric_scalar_multiple_rows",
             ),
             (
                 ApiCompositionDiagnosticCode::MetricResultColumnMissing,

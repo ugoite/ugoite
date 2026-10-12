@@ -9,9 +9,7 @@ use crate::sql_query::SqlScalarProbeResult;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
-use ugoite_domain::composition::{
-    CompositionAggregateOperation, CompositionDiagnosticCode, CompositionResultFieldType,
-};
+use ugoite_domain::composition::{CompositionDiagnosticCode, CompositionResultFieldType};
 use ugoite_domain::composition_metric::validate_composition_metric_scalar_value;
 
 /// Target of a read-only Composition Metric query.
@@ -37,48 +35,11 @@ pub struct CompositionMetricQueryRequest {
     pub parameters: BTreeMap<String, Value>,
 }
 
-/// Semantic operation applied by a metric component.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CompositionMetricOperation {
-    SqlScalar,
-    CountRows,
-    CountValues,
-    Sum,
-    Avg,
-    Min,
-    Max,
-}
-
-impl From<CompositionAggregateOperation> for CompositionMetricOperation {
-    fn from(operation: CompositionAggregateOperation) -> Self {
-        match operation {
-            CompositionAggregateOperation::CountRows => Self::CountRows,
-            CompositionAggregateOperation::CountValues => Self::CountValues,
-            CompositionAggregateOperation::Sum => Self::Sum,
-            CompositionAggregateOperation::Avg => Self::Avg,
-            CompositionAggregateOperation::Min => Self::Min,
-            CompositionAggregateOperation::Max => Self::Max,
-        }
-    }
-}
-
-/// Semantic source category. Stable source IDs stay in the Composition and
-/// are not repeated in the user-visible result.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CompositionMetricSourceKind {
-    EntryQuery,
-    SavedSql,
-}
-
 /// One successfully evaluated metric value and its portable meaning.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompositionMetricQueryValue {
     pub component_id: String,
-    pub operation: CompositionMetricOperation,
-    pub source_kind: CompositionMetricSourceKind,
     pub result_type: CompositionResultFieldType,
     /// Integer results are canonical base-10 strings so Browser JSON parsing
     /// cannot round values above JavaScript's exact integer range. Decimal
@@ -176,7 +137,7 @@ pub fn evaluate_saved_sql_metric_probe(
         code,
         parameter_id: None,
     };
-    if binding.kind != ResolvedComponentKind::Metric || binding.metric_field_id.is_some() {
+    if binding.kind != ResolvedComponentKind::Metric {
         return Err(diagnostic(CompositionDiagnosticCode::InvalidComposition));
     }
     let expected_type = binding
@@ -188,13 +149,11 @@ pub fn evaluate_saved_sql_metric_probe(
         .ok_or_else(|| diagnostic(CompositionDiagnosticCode::InvalidComposition))?;
 
     if probe.rows.is_empty() {
-        return Err(diagnostic(
-            CompositionDiagnosticCode::MetricScalarExpectedOneRow,
-        ));
+        return Err(diagnostic(CompositionDiagnosticCode::MetricScalarNoRows));
     }
     if probe.rows.len() > 1 {
         return Err(diagnostic(
-            CompositionDiagnosticCode::MetricScalarExpectedOneRow,
+            CompositionDiagnosticCode::MetricScalarMultipleRows,
         ));
     }
 
@@ -263,8 +222,6 @@ mod tests {
             kind: ResolvedComponentKind::Metric,
             label: Some("合計".to_owned()),
             source_id: Some("monthly_sql".to_owned()),
-            metric_field_id: None,
-            aggregate_operation: None,
             result_property_key: Some("total".to_owned()),
             expected_result_type: Some(result_type),
             presentation: None,
@@ -322,7 +279,7 @@ mod tests {
     }
 
     #[test]
-    fn sql_scalar_probe_requires_exactly_one_result_row() {
+    fn sql_scalar_probe_distinguishes_zero_and_multiple_result_rows() {
         assert_eq!(
             evaluate_saved_sql_metric_probe(
                 &binding(CompositionResultFieldType::Integer),
@@ -330,7 +287,7 @@ mod tests {
             )
             .unwrap_err()
             .code,
-            CompositionDiagnosticCode::MetricScalarExpectedOneRow
+            CompositionDiagnosticCode::MetricScalarNoRows
         );
         assert_eq!(
             evaluate_saved_sql_metric_probe(
@@ -339,7 +296,7 @@ mod tests {
             )
             .unwrap_err()
             .code,
-            CompositionDiagnosticCode::MetricScalarExpectedOneRow
+            CompositionDiagnosticCode::MetricScalarMultipleRows
         );
     }
 

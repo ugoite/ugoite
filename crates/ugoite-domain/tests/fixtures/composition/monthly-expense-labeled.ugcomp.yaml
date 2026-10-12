@@ -62,10 +62,8 @@ spec:
     - id: total
       label: Monthly total
       kind: metric
-      definition:
-        kind: sql_scalar
-        source: month_total
-        column: total
+      source: month_total
+      column: total
     - id: transactions
       label: Expense transactions
       kind: table

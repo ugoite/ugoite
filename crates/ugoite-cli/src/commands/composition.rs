@@ -12,11 +12,9 @@ use ugoite_api_client::{
     prepare_request, CompositionDiagnosticCode as ApiCompositionDiagnosticCode,
     CompositionEntryIntegrity, CompositionEntryMetadata, CompositionHistoryPage,
     CompositionLintError, CompositionLintResponse, CompositionLintValue, CompositionListItem,
-    CompositionListPage, CompositionMetricOperation as ApiCompositionMetricOperation,
-    CompositionMetricQueryRequest as ApiCompositionMetricQueryRequest,
+    CompositionListPage, CompositionMetricQueryRequest as ApiCompositionMetricQueryRequest,
     CompositionMetricQueryResponse as ApiCompositionMetricQueryResponse,
-    CompositionMetricQueryTarget as ApiCompositionMetricQueryTarget,
-    CompositionMetricSourceKind as ApiCompositionMetricSourceKind, CompositionPublicationReceipt,
+    CompositionMetricQueryTarget as ApiCompositionMetricQueryTarget, CompositionPublicationReceipt,
     CompositionRawRevision, CompositionResolvePlan, CompositionResolveResponse,
     CompositionResolvedSource, CompositionRestoreRequest, CompositionRestoreResponse,
     CompositionResultFieldType as ApiCompositionResultFieldType, CompositionRevisionMetadata,
@@ -687,8 +685,6 @@ struct CompositionQuerySourceOutput {
 #[derive(Serialize)]
 struct CompositionQueryMetricOutput {
     component_id: String,
-    operation: ApiCompositionMetricOperation,
-    source_kind: ApiCompositionMetricSourceKind,
     result_type: ApiCompositionResultFieldType,
     value: Value,
 }
@@ -1152,8 +1148,6 @@ async fn execute_composition_metrics(
             );
             metrics.push(CompositionQueryMetricOutput {
                 component_id: result.component_id,
-                operation: result.operation,
-                source_kind: result.source_kind,
                 result_type: result.result_type,
                 value: result.value,
             });
@@ -1403,8 +1397,8 @@ mod tests {
     use std::io::Write;
     use ugoite_api_client::{
         prepare_request, CompositionDiagnosticCode, CompositionHistoryPage, CompositionListPage,
-        CompositionMetricOperation, CompositionMetricSourceKind, CompositionResolvePlan,
-        CompositionResolvedSource, CompositionResultFieldType, HttpMethod, RequestBodyKind,
+        CompositionResolvePlan, CompositionResolvedSource, CompositionResultFieldType, HttpMethod,
+        RequestBodyKind,
     };
     use ugoite_core::composition::ResolvedCompositionPlan;
     use ugoite_core::error::{AppError, ErrorCode};
@@ -1420,14 +1414,14 @@ mod tests {
     const MONTHLY_EXPENSE_CANONICAL: &str = include_str!(
         "../../../../crates/ugoite-domain/tests/fixtures/composition/monthly-expense.canonical.ugcomp.yaml"
     );
-    const TYPED_METRIC_DEFINITIONS: &str = include_str!(
-        "../../../../crates/ugoite-domain/tests/fixtures/composition/typed-metric-definitions.ugcomp.yaml"
+    const SAVED_SQL_METRIC_COLUMNS: &str = include_str!(
+        "../../../../crates/ugoite-domain/tests/fixtures/composition/saved-sql-metric-columns.ugcomp.yaml"
     );
-    const TYPED_METRIC_DEFINITIONS_CANONICAL: &str = include_str!(
-        "../../../../crates/ugoite-domain/tests/fixtures/composition/typed-metric-definitions.canonical.ugcomp.yaml"
+    const SAVED_SQL_METRIC_COLUMNS_CANONICAL: &str = include_str!(
+        "../../../../crates/ugoite-domain/tests/fixtures/composition/saved-sql-metric-columns.canonical.ugcomp.yaml"
     );
-    const TYPED_METRIC_DEFINITIONS_FINGERPRINT: &str = include_str!(
-        "../../../../crates/ugoite-domain/tests/fixtures/composition/typed-metric-definitions.fingerprint.txt"
+    const SAVED_SQL_METRIC_COLUMNS_FINGERPRINT: &str = include_str!(
+        "../../../../crates/ugoite-domain/tests/fixtures/composition/saved-sql-metric-columns.fingerprint.txt"
     );
 
     #[test]
@@ -1448,24 +1442,28 @@ mod tests {
     }
 
     #[test]
-    fn lint_file_preserves_typed_metric_definitions_and_shared_fingerprint() {
+    fn lint_file_preserves_saved_sql_metric_columns_and_shared_fingerprint() {
         let mut file = tempfile::NamedTempFile::new().expect("temporary YAML file");
-        file.write_all(TYPED_METRIC_DEFINITIONS.as_bytes())
-            .expect("write typed metric fixture");
+        file.write_all(SAVED_SQL_METRIC_COLUMNS.as_bytes())
+            .expect("write Saved SQL metric column fixture");
 
         let response = lint_file(file.path()).expect("lint succeeds");
 
         assert!(response.ok);
         let value = response.value.expect("canonical value");
-        assert_eq!(value.canonical_yaml, TYPED_METRIC_DEFINITIONS_CANONICAL);
+        assert_eq!(value.canonical_yaml, SAVED_SQL_METRIC_COLUMNS_CANONICAL);
         assert_eq!(
             value.fingerprint,
-            TYPED_METRIC_DEFINITIONS_FINGERPRINT.trim()
+            SAVED_SQL_METRIC_COLUMNS_FINGERPRINT.trim()
         );
         assert_eq!(
-            value.document["spec"]["components"][0]["definition"]["operation"],
-            "count_rows"
+            value.document["spec"]["components"][0]["source"],
+            "monthly_summary"
         );
+        assert_eq!(value.document["spec"]["components"][0]["column"], "count");
+        assert!(value.document["spec"]["components"][0]
+            .get("definition")
+            .is_none());
     }
 
     #[test]
@@ -1699,11 +1697,9 @@ mod tests {
     }
 
     #[test]
-    fn composition_metric_output_includes_operation_source_and_result_type() {
+    fn composition_metric_output_contains_only_the_selected_result_type_and_value() {
         let output = CompositionQueryMetricOutput {
             component_id: "count".to_string(),
-            operation: CompositionMetricOperation::CountRows,
-            source_kind: CompositionMetricSourceKind::EntryQuery,
             result_type: CompositionResultFieldType::Integer,
             value: json!("3"),
         };
@@ -1712,8 +1708,6 @@ mod tests {
             serde_json::to_value(output).expect("metric JSON output"),
             json!({
                 "component_id": "count",
-                "operation": "count_rows",
-                "source_kind": "entry_query",
                 "result_type": "integer",
                 "value": "3"
             })
@@ -1761,7 +1755,7 @@ mod tests {
     }
 
     #[test]
-    fn metric_only_sources_do_not_require_a_table_page() {
+    fn metric_sources_do_not_require_a_table_page_but_table_bindings_do() {
         let mut plan: ResolvedCompositionPlan = serde_json::from_value(json!({
             "composition_revision": {
                 "entry_id": "00000000-0000-0000-0000-000000000001",
@@ -1774,19 +1768,11 @@ mod tests {
                 "source_id": "summary",
                 "result_property_key": "total",
                 "expected_result_type": "float"
-            }, {
-                "component_id": "entry-total",
-                "kind": "metric",
-                "source_id": "entries",
-                "metric_field_id": 42,
-                "result_property_key": "amount",
-                "expected_result_type": "integer"
             }]
         }))
-        .expect("Core plan with typed Saved SQL and EntryQuery metric bindings");
+        .expect("Core plan with a Saved SQL metric binding");
 
         assert!(!composition_source_needs_table_page(&plan, "summary"));
-        assert!(!composition_source_needs_table_page(&plan, "entries"));
 
         plan.component_bindings.push(
             serde_json::from_value(json!({
@@ -1797,7 +1783,6 @@ mod tests {
             .expect("Saved SQL table binding"),
         );
         assert!(composition_source_needs_table_page(&plan, "summary"));
-        assert!(!composition_source_needs_table_page(&plan, "entries"));
     }
 
     #[test]

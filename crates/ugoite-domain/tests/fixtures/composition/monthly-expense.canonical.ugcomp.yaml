@@ -59,10 +59,8 @@ spec:
   components:
     - kind: metric
       id: total
-      definition:
-        kind: sql_scalar
-        source: month_total
-        column: total
+      source: month_total
+      column: total
     - kind: table
       id: transactions
       source: expense_rows

@@ -27,7 +27,7 @@ Frozen v1 pin (see `composition_v1_freeze_pins_portable_contract` in
 | Parser limits | 64 KiB YAML bytes, nesting depth 64, 256 collection items |
 | Tags | document tags are the sole semantic value and equal stored Entry tags |
 | Source grammar | `entry_query` (Form scope, six filter operators, two sort directions, fields/preview projection, optional Created/Updated display columns) and exact `saved_sql` (EntryId + RevisionId, ordered unique `expected_result`, eight logical types) |
-| Metric identity | required typed `definition` (`aggregate` or `sql_scalar`) with stable FieldId / exact column name; legacy `source` + `value_field` documents are rejected |
+| Metric identity | one Saved SQL source ID and one declared output-column name; optional label and display-only presentation |
 | Components | `text` / `metric` / `table`; `flow` layout rows/items, unique row and component IDs, exactly-once component placement, parameter controls for required parameters without defaults, empty layouts and empty rows invalid; text styles `title` / `heading` / `body` / `caption` |
 | Fingerprints | document SHA-256 over normalized value; per-source schema fingerprints over FormId + used-field snapshot |
 | Diagnostics | 14 caller-visible codes; missing/denied sources conceal as `source_unavailable` |
@@ -61,18 +61,12 @@ components, and a first-class dashboard flow `layout`. A source identifies eithe
 or an exact Saved SQL revision. Components refer to named sources, and layout
 rows carry ordered component and parameter-control items that reference them.
 Parameters keep their semantic definition under `spec.parameters`; the layout
-only places controls bound to parameter IDs. An `entry_query` source carries a sorted `field_schema`
-snapshot for the property fields used by its query and typed aggregate
-definitions. A preview projection uses all current property fields; an
-explicit projection, filter, or sort uses the fields it names. A typed
-aggregate binds its `field_id` through `field_schema` and may use a
-field that the table projection does not display. Its full matching set is
-defined by the source Form, filters, and text search; table page size, current
-page, sort, and projection do not change the aggregate set. Execution must
-revalidate the field against the current authorized Form schema. When
-text search is present, the snapshot also
-includes every text-searchable property field under existing EntryQuery
-semantics. The text-search expansion excludes `binary`, `list`, `object_list`, and
+only places controls bound to parameter IDs. An `entry_query` source carries a sorted `field_schema` snapshot for
+property fields used by that query. A preview projection uses all current
+property fields; an explicit projection, filter, sort, or text search adds the
+fields it uses. Metric bindings do not use EntryQuery fields or change the
+EntryQuery projection. When text search is present, the snapshot includes
+every text-searchable property field under existing EntryQuery semantics. The text-search expansion excludes `binary`, `list`, `object_list`, and
 `asset_reference` fields. A field of those types still appears when the query
 otherwise uses it, such as in a projection. Each snapshot row contains
 `field_id` and `field_type`, plus `reference_form` for a RowReference or
@@ -82,24 +76,19 @@ The complete illustrative document is maintained in
 `crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml`.
 It is a contract fixture for domain, parser, canonicalization, and WASM parity
 tests, not an assertion that persistence or rendering is already shipped.
-The typed metric grammar is covered by
-`typed-metric-definitions.ugcomp.yaml`. An aggregate definition names an
-EntryQuery source and one operation (`count_rows`, `count_values`, `sum`,
-`avg`, `min`, or `max`). `count_rows` has no `field_id`; `count_values` counts
-non-NULL field values, and the other field-based operations use a stable
-`FieldId`. `sum` and `avg` require a numeric field; `min` and `max` accept
-numeric, date, or timestamp fields, excluding time-only fields. Numeric
-formatting is optional display metadata. Date and timestamp `min`/`max` results
-omit it and use type-based rendering. Aggregate field identity and type do not depend on the table
-projection. A `sql_scalar` definition names an exact Saved SQL source
-and output column; its presentation is optional. The typed grammar is parsed,
-validated, canonicalized, and fingerprinted through the shared Rust/WASM
-contract. Core resolution binds aggregate FieldIds through the current Form
-schema and executes them over the authorized full matching set. Saved SQL
-scalar definitions bind to their exact revision and use a bounded scalar probe.
-Both paths return only validated scalar results through the Composition Metric
-query operation. The former `source` plus `value_field` metric shape is rejected
-during parsing; no compatibility reader or migration is provided.
+The `saved-sql-metric-columns.ugcomp.yaml` fixture covers several Metrics
+selecting different columns from one Saved SQL source while a Table uses an
+independent EntryQuery source. A Metric stores only its Saved SQL source ID,
+one declared output column, and optional presentation metadata. SQL performs
+COUNT, SUM, AVG, MIN, MAX, and any later-supported calculation. A Metric
+does not store an operation, Form FieldId, expression, or client aggregation
+configuration. The shared Rust/WASM model validates the column against the
+source's ordered result descriptor and rejects non-scalar types. The source
+pins one Saved SQL Entry and exact revision and can be shared by Metrics and
+Tables. The query adapter consumes at most two rows and succeeds only for
+exactly one row; it never chooses a prefix row or rewrites SQL to add
+`LIMIT 1`. Empty and multi-row results remain diagnostics, while a single
+SQL NULL remains a successful present scalar value.
 
 The typed v1 model supports `string`, `boolean`, `integer`, `float`, `date`, and
 `timestamp` parameters. A parameter may carry a typed default and a display
@@ -153,13 +142,12 @@ digits; normalized local timestamps omit trailing zeroes. The shared domain
 evaluator rejects malformed values with `metric_result_type_mismatch`; query
 adapters do not implement a second date/time parser.
 
-The Core resolver binds each typed metric definition to its source and current
-authorized schema. Aggregate definitions execute over the source's complete
-matching set, independent of the table page or projection. Saved SQL scalar
-definitions use the exact revision and declared output column. The query service
-validates scalar cardinality and value type, then returns one optional scalar;
-the Browser renders that response without aggregating or fetching pages. The
-shared Domain validator preserves exact Decimal scale and normalized date and
+The Core resolver binds each Metric to a shared Saved SQL source and declared
+output column, and verifies the exact current authorized revision. SQL owns all
+calculation; the Metric query adapter only validates the result's one-row
+cardinality and selected scalar type, then returns that value. It does not
+choose a prefix row or fetch and aggregate pages in the Browser. The shared
+Domain validator preserves exact Decimal scale and normalized date and
 timestamp forms, and rejects malformed scalar values with
 `metric_result_type_mismatch`.
 
@@ -168,8 +156,9 @@ The shared Rust and portable API diagnostic vocabulary includes
 `parameter_missing`, `parameter_type_mismatch`, `source_unavailable`,
 `missing_field`,
 `field_type_changed`, `source_schema_changed`, `metric_result_not_scalar`,
-`metric_result_type_mismatch`, `metric_scalar_expected_one_row`,
-`metric_result_column_missing`, `metric_result_column_ambiguous`. Audit note: `missing_form`,
+`metric_result_type_mismatch`, `metric_scalar_no_rows`,
+`metric_scalar_multiple_rows`, `metric_result_column_missing`, and
+`metric_result_column_ambiguous`. Audit note: `missing_form`,
 `saved_sql_revision_missing`, and `not_authorized` were removed from the
 portable vocabulary as unreachable. The current resolver projects a missing,
 denied, or mismatched source descriptor to `source_unavailable`; it does not

@@ -1,0 +1,69 @@
+format: ugoite.composition
+format_version: 1
+kind: dashboard
+name: Saved SQL metric columns
+tags: []
+spec:
+  sources:
+    - kind: entry_query
+      id: expense_rows
+      form_id: 00000000-0000-7000-8000-000000000010
+      field_schema:
+        - field_id: 100
+          field_type: string
+        - field_id: 102
+          field_type: double
+      query:
+        page_limit: 100
+        projection:
+          kind: fields
+          fields:
+            - 100
+    - kind: saved_sql
+      id: monthly_summary
+      entry_id: 00000000-0000-7000-8000-000000000020
+      revision_id: 00000000-0000-7000-8000-000000000021
+      expected_result:
+        - name: count
+          type: integer
+        - name: total
+          type: decimal
+        - name: latest
+          type: date
+  components:
+    - kind: metric
+      id: expense_count
+      source: monthly_summary
+      column: count
+      presentation:
+        kind: number
+        unit: 件
+        fraction_digits: 0
+    - kind: metric
+      id: expense_total
+      source: monthly_summary
+      column: total
+      presentation:
+        kind: number
+        unit: 円
+        fraction_digits: 0
+    - kind: metric
+      id: latest_expense
+      source: monthly_summary
+      column: latest
+    - kind: table
+      id: expense_rows
+      source: expense_rows
+  layout:
+    kind: flow
+    rows:
+      - id: main
+        items:
+          - kind: component
+            component: expense_count
+          - kind: component
+            component: expense_total
+          - kind: component
+            component: latest_expense
+          - kind: component
+            component: expense_rows

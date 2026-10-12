@@ -136,8 +136,7 @@ use crate::{
 use crate::{CheckpointIntegrityError, CheckpointUnavailable, PublicationRef, RevisionView};
 use ugoite_core::entry_query::{
     EntryCount, EntryCountRequest, EntryCursor, EntryFieldRef, EntryPage, EntryPageRequest,
-    EntryProjection, EntryQueryAggregateRequest, EntryQueryAggregateResult, EntryQueryError,
-    EntryQueryScope, EntryResult,
+    EntryProjection, EntryQueryError, EntryQueryScope, EntryResult,
 };
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind as AppErrorKind};
 use ugoite_core::query::EntryScope;
@@ -6683,131 +6682,6 @@ impl UgoiteService {
         )
         .await?;
         Ok(EntryCount { count })
-    }
-
-    /// Aggregates the complete current matching set of a Form-scoped
-    /// EntryQuery for the trusted local operator boundary.
-    pub async fn aggregate_entries_local(
-        &self,
-        space_id: &str,
-        request: EntryQueryAggregateRequest,
-    ) -> Result<EntryQueryAggregateResult> {
-        request.validate().map_err(entry_query_contract_error)?;
-        self.validate_complete_space(space_id).await?;
-        let workspace =
-            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
-        let publication = workspace.current_publication().await?;
-        let checkpoint = workspace.resolve_publication(&publication).await?;
-        let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
-        let relation_scopes = forms
-            .iter()
-            .map(|form| (sql_relation_name(form.id), EntryScope::AllCurrent))
-            .collect::<BTreeMap<_, _>>();
-        index::aggregate_entry_query_at_checkpoint(
-            &self.operator,
-            &self.workspace_path(space_id),
-            checkpoint,
-            &forms,
-            &relation_scopes,
-            &request,
-        )
-        .await
-    }
-
-    /// Aggregates the complete current matching set of a Form-scoped
-    /// EntryQuery. Authorization and publication are rebuilt for every call;
-    /// page projection, sorting, and page limits are not part of the request.
-    pub async fn aggregate_entries_authorized_for_principals(
-        &self,
-        space_id: &str,
-        principal_ids: &[Uuid],
-        request: EntryQueryAggregateRequest,
-    ) -> Result<EntryQueryAggregateResult> {
-        self.aggregate_entries_authorized_for_principals_with_composition_access(
-            space_id,
-            principal_ids,
-            None,
-            request,
-        )
-        .await
-    }
-
-    /// Aggregates a Composition Metric while the exact Composition read ACL
-    /// is checked under the same authorization lease as the full-set query.
-    pub async fn aggregate_entries_authorized_for_composition_metric(
-        &self,
-        space_id: &str,
-        principal_ids: &[Uuid],
-        composition_id: &str,
-        request: EntryQueryAggregateRequest,
-    ) -> Result<EntryQueryAggregateResult> {
-        self.aggregate_entries_authorized_for_principals_with_composition_access(
-            space_id,
-            principal_ids,
-            Some(composition_id),
-            request,
-        )
-        .await
-    }
-
-    async fn aggregate_entries_authorized_for_principals_with_composition_access(
-        &self,
-        space_id: &str,
-        principal_ids: &[Uuid],
-        composition_id: Option<&str>,
-        request: EntryQueryAggregateRequest,
-    ) -> Result<EntryQueryAggregateResult> {
-        request.validate().map_err(entry_query_contract_error)?;
-        require_nonempty_authorized_principals(principal_ids)?;
-        self.validate_complete_space(space_id).await?;
-        let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
-            .acquire_state_lease(space_id)
-            .await?;
-        for principal_id in principal_ids {
-            if !effective_actions_for_state(&state, *principal_id, None)?.contains(&Action::Read) {
-                return Err(
-                    AppError::forbidden("principal is not authorized to read this Space").into(),
-                );
-            }
-        }
-
-        let EntryQueryScope::Form { form_id } = &request.matching_set.scope else {
-            return Err(entry_query_contract_error(EntryQueryError::Invalid(
-                "Entry aggregates require a single Form scope".to_owned(),
-            )));
-        };
-        let workspace =
-            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
-        let publication = workspace.current_publication().await?;
-        let checkpoint = workspace.resolve_publication(&publication).await?;
-        let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
-        if let Some(composition_id) = composition_id {
-            let composition_scopes =
-                Self::authorized_form_entry_scopes_for_forms(&state, principal_ids, forms.clone())?;
-            require_composition_entry_read_scope(
-                &composition_scopes,
-                parse_entry_id(composition_id)?,
-                composition_id,
-            )?;
-        }
-        let Some(form) = forms.iter().find(|form| form.id == *form_id) else {
-            return Err(AppError::not_found(ErrorCode::FormNotFound, "Form not found").into());
-        };
-        let named_scopes =
-            Self::authorized_form_entry_scopes_for_forms(&state, principal_ids, forms.clone())?;
-        let Some(entry_scope) = named_scopes.get(&form.name.to_ascii_lowercase()).cloned() else {
-            return Err(AppError::not_found(ErrorCode::FormNotFound, "Form not found").into());
-        };
-        let relation_scopes = BTreeMap::from([(sql_relation_name(form.id), entry_scope)]);
-        index::aggregate_entry_query_at_checkpoint(
-            &self.operator,
-            &self.workspace_path(space_id),
-            checkpoint,
-            std::slice::from_ref(form),
-            &relation_scopes,
-            &request,
-        )
-        .await
     }
 
     /// Executes one stateless, read-only SQL page for the trusted local

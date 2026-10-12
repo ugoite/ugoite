@@ -22,7 +22,8 @@ pub enum CompositionDiagnosticCode {
     SourceSchemaChanged,
     MetricResultNotScalar,
     MetricResultTypeMismatch,
-    MetricScalarExpectedOneRow,
+    MetricScalarNoRows,
+    MetricScalarMultipleRows,
     MetricResultColumnMissing,
     MetricResultColumnAmbiguous,
 }
@@ -41,7 +42,8 @@ impl CompositionDiagnosticCode {
             Self::SourceSchemaChanged => "source_schema_changed",
             Self::MetricResultNotScalar => "metric_result_not_scalar",
             Self::MetricResultTypeMismatch => "metric_result_type_mismatch",
-            Self::MetricScalarExpectedOneRow => "metric_scalar_expected_one_row",
+            Self::MetricScalarNoRows => "metric_scalar_no_rows",
+            Self::MetricScalarMultipleRows => "metric_scalar_multiple_rows",
             Self::MetricResultColumnMissing => "metric_result_column_missing",
             Self::MetricResultColumnAmbiguous => "metric_result_column_ambiguous",
         }
@@ -60,7 +62,8 @@ impl CompositionDiagnosticCode {
             "source_schema_changed" => Some(Self::SourceSchemaChanged),
             "metric_result_not_scalar" => Some(Self::MetricResultNotScalar),
             "metric_result_type_mismatch" => Some(Self::MetricResultTypeMismatch),
-            "metric_scalar_expected_one_row" => Some(Self::MetricScalarExpectedOneRow),
+            "metric_scalar_no_rows" => Some(Self::MetricScalarNoRows),
+            "metric_scalar_multiple_rows" => Some(Self::MetricScalarMultipleRows),
             "metric_result_column_missing" => Some(Self::MetricResultColumnMissing),
             "metric_result_column_ambiguous" => Some(Self::MetricResultColumnAmbiguous),
             _ => None,
@@ -289,34 +292,11 @@ pub struct CompositionMetricQueryRequest {
     pub parameters: BTreeMap<String, Value>,
 }
 
-/// Semantic operation evaluated by the metric component.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CompositionMetricOperation {
-    SqlScalar,
-    CountRows,
-    CountValues,
-    Sum,
-    Avg,
-    Min,
-    Max,
-}
-
-/// Semantic category of the metric's source.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CompositionMetricSourceKind {
-    EntryQuery,
-    SavedSql,
-}
-
-/// One successful metric result with its portable operation and type.
+/// One successful display value selected from a Saved SQL result.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompositionMetricQueryValue {
     pub component_id: String,
-    pub operation: CompositionMetricOperation,
-    pub source_kind: CompositionMetricSourceKind,
     pub result_type: CompositionResultFieldType,
     /// JSON encoding follows `result_type`: Integer results are canonical
     /// base-10 strings, Decimal results are strings preserving scale, Float
@@ -478,8 +458,6 @@ pub struct CompositionResolvedComponentBinding {
     /// declaration by `component_id`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub metric_field_id: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result_property_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -3,7 +3,7 @@ use arrow_array::{
     Array, BooleanArray, Int64Array, ListArray, StringArray, StructArray,
     TimestampMicrosecondArray, TimestampNanosecondArray,
 };
-use arrow_json::writer::{ArrayWriter, JsonArray, WriterBuilder};
+use arrow_json::writer::ArrayWriter;
 use arrow_schema::Schema;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
@@ -20,7 +20,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use ugoite_core::sql_query::SqlResultColumn;
-use ugoite_domain::composition::CompositionAggregateOperation;
 use ugoite_domain::form::{
     sql_column_name, sql_relation_name, FieldType, FormDefinition, FormField,
 };
@@ -31,9 +30,8 @@ use uuid::Uuid;
 use crate::entry;
 use crate::SpaceCheckpoint;
 use ugoite_core::entry_query::{
-    EntryCursor, EntryFieldRef, EntryProjection, EntryQuery, EntryQueryAggregateRequest,
-    EntryQueryAggregateResult, EntryQueryFieldKind, EntryQueryScope, EntrySort, EntrySortDirection,
-    SearchOperator,
+    EntryCursor, EntryFieldRef, EntryProjection, EntryQuery, EntryQueryFieldKind, EntryQueryScope,
+    EntrySort, EntrySortDirection, SearchOperator,
 };
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::{
@@ -501,120 +499,6 @@ pub(crate) struct CanonicalEntryCandidate {
 pub(crate) struct CanonicalEntryRow {
     pub candidate: CanonicalEntryCandidate,
     pub row: entry::EntryRow,
-}
-
-/// Execute one bounded aggregate over the complete authorized EntryQuery
-/// matching set. The same canonical matcher used by paginated EntryQuery
-/// supplies text and filter predicates; page sorting, projection, and limits
-/// are absent from the aggregate input.
-pub(crate) async fn aggregate_entry_query_at_checkpoint(
-    op: &Operator,
-    ws_path: &str,
-    checkpoint: SpaceCheckpoint,
-    forms: &[FormDefinition],
-    relation_scopes: &BTreeMap<String, EntryScope>,
-    request: &EntryQueryAggregateRequest,
-) -> Result<EntryQueryAggregateResult> {
-    request
-        .validate()
-        .map_err(|error| canonical_query_invalid(error.to_string()))?;
-    let query = request.matching_set.as_entry_query();
-    let selected_forms = selected_canonical_forms(forms, relation_scopes, &query.scope);
-    if selected_forms.len() != 1 {
-        return Err(canonical_query_invalid(
-            "Entry aggregate requires one currently authorized Form",
-        ));
-    }
-    let form = selected_forms[0];
-    let field = request
-        .field_id
-        .map(|field_id| {
-            form.fields
-                .iter()
-                .find(|field| field.id == field_id)
-                .ok_or_else(|| canonical_query_invalid("aggregate field is unavailable"))
-        })
-        .transpose()?;
-    ugoite_domain::composition_metric::composition_aggregate_result_type(
-        request.operation,
-        field.map(|field| &field.field_type),
-    )
-    .map_err(|diagnostic| canonical_query_invalid(diagnostic.as_str()))?;
-
-    let aggregate_field_alias = "__ugoite_aggregate_value";
-    let extra_columns = field
-        .map(|field| {
-            vec![(
-                quote_identifier(&sql_column_name(field.id)),
-                aggregate_field_alias.to_owned(),
-            )]
-        })
-        .unwrap_or_default();
-    let (matching_sql, values, types) = build_canonical_entry_sql_with_extra_columns(
-        &query,
-        &selected_forms,
-        &[],
-        &extra_columns,
-        None,
-        None,
-    )?;
-    let aggregate_function = match request.operation {
-        CompositionAggregateOperation::CountRows | CompositionAggregateOperation::CountValues => {
-            "COUNT"
-        }
-        CompositionAggregateOperation::Sum => "SUM",
-        CompositionAggregateOperation::Avg => "AVG",
-        CompositionAggregateOperation::Min => "MIN",
-        CompositionAggregateOperation::Max => "MAX",
-    };
-    let aggregate_input = if request.operation == CompositionAggregateOperation::CountRows {
-        "*".to_owned()
-    } else {
-        quote_identifier(aggregate_field_alias)
-    };
-    let aggregate_sql = format!(
-        "SELECT {aggregate_function}({aggregate_input}) AS {} FROM ({matching_sql}) AS {}",
-        quote_identifier(aggregate_field_alias),
-        quote_identifier("__ugoite_aggregate_input")
-    );
-    let context = datafusion_sql_context_with_form_definitions(
-        op,
-        ws_path,
-        EntryScope::AllCurrent,
-        None,
-        Some(relation_scopes),
-        Some(checkpoint),
-        SqlFunctionPolicy::new(
-            &[
-                "array_to_string",
-                crate::search_normalization::SEARCH_NORMALIZE_FUNCTION_NAME,
-            ],
-            &["count", "sum", "avg", "min", "max"],
-            &[],
-        ),
-        1,
-        false,
-        forms.to_vec(),
-    )
-    .await
-    .map_err(map_sql_error)?;
-    let batches = context
-        .execute_with_parameters(&aggregate_sql, datafusion_parameters(&values, &types)?)
-        .await
-        .map_err(map_sql_error)?;
-    let rows = record_batches_to_values_with_explicit_nulls(&batches)?;
-    if rows.len() != 1 {
-        return Err(anyhow!(
-            "DataFusion aggregate did not return one result row"
-        ));
-    }
-    let value = rows[0]
-        .as_object()
-        .and_then(|row| row.get(aggregate_field_alias))
-        .ok_or_else(|| anyhow!("DataFusion aggregate result column is missing"))?;
-    Ok(EntryQueryAggregateResult {
-        value: (!value.is_null()).then(|| value.clone()),
-    })
 }
 
 #[derive(Debug, Clone)]
@@ -3442,28 +3326,6 @@ fn record_batches_to_values(batches: &[arrow_array::RecordBatch]) -> Result<Vec<
         .context("encode DataFusion result rows as JSON")?;
     writer.finish().context("finish DataFusion JSON encoding")?;
     serde_json::from_slice(&writer.into_inner()).context("decode DataFusion result rows")
-}
-
-/// Metric aggregates always produce one scalar row, including when SQL
-/// semantics produce NULL for an empty or all-NULL input. Keep this adapter's
-/// null behavior local to the metric result so ordinary SQL JSON output
-/// retains its established omission of null-valued keys.
-fn record_batches_to_values_with_explicit_nulls(
-    batches: &[arrow_array::RecordBatch],
-) -> Result<Vec<Value>> {
-    let mut encoded = Vec::new();
-    {
-        let mut writer = WriterBuilder::new()
-            .with_explicit_nulls(true)
-            .build::<_, JsonArray>(&mut encoded);
-        writer
-            .write_batches(&batches.iter().collect::<Vec<_>>())
-            .context("encode Composition metric result rows as JSON")?;
-        writer
-            .finish()
-            .context("finish Composition metric JSON encoding")?;
-    }
-    serde_json::from_slice(&encoded).context("decode Composition metric result rows")
 }
 
 /// Converts only bounded Arrow batches to JSON. The per-batch preflight keeps

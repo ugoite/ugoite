@@ -62,9 +62,9 @@ requirements:
       - id: display-label-verification
         role: verification
         facet: verification
-        responsibility: Verify optional display labels round-trip through canonical YAML and the fingerprint natively and in WASM, and typed Metric definitions canonicalize identically through native and WASM paths while rejecting the former source/value_field shape and other invalid definitions.
+        responsibility: Verify optional labels through native and WASM canonicalization, and verify that Metrics using different result columns from one Saved SQL source canonicalize identically across both surfaces.
         targets:
-          - id: case
+          - id: canonicalization-parity-case
             adapter: rust
             path: crates/ugoite-wasm/src/lib.rs
             selector: { kind: symbol, name: tests::composition_canonicalization_matches_the_native_domain_contract }
@@ -76,97 +76,66 @@ requirements:
                   - FEAT-COMP-001#binding.display-label-domain/target.component-display-label
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::composition_canonicalization_matches_the_native_domain_contract } }
               - kind: verifies
-                criterion: REQ-COMP-002#criterion.typed-metric-definition
+                criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation
                 covers:
-                  - FEAT-COMP-001#binding.typed-metric-definition-domain/target.metric-definition-type
+                  - FEAT-COMP-001#binding.saved-sql-metric-presentation-domain/target.metric-component
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::composition_canonicalization_matches_the_native_domain_contract } }
-      - id: typed-metric-definition-validation
+      - id: saved-sql-metric-presentation-validation
         role: verification
         facet: verification
-        responsibility: Verify typed aggregate and SQL scalar definitions resolve into server metric bindings and execute through the Composition Metric query operation with exact Saved SQL revision and current authorization. Companion targets verify operation-specific aggregate result types, matching-set semantics, projection-independent aggregate FieldIds, and native/WASM canonical parity.
+        responsibility: Verify a Metric binds one exact Saved SQL source and one declared scalar output column, including shared multi-column sources, exact numeric values, distinct zero-row and multi-row outcomes, parameters, live data, and current authorization.
         targets:
-          - id: typed-metric-binding-resolution-case
+          - id: saved-sql-metric-binding-resolution
             adapter: rust
             path: crates/ugoite-core/src/composition.rs
-            selector: { kind: symbol, name: tests::typed_metric_definitions_resolve_to_server_metric_bindings }
+            selector: { kind: symbol, name: tests::saved_sql_columns_resolve_to_shared_metric_bindings }
             claims:
               - kind: verifies
-                criterion: REQ-COMP-002#criterion.typed-metric-definition
+                criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation
                 covers:
-                  - FEAT-COMP-001#binding.typed-metric-definition-domain/target.metric-definition-type
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::typed_metric_definitions_resolve_to_server_metric_bindings } }
-          - id: typed-metric-query-execution-case
+                  - FEAT-COMP-001#binding.saved-sql-metric-presentation-domain/target.metric-component
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_columns_resolve_to_shared_metric_bindings } }
+          - id: metric-row-cardinality-diagnostics
+            adapter: rust
+            path: crates/ugoite-core/src/composition_metric.rs
+            selector: { kind: symbol, name: tests::sql_scalar_probe_distinguishes_zero_and_multiple_result_rows }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation
+                covers:
+                  - FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition_metric::tests::sql_scalar_probe_distinguishes_zero_and_multiple_result_rows } }
+          - id: saved-sql-metric-query-execution
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_composition_query_authorization.rs
-            selector: { kind: test, name: typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe }
+            selector: { kind: test, name: saved_sql_columns_resolve_to_bounded_metric_results }
             claims:
-              - { kind: verifies, criterion: REQ-COMP-002#criterion.typed-metric-definition, covers: [FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe } } }
-              - { kind: verifies, criterion: REQ-COMP-002#criterion.typed-entry-aggregate-execution, covers: [FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.aggregate-entry-query, FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe } } }
-          - id: typed-metric-current-authorization-case
+              - { kind: verifies, criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation, covers: [FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: saved_sql_columns_resolve_to_bounded_metric_results } } }
+          - id: saved-sql-metric-current-authorization
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_composition_query_authorization.rs
             selector: { kind: test, name: authorized_composition_metrics_recheck_current_entry_and_saved_sql_access }
             claims:
-              - { kind: verifies, criterion: REQ-COMP-002#criterion.typed-metric-definition, covers: [FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: authorized_composition_metrics_recheck_current_entry_and_saved_sql_access } } }
-              - { kind: verifies, criterion: REQ-COMP-002#criterion.typed-entry-aggregate-execution, covers: [FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.aggregate-entry-query, FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: authorized_composition_metrics_recheck_current_entry_and_saved_sql_access } } }
+              - { kind: verifies, criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation, covers: [FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: authorized_composition_metrics_recheck_current_entry_and_saved_sql_access } } }
               - { kind: verifies, criterion: REQ-COMP-004#criterion.current-authorization, covers: [FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: authorized_composition_metrics_recheck_current_entry_and_saved_sql_access } } }
-              - { kind: verifies, criterion: REQ-API-015#criterion.checked-numeric-aggregates, covers: [FEAT-API-001#binding.sql-service-implementation/target.checked-numeric-aggregates], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: authorized_composition_metrics_recheck_current_entry_and_saved_sql_access } } }
-          - id: matching-set-contract-case
-            adapter: rust
-            path: crates/ugoite-core/src/entry_query.rs
-            selector: { kind: symbol, name: tests::matching_set_preserves_scope_text_and_filters_but_drops_sort }
-            claims:
-              - kind: verifies
-                criterion: REQ-COMP-002#criterion.typed-entry-aggregate-execution
-                covers:
-                  - FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.matching-set-contract
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: entry_query::tests::matching_set_preserves_scope_text_and_filters_but_drops_sort } }
-          - id: aggregate-source-fingerprint-case
-            adapter: rust
-            path: crates/ugoite-core/src/composition.rs
-            selector: { kind: symbol, name: tests::aggregate_fields_stay_out_of_projection_and_enter_the_source_fingerprint }
-            claims:
-              - kind: verifies
-                criterion: REQ-COMP-002#criterion.typed-entry-aggregate-execution
-                covers:
-                  - FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.aggregate-source-fingerprint
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::aggregate_fields_stay_out_of_projection_and_enter_the_source_fingerprint } }
-          - id: domain-aggregate-result-type-case
-            adapter: rust
-            path: crates/ugoite-domain/src/composition_metric.rs
-            selector: { kind: symbol, name: tests::classifies_typed_aggregate_results_and_rejects_incompatible_fields }
-            claims:
-              - kind: verifies
-                criterion: REQ-COMP-002#criterion.typed-entry-aggregate-execution
-                covers:
-                  - FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.aggregate-result-type
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition_metric::tests::classifies_typed_aggregate_results_and_rejects_incompatible_fields } }
           - id: cli-canonical-case
             adapter: rust
             path: crates/ugoite-cli/src/commands/composition.rs
-            selector: { kind: symbol, name: tests::lint_file_preserves_typed_metric_definitions_and_shared_fingerprint }
+            selector: { kind: symbol, name: tests::lint_file_preserves_saved_sql_metric_columns_and_shared_fingerprint }
             claims:
-              - kind: verifies
-                criterion: REQ-COMP-002#criterion.typed-metric-definition
-                covers:
-                  - FEAT-COMP-001#binding.typed-metric-definition-domain/target.metric-definition-type
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: commands::composition::tests::lint_file_preserves_typed_metric_definitions_and_shared_fingerprint } }
+              - { kind: verifies, criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation, covers: [FEAT-COMP-001#binding.saved-sql-metric-presentation-domain/target.metric-component], runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: commands::composition::tests::lint_file_preserves_saved_sql_metric_columns_and_shared_fingerprint } } }
           - id: domain-canonical-case
             adapter: rust
             path: crates/ugoite-domain/src/composition.rs
-            selector: { kind: symbol, name: tests::typed_metric_grammar_accepts_projection_independent_aggregates }
+            selector: { kind: symbol, name: tests::multiple_metrics_select_columns_from_one_saved_sql_source }
             claims:
-              - kind: verifies
-                criterion: REQ-COMP-002#criterion.typed-metric-definition
-                covers:
-                  - FEAT-COMP-001#binding.typed-metric-definition-domain/target.metric-definition-type
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::typed_metric_grammar_accepts_projection_independent_aggregates } }
-              - kind: verifies
-                criterion: REQ-COMP-002#criterion.used-field-schema-snapshot
-                covers:
-                  - FEAT-COMP-001#binding.entry-query-field-schema-domain/target.field-schema-snapshot-entry
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::typed_metric_grammar_accepts_projection_independent_aggregates } }
-          - id: decimal-metric-value-case
+              - { kind: verifies, criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation, covers: [FEAT-COMP-001#binding.saved-sql-metric-presentation-domain/target.metric-component], runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::multiple_metrics_select_columns_from_one_saved_sql_source } } }
+      - id: decimal-metric-value-case
+        role: verification
+        facet: verification
+        responsibility: Verify exact Decimal metric strings preserve scale and reject malformed values.
+        targets:
+          - id: exact-decimal-case
             adapter: rust
             path: crates/ugoite-domain/src/composition_metric.rs
             selector: { kind: symbol, name: tests::validates_exact_decimal_metric_strings_without_losing_scale }
@@ -246,6 +215,29 @@ requirements:
                 criterion: REQ-COMP-002#criterion.entry-query-display-system-fields
                 covers: [FEAT-COMP-002#binding.entry-query-resolver/target.compile-entry-query-source]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::entry_query_template_compiles_to_the_existing_bounded_request } }
+      - id: used-field-schema-snapshot-verification
+        role: verification
+        facet: verification
+        responsibility: Verify EntryQuery snapshots preserve typed property metadata and reject changes to a used field schema.
+        targets:
+          - id: field-schema-canonicalization
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: entry_query_field_schema_preserves_typed_list_and_reference_metadata }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.used-field-schema-snapshot
+                covers: [FEAT-COMP-001#binding.entry-query-field-schema-domain/target.field-schema-snapshot-entry]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::entry_query_field_schema_preserves_typed_list_and_reference_metadata } }
+          - id: current-used-field-schema-revalidation
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::changed_list_item_schema_is_reported_for_a_used_field }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.used-field-schema-snapshot
+                covers: [FEAT-COMP-001#binding.entry-query-field-schema-domain/target.field-schema-snapshot-entry]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::changed_list_item_schema_is_reported_for_a_used_field } }
       - id: layout-verification
         role: verification
         facet: verification
@@ -721,7 +713,7 @@ requirements:
       - id: edit-round-trip-verification
         role: verification
         facet: verification
-        responsibility: Verify restoring a lint-normalized document into the draft keeps multi-row layout order with text content and style plus parameter placement against the labeled shape, entry_query sources with omitted empty filters/sort default like the domain, and unknown future component, layout, and metric definition kinds with invalid text shapes fail closed.
+        responsibility: Verify restoring a lint-normalized document into the draft keeps multi-row layout order with text content and style plus parameter placement against the labeled shape, entry_query sources with omitted empty filters/sort default like the domain, and unknown future component/layout kinds, removed Metric calculation and value_field shapes, and invalid text shapes fail closed.
         targets:
           - id: edit-round-trip-omitted-query-case
             adapter: typescript
@@ -756,23 +748,23 @@ requirements:
           - id: edit-round-trip-unknown-kinds-case
             adapter: typescript
             path: frontend/src/lib/composition-draft.test.ts
-            selector: { kind: test, name: "refuses unknown future component, layout, and metric definition kinds instead of approximating" }
+            selector: { kind: test, name: "rejects removed Metric calculation shapes and unknown component/layout kinds" }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.ordered-component-layout
                 covers:
                   - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-round-trip
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "refuses unknown future component, layout, and metric definition kinds instead of approximating" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "rejects removed Metric calculation shapes and unknown component/layout kinds" } }
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.text-style-enum
                 covers:
                   - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-round-trip
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "refuses unknown future component, layout, and metric definition kinds instead of approximating" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "rejects removed Metric calculation shapes and unknown component/layout kinds" } }
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.parameter-placement
                 covers:
                   - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-round-trip
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "refuses unknown future component, layout, and metric definition kinds instead of approximating" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "rejects removed Metric calculation shapes and unknown component/layout kinds" } }
       - id: metric-value-verification
         role: verification
         facet: verification
@@ -842,42 +834,24 @@ requirements:
         kind: behavior
         statement: Composition parameters and Metric/Table components may carry optional display labels; present labels round-trip through canonical YAML and the semantic fingerprint, do not replace stable IDs or change source and query binding semantics, and absent labels remain omitted from canonical output.
         governed_by: [POL-002#rule.governance, POL-007#rule.governance]
-      - id: typed-metric-definition
+      - id: saved-sql-metric-presentation
         kind: behavior
         statement: >-
-          Composition v1 Metric components use one typed definition:
-          EntryQuery aggregates count_rows, count_values, sum, avg, min, and
-          max, or an exact Saved SQL scalar column. The definition has strict
-          operation-specific fields and optional display-only presentation.
-          count_rows has no field_id; count_values counts non-NULL values, and
-          the other field-based operations require a stable FieldId. sum and
-          avg require numeric fields; min and max accept numeric, date, and
-          timestamp fields, excluding time-only fields. Numeric presentation
-          metadata is optional; date and timestamp min/max omit it and use
-          type-based rendering. A typed aggregate FieldId is resolved from the
-          source schema even when it is absent from the table projection;
-          aggregate results use the full source matching set and are
-          independent of table page size, page, sort, and display projection.
-          EntryQuery aggregates execute through the current authorized
-          matching-set path and Composition metric query operation. Exact
-          Saved SQL scalar definitions bind to a specific saved revision and
-          execute through a bounded scalar probe. Metric documents using the
-          former source plus value_field form are rejected; no compatibility
-          parser or migration is provided.
+          A Metric stores the ID of one Composition Saved SQL source, the name of
+          one declared output column, and optional display-only label, unit, and
+          fraction-digit settings. The source pins an exact Saved SQL revision
+          and may be shared by multiple Metrics and Tables. The selected column
+          must be a declared displayable scalar. SQL owns all calculations;
+          Metric stores no operation, Form FieldId, calculation expression, or
+          client-side aggregation configuration. Evaluation uses current ACLs
+          and typed parameters, consumes at most two rows, and succeeds only
+          for exactly one row. It never chooses a first row or inserts LIMIT.
+          SQL NULL is a successful present value distinct from numeric zero;
+          zero-row and multi-row results are distinct failures. Existing
+          read-only SQL, exact-revision, precision, and resource-limit contracts
+          remain in force. Metric-specific compatibility with former
+          prerelease shapes is not required.
         governed_by: [POL-002#rule.governance, POL-007#rule.governance]
-      - id: typed-entry-aggregate-execution
-        kind: behavior
-        statement: >-
-          A typed EntryQuery aggregate executes over the full matching set for
-          one current Form: canonical text and filters define membership, while
-          sort, cursor, page limit, and table projection do not. The aggregate
-          FieldId is validated against the current Form and remains part of
-          the source schema fingerprint even when it is not projected. The
-          executor reads the current publication and rebuilds current Space,
-          Form, and Entry authorization for each operation, executes the
-          aggregate within the closed authorized query context, and returns
-          only its scalar result.
-        governed_by: [POL-007#rule.governance, POL-011#rule.governance]
       - id: metric-runtime-values
         kind: behavior
         statement: >-
@@ -926,11 +900,9 @@ requirements:
         kind: behavior
         statement: >-
           An entry_query source records a FieldId and FieldType snapshot for
-          property fields used by its filters, sort, projection, and typed
-          aggregate definitions; a preview projection records all current
-          property fields returned by preview. A typed aggregate may reference
-          a field outside the table projection without widening or rewriting
-          that projection, and execution revalidates the FieldId and type
+          property fields used by its filters, sort, projection, and text
+          search; a preview projection records all current property fields
+          returned by preview. Execution revalidates each FieldId and type
           against the current authorized Form schema. The snapshot includes
           List item and RowReference target
           metadata when present. When text search is present, it also includes

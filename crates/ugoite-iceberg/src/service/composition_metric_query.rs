@@ -6,11 +6,10 @@ use ugoite_core::composition::{
     ResolvedComponentBinding, ResolvedComponentKind, ResolvedSourceRequest,
 };
 use ugoite_core::composition_metric::{
-    encode_composition_metric_value, evaluate_saved_sql_metric_probe, CompositionMetricOperation,
+    encode_composition_metric_value, evaluate_saved_sql_metric_probe,
     CompositionMetricQueryRequest, CompositionMetricQueryResponse, CompositionMetricQueryTarget,
-    CompositionMetricQueryValue, CompositionMetricSourceKind,
+    CompositionMetricQueryValue,
 };
-use ugoite_core::entry_query::{EntryQueryAggregateRequest, EntryQueryMatchingSet};
 use ugoite_core::sql_query::{SqlQueryRequest, SqlScalarProbeResult};
 use ugoite_domain::composition::CompositionDiagnosticCode;
 use ugoite_domain::id::{validate_entry_id, validate_revision_id};
@@ -219,7 +218,7 @@ impl UgoiteService {
             ));
         };
 
-        let (value, operation, source_kind) = match source {
+        let value = match source {
             ResolvedSourceRequest::SavedSql {
                 request: sql_request,
                 ..
@@ -248,11 +247,7 @@ impl UgoiteService {
                     None => self.probe_sql_scalar_local(space_id, sql_request).await?,
                 };
                 match evaluate_saved_sql_metric_probe(binding, &probe) {
-                    Ok(value) => (
-                        value,
-                        CompositionMetricOperation::SqlScalar,
-                        CompositionMetricSourceKind::SavedSql,
-                    ),
+                    Ok(value) => value,
                     Err(diagnostic) => {
                         return Ok(metric_query_diagnostic(
                             draft_fingerprint,
@@ -262,56 +257,12 @@ impl UgoiteService {
                     }
                 }
             }
-            ResolvedSourceRequest::EntryQuery {
-                request: entry_request,
-                ..
-            } => {
-                let Some(aggregate_operation) = binding.aggregate_operation else {
-                    return Ok(metric_query_diagnostic(
-                        draft_fingerprint,
-                        component_id,
-                        CompositionDiagnosticCode::InvalidComposition,
-                    ));
-                };
-                let aggregate_request = EntryQueryAggregateRequest {
-                    matching_set: EntryQueryMatchingSet {
-                        scope: entry_request.query.scope.clone(),
-                        text: entry_request.query.text.clone(),
-                        filters: entry_request.query.filters.clone(),
-                    },
-                    operation: aggregate_operation,
-                    field_id: binding.metric_field_id,
-                };
-                let aggregate = match principal_ids {
-                    Some(principal_ids) => match composition_id {
-                        Some(composition_id) => {
-                            self.aggregate_entries_authorized_for_composition_metric(
-                                space_id,
-                                principal_ids,
-                                composition_id,
-                                aggregate_request,
-                            )
-                            .await?
-                        }
-                        None => {
-                            self.aggregate_entries_authorized_for_principals(
-                                space_id,
-                                principal_ids,
-                                aggregate_request,
-                            )
-                            .await?
-                        }
-                    },
-                    None => {
-                        self.aggregate_entries_local(space_id, aggregate_request)
-                            .await?
-                    }
-                };
-                (
-                    aggregate.value.unwrap_or(Value::Null),
-                    aggregate_operation.into(),
-                    CompositionMetricSourceKind::EntryQuery,
-                )
+            ResolvedSourceRequest::EntryQuery { .. } => {
+                return Ok(metric_query_diagnostic(
+                    draft_fingerprint,
+                    component_id,
+                    CompositionDiagnosticCode::InvalidComposition,
+                ));
             }
         };
         let value = match encode_composition_metric_value(result_type, value) {
@@ -329,8 +280,6 @@ impl UgoiteService {
             draft_fingerprint,
             result: Some(CompositionMetricQueryValue {
                 component_id: component_id.to_owned(),
-                operation,
-                source_kind,
                 result_type,
                 value,
             }),
