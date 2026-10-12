@@ -1288,24 +1288,11 @@ mod tests {
         );
         assert!(super::canonicalize_composition_yaml(&yaml_without_default).is_ok());
 
-        let json_with_null = serde_json::json!({
-            "format": "ugoite.composition",
-            "format_version": 1,
-            "kind": "dashboard",
-            "name": "Typed variables",
-            "tags": [],
-            "spec": {
-                "variables": [{
-                    "id": "amount",
-                    "type": "float",
-                    "required": false,
-                    "default": null
-                }],
-                "sources": [],
-                "components": [],
-                "layout": {"kind": "flow", "rows": []}
-            }
-        });
+        let mut json_with_null = serde_json::to_value(
+            super::parse_composition_yaml(MONTHLY_EXPENSE).expect("valid fixture document"),
+        )
+        .expect("fixture serializes to JSON");
+        json_with_null["spec"]["variables"][0]["default"] = serde_json::Value::Null;
         assert_eq!(
             super::canonicalize_composition_document_value(json_with_null),
             Err(CompositionDiagnosticCode::InvalidComposition)
