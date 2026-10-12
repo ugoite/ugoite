@@ -763,16 +763,20 @@ requirements:
           - id: entry-point-studio-seed-saved-sql
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
-            selector: { kind: test, name: "seeds the studio from a saved sql seed with a table and placed controls" }
+            selector: { kind: test, name: "seeds the studio from a saved sql seed with a table and placed controls using localized parameter labels" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.source-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio-seed]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from a saved sql seed with a table and placed controls" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from a saved sql seed with a table and placed controls using localized parameter labels" } }
               - kind: verifies
                 criterion: REQ-FE-070#criterion.typed-parameter-binding
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio-seed]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from a saved sql seed with a table and placed controls" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from a saved sql seed with a table and placed controls using localized parameter labels" } }
+              - kind: verifies
+                criterion: REQ-FE-077#criterion.parameter-display-names
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-seed]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from a saved sql seed with a table and placed controls using localized parameter labels" } }
           - id: entry-point-studio-seed-entry-query
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx

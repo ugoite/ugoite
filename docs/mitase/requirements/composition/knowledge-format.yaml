@@ -626,13 +626,13 @@ requirements:
           - id: studio-seed-sql-route-case
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx"
-            selector: { kind: test, name: seeds the studio from a saved sql seed with a table and placed controls }
+            selector: { kind: test, name: seeds the studio from a saved sql seed with a table and placed controls using localized parameter labels }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.exact-saved-sql-revision
                 covers:
                   - FEAT-COMP-006#binding.studio-data-runtime/target.browser-studio-seed
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from a saved sql seed with a table and placed controls" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from a saved sql seed with a table and placed controls using localized parameter labels" } }
           - id: studio-readiness-matrix-case
             adapter: typescript
             path: frontend/src/lib/composition-draft.test.ts

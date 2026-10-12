@@ -750,7 +750,7 @@ describe("Composition studio shell", () => {
     expect(saveMock).not.toHaveBeenCalled();
   });
 
-  it("seeds the studio from a saved sql seed with a table and placed controls", () => {
+  it("seeds the studio from a saved sql seed with a table and placed controls using localized parameter labels", () => {
     locationControls.state = {
       seed: {
         kind: "saved_sql",
@@ -771,10 +771,11 @@ describe("Composition studio shell", () => {
     expect(screen.getByRole("button", { name: "Monthly" }))
       .toBeInTheDocument();
     expect(screen.getByLabelText("Name")).toHaveValue("Monthly");
-    expect(screen.getByText("month")).toBeInTheDocument();
     // The seed carries a default Table on the new source with the variable
     // control placed, so the canvas owns a visible block on open.
     showDesignMode();
+    expect(screen.getByLabelText("Parameter 1")).toBeInTheDocument();
+    expect(screen.queryByLabelText("month")).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Select Monthly" }),
     ).toBeInTheDocument();
@@ -835,13 +836,17 @@ describe("Composition studio shell", () => {
     const parameters = screen
       .getByRole("heading", { name: "Parameters" })
       .closest("section")!;
-    expect(await within(parameters).findByText("month")).toBeInTheDocument();
+    expect(await within(parameters).findByText("Parameter 1"))
+      .toBeInTheDocument();
 
     // A referenced parameter cannot be removed silently.
-    fireEvent.click(screen.getByRole("button", { name: "Remove month" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove Parameter 1" }),
+    );
     expect(
       await screen.findByText("This parameter is used by a data source."),
     ).toBeInTheDocument();
-    expect(within(parameters).getByText("month")).toBeInTheDocument();
+    expect(within(parameters).getByText("Parameter 1")).toBeInTheDocument();
+    expect(within(parameters).queryByText("month")).not.toBeInTheDocument();
   });
 });

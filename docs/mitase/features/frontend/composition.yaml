@@ -303,6 +303,8 @@ features:
                 criterion: REQ-FE-070#criterion.source-authoring
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.typed-parameter-binding
+              - kind: satisfies
+                criterion: REQ-FE-077#criterion.parameter-display-names
           - id: composition-studio-mobile
             adapter: typescript
             path: frontend/src/components/CompositionInspectorSheet.tsx
