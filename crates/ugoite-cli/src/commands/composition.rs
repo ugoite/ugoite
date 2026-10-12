@@ -1705,7 +1705,7 @@ mod tests {
             operation: CompositionMetricOperation::CountRows,
             source_kind: CompositionMetricSourceKind::EntryQuery,
             result_type: CompositionResultFieldType::Integer,
-            value: json!(3),
+            value: json!("3"),
         };
 
         assert_eq!(
@@ -1715,7 +1715,7 @@ mod tests {
                 "operation": "count_rows",
                 "source_kind": "entry_query",
                 "result_type": "integer",
-                "value": 3
+                "value": "3"
             })
         );
     }
