@@ -558,7 +558,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
         component_id: metric.draftId,
         parameters,
       });
-      if (!response.ok || !response.result) {
+      if (
+        !response.ok || !response.result ||
+        response.draft_fingerprint !== canonical.fingerprint
+      ) {
         return { ok: false, error: t("composition.metricUnavailable") };
       }
       return { ok: true, value: response.result.value };

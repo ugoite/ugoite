@@ -271,6 +271,7 @@ describe("CompositionStudioSync", () => {
             `${component.id}=${component.label ?? ""}`
           ).join(",")
         }`,
+        fingerprint: "canonical-fingerprint",
       }),
     );
     previewMock.mockImplementation(async () => okPreview("fp-1"));
@@ -421,6 +422,50 @@ describe("CompositionStudioSync", () => {
     expect(
       await screen.findByText("128400", { selector: "output" }),
     ).toBeInTheDocument();
+  });
+
+  it("rejects a successful metric preview with a different draft fingerprint", async () => {
+    queryMetricMock.mockResolvedValueOnce({
+      ok: true,
+      draft_fingerprint: "stale-fingerprint",
+      result: {
+        component_id: "disp-1",
+        operation: "sql_scalar",
+        source_kind: "saved_sql",
+        result_type: "float",
+        value: 128400,
+      },
+    });
+    const { container } = renderStudio(sourceOnlyDraft());
+    fireEvent.click(screen.getByRole("button", { name: "Add to design" }));
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Add to design" }))
+        .getByRole("button", { name: "Data" }),
+    );
+
+    const picker = screen.getByRole("dialog", { name: "Add data component" });
+    fireEvent.click(within(picker).getByRole("tab", { name: "Metric" }));
+    fireEvent.click(
+      within(picker).getByRole("button", { name: "Monthly totals" }),
+    );
+    fireEvent.change(within(picker).getByLabelText("Column"), {
+      target: { value: "total" },
+    });
+    fireEvent.click(within(picker).getByRole("button", { name: "Preview" }));
+
+    expect(await within(picker).findByRole("alert")).toHaveTextContent(
+      "Metric result unavailable",
+    );
+    expect(within(picker).getByRole("button", { name: "Add" }))
+      .toBeDisabled();
+    expect(container.querySelectorAll(".designBlock")).toHaveLength(0);
+    expect(queryMetricMock).toHaveBeenCalledWith(
+      "space-1",
+      expect.objectContaining({
+        target: { kind: "draft", yaml: expect.any(String) },
+        component_id: expect.any(String),
+      }),
+    );
   });
 
   it("auto-selects the block source in Data and keeps text and parameter selections", async () => {
