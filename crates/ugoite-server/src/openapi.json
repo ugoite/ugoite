@@ -15148,7 +15148,8 @@
           "source_schema_changed",
           "metric_result_not_scalar",
           "metric_result_type_mismatch",
-          "metric_scalar_expected_one_row",
+          "metric_scalar_no_rows",
+          "metric_scalar_multiple_rows",
           "metric_result_column_missing",
           "metric_result_column_ambiguous"
         ]
@@ -15447,11 +15448,6 @@
           },
           "source_id": {
             "type": "string"
-          },
-          "metric_field_id": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 1
           },
           "result_property_key": {
             "type": "string"
@@ -16189,43 +16185,16 @@
         },
         "additionalProperties": false
       },
-      "CompositionMetricOperation": {
-        "type": "string",
-        "enum": [
-          "sql_scalar",
-          "count_rows",
-          "count_values",
-          "sum",
-          "avg",
-          "min",
-          "max"
-        ]
-      },
-      "CompositionMetricSourceKind": {
-        "type": "string",
-        "enum": [
-          "entry_query",
-          "saved_sql"
-        ]
-      },
       "CompositionMetricQueryValue": {
         "type": "object",
         "required": [
           "component_id",
-          "operation",
-          "source_kind",
           "result_type",
           "value"
         ],
         "properties": {
           "component_id": {
             "type": "string"
-          },
-          "operation": {
-            "$ref": "#/components/schemas/CompositionMetricOperation"
-          },
-          "source_kind": {
-            "$ref": "#/components/schemas/CompositionMetricSourceKind"
           },
           "result_type": {
             "$ref": "#/components/schemas/CompositionResultFieldType"

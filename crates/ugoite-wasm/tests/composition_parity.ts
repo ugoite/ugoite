@@ -175,8 +175,8 @@ async function main(): Promise<void> {
     "../../ugoite-domain/tests/fixtures/composition/monthly-expense-labeled.ugcomp.yaml",
     import.meta.url,
   );
-  const typedMetricDefinitionsFixturePath = new URL(
-    "../../ugoite-domain/tests/fixtures/composition/typed-metric-definitions.ugcomp.yaml",
+  const savedSqlMetricColumnsFixturePath = new URL(
+    "../../ugoite-domain/tests/fixtures/composition/saved-sql-metric-columns.ugcomp.yaml",
     import.meta.url,
   );
   const canonicalPath = new URL(
@@ -195,12 +195,12 @@ async function main(): Promise<void> {
     "../../ugoite-domain/tests/fixtures/composition/monthly-expense-labeled.fingerprint.txt",
     import.meta.url,
   );
-  const typedMetricDefinitionsCanonicalPath = new URL(
-    "../../ugoite-domain/tests/fixtures/composition/typed-metric-definitions.canonical.ugcomp.yaml",
+  const savedSqlMetricColumnsCanonicalPath = new URL(
+    "../../ugoite-domain/tests/fixtures/composition/saved-sql-metric-columns.canonical.ugcomp.yaml",
     import.meta.url,
   );
-  const typedMetricDefinitionsFingerprintPath = new URL(
-    "../../ugoite-domain/tests/fixtures/composition/typed-metric-definitions.fingerprint.txt",
+  const savedSqlMetricColumnsFingerprintPath = new URL(
+    "../../ugoite-domain/tests/fixtures/composition/saved-sql-metric-columns.fingerprint.txt",
     import.meta.url,
   );
   const invalidListItemPath = new URL(
@@ -213,73 +213,43 @@ async function main(): Promise<void> {
   );
   const yaml = await Deno.readTextFile(fixturePath);
   const labeledYaml = await Deno.readTextFile(labeledFixturePath);
-  const typedMetricDefinitionsYaml = await Deno.readTextFile(
-    typedMetricDefinitionsFixturePath,
+  const savedSqlMetricColumnsYaml = await Deno.readTextFile(
+    savedSqlMetricColumnsFixturePath,
   );
-  const invalidTypedMetricDefinitionsYaml = [
-    typedMetricDefinitionsYaml.replace("operation: count_rows", "operation: median"),
-    typedMetricDefinitionsYaml.replace(
-      "operation: count_rows\n      presentation:",
-      "operation: count_rows\n        field_id: 102\n      presentation:",
+  const invalidSavedSqlMetricColumnsYaml = [
+    savedSqlMetricColumnsYaml.replace(
+      "      source: monthly_summary\n      column: count",
+      "      definition:\n        kind: sql_scalar\n        source: monthly_summary\n        column: count",
     ),
-    typedMetricDefinitionsYaml.replace(
-      "operation: count_values\n        field_id: 103",
-      "operation: count_values",
+    savedSqlMetricColumnsYaml.replace(
+      "      source: monthly_summary\n      column: count",
+      "      source: expense_rows\n      column: count",
     ),
-    typedMetricDefinitionsYaml.replace(
-      "operation: count_values\n        field_id: 103",
-      "operation: count_rows\n        field_id: 103",
+    savedSqlMetricColumnsYaml.replace(
+      "      source: monthly_summary\n      column: count",
+      "      source: monthly_summary\n      value_field:\n        kind: sql_column\n        name: count",
     ),
-    typedMetricDefinitionsYaml.replace(
-      "        field_id: 104\n    - id: latest_expense",
-      "        field_id: 104\n      presentation:\n        kind: number\n    - id: latest_expense",
+    savedSqlMetricColumnsYaml.replace(
+      "      source: monthly_summary\n      column: count",
+      "      source: monthly_summary\n      column: count\n      operation: sum\n      field_id: 102",
     ),
-    typedMetricDefinitionsYaml.replace(
-      "operation: min\n        field_id: 104",
-      "operation: min\n        field_id: 103",
-    ),
-    typedMetricDefinitionsYaml.replace(
-      "field_id: 104\n          field_type: date",
-      "field_id: 104\n          field_type: time",
-    ),
-    typedMetricDefinitionsYaml.replace(
-      "field_id: 105\n          field_type: timestamp",
-      "field_id: 105\n          field_type: time",
-    ),
-    typedMetricDefinitionsYaml.replace(
-      "        column: total\n  layout:",
-      "        column: total\n      presentation:\n        kind: number\n  layout:",
-    ).replace("type: decimal", "type: date"),
-    typedMetricDefinitionsYaml.replace(
-      "operation: sum\n        field_id: 102",
-      "operation: sum\n        field_id: 103",
-    ),
-    typedMetricDefinitionsYaml.replace(
-      "kind: sql_scalar\n        source: monthly_total",
-      "kind: sql_scalar\n        source: expense_rows",
-    ),
-    typedMetricDefinitionsYaml.replace("column: total", "column: missing"),
-    typedMetricDefinitionsYaml.replace(
-      "      definition:\n        kind: sql_scalar",
-      "      source: monthly_total\n      value_field:\n        kind: sql_column\n        name: total\n      definition:\n        kind: sql_scalar",
-    ),
-    typedMetricDefinitionsYaml.replace(
-      "operation: sum\n        field_id: 102",
-      "operation: sum\n        field_id: 102\n        unsupported: true",
+    savedSqlMetricColumnsYaml.replace(
+      "      source: monthly_summary\n      column: count",
+      "      source: monthly_summary\n      column: missing",
     ),
   ];
-  if (invalidTypedMetricDefinitionsYaml.some((yaml) => yaml === typedMetricDefinitionsYaml)) {
-    throw new Error("Could not build every invalid typed metric definition fixture");
+  if (invalidSavedSqlMetricColumnsYaml.some((yaml) => yaml === savedSqlMetricColumnsYaml)) {
+    throw new Error("Could not build every invalid SQL Metric binding fixture");
   }
   const canonicalYaml = await Deno.readTextFile(canonicalPath);
   const fingerprint = (await Deno.readTextFile(fingerprintPath)).trim();
   const labeledCanonicalYaml = await Deno.readTextFile(labeledCanonicalPath);
   const labeledFingerprint = (await Deno.readTextFile(labeledFingerprintPath)).trim();
-  const typedMetricDefinitionsCanonicalYaml = await Deno.readTextFile(
-    typedMetricDefinitionsCanonicalPath,
+  const savedSqlMetricColumnsCanonicalYaml = await Deno.readTextFile(
+    savedSqlMetricColumnsCanonicalPath,
   );
-  const typedMetricDefinitionsFingerprint = (
-    await Deno.readTextFile(typedMetricDefinitionsFingerprintPath)
+  const savedSqlMetricColumnsFingerprint = (
+    await Deno.readTextFile(savedSqlMetricColumnsFingerprintPath)
   ).trim();
   const invalidListItemYaml = await Deno.readTextFile(invalidListItemPath);
   const unknownFormatVersionYaml = await Deno.readTextFile(unknownFormatVersionPath);
@@ -473,32 +443,32 @@ async function main(): Promise<void> {
     "labeled semantic fingerprint",
   );
 
-  const typedMetricDefinitionsResponse = await invokeWasm(instance.exports, {
+  const savedSqlMetricColumnsResponse = await invokeWasm(instance.exports, {
     action: "domain.canonicalize_composition",
-    value: { yaml: typedMetricDefinitionsYaml },
+    value: { yaml: savedSqlMetricColumnsYaml },
   });
-  const typedMetricDefinitionsResponseValue = typedMetricDefinitionsResponse.value as Record<
+  const savedSqlMetricColumnsResponseValue = savedSqlMetricColumnsResponse.value as Record<
     string,
     unknown
   >;
   assertEqual(
-    typedMetricDefinitionsResponse.ok,
+    savedSqlMetricColumnsResponse.ok,
     true,
-    "typed metric definitions parse result",
+    "Saved SQL metric columns parse result",
   );
   assertEqual(
-    typedMetricDefinitionsResponseValue.canonical_yaml,
-    typedMetricDefinitionsCanonicalYaml,
-    "typed metric definitions canonical YAML",
+    savedSqlMetricColumnsResponseValue.canonical_yaml,
+    savedSqlMetricColumnsCanonicalYaml,
+    "Saved SQL metric columns canonical YAML",
   );
   assertEqual(
-    typedMetricDefinitionsResponseValue.fingerprint,
-    typedMetricDefinitionsFingerprint,
-    "typed metric definitions semantic fingerprint",
+    savedSqlMetricColumnsResponseValue.fingerprint,
+    savedSqlMetricColumnsFingerprint,
+    "Saved SQL metric columns semantic fingerprint",
   );
 
   const invalidMetricValueFieldYaml = yaml.replace(
-    "      definition:\n        kind: sql_scalar\n        source: month_total\n        column: total",
+    "      source: month_total\n      column: total",
     "      source: month_total\n      value_field:\n        kind: sql_column\n        name: total",
   );
   if (invalidMetricValueFieldYaml === yaml) {
@@ -546,15 +516,15 @@ async function main(): Promise<void> {
     assertEqual(error.code, expectedCode, "diagnostic code");
   }
 
-  for (const invalidYaml of invalidTypedMetricDefinitionsYaml) {
+  for (const invalidYaml of invalidSavedSqlMetricColumnsYaml) {
     const invalidResponse = await invokeWasm(instance.exports, {
       action: "domain.canonicalize_composition",
       value: { yaml: invalidYaml },
     });
     const error = invalidResponse.error as Record<string, unknown>;
-    assertEqual(invalidResponse.ok, false, "invalid typed metric definition result");
-    assertEqual(error.kind, "composition_diagnostic", "typed metric diagnostic kind");
-    assertEqual(error.code, "invalid_composition", "typed metric diagnostic code");
+    assertEqual(invalidResponse.ok, false, "invalid SQL Metric result");
+    assertEqual(error.kind, "composition_diagnostic", "SQL Metric diagnostic kind");
+    assertEqual(error.code, "invalid_composition", "SQL Metric diagnostic code");
   }
 
 

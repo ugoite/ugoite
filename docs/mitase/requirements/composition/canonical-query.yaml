@@ -27,7 +27,7 @@ requirements:
       - id: used-field-verification
         role: verification
         facet: verification
-        responsibility: Verify the current EntryQuery source-schema fingerprint ignores unreferenced fields and includes unprojected typed aggregate fields; verify aggregates run against the complete current authorized text-and-filter matching set.
+        responsibility: Verify the current EntryQuery source-schema fingerprint ignores unreferenced fields and follows the fields used by filters, sort, projection, and text search.
         targets:
           - id: case
             adapter: rust
@@ -39,22 +39,6 @@ requirements:
                 covers:
                   - FEAT-COMP-002#binding.entry-query-resolver/target.compile-entry-query-source
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::entry_query_fingerprint_ignores_unreferenced_schema_fields } }
-          - id: aggregate-matching-set-case
-            adapter: rust
-            path: crates/ugoite-iceberg/tests/test_entry_query_traversal.rs
-            selector: { kind: test, name: authorized_aggregates_use_the_full_text_and_filter_matching_set }
-            claims:
-              - kind: verifies
-                criterion: REQ-COMP-002#criterion.typed-entry-aggregate-execution
-                covers:
-                  - FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.aggregate-entry-query
-                  - FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.canonical-aggregate-matching-set
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry_query_traversal, test: authorized_aggregates_use_the_full_text_and_filter_matching_set } }
-              - kind: verifies
-                criterion: REQ-COMP-004#criterion.current-authorization
-                covers:
-                  - FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.aggregate-entry-query
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry_query_traversal, test: authorized_aggregates_use_the_full_text_and_filter_matching_set } }
       - id: saved-sql-revision-verification
         role: verification
         facet: verification
@@ -73,18 +57,18 @@ requirements:
       - id: saved-sql-fingerprint-verification
         role: verification
         facet: verification
-        responsibility: Verify the resolved Saved SQL result fingerprint tracks the selected metric result column.
+        responsibility: Verify a shared Saved SQL source fingerprint includes its result schema but stays independent of selected Metric columns.
         targets:
           - id: case
             adapter: rust
             path: crates/ugoite-core/src/composition.rs
-            selector: { kind: symbol, name: tests::saved_sql_result_fingerprint_tracks_selected_metric_column }
+            selector: { kind: symbol, name: tests::shared_saved_sql_source_fingerprint_is_independent_of_metric_column_selection }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.saved-sql-result-fingerprint
                 covers:
-                  - FEAT-COMP-002#binding.saved-sql-resolver/target.fingerprint-resolved-saved-sql-source
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_result_fingerprint_tracks_selected_metric_column } }
+                  - FEAT-COMP-002#binding.saved-sql-resolver/target.compile-exact-saved-sql-source
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::shared_saved_sql_source_fingerprint_is_independent_of_metric_column_selection } }
       - id: browser-exact-revision-verification
         role: verification
         facet: verification
@@ -324,14 +308,8 @@ requirements:
           by preview), plus the fields searched under existing EntryQuery
           text-search semantics when text is present. The snapshot includes
           field IDs and types with typed List item and RowReference target
-          metadata. A legacy scalar metric field contributes only when the
-          source projection already includes it. A typed aggregate field comes
-          from the source schema and contributes even when it is absent from
-          the table projection; it never changes that projection. Unrelated
-          fields, labels, and other Composition document content are excluded
-          from this fingerprint. Aggregate execution revalidates the current
-          Form field and operates over the full authorized matching set under
-          the canonical EntryQuery text and filter rules.
+          metadata. Unrelated fields and other Composition document content
+          are excluded from this fingerprint.
         governed_by: [POL-007#rule.governance]
       - id: exact-saved-sql-revision
         kind: behavior
@@ -339,7 +317,7 @@ requirements:
         governed_by: [POL-014#rule.governance, POL-016#rule.governance]
       - id: saved-sql-result-fingerprint
         kind: behavior
-        statement: A resolved saved_sql result fingerprint includes its exact Entry and Revision, normalized ordered expected_result descriptor, used variable schema, and selected metric result column when applicable.
+        statement: A resolved saved_sql source fingerprint includes its exact Entry and Revision, normalized ordered expected_result descriptor, and used variable schema. It is independent of the display components and selected Metric columns that consume the source.
         governed_by: [POL-007#rule.governance, POL-014#rule.governance]
       - id: exact-composition-revision
         kind: behavior

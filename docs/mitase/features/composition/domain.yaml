@@ -34,11 +34,11 @@ features:
       - kind: documents
         anchor: REQ-COMP-002#criterion.optional-display-labels
       - kind: documents
-        anchor: REQ-COMP-002#criterion.typed-metric-definition
+        anchor: REQ-COMP-002#criterion.saved-sql-metric-presentation
       - kind: documents
         anchor: REQ-COMP-002#criterion.metric-runtime-values
       - kind: documents
-        anchor: REQ-COMP-002#criterion.typed-entry-aggregate-execution
+        anchor: REQ-COMP-002#criterion.saved-sql-metric-presentation
       - kind: documents
         anchor: REQ-COMP-002#criterion.ordered-component-layout
       - kind: documents
@@ -77,9 +77,9 @@ features:
       path: crates/ugoite-domain/tests/fixtures/composition/monthly-expense-labeled.ugcomp.yaml
       selector:
         kind: file
-    - id: typed-metric-definitions-fixture
+    - id: saved-sql-metric-columns-fixture
       adapter: declared
-      path: crates/ugoite-domain/tests/fixtures/composition/typed-metric-definitions.ugcomp.yaml
+      path: crates/ugoite-domain/tests/fixtures/composition/saved-sql-metric-columns.ugcomp.yaml
       selector:
         kind: file
   - id: portable-envelope-domain
@@ -362,7 +362,7 @@ features:
   - id: entry-query-field-schema-domain
     role: implementation
     facet: domain
-    responsibility: Carry FieldId and type snapshots for query-used properties and typed aggregate fields, including aggregate fields outside the table projection.
+    responsibility: Carry FieldId and type snapshots only for property fields used by each EntryQuery source.
     targets:
     - id: field-schema-snapshot-entry
       adapter: rust
@@ -373,34 +373,57 @@ features:
       claims:
       - kind: satisfies
         criterion: REQ-COMP-002#criterion.used-field-schema-snapshot
-  - id: typed-metric-definition-domain
-    role: implementation
-    facet: domain
-    responsibility: Represent count_rows, count_values, sum/avg numeric aggregates, min/max numeric/date/timestamp aggregates, and exact SQL scalar metric definitions as strict typed Composition values. Numeric presentation is optional display metadata; date/timestamp min/max omit it, and time-only fields are unsupported. Typed aggregate fields bind through source field_schema independently of table projection.
+  - id: entry-query-field-schema-evidence
+    role: evidence
+    facet: core-tests
+    responsibility: Verify EntryQuery field snapshots preserve typed List and RowReference metadata and detect changes to used Form fields.
     targets:
-    - id: metric-definition-type
+    - id: canonical-field-schema-metadata
       adapter: rust
       path: crates/ugoite-domain/src/composition.rs
       selector:
         kind: symbol
-        name: CompositionMetricDefinition
+        name: entry_query_field_schema_preserves_typed_list_and_reference_metadata
       claims:
-      - kind: satisfies
-        criterion: REQ-COMP-002#criterion.typed-metric-definition
-  - id: typed-metric-runtime-evidence
-    role: evidence
-    facet: core-tests
-    responsibility: Verify typed aggregate and SQL scalar definitions resolve into server metric bindings.
-    targets:
-    - id: core-typed-metric-binding-resolution
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.used-field-schema-snapshot
+    - id: current-used-field-schema-check
       adapter: rust
       path: crates/ugoite-core/src/composition.rs
       selector:
         kind: symbol
-        name: tests::typed_metric_definitions_resolve_to_server_metric_bindings
+        name: tests::changed_list_item_schema_is_reported_for_a_used_field
       claims:
       - kind: evidences
-        anchor: REQ-COMP-002#criterion.typed-metric-definition
+        anchor: REQ-COMP-002#criterion.used-field-schema-snapshot
+  - id: saved-sql-metric-presentation-domain
+    role: implementation
+    facet: domain
+    responsibility: Represent a Metric as one Saved SQL source ID, one declared output column, and optional display-only presentation settings. Multiple Metrics may select different columns from the same Saved SQL source.
+    targets:
+    - id: metric-component
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: CompositionComponent
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation
+  - id: saved-sql-metric-runtime-evidence
+    role: evidence
+    facet: core-tests
+    responsibility: Verify multiple Metric columns resolve through one shared Saved SQL source binding.
+    targets:
+    - id: core-saved-sql-metric-binding-resolution
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: tests::saved_sql_columns_resolve_to_shared_metric_bindings
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.saved-sql-metric-presentation
   - id: metric-runtime-value-domain
     role: implementation
     facet: domain

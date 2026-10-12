@@ -406,8 +406,9 @@ sharing the source continues to use `sql.query` independently.
 
 The response reports one typed value or stable Composition diagnostics. A
 present JSON `null` is a successful scalar result. A Saved SQL scalar that
-returns zero rows or multiple rows produces the same
-`metric_scalar_expected_one_row` diagnostic; it never selects a prefix value.
+returns zero rows produces `metric_scalar_no_rows`; one that returns multiple
+rows produces `metric_scalar_multiple_rows`. Neither case selects a prefix
+value.
 Typed EntryQuery aggregates retain their aggregate empty-set behavior. Transport
 adapters do not expose backend SQL text, storage paths, or source identifiers
 in metric diagnostics. The

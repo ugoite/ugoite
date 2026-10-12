@@ -31,7 +31,7 @@ features:
   - id: entry-query-fingerprint-evidence
     role: evidence
     facet: core-tests
-    responsibility: Preserve evidence that unused schema fields are excluded, text-search fields follow canonical EntryQuery semantics, and unprojected aggregate FieldIds enter the source fingerprint.
+    responsibility: Preserve evidence that unused schema fields are excluded and text-search fields follow canonical EntryQuery semantics.
     targets:
     - id: ignores-unreferenced-fields
       adapter: rust
@@ -60,17 +60,6 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.used-field-fingerprint
-    - id: unprojected-aggregate-field
-      adapter: rust
-      path: crates/ugoite-core/src/composition.rs
-      selector:
-        kind: symbol
-        name: aggregate_fields_stay_out_of_projection_and_enter_the_source_fingerprint
-      claims:
-      - kind: evidences
-        anchor: REQ-COMP-004#criterion.used-field-fingerprint
-      - kind: evidences
-        anchor: REQ-COMP-002#criterion.typed-entry-aggregate-execution
   - id: entry-query-display-system-fields-evidence
     role: evidence
     facet: core-tests
@@ -152,7 +141,7 @@ features:
   - id: field-level-source-diagnostics-authorization-evidence
     role: evidence
     facet: core-tests
-    responsibility: Verify field-level source diagnostics require an authorized Form read, denied reads
+    responsibility: Verify EntryQuery field diagnostics require an authorized Form read, denied reads
       collapse to source_unavailable without source/component/section names or Form/Field identifiers,
       and an authorized changed Form returns field_type_changed.
     targets:
@@ -161,15 +150,14 @@ features:
       path: crates/ugoite-core/src/composition.rs
       selector:
         kind: symbol
-        name: field_level_diagnostics_require_an_authorized_source_form_read
+        name: tests::table_field_diagnostics_require_an_authorized_source_form_read
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.concealed-unavailable-references
   - id: saved-sql-resolver
     role: implementation
     facet: core
-    responsibility: Compile Saved SQL sources through the exact current revision descriptor and fingerprint
-      the ordered output contract, used variables, and selected metric columns.
+    responsibility: Compile one shared Saved SQL source through the exact current revision descriptor and fingerprint its ordered output contract and used variable schema, independently of selected display columns.
     targets:
     - id: compile-exact-saved-sql-source
       adapter: rust
@@ -180,20 +168,13 @@ features:
       claims:
       - kind: satisfies
         criterion: REQ-COMP-004#criterion.exact-saved-sql-revision
-    - id: fingerprint-resolved-saved-sql-source
-      adapter: rust
-      path: crates/ugoite-core/src/composition.rs
-      selector:
-        kind: symbol
-        name: compile_saved_sql_source_with_metric_columns
-      claims:
       - kind: satisfies
         criterion: REQ-COMP-004#criterion.saved-sql-result-fingerprint
   - id: saved-sql-resolver-evidence
     role: evidence
     facet: core-tests
     responsibility: Verify exact stateless SQL request compilation, rejection of a missing or mismatched
-      current revision descriptor, and deterministic fingerprint inputs including metric selection.
+      current revision descriptor, and deterministic source fingerprint inputs that exclude display selection.
     targets:
     - id: exact-stateless-sql-request
       adapter: rust
@@ -231,12 +212,12 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.saved-sql-result-fingerprint
-    - id: selected-metric-column-fingerprint
+    - id: shared-source-fingerprint-independent-of-display-columns
       adapter: rust
       path: crates/ugoite-core/src/composition.rs
       selector:
         kind: symbol
-        name: saved_sql_result_fingerprint_tracks_selected_metric_column
+        name: tests::shared_saved_sql_source_fingerprint_is_independent_of_metric_column_selection
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.saved-sql-result-fingerprint
@@ -380,62 +361,10 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.draft-preview
-  - id: entry-query-aggregate-runtime
-    role: implementation
-    facet: service
-    responsibility: Resolve operation-specific aggregate result types and execute each typed aggregate over the complete matching set of one current ACL-authorized Form publication through the canonical EntryQuery text and filter compiler.
-    targets:
-    - id: aggregate-result-type
-      adapter: rust
-      path: crates/ugoite-domain/src/composition_metric.rs
-      selector:
-        kind: symbol
-        name: composition_aggregate_result_type
-      claims:
-      - kind: satisfies
-        criterion: REQ-COMP-002#criterion.typed-entry-aggregate-execution
-    - id: matching-set-contract
-      adapter: rust
-      path: crates/ugoite-core/src/entry_query.rs
-      selector:
-        kind: symbol
-        name: EntryQuery::matching_set
-      claims:
-      - kind: satisfies
-        criterion: REQ-COMP-002#criterion.typed-entry-aggregate-execution
-    - id: aggregate-entry-query
-      adapter: rust
-      path: crates/ugoite-iceberg/src/service.rs
-      selector:
-        kind: symbol
-        name: aggregate_entries_authorized_for_principals
-      claims:
-      - kind: satisfies
-        criterion: REQ-COMP-002#criterion.typed-entry-aggregate-execution
-      - kind: satisfies
-        criterion: REQ-COMP-004#criterion.current-authorization
-    - id: canonical-aggregate-matching-set
-      adapter: rust
-      path: crates/ugoite-iceberg/src/index.rs
-      selector:
-        kind: symbol
-        name: aggregate_entry_query_at_checkpoint
-      claims:
-      - kind: satisfies
-        criterion: REQ-COMP-002#criterion.typed-entry-aggregate-execution
-    - id: aggregate-source-fingerprint
-      adapter: rust
-      path: crates/ugoite-core/src/composition.rs
-      selector:
-        kind: symbol
-        name: compile_entry_query_source_with_aggregate_fields
-      claims:
-      - kind: satisfies
-        criterion: REQ-COMP-002#criterion.typed-entry-aggregate-execution
   - id: composition-metric-query-runtime
     role: implementation
     facet: service
-    responsibility: Dispatch typed EntryQuery aggregate and exact Saved SQL scalar definitions through the Composition Metric query service; execute aggregates over the authorized full matching set and probe the pinned SQL revision with bounded row consumption.
+    responsibility: Execute the authorized exact Saved SQL revision for a Metric, then expose only the selected declared scalar column after a bounded one-row probe.
     targets:
     - id: composition-metric-query-service-module
       adapter: rust
@@ -443,42 +372,35 @@ features:
       selector: { kind: file }
       claims:
       - kind: satisfies
-        criterion: REQ-COMP-002#criterion.typed-metric-definition
-      - kind: satisfies
-        criterion: REQ-COMP-002#criterion.typed-entry-aggregate-execution
+        criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation
       - kind: satisfies
         criterion: REQ-COMP-004#criterion.current-authorization
-  - id: entry-query-aggregate-evidence
-    role: evidence
-    facet: iceberg-tests
-    responsibility: Verify full-set text and filter semantics, current Entry authorization, and typed count and numeric aggregate results.
-    targets:
-    - id: full-authorized-matching-set
-      adapter: rust
-      path: crates/ugoite-iceberg/tests/test_entry_query_traversal.rs
-      selector:
-        kind: test
-        name: authorized_aggregates_use_the_full_text_and_filter_matching_set
-      claims:
-      - kind: evidences
-        anchor: REQ-COMP-002#criterion.typed-entry-aggregate-execution
   - id: composition-metric-query-evidence
     role: evidence
     facet: iceberg-tests
-    responsibility: Verify Composition Metric execution uses the full EntryQuery matching set, a bounded probe of the exact Saved SQL revision, current authorization for the Composition, Form entries, and Saved SQL source, and fail-closed behavior for Entry aggregate ACL denial and numeric overflow.
+    responsibility: Verify multiple scalar columns from one Saved SQL source, SQL aggregate values and exact numeric representations, current data and parameters, distinct zero-row and multi-row outcomes, and current authorization.
     targets:
-    - id: typed-metric-query-execution-case
+    - id: saved-sql-metric-columns-execution
       adapter: rust
       path: crates/ugoite-iceberg/tests/test_composition_query_authorization.rs
       selector:
         kind: test
-        name: typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe
+        name: saved_sql_columns_resolve_to_bounded_metric_results
       claims:
       - kind: evidences
-        anchor: REQ-COMP-002#criterion.typed-metric-definition
+        anchor: REQ-COMP-002#criterion.saved-sql-metric-presentation
       - kind: evidences
-        anchor: REQ-COMP-002#criterion.typed-entry-aggregate-execution
-    - id: metric-current-authorization-case
+        anchor: REQ-COMP-002#criterion.metric-runtime-values
+    - id: metric-row-cardinality-diagnostics
+      adapter: rust
+      path: crates/ugoite-core/src/composition_metric.rs
+      selector:
+        kind: symbol
+        name: tests::sql_scalar_probe_distinguishes_zero_and_multiple_result_rows
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.saved-sql-metric-presentation
+    - id: metric-current-authorization
       adapter: rust
       path: crates/ugoite-iceberg/tests/test_composition_query_authorization.rs
       selector:
@@ -488,59 +410,25 @@ features:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.current-authorization
       - kind: evidences
-        anchor: REQ-COMP-002#criterion.typed-metric-definition
-      - kind: evidences
-        anchor: REQ-COMP-002#criterion.typed-entry-aggregate-execution
-      - kind: evidences
-        anchor: REQ-API-015#criterion.checked-numeric-aggregates
-  - id: aggregate-result-type-evidence
-    role: evidence
-    facet: core-tests
-    responsibility: Verify aggregate result typing and operation-specific rejection of unsupported Form field types.
-    targets:
-    - id: operation-result-type
+        anchor: REQ-COMP-002#criterion.saved-sql-metric-presentation
+    - id: metric-query-openapi-contract
       adapter: rust
-      path: crates/ugoite-domain/src/composition_metric.rs
+      path: crates/ugoite-server/tests/api_contract.rs
       selector:
-        kind: symbol
-        name: classifies_typed_aggregate_results_and_rejects_incompatible_fields
+        kind: test
+        name: openapi_documents_bounded_composition_metric_queries
       claims:
       - kind: evidences
-        anchor: REQ-COMP-002#criterion.typed-entry-aggregate-execution
-  - id: entry-query-matching-set-evidence
-    role: evidence
-    facet: core-tests
-    responsibility: Verify aggregate matching sets retain EntryQuery scope, canonical text, and filters while excluding page sort.
-    targets:
-    - id: matching-set-semantics
-      adapter: rust
-      path: crates/ugoite-core/src/entry_query.rs
-      selector:
-        kind: symbol
-        name: matching_set_preserves_scope_text_and_filters_but_drops_sort
-      claims:
-      - kind: evidences
-        anchor: REQ-COMP-002#criterion.typed-entry-aggregate-execution
+        anchor: REQ-COMP-002#criterion.saved-sql-metric-presentation
   contracts:
-  - id: typed-entry-aggregate-execution
+  - id: saved-sql-metric-result-contract
     kind: custom
     source: FEAT-COMP-001#binding.contract/target.composition-contract
     participants:
-    - target: FEAT-COMP-001#binding.typed-metric-definition-domain/target.metric-definition-type
+    - target: FEAT-COMP-001#binding.saved-sql-metric-presentation-domain/target.metric-component
       role: domain
-    - target: FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.aggregate-result-type
-      role: domain
-    - target: FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.matching-set-contract
-      role: core
-    - target: FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.aggregate-source-fingerprint
-      role: core
-    - target: FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.aggregate-entry-query
-      role: service
-    - target: FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.canonical-aggregate-matching-set
-      role: index
     - target: FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module
       role: service
     guarantees:
-    - REQ-COMP-002#criterion.typed-entry-aggregate-execution
-    - REQ-COMP-002#criterion.typed-metric-definition
+    - REQ-COMP-002#criterion.saved-sql-metric-presentation
     - REQ-COMP-004#criterion.current-authorization

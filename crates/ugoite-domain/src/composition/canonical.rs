@@ -2,7 +2,7 @@
 
 use super::{
     CompositionComponent, CompositionDiagnosticCode, CompositionDocument,
-    CompositionFieldSchemaEntry, CompositionMetricDefinition, CompositionSource,
+    CompositionFieldSchemaEntry, CompositionSource,
 };
 use crate::form::{FieldType, ListItemDefinition};
 use serde_json::Value;
@@ -100,7 +100,7 @@ pub(super) fn normalize_composition_document(
         .components
         .iter()
         .any(|component| !component.metric_shape_is_well_formed())
-        || !typed_metric_bindings_are_well_formed(document)
+        || !metric_bindings_are_well_formed(document)
     {
         return Err(CompositionDiagnosticCode::InvalidComposition);
     }
@@ -129,10 +129,11 @@ pub(super) fn normalize_composition_document(
     Ok(normalized)
 }
 
-fn typed_metric_bindings_are_well_formed(document: &CompositionDocument) -> bool {
+fn metric_bindings_are_well_formed(document: &CompositionDocument) -> bool {
     document.spec.components.iter().all(|component| {
         let CompositionComponent::Metric {
-            definition,
+            source,
+            column,
             presentation,
             ..
         } = component
@@ -144,91 +145,28 @@ fn typed_metric_bindings_are_well_formed(document: &CompositionDocument) -> bool
             .spec
             .sources
             .iter()
-            .filter(|source| source.id() == definition.source_id())
+            .filter(|candidate| candidate.id() == source)
             .collect::<Vec<_>>();
-        if matching_sources.len() != 1 {
+        let [CompositionSource::SavedSql {
+            expected_result, ..
+        }] = matching_sources.as_slice()
+        else {
             return false;
-        }
-
-        match (definition, matching_sources[0]) {
-            (
-                CompositionMetricDefinition::Aggregate {
-                    operation,
-                    field_id,
-                    ..
-                },
-                CompositionSource::EntryQuery { field_schema, .. },
-            ) => match (operation, field_id) {
-                (super::CompositionAggregateOperation::CountRows, None) => true,
-                (super::CompositionAggregateOperation::CountValues, Some(field_id)) => {
-                    field_schema.iter().any(|field| field.field_id == *field_id)
-                }
-                (
-                    super::CompositionAggregateOperation::Sum
-                    | super::CompositionAggregateOperation::Avg,
-                    Some(field_id),
-                ) => field_schema
-                    .iter()
-                    .find(|field| field.field_id == *field_id)
-                    .is_some_and(|field| is_numeric_field_type(&field.field_type)),
-                (operation, Some(field_id)) => {
-                    let Some(field) = field_schema
-                        .iter()
-                        .find(|field| field.field_id == *field_id)
-                    else {
-                        return false;
-                    };
-                    match operation {
-                        super::CompositionAggregateOperation::Min
-                        | super::CompositionAggregateOperation::Max => {
-                            matches!(
-                                &field.field_type,
-                                FieldType::Date
-                                    | FieldType::Timestamp
-                                    | FieldType::TimestampTz
-                                    | FieldType::TimestampNs
-                                    | FieldType::TimestampTzNs
-                            ) && presentation.is_none()
-                                || is_numeric_field_type(&field.field_type)
-                        }
-                        super::CompositionAggregateOperation::CountRows
-                        | super::CompositionAggregateOperation::CountValues
-                        | super::CompositionAggregateOperation::Sum
-                        | super::CompositionAggregateOperation::Avg => false,
-                    }
-                }
-                _ => false,
-            },
-            (
-                CompositionMetricDefinition::SqlScalar { column, .. },
-                CompositionSource::SavedSql {
-                    expected_result, ..
-                },
-            ) => {
-                let mut matching_columns = expected_result
-                    .iter()
-                    .filter(|result_column| result_column.name == *column);
-                matching_columns.next().is_some_and(|result_column| {
-                    result_column.result_type.supports_metric()
-                        && (presentation.is_none()
-                            || matches!(
-                                result_column.result_type,
-                                super::CompositionResultFieldType::Integer
-                                    | super::CompositionResultFieldType::Float
-                                    | super::CompositionResultFieldType::Decimal
-                            ))
-                }) && matching_columns.next().is_none()
-            }
-            _ => false,
-        }
+        };
+        let mut matching_columns = expected_result
+            .iter()
+            .filter(|result_column| result_column.name == *column);
+        matching_columns.next().is_some_and(|result_column| {
+            result_column.result_type.supports_metric()
+                && (presentation.is_none()
+                    || matches!(
+                        result_column.result_type,
+                        super::CompositionResultFieldType::Integer
+                            | super::CompositionResultFieldType::Float
+                            | super::CompositionResultFieldType::Decimal
+                    ))
+        }) && matching_columns.next().is_none()
     })
-}
-
-fn is_numeric_field_type(field_type: &FieldType) -> bool {
-    matches!(
-        field_type,
-        FieldType::Integer | FieldType::Long | FieldType::Float | FieldType::Double
-    )
 }
 
 fn composition_collection_limits_hold(document: &CompositionDocument) -> bool {
@@ -321,8 +259,8 @@ mod tests {
         canonicalize_composition, canonicalize_composition_yaml, normalize_composition_document,
     };
     use crate::composition::{
-        CompositionDiagnosticCode, CompositionDocument, CompositionMetricDefinition,
-        CompositionMetricPresentation, CompositionSource,
+        CompositionDiagnosticCode, CompositionDocument, CompositionMetricPresentation,
+        CompositionSource,
     };
     use crate::form::{FieldType, ListItemDefinition};
     use crate::id::FormId;
@@ -331,8 +269,8 @@ mod tests {
         include_str!("../../tests/fixtures/composition/monthly-expense.ugcomp.yaml");
     const MONTHLY_EXPENSE_LABELED: &str =
         include_str!("../../tests/fixtures/composition/monthly-expense-labeled.ugcomp.yaml");
-    const TYPED_METRIC_DEFINITIONS: &str =
-        include_str!("../../tests/fixtures/composition/typed-metric-definitions.ugcomp.yaml");
+    const SAVED_SQL_METRIC_COLUMNS: &str =
+        include_str!("../../tests/fixtures/composition/saved-sql-metric-columns.ugcomp.yaml");
     const UNKNOWN_LIST_ITEM_FIELD: &str =
         include_str!("../../tests/fixtures/composition/unknown-list-item-field.ugcomp.yaml");
 
@@ -421,118 +359,88 @@ mod tests {
     }
 
     #[test]
-    fn typed_metric_definitions_canonical_bytes_and_fingerprint_match_golden_fixtures() {
-        let result = canonicalize_composition_yaml(TYPED_METRIC_DEFINITIONS).unwrap();
+    fn saved_sql_metric_columns_match_canonical_fixture_and_share_one_source() {
+        let result = canonicalize_composition_yaml(SAVED_SQL_METRIC_COLUMNS).unwrap();
         assert_eq!(
             result.yaml,
             include_str!(
-                "../../tests/fixtures/composition/typed-metric-definitions.canonical.ugcomp.yaml"
+                "../../tests/fixtures/composition/saved-sql-metric-columns.canonical.ugcomp.yaml"
             )
         );
         assert_eq!(
             result.fingerprint,
             include_str!(
-                "../../tests/fixtures/composition/typed-metric-definitions.fingerprint.txt"
+                "../../tests/fixtures/composition/saved-sql-metric-columns.fingerprint.txt"
             )
             .trim()
         );
         assert_eq!(canonicalize_composition_yaml(&result.yaml).unwrap(), result);
-        assert!(matches!(
-            &result.document.spec.components[0],
-            super::super::CompositionComponent::Metric {
-                definition: CompositionMetricDefinition::Aggregate {
-                    operation: super::super::CompositionAggregateOperation::CountRows,
-                    field_id: None,
-                    ..
-                },
-                presentation: Some(CompositionMetricPresentation::Number {
-                    unit: Some(unit),
-                    fraction_digits: Some(0),
-                }),
-                ..
-            } if unit == "件"
-        ));
-        assert!(matches!(
-            &result.document.spec.components[1],
-            super::super::CompositionComponent::Metric {
-                definition: CompositionMetricDefinition::Aggregate {
-                    operation: super::super::CompositionAggregateOperation::Sum,
-                    field_id: Some(field_id),
-                    ..
-                },
-                ..
-            } if field_id.get() == 102
-        ));
-        assert!(matches!(
-            &result.document.spec.components[2],
-            super::super::CompositionComponent::Metric {
-                definition: CompositionMetricDefinition::Aggregate {
-                    operation: super::super::CompositionAggregateOperation::CountValues,
-                    field_id: Some(field_id),
-                    ..
-                },
-                ..
-            } if field_id.get() == 103
-        ));
-        assert!(matches!(
-            &result.document.spec.components[3],
-            super::super::CompositionComponent::Metric {
-                definition: CompositionMetricDefinition::Aggregate {
-                    operation: super::super::CompositionAggregateOperation::Min,
-                    field_id: Some(field_id),
-                    ..
-                },
-                presentation: None,
-                ..
-            } if field_id.get() == 104
-        ));
-        assert!(matches!(
-            &result.document.spec.components[4],
-            super::super::CompositionComponent::Metric {
-                definition: CompositionMetricDefinition::Aggregate {
-                    operation: super::super::CompositionAggregateOperation::Max,
-                    field_id: Some(field_id),
-                    ..
-                },
-                presentation: None,
-                ..
-            } if field_id.get() == 105
-        ));
-        assert!(matches!(
-            &result.document.spec.components[5],
-            super::super::CompositionComponent::Metric {
-                definition: CompositionMetricDefinition::SqlScalar { column, .. },
-                presentation: None,
-                ..
-            } if column == "total"
-        ));
+
+        let columns = result.document.spec.components[..3]
+            .iter()
+            .map(|component| match component {
+                super::super::CompositionComponent::Metric { source, column, .. } => {
+                    assert_eq!(source, "monthly_summary");
+                    column.as_str()
+                }
+                _ => panic!("expected a Metric component"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(columns, ["count", "total", "latest"]);
         let CompositionSource::SavedSql {
             expected_result, ..
         } = &result.document.spec.sources[1]
         else {
-            panic!("second typed metric source should be Saved SQL")
+            panic!("second source should be Saved SQL")
         };
+        assert_eq!(expected_result.len(), 3);
         assert_eq!(
-            expected_result[0].result_type,
+            expected_result[1].result_type,
             super::super::CompositionResultFieldType::Decimal
         );
-        let CompositionSource::EntryQuery {
-            field_schema,
-            query,
-            ..
-        } = &result.document.spec.sources[0]
-        else {
-            panic!("first typed metric source should be an EntryQuery")
-        };
-        assert!(matches!(
-            &query.projection,
-            super::super::EntryQueryProjectionTemplate::Fields { fields }
-                if fields == &[crate::id::FieldId::new(100).unwrap()]
-        ));
-        assert!(field_schema.iter().any(|field| field.field_id.get() == 102));
-        assert!(field_schema.iter().any(|field| field.field_id.get() == 103));
-        assert!(field_schema.iter().any(|field| field.field_id.get() == 104));
-        assert!(field_schema.iter().any(|field| field.field_id.get() == 105));
+    }
+
+    #[test]
+    fn canonicalization_rejects_metrics_outside_scalar_saved_sql_columns() {
+        let baseline = canonicalize_composition_yaml(SAVED_SQL_METRIC_COLUMNS)
+            .unwrap()
+            .document;
+
+        let mut entry_query_metric = baseline.clone();
+        if let super::super::CompositionComponent::Metric { source, .. } =
+            &mut entry_query_metric.spec.components[0]
+        {
+            *source = "expense_rows".to_owned();
+        }
+        assert_eq!(
+            canonicalize_composition(&entry_query_metric),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+
+        let mut missing_column = baseline.clone();
+        if let super::super::CompositionComponent::Metric { column, .. } =
+            &mut missing_column.spec.components[0]
+        {
+            *column = "missing".to_owned();
+        }
+        assert_eq!(
+            canonicalize_composition(&missing_column),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+
+        let mut presentation_on_date = baseline.clone();
+        if let super::super::CompositionComponent::Metric { presentation, .. } =
+            &mut presentation_on_date.spec.components[2]
+        {
+            *presentation = Some(CompositionMetricPresentation::Number {
+                unit: None,
+                fraction_digits: None,
+            });
+        }
+        assert_eq!(
+            canonicalize_composition(&presentation_on_date),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
     }
 
     #[test]
