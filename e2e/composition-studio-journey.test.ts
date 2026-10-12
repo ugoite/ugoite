@@ -319,7 +319,9 @@ async function openToolFromHome(
   await page.goto(getFrontendUrl(`/spaces/${spaceId}/dashboard`), {
     waitUntil: "domcontentloaded",
   });
-  const link = page.getByRole("link", { name: new RegExp(toolName) });
+  const link = page.getByRole("link", {
+    name: new RegExp(`^${toolName} Dashboard`),
+  });
   await expect(link).toHaveAttribute("href", path);
   await link.click();
   await expect(page).toHaveURL(new RegExp(`${path.replaceAll("/", "\\/")}$`));
@@ -480,8 +482,9 @@ test.describe("Composition Studio Journey", () => {
         page.getByRole("button", { name: "Select Quantity", exact: true }),
       ).toBeVisible();
 
-      // EntryQuery source through the Forms picker.
-      await page.getByRole("button", { name: "Add data", exact: true }).click();
+      // EntryQuery source through the Data source navigator.
+      await page.getByRole("button", { name: "Add source", exact: true })
+        .click();
       const sourceDialog = page.getByRole("dialog");
       await expect(sourceDialog).toBeVisible();
       await sourceDialog.getByRole("button", {
@@ -530,7 +533,8 @@ test.describe("Composition Studio Journey", () => {
       // Add an EntryQuery metric through the real picker path and verify the
       // single-row Form value reaches the canvas instead of the unavailable
       // projection diagnostic.
-      await page.getByRole("button", { name: "Add data", exact: true }).click();
+      await page.getByRole("button", { name: "Add source", exact: true })
+        .click();
       await page.getByRole("dialog").getByRole("button", {
         name: entryMetricForm.formName,
         exact: true,
@@ -858,6 +862,8 @@ test.describe("Composition Studio Journey", () => {
         page.getByRole("heading", { name: "Data", exact: true }),
       ).toBeVisible();
       const dataTabs = page.getByRole("tablist", { name: "Data" });
+      await page.getByRole("button", { name: "Show data sources", exact: true })
+        .click();
       await expect(
         page.getByRole("button", { name: seed.savedSqlName, exact: true }),
       ).toBeVisible();
