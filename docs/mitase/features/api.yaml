@@ -144,10 +144,12 @@ features:
           - id: function-registration
             adapter: rust
             path: crates/ugoite-iceberg/src/query_context.rs
-            selector: { kind: symbol, name: bounded_session_context }
+            selector: { kind: symbol, name: allowed_aggregate_functions }
             claims:
               - kind: satisfies
                 criterion: REQ-API-015#criterion.function-class-policy
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.grouped-numeric-aggregates
           - id: function-policy-validation
             adapter: rust
             path: crates/ugoite-iceberg/src/query_context.rs
@@ -197,13 +199,70 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-API-015#criterion.exact-integer-presentation
-          - id: checked-numeric-aggregates
+          - id: checked-sum-aggregates
             adapter: rust
             path: crates/ugoite-iceberg/src/safe_aggregates.rs
             selector: { kind: symbol, name: checked_sum_udaf }
             claims:
               - kind: satisfies
                 criterion: REQ-API-015#criterion.checked-numeric-aggregates
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.grouped-numeric-aggregates
+          - id: checked-count-aggregates
+            adapter: rust
+            path: crates/ugoite-iceberg/src/safe_aggregates.rs
+            selector: { kind: symbol, name: checked_count_udaf }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.checked-numeric-aggregates
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.grouped-numeric-aggregates
+          - id: checked-avg-aggregates
+            adapter: rust
+            path: crates/ugoite-iceberg/src/safe_aggregates.rs
+            selector: { kind: symbol, name: checked_avg_udaf }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.checked-numeric-aggregates
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.grouped-numeric-aggregates
+          - id: checked-count-aggregate-memory-state
+            adapter: rust
+            path: crates/ugoite-iceberg/src/safe_aggregates.rs
+            selector: { kind: symbol, name: CheckedCountAccumulator }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.bounded-aggregate-state
+          - id: checked-numeric-aggregate-memory-state
+            adapter: rust
+            path: crates/ugoite-iceberg/src/safe_aggregates.rs
+            selector: { kind: symbol, name: CheckedNumericAccumulator }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.bounded-aggregate-state
+          - id: aggregate-query-execution
+            adapter: rust
+            path: crates/ugoite-iceberg/src/query_context.rs
+            selector: { kind: symbol, name: execute_with_parameters }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.bounded-aggregate-state
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.grouped-numeric-aggregates
+          - id: aggregate-memory-budget
+            adapter: rust
+            path: crates/ugoite-iceberg/src/query_context.rs
+            selector: { kind: symbol, name: bounded_session_context }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.bounded-aggregate-state
+          - id: aggregate-result-row-limit
+            adapter: rust
+            path: crates/ugoite-iceberg/src/query_context.rs
+            selector: { kind: symbol, name: execute_with_permit_and_byte_limit }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.bounded-aggregate-state
           - id: aggregate-error-mapping
             adapter: rust
             path: crates/ugoite-iceberg/src/index.rs
@@ -220,6 +279,8 @@ features:
                 criterion: REQ-API-018#criterion.current-form-authorization
               - kind: satisfies
                 criterion: REQ-API-015#criterion.function-class-policy
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.canonical-sql-count
       - id: space-service-implementation
         role: implementation
         facet: service
