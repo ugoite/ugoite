@@ -132,24 +132,6 @@ export const applyStudioSeed = (
   return { draft: named, draftId: added.draftId };
 };
 
-export type DraftAggregateOperation =
-  | "count_rows"
-  | "count_values"
-  | "sum"
-  | "avg"
-  | "min"
-  | "max";
-
-/** Metric authoring state. Source identity remains a separate draft binding. */
-export type DraftMetricDefinition =
-  | {
-    kind: "aggregate";
-    operation: DraftAggregateOperation;
-    /** Unset while the user is choosing a field for a field-based operation. */
-    fieldId?: number;
-  }
-  | { kind: "sql_scalar"; column?: string };
-
 export interface DraftMetricPresentation {
   kind: "number";
   unit?: string;
@@ -168,7 +150,7 @@ export type DraftDisplay =
     draftId: string;
     sourceDraftId: string;
     label?: string;
-    definition: DraftMetricDefinition;
+    column?: string;
     presentation?: DraftMetricPresentation;
   }
   | {
@@ -294,18 +276,8 @@ export interface CompositionStudioDocument {
         kind: "metric";
         id: string;
         label?: string;
-        definition:
-          | {
-            kind: "aggregate";
-            source: string;
-            operation: DraftAggregateOperation;
-            field_id?: number;
-          }
-          | {
-            kind: "sql_scalar";
-            source: string;
-            column?: string;
-          };
+        source: string;
+        column: string;
         presentation?: {
           kind: "number";
           unit?: string;
@@ -852,73 +824,48 @@ export const addTableDisplay = (
   return { ok: true, draftId, draft: placed.draft };
 };
 
-const metricDefinitionFitsSource = (
+const metricColumnFitsSource = (
   source: DraftSource,
-  definition: DraftMetricDefinition,
+  columnName: string | undefined,
   requireReady: boolean,
 ): boolean => {
-  if (definition.kind === "aggregate") {
-    if (source.kind !== "entry_query") return false;
-    if (definition.operation === "count_rows") {
-      return definition.fieldId === undefined;
-    }
-    if (definition.fieldId === undefined) return !requireReady;
-    return isIntegerFieldId(definition.fieldId) &&
-      source.fieldSchema.some((field) => field.field_id === definition.fieldId);
-  }
-
   if (source.kind !== "saved_sql") return false;
-  if (!definition.column?.trim()) return !requireReady;
+  if (!columnName?.trim()) return !requireReady;
   return source.expectedResult.filter((column) =>
-    column.name === definition.column && column.type !== "json"
+    column.name === columnName && column.type !== "json"
   ).length === 1;
 };
 
-export const metricDefinitionReady = (
+export const metricColumnReady = (
   draft: CompositionDraft,
   sourceDraftId: string,
-  definition: DraftMetricDefinition,
+  columnName: string | undefined,
 ): boolean => {
   const source = draft.sources.find((entry) => entry.draftId === sourceDraftId);
   return source !== undefined &&
-    metricDefinitionFitsSource(source, definition, true);
+    metricColumnFitsSource(source, columnName, true);
 };
 
 export const draftMetricsReady = (draft: CompositionDraft): boolean =>
   draft.displays.every((display) =>
     display.kind !== "metric" ||
-    metricDefinitionReady(draft, display.sourceDraftId, display.definition)
+    metricColumnReady(draft, display.sourceDraftId, display.column)
   );
 
-const numericMetricFieldTypes = new Set(["integer", "long", "float", "double"]);
 const numericMetricResultTypes = new Set([
   "integer",
-  "long",
   "float",
   "double",
   "decimal",
 ]);
 
-export const metricDefinitionHasNumericResult = (
+export const metricColumnIsNumeric = (
   source: DraftSource,
-  definition: DraftMetricDefinition,
+  columnName: string | undefined,
 ): boolean => {
-  if (definition.kind === "aggregate") {
-    if (
-      definition.operation === "count_rows" ||
-      definition.operation === "count_values"
-    ) return source.kind === "entry_query";
-    if (source.kind !== "entry_query" || definition.fieldId === undefined) {
-      return false;
-    }
-    return source.fieldSchema.some((field) =>
-      field.field_id === definition.fieldId &&
-      numericMetricFieldTypes.has(field.field_type)
-    );
-  }
-  if (source.kind !== "saved_sql" || !definition.column) return false;
+  if (source.kind !== "saved_sql" || !columnName) return false;
   const columns = source.expectedResult.filter((column) =>
-    column.name === definition.column && column.type !== "json"
+    column.name === columnName && column.type !== "json"
   );
   return columns.length === 1 && numericMetricResultTypes.has(columns[0].type);
 };
@@ -926,13 +873,13 @@ export const metricDefinitionHasNumericResult = (
 export const addMetricDisplay = (
   draft: CompositionDraft,
   sourceDraftId: string,
-  definition: DraftMetricDefinition,
+  column: string,
   label?: string,
   target?: DraftInsertTarget,
 ): DraftResult & { draftId?: string } => {
   const source = draft.sources.find((entry) => entry.draftId === sourceDraftId);
   if (!source) return { ok: false, error: "unknown-source" };
-  if (!metricDefinitionFitsSource(source, definition, true)) {
+  if (!metricColumnFitsSource(source, column, true)) {
     return { ok: false, error: "invalid-query" };
   }
   const draftId = `disp-${draft.nextDisplaySeq}`;
@@ -940,7 +887,7 @@ export const addMetricDisplay = (
     kind: "metric",
     draftId,
     sourceDraftId,
-    definition,
+    column,
     ...(label ? { label } : {}),
   };
   const placed = insertLayoutItem(
@@ -1181,7 +1128,7 @@ export const setDisplayLabel = (
   return { ok: true, draft: { ...draft, displays } };
 };
 
-/** Retarget a metric; the next source gets its operation-oriented default. */
+/** Retarget a Metric to a Saved SQL source; a column must be selected again. */
 export const setMetricSource = (
   draft: CompositionDraft,
   displayDraftId: string,
@@ -1195,13 +1142,10 @@ export const setMetricSource = (
   if (current.kind !== "metric") return { ok: false, error: "unknown-display" };
   const source = draft.sources.find((entry) => entry.draftId === sourceDraftId);
   if (!source) return { ok: false, error: "unknown-source" };
-  const definition: DraftMetricDefinition = source.kind === "entry_query"
-    ? { kind: "aggregate", operation: "count_rows" }
-    : { kind: "sql_scalar" };
-  const next = { ...current, sourceDraftId, definition };
-  if (!metricDefinitionHasNumericResult(source, definition)) {
-    delete next.presentation;
-  }
+  if (source.kind !== "saved_sql") return { ok: false, error: "invalid-query" };
+  const next = { ...current, sourceDraftId };
+  delete next.column;
+  delete next.presentation;
   const displays = [...draft.displays];
   displays[index] = next;
   return { ok: true, draft: { ...draft, displays } };
@@ -1227,11 +1171,11 @@ export const setTableSource = (
   return { ok: true, draft: { ...draft, displays } };
 };
 
-/** Change the aggregate operation, field, or Saved SQL scalar column. */
-export const setMetricDefinition = (
+/** Select one displayable output column from the Metric's Saved SQL source. */
+export const setMetricColumn = (
   draft: CompositionDraft,
   displayDraftId: string,
-  definition: DraftMetricDefinition,
+  column: string | undefined,
 ): DraftResult => {
   const index = draft.displays.findIndex((display) =>
     display.draftId === displayDraftId
@@ -1243,11 +1187,13 @@ export const setMetricDefinition = (
     entry.draftId === current.sourceDraftId
   );
   if (!source) return { ok: false, error: "unknown-source" };
-  if (!metricDefinitionFitsSource(source, definition, false)) {
+  if (!metricColumnFitsSource(source, column, false)) {
     return { ok: false, error: "invalid-query" };
   }
-  const next = { ...current, definition };
-  if (!metricDefinitionHasNumericResult(source, definition)) {
+  const next = { ...current };
+  if (column === undefined || column === "") delete next.column;
+  else next.column = column;
+  if (!metricColumnIsNumeric(source, column)) {
     delete next.presentation;
   }
   const displays = [...draft.displays];
@@ -1271,7 +1217,7 @@ export const setMetricPresentation = (
     entry.draftId === current.sourceDraftId
   );
   if (!source) return { ok: false, error: "unknown-source" };
-  if (!metricDefinitionHasNumericResult(source, current.definition)) {
+  if (!metricColumnIsNumeric(source, current.column)) {
     return { ok: false, error: "invalid-query" };
   }
   const unit = presentation.unit;
@@ -1579,22 +1525,8 @@ export const toStudioDocument = (
         kind: "metric" as const,
         id: display.draftId,
         ...(display.label ? { label: display.label } : {}),
-        definition: display.definition.kind === "aggregate"
-          ? {
-            kind: "aggregate" as const,
-            source: display.sourceDraftId,
-            operation: display.definition.operation,
-            ...(display.definition.fieldId === undefined
-              ? {}
-              : { field_id: display.definition.fieldId }),
-          }
-          : {
-            kind: "sql_scalar" as const,
-            source: display.sourceDraftId,
-            ...(display.definition.column === undefined
-              ? {}
-              : { column: display.definition.column }),
-          },
+        source: display.sourceDraftId,
+        column: display.column ?? "",
         ...(display.presentation
           ? {
             presentation: {
@@ -1637,7 +1569,7 @@ export const toStudioDocument = (
 /**
  * Rebuild an editable draft from a server-normalized Composition document.
  * Structural mapping only: lint already normalized, so no validation logic
- * lives here. Unknown source, component, or Metric definition kinds throw
+ * lives here. Unknown source or component kinds throw
  * fail-closed instead of approximating. Human names come from `sourceNames`
  * (keyed by document source id); unavailable names use the source kind label.
  */
@@ -1726,11 +1658,7 @@ export const draftFromDocument = (
           ...(component.label ? { label: component.label } : {}),
         };
       }
-      const componentSourceId = component.kind === "metric"
-        ? ("definition" in component
-          ? component.definition.source
-          : fail("metric definition"))
-        : component.source;
+      const componentSourceId = component.source;
       const sourceDraftId = sourceDraftIds.get(componentSourceId);
       if (sourceDraftId === undefined) {
         return fail(`component source: ${componentSourceId}`);
@@ -1744,43 +1672,19 @@ export const draftFromDocument = (
         };
       }
       if (component.kind === "metric") {
-        const definition = component.definition;
-        const source = document.spec.sources.find((entry) =>
-          entry.id === definition.source
-        );
-        if (!source) return fail("metric source is missing");
         const draftSource = sources.find((entry) =>
           entry.draftId === sourceDraftId
         );
         if (!draftSource) return fail("metric source draft is missing");
-        const draftDefinition: DraftMetricDefinition = definition.kind ===
-            "aggregate"
-          ? {
-            kind: "aggregate",
-            operation: definition.operation,
-            ...(definition.field_id === undefined
-              ? {}
-              : { fieldId: definition.field_id }),
-          }
-          : {
-            kind: "sql_scalar",
-            column: definition.column,
-          };
-        if (
-          !metricDefinitionFitsSource(
-            draftSource,
-            draftDefinition,
-            true,
-          )
-        ) {
-          return fail("metric definition is invalid for its source");
+        if (!metricColumnFitsSource(draftSource, component.column, true)) {
+          return fail("metric column is invalid for its source");
         }
         return {
           kind: "metric",
           draftId,
           sourceDraftId,
           ...(component.label ? { label: component.label } : {}),
-          definition: draftDefinition,
+          column: component.column,
           ...(component.presentation
             ? {
               presentation: {

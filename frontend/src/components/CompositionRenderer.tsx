@@ -92,9 +92,15 @@ const knownDiagnosticCodes = new Set([
   "source_schema_changed",
   "metric_result_not_scalar",
   "metric_result_type_mismatch",
-  "metric_scalar_expected_one_row",
+  "metric_scalar_no_rows",
+  "metric_scalar_multiple_rows",
   "metric_result_column_missing",
   "metric_result_column_ambiguous",
+]);
+
+const directEditMetricDiagnosticCodes = new Set([
+  "metric_scalar_no_rows",
+  "metric_scalar_multiple_rows",
 ]);
 
 export const compositionDiagnosticMessage = (
@@ -206,16 +212,6 @@ const expandScientificNotation = (value: string): string => {
   }`;
 };
 
-const metricOperations = new Set([
-  "sql_scalar",
-  "count_rows",
-  "count_values",
-  "sum",
-  "avg",
-  "min",
-  "max",
-]);
-
 const metricResultTypes = new Set<CompositionResultType>([
   "string",
   "boolean",
@@ -249,10 +245,6 @@ const isMetricQueryResponse = (
   if (value.result === undefined) return true;
   const result = value.result;
   return isRecord(result) && typeof result.component_id === "string" &&
-    typeof result.operation === "string" &&
-    metricOperations.has(result.operation) &&
-    (result.source_kind === "entry_query" ||
-      result.source_kind === "saved_sql") &&
     typeof result.result_type === "string" &&
     metricResultTypes.has(result.result_type as CompositionResultType) &&
     (result.value === null || typeof result.value === "string" ||
@@ -511,9 +503,11 @@ export function CompositionMetric(props: {
       ? compositionDiagnosticMessage({ code: first.code })
       : undefined;
   };
-  const needsEdit = () =>
-    serverResult()?.diagnostics?.[0]?.code === "metric_scalar_expected_one_row" &&
-    props.metricQueryContext?.onEdit !== undefined;
+  const needsEdit = () => {
+    const code = serverResult()?.diagnostics?.[0]?.code;
+    return code !== undefined && directEditMetricDiagnosticCodes.has(code) &&
+      props.metricQueryContext?.onEdit !== undefined;
+  };
 
   return (
     <section class="section">

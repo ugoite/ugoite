@@ -14,7 +14,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CompositionDataWorkspace } from "./CompositionDataWorkspace";
 import {
   addEntryQuerySource,
-  addMetricDisplay,
   addSavedSqlSource,
   addTableDisplay,
   type CompositionDraft,
@@ -703,37 +702,6 @@ describe("CompositionDataWorkspace", () => {
     expect(harness.current().sources[1]).toMatchObject({
       kind: "entry_query",
       query: { projection: { kind: "fields", fields: [100, 101] } },
-    });
-  });
-
-  it("keeps EntryQuery aggregate fields independent from table projection", async () => {
-    formApiListMock.mockResolvedValue([expenseForm()]);
-    const base = twoSourceDraft();
-    const metric = addMetricDisplay(base, "src-2", {
-      kind: "aggregate",
-      operation: "count_values",
-      fieldId: 100,
-    });
-    if (!metric.ok) throw new Error("expected metric");
-    const harness = renderWorkspace(metric.draft);
-    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
-    const editor = harness.editor();
-    await within(editor).findByRole("radio", { name: "Selected fields" });
-
-    expect(within(editor).getByRole("radio", { name: "Preview" }))
-      .toBeEnabled();
-    fireEvent.click(within(editor).getByRole("radio", { name: "Preview" }));
-    expect(harness.current().sources[1]).toMatchObject({
-      kind: "entry_query",
-      query: { projection: { kind: "preview" } },
-    });
-    expect(harness.current().displays[0]).toMatchObject({
-      kind: "metric",
-      definition: {
-        kind: "aggregate",
-        operation: "count_values",
-        fieldId: 100,
-      },
     });
   });
 

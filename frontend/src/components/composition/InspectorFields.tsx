@@ -78,8 +78,13 @@ export function InspectorSourceField(props: {
   draft: CompositionDraft;
   sourceDraftId: string;
   fieldId: string;
+  sourceKind?: "entry_query" | "saved_sql";
   onPick: (sourceDraftId: string) => void;
 }) {
+  const sources = () =>
+    props.sourceKind
+      ? props.draft.sources.filter((source) => source.kind === props.sourceKind)
+      : props.draft.sources;
   return (
     <div class="ui-field">
       <label class="ui-label" for={props.fieldId}>
@@ -91,7 +96,7 @@ export function InspectorSourceField(props: {
         value={props.sourceDraftId}
         onChange={(event) => props.onPick(event.currentTarget.value)}
       >
-        <For each={props.draft.sources}>
+        <For each={sources()}>
           {(source) => <option value={source.draftId}>{source.name}</option>}
         </For>
       </select>

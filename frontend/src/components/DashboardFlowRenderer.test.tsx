@@ -143,8 +143,6 @@ describe("DashboardFlowRenderer", () => {
           ok: true,
           result: {
             component_id: request.component_id,
-            operation: "sql_scalar",
-            source_kind: "saved_sql",
             result_type: "integer",
             value: request.component_id === "total" ? "42" : "7",
           },
@@ -275,8 +273,6 @@ describe("DashboardFlowRenderer", () => {
       ok: true,
       result: {
         component_id: "total",
-        operation: "sql_scalar",
-        source_kind: "saved_sql",
         result_type: "integer",
         value: "42",
       },
@@ -319,8 +315,6 @@ describe("DashboardFlowRenderer", () => {
       ok: true,
       result: {
         component_id: "total",
-        operation: "sql_scalar",
-        source_kind: "saved_sql",
         result_type: "integer",
         value: "42",
       },
@@ -371,8 +365,6 @@ describe("DashboardFlowRenderer", () => {
       ok: true,
       result: {
         component_id: "total",
-        operation: "sql_scalar",
-        source_kind: "saved_sql",
         result_type: "integer",
         value: "42",
       },

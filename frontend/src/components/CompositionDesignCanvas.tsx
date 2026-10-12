@@ -85,7 +85,6 @@ const blockName = (
   draft: CompositionDraft,
   definitions: ReadonlyMap<string, CompositionParameterDefinition>,
   item: DraftLayoutItem,
-  fieldNames?: CompositionFieldNames,
 ): string => {
   if (item.kind === "parameter") {
     return definitions.get(item.parameterId)?.label ?? item.parameterId;
@@ -98,7 +97,7 @@ const blockName = (
   if (display.kind === "text") {
     return display.text || t("composition.studioText");
   }
-  return displayDefaultName(display, draft.sources, fieldNames);
+  return displayDefaultName(display, draft.sources);
 };
 
 /**
@@ -379,7 +378,7 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
     const selected = () => props.selectedId === blockId();
     const highlighted = () => props.highlightedIds?.has(blockId()) ?? false;
     const name = () =>
-      blockName(props.draft, definitionById(), item, props.fieldNames);
+      blockName(props.draft, definitionById(), item);
     const binding = () =>
       item.kind === "component" ? bindingById().get(item.draftId) : undefined;
     const ownsSourceStatus = () => {

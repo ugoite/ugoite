@@ -55,10 +55,8 @@ async function seedStudioKnowledge(
   const toolName = `Studio monthly tool ${suffix}`;
   const monthStart = "2026-01-01";
   const monthEnd = "2026-02-01";
-  // Exactly one January row: metric displays need a single exact-scalar row,
-  // and stateless SQL pages are aggregate-free by deliberate product design
-  // (no SUM/COUNT/AVG), so the seed binds two scalar columns instead of
-  // monthly totals. Quantity gives the second metric its own value column.
+  // Exactly one January row: metric displays need one exact-scalar row. The
+  // result exposes two independent columns so multiple Metrics can share it.
   const purposes = ["Studio Jan one", "Studio Feb one"];
   const entries = [
     { date: "2026-01-15", purpose: purposes[0], amount: 20, quantity: 3 },
@@ -132,10 +130,9 @@ async function seedStudioKnowledge(
     expect(entryResponse.status()).toBe(201);
   }
 
-  // Aggregate-free exact-scalar SQL mirroring the metric journey: plain
-  // column selects with ORDER BY. The month range keeps parameter-binding
-  // coverage; the January window matches exactly one row so both metrics
-  // render scalars instead of the multiple-rows diagnostic.
+  // Plain column selects with ORDER BY keep this fixture deterministic while
+  // exercising parameter binding; the January window matches exactly one
+  // row so both metrics render scalars instead of the multiple-rows diagnostic.
   const sql = `SELECT ${sqlIdentifier(amountColumn!)} AS total, ${
     sqlIdentifier(quantityColumn!)
   } AS quantity FROM ${sqlIdentifier(form!.sql_relation!)} WHERE ${
@@ -188,32 +185,6 @@ async function seedStudioKnowledge(
   };
 }
 
-async function seedSingleEntryMetricForm(
-  request: APIRequestContext,
-  spaceId: string,
-): Promise<{ formName: string; value: string }> {
-  const formName = `StudioMetric${crypto.randomUUID().slice(0, 8)}`;
-  const formResponse = await request.post(
-    getBackendUrl(`/spaces/${spaceId}/forms`),
-    {
-      data: {
-        name: formName,
-        version: 1,
-        template: `# ${formName}\n\n## Amount\n`,
-        fields: { Amount: { type: "integer", required: true } },
-      },
-    },
-  );
-  expect([200, 201]).toContain(formResponse.status());
-
-  const entryResponse = await request.post(
-    getBackendUrl(`/spaces/${spaceId}/entries`),
-    { data: { form: formName, fields: { Amount: 42 } } },
-  );
-  expect(entryResponse.status()).toBe(201);
-  return { formName, value: "42" };
-}
-
 async function expectHistoryTotal(
   request: APIRequestContext,
   spaceId: string,
@@ -245,7 +216,7 @@ async function addCanvasDisplay(
   page: Page,
   kind: "Metric" | "Table",
   sourceName: string,
-  value?: string | { label: string },
+  column?: string,
   label?: string,
 ): Promise<void> {
   // A gap opens the design palette; its Data entry opens the shared
@@ -278,16 +249,7 @@ async function addCanvasDisplay(
     return;
   }
   await expect(source).toHaveAttribute("aria-pressed", "true");
-  if (typeof value === "string") {
-    await dialog.getByLabel("Column", { exact: true }).selectOption(value);
-  } else {
-    await dialog.getByLabel("Operation", { exact: true }).selectOption("sum");
-    const field = dialog.getByLabel("Field", { exact: true });
-    await expect.poll(() => field.locator("option").allTextContents()).toEqual(
-      expect.arrayContaining([value!.label]),
-    );
-    await field.selectOption({ label: value!.label });
-  }
+  await dialog.getByLabel("Column", { exact: true }).selectOption(column!);
   await dialog.getByRole("button", { name: "Preview", exact: true })
     .click();
   await expect(dialog.locator("output.compositionMetricPreview"))
@@ -302,10 +264,10 @@ async function addCanvasDisplay(
 async function addMetricDisplay(
   page: Page,
   sourceName: string,
-  value: string | { label: string },
+  column: string,
   label: string,
 ): Promise<void> {
-  await addCanvasDisplay(page, "Metric", sourceName, value, label);
+  await addCanvasDisplay(page, "Metric", sourceName, column, label);
 }
 
 async function openToolFromHome(
@@ -345,9 +307,9 @@ function buildMobileStudioYaml(
   monthStart: string,
   monthEnd: string,
 ): string {
-  // Same aggregate-free scalar source as the seeded Saved SQL: one metric on
-  // the amount column plus a table, with the month range carried as parameter
-  // defaults so the tool resolves without caller input.
+  // Same single-row source as the seeded Saved SQL: one Metric on the amount
+  // column plus a table, with the month range carried as parameter defaults
+  // so the tool resolves without caller input.
   return [
     "format: ugoite.composition",
     "format_version: 1",
@@ -383,10 +345,8 @@ function buildMobileStudioYaml(
     "    - id: total",
     "      kind: metric",
     "      label: Total",
-    "      definition:",
-    "        kind: sql_scalar",
-    "        source: studio_rows",
-    "        column: total",
+    "      source: studio_rows",
+    "      column: total",
     "    - id: rows",
     "      kind: table",
     "      source: studio_rows",
@@ -414,10 +374,6 @@ test.describe("Composition Studio Journey", () => {
 
   test("Composition Studio builds a reusable tool from existing knowledge", async ({ browser, context, request }) => {
     test.setTimeout(120_000);
-    const entryMetricForm = await seedSingleEntryMetricForm(
-      request,
-      seed.spaceId,
-    );
     const storageState = await context.storageState();
     let compositionId = "";
     let firstRevisionId = "";
@@ -496,8 +452,8 @@ test.describe("Composition Studio Journey", () => {
         page.getByRole("button", { name: seed.formName, exact: true }),
       ).toHaveCount(1);
 
-      // EntryQuery metric choices show the Form's human field names without
-      // leaking backend field IDs or schema ordinals.
+      // Metric sources are Saved SQL only; the Form remains available for
+      // Tables through the same source catalog.
       await page.getByRole("button", { name: "Add to design", exact: true })
         .first().click();
       const palette = page.getByRole("dialog", {
@@ -514,49 +470,16 @@ test.describe("Composition Studio Journey", () => {
         name: "Data component type",
       });
       await kindTabs.getByRole("tab", { name: "Metric", exact: true }).click();
-      await metricPicker.getByRole("button", {
+      await expect(metricPicker.getByRole("button", {
         name: seed.formName,
         exact: true,
-      }).click();
-      await metricPicker.getByLabel("Operation", { exact: true })
-        .selectOption("sum");
-      const valueOptions = metricPicker.getByLabel("Field", { exact: true })
-        .locator("option");
-      await expect.poll(() => valueOptions.allTextContents()).toEqual(
-        expect.arrayContaining(["Amount", "Quantity"]),
-      );
-      const optionLabels = await valueOptions.allTextContents();
-      expect(optionLabels.join(" ")).not.toMatch(/(?:Field \d+|#\d+)/);
+      })).toHaveCount(0);
+      await expect(metricPicker.getByRole("button", {
+        name: seed.savedSqlName,
+        exact: true,
+      })).toBeVisible();
       await metricPicker.getByRole("button", { name: "Cancel", exact: true })
         .click();
-
-      // Add an EntryQuery metric through the real picker path and verify the
-      // single-row Form value reaches the canvas instead of the unavailable
-      // projection diagnostic.
-      await page.getByRole("button", { name: "Add source", exact: true })
-        .click();
-      await page.getByRole("dialog").getByRole("button", {
-        name: entryMetricForm.formName,
-        exact: true,
-      }).click();
-      await expect(page.getByRole("dialog")).toHaveCount(0);
-      await addMetricDisplay(
-        page,
-        entryMetricForm.formName,
-        { label: "Amount" },
-        "Entry amount",
-      );
-      await expect(
-        page.getByRole("heading", { name: "Entry amount", exact: true }),
-      ).toBeVisible();
-      await expect(
-        page.locator("output.compositionMetric").filter({
-          hasText: new RegExp(`^${entryMetricForm.value}$`),
-        }),
-      ).toBeVisible({ timeout: 30_000 });
-      await expect(
-        page.getByText("The metric field is unavailable.", { exact: true }),
-      ).toHaveCount(0);
 
       // Table display on the EntryQuery source through the canvas.
       await addCanvasDisplay(page, "Table", seed.formName);

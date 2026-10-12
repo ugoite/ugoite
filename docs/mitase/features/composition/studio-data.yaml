@@ -321,24 +321,17 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.entry-query-translation
-    - id: browser-data-entry-query-metric-projection-independent
+    - id: browser-data-entry-query-projection-does-not-change-sql-metric
       adapter: typescript
       path: frontend/src/lib/composition-draft.test.ts
       selector:
         kind: test
-        name: keeps metric aggregate fields independent from table projection
+        name: keeps a Saved SQL Metric independent from EntryQuery table projection
       claims:
       - kind: evidences
-        anchor: REQ-FE-070#criterion.display-authoring
-    - id: browser-data-entry-query-metric-projection-independent-workspace
-      adapter: typescript
-      path: frontend/src/components/CompositionDataWorkspace.test.tsx
-      selector:
-        kind: test
-        name: keeps EntryQuery aggregate fields independent from table projection
-      claims:
+        anchor: REQ-COMP-002#criterion.saved-sql-metric-presentation
       - kind: evidences
-        anchor: REQ-FE-070#criterion.display-authoring
+        anchor: REQ-FE-070#criterion.metric-authoring
     - id: browser-data-entry-query-projection-initial-cap
       adapter: typescript
       path: frontend/src/components/CompositionDataWorkspace.test.tsx

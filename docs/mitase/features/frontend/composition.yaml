@@ -5,7 +5,7 @@ category: Frontend Space selection and preference surfaces
 features:
   - id: FEAT-FE-014
     title: Composition Studio contract
-    summary: Connect the Composition Studio authoring contract to its declarative component specification; metric authoring is implemented, while result presentation and saved-journey verification remain planned.
+    summary: Connect the current Saved SQL Metric authoring and result-presentation contracts to the declarative Composition Studio specification, with browser journey evidence.
     status: planned
     bindings:
       - id: frontend
@@ -97,20 +97,6 @@ features:
                 criterion: REQ-FE-070#criterion.display-authoring
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.structure-first-authoring
-          - id: composition-aggregate-capability-client
-            adapter: typescript
-            path: frontend/src/lib/ugoite-client/protocol.ts
-            selector: { kind: symbol, name: compositionAggregateCapability }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-070#criterion.display-authoring
-          - id: composition-metric-capability
-            adapter: typescript
-            path: frontend/src/lib/composition-metric-capability.ts
-            selector: { kind: symbol, name: supportedCompositionAggregateFieldTypes }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-070#criterion.display-authoring
           - id: composition-inspector
             adapter: typescript
             path: frontend/src/components/CompositionInspector.tsx
@@ -333,7 +319,7 @@ features:
             path: frontend/src/components/CompositionDisplayPicker.test.tsx
             selector: {
               kind: test,
-              name: "discards a late preview when the Metric definition changes",
+              name: "discards a late preview after the selected column changes",
             }
             claims:
               - kind: verifies
@@ -343,6 +329,55 @@ features:
                   runner: frontend-vitest-file,
                   arguments: {
                     file: src/components/CompositionDisplayPicker.test.tsx,
-                    test: "discards a late preview when the Metric definition changes",
+                    test: "discards a late preview after the selected column changes",
                   },
                 }
+      - id: saved-metric-browser-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Saved SQL Metric authoring, result recovery, and exact saved-revision lifecycle through Browser journeys and focused renderer tests.
+        targets:
+          - id: metric-authoring-and-save-reopen
+            adapter: typescript
+            path: e2e/composition-studio-journey.test.ts
+            selector: { kind: test, name: "Composition Studio builds a reusable tool from existing knowledge" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.metric-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Composition Studio builds a reusable tool from existing knowledge" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.metric-saved-lifecycle
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-contract]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Composition Studio builds a reusable tool from existing knowledge" } }
+          - id: metric-multiple-row-recovery
+            adapter: typescript
+            path: e2e/composition-metric-journey.test.ts
+            selector: { kind: test, name: "Browser reopens a Saved SQL metric at its exact revision and reports multiple matching rows" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.metric-result-presentation
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-contract]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-metric-journey.test.ts, test: "Browser reopens a Saved SQL metric at its exact revision and reports multiple matching rows" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.metric-saved-lifecycle
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-contract]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-metric-journey.test.ts, test: "Browser reopens a Saved SQL metric at its exact revision and reports multiple matching rows" } }
+          - id: metric-multiple-row-direct-edit
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.test.tsx
+            selector: { kind: test, name: "sends a multi-row Saved SQL metric directly to edit" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.metric-result-presentation
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-contract]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: "sends a multi-row Saved SQL metric directly to edit" } }
+          - id: metric-zero-row-direct-edit
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.test.tsx
+            selector: { kind: test, name: "offers direct edit when a Saved SQL metric returns no rows" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.metric-result-presentation
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-contract]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: "offers direct edit when a Saved SQL metric returns no rows" } }

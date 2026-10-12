@@ -1,4 +1,11 @@
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import {
+  createEffect,
+  createSignal,
+  For,
+  onCleanup,
+  onMount,
+  Show,
+} from "solid-js";
 import { Portal } from "solid-js/web";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { RowList, RowListButton, RowListItem } from "~/components/RowList";
@@ -34,6 +41,7 @@ export type CompositionSourceSeed =
 
 interface CompositionSourcePickerProps {
   spaceId: string;
+  sourcePurpose?: "data" | "table" | "metric";
   /** Sources already referenced by the current draft; shown first for reuse. */
   existingSources?: readonly DraftSource[];
   onSelectExisting?: (sourceDraftId: string) => void;
@@ -68,7 +76,10 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
   const formsPanelId = "composition-source-panel-forms";
   const sqlTabId = "composition-source-tab-saved-sql";
   const sqlPanelId = "composition-source-panel-saved-sql";
-  const [tab, setTab] = createSignal<"forms" | "savedSql">("forms");
+  const metricOnly = () => props.sourcePurpose === "metric";
+  const [tab, setTab] = createSignal<"forms" | "savedSql">(
+    metricOnly() ? "savedSql" : "forms",
+  );
   const [load, setLoad] = createSignal<PickerLoad>({ status: "loading" });
   const [adding, setAdding] = createSignal(false);
   const [addError, setAddError] = createSignal<string | null>(null);
@@ -80,15 +91,18 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
 
   const spaceId = () => props.spaceId;
 
-  const reload = () => {
+  const reload = (
+    currentSpaceId = spaceId(),
+    currentMetricOnly = metricOnly(),
+  ) => {
     const requestGeneration = ++generation;
     controller?.abort();
     const current = new AbortController();
     controller = current;
     setLoad({ status: "loading" });
     void Promise.all([
-      formApi.list(spaceId()),
-      sqlApi.list(spaceId()),
+      currentMetricOnly ? Promise.resolve([] as Form[]) : formApi.list(currentSpaceId),
+      sqlApi.list(currentSpaceId),
     ]).then(
       ([listedForms, listedSql]) => {
         if (
@@ -114,7 +128,11 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
     );
   };
 
-  reload();
+  createEffect(() => {
+    const currentMetricOnly = metricOnly();
+    if (currentMetricOnly) setTab("savedSql");
+    reload(spaceId(), currentMetricOnly);
+  });
   onCleanup(() => {
     generation += 1;
     controller?.abort();
@@ -173,7 +191,7 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
   };
 
   const addEntryQuery = (form: Form) => {
-    if (adding() || !form.id) return;
+    if (adding() || metricOnly() || !form.id) return;
     setAdding(true);
     setAddError(null);
     try {
@@ -360,13 +378,19 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
           <Show when={ready()}>
             {(sources) => (
               <div>
-                <Show when={(props.existingSources?.length ?? 0) > 0}>
+                <Show
+                  when={(props.existingSources?.filter((source) =>
+                    !metricOnly() || source.kind === "saved_sql"
+                  ).length ?? 0) > 0}
+                >
                   <section class="ui-stack-sm">
                     <h3 class="ui-label">
                       {t("composition.studioCurrentSources")}
                     </h3>
                     <RowList label={t("composition.studioCurrentSources")}>
-                      <For each={props.existingSources ?? []}>
+                      <For each={(props.existingSources ?? []).filter((source) =>
+                        !metricOnly() || source.kind === "saved_sql"
+                      )}>
                         {(source) => (
                           <RowListItem
                             main={
@@ -393,11 +417,12 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
                     </RowList>
                   </section>
                 </Show>
-                <div
-                  class="tabs"
-                  role="tablist"
-                  aria-labelledby={titleId}
-                >
+                <Show when={!metricOnly()}>
+                  <div
+                    class="tabs"
+                    role="tablist"
+                    aria-labelledby={titleId}
+                  >
                   <button
                     type="button"
                     role="tab"
@@ -422,8 +447,9 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
                   >
                     {t("spaceShell.title.savedSql")}
                   </button>
-                </div>
-                <Show when={tab() === "forms"}>
+                  </div>
+                </Show>
+                <Show when={!metricOnly() && tab() === "forms"}>
                   <section
                     id={formsPanelId}
                     role="tabpanel"
@@ -459,11 +485,14 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
                     </Show>
                   </section>
                 </Show>
-                <Show when={tab() === "savedSql"}>
+                <Show when={metricOnly() || tab() === "savedSql"}>
                   <section
                     id={sqlPanelId}
                     role="tabpanel"
-                    aria-labelledby={sqlTabId}
+                    aria-labelledby={metricOnly() ? undefined : sqlTabId}
+                    aria-label={metricOnly()
+                      ? t("spaceShell.title.savedSql")
+                      : undefined}
                     class="ui-stack-sm"
                   >
                     <Show
@@ -476,7 +505,7 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
                     >
                       <RowList
                         label={t("spaceShell.title.savedSql")}
-                        labelledBy={sqlTabId}
+                        labelledBy={metricOnly() ? undefined : sqlTabId}
                       >
                         <For each={sources().queries}>
                           {(entry) => (

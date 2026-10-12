@@ -46,7 +46,6 @@ import {
   createEmptyDraft,
   defaultParameterValues,
   type DraftInsertTarget,
-  type DraftMetricDefinition,
   draftMetricsReady,
   type DraftParameter,
   type DraftSaveBlockedReason,
@@ -494,7 +493,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
       : addMetricDisplay(
         draft(),
         seed.sourceDraftId,
-        seed.definition,
+        seed.column,
         seed.label,
         target,
       );
@@ -514,7 +513,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
 
   const previewMetric = async (seed: {
     sourceDraftId: string;
-    definition: DraftMetricDefinition;
+    column: string;
   }) => {
     try {
       const snapshot = draft();
@@ -536,7 +535,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
       const metric = addMetricDisplay(
         scratch,
         source.draftId,
-        seed.definition,
+        seed.column,
       );
       if (!metric.ok || !metric.draftId) {
         return { ok: false, error: t("composition.metricUnavailable") };
@@ -584,6 +583,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
       addSeed(seed);
       return;
     }
+    if (kind === "metric" && seed.kind !== "saved_sql") return;
     const { draft: sourceDraft, draftId } = addSourceSeed(seed);
     if (kind === "table") {
       const table = addTableDisplay(
@@ -602,7 +602,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
       setSourcePickerKind(null);
       return;
     }
-    // Add the source, then configure and preview the typed metric before it
+    // Add the Saved SQL source, then choose and preview a result column before it
     // enters the canvas layout.
     setDraft(sourceDraft);
     setDisplayPickerSourceId(draftId);
@@ -1073,8 +1073,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
           <CompositionInspector
             draft={draft()}
             selectedId={selectedId()}
-            fieldNames={fieldNames}
-            fieldNamesLoading={forms.loading}
             onDraftChange={setDraft}
             onRemove={removeSelectedBlock}
             onDataJump={jumpToSource}
@@ -1086,8 +1084,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
           <CompositionInspectorSheet
             draft={draft()}
             selectedId={activeId()}
-            fieldNames={fieldNames}
-            fieldNamesLoading={forms.loading}
             onDraftChange={setDraft}
             onRemove={removeSelectedBlock}
             onDataJump={jumpToSource}
@@ -1298,6 +1294,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
       <Show when={pickerOpen()}>
         <CompositionSourcePicker
           spaceId={spaceId()}
+          sourcePurpose={sourcePickerKind() ?? "data"}
           onSelect={(seed) =>
             dataSourcePickerOpen()
               ? addDataSource(seed)
@@ -1313,8 +1310,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
       <Show when={displayPickerOpen()}>
         <CompositionDisplayPicker
           draft={draft()}
-          fieldNames={fieldNames}
-          fieldNamesLoading={forms.loading}
           initialKind={displayPickerKind()}
           initialSourceDraftId={displayPickerSourceId()}
           onAdd={addDisplaySeed}

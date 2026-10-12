@@ -118,6 +118,49 @@ describe("CompositionSourcePicker", () => {
     });
   });
 
+  it("limits Metric source browsing to Saved SQL", async () => {
+    const entrySource: DraftSource = {
+      kind: "entry_query",
+      draftId: "src-entry",
+      formId: FORM_ID,
+      name: "Tasks",
+      fieldSchema: [],
+      query: {
+        filters: [],
+        sort: [],
+        projection: { kind: "preview" },
+      },
+    };
+    const savedSource: DraftSource = {
+      kind: "saved_sql",
+      draftId: "src-sql",
+      entryId: "sql-1",
+      revisionId: "sql-rev-1",
+      name: "Monthly",
+      expectedResult: [{ name: "total", type: "float" }],
+      variables: {},
+    };
+    render(() => (
+      <CompositionSourcePicker
+        spaceId="space-1"
+        sourcePurpose="metric"
+        existingSources={[entrySource, savedSource]}
+        onSelect={() => {}}
+        onClose={() => {}}
+      />
+    ));
+
+    const dialog = await screen.findByRole("dialog", { name: "Choose a source" });
+    await within(dialog).findByRole("button", { name: "Monthly" });
+    expect(within(dialog).getByRole("tabpanel", { name: "Saved SQL" }))
+      .toBeInTheDocument();
+    expect(within(dialog).queryByRole("tab", { name: "Forms" }))
+      .not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Tasks" }))
+      .not.toBeInTheDocument();
+    expect(formListMock).not.toHaveBeenCalled();
+  });
+
   it("starts new Form sources with projectable fields selected", async () => {
     const onSelect = vi.fn();
     formListMock.mockResolvedValue([{

@@ -21,7 +21,7 @@ import {
   type CompositionDraft,
   createEmptyDraft,
   placeParameterControl,
-  setMetricDefinition,
+  setMetricSource,
 } from "~/lib/composition-draft";
 import { setLocale } from "~/lib/i18n";
 
@@ -133,7 +133,7 @@ const seedDraft = (): CompositionDraft => {
   const metric = addMetricDisplay(
     draft,
     "src-1",
-    { kind: "sql_scalar", column: "total" },
+    "total",
     "Total",
   );
   if (!metric.ok) throw new Error("expected metric block");
@@ -158,45 +158,30 @@ const sourceOnlyDraft = (): CompositionDraft =>
     variables: {},
   }).draft;
 
-const rowCountMetricDraft = (): CompositionDraft => {
-  const source = addEntryQuerySource(createEmptyDraft("Studio"), {
-    formId: "11111111-1111-4111-8111-111111111111",
-    name: "Expenses",
-    fieldSchema: [{ field_id: 1, field_type: "integer" }],
-    query: {
-      filters: [],
-      sort: [],
-      projection: { kind: "preview" as const },
-    },
-  });
-  const metric = addMetricDisplay(source.draft, source.draftId, {
-    kind: "aggregate",
-    operation: "count_rows",
-  }, "Count");
-  if (!metric.ok) throw new Error("expected row-count metric");
-  return metric.draft;
-};
-
-const incompleteSavedSqlMetricDraft = (): CompositionDraft => {
-  const source = addSavedSqlSource(createEmptyDraft("Studio"), {
+const sqlMetricDraft = (): CompositionDraft => {
+  const primary = addSavedSqlSource(createEmptyDraft("Studio"), {
     entryId: "sql-1",
     revisionId: "sql-rev-1",
     name: "Monthly totals",
     expectedResult: [{ name: "total", type: "float" as const }],
     variables: {},
   });
-  const metric = addMetricDisplay(source.draft, source.draftId, {
-    kind: "sql_scalar",
-    column: "total",
+  const alternate = addSavedSqlSource(primary.draft, {
+    entryId: "sql-2",
+    revisionId: "sql-rev-2",
+    name: "Yearly totals",
+    expectedResult: [{ name: "total", type: "float" as const }],
+    variables: {},
   });
-  if (!metric.ok || !metric.draftId) {
-    throw new Error("expected Saved SQL metric");
-  }
-  const incomplete = setMetricDefinition(metric.draft, metric.draftId, {
-    kind: "sql_scalar",
-  });
-  if (!incomplete.ok) throw new Error("expected incomplete Saved SQL metric");
-  return incomplete.draft;
+  const metric = addMetricDisplay(alternate.draft, "src-1", "total", "Total");
+  if (!metric.ok) throw new Error("expected Saved SQL Metric");
+  return metric.draft;
+};
+
+const incompleteSavedSqlMetricDraft = (): CompositionDraft => {
+  const moved = setMetricSource(sqlMetricDraft(), "disp-1", "src-2");
+  if (!moved.ok) throw new Error("expected incomplete Saved SQL Metric");
+  return moved.draft;
 };
 
 const okPreview = (fingerprint: string) => ({
@@ -284,8 +269,6 @@ describe("CompositionStudioSync", () => {
       draft_fingerprint: "fp-studio",
       result: {
         component_id: "disp-1",
-        operation: "sql_scalar",
-        source_kind: "saved_sql",
         result_type: "float",
         value: 128400,
       },
@@ -430,8 +413,6 @@ describe("CompositionStudioSync", () => {
       draft_fingerprint: "stale-fingerprint",
       result: {
         component_id: "disp-1",
-        operation: "sql_scalar",
-        source_kind: "saved_sql",
         result_type: "float",
         value: 128400,
       },
@@ -700,16 +681,16 @@ describe("CompositionStudioSync", () => {
     expect(saveMock).not.toHaveBeenCalled();
   });
 
-  it("disables Save when a Metric operation requires an unselected field", async () => {
-    renderStudio(rowCountMetricDraft());
+  it("disables Save when a retargeted Metric needs a new SQL column", async () => {
+    renderStudio(sqlMetricDraft());
     const save = screen.getByRole("button", { name: "Save" });
     expect(save).toBeEnabled();
 
     fireEvent.click(
-      await screen.findByRole("button", { name: "Select Count" }),
+      await screen.findByRole("button", { name: "Select Total" }),
     );
-    fireEvent.change(screen.getByRole("combobox", { name: "Operation" }), {
-      target: { value: "sum" },
+    fireEvent.change(screen.getByRole("combobox", { name: "Source" }), {
+      target: { value: "src-2" },
     });
 
     const blockedSave = screen.getByRole("button", {
@@ -721,12 +702,12 @@ describe("CompositionStudioSync", () => {
     expect(saveMock).not.toHaveBeenCalled();
   });
 
-  it("skips canonicalization and clears preview when a Metric edit is incomplete", async () => {
+  it("skips canonicalization and clears preview when Metric source changes", async () => {
     vi.useFakeTimers();
     previewMock.mockImplementationOnce(async () =>
       okMetricPreview("fp-studio")
     );
-    renderStudio(rowCountMetricDraft());
+    renderStudio(sqlMetricDraft());
 
     await vi.advanceTimersByTimeAsync(401);
     expect(canonicalizeMock).toHaveBeenCalledTimes(1);
@@ -735,9 +716,9 @@ describe("CompositionStudioSync", () => {
     expect(screen.getByText("128400", { selector: "output" }))
       .toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Select Count" }));
-    fireEvent.change(screen.getByRole("combobox", { name: "Operation" }), {
-      target: { value: "sum" },
+    fireEvent.click(screen.getByRole("button", { name: "Select Total" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Source" }), {
+      target: { value: "src-2" },
     });
 
     await vi.advanceTimersByTimeAsync(401);
@@ -754,15 +735,15 @@ describe("CompositionStudioSync", () => {
     canonicalizeMock.mockImplementationOnce(
       () => new Promise((resolve) => finishCanonicalize = resolve),
     );
-    renderStudio(rowCountMetricDraft());
+    renderStudio(sqlMetricDraft());
 
     await vi.advanceTimersByTimeAsync(401);
     expect(canonicalizeMock).toHaveBeenCalledTimes(1);
     expect(previewMock).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Select Count" }));
-    fireEvent.change(screen.getByRole("combobox", { name: "Operation" }), {
-      target: { value: "sum" },
+    fireEvent.click(screen.getByRole("button", { name: "Select Total" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Source" }), {
+      target: { value: "src-2" },
     });
     finishCanonicalize({ canonical_yaml: "yaml:stale" });
     await Promise.resolve();

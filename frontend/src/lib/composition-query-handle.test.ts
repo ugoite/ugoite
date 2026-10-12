@@ -400,13 +400,13 @@ describe("CompositionQueryHandle", () => {
     handle.dispose();
   });
 
-  it("skips paged Entry queries when a source is used only by metrics", async () => {
-    const response = resolved("2026-03") as CompositionResolveResponse;
+  it("does not page a Saved SQL source used only by Metrics", async () => {
+    const response = resolvedSavedSql("2026-03-01") as CompositionResolveResponse;
     response.plan!.component_bindings = [{
       component_id: "total",
       kind: "metric",
-      source_id: "entries",
-      metric_field_id: 7,
+      source_id: "sql_results",
+      result_property_key: "amount",
       expected_result_type: "integer",
     }];
     const querySource = vi.fn();

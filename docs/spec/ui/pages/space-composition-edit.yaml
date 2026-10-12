@@ -19,7 +19,7 @@ components:
         mode: shared-composition-renderer
         rows: first-page-per-source
       async_state: explicit-loading-empty-error
-      description: Unknown versions, lint failures, and untyped legacy Metric definitions show a concise error with one back control to the opened revision and never open the studio. Canonical revisions may omit empty optional parameter and Saved SQL variable collections; the editor restores those as empty state. Legacy Metric definitions are not converted or retained.
+      description: Unknown versions, lint failures, and legacy Metric shapes show a concise error with one back control to the opened revision and never open the studio. Canonical revisions may omit empty optional parameter and Saved SQL variable collections; the editor restores those as empty state. Legacy Metric shapes are not migrated or retained.
     - id: studio-header
       type: page-header
       title: Tool name
@@ -86,7 +86,7 @@ components:
       type: dialog
       title: Choose a source
       source: Forms through form.list and Saved SQL through sql.list
-      selection: full-row-activate; table adds immediately; metric opens operation or column setup then server preview before insertion
+      selection: full-row-activate; table adds immediately; Metric offers Saved SQL only, then column selection and server preview before insertion
 
       rendering: human-name-only rows with loading, empty, and error states
       row_name_overflow: ellipsis-with-full-name-native-title
@@ -100,17 +100,15 @@ components:
       type: dialog
       title: Add data component
       kind_selection: Table/Metric tabs inside the picker
-      sequence: kind, source, Form operation or Saved SQL column, server preview, insert
+      sequence: kind, Saved SQL source, result column, server preview, insert
       selection: table adds on source selection; Metric inserts only after successful preview
       label: omitted during insertion; optional edit in Inspector after selection
       source_selection: catalog browse preserves selected Table or Metric kind
-      entry_query_field_labels: resolved human Form labels only; no field ID or ordinal fallback
-      entry_query_metric_field: independent_of_table_projection
-      entry_query_metric_candidates: operation-specific-supported-types-with-human-Form-name-only
-      saved_sql_metric_candidates: declared-non-json-result-columns
+      metric_source_catalog: existing-or-catalog-Saved-SQL-only
+      saved_sql_metric_candidates: unique-declared-displayable-non-json-result-columns
       metric_preview: server-side-exact-value-before-insertion
       projection_initialization: schema-order-up-to-64-projectable-fields
-      projection_capacity: table-projection-limit-does-not-limit-metric-fields
+      preview_freshness: exact-source-and-column; stale-result-discarded-on-change
 
       internal_field_ids: never rendered
       sizing: 720px maximum width and viewport-capped vertical scrolling

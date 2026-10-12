@@ -258,47 +258,25 @@ features:
       path: frontend/src/components/CompositionInspector.test.tsx
       selector:
         kind: test
-        name: maps metric source, operation, field, and SQL column edits
+        name: limits Metric source and column controls to Saved SQL names
       claims:
       - kind: evidences
-        anchor: REQ-COMP-002#criterion.typed-metric-definition
-    - id: browser-metric-picker-form-aggregate
+        anchor: REQ-COMP-002#criterion.saved-sql-metric-presentation
+    - id: browser-source-picker-metric-sql-only
       adapter: typescript
-      path: frontend/src/components/CompositionDisplayPicker.test.tsx
+      path: frontend/src/components/CompositionSourcePicker.test.tsx
       selector:
         kind: test
-        name: configures Form sum by operation and human field name before insertion
+        name: limits Metric source browsing to Saved SQL
       claims:
       - kind: evidences
         anchor: REQ-FE-070#criterion.metric-authoring
-      - kind: evidences
-        anchor: REQ-FE-070#criterion.entry-query-field-labels
     - id: browser-metric-picker-saved-sql-scalar
       adapter: typescript
       path: frontend/src/components/CompositionDisplayPicker.test.tsx
       selector:
         kind: test
-        name: previews an exact Saved SQL scalar before inserting it
-      claims:
-      - kind: evidences
-        anchor: REQ-FE-070#criterion.metric-authoring
-    - id: e2e-studio-saved-sql-metric-lifecycle
-      adapter: typescript
-      path: e2e/composition-studio-journey.test.ts
-      selector:
-        kind: test
-        name: Composition Studio builds a reusable tool from existing knowledge
-      claims:
-      - kind: evidences
-        anchor: REQ-FE-070#criterion.metric-authoring
-      - kind: evidences
-        anchor: REQ-FE-070#criterion.metric-saved-lifecycle
-    - id: browser-metric-aggregate-capability-protocol
-      adapter: typescript
-      path: frontend/src/lib/ugoite-client/protocol.test.ts
-      selector:
-        kind: test
-        name: resolves aggregate candidates through the Rust Domain contract
+        name: previews a selected Saved SQL column before inserting a Metric
       claims:
       - kind: evidences
         anchor: REQ-FE-070#criterion.metric-authoring
@@ -310,7 +288,7 @@ features:
         name: edits optional numeric presentation without changing source bindings
       claims:
       - kind: evidences
-        anchor: REQ-COMP-002#criterion.typed-metric-definition
+        anchor: REQ-COMP-002#criterion.saved-sql-metric-presentation
       - kind: evidences
         anchor: REQ-FE-070#criterion.display-authoring
     - id: browser-inspector-metric-number-presentation-locale
@@ -382,10 +360,10 @@ features:
       path: frontend/src/lib/composition-draft.test.ts
       selector:
         kind: test
-        name: retargets metric source and typed definition
+        name: retargets a Metric between Saved SQL sources and requires a new column
       claims:
       - kind: evidences
-        anchor: REQ-COMP-002#criterion.typed-metric-definition
+        anchor: REQ-COMP-002#criterion.saved-sql-metric-presentation
 
     - id: browser-inspector-draft-text-edits
       adapter: typescript
