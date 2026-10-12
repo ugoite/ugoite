@@ -120,10 +120,6 @@ requirements:
                 criterion: REQ-FE-070#criterion.metric-saved-lifecycle
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio-contract]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/composition-metric-authoring.test.ts, test: "REQ-FE-070: saves and updates a Form SUM across pagination" } }
-              - kind: verifies
-                criterion: REQ-FE-070#criterion.mobile-one-column
-                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-contract]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-metric-authoring.test.ts, test: "REQ-FE-070: saves and updates a Form SUM across pagination" } }
       - id: preview-handle-verification
         role: verification
         facet: verification
