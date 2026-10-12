@@ -41,6 +41,7 @@ components:
       component: ActionIconBar
       reference: ../components/action-icon-bar.yaml
       description: Save and Delete keep visible labels. History and Info use named icon-only utility controls. Delete retains danger styling and confirmation.
+      keyboard_shortcut_scope: Entry editor and associated action bar only; unrelated shell controls do not trigger or consume Save shortcuts.
       actions:
         - id: save
           type: button

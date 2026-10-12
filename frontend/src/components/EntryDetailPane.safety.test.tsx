@@ -156,19 +156,26 @@ describe("EntryDetailPane safety/recovery", () => {
     updateMock.mockResolvedValue({ id: "entry-1", revision_id: "rev-2" });
 
     render(() => (
-      <EntryDetailPane
-        spaceId={() => "default"}
-        entryId={() => "entry-1"}
-        forms={() => [markdownForm]}
-        onDeleted={vi.fn()}
-      />
+      <>
+        <button type="button" aria-label="Workspace search">Search</button>
+        <EntryDetailPane
+          spaceId={() => "default"}
+          entryId={() => "entry-1"}
+          forms={() => [markdownForm]}
+          onDeleted={vi.fn()}
+        />
+      </>
     ));
 
     const body = await screen.findByLabelText("Body");
     fireEvent.input(body, { target: { value: "# Updated" } });
-    expect(fireEvent.keyDown(document, { key: "s", ctrlKey: true })).toBe(
-      false,
-    );
+    const search = screen.getByRole("button", { name: "Workspace search" });
+    search.focus();
+    expect(fireEvent.keyDown(search, { key: "s", ctrlKey: true })).toBe(true);
+    expect(updateMock).not.toHaveBeenCalled();
+
+    body.focus();
+    expect(fireEvent.keyDown(body, { key: "s", ctrlKey: true })).toBe(false);
 
     await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(1));
     const firstPayload = updateMock.mock.calls[0][2] as Record<string, unknown>;
@@ -176,9 +183,7 @@ describe("EntryDetailPane safety/recovery", () => {
     expect(firstPayload.fields).toEqual({ Body: "# Updated" });
 
     fireEvent.input(body, { target: { value: "# Updated again" } });
-    expect(fireEvent.keyDown(document, { key: "s", metaKey: true })).toBe(
-      false,
-    );
+    expect(fireEvent.keyDown(body, { key: "s", metaKey: true })).toBe(false);
     await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(2));
     const secondPayload = updateMock.mock.calls[1][2] as Record<string, unknown>;
     expect(secondPayload.parent_revision_id).toBe("rev-2");
@@ -196,10 +201,9 @@ describe("EntryDetailPane safety/recovery", () => {
       />
     ));
 
-    await screen.findByLabelText("Notes");
-    expect(fireEvent.keyDown(document, { key: "s", ctrlKey: true })).toBe(
-      false,
-    );
+    const notes = await screen.findByLabelText("Notes");
+    notes.focus();
+    expect(fireEvent.keyDown(notes, { key: "s", ctrlKey: true })).toBe(false);
     expect(entryApi.update).not.toHaveBeenCalled();
   });
 
