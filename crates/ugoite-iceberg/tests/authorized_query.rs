@@ -710,7 +710,9 @@ async fn sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts
 
     let grouped = context
         .execute(
-            "SELECT field_100, COUNT(*) AS item_count, SUM(field_101) AS total \
+            "SELECT field_100, COUNT(*) AS item_count, COUNT(field_102) AS optional_count, \
+             SUM(field_101) AS total, AVG(field_101) AS average, \
+             MIN(field_101) AS minimum, MAX(field_101) AS maximum \
              FROM tasks GROUP BY field_100 HAVING COUNT(*) > 0 ORDER BY total DESC",
         )
         .await?;
@@ -724,17 +726,57 @@ async fn sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts
         .as_any()
         .downcast_ref::<StringArray>()
         .expect("category is a string");
-    let totals = group_batch
+    let item_counts = group_batch
+        .column(1)
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .expect("grouped COUNT(*) uses Int64");
+    let optional_counts = group_batch
         .column(2)
         .as_any()
         .downcast_ref::<Int64Array>()
+        .expect("grouped COUNT(field) uses Int64");
+    let totals = group_batch
+        .column(3)
+        .as_any()
+        .downcast_ref::<Int64Array>()
         .expect("grouped integer SUM uses Int64");
+    let averages = group_batch
+        .column(4)
+        .as_any()
+        .downcast_ref::<arrow_array::Float64Array>()
+        .expect("grouped integer AVG uses Float64");
+    let minimums = group_batch
+        .column(5)
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .expect("grouped integer MIN uses Int64");
+    let maximums = group_batch
+        .column(6)
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .expect("grouped integer MAX uses Int64");
     assert_eq!(categories.value(0), "food");
+    assert_eq!(item_counts.value(0), 2);
+    assert_eq!(optional_counts.value(0), 1, "COUNT(field) ignores NULL");
     assert_eq!(totals.value(0), 300);
+    assert_eq!(averages.value(0), 150.0);
+    assert_eq!(minimums.value(0), 100);
+    assert_eq!(maximums.value(0), 200);
     assert_eq!(categories.value(1), "zero");
+    assert_eq!(item_counts.value(1), 1);
+    assert_eq!(optional_counts.value(1), 0);
     assert_eq!(totals.value(1), 0);
+    assert_eq!(averages.value(1), 0.0);
+    assert_eq!(minimums.value(1), 0);
+    assert_eq!(maximums.value(1), 0);
     assert_eq!(categories.value(2), "travel");
+    assert_eq!(item_counts.value(2), 1);
+    assert_eq!(optional_counts.value(2), 1);
     assert_eq!(totals.value(2), -50);
+    assert_eq!(averages.value(2), -50.0);
+    assert_eq!(minimums.value(2), -50);
+    assert_eq!(maximums.value(2), -50);
 
     let plan = context
         .physical_plan_for_testing(
