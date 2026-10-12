@@ -1709,6 +1709,10 @@ fn openapi_documents_bounded_composition_metric_queries() {
         response["oneOf"][1]["properties"]["diagnostics"]["items"]["$ref"],
         "#/components/schemas/CompositionMetricQueryDiagnostic"
     );
+    assert_eq!(
+        snapshot["components"]["schemas"]["CompositionMetricQueryValue"]["properties"]["value"]["description"],
+        "Encoding is determined by result_type: integer values are canonical base-10 strings that preserve exact precision; decimal values are base-10 strings that preserve scale; float values are JSON numbers; boolean values are JSON booleans; string, date, and timestamp values are JSON strings. A successful SQL NULL is JSON null."
+    );
 }
 
 #[test]
