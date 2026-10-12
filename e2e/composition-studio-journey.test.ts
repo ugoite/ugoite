@@ -590,8 +590,10 @@ test.describe("Composition Studio Journey", () => {
         body: await page.screenshot({ fullPage: true }),
         contentType: "image/png",
       });
-      await page.getByLabel("Default for month_start").fill(seed.monthStart);
-      await page.getByLabel("Default for month_end").fill(seed.monthEnd);
+      await page.getByLabel("Default for Parameter 1").fill(seed.monthStart);
+      await page.getByLabel("Default for Parameter 2").fill(seed.monthEnd);
+      await expect(page.getByLabel("Default for month_start")).toHaveCount(0);
+      await expect(page.getByLabel("Default for month_end")).toHaveCount(0);
       await dataTabs.getByRole("tab", { name: "Tags", exact: true }).click();
       await expect(
         page.getByRole("textbox", { name: "Tags", exact: true }),
@@ -649,10 +651,12 @@ test.describe("Composition Studio Journey", () => {
         firstRevisionId,
         seed.toolName,
       );
-      await expect(page.getByLabel("month_start")).toHaveValue(
+      await expect(page.getByLabel("Parameter 1")).toHaveValue(
         seed.monthStart,
       );
-      await expect(page.getByLabel("month_end")).toHaveValue(seed.monthEnd);
+      await expect(page.getByLabel("Parameter 2")).toHaveValue(seed.monthEnd);
+      await expect(page.getByLabel("month_start")).toHaveCount(0);
+      await expect(page.getByLabel("month_end")).toHaveCount(0);
       await expect(
         page.locator("output.compositionMetric").filter({
           hasText: new RegExp(`^${seed.expectedTotal}$`),
@@ -869,9 +873,10 @@ test.describe("Composition Studio Journey", () => {
       ).toBeVisible();
       await dataTabs.getByRole("tab", { name: "Parameters", exact: true })
         .click();
-      await expect(page.getByLabel("Default for month_start")).toHaveValue(
+      await expect(page.getByLabel("Default for Parameter 1")).toHaveValue(
         seed.monthStart,
       );
+      await expect(page.getByLabel("Default for month_start")).toHaveCount(0);
     } finally {
       await mobileContext.close();
     }

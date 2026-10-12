@@ -451,12 +451,14 @@ test.describe("Composition Golden Journey", () => {
       await expect(reopenedPage).toHaveURL(
         new RegExp(`${exactPath.replaceAll("/", "\\/")}$`),
       );
-      await expect(reopenedPage.getByLabel("month_start")).toHaveValue(
+      await expect(reopenedPage.getByLabel("Parameter 1")).toHaveValue(
         manifest.parameters.month_start,
       );
-      await expect(reopenedPage.getByLabel("month_end")).toHaveValue(
+      await expect(reopenedPage.getByLabel("Parameter 2")).toHaveValue(
         manifest.parameters.month_end,
       );
+      await expect(reopenedPage.getByLabel("month_start")).toHaveCount(0);
+      await expect(reopenedPage.getByLabel("month_end")).toHaveCount(0);
 
       const table = reopenedPage.getByRole("table");
       await expect(table.locator("tbody tr")).toHaveCount(
@@ -479,7 +481,7 @@ test.describe("Composition Golden Journey", () => {
       expect(secondPageRow).toBeTruthy();
       await expect(table).toContainText(secondPageRow!.merchant);
 
-      await reopenedPage.getByLabel("month_start").fill(
+      await reopenedPage.getByLabel("Parameter 1").fill(
         manifest.parameters.month_start_after_change,
       );
       await expect(table.locator("tbody tr")).toHaveCount(
