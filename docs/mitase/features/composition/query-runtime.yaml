@@ -465,7 +465,7 @@ features:
   - id: composition-metric-query-evidence
     role: evidence
     facet: iceberg-tests
-    responsibility: Verify Composition Metric execution uses the full EntryQuery matching set, a bounded probe of the exact Saved SQL revision, and current authorization for the Composition, Form entries, and Saved SQL source.
+    responsibility: Verify Composition Metric execution uses the full EntryQuery matching set, a bounded probe of the exact Saved SQL revision, current authorization for the Composition, Form entries, and Saved SQL source, and fail-closed behavior for Entry aggregate ACL denial and numeric overflow.
     targets:
     - id: typed-metric-query-execution-case
       adapter: rust
@@ -483,12 +483,16 @@ features:
       path: crates/ugoite-iceberg/tests/test_composition_query_authorization.rs
       selector:
         kind: test
-        name: authorized_metric_scalar_rechecks_current_form_and_saved_sql_access
+        name: authorized_composition_metrics_recheck_current_entry_and_saved_sql_access
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.current-authorization
       - kind: evidences
         anchor: REQ-COMP-002#criterion.typed-metric-definition
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.typed-entry-aggregate-execution
+      - kind: evidences
+        anchor: REQ-API-015#criterion.checked-numeric-aggregates
   - id: aggregate-result-type-evidence
     role: evidence
     facet: core-tests

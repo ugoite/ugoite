@@ -110,10 +110,12 @@ requirements:
           - id: typed-metric-current-authorization-case
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_composition_query_authorization.rs
-            selector: { kind: test, name: authorized_metric_scalar_rechecks_current_form_and_saved_sql_access }
+            selector: { kind: test, name: authorized_composition_metrics_recheck_current_entry_and_saved_sql_access }
             claims:
-              - { kind: verifies, criterion: REQ-COMP-002#criterion.typed-metric-definition, covers: [FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: authorized_metric_scalar_rechecks_current_form_and_saved_sql_access } } }
-              - { kind: verifies, criterion: REQ-COMP-004#criterion.current-authorization, covers: [FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: authorized_metric_scalar_rechecks_current_form_and_saved_sql_access } } }
+              - { kind: verifies, criterion: REQ-COMP-002#criterion.typed-metric-definition, covers: [FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: authorized_composition_metrics_recheck_current_entry_and_saved_sql_access } } }
+              - { kind: verifies, criterion: REQ-COMP-002#criterion.typed-entry-aggregate-execution, covers: [FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.aggregate-entry-query, FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: authorized_composition_metrics_recheck_current_entry_and_saved_sql_access } } }
+              - { kind: verifies, criterion: REQ-COMP-004#criterion.current-authorization, covers: [FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: authorized_composition_metrics_recheck_current_entry_and_saved_sql_access } } }
+              - { kind: verifies, criterion: REQ-API-015#criterion.checked-numeric-aggregates, covers: [FEAT-API-001#binding.sql-service-implementation/target.checked-numeric-aggregates], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: authorized_composition_metrics_recheck_current_entry_and_saved_sql_access } } }
           - id: matching-set-contract-case
             adapter: rust
             path: crates/ugoite-core/src/entry_query.rs
