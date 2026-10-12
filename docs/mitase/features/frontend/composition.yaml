@@ -173,6 +173,10 @@ features:
                 criterion: REQ-FE-070#criterion.exact-revision-edit
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.structure-first-authoring
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.metric-authoring
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.side-effect-free-preview
           - id: composition-edit-route
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.tsx
