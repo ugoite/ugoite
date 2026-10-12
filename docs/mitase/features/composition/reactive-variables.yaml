@@ -22,6 +22,8 @@ features:
               - kind: documents
                 anchor: REQ-COMP-007#criterion.typed-variable-declarations
               - kind: documents
+                anchor: REQ-COMP-007#criterion.typed-input-lexical-contract
+              - kind: documents
                 anchor: REQ-COMP-007#criterion.input-component-binding
               - kind: documents
                 anchor: REQ-COMP-007#criterion.input-runtime-synchronization
@@ -59,6 +61,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-COMP-007#criterion.typed-variable-declarations
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
           - id: input-component-model
             adapter: rust
             path: crates/ugoite-domain/src/composition.rs
@@ -100,6 +104,8 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.typed-variable-declarations
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-input-lexical-contract
           - id: exact-variable-defaults
             adapter: rust
             path: crates/ugoite-domain/src/composition.rs

@@ -13,6 +13,10 @@ requirements:
         kind: behavior
         statement: Each Composition variable has a unique stable ID, required type, required flag, optional exact-type default, and optional display metadata. The initial type set is string, boolean, integer, float, date, and timestamp; values are never inferred or implicitly coerced.
         governed_by: [POL-000#rule.foundation-precedence]
+      - id: typed-input-lexical-contract
+        kind: behavior
+        statement: Typed Input parsing is locale-independent and follows the bounded per-type lexical grammar and value limits in ADR-023 section 2.1. Empty input is unset; malformed, over-limit, overflow, non-finite, or underflow-to-zero values remain invalid and cannot be bound to a query. Defaults use the same type and lexical rules.
+        governed_by: [POL-000#rule.foundation-precedence]
       - id: input-component-binding
         kind: behavior
         statement: An Input component references one declared variable and owns no persisted value or setter expression. A required variable without a default has a placed Input, and each placed Input is an ordinary Component referenced once by Layout.
@@ -75,6 +79,10 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-007#criterion.typed-variable-declarations
                 covers: [FEAT-COMP-008#binding.typed-variable-domain/target.variable-declaration-and-input-parser]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::typed_input_parser_enforces_the_pinned_lexical_contract } }
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+                covers: [FEAT-COMP-008#binding.typed-variable-domain-evidence/target.exact-input-lexical-contract]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::typed_input_parser_enforces_the_pinned_lexical_contract } }
           - id: typed-variable-default-case
             adapter: rust
