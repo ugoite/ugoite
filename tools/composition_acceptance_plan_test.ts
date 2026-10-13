@@ -69,7 +69,7 @@ const EXPECTED_BROWSER_STEPS = [
   "Delay and interrupt the first save response after commit, then retry with the same Idempotency-Key and verify one history publication and the original receipt revision.",
   "Close the browser context, rediscover the saved tool from Space Home, and open the exact revision named by the receipt.",
   "Use the labeled Inputs to change declared Variable values, advance a result page, and confirm the displayed rows come from the existing query response without Browser aggregation.",
-  "Change a Variable, Space, or source while an earlier request is delayed and confirm stale success, error, finalization, and loading updates are discarded.",
+  "Change a Variable or Space, switch a source, or navigate through Composition History to another exact revision while a request is delayed; confirm stale success, error, finalization, and loading updates are discarded.",
   "Confirm page, scroll, result, continuation, and cache state are absent from the saved Composition.",
 ];
 
@@ -140,7 +140,7 @@ const EXPECTED_RECOVERY_CASES = [
     surface: "Browser",
     boundary: "Transient Composition query generation state",
     expectation:
-      "Parameter, Space, and source changes suppress stale success, error, finalization, and loading-state updates.",
+      "Variable, Space, source, and exact Composition revision changes suppress stale success, error, finalization, and loading-state updates.",
   },
   {
     id: "portable_surface_contract_parity",
@@ -200,6 +200,7 @@ const EXPECTED_RESERVED_SELECTORS: Record<string, string[]> = {
     "frontend/src/lib/composition-api.ts#test:composition_query_handle_discards_stale_response_state_updates",
     "frontend/src/components/CompositionRenderer.test.tsx#test:composition_renderer_delegates_to_source_native_presenters_without_client_aggregation",
     "e2e/composition-golden-journey.test.ts#test:Browser saves a tool once, reopens its exact revision from Home, and pages parameterized results with model connection disabled",
+    "e2e/composition-revision-stale-response.test.ts#test:discard a delayed metric response after navigating to another exact revision",
   ],
   B6: [
     "e2e/composition-golden-journey.test.ts#test:Browser saves a tool once, reopens its exact revision from Home, and pages parameterized results with model connection disabled",
