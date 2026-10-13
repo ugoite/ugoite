@@ -6,6 +6,9 @@ title: "ADR-023 — Typed reactive Composition variables"
 This decision authorizes a breaking change to the unreleased Composition v1
 grammar. It does not authorize a product release. Its SQL and Metric boundary
 inherits ADR-022 and remains gated on the SQL-only Metric implementation.
+Because this makes previously saved Composition v1 documents non-executable,
+the first product version that may include this grammar is v0.3.0 or later; it
+must not ship in a v0.2.x patch release.
 
 This ruling supersedes ADR-019 only where it requires parameters and parameter
 layout items, restricts Components to Text/Metric/Table, and forbids variable-
