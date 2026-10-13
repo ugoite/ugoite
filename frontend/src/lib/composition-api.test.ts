@@ -207,7 +207,7 @@ describe("compositionApi", () => {
     expect(canonicalizeCompositionDocument).toHaveBeenCalledWith(document);
   });
 
-  it("resolves parameters against the exact revision through the portable operation", async () => {
+  it("resolves variables against the exact revision through the portable operation", async () => {
     vi.mocked(protocolFetch).mockResolvedValue({ ok: true });
 
     await compositionApi.resolve(
@@ -221,7 +221,7 @@ describe("compositionApi", () => {
     expect(protocolFetch).toHaveBeenCalledWith(
       "composition.resolve",
       { space_id: "space-1", composition_id: "composition-1" },
-      { revision_id: "revision-2", parameters: { month_start: "2026-03-01" } },
+      { revision_id: "revision-2", variables: { month_start: "2026-03-01" } },
       { signal },
     );
   });
@@ -242,7 +242,7 @@ describe("compositionApi", () => {
       { space_id: "space-1", composition_id: "composition-1" },
       {
         revision_id: "revision-2",
-        parameters: { label: "ready" },
+        variables: { label: "ready" },
         unset_variables: ["limit"],
       },
       { signal },
@@ -256,7 +256,7 @@ describe("compositionApi", () => {
         yaml: "format: ugoite.composition\n",
       },
       component_id: "sql_total",
-      parameters: { month: null },
+      variables: { month: null },
     };
     vi.mocked(protocolFetch).mockResolvedValue({
       ok: true,
@@ -277,7 +277,7 @@ describe("compositionApi", () => {
       {
         target: request.target,
         component_id: request.component_id,
-        parameters: {},
+        variables: {},
         unset_variables: ["month"],
       },
       { signal },

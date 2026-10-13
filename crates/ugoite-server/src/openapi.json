@@ -14236,13 +14236,36 @@
       "SqlQueryRequest": {
         "type": "object",
         "properties": {
-          "sql": {"type": "string", "description": "SQL text for a normal query; may be omitted or empty when saved_sql is selected."},
-          "saved_sql": {"$ref": "#/components/schemas/SavedSqlRevisionRef"},
-          "parameters": {"type": "object", "additionalProperties": true},
-          "parameter_types": {"type": "object", "additionalProperties": {"type": "string"}},
-          "include_exact_integer_values": {"type": "boolean", "default": false, "description": "Include column-aligned exact base-10 strings for integer result cells."},
-          "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
-          "continuation": {"type": "string"}
+          "sql": {
+            "type": "string",
+            "description": "SQL text for a normal query; may be omitted or empty when saved_sql is selected."
+          },
+          "saved_sql": {
+            "$ref": "#/components/schemas/SavedSqlRevisionRef"
+          },
+          "parameters": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "parameter_types": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "include_exact_integer_values": {
+            "type": "boolean",
+            "default": false,
+            "description": "Include column-aligned exact base-10 strings for integer result cells."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "continuation": {
+            "type": "string"
+          }
         },
         "required": [
           "limit"
@@ -14252,11 +14275,30 @@
       "SqlQueryPage": {
         "type": "object",
         "properties": {
-          "columns": {"type": "array", "items": {"type": "string"}},
-          "rows": {"type": "array", "items": {"$ref": "#/components/schemas/JsonValue"}},
-          "has_more": {"type": "boolean"},
-          "next": {"type": "string"},
-          "result_schema": {"type": "array", "items": {"$ref": "#/components/schemas/SqlResultColumn"}},
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JsonValue"
+            }
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "next": {
+            "type": "string"
+          },
+          "result_schema": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SqlResultColumn"
+            }
+          },
           "exact_integer_rows": {
             "type": "array",
             "description": "Present only when requested; cells align with rows and columns, with exact base-10 strings for integer values and null in other positions.",
@@ -14264,23 +14306,48 @@
               "type": "array",
               "items": {
                 "oneOf": [
-                  {"type": "string"},
-                  {"type": "null"}
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
                 ]
               }
             }
           }
         },
-        "required": ["columns", "rows", "has_more"],
+        "required": [
+          "columns",
+          "rows",
+          "has_more"
+        ],
         "additionalProperties": false
       },
       "SqlResultColumn": {
         "type": "object",
         "properties": {
-          "name": {"type": "string"},
-          "type": {"type": "string", "enum": ["string", "boolean", "integer", "float", "date", "timestamp", "decimal", "json"]}
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "string",
+              "boolean",
+              "integer",
+              "float",
+              "date",
+              "timestamp",
+              "decimal",
+              "json"
+            ]
+          }
         },
-        "required": ["name", "type"],
+        "required": [
+          "name",
+          "type"
+        ],
         "additionalProperties": false
       },
       "SqlQueryCountRequest": {
@@ -15139,9 +15206,9 @@
         "enum": [
           "unsupported_format_version",
           "invalid_composition",
-          "parameter_unknown",
-          "parameter_missing",
-          "parameter_type_mismatch",
+          "variable_unknown",
+          "variable_missing",
+          "variable_type_mismatch",
           "source_unavailable",
           "missing_field",
           "field_type_changed",
@@ -15256,7 +15323,7 @@
             "format": "uuid",
             "description": "Exact Composition revision to resolve; no latest fallback."
           },
-          "parameters": {
+          "variables": {
             "type": "object",
             "additionalProperties": {
               "$ref": "#/components/schemas/JsonValue"
@@ -15268,7 +15335,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Variable names explicitly left unset. Omission from both fields uses a declared default; an unset name must not also appear in parameters."
+            "description": "Variable names explicitly left unset. Omission from both fields uses a declared default; an unset name must not also appear in variables."
           }
         },
         "additionalProperties": false
@@ -15283,7 +15350,7 @@
             "type": "string",
             "description": "Candidate Composition YAML; parsed but never stored."
           },
-          "parameters": {
+          "variables": {
             "type": "object",
             "additionalProperties": {
               "$ref": "#/components/schemas/JsonValue"
@@ -15295,7 +15362,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Variable names explicitly left unset. Omission from both fields uses a declared default; an unset name must not also appear in parameters."
+            "description": "Variable names explicitly left unset. Omission from both fields uses a declared default; an unset name must not also appear in variables."
           }
         },
         "additionalProperties": false
@@ -15513,17 +15580,23 @@
         "properties": {
           "input_component_ids": {
             "type": "array",
-            "items": {"type": "string"},
+            "items": {
+              "type": "string"
+            },
             "uniqueItems": true
           },
           "text_component_ids": {
             "type": "array",
-            "items": {"type": "string"},
+            "items": {
+              "type": "string"
+            },
             "uniqueItems": true
           },
           "source_ids": {
             "type": "array",
-            "items": {"type": "string"},
+            "items": {
+              "type": "string"
+            },
             "uniqueItems": true
           }
         },
@@ -15534,12 +15607,16 @@
         "properties": {
           "metric_component_ids": {
             "type": "array",
-            "items": {"type": "string"},
+            "items": {
+              "type": "string"
+            },
             "uniqueItems": true
           },
           "table_component_ids": {
             "type": "array",
-            "items": {"type": "string"},
+            "items": {
+              "type": "string"
+            },
             "uniqueItems": true
           }
         },
@@ -15600,7 +15677,7 @@
           "code": {
             "$ref": "#/components/schemas/CompositionDiagnosticCode"
           },
-          "parameter_id": {
+          "variable_id": {
             "type": "string"
           }
         },
@@ -15612,7 +15689,7 @@
             "type": "object",
             "required": [
               "ok",
-              "parameter_definitions",
+              "variable_definitions",
               "plan"
             ],
             "properties": {
@@ -15620,10 +15697,10 @@
                 "type": "boolean",
                 "const": true
               },
-              "parameter_definitions": {
+              "variable_definitions": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/components/schemas/CompositionParameterDefinition"
+                  "$ref": "#/components/schemas/CompositionVariableDefinition"
                 }
               },
               "plan": {
@@ -15643,10 +15720,10 @@
                 "type": "boolean",
                 "const": false
               },
-              "parameter_definitions": {
+              "variable_definitions": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/components/schemas/CompositionParameterDefinition"
+                  "$ref": "#/components/schemas/CompositionVariableDefinition"
                 }
               },
               "diagnostics": {
@@ -15678,10 +15755,10 @@
               "draft_fingerprint": {
                 "type": "string"
               },
-              "parameter_definitions": {
+              "variable_definitions": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/components/schemas/CompositionParameterDefinition"
+                  "$ref": "#/components/schemas/CompositionVariableDefinition"
                 }
               },
               "plan": {
@@ -15704,10 +15781,10 @@
               "draft_fingerprint": {
                 "type": "string"
               },
-              "parameter_definitions": {
+              "variable_definitions": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/components/schemas/CompositionParameterDefinition"
+                  "$ref": "#/components/schemas/CompositionVariableDefinition"
                 }
               },
               "diagnostics": {
@@ -15722,7 +15799,7 @@
           }
         ]
       },
-      "CompositionParameterDefinition": {
+      "CompositionVariableDefinition": {
         "type": "object",
         "required": [
           "id",
@@ -16259,7 +16336,7 @@
             "minLength": 1,
             "maxLength": 128
           },
-          "parameters": {
+          "variables": {
             "type": "object",
             "additionalProperties": {
               "$ref": "#/components/schemas/JsonValue"
@@ -16271,7 +16348,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Variable names explicitly left unset. Omission from both fields uses a declared default; an unset name must not also appear in parameters."
+            "description": "Variable names explicitly left unset. Omission from both fields uses a declared default; an unset name must not also appear in variables."
           }
         },
         "additionalProperties": false
@@ -16309,7 +16386,7 @@
           "component_id": {
             "type": "string"
           },
-          "parameter_id": {
+          "variable_id": {
             "type": "string"
           }
         },

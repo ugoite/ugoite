@@ -78,7 +78,7 @@ export interface CompositionLintDocument {
     variables?: Array<{
       id: string;
       label?: string;
-      type: CompositionParameterType;
+      type: CompositionVariableType;
       required: boolean;
       default?: unknown;
       format?: "year-month";
@@ -198,7 +198,7 @@ export interface SavedSqlCompositionDocument {
   spec: {
     variables: Array<{
       id: string;
-      type: CompositionParameterType;
+      type: CompositionVariableType;
       required: true;
       default?: unknown;
     }>;
@@ -228,7 +228,7 @@ export type CompositionSaveDocument =
   | SavedSqlCompositionDocument
   | EntryQueryCompositionDocument;
 
-export type CompositionParameterType =
+export type CompositionVariableType =
   | "string"
   | "boolean"
   | "integer"
@@ -236,10 +236,10 @@ export type CompositionParameterType =
   | "date"
   | "timestamp";
 
-export interface CompositionParameterDefinition {
+export interface CompositionVariableDefinition {
   id: string;
   label?: string;
-  type: CompositionParameterType;
+  type: CompositionVariableType;
   required: boolean;
   default?: unknown;
   format?: "year-month";
@@ -287,7 +287,7 @@ export type CompositionMetricPresentation = {
 
 export interface CompositionResolveDiagnostic {
   code: string;
-  parameter_id?: string;
+  variable_id?: string;
 }
 
 export interface CompositionResolvePlan {
@@ -349,7 +349,7 @@ export type CompositionResolvedComponentBinding =
 
 export interface CompositionResolveResponse {
   ok: boolean;
-  parameter_definitions?: CompositionParameterDefinition[];
+  variable_definitions?: CompositionVariableDefinition[];
   plan?: CompositionResolvePlan;
   diagnostics?: CompositionResolveDiagnostic[];
 }
@@ -363,7 +363,7 @@ export interface CompositionPreviewPlan {
 export interface CompositionPreviewResponse {
   ok: boolean;
   draft_fingerprint?: string;
-  parameter_definitions?: CompositionParameterDefinition[];
+  variable_definitions?: CompositionVariableDefinition[];
   plan?: CompositionPreviewPlan;
   diagnostics?: CompositionResolveDiagnostic[];
 }
@@ -379,7 +379,7 @@ export type CompositionMetricQueryTarget =
 export interface CompositionMetricQueryRequest {
   target: CompositionMetricQueryTarget;
   component_id: string;
-  parameters: Record<string, unknown>;
+  variables: Record<string, unknown>;
   unset_variables?: string[];
 }
 
@@ -392,7 +392,7 @@ export interface CompositionMetricQueryValue {
 export interface CompositionMetricQueryDiagnostic {
   code: string;
   component_id?: string;
-  parameter_id?: string;
+  variable_id?: string;
 }
 
 export interface CompositionMetricQueryResponse {
@@ -404,21 +404,21 @@ export interface CompositionMetricQueryResponse {
 
 const splitParameterSnapshot = (
   snapshot: Record<string, unknown>,
-): { parameters: Record<string, unknown>; unset_variables: string[] } => {
-  const parameters: Record<string, unknown> = {};
+): { variables: Record<string, unknown>; unset_variables: string[] } => {
+  const variables: Record<string, unknown> = {};
   const unset_variables: string[] = [];
   for (const [id, value] of Object.entries(snapshot)) {
     if (value === null) unset_variables.push(id);
-    else parameters[id] = value;
+    else variables[id] = value;
   }
-  return { parameters, unset_variables };
+  return { variables, unset_variables };
 };
 
 export type CompositionSourcePage =
   | { kind: "entry_query"; page: EntryPage }
   | { kind: "saved_sql"; page: SqlQueryPage };
 
-const compositionParameterTypes = new Set<CompositionParameterType>([
+const compositionParameterTypes = new Set<CompositionVariableType>([
   "string",
   "boolean",
   "integer",
@@ -430,7 +430,7 @@ const compositionParameterTypes = new Set<CompositionParameterType>([
 export const canCreateSavedSqlComposition = (entry: SqlEntry): boolean =>
   entry.kind === "user-query" &&
   entry.variables.every((variable) =>
-    compositionParameterTypes.has(variable.type as CompositionParameterType)
+    compositionParameterTypes.has(variable.type as CompositionVariableType)
   );
 
 /** Build the smallest typed Composition that retains one exact Saved SQL revision. */
@@ -443,14 +443,14 @@ export const buildSavedSqlCompositionDocument = (
 ): SavedSqlCompositionDocument => {
   const variables = entry.variables.map((variable) => {
     if (
-      !compositionParameterTypes.has(variable.type as CompositionParameterType)
+      !compositionParameterTypes.has(variable.type as CompositionVariableType)
     ) {
       throw new Error(`Unsupported Saved SQL parameter type: ${variable.type}`);
     }
     const value = parameterValues[variable.name];
     return {
       id: variable.name,
-      type: variable.type as CompositionParameterType,
+      type: variable.type as CompositionVariableType,
       required: true as const,
       ...(value === null || value === undefined ? {} : { default: value }),
     };
@@ -650,7 +650,7 @@ export const compositionApi = {
       { space_id: spaceId, composition_id: compositionId },
       {
         revision_id: revisionId,
-        parameters: snapshot.parameters,
+        variables: snapshot.variables,
         ...(snapshot.unset_variables.length > 0
           ? { unset_variables: snapshot.unset_variables }
           : {}),
@@ -672,7 +672,7 @@ export const compositionApi = {
       { space_id: spaceId },
       {
         yaml,
-        parameters: snapshot.parameters,
+        variables: snapshot.variables,
         ...(snapshot.unset_variables.length > 0
           ? { unset_variables: snapshot.unset_variables }
           : {}),
@@ -687,9 +687,9 @@ export const compositionApi = {
     request: CompositionMetricQueryRequest,
     signal?: AbortSignal,
   ): Promise<CompositionMetricQueryResponse> {
-    const { parameters, unset_variables: explicitlyUnset = [], ...requestBody } =
+    const { variables, unset_variables: explicitlyUnset = [], ...requestBody } =
       request;
-    const snapshot = splitParameterSnapshot(parameters);
+    const snapshot = splitParameterSnapshot(variables);
     const unset_variables = [
       ...new Set([...explicitlyUnset, ...snapshot.unset_variables]),
     ];
@@ -698,7 +698,7 @@ export const compositionApi = {
       { space_id: spaceId },
       {
         ...requestBody,
-        parameters: snapshot.parameters,
+        variables: snapshot.variables,
         ...(unset_variables.length > 0 ? { unset_variables } : {}),
       },
       { signal },

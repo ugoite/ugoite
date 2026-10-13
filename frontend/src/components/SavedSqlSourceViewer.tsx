@@ -4,7 +4,7 @@ import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { ResultPagination } from "~/components/ResultPagination";
 import { SqlResultTable } from "~/components/SqlResultTable";
 import {
-  type CompositionParameterType,
+  type CompositionVariableType,
   type CompositionResolveDiagnostic,
   type CompositionResolvedSource,
   compositionResultTypeFromSql,
@@ -34,7 +34,7 @@ interface SavedSqlSourceViewerProps {
   /** Exact revision update; composition save stays a separate explicit save. */
   onUpdateRevision: (
     revision: SavedSqlRevisionUpdate,
-    variableTypes: Record<string, CompositionParameterType>,
+    variableTypes: Record<string, CompositionVariableType>,
   ) => boolean;
   /** Existing Saved SQL editor route for the Edit action. */
   editHref: string;
@@ -136,7 +136,7 @@ export function SavedSqlSourceViewer(props: SavedSqlSourceViewerProps) {
           Object.fromEntries(
             current.variables.map((variable) => [
               variable.name,
-              variable.type as CompositionParameterType,
+              variable.type as CompositionVariableType,
             ]),
           ),
         );

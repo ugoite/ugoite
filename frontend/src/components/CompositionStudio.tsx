@@ -68,7 +68,7 @@ import {
 } from "~/lib/composition-draft";
 import {
   compositionApi,
-  type CompositionParameterType,
+  type CompositionVariableType,
 } from "~/lib/composition-api";
 import type {
   EntryQueryCompositionFilter,
@@ -662,7 +662,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const updateSavedSqlRevision = (
     sourceDraftId: string,
     revision: SavedSqlRevisionUpdate,
-    variableTypes: Record<string, CompositionParameterType>,
+    variableTypes: Record<string, CompositionVariableType>,
   ): boolean => {
     const result = setSavedSqlRevision(draft(), sourceDraftId, revision);
     if (!result.ok) return false;

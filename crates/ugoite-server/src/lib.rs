@@ -53,9 +53,7 @@ use ugoite_api_client::{
     CompositionMetricQueryDiagnostic as ApiCompositionMetricQueryDiagnostic,
     CompositionMetricQueryRequest, CompositionMetricQueryResponse,
     CompositionMetricQueryTarget as ApiCompositionMetricQueryTarget,
-    CompositionMetricQueryValue as ApiCompositionMetricQueryValue, CompositionParameterDefinition,
-    CompositionParameterFormat as ApiCompositionParameterFormat,
-    CompositionParameterType as ApiCompositionParameterType, CompositionPreviewPlan,
+    CompositionMetricQueryValue as ApiCompositionMetricQueryValue, CompositionPreviewPlan,
     CompositionPreviewRequest, CompositionPreviewResponse, CompositionPublicationReceipt,
     CompositionRawRevision, CompositionResolveDiagnostic, CompositionResolvePlan,
     CompositionResolveRequest, CompositionResolveResponse, CompositionResolvedComponentBinding,
@@ -64,7 +62,9 @@ use ugoite_api_client::{
     CompositionResultFieldType as ApiCompositionResultFieldType, CompositionRevisionMetadata,
     CompositionRevisionReference, CompositionSaveRequest as ApiCompositionSaveRequest,
     CompositionSaveResponse, CompositionSourceConsumers as ApiCompositionSourceConsumers,
-    CompositionVariableConsumers as ApiCompositionVariableConsumers,
+    CompositionVariableConsumers as ApiCompositionVariableConsumers, CompositionVariableDefinition,
+    CompositionVariableFormat as ApiCompositionVariableFormat,
+    CompositionVariableType as ApiCompositionVariableType,
 };
 use ugoite_core::composition::{
     CompositionDependencyIndex as CoreCompositionDependencyIndex,
@@ -11460,27 +11460,27 @@ async fn resolve_composition_handler(
             &space_id,
             &composition_id,
             &request.revision_id,
-            &request.parameters,
+            &request.variables,
             &request.unset_variables,
             &principals,
         )
         .await
         .map_err(ApiError::from_core)?;
-    let parameter_definitions = resolution.parameter_definitions.as_ref().map(|parameters| {
-        parameters
+    let variable_definitions = resolution.variable_definitions.as_ref().map(|variables| {
+        variables
             .iter()
-            .map(api_composition_parameter_definition)
+            .map(api_composition_variable_definition)
             .collect::<Vec<_>>()
     });
 
     match resolution.plan {
         Some(plan) => Ok(Json(composition_resolve_success_response(
             plan,
-            parameter_definitions,
+            variable_definitions,
         )?)),
         None => Ok(Json(composition_resolve_diagnostics_response(
             resolution.diagnostics,
-            parameter_definitions,
+            variable_definitions,
         )?)),
     }
 }
@@ -11509,28 +11509,28 @@ async fn preview_composition_handler(
         .preview_composition_authorized_for_principals(
             &space_id,
             &request.yaml,
-            &request.parameters,
+            &request.variables,
             &request.unset_variables,
             &principals,
         )
         .await
         .map_err(ApiError::from_core)?;
-    let parameter_definitions = preview.parameter_definitions.as_ref().map(|parameters| {
-        parameters
+    let variable_definitions = preview.variable_definitions.as_ref().map(|variables| {
+        variables
             .iter()
-            .map(api_composition_parameter_definition)
+            .map(api_composition_variable_definition)
             .collect::<Vec<_>>()
     });
 
     match preview.plan {
         Some(plan) => Ok(Json(composition_preview_success_response(
             plan,
-            parameter_definitions,
+            variable_definitions,
         )?)),
         None => Ok(Json(composition_preview_diagnostics_response(
             preview.draft_fingerprint,
             preview.diagnostics,
-            parameter_definitions,
+            variable_definitions,
         )?)),
     }
 }
@@ -11589,7 +11589,7 @@ async fn composition_metric_query_handler(
             CoreCompositionMetricQueryRequest {
                 target,
                 component_id: request.component_id,
-                parameters: request.parameters,
+                variables: request.variables,
                 unset_variables: request.unset_variables,
             },
         )
@@ -11610,19 +11610,19 @@ fn validate_composition_uuid(value: &str, label: &str) -> ApiResult<()> {
     })
 }
 
-fn api_composition_parameter_definition(
+fn api_composition_variable_definition(
     variable: &DomainCompositionVariable,
-) -> CompositionParameterDefinition {
-    CompositionParameterDefinition {
+) -> CompositionVariableDefinition {
+    CompositionVariableDefinition {
         id: variable.id.clone(),
         label: variable.label.clone(),
-        parameter_type: match variable.variable_type {
-            DomainCompositionVariableType::String => ApiCompositionParameterType::String,
-            DomainCompositionVariableType::Boolean => ApiCompositionParameterType::Boolean,
-            DomainCompositionVariableType::Integer => ApiCompositionParameterType::Integer,
-            DomainCompositionVariableType::Float => ApiCompositionParameterType::Float,
-            DomainCompositionVariableType::Date => ApiCompositionParameterType::Date,
-            DomainCompositionVariableType::Timestamp => ApiCompositionParameterType::Timestamp,
+        variable_type: match variable.variable_type {
+            DomainCompositionVariableType::String => ApiCompositionVariableType::String,
+            DomainCompositionVariableType::Boolean => ApiCompositionVariableType::Boolean,
+            DomainCompositionVariableType::Integer => ApiCompositionVariableType::Integer,
+            DomainCompositionVariableType::Float => ApiCompositionVariableType::Float,
+            DomainCompositionVariableType::Date => ApiCompositionVariableType::Date,
+            DomainCompositionVariableType::Timestamp => ApiCompositionVariableType::Timestamp,
         },
         required: variable.required,
         default: variable
@@ -11630,27 +11630,27 @@ fn api_composition_parameter_definition(
             .as_ref()
             .map(|value| value.as_json_value().clone()),
         format: variable.format.map(|format| match format {
-            DomainCompositionVariableFormat::YearMonth => ApiCompositionParameterFormat::YearMonth,
+            DomainCompositionVariableFormat::YearMonth => ApiCompositionVariableFormat::YearMonth,
         }),
     }
 }
 
 fn composition_resolve_diagnostics_response(
     diagnostics: Vec<CoreCompositionDiagnostic>,
-    parameter_definitions: Option<Vec<CompositionParameterDefinition>>,
+    variable_definitions: Option<Vec<CompositionVariableDefinition>>,
 ) -> ApiResult<CompositionResolveResponse> {
     let diagnostics = diagnostics
         .into_iter()
         .map(|diagnostic| {
             Ok(CompositionResolveDiagnostic {
                 code: api_composition_diagnostic_code(diagnostic.code)?,
-                parameter_id: diagnostic.variable_id,
+                variable_id: diagnostic.variable_id,
             })
         })
         .collect::<ApiResult<Vec<_>>>()?;
     Ok(CompositionResolveResponse {
         ok: false,
-        parameter_definitions,
+        variable_definitions,
         plan: None,
         diagnostics,
     })
@@ -11702,7 +11702,7 @@ fn api_composition_metric_query_response(
             Ok(ApiCompositionMetricQueryDiagnostic {
                 code: api_composition_diagnostic_code(diagnostic.code)?,
                 component_id: diagnostic.component_id,
-                parameter_id: diagnostic.parameter_id,
+                variable_id: diagnostic.variable_id,
             })
         })
         .collect::<ApiResult<Vec<_>>>()?;
@@ -11716,7 +11716,7 @@ fn api_composition_metric_query_response(
 
 fn composition_resolve_success_response(
     plan: ResolvedCompositionPlan,
-    parameter_definitions: Option<Vec<CompositionParameterDefinition>>,
+    variable_definitions: Option<Vec<CompositionVariableDefinition>>,
 ) -> ApiResult<CompositionResolveResponse> {
     let composition_revision = CompositionRevisionReference {
         entry_id: plan.composition_revision.entry_id.to_string(),
@@ -11727,7 +11727,7 @@ fn composition_resolve_success_response(
     let dependencies = api_composition_dependency_index(plan.dependencies);
     Ok(CompositionResolveResponse {
         ok: true,
-        parameter_definitions,
+        variable_definitions,
         plan: Some(CompositionResolvePlan {
             composition_revision,
             sources,
@@ -11740,7 +11740,7 @@ fn composition_resolve_success_response(
 
 fn composition_preview_success_response(
     plan: PreviewCompositionPlan,
-    parameter_definitions: Option<Vec<CompositionParameterDefinition>>,
+    variable_definitions: Option<Vec<CompositionVariableDefinition>>,
 ) -> ApiResult<CompositionPreviewResponse> {
     let draft_fingerprint = plan.draft_fingerprint.clone();
     let (sources, component_bindings) =
@@ -11749,7 +11749,7 @@ fn composition_preview_success_response(
     Ok(CompositionPreviewResponse {
         ok: true,
         draft_fingerprint: Some(draft_fingerprint.clone()),
-        parameter_definitions,
+        variable_definitions,
         plan: Some(CompositionPreviewPlan {
             draft_fingerprint,
             sources,
@@ -11763,21 +11763,21 @@ fn composition_preview_success_response(
 fn composition_preview_diagnostics_response(
     draft_fingerprint: Option<String>,
     diagnostics: Vec<CoreCompositionDiagnostic>,
-    parameter_definitions: Option<Vec<CompositionParameterDefinition>>,
+    variable_definitions: Option<Vec<CompositionVariableDefinition>>,
 ) -> ApiResult<CompositionPreviewResponse> {
     let diagnostics = diagnostics
         .into_iter()
         .map(|diagnostic| {
             Ok(CompositionResolveDiagnostic {
                 code: api_composition_diagnostic_code(diagnostic.code)?,
-                parameter_id: diagnostic.variable_id,
+                variable_id: diagnostic.variable_id,
             })
         })
         .collect::<ApiResult<Vec<_>>>()?;
     Ok(CompositionPreviewResponse {
         ok: false,
         draft_fingerprint,
-        parameter_definitions,
+        variable_definitions,
         plan: None,
         diagnostics,
     })
@@ -11932,19 +11932,7 @@ fn composition_lint_response(yaml: &str) -> ApiResult<CompositionLintResponse> {
 fn api_composition_diagnostic_code(
     code: ugoite_domain::composition::CompositionDiagnosticCode,
 ) -> ApiResult<ApiCompositionDiagnosticCode> {
-    let api_code = match code {
-        ugoite_domain::composition::CompositionDiagnosticCode::VariableUnknown => {
-            Some(ApiCompositionDiagnosticCode::ParameterUnknown)
-        }
-        ugoite_domain::composition::CompositionDiagnosticCode::VariableMissing => {
-            Some(ApiCompositionDiagnosticCode::ParameterMissing)
-        }
-        ugoite_domain::composition::CompositionDiagnosticCode::VariableTypeMismatch => {
-            Some(ApiCompositionDiagnosticCode::ParameterTypeMismatch)
-        }
-        _ => ApiCompositionDiagnosticCode::from_code(code.as_str()),
-    };
-    api_code.ok_or_else(|| {
+    ApiCompositionDiagnosticCode::from_code(code.as_str()).ok_or_else(|| {
         ApiError::from_core(anyhow!(
             "Composition diagnostic is missing from the portable API contract"
         ))
@@ -15892,7 +15880,7 @@ mod authentication_regression_tests {
             ))
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(
-                json!({"revision_id": revision_id, "parameters": {}}).to_string(),
+                json!({"revision_id": revision_id, "variables": {}}).to_string(),
             ))
         };
         let (missing_status, missing_body) = route_json(
@@ -15908,7 +15896,7 @@ mod authentication_regression_tests {
 
         let expected = json!({
             "ok": false,
-            "parameter_definitions": [],
+            "variable_definitions": [],
             "diagnostics": [{"code": "source_unavailable"}]
         });
         assert_eq!(missing_status, StatusCode::OK);
@@ -16090,7 +16078,7 @@ mod authentication_regression_tests {
             ))
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(
-                json!({"revision_id": revision_id, "parameters": {}}).to_string(),
+                json!({"revision_id": revision_id, "variables": {}}).to_string(),
             ))
         };
         let (exact_status, exact_body) = route_json(
@@ -16133,7 +16121,7 @@ mod authentication_regression_tests {
 
         let expected = json!({
             "ok": false,
-            "parameter_definitions": [],
+            "variable_definitions": [],
             "diagnostics": [{"code": "source_unavailable"}]
         });
         assert_eq!(missing_status, StatusCode::OK);
@@ -16148,7 +16136,7 @@ mod authentication_regression_tests {
     }
 
     #[tokio::test]
-    async fn composition_metric_query_route_preserves_revision_parameters_and_acl(
+    async fn composition_metric_query_route_preserves_revision_variables_and_acl(
     ) -> anyhow::Result<()> {
         use ugoite_domain::composition::{
             CompositionComponent, CompositionDocument, CompositionFormat, CompositionKind,
@@ -16344,7 +16332,7 @@ mod authentication_regression_tests {
                     json!({
                         "target": target,
                         "component_id": "parameter_total",
-                        "parameters": {"minimum": minimum}
+                        "variables": {"minimum": minimum}
                     })
                     .to_string(),
                 ))
@@ -16374,7 +16362,7 @@ mod authentication_regression_tests {
             .body(Body::from(
                 json!({
                     "revision_id": original.revision_id.to_string(),
-                    "parameters": {"minimum": 42}
+                    "variables": {"minimum": 42}
                 })
                 .to_string(),
             ))?,
@@ -16689,33 +16677,33 @@ mod authentication_regression_tests {
             state.clone(),
             reversible_knowledge_identity(viewer_id, space_uid),
         );
-        let resolve = |revision_id: String, parameters: Value| {
+        let resolve = |revision_id: String, variables: Value| {
             Request::post(format!(
                 "/spaces/{space_id}/compositions/{}/resolve",
                 older.entry_id
             ))
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(
-                json!({"revision_id": revision_id, "parameters": parameters}).to_string(),
+                json!({"revision_id": revision_id, "variables": variables}).to_string(),
             ))
         };
-        let (missing_parameter_status, missing_parameter_body) = route_json(
+        let (missing_variable_status, missing_variable_body) = route_json(
             route.clone(),
             resolve(older.revision_id.to_string(), json!({}))?,
         )
         .await?;
-        assert_eq!(missing_parameter_status, StatusCode::OK);
-        assert_eq!(missing_parameter_body["ok"], false);
+        assert_eq!(missing_variable_status, StatusCode::OK);
+        assert_eq!(missing_variable_body["ok"], false);
         assert_eq!(
-            missing_parameter_body["parameter_definitions"],
+            missing_variable_body["variable_definitions"],
             json!([
                 {"id":"month", "label":"Month", "type":"string", "required":true},
                 {"id":"region", "type":"string", "required":false}
             ])
         );
         assert_eq!(
-            missing_parameter_body["diagnostics"],
-            json!([{"code":"parameter_missing", "parameter_id":"month"}])
+            missing_variable_body["diagnostics"],
+            json!([{"code":"variable_missing", "variable_id":"month"}])
         );
 
         let (older_status, older_body) = route_json(
@@ -16726,7 +16714,7 @@ mod authentication_regression_tests {
         assert_eq!(older_status, StatusCode::OK);
         assert_eq!(older_body["ok"], true);
         assert_eq!(
-            older_body["parameter_definitions"],
+            older_body["variable_definitions"],
             json!([
                 {"id":"month", "label":"Month", "type":"string", "required":true},
                 {"id":"region", "type":"string", "required":false}
@@ -16789,10 +16777,10 @@ mod authentication_regression_tests {
         .await?;
         assert_eq!(latest_status, StatusCode::OK);
         assert_eq!(latest_body["ok"], false);
-        assert_eq!(latest_body["parameter_definitions"], json!([]));
+        assert_eq!(latest_body["variable_definitions"], json!([]));
         assert_eq!(
             latest_body["diagnostics"],
-            json!([{"code":"parameter_unknown", "parameter_id":"month"}])
+            json!([{"code":"variable_unknown", "variable_id":"month"}])
         );
 
         let (missing_status, missing_body) = route_json(
@@ -16829,9 +16817,9 @@ mod authentication_regression_tests {
             let api = api_composition_diagnostic_code(domain)
                 .expect("domain diagnostic is represented by the portable API");
             let expected = match domain {
-                DomainCode::VariableUnknown => "parameter_unknown",
-                DomainCode::VariableMissing => "parameter_missing",
-                DomainCode::VariableTypeMismatch => "parameter_type_mismatch",
+                DomainCode::VariableUnknown => "variable_unknown",
+                DomainCode::VariableMissing => "variable_missing",
+                DomainCode::VariableTypeMismatch => "variable_type_mismatch",
                 other => other.as_str(),
             };
             assert_eq!(expected, api.as_str());
@@ -16891,9 +16879,9 @@ mod authentication_regression_tests {
             .expect("OpenAPI Composition diagnostic enum");
         for domain in domain_codes {
             let expected = match domain {
-                DomainCode::VariableUnknown => "parameter_unknown",
-                DomainCode::VariableMissing => "parameter_missing",
-                DomainCode::VariableTypeMismatch => "parameter_type_mismatch",
+                DomainCode::VariableUnknown => "variable_unknown",
+                DomainCode::VariableMissing => "variable_missing",
+                DomainCode::VariableTypeMismatch => "variable_type_mismatch",
                 other => other.as_str(),
             };
             assert!(

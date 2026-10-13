@@ -187,7 +187,7 @@ const incompleteSavedSqlMetricDraft = (): CompositionDraft => {
 const okPreview = (fingerprint: string) => ({
   ok: true,
   draft_fingerprint: fingerprint,
-  parameter_definitions: [],
+  variable_definitions: [],
   plan: {
     draft_fingerprint: fingerprint,
     sources: ["src-1", "src-2"].map((id) => ({
@@ -203,7 +203,7 @@ const okPreview = (fingerprint: string) => ({
 const okMetricPreview = (fingerprint: string) => ({
   ok: true,
   draft_fingerprint: fingerprint,
-  parameter_definitions: [],
+  variable_definitions: [],
   plan: {
     draft_fingerprint: fingerprint,
     sources: [{
@@ -397,7 +397,7 @@ describe("CompositionStudioSync", () => {
       {
         target: { kind: "draft", yaml: previewYaml },
         component_id: "disp-1",
-        parameters: { month: "2026-10-01" },
+        variables: { month: "2026-10-01" },
       },
       expect.any(AbortSignal),
     );
@@ -901,7 +901,7 @@ describe("CompositionStudioSync", () => {
     previewMock.mockImplementation(async () => ({
       ok: false,
       draft_fingerprint: "fp-bad",
-      diagnostics: [{ code: "parameter_missing", parameter_id: "month" }],
+      diagnostics: [{ code: "variable_missing", variable_id: "month" }],
     }));
     renderStudio();
 

@@ -8,13 +8,13 @@ import { DashboardFlowRenderer } from "./DashboardFlowRenderer";
 import { compositionApi } from "~/lib/composition-api";
 import { setLocale } from "~/lib/i18n";
 import type {
-  CompositionParameterDefinition,
+  CompositionVariableDefinition,
   CompositionResolvePlan,
 } from "~/lib/composition-api";
 
 const stylesheet = () => readFileSync(join(__dirname, "..", "app.css"), "utf8");
 
-const definitions: CompositionParameterDefinition[] = [
+const definitions: CompositionVariableDefinition[] = [
   {
     id: "month",
     label: "Month",

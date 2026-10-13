@@ -13,7 +13,7 @@ import { SqlResultTable } from "~/components/SqlResultTable";
 import { sqlApi } from "~/lib/ugoite-client";
 import {
   canCreateSavedSqlComposition,
-  type CompositionParameterType,
+  type CompositionVariableType,
   type CompositionResultType,
 } from "~/lib/composition-api";
 import type { CompositionStudioSeed } from "~/lib/composition-draft";
@@ -324,7 +324,7 @@ export default function SpaceSqlRunRoute() {
           variableTypes: Object.fromEntries(
             current.variables.map((variable) => [
               variable.name,
-              variable.type as CompositionParameterType,
+              variable.type as CompositionVariableType,
             ]),
           ),
           // The run that was just executed supplies the parameter defaults

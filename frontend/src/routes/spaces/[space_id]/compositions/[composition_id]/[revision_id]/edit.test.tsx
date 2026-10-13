@@ -182,7 +182,7 @@ describe("Composition edit route", () => {
     previewMock.mockResolvedValue({
       ok: true,
       draft_fingerprint: "draft-fingerprint",
-      parameter_definitions: [],
+      variable_definitions: [],
       plan: { draft_fingerprint: "draft-fingerprint", sources: [] },
     });
     formListMock.mockResolvedValue([]);

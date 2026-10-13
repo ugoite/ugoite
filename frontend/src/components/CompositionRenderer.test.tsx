@@ -69,15 +69,15 @@ describe("CompositionRenderer", () => {
 
   it("uses localized parameter names instead of binding keys in diagnostics", () => {
     const unknown = compositionDiagnosticMessage({
-      code: "parameter_unknown",
-      parameter_id: "internal_key",
+      code: "variable_unknown",
+      variable_id: "internal_key",
     });
-    expect(unknown).toBe("Unknown parameter: Parameter.");
+    expect(unknown).toBe("Unknown variable: Parameter.");
     expect(unknown).not.toContain("internal_key");
 
     setLocale("ja");
     const missing = compositionDiagnosticMessage(
-      { code: "parameter_missing", parameter_id: "month" },
+      { code: "variable_missing", variable_id: "month" },
       [{ id: "month" }],
     );
     expect(missing).toBe("パラメーター1 の値を入力してください。");
@@ -127,7 +127,7 @@ describe("CompositionRenderer", () => {
           revision_id: "revision-1",
         },
         component_id: "total",
-        parameters: { month: "2026-10" },
+        variables: { month: "2026-10" },
       },
       expect.any(AbortSignal),
     );
@@ -168,7 +168,7 @@ describe("CompositionRenderer", () => {
       {
         target: { kind: "draft", yaml },
         component_id: "total",
-        parameters: { year: 2026 },
+        variables: { year: 2026 },
       },
       expect.any(AbortSignal),
     );
@@ -648,13 +648,13 @@ describe("CompositionRenderer", () => {
     expect(query).toHaveBeenNthCalledWith(
       1,
       "space-1",
-      expect.objectContaining({ parameters: { month: "2026-10" } }),
+      expect.objectContaining({ variables: { month: "2026-10" } }),
       expect.any(AbortSignal),
     );
     expect(query).toHaveBeenNthCalledWith(
       3,
       "space-1",
-      expect.objectContaining({ parameters: { month: "2026-11" } }),
+      expect.objectContaining({ variables: { month: "2026-11" } }),
       expect.any(AbortSignal),
     );
   });

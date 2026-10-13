@@ -153,8 +153,8 @@ timestamp forms, and rejects malformed scalar values with
 `metric_result_type_mismatch`.
 
 The shared Rust and portable API diagnostic vocabulary includes
-`unsupported_format_version`, `invalid_composition`, `parameter_unknown`,
-`parameter_missing`, `parameter_type_mismatch`, `source_unavailable`,
+`unsupported_format_version`, `invalid_composition`, `variable_unknown`,
+`variable_missing`, `variable_type_mismatch`, `source_unavailable`,
 `missing_field`,
 `field_type_changed`, `source_schema_changed`, `metric_result_not_scalar`,
 `metric_result_type_mismatch`, `metric_scalar_no_rows`,

@@ -1,13 +1,13 @@
 import { createSignal, For, Show } from "solid-js";
 import { IconButton } from "~/components/IconButton";
 import { RowList, RowListItem } from "~/components/RowList";
-import type { CompositionParameterType } from "~/lib/composition-api";
+import type { CompositionVariableType } from "~/lib/composition-api";
 import { compositionParameterDisplayName } from "~/lib/composition-parameter-name";
 import type { DraftParameter } from "~/lib/composition-draft";
 import { t } from "~/lib/i18n";
 import { parseCompositionVariableInput } from "~/lib/ugoite-client/protocol";
 
-const parameterTypes: CompositionParameterType[] = [
+const parameterTypes: CompositionVariableType[] = [
   "string",
   "boolean",
   "integer",
@@ -27,7 +27,7 @@ const displayValue = (parameter: DraftParameter): string => {
 };
 
 const isNumericParameter = (
-  type: CompositionParameterType,
+  type: CompositionVariableType,
 ): boolean => type === "integer" || type === "float";
 
 interface CompositionParameterListProps {
@@ -47,7 +47,7 @@ interface CompositionParameterListProps {
  */
 export function CompositionParameterList(props: CompositionParameterListProps) {
   const [newId, setNewId] = createSignal("");
-  const [newType, setNewType] = createSignal<CompositionParameterType>(
+  const [newType, setNewType] = createSignal<CompositionVariableType>(
     "string",
   );
   const [removeError, setRemoveError] = createSignal<string | null>(null);
@@ -289,7 +289,7 @@ export function CompositionParameterList(props: CompositionParameterListProps) {
           aria-label={t("composition.studioParameterType")}
           value={newType()}
           onChange={(event) =>
-            setNewType(event.currentTarget.value as CompositionParameterType)}
+            setNewType(event.currentTarget.value as CompositionVariableType)}
         >
           <For each={parameterTypes}>
             {(type) => <option value={type}>{type}</option>}

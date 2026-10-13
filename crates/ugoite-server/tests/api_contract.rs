@@ -1467,9 +1467,9 @@ fn openapi_documents_composition_lint_request_response_and_diagnostics() {
         serde_json::json!([
             "unsupported_format_version",
             "invalid_composition",
-            "parameter_unknown",
-            "parameter_missing",
-            "parameter_type_mismatch",
+            "variable_unknown",
+            "variable_missing",
+            "variable_type_mismatch",
             "source_unavailable",
             "missing_field",
             "field_type_changed",
@@ -1625,6 +1625,25 @@ fn openapi_documents_composition_preview_without_publication() {
         preview["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
         "#/components/schemas/CompositionPreviewResponse"
     );
+    let request = &snapshot["components"]["schemas"]["CompositionPreviewRequest"];
+    assert!(request["properties"].get("variables").is_some());
+    assert!(request["properties"].get("unset_variables").is_some());
+    assert!(request["properties"].get("parameters").is_none());
+    let response = &snapshot["components"]["schemas"]["CompositionPreviewResponse"];
+    for result in response["oneOf"]
+        .as_array()
+        .expect("preview response variants")
+    {
+        assert!(result["properties"].get("variable_definitions").is_some());
+        assert!(result["properties"].get("parameter_definitions").is_none());
+        assert_eq!(
+            result["properties"]["variable_definitions"]["items"]["$ref"],
+            "#/components/schemas/CompositionVariableDefinition"
+        );
+    }
+    assert!(snapshot["components"]["schemas"]
+        .get("CompositionVariableDefinition")
+        .is_some());
     let plan = &snapshot["components"]["schemas"]["CompositionPreviewPlan"];
     assert_eq!(
         plan["properties"]["sources"]["items"]["$ref"],
@@ -1728,6 +1747,9 @@ fn openapi_documents_bounded_composition_metric_queries() {
         request["properties"]["target"]["$ref"],
         "#/components/schemas/CompositionMetricQueryTarget"
     );
+    assert!(request["properties"].get("variables").is_some());
+    assert!(request["properties"].get("unset_variables").is_some());
+    assert!(request["properties"].get("parameters").is_none());
     assert_eq!(
         snapshot["components"]["schemas"]["CompositionMetricQueryTarget"]["oneOf"]
             .as_array()
@@ -1747,6 +1769,11 @@ fn openapi_documents_bounded_composition_metric_queries() {
         response["oneOf"][1]["properties"]["diagnostics"]["items"]["$ref"],
         "#/components/schemas/CompositionMetricQueryDiagnostic"
     );
+    let metric_diagnostic = &snapshot["components"]["schemas"]["CompositionMetricQueryDiagnostic"];
+    assert!(metric_diagnostic["properties"].get("variable_id").is_some());
+    assert!(metric_diagnostic["properties"]
+        .get("parameter_id")
+        .is_none());
     assert_eq!(
         snapshot["components"]["schemas"]["CompositionMetricQueryValue"]["properties"]["value"]["description"],
         "Encoding is determined by result_type: integer values are canonical base-10 strings that preserve exact precision; decimal values are base-10 strings that preserve scale; float values are JSON numbers; boolean values are JSON booleans; string, date, and timestamp values are JSON strings. A successful SQL NULL is JSON null."
@@ -1761,6 +1788,25 @@ fn openapi_documents_composition_resolve_metric_result_type() {
         resolve["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
         "#/components/schemas/CompositionResolveResponse"
     );
+    let request = &snapshot["components"]["schemas"]["CompositionResolveRequest"];
+    assert!(request["properties"].get("variables").is_some());
+    assert!(request["properties"].get("unset_variables").is_some());
+    assert!(request["properties"].get("parameters").is_none());
+    let response = &snapshot["components"]["schemas"]["CompositionResolveResponse"];
+    for result in response["oneOf"]
+        .as_array()
+        .expect("resolve response variants")
+    {
+        assert!(result["properties"].get("variable_definitions").is_some());
+        assert!(result["properties"].get("parameter_definitions").is_none());
+        assert_eq!(
+            result["properties"]["variable_definitions"]["items"]["$ref"],
+            "#/components/schemas/CompositionVariableDefinition"
+        );
+    }
+    let diagnostic = &snapshot["components"]["schemas"]["CompositionResolveDiagnostic"];
+    assert!(diagnostic["properties"].get("variable_id").is_some());
+    assert!(diagnostic["properties"].get("parameter_id").is_none());
 
     let binding = &snapshot["components"]["schemas"]["CompositionResolvedComponentBinding"];
     assert!(binding["properties"]["kind"]["enum"]

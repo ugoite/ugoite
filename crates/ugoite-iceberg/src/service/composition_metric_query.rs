@@ -39,7 +39,7 @@ impl UgoiteService {
                         space_id,
                         composition_id,
                         revision_id,
-                        &request.parameters,
+                        &request.variables,
                         &request.unset_variables,
                     )
                     .await?;
@@ -56,7 +56,7 @@ impl UgoiteService {
                     .preview_composition_local(
                         space_id,
                         yaml,
-                        &request.parameters,
+                        &request.variables,
                         &request.unset_variables,
                     )
                     .await?;
@@ -110,7 +110,7 @@ impl UgoiteService {
                         space_id,
                         composition_id,
                         revision_id,
-                        &request.parameters,
+                        &request.variables,
                         &request.unset_variables,
                         principal_ids,
                     )
@@ -129,7 +129,7 @@ impl UgoiteService {
                     .preview_composition_authorized_for_principals(
                         space_id,
                         yaml,
-                        &request.parameters,
+                        &request.variables,
                         &request.unset_variables,
                         principal_ids,
                     )
@@ -457,7 +457,7 @@ fn metric_query_diagnostic(
             ugoite_core::composition_metric::CompositionMetricQueryDiagnostic {
                 code,
                 component_id: Some(component_id.to_owned()),
-                parameter_id: None,
+                variable_id: None,
             },
         ],
     }

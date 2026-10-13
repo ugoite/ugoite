@@ -18,7 +18,6 @@ pub use composition::{
     CompositionLintResponse, CompositionLintValue, CompositionListItem, CompositionListPage,
     CompositionMetricPresentation, CompositionMetricQueryDiagnostic, CompositionMetricQueryRequest,
     CompositionMetricQueryResponse, CompositionMetricQueryTarget, CompositionMetricQueryValue,
-    CompositionParameterDefinition, CompositionParameterFormat, CompositionParameterType,
     CompositionPreviewPlan, CompositionPreviewRequest, CompositionPreviewResponse,
     CompositionPublicationReceipt, CompositionRawRevision, CompositionResolveDiagnostic,
     CompositionResolvePlan, CompositionResolveRequest, CompositionResolveResponse,
@@ -26,7 +25,8 @@ pub use composition::{
     CompositionResolvedSource, CompositionRestoreRequest, CompositionRestoreResponse,
     CompositionResultFieldType, CompositionRevisionMetadata, CompositionRevisionReference,
     CompositionSaveRequest, CompositionSaveResponse, CompositionSourceConsumers,
-    CompositionVariableConsumers,
+    CompositionVariableConsumers, CompositionVariableDefinition, CompositionVariableFormat,
+    CompositionVariableType,
 };
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -2711,6 +2711,57 @@ mod tests {
     }
 
     #[test]
+    fn composition_request_dtos_use_variables_without_a_parameter_alias() {
+        let variables = std::collections::BTreeMap::from([("month".to_string(), json!("2026-10"))]);
+        let assert_variable_wire_shape = |value: Value| {
+            assert_eq!(value["variables"], json!({"month": "2026-10"}));
+            assert!(value.get("parameters").is_none());
+        };
+
+        let resolve = CompositionResolveRequest {
+            revision_id: "revision-1".to_string(),
+            variables: variables.clone(),
+            unset_variables: Vec::new(),
+        };
+        assert_variable_wire_shape(serde_json::to_value(resolve).expect("resolve request"));
+        assert!(serde_json::from_value::<CompositionResolveRequest>(json!({
+            "revision_id": "revision-1",
+            "parameters": {"month": "2026-10"}
+        }))
+        .is_err());
+
+        let preview = CompositionPreviewRequest {
+            yaml: "format: ugoite.composition\\n".to_string(),
+            variables: variables.clone(),
+            unset_variables: Vec::new(),
+        };
+        assert_variable_wire_shape(serde_json::to_value(preview).expect("preview request"));
+        assert!(serde_json::from_value::<CompositionPreviewRequest>(json!({
+            "yaml": "format: ugoite.composition\\n",
+            "parameters": {"month": "2026-10"}
+        }))
+        .is_err());
+
+        let metric = CompositionMetricQueryRequest {
+            target: CompositionMetricQueryTarget::Draft {
+                yaml: "format: ugoite.composition\\n".to_string(),
+            },
+            component_id: "total".to_string(),
+            variables,
+            unset_variables: Vec::new(),
+        };
+        assert_variable_wire_shape(serde_json::to_value(metric).expect("metric request"));
+        assert!(
+            serde_json::from_value::<CompositionMetricQueryRequest>(json!({
+                "target": {"kind": "draft", "yaml": "format: ugoite.composition\\n"},
+                "component_id": "total",
+                "parameters": {"month": "2026-10"}
+            }))
+            .is_err()
+        );
+    }
+
+    #[test]
     fn composition_operations_prepare_and_decode_through_the_portable_protocol() {
         let list = prepare_request(
             "composition.list",
@@ -2993,7 +3044,7 @@ mod tests {
 
         let resolve_body = json!({
             "revision_id": "01900000-0000-7000-8000-000000000003",
-            "parameters": {"month": "2026-10"},
+            "variables": {"month": "2026-10"},
             "unset_variables": ["include_archived"]
         });
         let resolve = prepare_request(
@@ -3022,7 +3073,7 @@ mod tests {
 
         let resolve_success = json!({
             "ok": true,
-            "parameter_definitions": [{
+            "variable_definitions": [{
                 "id": "month",
                 "label": "Month",
                 "type": "date",
@@ -3086,7 +3137,7 @@ mod tests {
         );
         let source_unavailable = json!({
             "ok": false,
-            "parameter_definitions": [{
+            "variable_definitions": [{
                 "id": "month",
                 "type": "date",
                 "required": true,
@@ -3105,10 +3156,22 @@ mod tests {
             CompositionDiagnosticCode::SourceUnavailable.as_str(),
             "source_unavailable"
         );
+        let variable_diagnostic = json!({
+            "ok": false,
+            "diagnostics": [{"code": "variable_missing", "variable_id": "month"}]
+        });
+        let variable_diagnostic_dto: CompositionResolveResponse =
+            serde_json::from_value(variable_diagnostic.clone())
+                .expect("typed-variable diagnostic DTO");
+        assert_eq!(
+            serde_json::to_value(variable_diagnostic_dto)
+                .expect("serialize typed-variable diagnostic DTO"),
+            variable_diagnostic
+        );
 
         let preview_body = json!({
             "yaml": "format: ugoite.composition\n",
-            "parameters": {"month": "2026-10"},
+            "variables": {"month": "2026-10"},
             "unset_variables": ["include_archived"]
         });
         let preview = prepare_request(
@@ -3139,7 +3202,7 @@ mod tests {
                 "revision_id": "01900000-0000-7000-8000-000000000011"
             },
             "component_id": "monthly_total",
-            "parameters": {"month": "2026-10"},
+            "variables": {"month": "2026-10"},
             "unset_variables": ["include_archived"]
         });
         let metric_query = prepare_request(
@@ -3166,7 +3229,7 @@ mod tests {
         let draft_metric_body = json!({
             "target": {"kind": "draft", "yaml": "format: ugoite.composition\\n"},
             "component_id": "sql_total",
-            "parameters": {}
+            "variables": {}
         });
         let draft_metric_request: CompositionMetricQueryRequest =
             serde_json::from_value(draft_metric_body.clone()).expect("draft metric query DTO");
@@ -3178,7 +3241,7 @@ mod tests {
         let preview_success = json!({
             "ok": true,
             "draft_fingerprint": "f".repeat(64),
-            "parameter_definitions": [{
+            "variable_definitions": [{
                 "id": "month",
                 "type": "date",
                 "required": true
@@ -3201,6 +3264,18 @@ mod tests {
         .expect("preview diagnostic DTO");
         assert_eq!(preview_error_dto.draft_fingerprint, None);
         for (code, expected) in [
+            (
+                CompositionDiagnosticCode::VariableUnknown,
+                "variable_unknown",
+            ),
+            (
+                CompositionDiagnosticCode::VariableMissing,
+                "variable_missing",
+            ),
+            (
+                CompositionDiagnosticCode::VariableTypeMismatch,
+                "variable_type_mismatch",
+            ),
             (
                 CompositionDiagnosticCode::MetricResultNotScalar,
                 "metric_result_not_scalar",

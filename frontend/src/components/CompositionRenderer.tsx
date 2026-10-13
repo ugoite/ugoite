@@ -84,9 +84,9 @@ type RendererProps = {
 const knownDiagnosticCodes = new Set([
   "unsupported_format_version",
   "invalid_composition",
-  "parameter_unknown",
-  "parameter_missing",
-  "parameter_type_mismatch",
+  "variable_unknown",
+  "variable_missing",
+  "variable_type_mismatch",
   "source_unavailable",
   "missing_field",
   "field_type_changed",
@@ -113,11 +113,11 @@ export const compositionDiagnosticMessage = (
   }
   return t(
     `composition.diagnostic.${diagnostic.code}` as TranslationKey,
-    diagnostic.parameter_id
+    diagnostic.variable_id
       ? {
         parameter: compositionParameterDisplayName(
           parameterDefinitions,
-          diagnostic.parameter_id,
+          diagnostic.variable_id,
         ),
       }
       : undefined,
@@ -241,8 +241,8 @@ const isMetricQueryResponse = (
         isRecord(diagnostic) && typeof diagnostic.code === "string" &&
         (diagnostic.component_id === undefined ||
           typeof diagnostic.component_id === "string") &&
-        (diagnostic.parameter_id === undefined ||
-          typeof diagnostic.parameter_id === "string")
+        (diagnostic.variable_id === undefined ||
+          typeof diagnostic.variable_id === "string")
       ))
   ) return false;
   if (value.result === undefined) return true;
@@ -434,7 +434,7 @@ export function CompositionMetric(props: {
       {
         target: { ...context.target },
         component_id: props.binding.component_id,
-        parameters: { ...context.parameters },
+        variables: { ...context.parameters },
       },
       controller.signal,
     ).then(
