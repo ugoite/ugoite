@@ -84,6 +84,20 @@ features:
             claims:
               - kind: documents
                 anchor: REQ-COMP-007#criterion.portable-variable-contract
+      - id: server-explicit-unset-route-evidence
+        role: evidence
+        facet: server-tests
+        responsibility: Verify resolve, preview, and metric-query routes preserve explicit unset markers separately from typed values, bypass defaults, and stop metric execution when a required value is missing.
+        targets:
+          - id: explicit-unset-route-boundary
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector:
+              kind: symbol
+              name: authentication_regression_tests::composition_routes_preserve_explicit_unsets_and_skip_source_queries
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-input-lexical-contract
       - id: typed-variable-domain
         role: implementation
         facet: domain
