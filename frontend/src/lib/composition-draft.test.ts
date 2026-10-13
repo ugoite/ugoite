@@ -423,7 +423,7 @@ describe("composition draft model", () => {
         },
       },
     };
-    let draft = draftFromDocument(document, {
+    const draft = draftFromDocument(document, {
       "src-1": "Monthly totals",
       "src-2": "Expenses",
     });
