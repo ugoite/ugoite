@@ -740,7 +740,7 @@ requirements:
       - id: a11y-names-verification
         role: verification
         facet: verification
-        responsibility: Verify PR-7 auth, account, and form surfaces expose accessible names with a visible orderly focus path through exact Vitest cases.
+        responsibility: Verify PR-7 auth, account, and form surfaces expose accessible names with a visible orderly focus path through exact Vitest cases; the device approval case also keeps user codes, Space UIDs, and resource URLs out of visible and accessible text.
         targets:
           - id: login-single-task-names
             adapter: typescript
