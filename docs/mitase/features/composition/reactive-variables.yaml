@@ -60,7 +60,7 @@ features:
             selector:
               kind: operation
               method: post
-              path: '/spaces/{space_id}/compositions/{entry_id}/resolve'
+              path: "/spaces/{space_id}/compositions/{entry_id}/resolve"
             claims:
               - kind: documents
                 anchor: REQ-COMP-007#criterion.portable-variable-contract
