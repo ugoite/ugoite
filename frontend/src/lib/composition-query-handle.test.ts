@@ -162,6 +162,7 @@ describe("CompositionQueryHandle", () => {
   it("isolates Work when the same Composition IDs are opened in another Space", async () => {
     const lateSpaceAPage = deferred<ReturnType<typeof entryPage>>();
     const sourceSignals: AbortSignal[] = [];
+    let spaceAQueryCount = 0;
     const compositionId = "shared-composition-id";
     const revisionId = "shared-revision-id";
     const responseForSpace = (spaceId: string) => {
@@ -192,20 +193,25 @@ describe("CompositionQueryHandle", () => {
       resolve: vi.fn((spaceId) => Promise.resolve(responseForSpace(spaceId))),
       querySource: vi.fn((spaceId, _source, _cursor, signal) => {
         sourceSignals.push(signal);
-        return spaceId === "space-a"
-          ? lateSpaceAPage.promise
-          : Promise.resolve(entryPage("space-b-result"));
+        if (spaceId === "space-a") {
+          spaceAQueryCount += 1;
+          return spaceAQueryCount === 1
+            ? Promise.resolve(entryPage("space-a-initial-result"))
+            : lateSpaceAPage.promise;
+        }
+        return Promise.resolve(entryPage("space-b-result"));
       }),
     };
     const handle = createCompositionQueryHandle(api);
     const spaceA = { spaceId: "space-a", compositionId, revisionId };
     const spaceB = { spaceId: "space-b", compositionId, revisionId };
 
-    const openingSpaceA = handle.open(spaceA);
-    await vi.waitFor(() => expect(api.querySource).toHaveBeenCalledTimes(1));
+    await handle.open(spaceA);
     expect(handle.variables()).toEqual({ month: "default-space-a" });
     handle.setVariableRaw("month", "edited-in-space-a");
     expect(handle.variables()).toEqual({ month: "edited-in-space-a" });
+    await vi.waitFor(() => expect(api.querySource).toHaveBeenCalledTimes(2));
+    expect(sourceSignals[1].aborted).toBe(false);
 
     await handle.open(spaceB);
 
@@ -223,7 +229,7 @@ describe("CompositionQueryHandle", () => {
       {},
       expect.any(AbortSignal),
     );
-    expect(sourceSignals[0].aborted).toBe(true);
+    expect(sourceSignals[1].aborted).toBe(true);
     expect(handle.state().identity).toEqual(spaceB);
     expect(handle.variableInputs().month).toEqual({
       raw: "default-space-b",
@@ -235,7 +241,7 @@ describe("CompositionQueryHandle", () => {
     );
 
     lateSpaceAPage.resolve(entryPage("late-space-a-result"));
-    await openingSpaceA;
+    await lateSpaceAPage.promise;
 
     expect(handle.state().identity).toEqual(spaceB);
     expect(handle.variables()).toEqual({ month: "default-space-b" });
