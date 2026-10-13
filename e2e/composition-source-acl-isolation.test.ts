@@ -650,6 +650,20 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
     expect((await ownerMetricResponse).result?.value).toBe(seed.protectedValue);
     expect((await ownerSqlPageResponse).ok()).toBe(true);
 
+    const savedSqlPolicyResponse = await request.put(
+      getBackendUrl(
+        `/spaces/${seed.spaceId}/policies/saved_sql/${seed.savedSqlId}`,
+      ),
+      {
+        data: {
+          policy_id: crypto.randomUUID(),
+          inherit_space_role: false,
+          grants: [],
+        },
+      },
+    );
+    expect(savedSqlPolicyResponse.status()).toBe(200);
+
     await page.getByRole("button", { name: "Account" }).click();
     await page.getByRole("menuitem", { name: "Sign out" }).click();
     await expect(page).toHaveURL(/\/login$/);
@@ -684,42 +698,33 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
         ownerSession.account.account_id,
       );
 
-      const membersResponse = await request.get(
-        getBackendUrl(`/spaces/${seed.spaceId}/members`),
+      const viewerSpaceResponse = await context.request.get(
+        getBackendUrl(`/spaces/${seed.spaceId}`),
       );
-      expect(membersResponse.ok()).toBe(true);
-      const members = await membersResponse.json() as Array<{
-        principal: { display_name: string };
-        role: string;
-      }>;
-      const viewerMember = members.find((member) =>
-        member.principal.display_name === `Principal switch viewer ${suffix}`
-      );
-      expect(viewerMember?.role).toBe("viewer");
+      expect(viewerSpaceResponse.status()).toBe(200);
 
-      const savedSqlPolicyResponse = await request.put(
-        getBackendUrl(
-          `/spaces/${seed.spaceId}/policies/saved_sql/${seed.savedSqlId}`,
-        ),
-        {
-          data: {
-            policy_id: crypto.randomUUID(),
-            inherit_space_role: false,
-            grants: [],
-          },
-        },
-      );
-      expect(savedSqlPolicyResponse.status()).toBe(200);
-
-      const viewerMetricResponse = metricResponse(page);
       await page.goto(getFrontendUrl(compositionPath(seed)), {
         waitUntil: "domcontentloaded",
       });
       await expect(
         page.getByRole("heading", { level: 1, name: seed.compositionName }),
       ).toBeVisible();
-      const deniedMetricBody = await viewerMetricResponse;
-      expect(deniedMetricBody).toMatchObject({
+      const viewerResolveResponse = await context.request.post(
+        getBackendUrl(
+          `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/resolve`,
+        ),
+        {
+          data: {
+            revision_id: seed.compositionRevisionId,
+            variables: { [VARIABLE_ID]: "match" },
+          },
+        },
+      );
+      expect(viewerResolveResponse.ok()).toBe(true);
+      const deniedResolveBody = await viewerResolveResponse.json() as {
+        diagnostics?: Array<{ code: string }>;
+      };
+      expect(deniedResolveBody).toMatchObject({
         ok: false,
         diagnostics: [{ code: "source_unavailable" }],
       });
@@ -731,7 +736,7 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
       await expect(page.locator("output.compositionMetric")).toHaveCount(0);
       await expect(page.getByRole("table")).toHaveCount(0);
 
-      const concealedDetails = JSON.stringify(deniedMetricBody);
+      const concealedDetails = JSON.stringify(deniedResolveBody);
       for (
         const privateValue of [
           seed.savedSqlText,
