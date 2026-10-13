@@ -554,6 +554,101 @@ function buildMobileStudioYaml(
   ].join("\n");
 }
 
+function buildResponsiveRuntimeYaml(
+  compositionName: string,
+  savedSqlId: string,
+  savedSqlRevisionId: string,
+  monthStart: string,
+  monthEnd: string,
+): string {
+  return [
+    "format: ugoite.composition",
+    "format_version: 1",
+    `name: ${compositionName}`,
+    "kind: dashboard",
+    "tags: []",
+    "spec:",
+    "  variables:",
+    "    - id: month_start",
+    "      label: Start month",
+    "      type: date",
+    "      required: true",
+    `      default: ${monthStart}`,
+    "    - id: month_end",
+    "      label: End month",
+    "      type: date",
+    "      required: true",
+    `      default: ${monthEnd}`,
+    "    - id: report_note",
+    "      label: Report note",
+    "      type: string",
+    "      required: true",
+    '      default: "Monthly report"',
+    "  sources:",
+    "    - id: studio_rows",
+    "      kind: saved_sql",
+    `      entry_id: \"${savedSqlId}\"`,
+    `      revision_id: \"${savedSqlRevisionId}\"`,
+    "      expected_result:",
+    "        - name: total",
+    "          type: float",
+    "        - name: quantity",
+    "          type: float",
+    "      variables:",
+    "        month_start:",
+    "          variable: month_start",
+    "        month_end:",
+    "          variable: month_end",
+    "  components:",
+    "    - id: month_start_input",
+    "      kind: input",
+    "      variable: month_start",
+    "    - id: month_end_input",
+    "      kind: input",
+    "      variable: month_end",
+    "    - id: report_note_input",
+    "      kind: input",
+    "      variable: report_note",
+    "    - id: report_note_text",
+    "      kind: text",
+    "      content:",
+    "        kind: variable",
+    "        variable: report_note",
+    "      style: body",
+    "    - id: total",
+    "      kind: metric",
+    "      label: Monthly total",
+    "      source: studio_rows",
+    "      column: total",
+    "    - id: rows",
+    "      kind: table",
+    "      label: Expense transactions",
+    "      source: studio_rows",
+    "  layout:",
+    "    kind: flow",
+    "    rows:",
+    "      - id: filters",
+    "        items:",
+    "          - kind: component",
+    "            component: month_start_input",
+    "          - kind: component",
+    "            component: month_end_input",
+    "          - kind: component",
+    "            component: report_note_input",
+    "      - id: results",
+    "        items:",
+    "          - kind: component",
+    "            component: total",
+    "          - kind: component",
+    "            component: rows",
+    "      - id: note",
+    "        items:",
+    "          - kind: component",
+    "            component: report_note_text",
+    "",
+  ].join("\n");
+}
+
 test.describe("Composition Studio Journey", () => {
   let seed: StudioSeedState;
 
@@ -1257,6 +1352,181 @@ test.describe("Composition Studio Journey", () => {
       );
       await expect(page.getByLabel("Default for month_start")).toHaveCount(0);
     } finally {
+      await mobileContext.close();
+    }
+  });
+
+  test("Composition runtime Inputs expose accessible states at a 390px viewport", async ({ browser, context, request }) => {
+    test.setTimeout(120_000);
+    const storageState = await context.storageState();
+    const compositionName = `Runtime mobile ${crypto.randomUUID().slice(0, 8)}`;
+    const saveResponse = await request.post(
+      getBackendUrl(`/spaces/${seed.spaceId}/compositions`),
+      {
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+        data: {
+          yaml: buildResponsiveRuntimeYaml(
+            compositionName,
+            seed.savedSqlId,
+            seed.savedSqlRevisionId,
+            seed.monthStart,
+            seed.monthEnd,
+          ),
+        },
+      },
+    );
+    expect([200, 201]).toContain(saveResponse.status());
+    const saved = await saveResponse.json() as {
+      composition_id?: string;
+      revision_id?: string;
+    };
+    expect(saved.composition_id).toBeTruthy();
+    expect(saved.revision_id).toBeTruthy();
+
+    const mobileContext = await browser.newContext({
+      storageState,
+      viewport: { width: 390, height: 844 },
+    });
+    let releaseMetric: (() => void) | undefined;
+    const metricGate = new Promise<void>((resolve) => {
+      releaseMetric = resolve;
+    });
+    try {
+      const page = await mobileContext.newPage();
+      let holdFirstMetric = true;
+      await page.route("**/compositions/metric-query", async (route) => {
+        if (holdFirstMetric) {
+          holdFirstMetric = false;
+          await metricGate;
+        }
+        await route.continue();
+      });
+      const firstMetricRequest = page.waitForRequest(
+        (candidate) => candidate.url().includes("/compositions/metric-query"),
+        { timeout: 30_000 },
+      );
+      await page.goto(
+        getFrontendUrl(
+          `/spaces/${seed.spaceId}/compositions/${saved.composition_id}/${saved.revision_id}`,
+        ),
+        { waitUntil: "domcontentloaded" },
+      );
+      await expect(
+        page.getByRole("heading", { level: 1, name: compositionName }),
+      ).toBeVisible();
+
+      const startMonth = page.getByRole("textbox", {
+        name: "Start month",
+        exact: true,
+      });
+      const endMonth = page.getByRole("textbox", {
+        name: "End month",
+        exact: true,
+      });
+      const reportNote = page.getByRole("textbox", {
+        name: "Report note",
+        exact: true,
+      });
+      await expect(startMonth).toBeVisible();
+      await expect(endMonth).toBeVisible();
+      await expect(reportNote).toBeVisible();
+      await expect(
+        page.getByRole("textbox", { name: "month_start", exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        page.getByRole("textbox", { name: "month_end", exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        page.getByRole("textbox", { name: "report_note", exact: true }),
+      ).toHaveCount(0);
+      expect(
+        await page.evaluate(() =>
+          document.documentElement.scrollWidth <= window.innerWidth
+        ),
+      ).toBe(true);
+
+      await firstMetricRequest;
+      const loadingStatus = page.getByRole("status").filter({
+        hasText: /Loading results|結果を読み込み中/,
+      });
+      await expect(loadingStatus.first()).toBeVisible();
+      releaseMetric?.();
+      await expect(page.locator("output.compositionMetric")).toHaveText(
+        seed.expectedTotal,
+        { timeout: 30_000 },
+      );
+      await expect(page.getByText("Monthly report", { exact: true }))
+        .toBeVisible();
+      const resultsTable = page.getByRole("table", {
+        name: "Expense transactions",
+        exact: true,
+      });
+      const firstResultRow = resultsTable.locator("tbody tr").first();
+      await expect(resultsTable.locator("tbody tr")).toHaveCount(1);
+      await expect(firstResultRow).toContainText(seed.expectedTotal);
+      await expect(firstResultRow).toContainText(seed.expectedQuantity);
+
+      // The next Input is reached with Tab, and invalid raw text is announced
+      // without keeping the previous authorized result visible.
+      await startMonth.focus();
+      await page.keyboard.press("Tab");
+      await expect(endMonth).toBeFocused();
+      await page.keyboard.press("Tab");
+      await expect(reportNote).toBeFocused();
+      await startMonth.fill("not-a-date");
+      await expect(startMonth).toHaveAttribute("aria-invalid", "true");
+      await expect(
+        page.getByRole("alert").filter({
+          hasText: /Enter a valid value|正しい値を入力してください/,
+        }).first(),
+      ).toBeVisible();
+      await expect(page.locator("output.compositionMetric")).toHaveCount(0);
+      await expect(resultsTable).toHaveCount(0);
+
+      await startMonth.fill(seed.monthStart);
+      await expect(startMonth).not.toHaveAttribute("aria-invalid", "true");
+      await expect(page.locator("output.compositionMetric")).toHaveText(
+        seed.expectedTotal,
+        { timeout: 30_000 },
+      );
+      await expect(resultsTable.locator("tbody tr")).toHaveCount(1);
+      await expect(firstResultRow).toContainText(seed.expectedTotal);
+      await expect(firstResultRow).toContainText(seed.expectedQuantity);
+
+      // A required value unrelated to the SQL source blocks a changed source
+      // without exposing the source's previous result.
+      await reportNote.fill("");
+      await expect(
+        page.getByRole("alert", { name: "Diagnostics" }),
+      ).toContainText(/Enter a value for Report note|Report note の値を入力/);
+      await expect(page.getByText("Monthly report", { exact: true }))
+        .toHaveCount(0);
+      await startMonth.fill("2026-01-02");
+      await expect(
+        page.getByRole("status").filter({
+          hasText: /Waiting for input|入力待ち/,
+        }).first(),
+      ).toBeVisible();
+      await expect(page.locator("output.compositionMetric")).toHaveCount(0);
+      await expect(resultsTable).toHaveCount(0);
+
+      await reportNote.fill("Monthly report");
+      await expect(page.getByText("Monthly report", { exact: true }))
+        .toBeVisible();
+      await expect(page.locator("output.compositionMetric")).toHaveText(
+        seed.expectedTotal,
+        { timeout: 30_000 },
+      );
+      await expect(resultsTable.locator("tbody tr")).toHaveCount(1);
+      await expect(firstResultRow).toContainText(seed.expectedTotal);
+      await expect(firstResultRow).toContainText(seed.expectedQuantity);
+      expect(
+        await page.evaluate(() =>
+          document.documentElement.scrollWidth <= window.innerWidth
+        ),
+      ).toBe(true);
+    } finally {
+      releaseMetric?.();
       await mobileContext.close();
     }
   });
