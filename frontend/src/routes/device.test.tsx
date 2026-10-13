@@ -200,8 +200,11 @@ describe("/device", () => {
     const approvalSelect = screen.getByLabelText("Space");
     expect(approvalSelect).toHaveValue(requestedSpaceUid);
     expect(approvalSelect).toHaveAccessibleName("Space");
-    expect(screen.getByRole("option", { name: "Current Space" }))
-      .toBeInTheDocument();
+    const requestedSpaceOption = screen.getByRole("option", {
+      name: "Current Space",
+    });
+    expect(requestedSpaceOption).toHaveValue(requestedSpaceUid);
+    expect(requestedSpaceOption.selected).toBe(true);
 
     fireEvent.click(reviewButton);
     const dialog = await screen.findByRole("dialog");
