@@ -70,6 +70,16 @@ const typedCompositionDocument = {
 describe("portable Ugoite API protocol WASM", () => {
   afterEach(() => vi.restoreAllMocks());
 
+  it("requires preparation before synchronously parsing Composition Input", async () => {
+    vi.resetModules();
+    const freshProtocol = await import("./protocol");
+
+    expect(() =>
+      freshProtocol.parseCompositionVariableInputSync("integer", "1")
+    )
+      .toThrow("Composition variable parser is not prepared");
+  });
+
   it("canonicalizes a typed Composition document through the Rust/WASM bridge", async () => {
     const canonical = await canonicalizeCompositionDocument(
       typedCompositionDocument,
