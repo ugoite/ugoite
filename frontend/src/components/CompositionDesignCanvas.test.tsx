@@ -454,6 +454,74 @@ describe("CompositionDesignCanvas", () => {
       .toBeInTheDocument();
   });
 
+  it("uses localized ordinals for unlabeled placed Input canvas names", () => {
+    const bindingId = "private_input_key_22";
+    const variable = addVariable(createEmptyDraft("Studio"), {
+      id: bindingId,
+      type: "string",
+      required: false,
+    });
+    if (!variable.ok) throw new Error("expected variable");
+    const placed = addInputComponent(variable.draft, bindingId);
+    if (!placed.ok) throw new Error("expected placed Input");
+    renderHarness(placed.draft);
+
+    const select = screen.getByRole("button", { name: "Select Variable 1" });
+    expect(select).toHaveAttribute("aria-label", "Select Variable 1");
+    fireEvent.click(select);
+
+    const expectInternalIdHidden = () => {
+      expect(document.body).not.toHaveTextContent(bindingId);
+      for (
+        const element of document.querySelectorAll("[aria-label], [title]")
+      ) {
+        expect(element.getAttribute("aria-label") ?? "").not.toContain(
+          bindingId,
+        );
+        expect(element.getAttribute("title") ?? "").not.toContain(bindingId);
+      }
+    };
+
+    const selectedBlock = document.querySelector('[data-selected="true"]');
+    expect(selectedBlock?.querySelectorAll("[title]")).toHaveLength(2);
+    expectInternalIdHidden();
+
+    setLocale("ja");
+    expect(screen.getByRole("button", { name: "変数1を選択" }))
+      .toHaveAttribute("aria-label", "変数1を選択");
+    expectInternalIdHidden();
+  });
+
+  it("uses a localized variable name for variable-bound Text blocks", () => {
+    const initial = seedDraft();
+    const bindingId = "private_binding_01";
+    const variableBound: CompositionDraft = {
+      ...initial,
+      variables: initial.variables.map((variable) => {
+        if (variable.id !== "month") return variable;
+        const { label: _label, ...unlabeled } = variable;
+        return { ...unlabeled, id: bindingId };
+      }),
+      displays: initial.displays.map((display) =>
+        display.kind === "text"
+          ? {
+            ...display,
+            content: { kind: "variable" as const, variable: bindingId },
+          }
+          : display
+      ),
+    };
+    renderHarness(variableBound);
+
+    const select = screen.getByRole("button", { name: "Select Variable 1" });
+    expect(select).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent(bindingId);
+
+    setLocale("ja");
+    expect(screen.getByRole("button", { name: "変数1を選択" }))
+      .toBeInTheDocument();
+  });
+
   it("reorders rows and items with keyboard-operable buttons", () => {
     const { container } = renderHarness();
 

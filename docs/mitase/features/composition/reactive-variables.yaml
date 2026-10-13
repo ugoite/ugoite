@@ -26,6 +26,8 @@ features:
               - kind: documents
                 anchor: REQ-COMP-007#criterion.input-component-binding
               - kind: documents
+                anchor: REQ-COMP-007#criterion.required-variable-unset-diagnostic
+              - kind: documents
                 anchor: REQ-COMP-007#criterion.input-runtime-synchronization
               - kind: documents
                 anchor: REQ-COMP-007#criterion.direct-text-binding
@@ -453,6 +455,8 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.typed-input-lexical-contract
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.required-variable-unset-diagnostic
           - id: missing-and-unknown-variable-diagnostics
             adapter: rust
             path: crates/ugoite-core/src/composition.rs
@@ -602,7 +606,7 @@ features:
       - id: browser-reactive-variable-runtime-evidence
         role: evidence
         facet: frontend-tests
-        responsibility: Verify canonical synchronous parsing, shared Input raw/typed state, selective page refresh, pagination race safety, fail-closed dependency handling, and stale Metric response suppression.
+        responsibility: Verify canonical synchronous parsing, shared Input raw/typed state, required-unset diagnostics and Source suppression, selective page refresh, pagination race safety, fail-closed dependency handling, and stale Metric response suppression.
         targets:
           - id: synchronous-shared-input-state
             adapter: typescript
@@ -689,6 +693,8 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.stale-result-and-state-safety
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.required-variable-unset-diagnostic
           - id: malformed-raw-hides-source-results
             adapter: typescript
             path: frontend/src/lib/composition-query-handle.test.ts
@@ -754,10 +760,83 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.code-free-studio-authoring
+      - id: studio-variable-identity-presentation
+        role: implementation
+        facet: frontend
+        responsibility: Keep stable variable IDs internal to ordinary Studio presentation and use authored labels or localized ordinals for variable names.
+        targets:
+          - id: variable-creation
+            adapter: typescript
+            path: frontend/src/components/CompositionVariableList.tsx
+            selector:
+              kind: symbol
+              name: CompositionVariableList
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.studio-variable-identity-presentation
+          - id: canvas-variable-display-name
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.tsx
+            selector:
+              kind: symbol
+              name: blockName
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.studio-variable-identity-presentation
+          - id: inspector-variable-display-name
+            adapter: typescript
+            path: frontend/src/lib/composition-display-name.ts
+            selector:
+              kind: symbol
+              name: displayDefaultName
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.studio-variable-identity-presentation
+      - id: studio-variable-identity-presentation-evidence
+        role: evidence
+        facet: frontend-tests
+        responsibility: Verify unlabelled variable IDs stay out of variable-bound Text names, placed Input canvas names and action titles, and Inspector removal labels and titles.
+        targets:
+          - id: canvas-variable-text-name
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector:
+              kind: test
+              name: uses a localized variable name for variable-bound Text blocks
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.studio-variable-identity-presentation
+          - id: canvas-unlabeled-input-name
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector:
+              kind: test
+              name: uses localized ordinals for unlabeled placed Input canvas names
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.studio-variable-identity-presentation
+          - id: variable-creation-hides-generated-id
+            adapter: typescript
+            path: frontend/src/components/CompositionVariableList.test.tsx
+            selector:
+              kind: test
+              name: creates a labeled variable without displaying its generated id
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.studio-variable-identity-presentation
+          - id: inspector-variable-text-removal-name
+            adapter: typescript
+            path: frontend/src/components/CompositionInspector.test.tsx
+            selector:
+              kind: test
+              name: uses a localized variable name for variable-bound Text removal
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.studio-variable-identity-presentation
       - id: browser-typed-variable-journey-evidence
         role: evidence
         facet: frontend-tests
-        responsibility: Record Browser evidence for explicit typed Saved SQL bindings, ordinary labeled Inputs, exact-revision reopen, Studio direct variable-backed Text with transient values, and suppression of late variable-change and revision-navigation responses.
+        responsibility: Record Browser evidence for explicit typed Saved SQL bindings, ordinary labeled Inputs, exact-revision reopen, Studio direct variable-backed Text with transient values, filtered SQL Metric updates, and suppression of late variable-change and revision-navigation responses.
         targets:
           - id: typed-variable-authoring-and-reopen
             adapter: typescript
@@ -802,6 +881,15 @@ features:
                 anchor: REQ-COMP-007#criterion.runtime-values-are-transient
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.code-free-studio-authoring
+          - id: studio-filtered-sql-metric-reopen
+            adapter: typescript
+            path: e2e/composition-studio-journey.test.ts
+            selector:
+              kind: test
+              name: Composition Studio saves and reopens a filtered SQL metric
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.studio-filtered-sql-metric-journey
           - id: revision-navigation-discards-old-metric-response
             adapter: typescript
             path: e2e/composition-revision-stale-response.test.ts

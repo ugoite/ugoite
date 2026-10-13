@@ -73,6 +73,22 @@
       "Reload the exact saved revision and verify the declared default returns while Composition history remains at one revision."
     ]
   },
+  "reactive_variable_metric_journey": {
+    "model_connection": "disabled",
+    "selector": {
+      "path": "e2e/composition-studio-journey.test.ts",
+      "kind": "test",
+      "name": "Composition Studio saves and reopens a filtered SQL metric"
+    },
+    "steps": [
+      "Seed one Space Form with Amount values 10, 20, and 30, then create a normal Saved SQL query that returns COUNT(*) and SUM(Amount) for Amount >= the typed minimum variable.",
+      "In Studio, declare an integer variable with default 0, bind the exact Saved SQL revision, place a labeled Input and two Metrics for the count and sum columns, and save once.",
+      "Read the exact Composition revision and verify it pins the Saved SQL revision used by both Metric displays.",
+      "Rediscover and reopen the saved tool from Space Home; minimum 0 displays count 3 and sum 60.",
+      "Change the Input to minimum 20 and verify the authorized server SQL result updates the Metrics to count 2 and sum 50.",
+      "Reload the exact Composition revision; the declared default 0 and values 3 / 60 return while history remains at one revision."
+    ]
+  },
   "evidence_record_fields": [
     "source_sha",
     "candidate_sha",

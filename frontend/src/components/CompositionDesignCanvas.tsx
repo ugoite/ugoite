@@ -94,16 +94,7 @@ const blockName = (
     entry.draftId === item.draftId
   );
   if (!display) return t("composition.studioDisplay");
-  if (display.label) return display.label;
-  if (display.kind === "text") {
-    return display.content.kind === "literal"
-      ? display.content.text || t("composition.studioText")
-      : compositionVariableDisplayName(
-        draft.variables,
-        display.content.variable,
-      );
-  }
-  return displayDefaultName(display, draft.sources);
+  return displayDefaultName(display, draft.sources, draft.variables);
 };
 
 /**

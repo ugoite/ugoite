@@ -39,6 +39,11 @@ type AcceptancePlan = {
     selector: { path: string; kind: "test"; name: string };
     steps: string[];
   };
+  reactive_variable_metric_journey: {
+    model_connection: string;
+    selector: { path: string; kind: "test"; name: string };
+    steps: string[];
+  };
   evidence_record_fields: string[];
   recovery_and_authorization: {
     save_enablement: {
@@ -79,6 +84,15 @@ const EXPECTED_REACTIVE_VARIABLE_STUDIO_STEPS = [
   "Reopen the exact saved revision and verify its declared defaults and variable-backed Text are restored.",
   "Change only the string Input and verify Text updates in the same UI cycle without reissuing either the Saved SQL Table or Composition Metric query that already ran.",
   "Reload the exact saved revision and verify the declared default returns while Composition history remains at one revision.",
+];
+
+const EXPECTED_REACTIVE_VARIABLE_METRIC_STEPS = [
+  "Seed one Space Form with Amount values 10, 20, and 30, then create a normal Saved SQL query that returns COUNT(*) and SUM(Amount) for Amount >= the typed minimum variable.",
+  "In Studio, declare an integer variable with default 0, bind the exact Saved SQL revision, place a labeled Input and two Metrics for the count and sum columns, and save once.",
+  "Read the exact Composition revision and verify it pins the Saved SQL revision used by both Metric displays.",
+  "Rediscover and reopen the saved tool from Space Home; minimum 0 displays count 3 and sum 60.",
+  "Change the Input to minimum 20 and verify the authorized server SQL result updates the Metrics to count 2 and sum 50.",
+  "Reload the exact Composition revision; the declared default 0 and values 3 / 60 return while history remains at one revision.",
 ];
 
 const EXPECTED_RECOVERY_CASES = [
@@ -341,6 +355,19 @@ Deno.test(
     assertEquals(
       plan.reactive_variable_studio_journey.steps,
       EXPECTED_REACTIVE_VARIABLE_STUDIO_STEPS,
+    );
+    assertEquals(
+      plan.reactive_variable_metric_journey.model_connection,
+      "disabled",
+    );
+    assertEquals(plan.reactive_variable_metric_journey.selector, {
+      path: "e2e/composition-studio-journey.test.ts",
+      kind: "test",
+      name: "Composition Studio saves and reopens a filtered SQL metric",
+    });
+    assertEquals(
+      plan.reactive_variable_metric_journey.steps,
+      EXPECTED_REACTIVE_VARIABLE_METRIC_STEPS,
     );
 
     const seedManifest = JSON.parse(

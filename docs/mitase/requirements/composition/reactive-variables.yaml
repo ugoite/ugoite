@@ -21,6 +21,10 @@ requirements:
         kind: behavior
         statement: An Input component references one declared variable and owns no persisted value or setter expression. A required variable without a default has a placed Input, and each placed Input is an ordinary Component referenced once by Layout.
         governed_by: [POL-000#rule.foundation-precedence]
+      - id: required-variable-unset-diagnostic
+        kind: behavior
+        statement: An explicit unset overrides a declared default. Resolving a required unset returns a `variable_missing` diagnostic with its variable ID; the Browser keeps dependent Sources invalid, hides their prior pages, and does not query them until the variable is valid.
+        governed_by: [POL-004#rule.governance]
       - id: input-runtime-synchronization
         kind: behavior
         statement: Multiple Inputs bound to the same variable display one shared current raw value and validation state; editing any bound Input updates every other bound Input in the same UI cycle.
@@ -65,6 +69,14 @@ requirements:
         kind: behavior
         statement: Studio can declare typed variables and defaults, place Inputs, bind literal or string-variable Text, and connect exact-type Saved SQL variables without JavaScript, expressions, getters, setters, or event handlers. Saving preserves defaults and never promotes runtime input to Composition Knowledge.
         governed_by: [POL-000#rule.foundation-precedence]
+      - id: studio-variable-identity-presentation
+        kind: quality
+        statement: Studio creates stable variable IDs internally and uses an authored label or localized declaration ordinal for variable-bound Text and Input names; ordinary visible labels, accessible names, and titles never expose variable IDs.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-005#rule.governance]
+      - id: studio-filtered-sql-metric-journey
+        kind: behavior
+        statement: Studio can save and reopen a Composition with an integer minimum bound to an exact Saved SQL revision that returns COUNT(*) and SUM(Amount); minimum 0 displays 3 and 60 for Amount values 10, 20, and 30, and changing the Input to 20 displays 2 and 50 from the dependent SQL result. Reload restores the default without appending a Composition revision.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
       - id: responsive-accessible-inputs
         kind: quality
         statement: At 390px width, variable Inputs, labels, invalid/loading/results states, and recovery actions remain understandable and operable by keyboard and screen reader; internal variable IDs are not primary labels.
@@ -290,6 +302,10 @@ requirements:
                 criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
                 covers: [FEAT-COMP-008#binding.core-typed-variable-resolution-evidence/target.explicit-unset-default-bypass]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::explicit_unset_overrides_defaults_and_reports_required_values_missing } }
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.required-variable-unset-diagnostic
+                covers: [FEAT-COMP-008#binding.core-typed-variable-resolution-evidence/target.explicit-unset-default-bypass]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::explicit_unset_overrides_defaults_and_reports_required_values_missing } }
           - id: explicit-unset-request-case
             adapter: typescript
             path: frontend/src/lib/composition-api.test.ts
@@ -343,6 +359,10 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-007#criterion.stale-result-and-state-safety
                 covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime/target.composition-query-work-handle]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: does not query a source when a required variable is explicitly unset } }
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.required-variable-unset-diagnostic
+                covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime-evidence/target.required-unset-stops-dependent-source-query]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: does not query a source when a required variable is explicitly unset } }
           - id: browser-malformed-raw-hides-source-results
             adapter: typescript
@@ -411,6 +431,20 @@ requirements:
                 criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
                 covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime-evidence/target.browser-sync-domain-parser]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/ugoite-client/protocol.test.ts, test: parses Composition Input synchronously after preparing the shared WASM parser } }
+      - id: studio-filtered-sql-metric-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the typed Saved SQL metric journey through Studio creation, exact-revision reopen, server-side aggregate re-evaluation, transient Input changes, and unchanged Composition history.
+        targets:
+          - id: filtered-count-and-sum-reopen-case
+            adapter: typescript
+            path: e2e/composition-studio-journey.test.ts
+            selector: { kind: test, name: "Composition Studio saves and reopens a filtered SQL metric" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.studio-filtered-sql-metric-journey
+                covers: [FEAT-COMP-008#binding.browser-typed-variable-journey-evidence/target.studio-filtered-sql-metric-reopen]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Composition Studio saves and reopens a filtered SQL metric" } }
       - id: cli-typed-variable-query-verification
         role: verification
         facet: verification

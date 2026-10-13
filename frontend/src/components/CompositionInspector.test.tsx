@@ -173,6 +173,33 @@ describe("CompositionInspector", () => {
     expect(harnessCalls.remove).toEqual(["disp-3"]);
   });
 
+  it("uses a localized variable name for variable-bound Text removal", () => {
+    const initial = seedDraft();
+    const bindingId = "private_binding_01";
+    const variableBound: CompositionDraft = {
+      ...initial,
+      variables: initial.variables.map((variable) => {
+        if (variable.id !== "region") return variable;
+        const { label: _label, ...unlabeled } = variable;
+        return { ...unlabeled, id: bindingId };
+      }),
+      displays: initial.displays.map((display) =>
+        display.kind === "text"
+          ? {
+            ...display,
+            content: { kind: "variable" as const, variable: bindingId },
+          }
+          : display
+      ),
+    };
+    renderHarness("disp-3", variableBound);
+
+    const remove = screen.getByRole("button", { name: "Remove Variable 2" });
+    expect(remove).toHaveAttribute("title", "Remove Variable 2");
+    expect(document.body).not.toHaveTextContent(bindingId);
+    expect(remove).toHaveAccessibleName("Remove Variable 2");
+  });
+
   it("removes the selected Input component without removing its variable", () => {
     renderHarness("input-4");
 
