@@ -5,6 +5,7 @@ import {
   canonicalizeCompositionDocument,
   encodeSpreadsheetCsv,
   getWasmSupportedOperations,
+  parseCompositionVariableInput,
   prepareApiRequest,
   protocolFetch,
   protocolFetchResponse,
@@ -101,6 +102,37 @@ describe("portable Ugoite API protocol WASM", () => {
       "revision_id: 00000000-0000-7000-8000-000000000021",
     );
     expect(canonical.fingerprint).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("parses Composition Input with the shared Rust Domain contract without coercion", async () => {
+    const cases = [
+      ["string", "", { status: "unset" }],
+      ["string", "日本語", { status: "valid", value: "日本語" }],
+      ["string", "x".repeat(4097), { status: "invalid" }],
+      ["boolean", "false", { status: "valid", value: false }],
+      ["boolean", "FALSE", { status: "invalid" }],
+      ["integer", "9007199254740991", {
+        status: "valid",
+        value: 9_007_199_254_740_991,
+      }],
+      ["integer", "1.0", { status: "invalid" }],
+      ["float", "1", { status: "valid", value: 1 }],
+      ["float", "1e-4000", { status: "invalid" }],
+      ["float", "1e309", { status: "invalid" }],
+      ["date", "2024-02-29", { status: "valid", value: "2024-02-29" }],
+      ["date", "2025-02-29", { status: "invalid" }],
+      ["timestamp", "2026-10-13T23:59:59.123456789+09:00", {
+        status: "valid",
+        value: "2026-10-13T23:59:59.123456789+09:00",
+      }],
+      ["timestamp", "2026-10-13T14:59:59", { status: "invalid" }],
+    ] as const;
+
+    for (const [type, raw, expected] of cases) {
+      await expect(parseCompositionVariableInput(type, raw)).resolves.toEqual(
+        expected,
+      );
+    }
   });
 
   it("uses the shared spreadsheet-safe CSV encoder", async () => {

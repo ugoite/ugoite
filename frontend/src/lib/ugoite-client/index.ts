@@ -36,6 +36,7 @@ export {
   getWasmSupportedOperations,
   invokeKonase,
   type KonaseProtocolAction,
+  parseCompositionVariableInput,
   prepareApiRequest,
   protocolFetch,
   type ProtocolFetchOptions,
@@ -45,5 +46,7 @@ export {
   UGOITE_WASM_PROTOCOL_VERSION,
   UgoiteApiError,
   type UgoiteApiOperation,
+  type CompositionVariableInputParseResult,
+  type CompositionVariableInputType,
   validateAssetReference,
 } from "./protocol";

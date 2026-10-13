@@ -142,6 +142,81 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.typed-source-binding
+      - id: wasm-variable-input-parser
+        role: implementation
+        facet: wasm
+        responsibility: Expose a stateless typed Input action that delegates raw values to the shared Domain parser and returns unset, valid typed scalar, or invalid without JavaScript coercion.
+        targets:
+          - id: wasm-variable-input-action
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector:
+              kind: symbol
+              name: invoke_domain
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.portable-variable-contract
+      - id: browser-variable-input-parser
+        role: implementation
+        facet: browser
+        responsibility: Provide a typed Browser helper for the stateless WASM action without duplicating Composition lexical parsing.
+        targets:
+          - id: browser-variable-input-helper
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.ts
+            selector:
+              kind: symbol
+              name: parseCompositionVariableInput
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.portable-variable-contract
+      - id: wasm-variable-input-parser-evidence
+        role: evidence
+        facet: wasm-tests
+        responsibility: Verify protocol outcomes against the native Domain parser and exercise the action in the actual wasm32 runtime.
+        targets:
+          - id: wasm-native-variable-input-parity
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector:
+              kind: symbol
+              name: tests::composition_variable_input_protocol_matches_native_domain_contract
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-input-lexical-contract
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.portable-variable-contract
+          - id: wasm32-variable-input-runtime
+            adapter: typescript
+            path: crates/ugoite-wasm/tests/composition_parity.ts
+            selector:
+              kind: symbol
+              name: main
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-input-lexical-contract
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.portable-variable-contract
+      - id: browser-variable-input-parser-evidence
+        role: evidence
+        facet: frontend-tests
+        responsibility: Verify the Browser helper preserves the Domain parser's exact status and typed values for each supported variable type.
+        targets:
+          - id: browser-variable-input-outcomes
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.test.ts
+            selector:
+              kind: test
+              name: parses Composition Input with the shared Rust Domain contract without coercion
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-input-lexical-contract
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.portable-variable-contract
       - id: core-typed-variable-resolution
         role: implementation
         facet: core

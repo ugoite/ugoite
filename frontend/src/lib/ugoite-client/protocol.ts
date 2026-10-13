@@ -225,6 +225,19 @@ export type CompositionDocumentCanonicalization = {
   fingerprint: string;
 };
 
+export type CompositionVariableInputType =
+  | "string"
+  | "boolean"
+  | "integer"
+  | "float"
+  | "date"
+  | "timestamp";
+
+export type CompositionVariableInputParseResult =
+  | { status: "unset" }
+  | { status: "valid"; value: string | boolean | number }
+  | { status: "invalid" };
+
 /** Canonicalize a typed Composition document through the shared Rust domain. */
 export const canonicalizeCompositionDocument = async (
   document: unknown,
@@ -232,6 +245,16 @@ export const canonicalizeCompositionDocument = async (
   await invokeProtocol<CompositionDocumentCanonicalization>({
     action: "domain.canonicalize_composition_document",
     value: { document },
+  });
+
+/** Parse raw Composition Input text using the shared Rust Domain contract. */
+export const parseCompositionVariableInput = async (
+  type: CompositionVariableInputType,
+  raw: string,
+): Promise<CompositionVariableInputParseResult> =>
+  await invokeProtocol<CompositionVariableInputParseResult>({
+    action: "domain.parse_composition_variable_input",
+    value: { type, raw },
   });
 
 /** Exact protocol envelope for one spreadsheet-CSV encode request. */

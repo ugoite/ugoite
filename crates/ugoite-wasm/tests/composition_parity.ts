@@ -542,6 +542,86 @@ async function main(): Promise<void> {
       "SQL Metric diagnostic code",
     );
   }
+
+  const variableInputCases = [
+    { type: "string", raw: "", expected: { status: "unset" } },
+    {
+      type: "string",
+      raw: "日本語",
+      expected: { status: "valid", value: "日本語" },
+    },
+    {
+      type: "string",
+      raw: "\u0000",
+      expected: { status: "invalid" },
+    },
+    {
+      type: "boolean",
+      raw: "true",
+      expected: { status: "valid", value: true },
+    },
+    { type: "boolean", raw: "TRUE", expected: { status: "invalid" } },
+    {
+      type: "integer",
+      raw: "+9007199254740991",
+      expected: { status: "valid", value: 9_007_199_254_740_991 },
+    },
+    { type: "integer", raw: "1.0", expected: { status: "invalid" } },
+    {
+      type: "integer",
+      raw: "9007199254740992",
+      expected: { status: "invalid" },
+    },
+    { type: "float", raw: "1", expected: { status: "valid", value: 1 } },
+    { type: "float", raw: "1e-4000", expected: { status: "invalid" } },
+    { type: "float", raw: "1e309", expected: { status: "invalid" } },
+    {
+      type: "date",
+      raw: "2024-02-29",
+      expected: { status: "valid", value: "2024-02-29" },
+    },
+    { type: "date", raw: "2025-02-29", expected: { status: "invalid" } },
+    {
+      type: "timestamp",
+      raw: "2026-10-13T23:59:59.123456789+09:00",
+      expected: {
+        status: "valid",
+        value: "2026-10-13T23:59:59.123456789+09:00",
+      },
+    },
+    {
+      type: "timestamp",
+      raw: "2026-10-13T14:59:59",
+      expected: { status: "invalid" },
+    },
+  ] as const;
+  for (const { type, raw, expected } of variableInputCases) {
+    const response = await invokeWasm(instance.exports, {
+      action: "domain.parse_composition_variable_input",
+      value: { type, raw },
+    });
+    assertEqual(response.ok, true, `${type} Input parser envelope`);
+    assertJsonEqual(
+      response.value,
+      expected,
+      `${type} Input parser result for ${JSON.stringify(raw)}`,
+    );
+  }
+
+  const malformedVariableInput = await invokeWasm(instance.exports, {
+    action: "domain.parse_composition_variable_input",
+    value: { type: "integer", raw: 1 },
+  });
+  const malformedVariableInputError = malformedVariableInput.error as Record<
+    string,
+    unknown
+  >;
+  assertEqual(malformedVariableInput.ok, false, "malformed Input parser result");
+  assertEqual(
+    malformedVariableInputError.kind,
+    "domain_validation",
+    "malformed Input parser error kind",
+  );
 }
 
 if (import.meta.main) {

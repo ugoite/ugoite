@@ -55,7 +55,7 @@ requirements:
         governed_by: [POL-000#rule.foundation-precedence]
       - id: portable-variable-contract
         kind: quality
-        statement: Rust Domain/Core define variable parsing, validation, canonicalization, dependency references, and diagnostics for Native and WASM. Composition DTOs use variables and variable_definitions; one-shot CLI Composition queries use --var; SQL APIs retain parameters and parameter_types. Native and WASM canonical output and fingerprints match.
+        statement: Rust Domain/Core define variable parsing, validation, canonicalization, dependency references, and diagnostics for Native and WASM. Native and WASM share raw Input outcomes as unset, an exact typed scalar, or invalid. Composition DTOs use variables and variable_definitions; one-shot CLI Composition queries use --var; SQL APIs retain parameters and parameter_types. Native and WASM canonical output and fingerprints match.
         governed_by: [POL-004#rule.governance]
       - id: code-free-studio-authoring
         kind: behavior
@@ -138,6 +138,39 @@ requirements:
                 criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
                 covers: [FEAT-COMP-008#binding.browser-typed-input-control/target.parameter-control]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/composition/ParameterControl.test.tsx, test: preserves timezone-bearing timestamp values in a text input } }
+      - id: typed-variable-wasm-verification
+        role: verification
+        facet: verification
+        responsibility: Verify that the portable WASM action and Browser helper preserve the Domain raw Input parser's unset, valid typed scalar, and invalid outcomes.
+        targets:
+          - id: wasm-variable-input-parity-case
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: symbol, name: tests::composition_variable_input_protocol_matches_native_domain_contract }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+                covers: [FEAT-COMP-008#binding.wasm-variable-input-parser-evidence/target.wasm-native-variable-input-parity]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::composition_variable_input_protocol_matches_native_domain_contract } }
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.portable-variable-contract
+                covers: [FEAT-COMP-008#binding.wasm-variable-input-parser-evidence/target.wasm-native-variable-input-parity]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::composition_variable_input_protocol_matches_native_domain_contract } }
+          - id: browser-variable-input-result-case
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.test.ts
+            selector:
+              kind: test
+              name: parses Composition Input with the shared Rust Domain contract without coercion
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+                covers: [FEAT-COMP-008#binding.browser-variable-input-parser-evidence/target.browser-variable-input-outcomes]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/ugoite-client/protocol.test.ts, test: parses Composition Input with the shared Rust Domain contract without coercion } }
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.portable-variable-contract
+                covers: [FEAT-COMP-008#binding.browser-variable-input-parser-evidence/target.browser-variable-input-outcomes]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/ugoite-client/protocol.test.ts, test: parses Composition Input with the shared Rust Domain contract without coercion } }
       - id: typed-variable-core-verification
         role: verification
         facet: verification

@@ -178,6 +178,12 @@ use the same parser, validator, canonicalizer, fingerprint, and diagnostic code
 definitions. Browser TypeScript does not implement a second Composition
 parser, resolver, query engine, or semantic validator.
 
+Browser Inputs send the raw text and declared variable type to the stateless
+WASM action `domain.parse_composition_variable_input`. It returns `unset`,
+`valid` with the exact typed JSON scalar, or `invalid` by delegating to the
+Domain parser. The Browser keeps raw text and validation state as transient
+Work; only a valid typed scalar may enter the Composition query snapshot.
+
 The v1 syntax rejects duplicate mapping keys, multiple documents, anchors and
 aliases, merge keys, unsupported/custom tags, implicit timestamp
 interpretation, and unknown fields. Date-like plain scalars remain strings;
