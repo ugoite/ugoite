@@ -34,6 +34,11 @@ type AcceptancePlan = {
     model_connection: string;
     steps: string[];
   };
+  reactive_variable_studio_journey: {
+    model_connection: string;
+    selector: { path: string; kind: "test"; name: string };
+    steps: string[];
+  };
   evidence_record_fields: string[];
   recovery_and_authorization: {
     save_enablement: {
@@ -66,6 +71,14 @@ const EXPECTED_BROWSER_STEPS = [
   "Use the labeled Inputs to change declared Variable values, advance a result page, and confirm the displayed rows come from the existing query response without Browser aggregation.",
   "Change a Variable, Space, or source while an earlier request is delayed and confirm stale success, error, finalization, and loading updates are discarded.",
   "Confirm page, scroll, result, continuation, and cache state are absent from the saved Composition.",
+];
+
+const EXPECTED_REACTIVE_VARIABLE_STUDIO_STEPS = [
+  "In Studio, declare a string variable with a default, bind an Input and Text to it, and bind date variables to the pinned Saved SQL revision before saving once.",
+  "Read the exact saved revision and verify its pinned Saved SQL revision and the SQL-name-to-variable bindings.",
+  "Reopen the exact saved revision and verify its declared defaults and variable-backed Text are restored.",
+  "Change only the string Input and verify Text updates in the same UI cycle without reissuing either the Saved SQL Table or Composition Metric query that already ran.",
+  "Reload the exact saved revision and verify the declared default returns while Composition history remains at one revision.",
 ];
 
 const EXPECTED_RECOVERY_CASES = [
@@ -295,6 +308,19 @@ Deno.test(
     ]);
     assertEquals(plan.browser_golden_journey.model_connection, "disabled");
     assertEquals(plan.browser_golden_journey.steps, EXPECTED_BROWSER_STEPS);
+    assertEquals(
+      plan.reactive_variable_studio_journey.model_connection,
+      "disabled",
+    );
+    assertEquals(plan.reactive_variable_studio_journey.selector, {
+      path: "e2e/composition-studio-journey.test.ts",
+      kind: "test",
+      name: "Composition Studio builds a reusable tool from existing knowledge",
+    });
+    assertEquals(
+      plan.reactive_variable_studio_journey.steps,
+      EXPECTED_REACTIVE_VARIABLE_STUDIO_STEPS,
+    );
 
     const seedManifest = JSON.parse(
       await Deno.readTextFile(

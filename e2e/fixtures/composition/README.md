@@ -5,11 +5,13 @@ set under `crates/ugoite-domain/tests/fixtures/composition/`. The Browser E2E
 uses the Browser save flow so its Composition is produced by the same public
 surface as a user-created tool.
 
-`acceptance-plan.json` describes the full B0–B6 plan. Its planned selectors are
-locators, not release evidence. One scoped Browser journey result and its JUnit
-artifact are recorded under `evidence/`; the other selectors and release
-criteria remain unverified. The Browser journey source is in
-`e2e/composition-golden-journey.test.ts`.
+`acceptance-plan.json` describes the full B0–B6 plan and the reactive-variable
+Studio journey. Planned selectors are locators, not release evidence. Scoped
+Browser journey results and their JUnit artifacts are recorded under
+`evidence/`; other selectors and release criteria remain unverified. The
+Browser journey sources are
+`e2e/composition-golden-journey.test.ts` and
+`e2e/composition-studio-journey.test.ts`.
 
 - `unknown-format-version.ugcomp.yaml` is a raw-payload candidate for
   unsupported-format recovery.
@@ -28,6 +30,13 @@ history publication. A fresh browser context rediscovers that exact revision
 from Home, sees the declared defaults in the labeled Inputs, and reads page one
 and page two. Changing the Start date Input resets the result page and narrows
 the rows. The journey does not connect a model or persist Browser Work.
+
+The Studio journey declares a string Variable with a default, binds an Input
+and Text to it, and binds date Inputs to the exact Saved SQL revision. It reads
+the exact saved Composition revision to verify those bindings. A runtime edit
+updates Text immediately without another SQL request. Reloading that revision
+restores the declared default without publishing a second Composition
+revision.
 
 Run the delayed stale-response case separately with
 `bash e2e/scripts/run-e2e-parity.sh composition-stale`. It uses the same

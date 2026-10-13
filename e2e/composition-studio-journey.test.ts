@@ -27,6 +27,11 @@ type StudioHistoryPage = {
   total: number;
 };
 
+type StudioRawRevision = {
+  revision: { entry_id: string; revision_id: string };
+  fields: Record<string, unknown>;
+};
+
 function sqlIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
@@ -285,6 +290,21 @@ async function addStudioDateVariable(
   await defaultInput.fill(defaultValue);
 }
 
+async function addStudioStringVariable(
+  page: Page,
+  label: string,
+  defaultValue: string,
+): Promise<void> {
+  await page.getByLabel("New variable label", { exact: true }).fill(label);
+  await page.getByLabel("Type", { exact: true }).selectOption("string");
+  await page.getByRole("button", { name: "Add variable", exact: true }).click();
+  const defaultInput = page.getByLabel(`Default for ${label}`, {
+    exact: true,
+  });
+  await expect(defaultInput).toBeVisible();
+  await defaultInput.fill(defaultValue);
+}
+
 async function bindSavedSqlVariable(
   page: Page,
   sqlVariable: string,
@@ -320,6 +340,20 @@ async function addStudioInput(
   await page.getByLabel(`Input label for ${variableName}`, {
     exact: true,
   }).fill(inputLabel);
+}
+
+async function addStudioText(page: Page, variableLabel: string): Promise<void> {
+  await page.getByRole("radio", { name: "Design", exact: true }).click();
+  await page.getByRole("button", { name: "Add to design", exact: true })
+    .first().click();
+  const palette = page.getByRole("dialog", {
+    name: "Add to design",
+    exact: true,
+  });
+  await palette.getByRole("button", { name: "Text", exact: true }).click();
+  await page.getByLabel("Content", { exact: true }).selectOption({
+    label: variableLabel,
+  });
 }
 
 async function openToolFromHome(
@@ -486,6 +520,7 @@ test.describe("Composition Studio Journey", () => {
         .click();
       await addStudioDateVariable(page, "Month start", seed.monthStart);
       await addStudioDateVariable(page, "Month end", seed.monthEnd);
+      await addStudioStringVariable(page, "Report title", "January expenses");
 
       await dataTabs.getByRole("tab", { name: "Sources", exact: true })
         .click();
@@ -500,6 +535,8 @@ test.describe("Composition Studio Journey", () => {
       // time are authored separately from the SQL variable names.
       await addStudioInput(page, "Month start", "Start date");
       await addStudioInput(page, "Month end", "End date");
+      await addStudioInput(page, "Report title", "Report title");
+      await addStudioText(page, "Report title");
 
       // Two metric displays on the seeded Saved SQL source, each bound to
       // its own exact-scalar column of the single January row.
@@ -592,6 +629,9 @@ test.describe("Composition Studio Journey", () => {
       await expect(page.getByLabel("Default for Month end")).toHaveValue(
         seed.monthEnd,
       );
+      await expect(page.getByLabel("Default for Report title")).toHaveValue(
+        "January expenses",
+      );
       await expect(page.getByLabel("Default for month_start")).toHaveCount(0);
       await expect(page.getByLabel("Default for month_end")).toHaveCount(0);
       await dataTabs.getByRole("tab", { name: "Tags", exact: true }).click();
@@ -636,6 +676,37 @@ test.describe("Composition Studio Journey", () => {
       compositionId = saved.compositionId;
       firstRevisionId = saved.revisionId;
       await expectHistoryTotal(request, seed.spaceId, compositionId, 1);
+
+      const exactResponse = await request.get(
+        getBackendUrl(
+          `/spaces/${seed.spaceId}/compositions/${compositionId}/history/${firstRevisionId}`,
+        ),
+      );
+      expect(exactResponse.ok()).toBe(true);
+      const exactRevision = await exactResponse.json() as StudioRawRevision;
+      expect(exactRevision.revision.revision_id).toBe(firstRevisionId);
+      const savedSpec = exactRevision.fields["spec"];
+      expect(typeof savedSpec).toBe("string");
+      const savedYaml = String(savedSpec);
+      expect(savedYaml).toContain(`revision_id: ${seed.savedSqlRevisionId}`);
+      const declaredVariableId = (label: string) =>
+        savedYaml.match(
+          new RegExp(`- id: ([^\\n]+)\\n\\s+label: ${label}\\n`),
+        )?.[1];
+      const boundVariableId = (sqlName: string) =>
+        savedYaml.match(
+          new RegExp(`${sqlName}:\\s*\\n\\s+variable:\\s*([^\\n]+)`),
+        )?.[1];
+      const monthStartVariable = declaredVariableId("Month start");
+      const monthStartBinding = boundVariableId("month_start");
+      expect(monthStartVariable).toBeTruthy();
+      expect(monthStartBinding).toBeTruthy();
+      expect(monthStartBinding).toBe(monthStartVariable);
+      const monthEndVariable = declaredVariableId("Month end");
+      const monthEndBinding = boundVariableId("month_end");
+      expect(monthEndVariable).toBeTruthy();
+      expect(monthEndBinding).toBeTruthy();
+      expect(monthEndBinding).toBe(monthEndVariable);
     } finally {
       await buildContext.close();
     }
@@ -643,6 +714,18 @@ test.describe("Composition Studio Journey", () => {
     const journeyContext = await openOwnerContext(browser, storageState);
     try {
       const page = await journeyContext.newPage();
+      let sqlQueryCount = 0;
+      let metricQueryCount = 0;
+      page.on("request", (request) => {
+        const pathname = new URL(request.url()).pathname;
+        if (
+          pathname.endsWith("/sql/query") ||
+          pathname.endsWith("/sql/query/count")
+        ) sqlQueryCount += 1;
+        if (pathname.endsWith("/compositions/metric-query")) {
+          metricQueryCount += 1;
+        }
+      });
       // Home rediscovers the tool; the exact revision keeps its values.
       await openToolFromHome(
         page,
@@ -654,6 +737,11 @@ test.describe("Composition Studio Journey", () => {
       await expect(page.getByLabel("Start date")).toHaveValue(
         seed.monthStart,
       );
+      await expect(page.getByLabel("Report title")).toHaveValue(
+        "January expenses",
+      );
+      await expect(page.getByText("January expenses", { exact: true }))
+        .toBeVisible();
       await expect(page.getByLabel("Start date")).toBeEditable();
       await expect(page.getByLabel("End date")).toHaveValue(seed.monthEnd);
       await expect(page.getByLabel("End date")).toBeEditable();
@@ -673,6 +761,32 @@ test.describe("Composition Studio Journey", () => {
       for (const purpose of seed.purposes) {
         await expect(savedTable).toContainText(purpose, { timeout: 30_000 });
       }
+
+      // A Text-only variable update is synchronous and must not re-execute the
+      // Saved SQL Table or Metric source.
+      const initialSqlQueryCount = sqlQueryCount;
+      const initialMetricQueryCount = metricQueryCount;
+      expect(initialSqlQueryCount).toBeGreaterThan(0);
+      expect(initialMetricQueryCount).toBeGreaterThan(0);
+      await page.getByLabel("Report title", { exact: true }).fill(
+        "Transient report title",
+      );
+      await expect(
+        page.getByText("Transient report title", { exact: true }),
+      ).toBeVisible();
+      await page.waitForTimeout(500);
+      expect(sqlQueryCount).toBe(initialSqlQueryCount);
+      expect(metricQueryCount).toBe(initialMetricQueryCount);
+
+      // Runtime edits live only in Work: a fresh load of the saved revision
+      // restores the declared default and does not publish another revision.
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await expect(page.getByLabel("Report title")).toHaveValue(
+        "January expenses",
+      );
+      await expect(page.getByText("January expenses", { exact: true }))
+        .toBeVisible();
+      await expectHistoryTotal(request, seed.spaceId, compositionId, 1);
 
       // Edit the exact revision: relabel one canvas block, save a new revision.
       await page.goto(
