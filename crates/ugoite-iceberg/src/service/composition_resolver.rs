@@ -34,11 +34,11 @@ use crate::{iceberg_store, saved_sql};
 ///
 /// A missing plan carries stable resolver diagnostics. Storage, identity, and
 /// authorization failures remain `Err`, matching the existing service read
-/// boundary. Parameter definitions are present once the YAML envelope parses,
-/// including when supplied parameter values are invalid.
+/// boundary. Variable definitions are present once the YAML envelope parses,
+/// including when supplied variable values are invalid.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CompositionResolution {
-    pub parameter_definitions: Option<Vec<CompositionVariable>>,
+    pub variable_definitions: Option<Vec<CompositionVariable>>,
     pub plan: Option<ResolvedCompositionPlan>,
     pub diagnostics: Vec<CompositionDiagnostic>,
 }
@@ -52,7 +52,7 @@ pub struct CompositionResolution {
 #[derive(Clone, Debug, PartialEq)]
 pub struct CompositionPreview {
     pub draft_fingerprint: Option<String>,
-    pub parameter_definitions: Option<Vec<CompositionVariable>>,
+    pub variable_definitions: Option<Vec<CompositionVariable>>,
     pub plan: Option<PreviewCompositionPlan>,
     pub diagnostics: Vec<CompositionDiagnostic>,
 }
@@ -172,13 +172,13 @@ impl UgoiteService {
         space_id: &str,
         composition_id: &str,
         revision_id: &str,
-        parameters: &BTreeMap<String, Value>,
+        variables: &BTreeMap<String, Value>,
         unset_variables: &[String],
     ) -> Result<CompositionResolution> {
         let raw = self
             .get_composition_raw_revision_local(space_id, composition_id, revision_id)
             .await?;
-        self.resolve_composition_from_raw(space_id, raw, parameters, unset_variables, None)
+        self.resolve_composition_from_raw(space_id, raw, variables, unset_variables, None)
             .await
     }
 
@@ -190,7 +190,7 @@ impl UgoiteService {
         space_id: &str,
         composition_id: &str,
         revision_id: &str,
-        parameters: &BTreeMap<String, Value>,
+        variables: &BTreeMap<String, Value>,
         unset_variables: &[String],
         principal_ids: &[Uuid],
     ) -> Result<CompositionResolution> {
@@ -205,7 +205,7 @@ impl UgoiteService {
         self.resolve_composition_from_raw(
             space_id,
             raw,
-            parameters,
+            variables,
             unset_variables,
             Some(principal_ids),
         )
@@ -216,7 +216,7 @@ impl UgoiteService {
         &self,
         space_id: &str,
         raw: crate::composition::RawCompositionRevision,
-        parameters: &BTreeMap<String, Value>,
+        variables: &BTreeMap<String, Value>,
         unset_variables: &[String],
         principal_ids: Option<&[Uuid]>,
     ) -> Result<CompositionResolution> {
@@ -230,15 +230,15 @@ impl UgoiteService {
             Ok(document) => document,
             Err(code) => return Ok(diagnostic_result(code, None)),
         };
-        let parameter_definitions = Some(ordered_parameter_definitions(&document.spec));
+        let variable_definitions = Some(ordered_variable_definitions(&document.spec));
 
-        let parameter_bindings =
-            bind_variables_with_unset(&document.spec.variables, parameters, unset_variables);
-        if !parameter_bindings.diagnostics.is_empty() {
+        let variable_bindings =
+            bind_variables_with_unset(&document.spec.variables, variables, unset_variables);
+        if !variable_bindings.diagnostics.is_empty() {
             return Ok(CompositionResolution {
-                parameter_definitions,
+                variable_definitions,
                 plan: None,
-                diagnostics: parameter_bindings.diagnostics,
+                diagnostics: variable_bindings.diagnostics,
             });
         }
 
@@ -256,7 +256,7 @@ impl UgoiteService {
                     revision_id: raw.revision.revision_id,
                 },
                 spec: &document.spec,
-                variables: parameters,
+                variables,
                 current_sources: &current_sources,
             },
             unset_variables,
@@ -264,12 +264,12 @@ impl UgoiteService {
 
         Ok(match result {
             Ok(plan) => CompositionResolution {
-                parameter_definitions,
+                variable_definitions,
                 plan: Some(plan),
                 diagnostics: Vec::new(),
             },
             Err(diagnostics) => CompositionResolution {
-                parameter_definitions,
+                variable_definitions,
                 plan: None,
                 diagnostics,
             },
@@ -283,10 +283,10 @@ impl UgoiteService {
         &self,
         space_id: &str,
         yaml: &str,
-        parameters: &BTreeMap<String, Value>,
+        variables: &BTreeMap<String, Value>,
         unset_variables: &[String],
     ) -> Result<CompositionPreview> {
-        self.preview_composition_from_yaml(space_id, yaml, parameters, unset_variables, None)
+        self.preview_composition_from_yaml(space_id, yaml, variables, unset_variables, None)
             .await
     }
 
@@ -297,14 +297,14 @@ impl UgoiteService {
         &self,
         space_id: &str,
         yaml: &str,
-        parameters: &BTreeMap<String, Value>,
+        variables: &BTreeMap<String, Value>,
         unset_variables: &[String],
         principal_ids: &[Uuid],
     ) -> Result<CompositionPreview> {
         self.preview_composition_from_yaml(
             space_id,
             yaml,
-            parameters,
+            variables,
             unset_variables,
             Some(principal_ids),
         )
@@ -315,7 +315,7 @@ impl UgoiteService {
         &self,
         space_id: &str,
         yaml: &str,
-        parameters: &BTreeMap<String, Value>,
+        variables: &BTreeMap<String, Value>,
         unset_variables: &[String],
         principal_ids: Option<&[Uuid]>,
     ) -> Result<CompositionPreview> {
@@ -324,7 +324,7 @@ impl UgoiteService {
             Err(code) => {
                 return Ok(CompositionPreview {
                     draft_fingerprint: None,
-                    parameter_definitions: None,
+                    variable_definitions: None,
                     plan: None,
                     diagnostics: vec![preview_diagnostic(code, None)],
                 });
@@ -333,7 +333,7 @@ impl UgoiteService {
         self.preview_composition_document(
             space_id,
             &document,
-            parameters,
+            variables,
             unset_variables,
             principal_ids,
         )
@@ -344,7 +344,7 @@ impl UgoiteService {
         &self,
         space_id: &str,
         document: &CompositionDocument,
-        parameters: &BTreeMap<String, Value>,
+        variables: &BTreeMap<String, Value>,
         unset_variables: &[String],
         principal_ids: Option<&[Uuid]>,
     ) -> Result<CompositionPreview> {
@@ -353,13 +353,13 @@ impl UgoiteService {
             Err(code) => {
                 return Ok(CompositionPreview {
                     draft_fingerprint: None,
-                    parameter_definitions: None,
+                    variable_definitions: None,
                     plan: None,
                     diagnostics: vec![preview_diagnostic(code, None)],
                 });
             }
         };
-        let parameter_definitions = Some(ordered_parameter_definitions(&document.spec));
+        let variable_definitions = Some(ordered_variable_definitions(&document.spec));
         let owned_sources = self
             .read_current_sources(space_id, &document.spec.sources, principal_ids)
             .await?;
@@ -369,7 +369,7 @@ impl UgoiteService {
             .collect::<Vec<_>>();
         let result = resolve_composition_preview_with_unset(
             &document.spec,
-            parameters,
+            variables,
             unset_variables,
             &current_sources,
             draft_fingerprint.clone(),
@@ -378,13 +378,13 @@ impl UgoiteService {
         Ok(match result {
             Ok(plan) => CompositionPreview {
                 draft_fingerprint: Some(draft_fingerprint),
-                parameter_definitions,
+                variable_definitions,
                 plan: Some(plan),
                 diagnostics: Vec::new(),
             },
             Err(diagnostics) => CompositionPreview {
                 draft_fingerprint: Some(draft_fingerprint),
-                parameter_definitions,
+                variable_definitions,
                 plan: None,
                 diagnostics,
             },
@@ -473,32 +473,26 @@ impl UgoiteService {
 
 fn preview_diagnostic(
     code: CompositionDiagnosticCode,
-    parameter_id: Option<String>,
+    variable_id: Option<String>,
 ) -> CompositionDiagnostic {
-    CompositionDiagnostic {
-        code,
-        variable_id: parameter_id,
-    }
+    CompositionDiagnostic { code, variable_id }
 }
 
-/// Expose declared parameters with layout-placed controls first in layout
+/// Expose declared variables with layout-placed controls first in layout
 /// row and item order. An invalid placement falls back to declaration order
-/// so diagnostics responses still describe the same semantic parameters.
-fn ordered_parameter_definitions(spec: &CompositionSpec) -> Vec<CompositionVariable> {
+/// so diagnostics responses still describe the same semantic variables.
+fn ordered_variable_definitions(spec: &CompositionSpec) -> Vec<CompositionVariable> {
     spec.variables.clone()
 }
 
 fn diagnostic_result(
     code: CompositionDiagnosticCode,
-    parameter_id: Option<String>,
+    variable_id: Option<String>,
 ) -> CompositionResolution {
     CompositionResolution {
-        parameter_definitions: None,
+        variable_definitions: None,
         plan: None,
-        diagnostics: vec![CompositionDiagnostic {
-            code,
-            variable_id: parameter_id,
-        }],
+        diagnostics: vec![CompositionDiagnostic { code, variable_id }],
     }
 }
 

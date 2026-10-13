@@ -19,7 +19,7 @@ const identity = {
 
 const resolved = (parameter: unknown) => ({
   ok: true,
-  parameter_definitions: [{
+  variable_definitions: [{
     id: "month",
     type: "string" as const,
     required: true,
@@ -76,7 +76,7 @@ const entryPage = (id: string) => ({
 
 const resolvedSavedSql = (monthStart: string) => ({
   ok: true,
-  parameter_definitions: [{
+  variable_definitions: [{
     id: "month_start",
     type: "date" as const,
     required: true,
@@ -149,7 +149,7 @@ describe("CompositionQueryHandle", () => {
 
   it("keeps an explicit unset marker so a declared default is not restored", async () => {
     const response = resolved("2026-03-01") as CompositionResolveResponse;
-    response.parameter_definitions = [{
+    response.variable_definitions = [{
       id: "month_start",
       type: "string",
       required: true,

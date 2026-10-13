@@ -121,7 +121,7 @@ async fn draft_preview_resolves_without_publication() -> Result<()> {
         Some(canonical.fingerprint.as_str())
     );
     assert!(preview
-        .parameter_definitions
+        .variable_definitions
         .is_some_and(|definitions| definitions.is_empty()));
     let plan = preview.plan.context("preview should return a plan")?;
     assert_eq!(plan.draft_fingerprint, canonical.fingerprint);
@@ -156,7 +156,7 @@ async fn invalid_draft_preview_reports_diagnostics_without_identity() -> Result<
         .context("invalid draft preview should report diagnostics")?;
     assert!(preview.plan.is_none());
     assert_eq!(preview.draft_fingerprint, None);
-    assert_eq!(preview.parameter_definitions, None);
+    assert_eq!(preview.variable_definitions, None);
     assert!(!preview.diagnostics.is_empty());
 
     let listed = service
@@ -228,7 +228,7 @@ async fn preview_exposes_variable_definitions_in_declaration_order() -> Result<(
         .context("placed variables should preview")?;
     assert!(preview.diagnostics.is_empty());
     let definitions = preview
-        .parameter_definitions
+        .variable_definitions
         .context("preview exposes declared variable definitions")?;
     let placed_ids: Vec<_> = definitions
         .iter()

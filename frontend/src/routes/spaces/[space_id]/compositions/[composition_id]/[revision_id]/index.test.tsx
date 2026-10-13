@@ -66,7 +66,7 @@ describe("Composition exact-revision route", () => {
     vi.spyOn(compositionApi, "get").mockResolvedValue(rawRevision);
     vi.spyOn(compositionApi, "resolve").mockResolvedValue({
       ok: true,
-      parameter_definitions: [{
+      variable_definitions: [{
         id: "month_start",
         label: "Month",
         type: "date",
@@ -160,15 +160,15 @@ describe("Composition exact-revision route", () => {
   it("renders deterministic diagnostics and retains the parameter control", async () => {
     vi.mocked(compositionApi.resolve).mockResolvedValue({
       ok: false,
-      parameter_definitions: [{
+      variable_definitions: [{
         id: "month_start",
         label: "Month",
         type: "date",
         required: true,
       }],
       diagnostics: [{
-        code: "parameter_missing",
-        parameter_id: "month_start",
+        code: "variable_missing",
+        variable_id: "month_start",
       }],
     });
     render(() => <CompositionRevisionRoute />);
@@ -189,7 +189,7 @@ describe("Composition exact-revision route", () => {
   it("preserves false as the default for a required boolean variable", async () => {
     vi.mocked(compositionApi.resolve).mockResolvedValue({
       ok: true,
-      parameter_definitions: [{
+      variable_definitions: [{
         id: "include_archived",
         label: "Include archived",
         type: "boolean",
@@ -487,7 +487,7 @@ describe("Composition revision flow layout", () => {
     });
     vi.spyOn(compositionApi, "resolve").mockResolvedValue({
       ok: true,
-      parameter_definitions: [
+      variable_definitions: [
         {
           id: "month",
           label: "Month",
@@ -580,7 +580,7 @@ describe("Composition revision flow layout", () => {
     });
     vi.mocked(compositionApi.resolve).mockResolvedValueOnce({
       ok: true,
-      parameter_definitions: [...variables].reverse(),
+      variable_definitions: [...variables].reverse(),
       plan: flowPlan,
     });
     const { container } = render(() => <CompositionRevisionRoute />);

@@ -81,7 +81,7 @@ The current CLI command surface includes:
 - `ugoite composition save <file> --idempotency-key <key>`
 - `ugoite composition save <file> --composition-id <id> --base-revision <revision> --idempotency-key <key>`
 - `ugoite composition lint <file>`
-- `ugoite composition query <id> [--revision] [--param k=v]`
+- `ugoite composition query <id> [--revision] [--var id=value]...`; use `--var id=` to explicitly unset a variable and bypass its default.
 
 `composition list` reads one bounded page in local Core or remote mode. Its
 default page size is 100 with offset 0; `--limit` and `--offset` select a

@@ -13,9 +13,9 @@ use std::collections::{BTreeMap, BTreeSet};
 pub enum CompositionDiagnosticCode {
     UnsupportedFormatVersion,
     InvalidComposition,
-    ParameterUnknown,
-    ParameterMissing,
-    ParameterTypeMismatch,
+    VariableUnknown,
+    VariableMissing,
+    VariableTypeMismatch,
     SourceUnavailable,
     MissingField,
     FieldTypeChanged,
@@ -33,9 +33,9 @@ impl CompositionDiagnosticCode {
         match self {
             Self::UnsupportedFormatVersion => "unsupported_format_version",
             Self::InvalidComposition => "invalid_composition",
-            Self::ParameterUnknown => "parameter_unknown",
-            Self::ParameterMissing => "parameter_missing",
-            Self::ParameterTypeMismatch => "parameter_type_mismatch",
+            Self::VariableUnknown => "variable_unknown",
+            Self::VariableMissing => "variable_missing",
+            Self::VariableTypeMismatch => "variable_type_mismatch",
             Self::SourceUnavailable => "source_unavailable",
             Self::MissingField => "missing_field",
             Self::FieldTypeChanged => "field_type_changed",
@@ -53,9 +53,9 @@ impl CompositionDiagnosticCode {
         match value {
             "unsupported_format_version" => Some(Self::UnsupportedFormatVersion),
             "invalid_composition" => Some(Self::InvalidComposition),
-            "parameter_unknown" => Some(Self::ParameterUnknown),
-            "parameter_missing" => Some(Self::ParameterMissing),
-            "parameter_type_mismatch" => Some(Self::ParameterTypeMismatch),
+            "variable_unknown" => Some(Self::VariableUnknown),
+            "variable_missing" => Some(Self::VariableMissing),
+            "variable_type_mismatch" => Some(Self::VariableTypeMismatch),
             "source_unavailable" => Some(Self::SourceUnavailable),
             "missing_field" => Some(Self::MissingField),
             "field_type_changed" => Some(Self::FieldTypeChanged),
@@ -247,7 +247,7 @@ pub struct CompositionListPage {
 pub struct CompositionPreviewRequest {
     pub yaml: String,
     #[serde(default)]
-    pub parameters: BTreeMap<String, Value>,
+    pub variables: BTreeMap<String, Value>,
     /// Variables explicitly left unset; omission from both fields uses the
     /// declared default when one exists.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -255,7 +255,7 @@ pub struct CompositionPreviewRequest {
 }
 
 /// Caller-visible result of a side-effect-free Composition preview pass.
-/// Parameter definitions and the draft fingerprint are present whenever the
+/// Variable definitions and the draft fingerprint are present whenever the
 /// candidate parsed as a supported Composition document, including responses
 /// with diagnostics.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -265,7 +265,7 @@ pub struct CompositionPreviewResponse {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub draft_fingerprint: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parameter_definitions: Option<Vec<CompositionParameterDefinition>>,
+    pub variable_definitions: Option<Vec<CompositionVariableDefinition>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plan: Option<CompositionPreviewPlan>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -293,7 +293,7 @@ pub struct CompositionMetricQueryRequest {
     pub target: CompositionMetricQueryTarget,
     pub component_id: String,
     #[serde(default)]
-    pub parameters: BTreeMap<String, Value>,
+    pub variables: BTreeMap<String, Value>,
     /// Variables explicitly left unset; omission from both fields uses the
     /// declared default when one exists.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -322,7 +322,7 @@ pub struct CompositionMetricQueryDiagnostic {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub component_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parameter_id: Option<String>,
+    pub variable_id: Option<String>,
 }
 
 /// Result of one bounded metric query. A present `value: null` is distinct
@@ -364,7 +364,7 @@ pub struct CompositionPreviewPlan {
 pub struct CompositionResolveRequest {
     pub revision_id: String,
     #[serde(default)]
-    pub parameters: BTreeMap<String, Value>,
+    pub variables: BTreeMap<String, Value>,
     /// Variables explicitly left unset; omission from both fields uses the
     /// declared default when one exists.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -372,39 +372,39 @@ pub struct CompositionResolveRequest {
 }
 
 /// Caller-visible result of a side-effect-free Composition resolution pass.
-/// Parameter definitions are present whenever the exact revision parsed as a
+/// Variable definitions are present whenever the exact revision parsed as a
 /// supported Composition document, including responses with diagnostics.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompositionResolveResponse {
     pub ok: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parameter_definitions: Option<Vec<CompositionParameterDefinition>>,
+    pub variable_definitions: Option<Vec<CompositionVariableDefinition>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plan: Option<CompositionResolvePlan>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub diagnostics: Vec<CompositionResolveDiagnostic>,
 }
 
-/// Typed, UI-neutral fields needed to collect caller parameter values.
+/// Typed, UI-neutral fields needed to collect caller variable values.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct CompositionParameterDefinition {
+pub struct CompositionVariableDefinition {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     #[serde(rename = "type")]
-    pub parameter_type: CompositionParameterType,
+    pub variable_type: CompositionVariableType,
     pub required: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub format: Option<CompositionParameterFormat>,
+    pub format: Option<CompositionVariableFormat>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CompositionParameterType {
+pub enum CompositionVariableType {
     String,
     Boolean,
     Integer,
@@ -415,7 +415,7 @@ pub enum CompositionParameterType {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum CompositionParameterFormat {
+pub enum CompositionVariableFormat {
     YearMonth,
 }
 
@@ -565,5 +565,5 @@ pub enum CompositionEntryQuerySystemField {
 pub struct CompositionResolveDiagnostic {
     pub code: CompositionDiagnosticCode,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parameter_id: Option<String>,
+    pub variable_id: Option<String>,
 }

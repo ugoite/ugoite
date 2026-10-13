@@ -151,13 +151,21 @@ pub enum CompositionSubCmd {
         output: PathBuf,
     },
     /// Resolve and execute one bounded page for each Composition source
+    #[command(
+        long_about = "Resolve and execute one bounded page for each Composition source. Repeat --var ID=VALUE to supply typed variables. Use --var ID= to explicitly unset a variable and bypass its default; omit --var to allow a declared default to apply."
+    )]
     Query {
         #[arg(value_name = "COMPOSITION_ID")]
         composition_id: String,
         #[arg(long, value_name = "REVISION_ID")]
         revision: Option<String>,
-        #[arg(long = "param", value_name = "KEY=VALUE", action = clap::ArgAction::Append)]
-        parameters: Vec<String>,
+        #[arg(
+            long = "var",
+            value_name = "ID=VALUE",
+            action = clap::ArgAction::Append,
+            help = "Set a typed variable; use ID= to explicitly unset it"
+        )]
+        variables: Vec<String>,
     },
 }
 
@@ -272,11 +280,11 @@ pub async fn run(
         CompositionSubCmd::Query {
             composition_id,
             revision,
-            parameters,
+            variables,
         } => {
             let target =
                 resolve_command_target(explicit_config, context_override, "composition query")?;
-            query_composition(&target, &composition_id, revision.as_deref(), &parameters).await?;
+            query_composition(&target, &composition_id, revision.as_deref(), &variables).await?;
         }
     }
     Ok(())
@@ -693,7 +701,7 @@ struct CompositionQueryMetricOutput {
 struct CompositionQueryDiagnostic {
     code: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    parameter_id: Option<String>,
+    variable_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     source_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -714,16 +722,17 @@ async fn query_composition(
     target: &SpaceTarget,
     composition_id: &str,
     requested_revision: Option<&str>,
-    raw_parameters: &[String],
+    raw_variables: &[String],
 ) -> Result<()> {
     let composition = read_composition(target, composition_id, requested_revision).await?;
-    let parameter_values = match composition.fields.get("spec").and_then(Value::as_str) {
-        Some(yaml) => match parse_composition_yaml(yaml) {
-            Ok(document) => parse_cli_parameter_values(&document.spec.variables, raw_parameters)?,
-            Err(_) => parse_cli_parameter_values(&[], raw_parameters)?,
-        },
-        None => parse_cli_parameter_values(&[], raw_parameters)?,
-    };
+    let (variable_values, unset_variables) =
+        match composition.fields.get("spec").and_then(Value::as_str) {
+            Some(yaml) => match parse_composition_yaml(yaml) {
+                Ok(document) => parse_cli_variables(&document.spec.variables, raw_variables)?,
+                Err(_) => parse_cli_variables(&[], raw_variables)?,
+            },
+            None => parse_cli_variables(&[], raw_variables)?,
+        };
     let local_service = match target {
         SpaceTarget::Core { root, .. } => {
             Some(UgoiteService::new_without_background_refresh(root)?)
@@ -736,7 +745,8 @@ async fn query_composition(
         target_space_id(target),
         composition_id,
         &composition.revision.revision_id,
-        parameter_values.clone(),
+        variable_values.clone(),
+        unset_variables.clone(),
         local_service.as_ref(),
     )
     .await?;
@@ -761,7 +771,8 @@ async fn query_composition(
     let metric_context = CompositionMetricQueryContext {
         composition_id,
         composition_revision_id: &composition.revision.revision_id,
-        parameters: &parameter_values,
+        variables: &variable_values,
+        unset_variables: &unset_variables,
     };
     let mut sources = Vec::with_capacity(plan.portable.sources.len());
     let mut diagnostics = Vec::new();
@@ -792,7 +803,8 @@ async fn query_composition(
 struct CompositionMetricQueryContext<'a> {
     composition_id: &'a str,
     composition_revision_id: &'a str,
-    parameters: &'a BTreeMap<String, Value>,
+    variables: &'a BTreeMap<String, Value>,
+    unset_variables: &'a [String],
 }
 
 fn composition_metric_query_request(
@@ -805,8 +817,8 @@ fn composition_metric_query_request(
             revision_id: context.composition_revision_id.to_string(),
         },
         component_id: component_id.to_string(),
-        parameters: context.parameters.clone(),
-        unset_variables: Vec::new(),
+        variables: context.variables.clone(),
+        unset_variables: context.unset_variables.to_vec(),
     }
 }
 
@@ -815,14 +827,21 @@ async fn resolve_composition(
     space_id: &str,
     composition_id: &str,
     revision_id: &str,
-    parameters: BTreeMap<String, Value>,
+    variables: BTreeMap<String, Value>,
+    unset_variables: Vec<String>,
     local_service: Option<&UgoiteService>,
 ) -> Result<CompositionQueryResolution> {
     match target {
         SpaceTarget::Core { .. } => {
             let service = local_service.context("local Composition service is unavailable")?;
             let resolution = service
-                .resolve_composition_local(space_id, composition_id, revision_id, &parameters, &[])
+                .resolve_composition_local(
+                    space_id,
+                    composition_id,
+                    revision_id,
+                    &variables,
+                    &unset_variables,
+                )
                 .await?;
             if let Some(plan) = resolution.plan {
                 Ok(CompositionQueryResolution::Plan(Box::new(
@@ -835,7 +854,7 @@ async fn resolve_composition(
                         .iter()
                         .map(|diagnostic| CompositionQueryDiagnostic {
                             code: composition_diagnostic_code_for_cli(diagnostic.code),
-                            parameter_id: diagnostic.variable_id.clone(),
+                            variable_id: diagnostic.variable_id.clone(),
                             source_id: None,
                             component_id: None,
                         })
@@ -848,7 +867,7 @@ async fn resolve_composition(
                 "space_id": space_id,
                 "composition_id": composition_id,
             });
-            let body = composition_resolve_body(revision_id, parameters);
+            let body = composition_resolve_body(revision_id, variables, unset_variables);
             let response =
                 http::execute_for_target(target, "composition.resolve", arguments, Some(body))
                     .await?;
@@ -871,7 +890,7 @@ async fn resolve_composition(
                                 .as_str()
                                 .context("Composition diagnostic code must serialize as text")?
                                 .to_string(),
-                            parameter_id: diagnostic.parameter_id.clone(),
+                            variable_id: diagnostic.variable_id.clone(),
                             source_id: None,
                             component_id: None,
                         })
@@ -884,12 +903,7 @@ async fn resolve_composition(
 }
 
 fn composition_diagnostic_code_for_cli(code: CompositionDiagnosticCode) -> String {
-    match code {
-        CompositionDiagnosticCode::VariableUnknown => "parameter_unknown".to_string(),
-        CompositionDiagnosticCode::VariableMissing => "parameter_missing".to_string(),
-        CompositionDiagnosticCode::VariableTypeMismatch => "parameter_type_mismatch".to_string(),
-        other => other.as_str().to_string(),
-    }
+    code.as_str().to_string()
 }
 
 fn composition_query_plan_from_core(plan: ResolvedCompositionPlan) -> Result<CompositionQueryPlan> {
@@ -912,51 +926,65 @@ fn composition_query_plan_from_portable(
     })
 }
 
-fn composition_resolve_body(revision_id: &str, parameters: BTreeMap<String, Value>) -> Value {
-    json!({
+fn composition_resolve_body(
+    revision_id: &str,
+    variables: BTreeMap<String, Value>,
+    unset_variables: Vec<String>,
+) -> Value {
+    let mut body = json!({
         "revision_id": revision_id,
-        "parameters": parameters,
-    })
+        "variables": variables,
+    });
+    if !unset_variables.is_empty() {
+        body["unset_variables"] = json!(unset_variables);
+    }
+    body
 }
 
-fn parse_cli_parameter_values(
+fn parse_cli_variables(
     definitions: &[CompositionVariable],
     assignments: &[String],
-) -> Result<BTreeMap<String, Value>> {
+) -> Result<(BTreeMap<String, Value>, Vec<String>)> {
     let mut values = BTreeMap::new();
     let mut assigned = BTreeSet::new();
+    let mut unset_variables = BTreeSet::new();
     for assignment in assignments {
         let (key, raw_value) = assignment.split_once('=').ok_or_else(|| {
-            crate::output::UsageError(format!("--param must be KEY=VALUE, got {assignment:?}"))
+            crate::output::UsageError(format!("--var must be ID=VALUE, got {assignment:?}"))
         })?;
         if key.is_empty() {
-            return Err(
-                crate::output::UsageError("--param key must not be empty".to_string()).into(),
-            );
+            return Err(crate::output::UsageError("--var id must not be empty".to_string()).into());
         }
         if !assigned.insert(key.to_string()) {
             return Err(crate::output::UsageError(format!(
-                "Composition parameter {key:?} was supplied more than once"
+                "Composition variable {key:?} was supplied more than once"
             ))
             .into());
         }
         let definition = definitions.iter().find(|definition| definition.id == key);
         let value = match definition {
             Some(definition) => match definition.variable_type.parse_input(raw_value) {
-                CompositionVariableInputValue::Unset => continue,
+                CompositionVariableInputValue::Unset => {
+                    unset_variables.insert(key.to_string());
+                    continue;
+                }
                 CompositionVariableInputValue::Valid(value) => value,
                 CompositionVariableInputValue::Invalid => {
                     return Err(crate::output::UsageError(format!(
-                        "Composition parameter {key:?} has an invalid value for its declared type"
+                        "Composition variable {key:?} has an invalid value for its declared type"
                     ))
                     .into());
                 }
             },
+            None if raw_value.is_empty() => {
+                unset_variables.insert(key.to_string());
+                continue;
+            }
             None => Value::String(raw_value.to_string()),
         };
         values.insert(key.to_string(), value);
     }
-    Ok(values)
+    Ok((values, unset_variables.into_iter().collect()))
 }
 
 async fn execute_composition_source(
@@ -1123,8 +1151,8 @@ async fn execute_composition_metrics(
                         revision_id: context.composition_revision_id.to_string(),
                     },
                     component_id: binding.component_id.clone(),
-                    parameters: context.parameters.clone(),
-                    unset_variables: Vec::new(),
+                    variables: context.variables.clone(),
+                    unset_variables: context.unset_variables.to_vec(),
                 };
                 let response = local_service
                     .context("local Composition Metric query service is unavailable")?
@@ -1155,7 +1183,7 @@ async fn execute_composition_metrics(
             diagnostics.extend(response.diagnostics.into_iter().map(|diagnostic| {
                 CompositionQueryDiagnostic {
                     code: diagnostic.code.as_str().to_string(),
-                    parameter_id: diagnostic.parameter_id,
+                    variable_id: diagnostic.variable_id,
                     source_id: Some(source_id.to_string()),
                     component_id: diagnostic
                         .component_id
@@ -1382,8 +1410,9 @@ mod tests {
         composition_query_plan_from_portable, composition_resolve_body,
         composition_source_dispatch, composition_source_needs_table_page, export_composition,
         lint_file, lint_yaml_bytes, list_compositions, local_raw_revision_to_api,
-        parse_cli_parameter_values, raw_spec_output, read_composition, read_composition_history,
-        write_raw_spec_to_path, CompositionQueryMetricOutput, CompositionVariable, RawSpecOutput,
+        parse_cli_variables, raw_spec_output, read_composition, read_composition_history,
+        write_raw_spec_to_path, CompositionQueryDiagnostic, CompositionQueryMetricOutput,
+        CompositionVariable, RawSpecOutput,
     };
     use crate::cli_config::SpaceTarget;
     use anyhow::Result;
@@ -1421,6 +1450,20 @@ mod tests {
     const SAVED_SQL_METRIC_COLUMNS_FINGERPRINT: &str = include_str!(
         "../../../../crates/ugoite-domain/tests/fixtures/composition/saved-sql-metric-columns.fingerprint.txt"
     );
+
+    #[test]
+    fn composition_diagnostics_expose_variable_ids() {
+        let value = serde_json::to_value(CompositionQueryDiagnostic {
+            code: "variable_missing".to_string(),
+            variable_id: Some("minimum".to_string()),
+            source_id: None,
+            component_id: None,
+        })
+        .expect("Composition diagnostic serializes");
+
+        assert_eq!(value["variable_id"], "minimum");
+        assert!(value.get("parameter_id").is_none());
+    }
 
     #[test]
     fn lint_file_returns_the_shared_canonical_document_response() {
@@ -1494,7 +1537,7 @@ mod tests {
     }
 
     #[test]
-    fn query_cli_parameters_follow_the_shared_domain_types() {
+    fn query_cli_variables_follow_the_shared_domain_types() {
         let definitions = vec![
             CompositionVariable {
                 id: "enabled".to_string(),
@@ -1545,7 +1588,7 @@ mod tests {
                 format: None,
             },
         ];
-        let values = parse_cli_parameter_values(
+        let (values, unset_variables) = parse_cli_variables(
             &definitions,
             &[
                 "enabled=true".to_string(),
@@ -1565,6 +1608,7 @@ mod tests {
         assert_eq!(values["date"], json!("2026-10-01"));
         assert_eq!(values["timestamp"], json!("2026-10-13T14:59:59+09:00"));
         assert!(!values.contains_key("title"));
+        assert_eq!(unset_variables, vec!["title"]);
         assert_eq!(values["custom"], json!("value"));
     }
 
@@ -1606,45 +1650,59 @@ mod tests {
         ];
         for assignment in invalid_assignments {
             assert!(
-                parse_cli_parameter_values(&definitions, std::slice::from_ref(&assignment))
-                    .is_err(),
+                parse_cli_variables(&definitions, std::slice::from_ref(&assignment)).is_err(),
                 "CLI accepted invalid typed variable assignment {assignment:?}"
             );
         }
 
-        let at_float_limit =
-            parse_cli_parameter_values(&definitions, &[format!("ratio={max_float_token}")])
+        let (at_float_limit, unset_variables) =
+            parse_cli_variables(&definitions, &[format!("ratio={max_float_token}")])
                 .expect("64-byte finite float token is valid");
         assert_eq!(at_float_limit["ratio"], json!(1e63));
+        assert!(unset_variables.is_empty());
     }
 
     #[test]
-    fn query_cli_parameter_assignments_reject_malformed_or_duplicate_names() {
-        assert!(parse_cli_parameter_values(&[], &["month".to_string()]).is_err());
-        assert!(parse_cli_parameter_values(
+    fn query_cli_variable_assignments_reject_malformed_or_duplicate_names() {
+        assert!(parse_cli_variables(&[], &["month".to_string()]).is_err());
+        assert!(parse_cli_variables(
             &[],
             &["month=2026-10".to_string(), "month=2026-11".to_string()]
         )
         .is_err());
+        assert!(
+            parse_cli_variables(&[], &["month=".to_string(), "month=2026-10".to_string()]).is_err()
+        );
     }
 
     #[test]
-    fn query_resolve_body_keeps_the_exact_revision_and_typed_parameters() {
+    fn query_cli_variables_send_unknown_empty_assignments_as_unsets() {
+        let (values, unset_variables) =
+            parse_cli_variables(&[], &["unknown=".to_string()]).expect("valid assignment");
+
+        assert!(values.is_empty());
+        assert_eq!(unset_variables, vec!["unknown"]);
+    }
+
+    #[test]
+    fn query_resolve_body_keeps_the_exact_revision_typed_variables_and_explicit_unsets() {
         let body = composition_resolve_body(
             "revision-1",
             BTreeMap::from([
                 ("month".to_string(), json!("2026-10")),
                 ("include_archived".to_string(), json!(true)),
             ]),
+            vec!["end_date".to_string()],
         );
         assert_eq!(
             body,
             json!({
                 "revision_id": "revision-1",
-                "parameters": {
+                "variables": {
                     "month": "2026-10",
                     "include_archived": true
-                }
+                },
+                "unset_variables": ["end_date"]
             })
         );
 
@@ -1657,6 +1715,12 @@ mod tests {
         assert_eq!(
             request.path,
             "/spaces/demo/compositions/composition-1/resolve"
+        );
+
+        assert_eq!(
+            composition_resolve_body("revision-1", BTreeMap::new(), Vec::new()),
+            json!({"revision_id":"revision-1", "variables":{}}),
+            "an omitted variable must leave default selection to Core"
         );
     }
 
@@ -1771,15 +1835,17 @@ mod tests {
     }
 
     #[test]
-    fn saved_sql_metric_query_uses_the_exact_composition_revision_and_parameters() {
-        let parameters = BTreeMap::from([
+    fn saved_sql_metric_query_carries_variables_and_explicit_unsets_at_the_exact_revision() {
+        let variables = BTreeMap::from([
             ("month".to_string(), json!("2026-10")),
             ("include_archived".to_string(), json!(false)),
         ]);
+        let unset_variables = vec!["search_text".to_string()];
         let context = super::CompositionMetricQueryContext {
             composition_id: "composition-entry-1",
             composition_revision_id: "composition-revision-9",
-            parameters: &parameters,
+            variables: &variables,
+            unset_variables: &unset_variables,
         };
         let request = composition_metric_query_request(&context, "total");
         let body = serde_json::to_value(request).expect("portable metric request");
@@ -1793,10 +1859,11 @@ mod tests {
                     "revision_id": "composition-revision-9"
                 },
                 "component_id": "total",
-                "parameters": {
+                "variables": {
                     "month": "2026-10",
                     "include_archived": false
-                }
+                },
+                "unset_variables": ["search_text"]
             })
         );
         let prepared = prepare_request(

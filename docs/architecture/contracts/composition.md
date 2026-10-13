@@ -12,10 +12,10 @@ implementation and test evidence. The full end-to-end runtime journey and
 release acceptance remain incomplete; see the
 [acceptance plan](../testing/composition-acceptance.md). Post-freeze semantic
 changes require a v1 compatibility ruling recorded against this contract.
-Governance decision ADR-019 re-freezes this contract on the dashboard flow
-layout: the pre-release `sections` grammar is replaced by first-class
-`layout`, with `text` components and parameter placement added.
-`format_version` stays 1 with no migration reader.
+ADR-023 supersedes ADR-019 for typed variables, Input components, and variable
+references, and authorizes the prerelease grammar without a compatibility
+reader or migration. ADR-019 still governs the flow `layout` AST, component
+placement, and presentation order. `format_version` stays 1.
 
 Frozen v1 pin (see `composition_v1_freeze_pins_portable_contract` in
 `ugoite-domain` and `composition_v1_freeze_pins_operation_inventory` in
@@ -28,7 +28,7 @@ Frozen v1 pin (see `composition_v1_freeze_pins_portable_contract` in
 | Tags | document tags are the sole semantic value and equal stored Entry tags |
 | Source grammar | `entry_query` (Form scope, six filter operators, two sort directions, fields/preview projection, optional Created/Updated display columns) and exact `saved_sql` (EntryId + RevisionId, ordered unique `expected_result`, eight logical types) |
 | Metric identity | one Saved SQL source ID and one declared output-column name; optional label and display-only presentation |
-| Components | `text` / `metric` / `table`; `flow` layout rows/items, unique row and component IDs, exactly-once component placement, parameter controls for required parameters without defaults, empty layouts and empty rows invalid; text styles `title` / `heading` / `body` / `caption` |
+| Components | `input` / `text` / `metric` / `table`; `flow` layout rows/items, unique row and component IDs, exactly-once component placement, input components for required variables without defaults, empty layouts and empty rows invalid; text styles `title` / `heading` / `body` / `caption` |
 | Fingerprints | document SHA-256 over normalized value; per-source schema fingerprints over FormId + used-field snapshot |
 | Diagnostics | 14 caller-visible codes; missing/denied sources conceal as `source_unavailable` |
 | Operations | `lint`, `list`, `get`, `history`, `resolve`, `save`, `restore` (export stays a CLI file operation) |
@@ -56,12 +56,12 @@ The exchange format is a restricted `.ugcomp.yaml` document at format version
 `tags`, and `spec`. `format` is the fixed value `ugoite.composition`, and
 `kind` is `dashboard` for v0.2.2. `tags` are the Composition Entry's tags and
 are saved and read as the same ordered list as `EntryMetadata.tags`; a save
-request has no second tag value. The `spec` contains typed parameters, sources,
+request has no second tag value. The `spec` contains typed variables, sources,
 components, and a first-class dashboard flow `layout`. A source identifies either an Entry query template
 or an exact Saved SQL revision. Components refer to named sources, and layout
-rows carry ordered component and parameter-control items that reference them.
-Parameters keep their semantic definition under `spec.parameters`; the layout
-only places controls bound to parameter IDs. An `entry_query` source carries a
+rows carry ordered component items, including inputs bound to variables.
+Variables keep their semantic definition under `spec.variables`; each input
+component references a variable ID. An `entry_query` source carries a
 sorted `field_schema` snapshot for property fields used by that query. It defines
 the Table query only; Metrics bind a Saved SQL source and never consume
 EntryQuery fields. A preview projection uses all current property fields; an
@@ -92,24 +92,27 @@ exactly one row; it never chooses a prefix row or rewrites SQL to add
 SQL NULL remains a successful present scalar value.
 
 The typed v1 model supports `string`, `boolean`, `integer`, `float`, `date`, and
-`timestamp` parameters. A parameter may carry a typed default and a display
+`timestamp` variables. A variable may carry a typed default and a display
 format hint; `year-month` is a hint and does not evaluate an expression or
-change the parameter value. Parameters and `text`/`metric`/`table` components may
+change the variable value. Variables and `input`/`text`/`metric`/`table` components may
 also carry optional display `label` text. A label is emitted in canonical YAML
 and included in the document fingerprint when present, and omitted when
-absent. Labels do not replace stable parameter, component, source, or field IDs
+absent. Labels do not replace stable variable, component, source, or field IDs
 and do not change source or query binding semantics. Source values are literals
-or named parameter references. An `entry_query` template scopes property
+or named variable references. An `entry_query` template scopes property
 `FieldId`s to its `FormId`, snapshots query-used field types, and carries the
 existing query filters, sort, text, projection, and page-size semantics. Text may be a literal
-or parameter reference; a parameter used for text is bound as a string. Its
+or variable reference; a variable used for text is bound as a string. Its
 projection is either preview or an ordered list of property `FieldId`s. The
 optional `page_limit` defaults to 100 and is still bounded by the existing
 EntryQuery maximum. Optional `display_system_fields` independently selects
 Created and Updated table columns and defaults to empty when omitted; these
 columns do not widen the EntryQuery projection. A `saved_sql` source carries an
-`EntryId`, an exact `RevisionId`, literal-or-parameter variables, and an ordered
-`expected_result` descriptor. Each expected result field has a unique non-empty output name and
+`EntryId`, an exact `RevisionId`, literal values or Composition variable
+references, and an ordered `expected_result` descriptor. Composition variables
+bind to the Saved SQL revision's existing named SQL parameters; SQL request
+fields `parameters` and `parameter_types` keep their meanings. Each expected
+result field has a unique non-empty output name and
 one portable logical type: `string`, `boolean`, `integer`, `float`, `decimal`,
 `date`, `timestamp`, or `json`. Decimal scalar values are JSON strings in
 plain notation with no exponent, no leading integer zeros, and no negative
@@ -117,16 +120,18 @@ zero; fractional scale, including trailing zeroes, is preserved. The descriptor 
 result shape; it does not claim that a SQL backend can statically infer the
 shape. Backend SQL type names are not part of the portable contract.
 Dashboard components are
-`text`, `metric`, or `table`. A `text` component carries inline `text` and one
+`input`, `text`, `metric`, or `table`. An `input` component binds a variable.
+A `text` component carries inline `text` and one
 fixed `style` (`title`, `heading`, `body`, or `caption`); it emits no source
 request and its resolve binding carries layout position with no source. `metric` and `table` components refer to
 named sources. The flow layout defines component render order by row-array
 order and item order. Every row ID and component ID is unique; every component
-is placed by exactly one layout item and every placed parameter references a
-declared parameter exactly once. Unknown, duplicate, or unreferenced component
-references, unknown or duplicate parameter references, empty layouts, empty
-rows, and duplicate row IDs make the document invalid, as does a required
-parameter without a default and without a layout control. Component
+is placed by exactly one layout item and every input references one declared
+variable. Multiple Inputs may reference the same variable. Unknown variable
+references, duplicate variable declarations, unknown or duplicate component
+references, unreferenced components, empty layouts, empty rows, and duplicate
+row IDs make the document invalid, as does a required variable without a
+default and without a layout input. Component
 declaration order does not supply a fallback render order. Pixel coordinates,
 CSS, and canvas state are never layout content.
 
@@ -153,8 +158,8 @@ timestamp forms, and rejects malformed scalar values with
 `metric_result_type_mismatch`.
 
 The shared Rust and portable API diagnostic vocabulary includes
-`unsupported_format_version`, `invalid_composition`, `parameter_unknown`,
-`parameter_missing`, `parameter_type_mismatch`, `source_unavailable`,
+`unsupported_format_version`, `invalid_composition`, `variable_unknown`,
+`variable_missing`, `variable_type_mismatch`, `source_unavailable`,
 `missing_field`,
 `field_type_changed`, `source_schema_changed`, `metric_result_not_scalar`,
 `metric_result_type_mismatch`, `metric_scalar_no_rows`,

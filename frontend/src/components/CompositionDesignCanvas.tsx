@@ -28,7 +28,7 @@ import { compositionParameterDisplayName } from "~/lib/composition-parameter-nam
 import { safeText } from "~/lib/display-value";
 import type {
   CompositionFlowLayoutItem,
-  CompositionParameterDefinition,
+  CompositionVariableDefinition,
   CompositionResolvedComponentBinding,
   CompositionResolvePlan,
   CompositionTextStyle,
@@ -286,7 +286,7 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
             ? {}
             : { default: parameter.default }),
           ...(parameter.format ? { format: parameter.format } : {}),
-        } satisfies CompositionParameterDefinition,
+        } satisfies CompositionVariableDefinition,
       ]),
     );
   const bindingById = () =>

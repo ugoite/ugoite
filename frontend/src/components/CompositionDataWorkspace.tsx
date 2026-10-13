@@ -14,7 +14,7 @@ import type {
   CompositionResolveDiagnostic,
   CompositionResolvedSource,
 } from "~/lib/composition-api";
-import type { CompositionParameterType } from "~/lib/composition-api";
+import type { CompositionVariableType } from "~/lib/composition-api";
 import type {
   CompositionDraft,
   SavedSqlRevisionUpdate,
@@ -59,7 +59,7 @@ export interface CompositionDataWorkspaceProps {
   onSavedSqlRevision: (
     sourceDraftId: string,
     revision: SavedSqlRevisionUpdate,
-    variableTypes: Record<string, CompositionParameterType>,
+    variableTypes: Record<string, CompositionVariableType>,
   ) => boolean;
   savedSqlEditHref: (entryId: string) => string;
   planSources: readonly CompositionResolvedSource[];

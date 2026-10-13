@@ -7,14 +7,14 @@ import {
   waitFor,
 } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { CompositionParameterDefinition } from "~/lib/composition-api";
+import type { CompositionVariableDefinition } from "~/lib/composition-api";
 import { ParameterControl } from "./ParameterControl";
 
 describe("Composition ParameterControl", () => {
   afterEach(() => cleanup());
 
   it("preserves timezone-bearing timestamp values in a text input", async () => {
-    const definition: CompositionParameterDefinition = {
+    const definition: CompositionVariableDefinition = {
       id: "created_at",
       type: "timestamp",
       required: true,
@@ -43,7 +43,7 @@ describe("Composition ParameterControl", () => {
   });
 
   it("uses the Domain parser for numeric Inputs without coercing invalid text", async () => {
-    const definition: CompositionParameterDefinition = {
+    const definition: CompositionVariableDefinition = {
       id: "limit",
       type: "integer",
       required: true,
@@ -72,7 +72,7 @@ describe("Composition ParameterControl", () => {
   });
 
   it("keeps an underflowing Float token raw instead of converting it to zero", async () => {
-    const definition: CompositionParameterDefinition = {
+    const definition: CompositionVariableDefinition = {
       id: "ratio",
       type: "float",
       required: false,

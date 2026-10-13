@@ -44,9 +44,46 @@ features:
               - kind: documents
                 anchor: REQ-COMP-007#criterion.portable-variable-contract
               - kind: documents
+                anchor: REQ-COMP-007#criterion.cli-variable-query
+              - kind: documents
                 anchor: REQ-COMP-007#criterion.code-free-studio-authoring
               - kind: documents
                 anchor: REQ-COMP-007#criterion.responsive-accessible-inputs
+      - id: typed-variable-api-contract
+        role: contract-source
+        facet: api
+        responsibility: Define Composition resolve, preview, and metric-query wire operations from the generated Rust-server OpenAPI snapshot; Composition values use variables while SQL request fields retain their existing names.
+        targets:
+          - id: composition-resolve-variable-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector:
+              kind: operation
+              method: post
+              path: '/spaces/{space_id}/compositions/{entry_id}/resolve'
+            claims:
+              - kind: documents
+                anchor: REQ-COMP-007#criterion.portable-variable-contract
+          - id: composition-preview-variable-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector:
+              kind: operation
+              method: post
+              path: /spaces/{space_id}/compositions/preview
+            claims:
+              - kind: documents
+                anchor: REQ-COMP-007#criterion.portable-variable-contract
+          - id: composition-metric-variable-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector:
+              kind: operation
+              method: post
+              path: /spaces/{space_id}/compositions/metric-query
+            claims:
+              - kind: documents
+                anchor: REQ-COMP-007#criterion.portable-variable-contract
       - id: typed-variable-domain
         role: implementation
         facet: domain
@@ -142,6 +179,124 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.typed-source-binding
+      - id: typed-variable-api-dtos
+        role: implementation
+        facet: api
+        responsibility: Carry typed Composition values and explicit unsets as variables, expose variable definitions and diagnostic IDs, and keep Saved SQL parameter request fields unchanged.
+        targets:
+          - id: variable-resolve-request-dto
+            adapter: rust
+            path: crates/ugoite-api-client/src/composition.rs
+            selector:
+              kind: symbol
+              name: CompositionResolveRequest
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.portable-variable-contract
+          - id: variable-preview-request-dto
+            adapter: rust
+            path: crates/ugoite-api-client/src/composition.rs
+            selector:
+              kind: symbol
+              name: CompositionPreviewRequest
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.portable-variable-contract
+          - id: variable-preview-response-dto
+            adapter: rust
+            path: crates/ugoite-api-client/src/composition.rs
+            selector:
+              kind: symbol
+              name: CompositionPreviewResponse
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.portable-variable-contract
+          - id: variable-metric-request-dto
+            adapter: rust
+            path: crates/ugoite-api-client/src/composition.rs
+            selector:
+              kind: symbol
+              name: CompositionMetricQueryRequest
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.portable-variable-contract
+          - id: variable-response-and-diagnostic-dtos
+            adapter: rust
+            path: crates/ugoite-api-client/src/composition.rs
+            selector:
+              kind: symbol
+              name: CompositionVariableDefinition
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.portable-variable-contract
+          - id: variable-resolve-response-dto
+            adapter: rust
+            path: crates/ugoite-api-client/src/composition.rs
+            selector:
+              kind: symbol
+              name: CompositionResolveResponse
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.portable-variable-contract
+          - id: variable-diagnostic-dtos
+            adapter: rust
+            path: crates/ugoite-api-client/src/composition.rs
+            selector:
+              kind: symbol
+              name: CompositionResolveDiagnostic
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.portable-variable-contract
+          - id: metric-variable-diagnostic-dto
+            adapter: rust
+            path: crates/ugoite-api-client/src/composition.rs
+            selector:
+              kind: symbol
+              name: CompositionMetricQueryDiagnostic
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.portable-variable-contract
+      - id: typed-variable-api-dto-evidence
+        role: evidence
+        facet: api-client-and-cli-tests
+        responsibility: Verify Composition request DTOs use variables without accepting the retired parameters alias, while OpenAPI resolve and preview schemas publish variable definitions and diagnostic IDs.
+        targets:
+          - id: composition-request-variable-wire-shape
+            adapter: rust
+            path: crates/ugoite-api-client/src/lib.rs
+            selector:
+              kind: symbol
+              name: composition_request_dtos_use_variables_without_a_parameter_alias
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.portable-variable-contract
+          - id: composition-preview-variable-openapi
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector:
+              kind: test
+              name: openapi_documents_composition_preview_without_publication
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.portable-variable-contract
+          - id: composition-resolve-variable-openapi
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector:
+              kind: test
+              name: openapi_documents_composition_resolve_metric_result_type
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.portable-variable-contract
+          - id: composition-metric-variable-openapi
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector:
+              kind: test
+              name: openapi_documents_bounded_composition_metric_queries
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.portable-variable-contract
       - id: wasm-variable-input-parser
         role: implementation
         facet: wasm
@@ -413,3 +568,76 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.code-free-studio-authoring
+      - id: cli-typed-variable-query
+        role: implementation
+        facet: cli
+        responsibility: Parse repeated typed Composition `--var` assignments and carry explicit unsets separately through local and remote resolution and Metric queries, rejecting the prerelease Composition `--param` flag.
+        targets:
+          - id: cli-variable-assignment-parser
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector:
+              kind: symbol
+              name: parse_cli_variables
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.cli-variable-query
+          - id: cli-variable-query-dispatch
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector:
+              kind: symbol
+              name: query_composition
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.cli-variable-query
+      - id: cli-typed-variable-query-evidence
+        role: evidence
+        facet: cli-tests
+        responsibility: Verify the shared typed lexical contract, rejection of the prerelease Composition `--param` flag, explicit-unset encoding, matching Core/Remote behavior when an unset required variable has a declared default, and Core's unknown-variable diagnostic for an explicitly unset unknown ID.
+        targets:
+          - id: cli-variable-lexical-and-unset-parser
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector:
+              kind: symbol
+              name: tests::query_cli_variables_follow_the_shared_domain_types
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.cli-variable-query
+          - id: cli-unknown-empty-unset-parser
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector:
+              kind: symbol
+              name: tests::query_cli_variables_send_unknown_empty_assignments_as_unsets
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.cli-variable-query
+          - id: cli-metric-variable-unset-request
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector:
+              kind: symbol
+              name: tests::saved_sql_metric_query_carries_variables_and_explicit_unsets_at_the_exact_revision
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.cli-variable-query
+          - id: cli-variable-unset-core-remote-parity
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_journey_remote.rs
+            selector:
+              kind: test
+              name: test_cli_composition_inspect_query_export_match_core_remote
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.cli-variable-query
+          - id: cli-unknown-unset-core-diagnostic
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_journey_remote.rs
+            selector:
+              kind: test
+              name: test_cli_composition_inspect_query_export_match_core_remote
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.cli-variable-query

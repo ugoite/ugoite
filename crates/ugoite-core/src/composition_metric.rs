@@ -25,14 +25,14 @@ pub enum CompositionMetricQueryTarget {
     Draft { yaml: String },
 }
 
-/// Request to evaluate one metric component with current parameters.
+/// Request to evaluate one metric component with current variables.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompositionMetricQueryRequest {
     pub target: CompositionMetricQueryTarget,
     pub component_id: String,
     #[serde(default)]
-    pub parameters: BTreeMap<String, Value>,
+    pub variables: BTreeMap<String, Value>,
     /// Variables explicitly left unset; omission from both fields uses the
     /// declared default when one exists.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -94,7 +94,7 @@ pub struct CompositionMetricQueryDiagnostic {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub component_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parameter_id: Option<String>,
+    pub variable_id: Option<String>,
 }
 
 /// Result of one metric query. A successful SQL `NULL` is represented as a
@@ -125,7 +125,7 @@ impl CompositionMetricQueryResponse {
                 .map(|diagnostic| CompositionMetricQueryDiagnostic {
                     code: diagnostic.code,
                     component_id: None,
-                    parameter_id: diagnostic.variable_id,
+                    variable_id: diagnostic.variable_id,
                 })
                 .collect(),
         }

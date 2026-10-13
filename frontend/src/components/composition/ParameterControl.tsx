@@ -1,10 +1,10 @@
 import { createSignal, Show } from "solid-js";
 import { t } from "~/lib/i18n";
-import type { CompositionParameterDefinition } from "~/lib/composition-api";
+import type { CompositionVariableDefinition } from "~/lib/composition-api";
 import { parseCompositionVariableInput } from "~/lib/ugoite-client/protocol";
 
 export const parameterDisplayValue = (
-  definition: CompositionParameterDefinition,
+  definition: CompositionVariableDefinition,
   value: unknown,
 ): string => {
   const current = value === undefined ? definition.default : value;
@@ -21,7 +21,7 @@ export const parameterDisplayValue = (
  * the existing resolver on edit and never written to the saved revision.
  */
 export function ParameterControl(props: {
-  definition: CompositionParameterDefinition;
+  definition: CompositionVariableDefinition;
   displayName: string;
   value: unknown;
   onChange: (value: unknown | undefined) => void;

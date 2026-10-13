@@ -202,7 +202,7 @@ export default function CompositionRevisionRoute() {
     compositionDisplayName(
       composition()?.fields.name ?? current().summary?.name,
     );
-  const definitions = () => current().resolved?.parameter_definitions ?? [];
+  const definitions = () => current().resolved?.variable_definitions ?? [];
   const diagnostics = () => current().resolved?.diagnostics ?? [];
   // Authorized Form metadata for Entry display names only. Property field
   // IDs in entry_query projections resolve to names through this existing
@@ -214,9 +214,9 @@ export default function CompositionRevisionRoute() {
   );
   const parameterMismatch = (parameterId: string) =>
     diagnostics().some((diagnostic) =>
-      diagnostic.parameter_id === parameterId &&
-      (diagnostic.code === "parameter_type_mismatch" ||
-        diagnostic.code === "parameter_missing")
+      diagnostic.variable_id === parameterId &&
+      (diagnostic.code === "variable_type_mismatch" ||
+        diagnostic.code === "variable_missing")
     );
 
   // First-class flow layout for saved Tools. The stored spec YAML is

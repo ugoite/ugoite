@@ -2,7 +2,7 @@ import { createSignal } from "solid-js";
 import {
   compositionApi,
   type CompositionListItem,
-  type CompositionParameterDefinition,
+  type CompositionVariableDefinition,
   type CompositionRawRevision,
   type CompositionResolvedComponentBinding,
   type CompositionResolvedSource,
@@ -46,7 +46,7 @@ const abortError = (error: unknown): boolean =>
   (error as { name?: unknown }).name === "AbortError";
 
 const defaultParameters = (
-  definitions: readonly CompositionParameterDefinition[] | undefined,
+  definitions: readonly CompositionVariableDefinition[] | undefined,
 ): Record<string, unknown> => {
   const values: Record<string, unknown> = {};
   for (const definition of definitions ?? []) {
@@ -190,7 +190,7 @@ export function createCompositionQueryHandle(
       if (!isCurrent(requestGeneration) || controller.signal.aborted) return;
       if (!parametersInitialized) {
         setParameters({
-          ...defaultParameters(resolved.parameter_definitions),
+          ...defaultParameters(resolved.variable_definitions),
           ...values,
         });
         parametersInitialized = true;

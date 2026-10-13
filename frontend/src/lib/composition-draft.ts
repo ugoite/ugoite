@@ -1,5 +1,5 @@
 import type {
-  CompositionParameterType,
+  CompositionVariableType,
   CompositionResultType,
   CompositionTextStyle,
 } from "./composition-api";
@@ -33,7 +33,7 @@ export interface DraftSavedSqlSeed {
   expectedResult: Array<{ name: string; type: CompositionResultType }>;
   variables: Record<string, { parameter: string }>;
   /** Declared Saved SQL variable types for parameter provisioning. */
-  variableTypes?: Record<string, CompositionParameterType>;
+  variableTypes?: Record<string, CompositionVariableType>;
   /** Run-time variable values carried as parameter defaults so the seeded
    * Studio opens with the same values that were just run. Values are stored
    * verbatim; type mismatches surface as Rust-owned resolve diagnostics. */
@@ -198,7 +198,7 @@ export interface DraftInsertTarget {
 
 export interface DraftParameter {
   id: string;
-  type: CompositionParameterType;
+  type: CompositionVariableType;
   label?: string;
   required: boolean;
   default?: unknown;
@@ -249,7 +249,7 @@ export interface CompositionStudioDocument {
     variables: Array<{
       id: string;
       label?: string;
-      type: CompositionParameterType;
+      type: CompositionVariableType;
       required: boolean;
       default?: unknown;
       format?: "year-month";
@@ -1417,7 +1417,7 @@ export const addParameter = (
  */
 export const ensureParametersForVariables = (
   draft: CompositionDraft,
-  variableTypes: Readonly<Record<string, CompositionParameterType>>,
+  variableTypes: Readonly<Record<string, CompositionVariableType>>,
   variableDefaults?: Readonly<Record<string, unknown>>,
 ): CompositionDraft => {
   let next = draft;

@@ -350,7 +350,7 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
             revision_id: saved.revision_id.to_string(),
         },
         component_id: component_id.to_string(),
-        parameters: BTreeMap::from([("minimum".to_string(), json!(minimum))]),
+        variables: BTreeMap::from([("minimum".to_string(), json!(minimum))]),
         unset_variables: Vec::new(),
     };
 
@@ -910,7 +910,7 @@ async fn authorized_composition_metrics_recheck_current_entry_and_saved_sql_acce
             revision_id: saved.revision_id.to_string(),
         },
         component_id: "amount_metric".to_string(),
-        parameters: BTreeMap::new(),
+        variables: BTreeMap::new(),
         unset_variables: Vec::new(),
     };
 

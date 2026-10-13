@@ -171,7 +171,7 @@ const seedDraft = (): CompositionDraft => {
 const okPreview = (fingerprint: string) => ({
   ok: true,
   draft_fingerprint: fingerprint,
-  parameter_definitions: [],
+  variable_definitions: [],
   plan: {
     draft_fingerprint: fingerprint,
     sources: ["src-1", "src-2"].map((id) => ({

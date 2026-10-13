@@ -22,7 +22,7 @@ const plan = (fingerprint: string, sources: string[] = ["s1"]) => ({
 const okResponse = (fingerprint: string): CompositionPreviewResponse => ({
   ok: true,
   draft_fingerprint: fingerprint,
-  parameter_definitions: [],
+  variable_definitions: [],
   plan: plan(fingerprint),
 });
 
@@ -127,7 +127,7 @@ describe("composition preview handle", () => {
       preview: async () => ({
         ok: true,
         draft_fingerprint: "fp-1",
-        parameter_definitions: [],
+        variable_definitions: [],
         plan: plan("fp-1", ["s1", "s2"]),
       }),
       querySource: async (_spaceId, source) => {
@@ -152,7 +152,7 @@ describe("composition preview handle", () => {
       preview: async () => ({
         ok: true,
         draft_fingerprint: "fp-1",
-        parameter_definitions: [],
+        variable_definitions: [],
         plan: plan("fp-1", ["s1", "s2", "s3"]),
       }),
       querySource: async (_spaceId, source) => {

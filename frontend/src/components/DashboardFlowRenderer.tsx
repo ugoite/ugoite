@@ -15,7 +15,7 @@ import { t } from "~/lib/i18n";
 import type {
   CompositionFlowLayout,
   CompositionFlowLayoutItem,
-  CompositionParameterDefinition,
+  CompositionVariableDefinition,
   CompositionResolvedComponentBinding,
   CompositionResolvePlan,
   CompositionTextStyle,
@@ -61,7 +61,7 @@ export interface DashboardFlowItemProps {
   binding?: CompositionResolvedComponentBinding;
   texts: Readonly<DashboardFlowTexts>;
   /** Semantic definition for Input components; absent when undeclared. */
-  definition?: CompositionParameterDefinition;
+  definition?: CompositionVariableDefinition;
   parameterDisplayName?: string;
   parameterValues: Readonly<Record<string, unknown>>;
   parameterInvalid?: (parameterId: string) => boolean;
@@ -145,9 +145,9 @@ type DashboardFlowRendererProps = {
   /** Text content and style joined by component id. */
   texts: Readonly<DashboardFlowTexts>;
   /** Semantic variable definitions used by Input component bindings. */
-  parameterDefinitions: readonly CompositionParameterDefinition[];
+  parameterDefinitions: readonly CompositionVariableDefinition[];
   /** Declaration-order definitions used only for localized display names. */
-  parameterDisplayDefinitions?: readonly CompositionParameterDefinition[];
+  parameterDisplayDefinitions?: readonly CompositionVariableDefinition[];
   /** Transient parameter values owned by the composition query handle. */
   parameterValues: Readonly<Record<string, unknown>>;
   parameterInvalid?: (parameterId: string) => boolean;

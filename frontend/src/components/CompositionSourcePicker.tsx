@@ -18,7 +18,7 @@ import {
 } from "~/lib/entry-query-composition";
 import {
   canCreateSavedSqlComposition,
-  type CompositionParameterType,
+  type CompositionVariableType,
   compositionResultTypeFromSql,
 } from "~/lib/composition-api";
 import {
@@ -321,7 +321,7 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
           variableTypes: Object.fromEntries(
             current.variables.map((variable) => [
               variable.name,
-              variable.type as CompositionParameterType,
+              variable.type as CompositionVariableType,
             ]),
           ),
         },
