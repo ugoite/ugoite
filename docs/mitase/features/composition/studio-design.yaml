@@ -429,6 +429,15 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-studio-variable-preview-stale-suppression
+      adapter: typescript
+      path: frontend/src/components/CompositionStudioSync.test.tsx
+      selector:
+        kind: test
+        name: invalidates an in-flight preview immediately when a variable default changes
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-007#criterion.stale-result-and-state-safety
     - id: browser-studio-split-narrow
       adapter: typescript
       path: frontend/src/components/CompositionStudioSync.test.tsx

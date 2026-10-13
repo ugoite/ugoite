@@ -396,6 +396,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
 
   const schedulePreview = (snapshot: CompositionDraft) => {
     const generation = ++previewGeneration;
+    // A draft can change while the previous preview is in flight. Invalidate
+    // its Work immediately; waiting for the debounced replacement request
+    // would briefly accept results for the previous draft or variable values.
+    previewHandle.invalidate();
     if (previewTimer !== undefined) clearTimeout(previewTimer);
     previewTimer = undefined;
     previewTimer = setTimeout(() => {
