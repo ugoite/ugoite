@@ -337,7 +337,7 @@ Deno.test(
       "ugoite composition restore <id> --revision <revision>",
       "ugoite composition lint <file>",
       "ugoite composition save <file>",
-      "ugoite composition query <id> --param k=v",
+      "ugoite composition query <id> --var ID=VALUE",
       "ugoite composition export <id> --output <path>",
       "ugoite composition import <file>",
     ]);
