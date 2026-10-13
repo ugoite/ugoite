@@ -201,6 +201,7 @@ components:
     label_kind: compact-section-label
     row_label: authored-human-label-else-localized-ordinal-by-declaration-order
     identifier: stable-internal-reference-never-a-display-fallback
+    identifier_visibility: excluded-from-ordinary-visible-labels-accessible-names-and-titles
     binding: typed-composition-variable-declaration-with-exact-type-default-and-required-state
     default_parsing: shared-rust-domain-parser-ignores-results-after-removal-or-type-change
     input_components: ordinary-layout-components-reference-one-declared-variable-and-own-no-value
@@ -313,9 +314,11 @@ components:
       data: opens-data-component-picker-with-Table-and-Metric-tabs
       input: place-existing-variable-binding-without-creating-a-variable
       input_label: authored-human-label-else-localized-variable-ordinal-never-variable-id
+      variable_bound_text_label: authored-human-label-else-localized-variable-ordinal-never-variable-id
     removal:
       owner: selected-block-inspector
       action: localized-icon-button-in-inspector-title-bar
+      accessible_name_and_title: localized-action-with-human-display-name-never-variable-id
       component: remove-declaration-and-unplace
       input: unplace-component-only-keeps-variable-declaration
       after_remove: clear-selection-prune-empty-layout-rows-and-focus-first-remaining-block-or-add-gap

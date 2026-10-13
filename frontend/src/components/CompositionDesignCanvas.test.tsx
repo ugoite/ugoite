@@ -454,6 +454,36 @@ describe("CompositionDesignCanvas", () => {
       .toBeInTheDocument();
   });
 
+  it("uses a localized variable name for variable-bound Text blocks", () => {
+    const initial = seedDraft();
+    const bindingId = "private_binding_01";
+    const variableBound: CompositionDraft = {
+      ...initial,
+      variables: initial.variables.map((variable) => {
+        if (variable.id !== "month") return variable;
+        const { label: _label, ...unlabeled } = variable;
+        return { ...unlabeled, id: bindingId };
+      }),
+      displays: initial.displays.map((display) =>
+        display.kind === "text"
+          ? {
+            ...display,
+            content: { kind: "variable" as const, variable: bindingId },
+          }
+          : display
+      ),
+    };
+    renderHarness(variableBound);
+
+    const select = screen.getByRole("button", { name: "Select Variable 1" });
+    expect(select).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent(bindingId);
+
+    setLocale("ja");
+    expect(screen.getByRole("button", { name: "変数1を選択" }))
+      .toBeInTheDocument();
+  });
+
   it("reorders rows and items with keyboard-operable buttons", () => {
     const { container } = renderHarness();
 
