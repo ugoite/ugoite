@@ -414,7 +414,7 @@ features:
   - id: metric-runtime-value-domain
     role: implementation
     facet: domain
-    responsibility: Validate selected scalar metric values, including exact decimal strings and date/time formats, with the shared Rust domain semantics.
+    responsibility: Validate selected scalar metric values, including exact integer and decimal strings, finite float numbers, nullable scalar results, and normalized date/time formats, with the shared Rust domain semantics.
     targets:
     - id: metric-runtime-value-validator
       adapter: rust
@@ -455,6 +455,24 @@ features:
       selector:
         kind: symbol
         name: tests::validates_exact_decimal_metric_strings_without_losing_scale
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.metric-runtime-values
+    - id: exact-integer-and-nullable-metric-values
+      adapter: rust
+      path: crates/ugoite-domain/src/composition_metric.rs
+      selector:
+        kind: symbol
+        name: tests::validates_nullable_scalar_results_and_exact_numeric_representations
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.metric-runtime-values
+    - id: finite-float-metric-json-values
+      adapter: rust
+      path: crates/ugoite-domain/src/composition_metric.rs
+      selector:
+        kind: symbol
+        name: tests::validates_typed_scalar_values
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.metric-runtime-values

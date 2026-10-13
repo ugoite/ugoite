@@ -845,11 +845,16 @@ requirements:
       - id: metric-runtime-values
         kind: behavior
         statement: >-
-          Decimal metric values are exact JSON strings in plain notation with
-          an optional minus sign, an integer part without leading zeroes, and
-          an optional non-empty fractional part. Exponents and negative zero
-          are rejected, while fractional scale, including trailing zeroes, is
-          preserved. Metric date values are valid Gregorian dates in
+          Integer metric values are JSON strings in the canonical base-10 forms
+          `0`, `[1-9][0-9]*`, or `-[1-9][0-9]*`; they preserve exact precision and
+          reject leading plus signs, leading zeroes, and negative zero. Float
+          metric values are finite JSON numbers. Decimal metric values are
+          exact JSON strings in plain notation with an optional minus sign, an
+          integer part without leading zeroes, and an optional non-empty
+          fractional part. Exponents and
+          negative zero are rejected, while fractional scale, including
+          trailing zeroes, is preserved. SQL NULL is JSON null for every
+          supported scalar result type. Metric date values are valid Gregorian dates in
           normalized YYYY-MM-DD form. Metric timestamp values are normalized
           local timestamps in YYYY-MM-DDTHH:MM or
           YYYY-MM-DDTHH:MM:SS[.fraction] form, or valid RFC 3339 timestamps
