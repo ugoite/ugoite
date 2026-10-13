@@ -73,6 +73,10 @@ requirements:
         kind: behavior
         statement: Studio can declare typed variables and defaults, place Inputs, bind literal or string-variable Text, and connect exact-type Saved SQL variables without JavaScript, expressions, getters, setters, or event handlers. Saving preserves defaults and never promotes runtime input to Composition Knowledge.
         governed_by: [POL-000#rule.foundation-precedence]
+      - id: studio-preview-default-synchronization
+        kind: behavior
+        statement: When a Studio draft default changes, the Design canvas, including when shown in Split, immediately reflects that current default while the replacement preview is debounced. An invalidated preview value cannot shadow the draft.
+        governed_by: [POL-000#rule.foundation-precedence]
       - id: studio-variable-identity-presentation
         kind: quality
         statement: Studio creates stable variable IDs internally and uses an authored label or localized declaration ordinal for variable-bound Text and Input names; ordinary visible labels, accessible names, and titles never expose variable IDs.
@@ -292,6 +296,20 @@ requirements:
                 criterion: REQ-COMP-007#criterion.code-free-studio-authoring
                 covers: [FEAT-COMP-008#binding.studio-typed-variable-defaults/target.variable-default-editor]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableList.test.tsx, test: does not restore a removed variable when its default parse resolves } }
+      - id: studio-preview-default-synchronization-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Design canvas in Split shows the current draft variable default immediately while replacement preview is waiting for debounce.
+        targets:
+          - id: split-preview-default-synchronization-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: shows changed variable defaults in Split while the replacement preview is debounced }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.studio-preview-default-synchronization
+                covers: [FEAT-COMP-005#binding.studio-design-evidence/target.browser-studio-split-preview-default-sync]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: shows changed variable defaults in Split while the replacement preview is debounced } }
       - id: typed-variable-explicit-unset-verification
         role: verification
         facet: verification
