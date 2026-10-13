@@ -682,8 +682,15 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
     const authenticatorId = await addVirtualAuthenticator(cdp);
     try {
       await page.goto(invitationUrl!);
+      const invitationFinishResponse = page.waitForResponse(
+        (response) =>
+          response.url().includes("/api/auth/invitations/finish") &&
+          response.request().method() === "POST",
+        { timeout: 30_000 },
+      );
       await page.getByRole("button", { name: "Accept invitation" }).click();
-      await expect(page).toHaveURL(/\/spaces$/);
+      expect((await invitationFinishResponse).status()).toBe(201);
+      await expect(page).toHaveURL(/\/spaces$/, { timeout: 10_000 });
 
       const viewerSessionResponse = await context.request.get(
         getBackendUrl("/auth/session"),
