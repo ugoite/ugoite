@@ -207,8 +207,6 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.typed-input-lexical-contract
-              - kind: evidences
-                anchor: REQ-COMP-007#criterion.portable-variable-contract
       - id: core-typed-variable-resolution
         role: implementation
         facet: core
