@@ -476,3 +476,17 @@ features:
                 criterion: REQ-FE-070#criterion.metric-result-presentation
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio-contract]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: "offers direct edit when a Saved SQL metric returns no rows" } }
+      - id: composition-input-synchronization-verification
+        role: verification
+        facet: verification
+        responsibility: Verify repeated layout-placed Inputs share valid typed state, invalid raw text, and validation at the Browser route boundary without refreshing unrelated SQL Sources.
+        targets:
+          - id: repeated-layout-input-state
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: "synchronizes repeated placed Inputs for valid and invalid raw values" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.input-runtime-synchronization
+                covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime/target.composition-query-work-handle]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: "synchronizes repeated placed Inputs for valid and invalid raw values" } }

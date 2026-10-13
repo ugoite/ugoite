@@ -654,6 +654,113 @@ describe("Composition revision flow layout", () => {
     expect(compositionApi.querySource).toHaveBeenCalledOnce();
   });
 
+  it("synchronizes repeated placed Inputs for valid and invalid raw values", async () => {
+    const repeatedInputDocument = structuredClone(lintDocument);
+    repeatedInputDocument.spec.variables.push({
+      id: "minimum",
+      label: "Minimum",
+      type: "integer",
+      required: true,
+      default: 0,
+    });
+    repeatedInputDocument.spec.components.push({
+      kind: "input",
+      id: "input-minimum",
+      label: "Minimum",
+      variable: "minimum",
+    }, {
+      kind: "input",
+      id: "input-minimum-copy",
+      label: "Minimum mirror",
+      variable: "minimum",
+    });
+    if (repeatedInputDocument.spec.layout?.kind !== "flow") {
+      throw new Error("expected a flow layout");
+    }
+    const controls = repeatedInputDocument.spec.layout.rows.find((row) =>
+      row.id === "controls"
+    );
+    if (!controls) throw new Error("expected the controls row");
+    controls.items.push(
+      { kind: "component", component: "input-minimum" },
+      { kind: "component", component: "input-minimum-copy" },
+    );
+    vi.mocked(compositionApi.lint).mockResolvedValue({
+      ok: true,
+      value: {
+        document: repeatedInputDocument,
+        canonical_yaml: "canonical",
+        fingerprint: "fingerprint",
+      },
+    });
+    const repeatedInputPlan = structuredClone(flowPlan);
+    repeatedInputPlan.component_bindings.push({
+      component_id: "input-minimum",
+      kind: "input",
+      variable_id: "minimum",
+    }, {
+      component_id: "input-minimum-copy",
+      kind: "input",
+      variable_id: "minimum",
+    });
+    repeatedInputPlan.dependencies = {
+      variable_consumers: {
+        month: { source_ids: [] },
+        region: { source_ids: [] },
+        minimum: {
+          input_component_ids: ["input-minimum", "input-minimum-copy"],
+          source_ids: [],
+        },
+      },
+    };
+    vi.mocked(compositionApi.resolve).mockResolvedValue({
+      ok: true,
+      variable_definitions: [{
+        id: "month",
+        label: "Month",
+        type: "date",
+        required: true,
+        default: "2026-10-01",
+        format: "year-month",
+      }, {
+        id: "region",
+        label: "Region",
+        type: "string",
+        required: false,
+      }, {
+        id: "minimum",
+        label: "Minimum",
+        type: "integer",
+        required: true,
+        default: 0,
+      }],
+      plan: repeatedInputPlan,
+    });
+    render(() => <CompositionRevisionRoute />);
+
+    const minimum = await screen.findByLabelText("Minimum");
+    const minimumMirror = await screen.findByLabelText("Minimum mirror");
+    expect(minimum).toHaveValue("0");
+    expect(minimumMirror).toHaveValue("0");
+    expect(compositionApi.querySource).toHaveBeenCalledOnce();
+
+    fireEvent.input(minimum, { target: { value: "+00042" } });
+    expect(minimum).toHaveValue("+00042");
+    expect(minimumMirror).toHaveValue("+00042");
+    await waitFor(() =>
+      expect(compositionApi.resolve).toHaveBeenCalledTimes(2)
+    );
+    expect(compositionApi.querySource).toHaveBeenCalledOnce();
+
+    fireEvent.input(minimumMirror, { target: { value: "1.0" } });
+    expect(minimum).toHaveValue("1.0");
+    expect(minimumMirror).toHaveValue("1.0");
+    expect(minimum).toHaveAttribute("aria-invalid", "true");
+    expect(minimumMirror).toHaveAttribute("aria-invalid", "true");
+    expect(compositionApi.resolve).toHaveBeenCalledTimes(2);
+    expect(compositionApi.querySource).toHaveBeenCalledOnce();
+  });
+
   it("uses declaration order for localized ordinals when placement order differs", async () => {
     const variables = (lintDocument.spec.variables ?? []).map(({
       label: _label,
