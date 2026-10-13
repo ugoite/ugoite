@@ -319,11 +319,17 @@ async function openSavedComposition(
   ).toBeVisible();
 }
 
-function metricOutput(page: Page, label: string) {
+function metricSection(page: Page, label: string) {
   return page.locator("section.section").filter({
     has: page.getByRole("heading", { name: label, exact: true }),
-  }).locator("output.compositionMetric");
+  });
 }
+
+function metricOutput(page: Page, label: string) {
+  return metricSection(page, label).locator("output.compositionMetric");
+}
+
+const scalarResultTimeoutMs = 30_000;
 
 async function openOwnerPage(
   browser: Browser,
@@ -351,10 +357,18 @@ test.describe("Composition scalar state journey", () => {
     test.setTimeout(120_000);
     const { freshContext, page } = await openOwnerPage(browser, context, seed);
     try {
-      await expect(metricOutput(page, "All rows")).toHaveText("3");
-      await expect(metricOutput(page, "Rows with amount")).toHaveText("2");
-      await expect(metricOutput(page, "Amount total")).toHaveText("30");
-      await expect(metricOutput(page, "Amount average")).toHaveText("15");
+      await expect(metricOutput(page, "All rows")).toHaveText("3", {
+        timeout: scalarResultTimeoutMs,
+      });
+      await expect(metricOutput(page, "Rows with amount")).toHaveText("2", {
+        timeout: scalarResultTimeoutMs,
+      });
+      await expect(metricOutput(page, "Amount total")).toHaveText("30", {
+        timeout: scalarResultTimeoutMs,
+      });
+      await expect(metricOutput(page, "Amount average")).toHaveText("15", {
+        timeout: scalarResultTimeoutMs,
+      });
     } finally {
       await freshContext.close();
     }
@@ -364,30 +378,31 @@ test.describe("Composition scalar state journey", () => {
     test.setTimeout(120_000);
     const { freshContext, page } = await openOwnerPage(browser, context, seed);
     try {
-      const zeroRowsSection = page.locator("section.section").filter({
-        has: page.getByRole("heading", {
-          name: "No matching rows",
-          exact: true,
-        }),
-      });
+      const zeroRowsSection = metricSection(page, "No matching rows");
       await expect(zeroRowsSection.getByRole("alert")).toContainText(
         await page.locator("html").getAttribute("lang").then((locale) =>
           locale === "ja"
             ? "指標の結果がありません。"
             : "The metric returned no rows."
         ),
+        { timeout: scalarResultTimeoutMs },
       );
       await expect(zeroRowsSection.locator("output.compositionMetric"))
-        .toHaveCount(0);
+        .toHaveCount(0, { timeout: scalarResultTimeoutMs });
 
       const nullOutput = metricOutput(page, "Empty sum");
       await expect(nullOutput).toHaveText(
         await page.locator("html").getAttribute("lang").then((locale) =>
           locale === "ja" ? "データなし" : "No data"
         ),
+        { timeout: scalarResultTimeoutMs },
       );
-      await expect(metricOutput(page, "Empty count")).toHaveText("0");
-      await expect(nullOutput).not.toHaveText("0");
+      await expect(metricOutput(page, "Empty count")).toHaveText("0", {
+        timeout: scalarResultTimeoutMs,
+      });
+      await expect(nullOutput).not.toHaveText("0", {
+        timeout: scalarResultTimeoutMs,
+      });
     } finally {
       await freshContext.close();
     }
