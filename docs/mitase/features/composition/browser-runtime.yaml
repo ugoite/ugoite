@@ -81,7 +81,7 @@ features:
       claims:
       - kind: satisfies
         criterion: REQ-COMP-002#criterion.text-style-enum
-    - id: browser-parameter-control
+    - id: browser-input-control
       adapter: typescript
       path: frontend/src/components/composition/InputControl.tsx
       selector:

@@ -725,7 +725,7 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.ordered-component-layout
-    - id: browser-studio-parameters-disclosure
+    - id: browser-studio-variables-disclosure
       adapter: typescript
       path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
       selector:

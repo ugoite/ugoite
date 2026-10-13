@@ -143,7 +143,7 @@ features:
         anchor: REQ-COMP-002#criterion.ordered-component-layout
       - kind: evidences
         anchor: REQ-COMP-002#criterion.text-style-enum
-    - id: browser-design-canvas-parameter-placement
+    - id: browser-design-canvas-input-placement
       adapter: typescript
       path: frontend/src/components/CompositionDesignCanvas.test.tsx
       selector:

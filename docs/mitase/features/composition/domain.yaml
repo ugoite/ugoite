@@ -745,7 +745,7 @@ features:
       role: implementation
     guarantees:
     - REQ-COMP-002#criterion.ordered-component-layout
-  - id: parameter-placement
+  - id: variable-input-placement
     kind: custom
     source: FEAT-COMP-001#binding.contract/target.composition-contract
     participants:
@@ -753,7 +753,7 @@ features:
       role: implementation
     - target: FEAT-COMP-001#binding.component-layout-domain/target.ordered-components
       role: implementation
-    - target: FEAT-COMP-004#binding.browser-query-runtime/target.browser-parameter-control
+    - target: FEAT-COMP-004#binding.browser-query-runtime/target.browser-input-control
       role: client
     - target: FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
       role: client
