@@ -766,6 +766,8 @@ test.describe("Composition Studio Journey", () => {
       // Saved SQL Table or Metric source.
       const initialSqlQueryCount = sqlQueryCount;
       const initialMetricQueryCount = metricQueryCount;
+      expect(initialSqlQueryCount).toBeGreaterThan(0);
+      expect(initialMetricQueryCount).toBeGreaterThan(0);
       await page.getByLabel("Report title", { exact: true }).fill(
         "Transient report title",
       );
