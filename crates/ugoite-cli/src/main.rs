@@ -296,7 +296,7 @@ mod tests {
     }
 
     #[test]
-    fn composition_query_accepts_exact_revision_and_typed_parameters_as_a_read() {
+    fn composition_query_accepts_exact_revision_and_typed_variables_as_a_read() {
         let cli = Cli::try_parse_from([
             "ugoite",
             "composition",
@@ -304,9 +304,9 @@ mod tests {
             "composition-1",
             "--revision",
             "revision-1",
-            "--param",
+            "--var",
             "month=2026-10",
-            "--param",
+            "--var",
             "include_archived=true",
         ])
         .expect("Composition query command");
@@ -318,11 +318,11 @@ mod tests {
                 sub: commands::composition::CompositionSubCmd::Query {
                     composition_id,
                     revision: Some(revision),
-                    parameters,
+                    variables,
                 }
             }) if composition_id == "composition-1"
                 && revision == "revision-1"
-                && parameters == ["month=2026-10", "include_archived=true"]
+                && variables == ["month=2026-10", "include_archived=true"]
         ));
     }
 
