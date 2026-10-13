@@ -114,6 +114,13 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+          - id: space-settings-members-surface
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/settings.tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
           - id: dashboard-entry-surface
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/dashboard.tsx"

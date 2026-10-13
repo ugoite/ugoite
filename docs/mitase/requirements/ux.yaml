@@ -445,6 +445,15 @@ requirements:
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
                 covers: [FEAT-UX-003#binding.list-baseline/target.spaces-route-surface]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/routes/spaces/index.test.tsx, test: "REQ-FE-001: uses Space names or slugs without exposing Space UIDs" } }
+          - id: space-settings-member-identifiers
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/settings.route.test.tsx"
+            selector: { kind: test, name: "renders members with display names while exact IDs stay advanced-only" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+                covers: [FEAT-UX-003#binding.list-baseline/target.space-settings-members-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/settings.route.test.tsx", test: "renders members with display names while exact IDs stay advanced-only" } }
           - id: entry-rows-compact
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx"
