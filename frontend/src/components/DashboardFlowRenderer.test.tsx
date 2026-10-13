@@ -77,6 +77,12 @@ const plan: CompositionResolvePlan = {
       source_id: "summary",
     },
   ],
+  dependencies: {
+    variable_consumers: {
+      month: { source_ids: ["summary"] },
+      region: {},
+    },
+  },
 };
 
 const texts = {
@@ -129,7 +135,7 @@ const renderFlow = (
       plan={plan}
       texts={texts}
       parameterDefinitions={definitions}
-      parameterValues={{ month: "2026-10-01" }}
+      variableValues={{ month: "2026-10-01" }}
       sources={readySources}
       onNext={() => {}}
       onPrevious={() => {}}
@@ -145,7 +151,7 @@ describe("DashboardFlowRenderer", () => {
   });
 
   it("renders rows in order with parameter controls interleaved", async () => {
-    const onParameterChange = vi.fn();
+    const onVariableInput = vi.fn();
     const query = vi.spyOn(compositionApi, "queryMetric").mockImplementation(
       (_spaceId, request) =>
         Promise.resolve({
@@ -158,7 +164,7 @@ describe("DashboardFlowRenderer", () => {
         }),
     );
     const { container } = renderFlow({
-      onParameterChange,
+      onVariableInput,
       metricQueryContext: {
         spaceId: "space-1",
         target: {
@@ -166,7 +172,7 @@ describe("DashboardFlowRenderer", () => {
           composition_id: "tool-1",
           revision_id: "revision-1",
         },
-        parameters: { month: "2026-10-01" },
+        variables: { month: "2026-10-01" },
       },
     });
 
@@ -186,7 +192,7 @@ describe("DashboardFlowRenderer", () => {
     expect(input).not.toHaveAttribute("readonly");
     fireEvent.input(input, { target: { value: "2026-11-01" } });
     await waitFor(() => {
-      expect(onParameterChange).toHaveBeenCalledWith("month", "2026-11-01");
+      expect(onVariableInput).toHaveBeenCalledWith("month", "2026-11-01");
     });
     expect(screen.queryByLabelText("month")).toBeNull();
     // Unplaced optional parameters render no in-flow control.
@@ -274,9 +280,9 @@ describe("DashboardFlowRenderer", () => {
   });
 
   it("binds parameter changes to transient work state", async () => {
-    const onParameterChange = vi.fn();
+    const onVariableInput = vi.fn();
     renderFlow({
-      onParameterChange,
+      onVariableInput,
       parameterDefinitions: [{
         id: "include_archived",
         label: "Include archived",
@@ -289,7 +295,7 @@ describe("DashboardFlowRenderer", () => {
           items: [{ kind: "component", component: "input-include-archived" }],
         }],
       },
-      parameterValues: {},
+      variableValues: {},
       inputVariables: { "input-include-archived": "include_archived" },
       plan: {
         composition_revision: {
@@ -312,7 +318,7 @@ describe("DashboardFlowRenderer", () => {
     expect(input).toHaveAttribute("aria-required", "true");
     fireEvent.input(input, { target: { value: "true" } });
     await waitFor(() => {
-      expect(onParameterChange).toHaveBeenCalledWith("include_archived", true);
+      expect(onVariableInput).toHaveBeenCalledWith("include_archived", "true");
     });
   });
 
@@ -342,7 +348,7 @@ describe("DashboardFlowRenderer", () => {
           composition_id: "tool-1",
           revision_id: "revision-1",
         },
-        parameters: { month: "2026-10-01" },
+        variables: { month: "2026-10-01" },
       },
     });
 
@@ -384,7 +390,7 @@ describe("DashboardFlowRenderer", () => {
           composition_id: "tool-1",
           revision_id: "revision-1",
         },
-        parameters: { month: "2026-10-01" },
+        variables: { month: "2026-10-01" },
       },
     });
 
@@ -462,7 +468,7 @@ describe("DashboardFlowRenderer", () => {
         plan={plan}
         texts={texts}
         parameterDefinitions={definitions}
-        parameterValues={{ month: "2026-10-01" }}
+        variableValues={{ month: "2026-10-01" }}
         metricQueryContext={{
           spaceId: "space-1",
           target: {
@@ -470,7 +476,7 @@ describe("DashboardFlowRenderer", () => {
             composition_id: "tool-1",
             revision_id: "revision-1",
           },
-          parameters: { month: "2026-10-01" },
+          variables: { month: "2026-10-01" },
         }}
         sources={sources()}
         onNext={() => setSources(secondPage)}
@@ -527,7 +533,7 @@ describe("DashboardFlowRenderer", () => {
         }],
       },
       parameterDefinitions: [],
-      parameterValues: {},
+      variableValues: {},
       sources: {
         entries: {
           status: "ready",

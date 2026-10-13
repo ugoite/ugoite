@@ -270,10 +270,15 @@ export function CompositionEntryQueryTable(props: {
             {t("composition.retry")}
           </button>
         </Show>
+        <Show when={status() === "invalid"}>
+          <p class="ui-text-danger" role="alert">
+            {t("composition.variableInvalid")}
+          </p>
+        </Show>
         <Show when={status() === "ready" && rows().length === 0 && !failed()}>
           <p class="ui-muted">{t("composition.queryEmpty")}</p>
         </Show>
-        <Show when={!failed() && rows().length > 0}>
+        <Show when={status() === "ready" && rows().length > 0}>
           <EntryResultTable
             columns={columns().map((column) => ({
               key: column.key,

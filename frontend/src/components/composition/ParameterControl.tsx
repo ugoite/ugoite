@@ -1,7 +1,6 @@
-import { createSignal, Show } from "solid-js";
+import { Show } from "solid-js";
 import { t } from "~/lib/i18n";
 import type { CompositionVariableDefinition } from "~/lib/composition-api";
-import { parseCompositionVariableInput } from "~/lib/ugoite-client/protocol";
 
 export const parameterDisplayValue = (
   definition: CompositionVariableDefinition,
@@ -24,50 +23,14 @@ export function ParameterControl(props: {
   definition: CompositionVariableDefinition;
   displayName: string;
   value: unknown;
-  onChange: (value: unknown | undefined) => void;
+  rawValue?: string;
+  onChange: (raw: string) => void;
   invalid?: boolean;
 }) {
-  const [rawValue, setRawValue] = createSignal<string | undefined>();
-  const [parseInvalid, setParseInvalid] = createSignal(false);
-  let inputGeneration = 0;
   const label = () => props.displayName;
   const value = () =>
-    rawValue() ??
+    props.rawValue ??
       parameterDisplayValue(props.definition, props.value);
-  const handleInput = async (raw: string) => {
-    setRawValue(raw);
-    setParseInvalid(false);
-    const generation = ++inputGeneration;
-    try {
-      const parsed = await parseCompositionVariableInput(
-        props.definition.type,
-        raw,
-      );
-      if (generation !== inputGeneration) return;
-
-      if (parsed.status === "valid") {
-        props.onChange(parsed.value);
-        setRawValue(undefined);
-        return;
-      }
-      if (parsed.status === "unset") {
-        props.onChange(undefined);
-        setRawValue(undefined);
-        return;
-      }
-
-      // Keep malformed raw text visible and let Core reject its untyped value.
-      // In particular, never guess a number using JavaScript's Number().
-      setParseInvalid(true);
-      props.onChange(raw);
-    } catch {
-      if (generation !== inputGeneration) return;
-      // If WASM is unavailable, the raw string remains untyped and Core still
-      // validates it against the declared variable type.
-      setParseInvalid(true);
-      props.onChange(raw);
-    }
-  };
 
   return (
     <div class="ui-field">
@@ -82,8 +45,8 @@ export function ParameterControl(props: {
               required={props.definition.required || undefined}
               value={value()}
               aria-required={props.definition.required || undefined}
-              aria-invalid={props.invalid || parseInvalid() || undefined}
-              onInput={(event) => void handleInput(event.currentTarget.value)}
+              aria-invalid={props.invalid || undefined}
+              onInput={(event) => props.onChange(event.currentTarget.value)}
             />
           }
         >
@@ -92,8 +55,8 @@ export function ParameterControl(props: {
             required={props.definition.required || undefined}
             value={value()}
             aria-required={props.definition.required || undefined}
-            aria-invalid={props.invalid || parseInvalid() || undefined}
-            onInput={(event) => void handleInput(event.currentTarget.value)}
+            aria-invalid={props.invalid || undefined}
+            onInput={(event) => props.onChange(event.currentTarget.value)}
           >
             <option value="">—</option>
             <option value="true">{t("composition.booleanTrue")}</option>

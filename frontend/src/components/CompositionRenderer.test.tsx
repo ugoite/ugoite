@@ -44,6 +44,12 @@ const plan: CompositionResolvePlan = {
     label: "Details",
     source_id: "summary",
   }],
+  dependencies: {
+    variable_consumers: {
+      month: { source_ids: ["summary"] },
+      year: { source_ids: ["summary"] },
+    },
+  },
 };
 
 const sources = {
@@ -108,7 +114,7 @@ describe("CompositionRenderer", () => {
             composition_id: "tool-1",
             revision_id: "revision-1",
           },
-          parameters: { month: "2026-10" },
+          variables: { month: "2026-10" },
         }}
         onNext={() => {}}
         onPrevious={() => {}}
@@ -134,6 +140,103 @@ describe("CompositionRenderer", () => {
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
+  it("invalidates a metric when an unset dependency becomes invalid without changing its null value", async () => {
+    const [invalidVariables, setInvalidVariables] = createSignal<string[]>([]);
+    let resolveQuery!: (response: CompositionMetricQueryResponse) => void;
+    const query = vi.spyOn(compositionApi, "queryMetric").mockImplementation(
+      () => new Promise((resolve) => resolveQuery = resolve),
+    );
+    const metricPlan = {
+      ...plan,
+      component_bindings: [plan.component_bindings[0]],
+    };
+    render(() => (
+      <CompositionRenderer
+        plan={metricPlan}
+        sources={{}}
+        metricQueryContext={{
+          spaceId: "space-1",
+          target: {
+            kind: "saved_revision",
+            composition_id: "tool-1",
+            revision_id: "revision-1",
+          },
+          variables: { month: null },
+          invalidVariables: invalidVariables(),
+        }}
+        onNext={() => {}}
+        onPrevious={() => {}}
+        onRetry={() => {}}
+      />
+    ));
+
+    await waitFor(() => expect(query).toHaveBeenCalledOnce());
+    const signal = query.mock.calls[0][2];
+    setInvalidVariables(["month"]);
+
+    expect(await screen.findByText("Enter a valid value.")).toBeInTheDocument();
+    expect(signal.aborted).toBe(true);
+    resolveQuery({
+      ok: true,
+      result: {
+        component_id: "total",
+        result_type: "integer",
+        value: "42",
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(screen.queryByText("42", { selector: "output" }))
+      .not.toBeInTheDocument();
+  });
+
+  it("invalidates a metric when its dependency index becomes incomplete", async () => {
+    const [dependencies, setDependencies] = createSignal<
+      CompositionResolvePlan["dependencies"]
+    >(plan.dependencies);
+    let resolveQuery!: (response: CompositionMetricQueryResponse) => void;
+    const query = vi.spyOn(compositionApi, "queryMetric").mockImplementation(
+      () => new Promise((resolve) => resolveQuery = resolve),
+    );
+    render(() => (
+      <CompositionRenderer
+        plan={{ ...plan, component_bindings: [plan.component_bindings[0]] }}
+        sources={{}}
+        metricQueryContext={{
+          spaceId: "space-1",
+          target: {
+            kind: "saved_revision",
+            composition_id: "tool-1",
+            revision_id: "revision-1",
+          },
+          variables: { month: "2026-10" },
+          dependencies: dependencies(),
+        }}
+        onNext={() => {}}
+        onPrevious={() => {}}
+        onRetry={() => {}}
+      />
+    ));
+
+    await waitFor(() => expect(query).toHaveBeenCalledOnce());
+    const signal = query.mock.calls[0][2];
+    setDependencies({ variable_consumers: {} });
+
+    expect(await screen.findByText("Enter a valid value.")).toBeInTheDocument();
+    expect(signal.aborted).toBe(true);
+    resolveQuery({
+      ok: true,
+      result: {
+        component_id: "total",
+        result_type: "integer",
+        value: "42",
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByText("42", { selector: "output" }))
+      .not.toBeInTheDocument();
+  });
+
   it("queries draft metrics and verifies the preview fingerprint", async () => {
     const yaml = "format: ugoite.composition\n";
     const query = vi.spyOn(compositionApi, "queryMetric").mockResolvedValue({
@@ -153,7 +256,7 @@ describe("CompositionRenderer", () => {
           spaceId: "space-1",
           target: { kind: "draft", yaml },
           draftFingerprint: "draft-fingerprint",
-          parameters: { year: 2026 },
+          variables: { year: 2026 },
         }}
         onNext={() => {}}
         onPrevious={() => {}}
@@ -192,7 +295,7 @@ describe("CompositionRenderer", () => {
           spaceId: "space-1",
           target: { kind: "draft", yaml: "format: ugoite.composition\n" },
           draftFingerprint: "current-fingerprint",
-          parameters: {},
+          variables: {},
         }}
         onNext={() => {}}
         onPrevious={() => {}}
@@ -236,7 +339,7 @@ describe("CompositionRenderer", () => {
                 composition_id: "tool-1",
                 revision_id: "revision-1",
               },
-              parameters: { month: "2026-10" },
+              variables: { month: "2026-10" },
             };
           })()}
           onNext={() => {}}
@@ -277,7 +380,7 @@ describe("CompositionRenderer", () => {
             composition_id: "tool-1",
             revision_id: "revision-1",
           },
-          parameters: {},
+          variables: {},
         }}
         onNext={() => {}}
         onPrevious={() => {}}
@@ -310,7 +413,7 @@ describe("CompositionRenderer", () => {
             composition_id: "tool-1",
             revision_id: "revision-1",
           },
-          parameters: {},
+          variables: {},
         }}
         onNext={() => {}}
         onPrevious={() => {}}
@@ -365,7 +468,7 @@ describe("CompositionRenderer", () => {
             composition_id: "tool-1",
             revision_id: "revision-1",
           },
-          parameters: parameters(),
+          variables: parameters(),
         }}
         onNext={() => {}}
         onPrevious={() => {}}
@@ -413,7 +516,7 @@ describe("CompositionRenderer", () => {
             composition_id: "tool-1",
             revision_id: "revision-1",
           },
-          parameters: {},
+          variables: {},
         }}
         onNext={() => {}}
         onPrevious={() => {}}
@@ -452,7 +555,7 @@ describe("CompositionRenderer", () => {
             composition_id: "tool-1",
             revision_id: "revision-1",
           },
-          parameters: {},
+          variables: {},
         }}
         onNext={() => {}}
         onPrevious={() => {}}
@@ -490,7 +593,7 @@ describe("CompositionRenderer", () => {
             composition_id: "tool-1",
             revision_id: "revision-1",
           },
-          parameters: {},
+          variables: {},
         }}
         onNext={() => {}}
         onPrevious={() => {}}
@@ -526,7 +629,7 @@ describe("CompositionRenderer", () => {
             composition_id: "tool-1",
             revision_id: "revision-1",
           },
-          parameters: {},
+          variables: {},
           onEdit,
         }}
         onNext={() => {}}
@@ -569,7 +672,7 @@ describe("CompositionRenderer", () => {
             composition_id: "tool-1",
             revision_id: "revision-1",
           },
-          parameters: {},
+          variables: {},
           onEdit,
         }}
         onNext={() => {}}
@@ -628,7 +731,7 @@ describe("CompositionRenderer", () => {
             composition_id: "tool-1",
             revision_id: "revision-1",
           },
-          parameters: parameters(),
+          variables: parameters(),
         }}
         onNext={() => {}}
         onPrevious={() => {}}
@@ -689,7 +792,7 @@ describe("CompositionRenderer", () => {
             composition_id: "tool-1",
             revision_id: "revision-1",
           },
-          parameters: parameters(),
+          variables: parameters(),
         }}
         onNext={() => {}}
         onPrevious={() => {}}

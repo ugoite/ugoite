@@ -9,6 +9,7 @@ import { SqlResultTable } from "~/components/SqlResultTable";
 import { t, type TranslationKey } from "~/lib/i18n";
 import {
   compositionApi,
+  type CompositionDependencyIndex,
   type CompositionMetricPresentation,
   type CompositionMetricQueryResponse,
   type CompositionMetricQueryTarget,
@@ -40,7 +41,9 @@ export type { CompositionFieldTypeLookup };
 type SavedRevisionMetricQueryContext = {
   spaceId: string;
   target: Extract<CompositionMetricQueryTarget, { kind: "saved_revision" }>;
-  parameters: Record<string, unknown>;
+  variables: Record<string, unknown>;
+  invalidVariables?: readonly string[];
+  dependencies?: CompositionDependencyIndex;
   onEdit?: () => void;
 };
 
@@ -48,7 +51,9 @@ type DraftMetricQueryContext = {
   spaceId: string;
   target: Extract<CompositionMetricQueryTarget, { kind: "draft" }>;
   draftFingerprint: string;
-  parameters: Record<string, unknown>;
+  variables: Record<string, unknown>;
+  invalidVariables?: readonly string[];
+  dependencies?: CompositionDependencyIndex;
   onEdit?: () => void;
 };
 
@@ -62,7 +67,10 @@ type RendererProps = {
    * the full resolve plan; unsaved draft previews pass the preview plan,
    * which carries the same sources and bindings without a revision.
    */
-  plan: Pick<CompositionResolvePlan, "sources" | "component_bindings">;
+  plan: Pick<
+    CompositionResolvePlan,
+    "sources" | "component_bindings" | "dependencies"
+  >;
   sources: Record<string, CompositionSourcePageState>;
   /**
    * Text content joined by component id. Surfaces without the component
@@ -331,10 +339,15 @@ export function CompositionSavedSqlTable(props: {
             {t("composition.retry")}
           </button>
         </Show>
+        <Show when={status() === "invalid"}>
+          <p class="ui-text-danger" role="alert">
+            {t("composition.variableInvalid")}
+          </p>
+        </Show>
         <Show when={status() === "ready" && rows().length === 0 && !failed()}>
           <p class="ui-muted">{t("composition.queryEmpty")}</p>
         </Show>
-        <Show when={!failed() && rows().length > 0}>
+        <Show when={status() === "ready" && rows().length > 0}>
           <SqlResultTable
             columns={page()?.columns ?? []}
             columnTypes={page()?.result_schema?.map((column) => column.type)}
@@ -378,15 +391,44 @@ export function CompositionMetric(props: {
   const [serverLoading, setServerLoading] = createSignal(false);
   const [serverFailed, setServerFailed] = createSignal(false);
   const [serverInvalid, setServerInvalid] = createSignal(false);
+  const [serverVariableInvalid, setServerVariableInvalid] = createSignal(false);
   const [serverRetry, setServerRetry] = createSignal(0);
   let serverGeneration = 0;
   let serverController: AbortController | undefined;
+  let serverTimer: ReturnType<typeof setTimeout> | undefined;
   let lastRequestSignature: string | undefined;
   let lastRequestRetry: number | undefined;
 
   createEffect(() => {
     const context = props.metricQueryContext;
     const retry = serverRetry();
+    const dependencyIndex = context?.dependencies?.variable_consumers;
+    const dependencyIndexComplete = !context ||
+      Object.keys(context.variables).length === 0 ||
+      (!!dependencyIndex && Object.keys(context.variables).every((variableId) =>
+        Object.hasOwn(dependencyIndex, variableId)
+      ));
+    const sourceVariables = context
+      ? dependencyIndex
+        ? Object.entries(dependencyIndex).flatMap(([variableId, consumers]) =>
+          consumers.source_ids?.includes(props.binding.source_id)
+            ? [variableId]
+            : []
+        )
+        : Object.keys(context.variables)
+      : [];
+    const variables = context
+      ? Object.fromEntries(sourceVariables.flatMap((variableId) =>
+        Object.hasOwn(context.variables, variableId)
+          ? [[variableId, context.variables[variableId]]]
+          : []
+      ))
+      : {};
+    const invalidSourceVariables = sourceVariables.filter((variableId) =>
+      context?.invalidVariables?.includes(variableId)
+    );
+    const invalidVariable = !!context && (!dependencyIndexComplete ||
+      invalidSourceVariables.length > 0);
     const requestSignature = context
       ? JSON.stringify([
         context.spaceId,
@@ -401,12 +443,15 @@ export function CompositionMetric(props: {
             context.target.yaml,
             context.draftFingerprint,
           ],
-        Object.entries(context.parameters)
+        sourceVariables,
+        Object.entries(variables)
           .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
           .map(([key, value]) => [
             key,
             value === undefined ? { kind: "undefined" } : value,
           ]),
+        dependencyIndexComplete,
+        invalidSourceVariables,
       ])
       : "no-context";
     if (
@@ -416,11 +461,18 @@ export function CompositionMetric(props: {
     lastRequestSignature = requestSignature;
     lastRequestRetry = retry;
     const requestGeneration = ++serverGeneration;
+    if (serverTimer !== undefined) clearTimeout(serverTimer);
+    serverTimer = undefined;
     serverController?.abort();
     serverController = undefined;
     setServerResult(undefined);
     setServerFailed(false);
     setServerInvalid(false);
+    setServerVariableInvalid(invalidVariable);
+    if (invalidVariable) {
+      setServerLoading(false);
+      return;
+    }
     if (!context) {
       setServerLoading(false);
       setServerFailed(true);
@@ -429,62 +481,66 @@ export function CompositionMetric(props: {
     const controller = new AbortController();
     serverController = controller;
     setServerLoading(true);
-    void compositionApi.queryMetric(
-      context.spaceId,
-      {
-        target: { ...context.target },
-        component_id: props.binding.component_id,
-        variables: { ...context.parameters },
-      },
-      controller.signal,
-    ).then(
-      (response) => {
-        if (requestGeneration !== serverGeneration) return;
-        if (!isMetricQueryResponse(response)) {
-          setServerInvalid(true);
-          return;
-        }
-        if (
-          (context.target.kind === "draft" &&
-            response.draft_fingerprint !== context.draftFingerprint) ||
-          (context.target.kind === "saved_revision" &&
-            response.draft_fingerprint !== undefined)
-        ) {
-          setServerInvalid(true);
-          return;
-        }
-        const result = response;
-        const hasDiagnostics = (result.diagnostics?.length ?? 0) > 0;
-        if (
-          (result.ok && (hasDiagnostics || !result.result)) ||
-          (!result.ok && (result.result !== undefined || !hasDiagnostics))
-        ) {
-          setServerInvalid(true);
-          return;
-        }
-        if (result.ok && result.result) {
-          const metric = result.result;
+    serverTimer = setTimeout(() => {
+      serverTimer = undefined;
+      void compositionApi.queryMetric(
+        context.spaceId,
+        {
+          target: { ...context.target },
+          component_id: props.binding.component_id,
+          variables,
+        },
+        controller.signal,
+      ).then(
+        (response) => {
+          if (requestGeneration !== serverGeneration) return;
+          if (!isMetricQueryResponse(response)) {
+            setServerInvalid(true);
+            return;
+          }
           if (
-            metric.component_id !== props.binding.component_id ||
-            metric.result_type !== props.binding.expected_result_type ||
-            !isValidMetricScalar(metric.result_type, metric.value)
+            (context.target.kind === "draft" &&
+              response.draft_fingerprint !== context.draftFingerprint) ||
+            (context.target.kind === "saved_revision" &&
+              response.draft_fingerprint !== undefined)
           ) {
             setServerInvalid(true);
             return;
           }
-        }
-        setServerResult(result);
-      },
-      () => {
-        if (requestGeneration === serverGeneration) setServerFailed(true);
-      },
-    ).finally(() => {
-      if (requestGeneration === serverGeneration) setServerLoading(false);
-    });
+          const result = response;
+          const hasDiagnostics = (result.diagnostics?.length ?? 0) > 0;
+          if (
+            (result.ok && (hasDiagnostics || !result.result)) ||
+            (!result.ok && (result.result !== undefined || !hasDiagnostics))
+          ) {
+            setServerInvalid(true);
+            return;
+          }
+          if (result.ok && result.result) {
+            const metric = result.result;
+            if (
+              metric.component_id !== props.binding.component_id ||
+              metric.result_type !== props.binding.expected_result_type ||
+              !isValidMetricScalar(metric.result_type, metric.value)
+            ) {
+              setServerInvalid(true);
+              return;
+            }
+          }
+          setServerResult(result);
+        },
+        () => {
+          if (requestGeneration === serverGeneration) setServerFailed(true);
+        },
+      ).finally(() => {
+        if (requestGeneration === serverGeneration) setServerLoading(false);
+      });
+    }, 120);
   });
 
   onCleanup(() => {
     serverGeneration += 1;
+    if (serverTimer !== undefined) clearTimeout(serverTimer);
     serverController?.abort();
   });
 
@@ -543,6 +599,11 @@ export function CompositionMetric(props: {
         >
           {t("composition.retry")}
         </button>
+      </Show>
+      <Show when={!serverLoading() && serverVariableInvalid()}>
+        <p class="ui-text-danger" role="alert">
+          {t("composition.variableInvalid")}
+        </p>
       </Show>
       <Show when={!serverLoading() && diagnostic()}>
         <p class="ui-text-danger" role="alert">{diagnostic()}</p>
@@ -612,7 +673,13 @@ export function CompositionRenderer(props: RendererProps) {
             return (
               <CompositionMetric
                 binding={binding}
-                metricQueryContext={props.metricQueryContext}
+                metricQueryContext={props.metricQueryContext
+                  ? {
+                    ...props.metricQueryContext,
+                    dependencies: props.metricQueryContext.dependencies ??
+                      props.plan.dependencies,
+                  }
+                  : undefined}
               />
             );
           }

@@ -6,7 +6,9 @@ import {
   encodeSpreadsheetCsv,
   getWasmSupportedOperations,
   parseCompositionVariableInput,
+  parseCompositionVariableInputSync,
   prepareApiRequest,
+  prepareCompositionVariableInputParser,
   protocolFetch,
   protocolFetchResponse,
   spreadsheetCsvRequestBytes,
@@ -133,6 +135,21 @@ describe("portable Ugoite API protocol WASM", () => {
         expected,
       );
     }
+  });
+
+  it("parses Composition Input synchronously after preparing the shared WASM parser", async () => {
+    await prepareCompositionVariableInputParser();
+
+    expect(parseCompositionVariableInputSync("integer", "+00042")).toEqual({
+      status: "valid",
+      value: 42,
+    });
+    expect(parseCompositionVariableInputSync("date", "2025-02-29")).toEqual({
+      status: "invalid",
+    });
+    expect(parseCompositionVariableInputSync("string", "")).toEqual({
+      status: "unset",
+    });
   });
 
   it("uses the shared spreadsheet-safe CSV encoder", async () => {

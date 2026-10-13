@@ -37,6 +37,8 @@ export {
   invokeKonase,
   type KonaseProtocolAction,
   parseCompositionVariableInput,
+  parseCompositionVariableInputSync,
+  prepareCompositionVariableInputParser,
   prepareApiRequest,
   protocolFetch,
   type ProtocolFetchOptions,

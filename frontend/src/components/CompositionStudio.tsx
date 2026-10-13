@@ -905,7 +905,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
       spaceId: current.spaceId,
       target: { kind: "draft", yaml: current.yaml },
       draftFingerprint: current.identity.fingerprint,
-      parameters: { ...previewHandle.parameters() },
+      variables: { ...previewHandle.parameters() },
+      dependencies: current.preview.plan?.dependencies,
     };
   };
   const previewDiagnostics = () => {
