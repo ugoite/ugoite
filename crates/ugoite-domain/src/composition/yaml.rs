@@ -13,9 +13,9 @@ pub const MAX_COMPOSITION_YAML_DEPTH: usize = 64;
 /// Maximum number of items accepted in any one Composition collection.
 pub const MAX_COMPOSITION_COLLECTION_ITEMS: usize = 256;
 
-const MAX_YAML_NODES: usize = 4096;
-const MAX_YAML_EVENTS: usize = 8192;
-const MAX_YAML_SCALAR_BYTES: usize = 32 * 1024;
+pub(super) const MAX_YAML_NODES: usize = 4096;
+pub(super) const MAX_YAML_EVENTS: usize = 8192;
+pub(super) const MAX_YAML_SCALAR_BYTES: usize = 32 * 1024;
 const VERSION_PROBE_MAX_DOCUMENTS: usize = 2;
 const VERSION_PROBE_MAX_ANCHORS: usize = 64;
 const VERSION_PROBE_MAX_ALIASES: usize = 64;

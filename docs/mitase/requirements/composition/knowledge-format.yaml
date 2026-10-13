@@ -885,7 +885,7 @@ requirements:
         governed_by: [POL-011#rule.governance]
       - id: bounded-parser
         kind: quality
-        statement: Composition parsing enforces measured limits for input bytes, nesting depth, and collection lengths in native and wasm32 builds.
+        statement: Composition parsing enforces limits for input bytes, nesting depth, YAML nodes, parser events, total scalar bytes, and items per collection through the shared Rust parser used by native and wasm32 builds.
         governed_by: [POL-011#rule.governance]
       - id: deterministic-diagnostics
         kind: behavior

@@ -129,9 +129,9 @@ features:
   - id: portable-envelope-domain-evidence
     role: evidence
     facet: domain-tests
-    responsibility: Verify the fixed envelope field names in the shared Rust contract and pin the byte,
-      nesting-depth, and collection parser limits through the frozen v1 contract test; ordered descriptors,
-      restricted YAML rejection, fingerprint inputs, and runtime enforcement across native and WASM are
+    responsibility: Verify the fixed envelope field names in the shared Rust contract and pin the input-byte,
+      nesting-depth, collection-item, YAML-node, parser-event, and total scalar-byte budgets through the frozen
+      v1 contract test; ordered descriptors, restricted YAML rejection, and native/WASM behavior parity are
       evidenced by portable-envelope-wasm-parity.
     targets:
     - id: portable-envelope-fields
@@ -219,8 +219,8 @@ features:
     role: evidence
     facet: wasm-tests
     responsibility: Keep the fixed marker, tags, ordered result descriptors, canonical bytes, fingerprint,
-      unknown-field rejection, diagnostics, and parser resource limits aligned between native Rust and
-      WASM.
+      unknown-field rejection, and diagnostics aligned between native Rust and WASM using the shared Rust
+      parser. Parser resource-budget values are pinned by the domain parser tests.
     targets:
     - id: ordered-result-descriptor-validation
       adapter: rust
@@ -428,8 +428,9 @@ features:
   - id: metric-runtime-value-evidence
     role: evidence
     facet: domain-tests
-    responsibility: Verify exact Decimal values preserve fractional scale and accepted normalized date/time values,
-      with stable rejection of invalid decimal, calendar, clock, precision, and offset forms.
+    responsibility: Verify exact integer and Decimal representations, finite Float values, SQL NULL, and
+      accepted normalized date/time values, with stable rejection of malformed values and invalid calendar,
+      clock, precision, and offset forms.
     targets:
     - id: accepted-metric-date-time-values
       adapter: rust
