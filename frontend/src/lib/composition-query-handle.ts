@@ -2,13 +2,13 @@ import { createSignal } from "solid-js";
 import {
   compositionApi,
   type CompositionListItem,
-  type CompositionVariableDefinition,
   type CompositionRawRevision,
-  type CompositionResolvePlan,
   type CompositionResolvedComponentBinding,
   type CompositionResolvedSource,
+  type CompositionResolvePlan,
   type CompositionResolveResponse,
   type CompositionSourcePage,
+  type CompositionVariableDefinition,
 } from "./composition-api";
 import {
   parseCompositionVariableInputSync,
@@ -31,7 +31,7 @@ export interface CompositionVariableInputState {
 }
 
 export interface CompositionSourcePageState {
-  status: "loading" | "ready" | "error" | "invalid";
+  status: "loading" | "ready" | "error" | "invalid" | "waiting";
   cursorStack: (string | undefined)[];
   cursor?: string;
   page?: CompositionSourcePage;
@@ -92,10 +92,12 @@ const defaultInputStates = (
 const variableSnapshot = (
   inputs: Readonly<Record<string, CompositionVariableInputState>>,
 ): Record<string, unknown> =>
-  Object.fromEntries(Object.entries(inputs).map(([id, input]) => [
-    id,
-    input.status === "valid" ? input.value : null,
-  ]));
+  Object.fromEntries(
+    Object.entries(inputs).map(([id, input]) => [
+      id,
+      input.status === "valid" ? input.value : null,
+    ]),
+  );
 
 const invalidVariableIds = (
   definitions: readonly CompositionVariableDefinition[],
@@ -114,11 +116,12 @@ const invalidVariableIds = (
 
 const invalidRawVariableIds = (
   inputs: Readonly<Record<string, CompositionVariableInputState>>,
-): Set<string> => new Set(
-  Object.entries(inputs).flatMap(([id, input]) =>
-    input.status === "invalid" ? [id] : []
-  ),
-);
+): Set<string> =>
+  new Set(
+    Object.entries(inputs).flatMap(([id, input]) =>
+      input.status === "invalid" ? [id] : []
+    ),
+  );
 
 const sourceVariableIds = (
   plan: CompositionResolvePlan | undefined,
@@ -146,9 +149,8 @@ const hasCompleteDependencyIndex = (
 ): boolean => {
   if (definitions.length === 0) return true;
   const consumers = plan.dependencies?.variable_consumers;
-  return !!consumers && definitions.every((definition) =>
-    Object.hasOwn(consumers, definition.id)
-  );
+  return !!consumers &&
+    definitions.every((definition) => Object.hasOwn(consumers, definition.id));
 };
 
 const sourceFingerprint = (source: CompositionResolvedSource): string =>
@@ -232,7 +234,10 @@ export function createCompositionQueryHandle(
         const source = currentPlan?.sources.find((candidate) =>
           candidate.source_id === sourceId
         );
-        if (!source || !sourceNeedsPage(source, currentPlan?.component_bindings ?? [])) {
+        if (
+          !source ||
+          !sourceNeedsPage(source, currentPlan?.component_bindings ?? [])
+        ) {
           continue;
         }
         sources[sourceId] = {
@@ -245,8 +250,39 @@ export function createCompositionQueryHandle(
     });
   };
 
-  const markPendingSourcesInvalid = () => {
-    if (pendingSourceIds.size > 0) markSourcesInvalid(pendingSourceIds);
+  const refreshPendingSourceStates = () => {
+    const plan = state().resolved?.plan;
+    if (!plan) return;
+    const blocked = blockedVariables();
+    const dependencyIndexComplete = hasCompleteDependencyIndex(
+      plan,
+      variableDefinitions,
+    );
+    setState((current) => {
+      const sources = { ...current.sources };
+      for (const sourceId of pendingSourceIds) {
+        const source = plan.sources.find((candidate) =>
+          candidate.source_id === sourceId
+        );
+        if (!source || !sourceNeedsPage(source, plan.component_bindings)) {
+          continue;
+        }
+        const invalid = !dependencyIndexComplete ||
+          sourceBlocked(plan, sourceId, blocked);
+        sources[sourceId] = {
+          status: invalid
+            ? "invalid"
+            : blocked.size > 0
+            ? "waiting"
+            : "loading",
+          cursorStack: invalid
+            ? current.sources[sourceId]?.cursorStack ?? [undefined]
+            : [undefined],
+          cursor: undefined,
+        };
+      }
+      return { ...current, sources };
+    });
   };
 
   const requestSource = async (
@@ -362,15 +398,26 @@ export function createCompositionQueryHandle(
           const source = plan?.sources.find((candidate) =>
             candidate.source_id === sourceId
           );
-          if (!source || !sourceNeedsPage(source, plan?.component_bindings ?? [])) {
+          if (
+            !source || !sourceNeedsPage(source, plan?.component_bindings ?? [])
+          ) {
             continue;
           }
           nextSources[sourceId] = {
             ...(nextSources[sourceId] ?? { cursorStack: [undefined] }),
-            status: sourceBlocked(plan, sourceId, blocked) ? "invalid" : "error",
+            status: sourceBlocked(plan, sourceId, blocked)
+              ? "invalid"
+              : blocked.size > 0
+              ? "waiting"
+              : "error",
             cursorStack: [undefined],
             cursor: undefined,
           };
+        }
+        if (blocked.size === 0) {
+          for (const sourceId of sourcesChanged) {
+            pendingSourceIds.delete(sourceId);
+          }
         }
         setState((value) => ({
           ...value,
@@ -387,7 +434,9 @@ export function createCompositionQueryHandle(
       const nextPlan = response.plan;
       if (!hasCompleteDependencyIndex(nextPlan, variableDefinitions)) {
         const invalidSources: Record<string, CompositionSourcePageState> = {};
-        const knownSources = new Set(nextPlan.sources.map((source) => source.source_id));
+        const knownSources = new Set(
+          nextPlan.sources.map((source) => source.source_id),
+        );
         const invalidated = new Set<string>();
         for (const sourceId of Object.keys(current.sources)) {
           invalidateSourceRequest(sourceId);
@@ -416,8 +465,13 @@ export function createCompositionQueryHandle(
         }));
         return;
       }
+      for (const sourceId of sourcesChanged) {
+        pendingSourceIds.delete(sourceId);
+      }
       const previousById = new Map(
-        (previousPlan?.sources ?? []).map((source) => [source.source_id, source]),
+        (previousPlan?.sources ?? []).map((
+          source,
+        ) => [source.source_id, source]),
       );
       const nextById = new Map(
         nextPlan.sources.map((source) => [source.source_id, source]),
@@ -430,7 +484,8 @@ export function createCompositionQueryHandle(
         if (!sourceNeedsPage(source, nextPlan.component_bindings)) continue;
         const previousSource = previousById.get(source.source_id);
         const previousState = current.sources[source.source_id];
-        const affected = sourcesChanged.has(source.source_id) || !previousSource;
+        const affected = sourcesChanged.has(source.source_id) ||
+          !previousSource;
         const sameRequest = previousSource !== undefined &&
           sourceFingerprint(previousSource) === sourceFingerprint(source);
         if (
@@ -490,18 +545,31 @@ export function createCompositionQueryHandle(
           }));
         } else {
           const sources = { ...current.sources };
+          const blocked = blockedVariables();
           for (const sourceId of sourcesChanged) {
             const source = current.resolved.plan.sources.find((candidate) =>
               candidate.source_id === sourceId
             );
-            if (!source || !sourceNeedsPage(source, current.resolved.plan.component_bindings)) continue;
+            if (
+              !source ||
+              !sourceNeedsPage(source, current.resolved.plan.component_bindings)
+            ) continue;
             sources[sourceId] = {
               ...(sources[sourceId] ?? { cursorStack: [undefined] }),
-              status: "error",
+              status: sourceBlocked(current.resolved.plan, sourceId, blocked)
+                ? "invalid"
+                : blocked.size > 0
+                ? "waiting"
+                : "error",
               cursorStack: [undefined],
               cursor: undefined,
               error,
             };
+          }
+          if (blocked.size === 0) {
+            for (const sourceId of sourcesChanged) {
+              pendingSourceIds.delete(sourceId);
+            }
           }
           setState((value) => ({ ...value, resolving: false, sources }));
         }
@@ -514,14 +582,13 @@ export function createCompositionQueryHandle(
   const resolveScheduled = () => {
     cancelScheduledResolve();
     if (invalidRawVariables().size > 0) {
-      markPendingSourcesInvalid();
+      refreshPendingSourceStates();
       return;
     }
     if (pendingSourceIds.size === 0 && !forceResolve) return;
     const current = state();
     if (!current.identity || !current.composition) return;
     const changed = new Set(pendingSourceIds);
-    pendingSourceIds.clear();
     forceResolve = false;
     const requestResolutionGeneration = ++resolutionGeneration;
     resolveController?.abort();
@@ -536,7 +603,8 @@ export function createCompositionQueryHandle(
 
   const scheduleResolve = () => {
     if (invalidRawVariables().size > 0) {
-      markPendingSourcesInvalid();
+      cancelScheduledResolve();
+      refreshPendingSourceStates();
       return;
     }
     cancelScheduledResolve();
@@ -607,7 +675,9 @@ export function createCompositionQueryHandle(
   };
 
   const setVariableRaw = (variableId: string, raw: string) => {
-    const definition = variableDefinitions.find((item) => item.id === variableId);
+    const definition = variableDefinitions.find((item) =>
+      item.id === variableId
+    );
     if (!definition) return;
     const parsed = parseCompositionVariableInputSync(definition.type, raw);
     const previous = variableInputs()[variableId];
@@ -626,6 +696,9 @@ export function createCompositionQueryHandle(
     // debounce window. Text and shared Inputs already reflect the new store.
     resolutionGeneration += 1;
     resolveController?.abort();
+    setState((value) =>
+      value.resolving ? { ...value, resolving: false } : value
+    );
 
     const current = state();
     const plan = current.resolved?.plan;
@@ -643,38 +716,19 @@ export function createCompositionQueryHandle(
     }
     const sourceIds = plan?.dependencies?.variable_consumers?.[variableId]
       ?.source_ids ?? [];
-    const blocked = next.status === "invalid" ||
-      (definition.required && next.status === "unset");
     for (const sourceId of sourceIds) {
       invalidateSourceRequest(sourceId);
-      setState((value) => {
-        const source = plan?.sources.find((item) => item.source_id === sourceId);
-        if (!source || !sourceNeedsPage(source, plan?.component_bindings ?? [])) {
-          return value;
-        }
-        const previousSource = value.sources[sourceId];
-        return {
-          ...value,
-          sources: {
-            ...value.sources,
-            [sourceId]: {
-              status: blocked ? "invalid" : "loading",
-              cursorStack: blocked ? previousSource?.cursorStack ?? [undefined] : [undefined],
-              cursor: undefined,
-            },
-          },
-        };
-      });
       if (next.status !== "invalid") pendingSourceIds.add(sourceId);
     }
-    // Resolve the typed snapshot for diagnostics and authoritative planning,
-    // but only dependency-indexed Sources may trigger a new page request.
+    if (next.status === "invalid") markSourcesInvalid(sourceIds);
+    refreshPendingSourceStates();
+    // Keep affected Sources pending until every declared input can produce a
+    // complete resolution plan. Only dependency-indexed Sources are refreshed.
     forceResolve = true;
     if (next.status === "invalid") {
       resolutionGeneration += 1;
       resolveController?.abort();
       cancelScheduledResolve();
-      markPendingSourcesInvalid();
       return;
     }
     scheduleResolve();
