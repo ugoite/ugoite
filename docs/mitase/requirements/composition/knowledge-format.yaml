@@ -410,7 +410,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.parameter-placement
                 covers:
-                  - FEAT-COMP-004#binding.browser-query-runtime/target.browser-parameter-control
+                  - FEAT-COMP-004#binding.browser-query-runtime/target.browser-input-control
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/DashboardFlowRenderer.test.tsx, test: "binds Input changes to transient Work state" } }
           - id: flow-text-style-case
             adapter: typescript
@@ -462,7 +462,7 @@ requirements:
                 covers:
                   - FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "inserts text blocks declared and placed exactly once" } }
-          - id: design-canvas-parameter-placement-case
+          - id: design-canvas-input-placement-case
             adapter: typescript
             path: frontend/src/components/CompositionDesignCanvas.test.tsx
             selector: { kind: test, name: places existing variable controls without creating variables }
