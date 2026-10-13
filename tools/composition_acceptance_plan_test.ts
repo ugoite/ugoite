@@ -77,7 +77,7 @@ const EXPECTED_REACTIVE_VARIABLE_STUDIO_STEPS = [
   "In Studio, declare a string variable with a default, bind an Input and Text to it, and bind date variables to the pinned Saved SQL revision before saving once.",
   "Read the exact saved revision and verify its pinned Saved SQL revision and the SQL-name-to-variable bindings.",
   "Reopen the exact saved revision and verify its declared defaults and variable-backed Text are restored.",
-  "Change only the string Input and verify Text updates in the same UI cycle without another SQL request.",
+  "Change only the string Input and verify Text updates in the same UI cycle without reissuing either the Saved SQL Table or Composition Metric query that already ran.",
   "Reload the exact saved revision and verify the declared default returns while Composition history remains at one revision.",
 ];
 

@@ -1,0 +1,8 @@
+<testsuites id="" name="" tests="2" failures="0" skipped="0" errors="0" time="37.184427">
+<testsuite name="composition-studio-journey.test.ts" timestamp="2026-10-13T11:23:55.442Z" hostname="" tests="2" failures="0" skipped="0" time="30.646" errors="0">
+<testcase name="Composition Studio Journey › Composition Studio builds a reusable tool from existing knowledge" classname="composition-studio-journey.test.ts" time="27.65">
+</testcase>
+<testcase name="Composition Studio Journey › Composition Studio inspector stays usable at a 390px viewport" classname="composition-studio-journey.test.ts" time="2.996">
+</testcase>
+</testsuite>
+</testsuites>

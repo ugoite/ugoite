@@ -157,6 +157,19 @@
       "artifact": "e2e/fixtures/composition/evidence/composition-studio-source-refresh-junit.xml",
       "artifact_digest": "30918bede18527745a18eaf857254868416dd68d915a0d49f5e2ce8b28a9b6bb",
       "gap": "This record supersedes the earlier Studio journey evidence for its source-refresh assertion: it checks both Saved SQL Table and Composition Metric request paths remain unchanged after a Text-only edit, and requires each saved SQL-name binding and declared variable ID to be present before comparing them. It covers only this journey and the included 390px Studio inspector case, not the full typed-variable contract or broader recovery and ACL coverage. No release candidate was built or promoted."
+    },
+    {
+      "source_sha": "23a6e088b4c37f2f2ce4e1e59475ab6cc8b067d4",
+      "candidate_sha": "23a6e088b4c37f2f2ce4e1e59475ab6cc8b067d4",
+      "command": "UGOITE_E2E_STARTUP_TIMEOUT_SECONDS=180 E2E_FRONTEND_MODE=dev E2E_ENFORCE_CI_GATES=true PLAYWRIGHT_JUNIT_OUTPUT_FILE=<out> bash e2e/scripts/run-e2e.sh composition-studio",
+      "selector": "e2e/composition-studio-journey.test.ts#test:Composition Studio builds a reusable tool from existing knowledge",
+      "surface": "Browser + Server (direct-process dev E2E)",
+      "fixture": "self-seeded via API: Space, Form, entries, parameterized Saved SQL, and Studio-created Composition",
+      "environment": "macOS 26.6.1 arm64; direct-process backend + frontend dev; Deno 2.8.3; Playwright 1.60.0 (Chromium)",
+      "result": "passed (2 passed, 0 skipped)",
+      "artifact": "e2e/fixtures/composition/evidence/composition-studio-query-path-assertions-junit.xml",
+      "artifact_digest": "238c2c0a0550f5d2abb0a8c25618b7d521324a6615bf9fdcfab985a4a0444bbb",
+      "gap": "This record covers only the Studio variable journey and included 390px inspector case on the stated source commit. It verifies both the Saved SQL Table and Composition Metric query paths ran before a Text-only edit and neither was requested again afterward, while the declared variable and saved SQL binding are present. It does not claim the full reactive-variable contract or broader recovery and ACL coverage. No release candidate was built or promoted."
     }
   ]
 }
