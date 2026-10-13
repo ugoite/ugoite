@@ -125,6 +125,7 @@ function ComponentInspector(props: {
       name: displayDefaultName(
         display(),
         props.draft.sources,
+        props.draft.variables,
       ),
     });
   const removeAction = () => (

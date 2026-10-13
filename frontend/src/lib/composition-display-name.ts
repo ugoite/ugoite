@@ -1,5 +1,10 @@
 import { t } from "~/lib/i18n";
-import type { DraftDisplay, DraftSource } from "~/lib/composition-draft";
+import {
+  type DraftDisplay,
+  type DraftSource,
+  type DraftVariable,
+} from "~/lib/composition-draft";
+import { compositionVariableDisplayName } from "~/lib/composition-variable-name";
 
 export const displayValueName = (
   display: DraftDisplay,
@@ -19,12 +24,13 @@ const sourceName = (
 export const displayDefaultName = (
   display: DraftDisplay,
   sources: readonly DraftSource[],
+  variables: readonly DraftVariable[],
 ): string => {
   if (display.label) return display.label;
   if (display.kind === "text") {
     return display.content.kind === "literal"
       ? display.content.text || t("composition.studioText")
-      : display.content.variable;
+      : compositionVariableDisplayName(variables, display.content.variable);
   }
   const name = sourceName(sources, display.sourceDraftId);
   if (display.kind === "table") return name;

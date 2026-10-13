@@ -760,6 +760,70 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.code-free-studio-authoring
+      - id: studio-variable-identity-presentation
+        role: implementation
+        facet: frontend
+        responsibility: Keep stable variable IDs internal to ordinary Studio presentation and use authored labels or localized ordinals for variable names.
+        targets:
+          - id: variable-creation
+            adapter: typescript
+            path: frontend/src/components/CompositionVariableList.tsx
+            selector:
+              kind: symbol
+              name: CompositionVariableList
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.studio-variable-identity-presentation
+          - id: canvas-variable-display-name
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.tsx
+            selector:
+              kind: symbol
+              name: blockName
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.studio-variable-identity-presentation
+          - id: inspector-variable-display-name
+            adapter: typescript
+            path: frontend/src/lib/composition-display-name.ts
+            selector:
+              kind: symbol
+              name: displayDefaultName
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.studio-variable-identity-presentation
+      - id: studio-variable-identity-presentation-evidence
+        role: evidence
+        facet: frontend-tests
+        responsibility: Verify unlabelled variable IDs stay out of variable-bound Text names and Inspector removal labels and titles.
+        targets:
+          - id: canvas-variable-text-name
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector:
+              kind: test
+              name: uses a localized variable name for variable-bound Text blocks
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.studio-variable-identity-presentation
+          - id: variable-creation-hides-generated-id
+            adapter: typescript
+            path: frontend/src/components/CompositionVariableList.test.tsx
+            selector:
+              kind: test
+              name: creates a labeled variable without displaying its generated id
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.studio-variable-identity-presentation
+          - id: inspector-variable-text-removal-name
+            adapter: typescript
+            path: frontend/src/components/CompositionInspector.test.tsx
+            selector:
+              kind: test
+              name: uses a localized variable name for variable-bound Text removal
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.studio-variable-identity-presentation
       - id: browser-typed-variable-journey-evidence
         role: evidence
         facet: frontend-tests
