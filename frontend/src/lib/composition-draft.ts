@@ -204,13 +204,18 @@ export const savedSqlVariableTypesFromFields = (
     }
     const { name, type } = item as { name?: unknown; type?: unknown };
     if (
-      typeof name !== "string" || !name.trim() || name in result ||
+      typeof name !== "string" || !name.trim() || Object.hasOwn(result, name) ||
       typeof type !== "string" ||
       !savedSqlVariableTypeSet.has(type as CompositionVariableType)
     ) {
       throw new Error("Invalid Saved SQL variable");
     }
-    result[name] = type as CompositionVariableType;
+    Object.defineProperty(result, name, {
+      value: type as CompositionVariableType,
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
   }
   return result;
 };
@@ -788,13 +793,19 @@ export const setSavedSqlRevision = (
   const variables: Record<string, { variable: string }> = {};
   for (const name of Object.keys(revision.variableTypes)) {
     if (!name.trim()) return { ok: false, error: "invalid-query" };
+    if (!Object.hasOwn(current.variables, name)) continue;
     const existing = current.variables[name];
     if (!existing) continue;
     const variable = draft.variables.find((item) =>
       item.id === existing.variable
     );
     if (variable?.type === revision.variableTypes[name]) {
-      variables[name] = { ...existing };
+      Object.defineProperty(variables, name, {
+        value: { ...existing },
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
     }
   }
   const sources = [...draft.sources];
@@ -858,10 +869,13 @@ export const setSavedSqlVariableBinding = (
     DraftSource,
     { kind: "saved_sql" }
   >;
-  const sqlType = source.variableTypes?.[sqlVariableName];
-  if (!sqlType || !sqlVariableName.trim()) {
+  const variableTypes = source.variableTypes ?? {};
+  if (
+    !sqlVariableName.trim() || !Object.hasOwn(variableTypes, sqlVariableName)
+  ) {
     return { ok: false, error: "invalid-query" };
   }
+  const sqlType = variableTypes[sqlVariableName];
   const variables = { ...source.variables };
   if (variableId === undefined) {
     delete variables[sqlVariableName];
@@ -869,7 +883,12 @@ export const setSavedSqlVariableBinding = (
     const variable = draft.variables.find((item) => item.id === variableId);
     if (!variable) return { ok: false, error: "unknown-variable" };
     if (variable.type !== sqlType) return { ok: false, error: "invalid-query" };
-    variables[sqlVariableName] = { variable: variableId };
+    Object.defineProperty(variables, sqlVariableName, {
+      value: { variable: variableId },
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
   }
   const sources = [...draft.sources];
   sources[index] = { ...source, variables };

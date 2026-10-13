@@ -24,6 +24,7 @@ import {
   removeInputComponent,
   removeSource,
   removeVariable,
+  savedSqlVariableTypesFromFields,
   setDisplayLabel,
   setDraftName,
   setDraftTags,
@@ -76,6 +77,83 @@ const entrySeed = () => ({
 });
 
 describe("composition draft model", () => {
+  it("accepts Saved SQL variables with prototype property names safely", () => {
+    const variableTypes = savedSqlVariableTypesFromFields({
+      variables: [
+        { name: "__proto__", type: "date" },
+        { name: "constructor", type: "integer" },
+        { name: "toString", type: "string" },
+      ],
+    });
+
+    expect(Object.getPrototypeOf(variableTypes)).toBe(Object.prototype);
+    expect(Object.keys(variableTypes)).toEqual([
+      "__proto__",
+      "constructor",
+      "toString",
+    ]);
+    expect(Object.hasOwn(variableTypes, "__proto__")).toBe(true);
+    expect(variableTypes["__proto__"]).toBe("date");
+    expect(variableTypes.constructor).toBe("integer");
+    expect(variableTypes.toString).toBe("string");
+    expect(() =>
+      savedSqlVariableTypesFromFields({
+        variables: [
+          { name: "__proto__", type: "date" },
+          { name: "__proto__", type: "string" },
+        ],
+      })
+    ).toThrow("Invalid Saved SQL variable");
+  });
+
+  it("binds prototype-named Saved SQL variables as ordinary own properties", () => {
+    const variableTypes = savedSqlVariableTypesFromFields({
+      variables: [{ name: "__proto__", type: "date" }],
+    });
+    const declared = addVariable(createEmptyDraft(), {
+      id: "period",
+      type: "date",
+      required: true,
+    });
+    if (!declared.ok) throw new Error("expected declared variable");
+    const draft = addSavedSqlSource(declared.draft, {
+      ...sqlSeed(),
+      variableTypes,
+    }).draft;
+
+    const bound = setSavedSqlVariableBinding(
+      draft,
+      "src-1",
+      "__proto__",
+      "period",
+    );
+    expect(bound.ok).toBe(true);
+    if (!bound.ok) throw new Error("expected explicit SQL variable binding");
+    const source = bound.draft.sources[0];
+    if (source.kind !== "saved_sql") throw new Error("expected Saved SQL");
+    expect(Object.getPrototypeOf(source.variables)).toBe(Object.prototype);
+    expect(Object.hasOwn(source.variables, "__proto__")).toBe(true);
+    expect(source.variables["__proto__"]).toEqual({ variable: "period" });
+
+    const updated = setSavedSqlRevision(bound.draft, "src-1", {
+      revisionId: "rev-2",
+      expectedResult: [{ name: "total", type: "float" }],
+      variableTypes: savedSqlVariableTypesFromFields({
+        variables: [{ name: "__proto__", type: "date" }],
+      }),
+    });
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) throw new Error("expected exact revision update");
+    const updatedSource = updated.draft.sources[0];
+    if (updatedSource.kind !== "saved_sql") {
+      throw new Error("expected Saved SQL");
+    }
+    expect(Object.hasOwn(updatedSource.variables, "__proto__")).toBe(true);
+    expect(updatedSource.variables["__proto__"]).toEqual({
+      variable: "period",
+    });
+  });
+
   it("builds stable draft identities without owning semantics", () => {
     let draft = createEmptyDraft("Monthly expenses");
     const first = addSavedSqlSource(draft, sqlSeed());

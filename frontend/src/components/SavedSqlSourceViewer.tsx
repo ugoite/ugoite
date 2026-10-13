@@ -254,7 +254,9 @@ export function SavedSqlSourceViewer(props: SavedSqlSourceViewerProps) {
                             aria-label={t("composition.studioBindSqlVariable", {
                               name,
                             })}
-                            value={props.source.variables[name]?.variable ?? ""}
+                            value={Object.hasOwn(props.source.variables, name)
+                              ? props.source.variables[name]?.variable ?? ""
+                              : ""}
                             onChange={(event) =>
                               props.onVariableBinding(
                                 name,
