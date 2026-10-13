@@ -3,6 +3,7 @@ import {
   clearStudioFormDefinitionCache,
   fetchStudioFormDefinition,
   studioBindingName,
+  studioBindingText,
   studioCapabilitiesFromForm,
   studioEntryFilterToComposition,
   studioEntrySortToComposition,
@@ -57,35 +58,40 @@ describe("entry-query-studio-capabilities", () => {
     clearStudioFormDefinitionCache();
   });
 
-  it("round-trips variable bindings through display text", () => {
+  it("round-trips variable bindings through human display text", () => {
+    const variables = [{ id: "month", label: "Month" }];
     expect(studioBindingName({ variable: "month" })).toBe("month");
     expect(studioBindingName({ parameter: "legacy" })).toBeUndefined();
     expect(studioBindingName("plain")).toBeUndefined();
     expect(studioBindingName({ variable: "", extra: 1 })).toBeUndefined();
-    expect(studioParseBindingText("{{month}}")).toEqual({
+    expect(studioBindingText("month", variables)).toBe("{{Month}}");
+    expect(studioParseBindingText("{{Month}}", variables)).toEqual({
       variable: "month",
     });
-    expect(studioParseBindingText("lunch")).toBe("lunch");
+    expect(studioParseBindingText("lunch", variables)).toBe("lunch");
+    expect(studioParseBindingText("{{unavailable}}", variables))
+      .toBeUndefined();
   });
 
   it("maps draft filters through the dialog shape without flattening bindings", () => {
+    const variables = [{ id: "month", label: "Month" }];
     expect(
       studioFilterToEntryFilter({
         field_id: 101,
         operator: "equals",
         value: { variable: "month" },
-      }),
+      }, variables),
     ).toEqual({
       field: { kind: "property", field_id: 101 },
       operator: "equals",
-      value: "{{month}}",
+      value: "{{Month}}",
     });
     expect(
       studioEntryFilterToComposition({
         field: { kind: "property", field_id: 101 },
         operator: "contains",
-        value: "{{month}}",
-      }),
+        value: "{{Month}}",
+      }, variables),
     ).toEqual({
       field_id: 101,
       operator: "contains",

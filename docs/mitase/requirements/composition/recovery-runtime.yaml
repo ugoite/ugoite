@@ -52,18 +52,18 @@ requirements:
       - id: transient-work-verification
         role: verification
         facet: verification
-        responsibility: Verify get and resolve stay pinned to the selected revision while a stale parameter response is ignored and discarded.
+        responsibility: Verify get and resolve stay pinned to the selected revision while a stale variable response is ignored and discarded.
         targets:
           - id: case
             adapter: typescript
             path: frontend/src/lib/composition-query-handle.test.ts
-            selector: { kind: test, name: pins get and resolve to the selected revision and ignores a stale parameter response }
+            selector: { kind: test, name: pins get and resolve to the selected revision and ignores a stale variable response }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-006#criterion.work-state-is-transient
                 covers:
                   - FEAT-COMP-004#binding.browser-query-runtime/target.browser-query-handle
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: pins get and resolve to the selected revision and ignores a stale parameter response } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: pins get and resolve to the selected revision and ignores a stale variable response } }
       - id: data-workspace-transient-verification
         role: verification
         facet: verification
@@ -168,14 +168,14 @@ requirements:
           - id: studio-block-to-source-case
             adapter: typescript
             path: frontend/src/components/CompositionStudioSync.test.tsx
-            selector: { kind: test, name: auto-selects the block source in Data and keeps text and parameter selections }
+            selector: { kind: test, name: auto-selects the block source in Data and keeps text and variable selections }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-006#criterion.work-state-is-transient
                 covers:
                   - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-mode
                   - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-sync
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: auto-selects the block source in Data and keeps text and parameter selections } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: auto-selects the block source in Data and keeps text and variable selections } }
           - id: studio-source-highlight-case
             adapter: typescript
             path: frontend/src/components/CompositionStudioSync.test.tsx
@@ -220,13 +220,13 @@ requirements:
           - id: studio-sync-block-no-source-case
             adapter: typescript
             path: frontend/src/lib/composition-studio-sync.test.ts
-            selector: { kind: test, name: "keeps the Data selection for text, parameter, and unknown blocks" }
+            selector: { kind: test, name: "keeps the Data selection for text, variable, and unknown blocks" }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-006#criterion.work-state-is-transient
                 covers:
                   - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-sync
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-studio-sync.test.ts, test: "keeps the Data selection for text, parameter, and unknown blocks" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-studio-sync.test.ts, test: "keeps the Data selection for text, variable, and unknown blocks" } }
           - id: studio-sync-source-blocks-case
             adapter: typescript
             path: frontend/src/lib/composition-studio-sync.test.ts

@@ -28,7 +28,7 @@ import {
   CompositionDisplayPicker,
   type CompositionDisplaySeed,
 } from "~/components/CompositionDisplayPicker";
-import { CompositionParameterList } from "~/components/CompositionParameterList";
+import { CompositionVariableList } from "~/components/CompositionVariableList";
 import {
   CompositionSourcePicker,
   type CompositionSourceSeed,
@@ -38,24 +38,25 @@ import { UiIcon } from "~/components/UiIcon";
 import {
   addEntryQuerySource,
   addMetricDisplay,
-  addParameter,
   addSavedSqlSource,
   addTableDisplay,
+  addVariable,
   canonicalizeDraft,
   type CompositionDraft,
   createEmptyDraft,
-  defaultParameterValues,
+  defaultVariableValues,
   type DraftInsertTarget,
   draftMetricsReady,
-  type DraftParameter,
   type DraftSaveBlockedReason,
   draftSaveReadiness,
-  ensureParametersForVariables,
+  type DraftVariable,
   moveSource,
   removeDisplay,
-  removeParameter,
+  removeInputComponent,
   removeSource,
+  removeVariable,
   type SavedSqlRevisionUpdate,
+  savedSqlVariableTypesFromFields,
   setDraftName,
   setDraftTags,
   setEntryQueryDisplaySystemFields,
@@ -63,8 +64,9 @@ import {
   setEntryQueryProjection,
   setEntryQuerySort,
   setSavedSqlRevision,
-  unplaceParameterControl,
-  upsertParameter,
+  setSavedSqlVariableBinding,
+  setSavedSqlVariableTypes,
+  upsertVariable,
 } from "~/lib/composition-draft";
 import {
   compositionApi,
@@ -100,7 +102,7 @@ import {
 import { t } from "~/lib/i18n";
 import { compositionFormFieldName } from "~/lib/composition-field-name";
 import { spaceCompositionRevisionPath } from "~/lib/space-path";
-import { formApi } from "~/lib/ugoite-client";
+import { entryApi, formApi } from "~/lib/ugoite-client";
 
 export type CompositionStudioSaveMode =
   | { kind: "create" }
@@ -146,7 +148,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
     "table" | "metric" | null
   >(null);
   const [dataPanel, setDataPanel] = createSignal<
-    "sources" | "parameters" | "tags"
+    "sources" | "variables" | "tags"
   >("sources");
   const [expandedId, setExpandedId] = createSignal<string | null>(null);
   // Transient canvas Work: selected block identity for the inspector and
@@ -207,7 +209,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
 
   // A dismissed or viewport-orphaned sheet returns focus to the invoking
   // block's select control. Block identities are compared literally so
-  // parameter identities containing a colon need no selector escaping.
+  // Component ids are compared literally, never parsed as selectors.
   const focusBlockSelect = (blockId: string | null): boolean => {
     if (!blockId || typeof document === "undefined") return false;
     const blocks = document.querySelectorAll("[data-block-id]");
@@ -245,8 +247,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const removeSelectedBlock = () => {
     const blockId = selectedId();
     if (!blockId) return;
-    const result = blockId.startsWith("input:")
-      ? unplaceParameterControl(draft(), blockId.slice("input:".length))
+    const result = draft().inputs.some((input) => input.draftId === blockId)
+      ? removeInputComponent(draft(), blockId)
       : removeDisplay(draft(), blockId);
     if (!result.ok) return;
 
@@ -295,6 +297,52 @@ export function CompositionStudio(props: CompositionStudioProps) {
   };
   const previewHandle = createCompositionPreviewHandle();
   onCleanup(previewHandle.dispose);
+
+  // Saved composition documents pin revisions and bindings, while the
+  // variable type schema remains owned by that Saved SQL revision. Hydrate
+  // it from the exact revision before allowing an edited draft to save.
+  const schemaReads = new Set<string>();
+  let schemaHydrationActive = true;
+  onCleanup(() => {
+    schemaHydrationActive = false;
+  });
+  createEffect(() => {
+    const currentSpaceId = spaceId();
+    for (const source of draft().sources) {
+      if (source.kind !== "saved_sql" || source.variableTypes !== undefined) {
+        continue;
+      }
+      const key = `${currentSpaceId}:${source.entryId}:${source.revisionId}`;
+      if (schemaReads.has(key)) continue;
+      schemaReads.add(key);
+      void entryApi.getRevision(
+        currentSpaceId,
+        source.entryId,
+        source.revisionId,
+      ).then((revision) => {
+        if (!schemaHydrationActive) return;
+        const latest = draft().sources.find((entry) =>
+          entry.draftId === source.draftId
+        );
+        if (
+          latest?.kind !== "saved_sql" ||
+          latest.revisionId !== source.revisionId ||
+          latest.variableTypes !== undefined
+        ) return;
+        const variableTypes = savedSqlVariableTypesFromFields(
+          revision.fields,
+        );
+        const typed = setSavedSqlVariableTypes(
+          draft(),
+          source.draftId,
+          variableTypes,
+        );
+        if (typed.ok) setDraft(typed.draft);
+      }).catch(() => {
+        schemaReads.delete(key);
+      });
+    }
+  });
 
   let previewTimer: ReturnType<typeof setTimeout> | undefined;
   let previewGeneration = 0;
@@ -372,7 +420,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
           await previewHandle.preview(
             spaceId(),
             canonical.canonical_yaml,
-            defaultParameterValues(snapshot),
+            defaultVariableValues(snapshot),
             {
               visibleSourceIds: visibleComponentSourceIds(draft()),
               selectedSourceId: expandedId(),
@@ -399,7 +447,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
     if (previewTimer !== undefined) clearTimeout(previewTimer);
     previewTimer = undefined;
     void previewHandle.preview(current.spaceId, current.yaml, {
-      ...previewHandle.parameters(),
+      ...previewHandle.variables(),
     }, previewScope());
   };
 
@@ -424,17 +472,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
     const added = seed.kind === "saved_sql"
       ? addSavedSqlSource(draft(), seed.seed)
       : addEntryQuerySource(draft(), seed.seed);
-    // Saved SQL variables bind same-named parameters; provision the
-    // missing ones from the server-declared types so the draft previews
-    // without dangling references.
-    const provisioned = seed.kind === "saved_sql" && seed.seed.variableTypes
-      ? ensureParametersForVariables(
-        added.draft,
-        seed.seed.variableTypes,
-        seed.seed.variableDefaults,
-      )
-      : added.draft;
-    return { draft: provisioned, draftId: added.draftId };
+    return { draft: added.draft, draftId: added.draftId };
   };
 
   const addSeed = (seed: CompositionSourceSeed) => {
@@ -529,7 +567,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
       const scratch: CompositionDraft = {
         ...createEmptyDraft("Metric preview"),
         sources: [source],
-        parameters: snapshot.parameters.map((parameter) => ({ ...parameter })),
+        variables: snapshot.variables.map((variable) => ({ ...variable })),
         nextSourceSeq: snapshot.nextSourceSeq,
       };
       const metric = addMetricDisplay(
@@ -543,13 +581,13 @@ export function CompositionStudio(props: CompositionStudioProps) {
 
       const canonical = await canonicalizeDraft(metric.draft);
       const availableValues = {
-        ...defaultParameterValues(snapshot),
-        ...previewHandle.parameters(),
+        ...defaultVariableValues(snapshot),
+        ...previewHandle.variables(),
       };
       const variables = Object.fromEntries(
-        metric.draft.parameters.flatMap((parameter) => {
-          const value = availableValues[parameter.id];
-          return value === undefined ? [] : [[parameter.id, value]];
+        metric.draft.variables.flatMap((variable) => {
+          const value = availableValues[variable.id];
+          return value === undefined ? [] : [[variable.id, value]];
         }),
       );
       const response = await compositionApi.queryMetric(spaceId(), {
@@ -656,18 +694,51 @@ export function CompositionStudio(props: CompositionStudioProps) {
   };
 
   // Exact-revision update after the Saved SQL editor publishes a new
-  // revision. Missing parameters are provisioned from the server-declared
-  // variable types, mirroring the add-source seed path; the composition
-  // save itself stays a separate explicit action.
+  // revision. Compatible bindings survive; every new SQL variable is
+  // mapped explicitly in the Variables workspace.
   const updateSavedSqlRevision = (
     sourceDraftId: string,
     revision: SavedSqlRevisionUpdate,
-    variableTypes: Record<string, CompositionVariableType>,
   ): boolean => {
     const result = setSavedSqlRevision(draft(), sourceDraftId, revision);
     if (!result.ok) return false;
-    setDraft(ensureParametersForVariables(result.draft, variableTypes));
+    setDraft(result.draft);
     return true;
+  };
+
+  const updateSavedSqlVariableTypes = (
+    sourceDraftId: string,
+    variableTypes: Record<string, CompositionVariableType>,
+  ): void => {
+    const current = draft().sources.find((source) =>
+      source.draftId === sourceDraftId
+    );
+    if (current?.kind !== "saved_sql") return;
+    if (
+      JSON.stringify(current.variableTypes ?? {}) ===
+        JSON.stringify(variableTypes)
+    ) return;
+    const result = setSavedSqlVariableTypes(
+      draft(),
+      sourceDraftId,
+      variableTypes,
+    );
+    if (result.ok) setDraft(result.draft);
+  };
+
+  const updateSavedSqlVariableBinding = (
+    sourceDraftId: string,
+    sqlVariable: string,
+    variableId: string | undefined,
+  ): boolean => {
+    const result = setSavedSqlVariableBinding(
+      draft(),
+      sourceDraftId,
+      sqlVariable,
+      variableId,
+    );
+    if (result.ok) setDraft(result.draft);
+    return result.ok;
   };
 
   const savedSqlEditHref = (entryId: string) =>
@@ -719,7 +790,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
   // auto-select their source in the Data workspace, reusing the RA5 jump
   // handoff (expand + scroll + focus only where the target row is
   // rendered; in Split the right pane shows it directly). Text blocks and
-  // parameter controls carry no source, so the Data selection is kept and
+  // Input components carry no source, so the Data selection is kept and
   // never invented. Selection changes never refetch the preview. On narrow
   // viewports selecting a block opens the inspector bottom sheet; clearing
   // the selection dismisses it.
@@ -742,26 +813,26 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const highlightedBlockIds = () =>
     new Set(blockIdsUsingSource(draft(), expandedId()));
 
-  const addDraftParameter = (parameter: DraftParameter) => {
-    const result = addParameter(draft(), parameter);
+  const addDraftVariable = (variable: DraftVariable) => {
+    const result = addVariable(draft(), variable);
     if (result.ok) setDraft(result.draft);
   };
 
-  const updateDraftParameter = (parameter: DraftParameter) => {
-    const result = upsertParameter(draft(), parameter);
+  const updateDraftVariable = (variable: DraftVariable) => {
+    const result = upsertVariable(draft(), variable);
     if (result.ok) setDraft(result.draft);
   };
 
-  const removeDraftParameter = (parameterId: string): string | undefined => {
-    const result = removeParameter(draft(), parameterId);
+  const removeDraftVariable = (variableId: string): string | undefined => {
+    const result = removeVariable(draft(), variableId);
     if (result.ok) {
       setDraft(result.draft);
       return undefined;
     }
-    if (result.error === "parameter-referenced") {
-      return t("composition.studioParameterReferenced");
+    if (result.error === "variable-referenced") {
+      return t("composition.studioVariableReferenced");
     }
-    return t("composition.studioCannotRemoveParameter");
+    return t("composition.studioCannotRemoveVariable");
   };
 
   const saveRequest = async (
@@ -874,11 +945,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
   // Preview selectors stay empty while the draft has no sources, so a
   // removed last source never leaves a stale preview on screen.
   const hasSources = () => draft().sources.length > 0;
-  createEffect(() => {
-    if (!hasSources() && dataPanel() === "parameters") {
-      setDataPanel("sources");
-    }
-  });
   const readySources = (): Record<string, CompositionSourcePageState> => {
     const current = previewState();
     return current.preview?.ok && hasSources() && draftMetricsReady(draft())
@@ -905,7 +971,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
       spaceId: current.spaceId,
       target: { kind: "draft", yaml: current.yaml },
       draftFingerprint: current.identity.fingerprint,
-      variables: { ...previewHandle.parameters() },
+      variables: { ...previewHandle.variables() },
       dependencies: current.preview.plan?.dependencies,
     };
   };
@@ -932,9 +998,17 @@ export function CompositionStudio(props: CompositionStudioProps) {
         component_id: display.draftId,
         kind: "text" as const,
       }));
+    const pendingInputs = draft().inputs
+      .filter((input) => !known.has(input.draftId))
+      .map((input) => ({
+        component_id: input.draftId,
+        kind: "input" as const,
+        variable_id: input.variable,
+        ...(input.label ? { label: input.label } : {}),
+      }));
     return {
       sources: plan?.sources ?? [],
-      component_bindings: [...bindings, ...pendingTexts],
+      component_bindings: [...bindings, ...pendingTexts, ...pendingInputs],
     };
   };
   const isPreviewing = () => hasSources() && previewState().previewing;
@@ -945,7 +1019,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
 
   const dataHeadingId = "studio-data-heading";
   const designHeadingId = "studio-design-heading";
-  const parametersHeadingId = "studio-parameters-heading";
+  const variablesHeadingId = "studio-variables-heading";
   const tagsHeadingId = "studio-tags-heading";
   const nameInputId = "studio-name";
 
@@ -984,6 +1058,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
       onEntryQueryProjection={updateEntryQueryProjection}
       onEntryQueryDisplaySystemFields={updateEntryQueryDisplaySystemFields}
       onSavedSqlRevision={updateSavedSqlRevision}
+      onSavedSqlVariableTypes={updateSavedSqlVariableTypes}
+      onSavedSqlVariableBinding={updateSavedSqlVariableBinding}
+      variables={draft().variables}
+      onEditVariables={() => setDataPanel("variables")}
       savedSqlEditHref={savedSqlEditHref}
       planSources={readyPlan()?.sources ?? []}
       sourceStates={readySources()}
@@ -1023,7 +1101,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
           <>
             <CompositionDiagnostics
               diagnostics={diagnostics()}
-              parameterDefinitions={draft().parameters}
+              variableDefinitions={draft().variables}
             />
             <button
               class="ui-button ui-button-secondary"
@@ -1045,9 +1123,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
           draft={draft()}
           plan={canvasPlan()}
           metricQueryContext={metricQueryContext()}
-          parameterValues={{
-            ...defaultParameterValues(draft()),
-            ...previewHandle.parameters(),
+          variableValues={{
+            ...defaultVariableValues(draft()),
+            ...previewHandle.variables(),
           }}
           sources={readySources()}
           fieldNames={fieldNames}
@@ -1185,20 +1263,18 @@ export function CompositionStudio(props: CompositionStudioProps) {
             >
               {t("composition.studioSources")}
             </button>
-            <Show when={hasSources()}>
-              <button
-                type="button"
-                id="studio-data-parameters-tab"
-                role="tab"
-                aria-selected={dataPanel() === "parameters"}
-                aria-controls="studio-data-parameters-panel"
-                class="tab"
-                classList={{ active: dataPanel() === "parameters" }}
-                onClick={() => setDataPanel("parameters")}
-              >
-                {t("composition.studioParameters")}
-              </button>
-            </Show>
+            <button
+              type="button"
+              id="studio-data-variables-tab"
+              role="tab"
+              aria-selected={dataPanel() === "variables"}
+              aria-controls="studio-data-variables-panel"
+              class="tab"
+              classList={{ active: dataPanel() === "variables" }}
+              onClick={() => setDataPanel("variables")}
+            >
+              {t("composition.studioVariables")}
+            </button>
             <button
               type="button"
               id="studio-data-tags-tab"
@@ -1220,26 +1296,24 @@ export function CompositionStudio(props: CompositionStudioProps) {
           >
             {renderDataWorkspace("studio-data-sources-tab")}
           </div>
-          <Show when={hasSources()}>
-            <section
-              id="studio-data-parameters-panel"
-              role="tabpanel"
-              aria-labelledby="studio-data-parameters-tab"
-              hidden={dataPanel() !== "parameters"}
-              class="section"
-            >
-              <h2 id={parametersHeadingId}>
-                {t("composition.studioParameters")}
-              </h2>
-              <CompositionParameterList
-                parameters={draft().parameters}
-                headingId={parametersHeadingId}
-                onAdd={addDraftParameter}
-                onUpdate={updateDraftParameter}
-                onRemove={removeDraftParameter}
-              />
-            </section>
-          </Show>
+          <section
+            id="studio-data-variables-panel"
+            role="tabpanel"
+            aria-labelledby="studio-data-variables-tab"
+            hidden={dataPanel() !== "variables"}
+            class="section"
+          >
+            <h2 id={variablesHeadingId}>
+              {t("composition.studioVariables")}
+            </h2>
+            <CompositionVariableList
+              variables={draft().variables}
+              headingId={variablesHeadingId}
+              onAdd={addDraftVariable}
+              onUpdate={updateDraftVariable}
+              onRemove={removeDraftVariable}
+            />
+          </section>
           <section
             id="studio-data-tags-panel"
             role="tabpanel"
@@ -1290,7 +1364,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
           legacy Preview section is gone too: the canvas previews blocks
           inline through the shared debounced handle, per-source results page
           inside the Data workspace, and resolve diagnostics render in the
-          strip above. Parameters and Tags edit in Data mode only. */
+          strip above. Variables and Tags edit in Data mode only. */
       }
 
       <Show when={pickerOpen()}>

@@ -131,13 +131,13 @@ components:
     internal_identifiers: form-source-draft-entry-revision-ids-never-rendered
   - id: studio-data-mode-tabs
     type: tab-list
-    title: Sources, Parameters, Tags
+    title: Sources, Variables, Tags
     status: implemented
     scope: data-mode-only
-    labels: localized-sources-parameters-tags
+    labels: localized-sources-variables-tags
     tab_pattern: settings-tablist-with-tab-and-tabpanel-roles-no-arrow-key-nav
     initial_selection: sources
-    parameter_disclosure: only-when-a-source-exists
+    variable_editor: available-before-any-source-exists
     state: transient-work-never-saved
   - id: studio-display
     type: list
@@ -192,16 +192,17 @@ components:
       decimal_rendering: minimum-zero-padded-scale-preserve-longer-source-scale-never-round
       transition_to_non_numeric: clears-number-presentation
 
-  - id: studio-parameters
+  - id: studio-variables
     type: form
-    title: Parameters
+    title: Variables
     status: implemented
-    scope: data-mode-parameters-tab-only
-    disclosure: renders-only-with-at-least-one-source-and-when-tab-is-selected
+    scope: data-mode-variables-tab-only
+    disclosure: available-with-or-without-sources-and-when-tab-is-selected
     label_kind: compact-section-label
     row_label: authored-human-label-else-localized-ordinal-by-declaration-order
-    binding_key: internal-reference-only-never-a-display-fallback
-    binding: existing-composition-parameter-grammar-by-reference
+    identifier: stable-internal-reference-never-a-display-fallback
+    binding: typed-composition-variable-declaration-with-exact-type-default-and-required-state
+    input_components: ordinary-layout-components-reference-one-declared-variable-and-own-no-value
     type_compatibility: rust-owned-diagnostics
   - id: studio-tags
     type: form
@@ -226,9 +227,9 @@ components:
     title: Diagnostics
     status: implemented
     ownership: shared-resolve-and-preview-diagnostics-in-every-mode
-    parameter_names: authored-label-or-localized-declaration-ordinal
-    unknown_parameter_names: generic-localized-parameter
-    binding_keys: never-render-in-diagnostics
+    variable_names: authored-label-or-localized-declaration-ordinal
+    unknown_variable_names: generic-localized-variable
+    variable_ids: never-render-in-diagnostics
     source: debounced-shared-preview-handle-only-no-second-path
     rendering:
       mode: shared-composition-diagnostics-with-structural-alert-roles
@@ -248,7 +249,7 @@ components:
     source: saved-tool-layout-rows-and-component-declarations
     rows:
       order: layout-row-array-then-item-order
-      items: [parameter-control, text, metric, table]
+      items: [input, text, metric, table]
     text:
       styles: [title, heading, body, caption]
       semantics: fixed-typography-no-markdown-no-source-fetch
@@ -257,10 +258,14 @@ components:
         labels:
           en: [Title, Heading, Body, Caption]
           ja: [タイトル, 見出し, 本文, キャプション]
-    parameter_controls:
+    inputs:
       order: layout-placement-first
       labels: declared-human-label-else-localized-ordinal-by-declaration-order
-      state: transient-work-never-stored
+      binding: one-declared-variable-per-Input-component
+      state: shared-transient-variable-value-never-stored
+    variable_bound_text:
+      binding: direct-reference-to-declared-string-variable-only
+      evaluation: synchronous-from-current-Work-value-without-SQL
     metric_semantics: selected-Saved-SQL-result-column-through-server-metric-query
     metric_rendering_status: implemented
     metric_result_states: loading, zero-rows, multiple-rows, null, numeric-zero, stale, source-unavailable, invalid-result, execution-error
@@ -291,9 +296,9 @@ components:
       order: layout-row-array-then-item-order
       reorder: keyboard-operable-move-up-down-buttons
       cross_row_item_moves: unsupported-insertion-targets-instead
-      items: [parameter-control, text, metric, table]
+      items: [input, text, metric, table]
     selection:
-      scope: transient-work-component-parameter-identity-only
+      scope: transient-work-component-identity-only
       affordance: outline-with-pressed-toggle-and-visible-focus
       inspector_handoff: selected-block-identity-only
       inspector_handoff_narrow: block-tap-opens-bottom-sheet-below-560px
@@ -303,15 +308,15 @@ components:
       palette_sizing:
         width: min(560px, calc(100vw - 32px))
         height: max-viewport-minus-32px-with-vertical-scroll
-      palette_entries: [text-always, data-always, parameters-only-with-parameters]
+      palette_entries: [text-always, data-always, inputs-only-with-variables]
       data: opens-data-component-picker-with-Table-and-Metric-tabs
-      parameter: place-existing-only-no-creation
-      parameter_label: authored-human-label-else-localized-ordinal-never-binding-key
+      input: place-existing-variable-binding-without-creating-a-variable
+      input_label: authored-human-label-else-localized-variable-ordinal-never-variable-id
     removal:
       owner: selected-block-inspector
       action: localized-icon-button-in-inspector-title-bar
       component: remove-declaration-and-unplace
-      parameter_control: unplace-only-semantics-kept
+      input: unplace-component-only-keeps-variable-declaration
       after_remove: clear-selection-prune-empty-layout-rows-and-focus-first-remaining-block-or-add-gap
       guards: blocked-while-referenced-preserved
     preview_discipline: existing-debounced-handle-only-no-second-path
@@ -327,7 +332,7 @@ components:
     metric_settings_editor_status: implemented
     ownership: selected-block-only-no-creation
     source: canvas-selection-identity-only
-    actions: [remove-display, unplace-parameter-control]
+    actions: [remove-display, unplace-input-component]
     removal: available-inline-and-in-narrow-bottom-sheet
     empty_state: no-panel-no-prose
     metric_fields:
@@ -342,10 +347,10 @@ components:
     text_fields:
       text: inline-content
       style: fixed-enum-only
-    parameter_control:
-      ref: owned-label-read-only-no-override
-      label_fallback: localized-ordinal-by-declaration-order-never-binding-key
-      placement: retarget-existing-parameter-in-place
+    input:
+      variable: retarget-selected-Input-to-an-existing-variable
+      label: authored-variable-label-or-localized-ordinal-read-only
+      value: shared-transient-work-only-never-saved
     data_jump: expand-and-focus-existing-source-row
     data_jump_narrow: dismiss-sheet-show-data-workspace-focus-jumped-row
     preview_discipline: existing-debounced-handle-only-no-second-path
@@ -367,9 +372,9 @@ components:
     accessible_names: radiogroup-with-checked-option-and-native-focus
     arrangement_only: draft-preview-selection-shared-continuous-no-refetch
     true_modes:
-      design: finished-shape-only-canvas-plus-inspector-no-data-no-parameters-no-tags-no-preview-section
-      data: fetch-definition-only-with-localized-sources-parameters-tags-tabs-no-canvas-no-preview-section
-      split: design-canvas-plus-scoped-data-pane-no-parameters-no-tags-no-preview-section
+      design: finished-shape-only-canvas-plus-inspector-no-data-no-variables-no-tags-no-preview-section
+      data: fetch-definition-only-with-localized-sources-variables-tags-tabs-no-canvas-no-preview-section
+      split: design-canvas-plus-scoped-data-pane-no-variables-no-tags-no-preview-section
     blank_design: Text-and-Data-insertion-controls-open-without-prose
     source_creation: design-display-picker-or-data-sidebar-footer
     split_availability: desktop-only-below-760px-design-data-only
@@ -384,7 +389,7 @@ components:
     title: Design Data synchronization
     status: implemented
     ownership: selection-identity-only-no-pixels
-    block_to_source: metric-table-auto-select-component-source-text-parameter-keep-selection
+    block_to_source: metric-table-auto-select-component-source-text-input-keep-selection
     source_to_blocks: soft-highlight-using-blocks-selection-unchanged
     highlight: visual-token-colors-only-distinct-from-selection-outline
     split: left-design-canvas-right-data-pane-for-selected-block-source

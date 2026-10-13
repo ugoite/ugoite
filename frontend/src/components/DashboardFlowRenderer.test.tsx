@@ -134,7 +134,7 @@ const renderFlow = (
       }}
       plan={plan}
       texts={texts}
-      parameterDefinitions={definitions}
+      variableDefinitions={definitions}
       variableValues={{ month: "2026-10-01" }}
       sources={readySources}
       onNext={() => {}}
@@ -150,7 +150,7 @@ describe("DashboardFlowRenderer", () => {
     setLocale("en");
   });
 
-  it("renders rows in order with parameter controls interleaved", async () => {
+  it("renders rows in order with Input controls interleaved", async () => {
     const onVariableInput = vi.fn();
     const query = vi.spyOn(compositionApi, "queryMetric").mockImplementation(
       (_spaceId, request) =>
@@ -186,7 +186,7 @@ describe("DashboardFlowRenderer", () => {
     expect(rows[2]).toContain("Count");
     expect(rows[3]).toContain("Details");
 
-    // The parameter control shows the declared human label, never the id.
+    // The Input shows the declared human label, never the id.
     const input = screen.getByLabelText("Month");
     expect(input).toHaveValue("2026-10-01");
     expect(input).not.toHaveAttribute("readonly");
@@ -195,7 +195,7 @@ describe("DashboardFlowRenderer", () => {
       expect(onVariableInput).toHaveBeenCalledWith("month", "2026-11-01");
     });
     expect(screen.queryByLabelText("month")).toBeNull();
-    // Unplaced optional parameters render no in-flow control.
+    // Unplaced optional variables render no in-flow control.
     expect(screen.queryByLabelText("Region")).toBeNull();
 
     // Metrics query the bounded server operation; the table delegates to
@@ -220,21 +220,21 @@ describe("DashboardFlowRenderer", () => {
     expect(screen.getByRole("table")).toBeInTheDocument();
   });
 
-  it("uses localized ordinal labels for unlabeled runtime parameters", async () => {
+  it("uses localized ordinal labels for unlabeled runtime variables", async () => {
     setLocale("en");
     const unlabeledDefinitions = definitions.map((
       { label: _label, ...entry },
     ) => entry);
-    renderFlow({ parameterDefinitions: unlabeledDefinitions });
+    renderFlow({ variableDefinitions: unlabeledDefinitions });
 
-    expect(await screen.findByLabelText("Parameter 1")).toHaveValue(
+    expect(await screen.findByLabelText("Variable 1")).toHaveValue(
       "2026-10-01",
     );
     expect(screen.queryByLabelText("month")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("region")).not.toBeInTheDocument();
 
     setLocale("ja");
-    expect(screen.getByLabelText("パラメーター1")).toHaveValue("2026-10-01");
+    expect(screen.getByLabelText("変数1")).toHaveValue("2026-10-01");
   });
 
   it("renders each text style without fetching sources", async () => {
@@ -279,11 +279,11 @@ describe("DashboardFlowRenderer", () => {
     await waitFor(() => expect(query).not.toHaveBeenCalled());
   });
 
-  it("binds parameter changes to transient work state", async () => {
+  it("binds Input changes to transient Work state", async () => {
     const onVariableInput = vi.fn();
     renderFlow({
       onVariableInput,
-      parameterDefinitions: [{
+      variableDefinitions: [{
         id: "include_archived",
         label: "Include archived",
         type: "boolean",
@@ -467,7 +467,7 @@ describe("DashboardFlowRenderer", () => {
         }}
         plan={plan}
         texts={texts}
-        parameterDefinitions={definitions}
+        variableDefinitions={definitions}
         variableValues={{ month: "2026-10-01" }}
         metricQueryContext={{
           spaceId: "space-1",
@@ -532,7 +532,7 @@ describe("DashboardFlowRenderer", () => {
           source_id: "entries",
         }],
       },
-      parameterDefinitions: [],
+      variableDefinitions: [],
       variableValues: {},
       sources: {
         entries: {
@@ -604,7 +604,7 @@ describe("DashboardFlowRenderer", () => {
   it("keeps flow rows inline with tables scrolling in their own viewport", () => {
     const css = stylesheet();
     // Desktop rows keep items inline with wrapping; tables take the full
-    // row while metrics share it and parameter controls keep content width.
+    // row while metrics share it and Input controls keep content width.
     expect(css).toMatch(
       /\.compositionFlowRow\s*\{[^}]*display:\s*flex[^}]*flex-wrap:\s*wrap/,
     );
@@ -614,7 +614,7 @@ describe("DashboardFlowRenderer", () => {
     expect(css).toMatch(
       /\.result-table-viewport\s*\{[^}]*overflow-x:\s*auto/,
     );
-    // Narrow viewports stack metric and parameter blocks instead of
+    // Narrow viewports stack metric and Input blocks instead of
     // squeezing them or scrolling the document.
     expect(css).toMatch(
       /@media\s*\(max-width:\s*560px\)[\s\S]*?\.compositionFlowItem--metric\s*\{[\s\S]*?flex-basis:\s*100%/,

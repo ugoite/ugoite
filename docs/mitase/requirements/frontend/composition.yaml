@@ -6,14 +6,14 @@ requirements:
   - id: REQ-FE-070
     title: Composition Studio Authoring
     description: |
-      Composition Studio combines existing Space-owned Knowledge (Saved SQL revisions, Form views, and parameters) into a reusable Tool with multiple data sources, displays, labels, tags, side-effect-free preview, and exact-revision edit. Metrics select a declared result column from an exact Saved SQL revision and keep calculation semantics in that query. Metric authoring previews through the server metric query operation. Richness is a typed, reproducible combination of existing Knowledge, not free-form layout. The Browser never owns Composition semantics or aggregates fetched rows. Drafts canonicalize through the shared Rust/WASM contract.
+      Composition Studio combines existing Space-owned Knowledge (Saved SQL revisions, Form views, and typed Composition variables) into a reusable Tool with multiple data sources, displays, labels, tags, side-effect-free preview, and exact-revision edit. Inputs and direct variable-bound Text read transient Work values; SQL Sources bind explicitly to exact-type declarations in the pinned Saved SQL revision. Metrics select a declared result column from an exact Saved SQL revision and keep calculation semantics in that query. Metric authoring previews through the server metric query operation. Richness is a typed, reproducible combination of existing Knowledge, not free-form layout. The Browser never owns Composition semantics or aggregates fetched rows. Drafts canonicalize through the shared Rust/WASM contract.
 
     priority: high
     status: planned
     criteria:
       - id: structure-first-authoring
         kind: behavior
-        statement: The Studio steady state shows the operative structure (tool name, Data, Display, Parameters, Tags, Preview, Save) without explanatory paragraphs; Data mode separates Sources, Parameters, and Tags into localized tabs, with Parameters shown only when a source exists; prose appears only to instruct the next ambiguous operation, recover from errors, warn, disambiguate unavailability, or show one empty-state next action.
+        statement: The Studio steady state shows the operative structure (tool name, Design, Data, Variables, Tags, Preview, Save) without explanatory paragraphs; Data mode separates Sources, Variables, and Tags into localized tabs, and the Variables editor is available before any source exists. Inputs can only be placed from declared variables; creating a SQL Source does not silently create Composition variables or Inputs. Prose appears only to instruct the next ambiguous operation, recover from errors, warn, disambiguate unavailability, or show one empty-state next action.
         governed_by: [POL-UI-002#rule.governance, POL-UI-003#rule.governance]
       - id: no-persistent-explanatory-copy
         kind: behavior
@@ -47,7 +47,7 @@ requirements:
         governed_by: [POL-UI-009#rule.governance]
       - id: typed-parameter-binding
         kind: behavior
-        statement: Parameters use the existing Composition parameter grammar with labels, defaults, and date/month/timestamp inputs. Parameter name surfaces show the authored human label or a localized ordinal based on declaration order; diagnostic messages use the same name and a generic localized parameter noun for unknown keys. Stable parameter keys remain binding-only and never serve as label fallbacks. Saved SQL variables and EntryQuery filter values bind to parameters by reference, and type compatibility is decided by the Rust-owned capability and diagnostics, never by Browser inference.
+        statement: Composition variables declare a unique identifier, exact type, required flag, optional exact-type default, and optional authored label. Inputs reference a declared variable and own no persisted value; variable-bound Text references only a declared string variable. User-facing variable surfaces use the authored label or localized declaration-order ordinal, while IDs stay binding-only. Saved SQL variable names bind explicitly to Composition variables through the existing typed SQL parameters; no same-name binding is inferred. Type compatibility is decided by Rust-owned validation and diagnostics, never by Browser inference. SQL APIs retain their `parameters` and `parameter_types` contract.
         governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
       - id: side-effect-free-preview
         kind: behavior
@@ -55,7 +55,7 @@ requirements:
         governed_by: [POL-UI-009#rule.governance]
       - id: exact-revision-edit
         kind: behavior
-        statement: Editing opens the exact saved revision through composition.get and composition.lint normalization, treats omitted empty optional parameter and Saved SQL variable collections as empty editor state, and refuses malformed explicit-null collections or untyped legacy Metric definitions without conversion; saves with the exact composition and base revision identity plus idempotency and appends a new revision on success; stale bases conflict and uncertain saves retry the identical payload and key.
+        statement: Editing opens the exact saved revision through composition.get and composition.lint normalization, treats omitted optional Composition variable and Saved SQL variable collections as empty editor state, and refuses malformed explicit-null collections or untyped legacy Metric definitions without conversion; saves with the exact composition and base revision identity plus idempotency and appends a new revision on success; stale bases conflict and uncertain saves retry the identical payload and key.
         governed_by: [POL-UI-008#rule.governance, POL-UI-009#rule.governance]
       - id: mobile-one-column
         kind: quality
@@ -105,7 +105,7 @@ requirements:
       - id: preview-handle-verification
         role: verification
         facet: verification
-        responsibility: Verify draft preview execution identity, stale-response guards, parameter re-preview, and error surfacing through exact frontend unit tests.
+        responsibility: Verify draft preview execution identity, stale-response guards, variable-triggered re-preview, and error surfacing through exact frontend unit tests.
         targets:
           - id: preview-fingerprint-identity
             adapter: typescript
@@ -125,15 +125,15 @@ requirements:
                 criterion: REQ-FE-070#criterion.side-effect-free-preview
                 covers: [FEAT-FE-014#binding.frontend/target.composition-preview-handle]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-preview-handle.test.ts, test: drops stale previews when the draft changes } }
-          - id: preview-parameter-repreview
+          - id: preview-variable-repreview
             adapter: typescript
             path: frontend/src/lib/composition-preview-handle.test.ts
-            selector: { kind: test, name: re-previews the stored draft when a parameter changes }
+            selector: { kind: test, name: re-previews the stored draft when a variable changes }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.side-effect-free-preview
                 covers: [FEAT-FE-014#binding.frontend/target.composition-preview-handle]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-preview-handle.test.ts, test: re-previews the stored draft when a parameter changes } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-preview-handle.test.ts, test: re-previews the stored draft when a variable changes } }
           - id: preview-error-state
             adapter: typescript
             path: frontend/src/lib/composition-preview-handle.test.ts
@@ -146,7 +146,7 @@ requirements:
       - id: studio-edit-verification
         role: verification
         facet: verification
-        responsibility: Verify exact-revision edit (open the exact saved revision through composition.get and composition.lint normalization, restore the shared studio draft while treating omitted empty optional parameter and Saved SQL variable collections as empty, save with the exact composition and base revision identity plus idempotency, and refuse malformed explicit-null collections or other invalid documents without opening the studio) through exact frontend unit tests.
+        responsibility: Verify exact-revision edit (open the exact saved revision through composition.get and composition.lint normalization, restore the shared studio draft while treating omitted empty optional Composition-variable and Saved SQL-variable collections as empty, save with the exact composition and base revision identity plus idempotency, and refuse malformed explicit-null collections or other invalid documents without opening the studio) through exact frontend unit tests.
         targets:
           - id: studio-edit-restore
             adapter: typescript
@@ -195,21 +195,21 @@ requirements:
           - id: studio-edit-empty-optional-collections
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx
-            selector: { kind: test, name: "opens canonical revisions when empty parameters and variables are omitted" }
+            selector: { kind: test, name: "opens canonical revisions when empty variables are omitted" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.exact-revision-edit
                 covers: [FEAT-FE-014#binding.frontend/target.composition-edit-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "opens canonical revisions when empty parameters and variables are omitted" } }
-          - id: studio-edit-null-parameters
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "opens canonical revisions when empty variables are omitted" } }
+          - id: studio-edit-null-variables
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx
-            selector: { kind: test, name: "refuses explicit null parameters as malformed" }
+            selector: { kind: test, name: "refuses explicit null variables as malformed" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.exact-revision-edit
                 covers: [FEAT-FE-014#binding.frontend/target.composition-edit-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "refuses explicit null parameters as malformed" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "refuses explicit null variables as malformed" } }
           - id: studio-edit-null-saved-sql-variables
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx
@@ -361,16 +361,16 @@ requirements:
           - id: studio-canvas-palette-gating
             adapter: typescript
             path: frontend/src/components/CompositionDesignCanvas.test.tsx
-            selector: { kind: test, name: offers data and hides parameter section without sources or parameters }
+            selector: { kind: test, name: offers data and hides variable section without sources or variables }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.display-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: offers data and hides parameter section without sources or parameters } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: offers data and hides variable section without sources or variables } }
               - kind: verifies
                 criterion: REQ-FE-070#criterion.structure-first-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: offers data and hides parameter section without sources or parameters } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: offers data and hides variable section without sources or variables } }
           - id: studio-canvas-text-spacing
             adapter: typescript
             path: frontend/src/components/CompositionDesignCanvas.test.tsx
@@ -438,86 +438,82 @@ requirements:
                 criterion: REQ-FE-070#criterion.side-effect-free-preview
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: rejects a successful metric preview with a different draft fingerprint } }
-      - id: studio-parameter-verification
+      - id: studio-variable-verification
         role: verification
         facet: verification
-        responsibility: Verify typed parameter provisioning, inline default editing, guarded removal, and preview default values through exact frontend unit tests. Rust-owned type compatibility stays covered by resolve diagnostics.
+        responsibility: Verify typed Composition-variable editing, inline defaults, guarded removal, generated-ID concealment, and explicit Saved SQL binding through exact frontend unit tests. Rust-owned type compatibility stays covered by resolve diagnostics.
         targets:
-          - id: parameter-provisioning
+          - id: variable-provisioning
             adapter: typescript
             path: frontend/src/lib/composition-draft.test.ts
-            selector: { kind: test, name: provisions missing variable parameters without touching existing ones }
+            selector: { kind: test, name: keeps variable declarations explicit when adding Saved SQL }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.typed-parameter-binding
-                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: provisions missing variable parameters without touching existing ones } }
-          - id: parameter-inline-edit
+                covers: [FEAT-FE-014#binding.frontend/target.composition-variable-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: keeps variable declarations explicit when adding Saved SQL } }
+          - id: variable-inline-edit
             adapter: typescript
-            path: frontend/src/components/CompositionParameterList.test.tsx
-            selector: { kind: test, name: adds typed parameters and edits defaults inline }
+            path: frontend/src/components/CompositionVariableList.test.tsx
+            selector: { kind: test, name: adds typed variables and edits defaults inline }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.typed-parameter-binding
-                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: adds typed parameters and edits defaults inline } }
+                covers: [FEAT-FE-014#binding.frontend/target.composition-variable-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableList.test.tsx, test: adds typed variables and edits defaults inline } }
               - kind: verifies
                 criterion: REQ-FE-070#criterion.structure-first-authoring
-                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: adds typed parameters and edits defaults inline } }
-          - id: parameter-label-first-display
+                covers: [FEAT-FE-014#binding.frontend/target.composition-variable-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableList.test.tsx, test: adds typed variables and edits defaults inline } }
+          - id: variable-label-first-display
             adapter: typescript
-            path: frontend/src/components/CompositionParameterList.test.tsx
-            selector: { kind: test, name: uses the declared label while keeping the parameter name for updates and removal }
+            path: frontend/src/components/CompositionVariableList.test.tsx
+            selector: { kind: test, name: uses the declared label while keeping the variable name for updates and removal }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.typed-parameter-binding
-                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: uses the declared label while keeping the parameter name for updates and removal } }
+                covers: [FEAT-FE-014#binding.frontend/target.composition-variable-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableList.test.tsx, test: uses the declared label while keeping the variable name for updates and removal } }
               - kind: verifies
                 criterion: REQ-FE-070#criterion.no-persistent-explanatory-copy
-                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: uses the declared label while keeping the parameter name for updates and removal } }
-          - id: parameter-guarded-remove
+                covers: [FEAT-FE-014#binding.frontend/target.composition-variable-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableList.test.tsx, test: uses the declared label while keeping the variable name for updates and removal } }
+          - id: variable-guarded-remove
             adapter: typescript
-            path: frontend/src/components/CompositionParameterList.test.tsx
+            path: frontend/src/components/CompositionVariableList.test.tsx
             selector: { kind: test, name: surfaces guarded removal without deleting }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.typed-parameter-binding
-                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: surfaces guarded removal without deleting } }
-          - id: parameter-add-reason
+                covers: [FEAT-FE-014#binding.frontend/target.composition-variable-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableList.test.tsx, test: surfaces guarded removal without deleting } }
+          - id: variable-generated-id-hidden
             adapter: typescript
-            path: frontend/src/components/CompositionParameterList.test.tsx
-            selector: { kind: test, name: names the disabled reason on the add control without prose }
+            path: frontend/src/components/CompositionVariableList.test.tsx
+            selector: { kind: test, name: creates a labeled variable without displaying its generated id }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.typed-parameter-binding
-                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: names the disabled reason on the add control without prose } }
-              - kind: verifies
-                criterion: REQ-FE-070#criterion.accessible-icon-actions
-                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: names the disabled reason on the add control without prose } }
-          - id: parameter-add-taken-reason
+                covers: [FEAT-FE-014#binding.frontend/target.composition-variable-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableList.test.tsx, test: creates a labeled variable without displaying its generated id } }
+          - id: variable-generated-id-reuse
             adapter: typescript
-            path: frontend/src/components/CompositionParameterList.test.tsx
-            selector: { kind: test, name: names the colliding id when the parameter already exists }
+            path: frontend/src/components/CompositionVariableList.test.tsx
+            selector: { kind: test, name: selects an unused generated id without exposing it }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.typed-parameter-binding
-                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: names the colliding id when the parameter already exists } }
-          - id: parameter-route-provisioning
+                covers: [FEAT-FE-014#binding.frontend/target.composition-variable-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableList.test.tsx, test: selects an unused generated id without exposing it } }
+          - id: variable-route-source-binding
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
-            selector: { kind: test, name: provisions typed parameters from saved sql variables and guards removal }
+            selector: { kind: test, name: does not create Composition variables from Saved SQL variables }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.typed-parameter-binding
-                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: provisions typed parameters from saved sql variables and guards removal } }
+                covers: [FEAT-FE-014#binding.frontend/target.composition-variable-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: does not create Composition variables from Saved SQL variables } }
       - id: studio-shell-verification
         role: verification
         facet: verification
@@ -763,20 +759,20 @@ requirements:
           - id: entry-point-studio-seed-saved-sql
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
-            selector: { kind: test, name: "seeds the studio from a saved sql seed with a table and placed controls using localized parameter labels" }
+            selector: { kind: test, name: "seeds the studio from Saved SQL without inventing variables or Inputs" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.source-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio-seed]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from a saved sql seed with a table and placed controls using localized parameter labels" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from Saved SQL without inventing variables or Inputs" } }
               - kind: verifies
                 criterion: REQ-FE-070#criterion.typed-parameter-binding
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio-seed]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from a saved sql seed with a table and placed controls using localized parameter labels" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from Saved SQL without inventing variables or Inputs" } }
               - kind: verifies
                 criterion: REQ-FE-077#criterion.parameter-display-names
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio-seed]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from a saved sql seed with a table and placed controls using localized parameter labels" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from Saved SQL without inventing variables or Inputs" } }
           - id: entry-point-studio-seed-entry-query
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
@@ -866,21 +862,21 @@ requirements:
       - id: studio-mode-verification
         role: verification
         facet: verification
-        responsibility: Verify true mode separation (Design shows the finished shape only, Data shows the fetch definition only with Parameters disclosed once a source exists and Tags, Split pairs the canvas with the scoped data pane), blank-canvas Text and Data insertion through the data component picker, and the every-mode diagnostics strip through exact frontend unit tests.
+        responsibility: Verify true mode separation (Design shows the finished shape only, Data shows Sources, Variables, and Tags without a canvas, and Split pairs the canvas with the scoped data pane), blank-canvas Text and Data insertion through the data component picker, and the every-mode diagnostics strip through exact frontend unit tests.
         targets:
           - id: studio-true-modes-case
             adapter: typescript
             path: frontend/src/components/CompositionStudioSync.test.tsx
-            selector: { kind: test, name: "separates Data sources, Parameters, and Tags into tabs in Data mode" }
+            selector: { kind: test, name: "separates Data sources, Variables, and Tags into tabs in Data mode" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.structure-first-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "separates Data sources, Parameters, and Tags into tabs in Data mode" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "separates Data sources, Variables, and Tags into tabs in Data mode" } }
               - kind: verifies
                 criterion: REQ-FE-070#criterion.no-persistent-explanatory-copy
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "separates Data sources, Parameters, and Tags into tabs in Data mode" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "separates Data sources, Variables, and Tags into tabs in Data mode" } }
           - id: studio-blank-guided-case
             adapter: typescript
             path: frontend/src/components/CompositionStudioSync.test.tsx
@@ -894,19 +890,19 @@ requirements:
                 criterion: REQ-FE-070#criterion.no-persistent-explanatory-copy
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: opens Text or Data insertion from a blank canvas } }
-          - id: studio-parameters-disclosure-case
+          - id: studio-variables-editor-before-source-case
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
-            selector: { kind: test, name: discloses Parameters in Data mode only once a source exists }
+            selector: { kind: test, name: offers the Variables editor before any source exists }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.structure-first-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio-shell]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: discloses Parameters in Data mode only once a source exists } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: offers the Variables editor before any source exists } }
               - kind: verifies
                 criterion: REQ-FE-070#criterion.typed-parameter-binding
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio-shell]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: discloses Parameters in Data mode only once a source exists } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: offers the Variables editor before any source exists } }
           - id: studio-diagnostics-strip-case
             adapter: typescript
             path: frontend/src/components/CompositionStudioSync.test.tsx

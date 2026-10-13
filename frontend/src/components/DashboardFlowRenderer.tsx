@@ -9,22 +9,22 @@ import {
   CompositionSavedSqlTable,
   usesServerMetricQuery,
 } from "~/components/CompositionRenderer";
-import { ParameterControl } from "~/components/composition/ParameterControl";
+import { InputControl } from "~/components/composition/InputControl";
 import { TextComponent } from "~/components/composition/TextComponent";
 import { t } from "~/lib/i18n";
 import type {
   CompositionFlowLayout,
   CompositionFlowLayoutItem,
-  CompositionVariableDefinition,
   CompositionResolvedComponentBinding,
   CompositionResolvePlan,
   CompositionTextStyle,
+  CompositionVariableDefinition,
 } from "~/lib/composition-api";
 import type {
   CompositionSourcePageState,
   CompositionVariableInputState,
 } from "~/lib/composition-query-handle";
-import { compositionParameterDisplayName } from "~/lib/composition-parameter-name";
+import { compositionVariableDisplayName } from "~/lib/composition-variable-name";
 
 export type DashboardFlowTexts = Record<
   string,
@@ -65,7 +65,7 @@ export interface DashboardFlowItemProps {
   texts: Readonly<DashboardFlowTexts>;
   /** Semantic definition for Input components; absent when undeclared. */
   definition?: CompositionVariableDefinition;
-  parameterDisplayName?: string;
+  inputDisplayName?: string;
   variableValues?: Readonly<Record<string, unknown>>;
   variableInputs?: Readonly<Record<string, CompositionVariableInputState>>;
   variableInvalid?: (variableId: string) => boolean;
@@ -95,15 +95,14 @@ export function DashboardFlowItem(props: DashboardFlowItemProps) {
   if (!props.item.component) return null;
   if (props.binding?.kind === "input" && props.definition) {
     return (
-      <div class="compositionFlowItem compositionFlowItem--parameter">
-        <ParameterControl
+      <div class="compositionFlowItem compositionFlowItem--input">
+        <InputControl
           definition={props.definition}
-          displayName={props.parameterDisplayName ??
-            t("composition.studioParameters")}
+          displayName={props.inputDisplayName ??
+            t("composition.studioVariables")}
           value={props.variableValues?.[props.definition.id]}
           rawValue={props.variableInputs?.[props.definition.id]?.raw}
-          onChange={(raw) =>
-            props.onVariableInput?.(props.definition.id, raw)}
+          onChange={(raw) => props.onVariableInput?.(props.definition.id, raw)}
           invalid={props.variableInvalid?.(props.definition.id)}
         />
       </div>
@@ -150,10 +149,10 @@ type DashboardFlowRendererProps = {
   /** Text content and style joined by component id. */
   texts: Readonly<DashboardFlowTexts>;
   /** Semantic variable definitions used by Input component bindings. */
-  parameterDefinitions: readonly CompositionVariableDefinition[];
+  variableDefinitions: readonly CompositionVariableDefinition[];
   /** Declaration-order definitions used only for localized display names. */
-  parameterDisplayDefinitions?: readonly CompositionVariableDefinition[];
-  /** Transient parameter values owned by the composition query handle. */
+  variableDisplayDefinitions?: readonly CompositionVariableDefinition[];
+  /** Transient variable values owned by the composition query handle. */
   variableValues?: Readonly<Record<string, unknown>>;
   variableInputs?: Readonly<Record<string, CompositionVariableInputState>>;
   variableInvalid?: (variableId: string) => boolean;
@@ -172,7 +171,7 @@ type DashboardFlowRendererProps = {
  * Read-only dashboard flow renderer for saved Tools. Layout rows and item
  * order come from the saved document; metric and table blocks reuse the
  * existing source-native presenters with exact-scalar semantics, and
- * parameter controls stay bound to transient Work state.
+ * Input components stay bound to transient Work state.
  */
 export function DashboardFlowRenderer(props: DashboardFlowRendererProps) {
   const bindingById = () => {
@@ -201,7 +200,7 @@ export function DashboardFlowRenderer(props: DashboardFlowRendererProps) {
     new Map(props.plan.sources.map((source) => [source.source_id, source]));
   const definitionById = () =>
     new Map(
-      props.parameterDefinitions.map((
+      props.variableDefinitions.map((
         definition,
       ) => [definition.id, definition]),
     );
@@ -213,13 +212,14 @@ export function DashboardFlowRenderer(props: DashboardFlowRendererProps) {
       bindingById(),
       sourceById(),
     );
-  const metricQueryContext = () => props.metricQueryContext
-    ? {
-      ...props.metricQueryContext,
-      dependencies: props.metricQueryContext.dependencies ??
-        props.plan.dependencies,
-    }
-    : undefined;
+  const metricQueryContext = () =>
+    props.metricQueryContext
+      ? {
+        ...props.metricQueryContext,
+        dependencies: props.metricQueryContext.dependencies ??
+          props.plan.dependencies,
+      }
+      : undefined;
 
   return (
     <div class="compositionFlow">
@@ -251,12 +251,12 @@ export function DashboardFlowRenderer(props: DashboardFlowRendererProps) {
                       binding={binding()}
                       texts={props.texts}
                       definition={definition()}
-                      parameterDisplayName={binding()?.kind === "input"
+                      inputDisplayName={binding()?.kind === "input"
                         ? binding()!.label?.trim() ||
                           props.inputLabels?.[item.component] ||
-                          compositionParameterDisplayName(
-                            props.parameterDisplayDefinitions ??
-                              props.parameterDefinitions,
+                          compositionVariableDisplayName(
+                            props.variableDisplayDefinitions ??
+                              props.variableDefinitions,
                             binding()!.variable_id,
                           )
                         : undefined}

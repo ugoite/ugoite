@@ -1,10 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-} from "@solidjs/testing-library";
+import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CompositionVariableDefinition } from "~/lib/composition-api";
@@ -12,9 +7,9 @@ import {
   parseCompositionVariableInputSync,
   prepareCompositionVariableInputParser,
 } from "~/lib/ugoite-client/protocol";
-import { ParameterControl } from "./ParameterControl";
+import { InputControl } from "./InputControl";
 
-describe("Composition ParameterControl", () => {
+describe("Composition InputControl", () => {
   afterEach(() => cleanup());
 
   it("preserves timezone-bearing timestamps in the shared raw input state", () => {
@@ -27,7 +22,7 @@ describe("Composition ParameterControl", () => {
     const [raw, setRaw] = createSignal(definition.default! as string);
     const onChange = vi.fn((value: string) => setRaw(value));
     render(() => (
-      <ParameterControl
+      <InputControl
         definition={definition}
         displayName="Created at"
         value={undefined}
@@ -75,7 +70,7 @@ describe("Composition ParameterControl", () => {
     };
     const { container } = render(() => (
       <>
-        <ParameterControl
+        <InputControl
           definition={definition}
           displayName="First limit"
           value={value()}
@@ -83,7 +78,7 @@ describe("Composition ParameterControl", () => {
           invalid={invalid()}
           onChange={onInput}
         />
-        <ParameterControl
+        <InputControl
           definition={definition}
           displayName="Second limit"
           value={value()}

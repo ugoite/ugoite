@@ -135,13 +135,13 @@ requirements:
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::unknown_variable_source_references_are_invalid } }
           - id: timestamp-input-preservation-case
             adapter: typescript
-            path: frontend/src/components/composition/ParameterControl.test.tsx
-            selector: { kind: test, name: preserves timezone-bearing timestamp values in a text input }
+            path: frontend/src/components/composition/InputControl.test.tsx
+            selector: { kind: test, name: preserves timezone-bearing timestamps in the shared raw input state }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
-                covers: [FEAT-COMP-008#binding.browser-typed-input-control/target.parameter-control]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/composition/ParameterControl.test.tsx, test: preserves timezone-bearing timestamp values in a text input } }
+                covers: [FEAT-COMP-008#binding.browser-typed-input-control/target.input-control]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/composition/InputControl.test.tsx, test: preserves timezone-bearing timestamps in the shared raw input state } }
       - id: typed-variable-wasm-verification
         role: verification
         facet: verification
@@ -242,13 +242,13 @@ requirements:
         targets:
           - id: numeric-default-parser-case
             adapter: typescript
-            path: frontend/src/components/CompositionParameterList.test.tsx
+            path: frontend/src/components/CompositionVariableList.test.tsx
             selector: { kind: test, name: parses numeric defaults through the shared Domain parser }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-007#criterion.code-free-studio-authoring
-                covers: [FEAT-COMP-008#binding.studio-typed-variable-defaults/target.parameter-default-editor]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: parses numeric defaults through the shared Domain parser } }
+                covers: [FEAT-COMP-008#binding.studio-typed-variable-defaults/target.variable-default-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableList.test.tsx, test: parses numeric defaults through the shared Domain parser } }
       - id: typed-variable-explicit-unset-verification
         role: verification
         facet: verification

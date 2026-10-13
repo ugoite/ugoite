@@ -15,12 +15,12 @@ import {
   CompositionRenderer,
 } from "~/components/CompositionRenderer";
 import { DashboardFlowRenderer } from "~/components/DashboardFlowRenderer";
-import { ParameterControl } from "~/components/composition/ParameterControl";
+import { InputControl } from "~/components/composition/InputControl";
 import { FieldStack, FieldStackRow } from "~/components/FieldStack";
 import { IconButton } from "~/components/IconButton";
 import { IconLink } from "~/components/IconLink";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
-import { compositionParameterDisplayName } from "~/lib/composition-parameter-name";
+import { compositionVariableDisplayName } from "~/lib/composition-variable-name";
 import { safeText } from "~/lib/display-value";
 import { t } from "~/lib/i18n";
 import { compositionFormFieldName } from "~/lib/composition-field-name";
@@ -214,20 +214,20 @@ export default function CompositionRevisionRoute() {
     () => params.space_id,
     (spaceId) => formApi.list(spaceId).catch(() => []),
   );
-  const parameterMismatch = (parameterId: string) =>
-    handle.invalidVariables().has(parameterId) ||
+  const variableMismatch = (variableId: string) =>
+    handle.invalidVariables().has(variableId) ||
     diagnostics().some((diagnostic) =>
-      diagnostic.variable_id === parameterId &&
+      diagnostic.variable_id === variableId &&
       (diagnostic.code === "variable_type_mismatch" ||
         diagnostic.code === "variable_missing")
     );
 
   // First-class flow layout for saved Tools. The stored spec YAML is
   // normalized side-effect-free (same as the edit route); rows, text
-  // content, and parameter placement come from that document while values
+  // content, and variable-bound Input placement come from that document while values
   // and pages stay with the resolve plan and transient Work state. When
   // the layout is unavailable the route falls back to the flat renderer
-  // with every declared parameter editable.
+  // with every declared variable editable.
   const specYaml = () => {
     const spec = current().composition?.fields?.["spec"];
     return typeof spec === "string" ? spec : undefined;
@@ -246,13 +246,13 @@ export default function CompositionRevisionRoute() {
     ) return undefined;
     return document;
   };
-  const parameterDisplayDefinitions = () => {
+  const variableDisplayDefinitions = () => {
     const resolved = definitions();
     const declarations = layoutDocument()?.spec.variables;
     if (!declarations) {
       return resolved.map((definition) => ({
         ...definition,
-        label: definition.label?.trim() || t("composition.parameterFallback"),
+        label: definition.label?.trim() || t("composition.variableFallback"),
       }));
     }
     const declarationIds = new Set(
@@ -281,7 +281,7 @@ export default function CompositionRevisionRoute() {
       { text: string; style: "title" | "heading" | "body" | "caption" }
     > = {};
     const defaults = Object.fromEntries(
-      parameterDisplayDefinitions().flatMap((definition) =>
+      variableDisplayDefinitions().flatMap((definition) =>
         definition.default === undefined
           ? []
           : [[definition.id, definition.default] as const]
@@ -320,7 +320,7 @@ export default function CompositionRevisionRoute() {
           : []
       ),
     );
-  const placedParameterIds = () => {
+  const placedInputVariableIds = () => {
     const placed = new Set<string>();
     const inputByComponent = inputVariables();
     for (const row of flowRows() ?? []) {
@@ -337,8 +337,8 @@ export default function CompositionRevisionRoute() {
   // keeps only variables without a placed Input.
   const sectionDefinitions = () => {
     if (flowRows() === undefined) return definitions();
-    const placed = placedParameterIds();
-    return parameterDisplayDefinitions().filter((definition) =>
+    const placed = placedInputVariableIds();
+    return variableDisplayDefinitions().filter((definition) =>
       !placed.has(definition.id)
     );
   };
@@ -408,22 +408,22 @@ export default function CompositionRevisionRoute() {
       </Show>
       <Show when={sectionDefinitions().length > 0}>
         <section class="section">
-          <h2>{t("composition.parameters")}</h2>
-          <FieldStack label={t("composition.parameters")}>
+          <h2>{t("composition.variables")}</h2>
+          <FieldStack label={t("composition.variables")}>
             <For each={sectionDefinitions()}>
               {(definition) => (
                 <FieldStackRow>
-                  <ParameterControl
+                  <InputControl
                     definition={definition}
-                    displayName={compositionParameterDisplayName(
-                      parameterDisplayDefinitions(),
+                    displayName={compositionVariableDisplayName(
+                      variableDisplayDefinitions(),
                       definition.id,
                     )}
                     value={handle.variables()[definition.id]}
                     rawValue={handle.variableInputs()[definition.id]?.raw}
                     onChange={(raw) =>
                       handle.setVariableRaw(definition.id, raw)}
-                    invalid={parameterMismatch(definition.id)}
+                    invalid={variableMismatch(definition.id)}
                   />
                 </FieldStackRow>
               )}
@@ -434,7 +434,7 @@ export default function CompositionRevisionRoute() {
       <Show when={diagnostics().length > 0}>
         <CompositionDiagnostics
           diagnostics={diagnostics()}
-          parameterDefinitions={parameterDisplayDefinitions()}
+          variableDefinitions={variableDisplayDefinitions()}
         />
       </Show>
       <Show when={current().resolving}>
@@ -448,11 +448,11 @@ export default function CompositionRevisionRoute() {
             inputLabels={inputLabels()}
             plan={resolvedPlan() ?? { sources: [], component_bindings: [] }}
             texts={flowTexts()}
-            parameterDefinitions={parameterDisplayDefinitions()}
-            parameterDisplayDefinitions={parameterDisplayDefinitions()}
+            variableDefinitions={variableDisplayDefinitions()}
+            variableDisplayDefinitions={variableDisplayDefinitions()}
             variableValues={handle.variables()}
             variableInputs={handle.variableInputs()}
-            variableInvalid={parameterMismatch}
+            variableInvalid={variableMismatch}
             onVariableInput={handle.setVariableRaw}
             sources={current().sources}
             fieldNames={fieldNames}

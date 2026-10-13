@@ -6,17 +6,17 @@ import {
   CompositionInspector,
   type CompositionInspectorDataJump,
 } from "./CompositionInspector";
-import { designBlockIdForParameter } from "./CompositionDesignCanvas";
 import {
   addEntryQuerySource,
+  addInputComponent,
   addMetricDisplay,
-  addParameter,
   addSavedSqlSource,
   addTableDisplay,
   addTextDisplay,
+  addVariable,
   type CompositionDraft,
   createEmptyDraft,
-  placeParameterControl,
+  setInputLabel,
   toStudioDocument,
 } from "~/lib/composition-draft";
 import { setLocale } from "~/lib/i18n";
@@ -49,21 +49,21 @@ const seedDraft = (): CompositionDraft => {
   draft = addSavedSqlSource(draft, sqlSeed("Monthly")).draft;
   draft = addEntryQuerySource(draft, entrySeed()).draft;
   draft = addSavedSqlSource(draft, sqlSeed("Backup")).draft;
-  const month = addParameter(draft, {
+  const month = addVariable(draft, {
     id: "month",
     label: "Month",
     type: "date",
     required: true,
   });
-  if (!month.ok) throw new Error("expected month parameter");
+  if (!month.ok) throw new Error("expected month variable");
   draft = month.draft;
-  const region = addParameter(draft, {
+  const region = addVariable(draft, {
     id: "region",
     label: "Region",
     type: "string",
     required: false,
   });
-  if (!region.ok) throw new Error("expected region parameter");
+  if (!region.ok) throw new Error("expected region variable");
   draft = region.draft;
   const metric = addMetricDisplay(
     draft,
@@ -79,8 +79,8 @@ const seedDraft = (): CompositionDraft => {
   const text = addTextDisplay(draft, { text: "Summary", style: "heading" });
   if (!text.ok) throw new Error("expected text block");
   draft = text.draft;
-  const placed = placeParameterControl(draft, "month");
-  if (!placed.ok) throw new Error("expected parameter placement");
+  const placed = addInputComponent(draft, "month");
+  if (!placed.ok) throw new Error("expected variable placement");
   return placed.draft;
 };
 
@@ -173,45 +173,35 @@ describe("CompositionInspector", () => {
     expect(harnessCalls.remove).toEqual(["disp-3"]);
   });
 
-  it("labels parameter removal as unplacing its canvas control", () => {
-    renderHarness(designBlockIdForParameter("month"));
+  it("removes the selected Input component without removing its variable", () => {
+    renderHarness("input-4");
 
-    const unplace = screen.getByRole("button", { name: "Unplace Month" });
-    expect(unplace).toHaveAttribute("title", "Unplace Month");
-    fireEvent.click(unplace);
+    const remove = screen.getByRole("button", {
+      name: "Remove Input for Month",
+    });
+    expect(remove).toHaveAttribute("title", "Remove Input for Month");
+    fireEvent.click(remove);
 
-    expect(harnessCalls.remove).toEqual(["input:input-month"]);
+    expect(harnessCalls.remove).toEqual(["input-4"]);
   });
 
   it("targets the selected Input component when a variable has siblings", () => {
     const initial = seedDraft();
-    const withSibling: CompositionDraft = {
-      ...initial,
-      layoutRows: initial.layoutRows.map((row, index) =>
-        index === 0
-          ? {
-            ...row,
-            items: [
-              ...row.items,
-              {
-                kind: "parameter" as const,
-                parameterId: "month",
-                inputComponentId: "input-month-secondary",
-                label: "Secondary month",
-              },
-            ],
-          }
-          : row
-      ),
-    };
-    renderHarness(
-      designBlockIdForParameter("month", "input-month-secondary"),
-      withSibling,
+    const second = addInputComponent(initial, "month");
+    if (!second.ok) throw new Error("expected sibling Input");
+    const labeled = setInputLabel(
+      second.draft,
+      second.draftId!,
+      "Secondary month",
+    );
+    if (!labeled.ok) throw new Error("expected Input label");
+    renderHarness(second.draftId!, labeled.draft);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove Input for Secondary month" }),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Unplace Month" }));
-
-    expect(harnessCalls.remove).toEqual(["input:input-month-secondary"]);
+    expect(harnessCalls.remove).toEqual([second.draftId]);
   });
 
   it("limits Metric source and column controls to Saved SQL names", () => {
@@ -426,9 +416,8 @@ describe("CompositionInspector", () => {
     };
     renderHarness("disp-3", variableText);
 
-    const content = screen.getByRole("textbox", { name: "Text" });
-    expect(content).toHaveValue("Region");
-    expect(content).toHaveAttribute("readonly");
+    expect(screen.getByLabelText("Content")).toHaveValue("variable:region");
+    expect(screen.queryByRole("textbox", { name: "Text" })).toBeNull();
     fireEvent.change(screen.getByLabelText("Style"), {
       target: { value: "caption" },
     });
@@ -445,16 +434,17 @@ describe("CompositionInspector", () => {
     });
   });
 
-  it("changes parameter placement targets without a label override", () => {
-    renderHarness(designBlockIdForParameter("month"));
+  it("changes the selected Input's variable binding", () => {
+    renderHarness("input-4");
 
-    // The owned parameter label heads the panel; no label input exists.
+    // The owned variable label heads the panel; the optional Input label is
+    // blank until the author supplies an override.
     expect(
       screen.getByRole("heading", { name: "Month" }),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.getByLabelText("Input label for Month")).toHaveValue("");
 
-    fireEvent.change(screen.getByLabelText("Parameters"), {
+    fireEvent.change(screen.getByLabelText("Variables"), {
       target: { value: "region" },
     });
 
@@ -465,7 +455,7 @@ describe("CompositionInspector", () => {
     );
     expect(items).toContainEqual({
       kind: "component",
-      component: "input-month",
+      component: "input-4",
     });
     expect(items).not.toContainEqual({
       kind: "component",
@@ -473,41 +463,43 @@ describe("CompositionInspector", () => {
     });
     expect(toStudioDocument(next).spec.components).toContainEqual({
       kind: "input",
-      id: "input-month",
+      id: "input-4",
       variable: "region",
     });
-    // Both declarations stay owned by the Parameters section.
-    expect(next.parameters.map((parameter) => parameter.id).sort()).toEqual([
+    // Both declarations stay owned by the Variables section.
+    expect(next.variables.map((variable) => variable.id).sort()).toEqual([
       "month",
       "region",
     ]);
   });
 
-  it("uses localized ordinal labels for unlabeled parameter placement", () => {
+  it("uses localized ordinal labels for unlabeled variable placement", () => {
     const labeled = seedDraft();
     const draft = {
       ...labeled,
-      parameters: labeled.parameters.map(({ label: _label, ...parameter }) =>
-        parameter
+      variables: labeled.variables.map(({ label: _label, ...variable }) =>
+        variable
       ),
     };
-    renderHarness(designBlockIdForParameter("month"), draft);
+    renderHarness("input-4", draft);
 
-    expect(screen.getByRole("heading", { name: "Parameter 1" }))
+    expect(screen.getByRole("heading", { name: "Variable 1" }))
       .toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Unplace Parameter 1" }))
+    expect(
+      screen.getByRole("button", { name: "Remove Input for Variable 1" }),
+    )
       .toBeInTheDocument();
     const options = screen.getAllByRole("option").map((option) =>
       option.textContent
     );
-    expect(options).toEqual(["Parameter 1", "Parameter 2"]);
+    expect(options).toEqual(["Variable 1", "Variable 2"]);
     expect(screen.queryByText("month")).not.toBeInTheDocument();
     expect(screen.queryByText("region")).not.toBeInTheDocument();
 
     setLocale("ja");
-    expect(screen.getByRole("heading", { name: "パラメーター1" }))
+    expect(screen.getByRole("heading", { name: "変数1" }))
       .toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "パラメーター1の配置を解除" }))
+    expect(screen.getByRole("button", { name: "変数1の入力を削除" }))
       .toBeInTheDocument();
   });
 
@@ -535,11 +527,11 @@ describe("CompositionInspector", () => {
     expect(container.textContent).toBe("");
     unmount();
 
-    // Unplaced parameters have no canvas block either.
+    // Unplaced variables have no canvas block either.
     render(() => (
       <Harness
         initial={seedDraft()}
-        selectedId={designBlockIdForParameter("region")}
+        selectedId="input-region"
       />
     ));
     expect(screen.queryByRole("complementary")).toBeNull();

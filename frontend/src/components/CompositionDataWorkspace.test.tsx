@@ -16,6 +16,7 @@ import {
   addEntryQuerySource,
   addSavedSqlSource,
   addTableDisplay,
+  addVariable,
   type CompositionDraft,
   createEmptyDraft,
   setEntryQueryDisplaySystemFields,
@@ -23,6 +24,8 @@ import {
   setEntryQueryProjection,
   setEntryQuerySort,
   setSavedSqlRevision,
+  setSavedSqlVariableBinding,
+  setSavedSqlVariableTypes,
 } from "~/lib/composition-draft";
 import type {
   CompositionResolveDiagnostic,
@@ -33,16 +36,22 @@ import { setLocale } from "~/lib/i18n";
 import { clearStudioFormDefinitionCache } from "~/lib/entry-query-studio-capabilities";
 import type { Form } from "~/lib/types";
 
-const { sqlGetMock, sqlQueryMock, formApiListMock } = vi.hoisted(() => ({
-  sqlGetMock: vi.fn(),
-  sqlQueryMock: vi.fn(),
-  formApiListMock: vi.fn(),
-}));
+const { sqlGetMock, sqlQueryMock, formApiListMock, entryRevisionMock } = vi
+  .hoisted(() => ({
+    sqlGetMock: vi.fn(),
+    sqlQueryMock: vi.fn(),
+    formApiListMock: vi.fn(),
+    entryRevisionMock: vi.fn(),
+  }));
 
 vi.mock("~/lib/ugoite-client", () => ({
   formApi: {
     list: (...args: unknown[]) =>
       (formApiListMock as (...call: unknown[]) => unknown)(...args),
+  },
+  entryApi: {
+    getRevision: (...args: unknown[]) =>
+      (entryRevisionMock as (...call: unknown[]) => unknown)(...args),
   },
   sqlApi: {
     get: (...args: unknown[]) =>
@@ -182,11 +191,20 @@ const sqlSeed = () => ({
   revisionId: "sql-rev-1",
   name: "Monthly totals",
   expectedResult: [{ name: "total", type: "float" as const }],
-  variables: { month_start: { parameter: "month_start" } },
+  variables: { month_start: { variable: "month_start" } },
+  variableTypes: { month_start: "date" },
 });
 
 const twoSourceDraft = (): CompositionDraft => {
   let draft = createEmptyDraft("Tool");
+  const month = addVariable(draft, {
+    id: "month_start",
+    type: "date",
+    label: "Month",
+    required: false,
+  });
+  if (!month.ok) throw new Error("expected month variable");
+  draft = month.draft;
   draft = addSavedSqlSource(draft, sqlSeed()).draft;
   draft = addEntryQuerySource(draft, entrySeed()).draft;
   return draft;
@@ -206,6 +224,7 @@ const savedSqlEntry = {
 interface Harness {
   container: HTMLElement;
   unmount: () => void;
+  selected: () => string | null;
   editor: () => HTMLElement;
   current: () => CompositionDraft;
   onSelect: ReturnType<typeof vi.fn>;
@@ -232,9 +251,8 @@ const renderWorkspace = (
   const [selected, setSelected] = createSignal<string | null>(null);
   const harness: Harness = {
     current,
-    onSelect: vi.fn((id: string) =>
-      setSelected((previous) => previous === id ? null : id)
-    ),
+    selected,
+    onSelect: vi.fn((id: string) => setSelected(id)),
     onAddSource: vi.fn(),
     onMove: vi.fn(),
     onRemove: vi.fn(),
@@ -247,6 +265,7 @@ const renderWorkspace = (
     <CompositionDataWorkspace
       spaceId="space-1"
       draft={current()}
+      variables={current().variables}
       headingId="studio-data-heading"
       selectedSourceId={selected()}
       collapsible={overrides.collapsible}
@@ -274,12 +293,27 @@ const renderWorkspace = (
         if (result.ok) setCurrent(result.draft);
         return result.ok;
       }}
-      onSavedSqlRevision={(id, revision, variableTypes) => {
+      onSavedSqlRevision={(id, revision) => {
         const result = setSavedSqlRevision(current(), id, revision);
         if (result.ok) setCurrent(result.draft);
-        harness.onRevision(id, revision, variableTypes);
+        harness.onRevision(id, revision, revision.variableTypes);
         return result.ok;
       }}
+      onSavedSqlVariableTypes={(id, variableTypes) => {
+        const result = setSavedSqlVariableTypes(current(), id, variableTypes);
+        if (result.ok) setCurrent(result.draft);
+      }}
+      onSavedSqlVariableBinding={(id, name, variableId) => {
+        const result = setSavedSqlVariableBinding(
+          current(),
+          id,
+          name,
+          variableId,
+        );
+        if (result.ok) setCurrent(result.draft);
+        return result.ok;
+      }}
+      onEditVariables={() => {}}
       savedSqlEditHref={(entryId) =>
         `/spaces/space-1/sql/${encodeURIComponent(entryId)}`}
       planSources={overrides.planSources ?? []}
@@ -320,6 +354,9 @@ describe("CompositionDataWorkspace", () => {
     // No definition by default: the editor degrades to the schema snapshot.
     formApiListMock.mockResolvedValue([]);
     sqlGetMock.mockResolvedValue(savedSqlEntry);
+    entryRevisionMock.mockResolvedValue({
+      fields: { variables: [{ name: "month_start", type: "date" }] },
+    });
     sqlQueryMock.mockResolvedValue({
       columns: ["total"],
       rows: [[128400]],
@@ -334,7 +371,7 @@ describe("CompositionDataWorkspace", () => {
   });
 
   it("selects navigator sources with full-row activation", async () => {
-    renderWorkspace(twoSourceDraft());
+    const harness = renderWorkspace(twoSourceDraft());
 
     const monthly = await screen.findByRole("button", {
       name: "Monthly totals",
@@ -346,6 +383,12 @@ describe("CompositionDataWorkspace", () => {
     expect(screen.queryByRole("heading", { name: "Expenses" })).toBeNull();
 
     fireEvent.click(expenses);
+    const expenseSource = harness.current().sources.find((source) =>
+      source.kind === "entry_query"
+    );
+    expect(expenseSource).toBeDefined();
+    expect(harness.onSelect).toHaveBeenCalledWith(expenseSource!.draftId);
+    expect(harness.selected()).toBe(expenseSource!.draftId);
     await screen.findByRole("heading", { name: "Expenses" });
     expect(expenses).toHaveAttribute("aria-pressed", "true");
   });
@@ -625,9 +668,17 @@ describe("CompositionDataWorkspace", () => {
     });
   });
 
-  it("keeps parameter bindings through the shared dialog round trip", async () => {
+  it("shows variable labels in the shared filter dialog and preserves bindings", async () => {
     formApiListMock.mockResolvedValue([expenseForm()]);
     let draft = createEmptyDraft("Tool");
+    const month = addVariable(draft, {
+      id: "month",
+      label: "Month",
+      type: "string",
+      required: false,
+    });
+    if (!month.ok) throw new Error("expected Month variable");
+    draft = month.draft;
     draft = addEntryQuerySource(draft, {
       ...entrySeed(),
       query: {
@@ -646,7 +697,7 @@ describe("CompositionDataWorkspace", () => {
     const editor = harness.editor();
 
     // The binding renders as display text, never flattened in the row.
-    expect(await within(editor).findByText("Title Equals {{month}}"))
+    expect(await within(editor).findByText("Title Equals {{Month}}"))
       .toBeInTheDocument();
 
     // Applying untouched through the dialog preserves the binding shape.
@@ -1420,12 +1471,22 @@ describe("CompositionDataWorkspace", () => {
 
     const editor = harness.editor();
     // Read-only SQL: preformatted text, never an editable field.
-    const sql = within(editor).getByText("SELECT SUM(amount) AS total", {
-      exact: false,
-    });
+    const sql = await within(editor).findByText(
+      "SELECT SUM(amount) AS total",
+      { exact: false },
+    );
     expect(sql.tagName).toBe("PRE");
     expect(within(editor).queryAllByRole("textbox")).toHaveLength(0);
-    // The variable pill shows the bound parameter only when it differs
+    expect(entryRevisionMock).toHaveBeenCalledWith(
+      "space-1",
+      "sql-1",
+      "sql-rev-1",
+    );
+    expect(harness.current().sources[0]).toMatchObject({
+      revisionId: "sql-rev-1",
+      variableTypes: { month_start: "date" },
+    });
+    // The variable pill shows the bound SQL variable only when it differs
     // from the variable name; here both read month_start once.
     expect(within(editor).getAllByText("month_start")).toHaveLength(1);
     expect(within(editor).getByText("total")).toBeInTheDocument();

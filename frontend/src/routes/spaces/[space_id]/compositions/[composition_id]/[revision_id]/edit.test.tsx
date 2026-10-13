@@ -24,6 +24,7 @@ const {
   sqlListMock,
   sqlGetMock,
   sqlQueryMock,
+  entryRevisionMock,
   navigateMock,
 } = vi.hoisted(() => ({
   getMock: vi.fn(),
@@ -36,6 +37,7 @@ const {
   sqlListMock: vi.fn(),
   sqlGetMock: vi.fn(),
   sqlQueryMock: vi.fn(),
+  entryRevisionMock: vi.fn(),
   navigateMock: vi.fn(),
 }));
 
@@ -85,6 +87,10 @@ vi.mock("~/lib/composition-api", () => ({
 }));
 
 vi.mock("~/lib/ugoite-client", () => ({
+  entryApi: {
+    getRevision: (...args: unknown[]) =>
+      (entryRevisionMock as (...call: unknown[]) => unknown)(...args),
+  },
   formApi: {
     list: (...args: unknown[]) =>
       (formListMock as (...call: unknown[]) => unknown)(...args),
@@ -188,6 +194,10 @@ describe("Composition edit route", () => {
     formListMock.mockResolvedValue([]);
     sqlListMock.mockResolvedValue([savedEntry]);
     sqlGetMock.mockResolvedValue(savedEntry);
+    entryRevisionMock.mockResolvedValue({
+      revision_id: "sql-rev-1",
+      fields: { variables: [] },
+    });
     sqlQueryMock.mockResolvedValue({
       columns: ["total"],
       rows: [[1]],
@@ -221,7 +231,7 @@ describe("Composition edit route", () => {
 
     // One Back to the opened revision, one Save, Design-first true-mode
     // structure with the single mode control: the finished shape only, no
-    // Parameters, Tags, Data workspace, or Preview section.
+    // Variables, Tags, Data workspace, or Preview section.
     expect(screen.getAllByRole("link")).toHaveLength(1);
     const back = screen.getByRole("link", { name: "Back to revision" });
     expect(back).toHaveAttribute(
@@ -474,6 +484,14 @@ describe("Composition edit route", () => {
     // A restored revision carries text blocks and several rows; the edit
     // route loads it back into an editable draft so restore-then-edit
     // continues without flattening or rejecting known kinds.
+    sqlGetMock.mockResolvedValueOnce({
+      ...savedEntry,
+      variables: [{ name: "month_start", type: "date", description: "" }],
+    });
+    entryRevisionMock.mockResolvedValueOnce({
+      revision_id: "sql-rev-1",
+      fields: { variables: [{ name: "month_start", type: "date" }] },
+    });
     lintMock.mockResolvedValueOnce({
       ok: true,
       value: {

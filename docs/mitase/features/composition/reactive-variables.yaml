@@ -489,12 +489,11 @@ features:
         facet: frontend
         responsibility: Present timezone-bearing timestamps in an editable text control so their declared lexical form can be preserved.
         targets:
-          - id: parameter-control
+          - id: input-control
             adapter: typescript
-            path: frontend/src/components/composition/ParameterControl.tsx
+            path: frontend/src/components/composition/InputControl.tsx
             selector:
-              kind: symbol
-              name: ParameterControl
+              kind: file
             claims:
               - kind: satisfies
                 criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
@@ -505,7 +504,7 @@ features:
         targets:
           - id: timestamp-input-preservation
             adapter: typescript
-            path: frontend/src/components/composition/ParameterControl.test.tsx
+            path: frontend/src/components/composition/InputControl.test.tsx
             selector:
               kind: test
               name: preserves timezone-bearing timestamps in the shared raw input state
@@ -575,7 +574,7 @@ features:
         targets:
           - id: synchronous-shared-input-state
             adapter: typescript
-            path: frontend/src/components/composition/ParameterControl.test.tsx
+            path: frontend/src/components/composition/InputControl.test.tsx
             selector:
               kind: test
               name: synchronously shares valid typed values and invalid raw text across Inputs
@@ -700,12 +699,12 @@ features:
         facet: frontend
         responsibility: Author numeric variable defaults through the shared Domain lexical parser and keep invalid drafts unsaveable.
         targets:
-          - id: parameter-default-editor
+          - id: variable-default-editor
             adapter: typescript
-            path: frontend/src/components/CompositionParameterList.tsx
+            path: frontend/src/components/CompositionVariableList.tsx
             selector:
               kind: symbol
-              name: CompositionParameterList
+              name: CompositionVariableList
             claims:
               - kind: satisfies
                 criterion: REQ-COMP-007#criterion.code-free-studio-authoring
@@ -716,7 +715,7 @@ features:
         targets:
           - id: numeric-default-parser
             adapter: typescript
-            path: frontend/src/components/CompositionParameterList.test.tsx
+            path: frontend/src/components/CompositionVariableList.test.tsx
             selector:
               kind: test
               name: parses numeric defaults through the shared Domain parser

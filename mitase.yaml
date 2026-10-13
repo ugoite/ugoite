@@ -279,9 +279,10 @@ inventory:
         - frontend/src/components/composition/MetricInspector.tsx
         - frontend/src/components/composition/TableInspector.tsx
         - frontend/src/components/composition/TextInspector.tsx
-        - frontend/src/components/composition/ParameterPlacementInspector.tsx
+        - frontend/src/components/composition/InputInspector.tsx
         - frontend/src/components/composition/TextComponent.tsx
-        - frontend/src/components/composition/ParameterControl.tsx
+        - frontend/src/components/composition/InputControl.tsx
+        - frontend/src/components/composition/InputControl.test.tsx
         - frontend/src/components/CompositionEntryQueryTable.tsx
         - frontend/src/components/CompositionEntryQueryTable.test.tsx
         - frontend/src/components/CompositionSourcePicker.tsx
@@ -292,8 +293,9 @@ inventory:
         - frontend/src/components/CompositionDisplayList.test.tsx
         - frontend/src/components/CompositionDisplayPicker.tsx
         - frontend/src/components/CompositionDisplayPicker.test.tsx
-        - frontend/src/components/CompositionParameterList.tsx
-        - frontend/src/components/CompositionParameterList.test.tsx
+        - frontend/src/components/CompositionVariableList.tsx
+        - frontend/src/components/CompositionVariableList.test.tsx
+        - frontend/src/lib/composition-variable-name.ts
         - frontend/src/routes/spaces/[space_id]/compositions/new.tsx
         - frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
         - frontend/src/components/CompositionStudio.tsx

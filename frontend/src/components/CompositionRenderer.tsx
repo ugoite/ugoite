@@ -22,7 +22,7 @@ import {
 } from "~/lib/composition-api";
 import { TextComponent } from "~/components/composition/TextComponent";
 import type { CompositionSourcePageState } from "~/lib/composition-query-handle";
-import { compositionParameterDisplayName } from "~/lib/composition-parameter-name";
+import { compositionVariableDisplayName } from "~/lib/composition-variable-name";
 
 export type CompositionFieldNames = (
   formId: string,
@@ -82,7 +82,7 @@ type RendererProps = {
   fieldNames?: CompositionFieldNames;
   fieldKeys?: CompositionFieldKeys;
   fieldTypes?: CompositionFieldTypeLookup;
-  /** Exact saved revision identity and transient parameters for server metrics. */
+  /** Exact saved revision identity and transient variables for server metrics. */
   metricQueryContext?: CompositionMetricQueryContext;
   onNext: (sourceId: string) => void;
   onPrevious: (sourceId: string) => void;
@@ -114,7 +114,7 @@ const directEditMetricDiagnosticCodes = new Set([
 
 export const compositionDiagnosticMessage = (
   diagnostic: CompositionResolveDiagnostic,
-  parameterDefinitions: readonly { id: string; label?: string }[] = [],
+  variableDefinitions: readonly { id: string; label?: string }[] = [],
 ): string => {
   if (!knownDiagnosticCodes.has(diagnostic.code)) {
     return t("composition.detailFailed");
@@ -123,8 +123,8 @@ export const compositionDiagnosticMessage = (
     `composition.diagnostic.${diagnostic.code}` as TranslationKey,
     diagnostic.variable_id
       ? {
-        parameter: compositionParameterDisplayName(
-          parameterDefinitions,
+        variable: compositionVariableDisplayName(
+          variableDefinitions,
           diagnostic.variable_id,
         ),
       }
@@ -134,7 +134,7 @@ export const compositionDiagnosticMessage = (
 
 export function CompositionDiagnostics(props: {
   diagnostics: readonly CompositionResolveDiagnostic[];
-  parameterDefinitions?: readonly { id: string; label?: string }[];
+  variableDefinitions?: readonly { id: string; label?: string }[];
 }) {
   return (
     <ul
@@ -147,7 +147,7 @@ export function CompositionDiagnostics(props: {
           <li>
             {compositionDiagnosticMessage(
               diagnostic,
-              props.parameterDefinitions,
+              props.variableDefinitions,
             )}
           </li>
         )}
@@ -405,9 +405,10 @@ export function CompositionMetric(props: {
     const dependencyIndex = context?.dependencies?.variable_consumers;
     const dependencyIndexComplete = !context ||
       Object.keys(context.variables).length === 0 ||
-      (!!dependencyIndex && Object.keys(context.variables).every((variableId) =>
-        Object.hasOwn(dependencyIndex, variableId)
-      ));
+      (!!dependencyIndex &&
+        Object.keys(context.variables).every((variableId) =>
+          Object.hasOwn(dependencyIndex, variableId)
+        ));
     const sourceVariables = context
       ? dependencyIndex
         ? Object.entries(dependencyIndex).flatMap(([variableId, consumers]) =>
@@ -418,11 +419,13 @@ export function CompositionMetric(props: {
         : Object.keys(context.variables)
       : [];
     const variables = context
-      ? Object.fromEntries(sourceVariables.flatMap((variableId) =>
-        Object.hasOwn(context.variables, variableId)
-          ? [[variableId, context.variables[variableId]]]
-          : []
-      ))
+      ? Object.fromEntries(
+        sourceVariables.flatMap((variableId) =>
+          Object.hasOwn(context.variables, variableId)
+            ? [[variableId, context.variables[variableId]]]
+            : []
+        ),
+      )
       : {};
     const invalidSourceVariables = sourceVariables.filter((variableId) =>
       context?.invalidVariables?.includes(variableId)

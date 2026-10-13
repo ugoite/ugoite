@@ -3782,7 +3782,7 @@ a.tool {
   flex: 1 1 100%;
   min-width: 0;
 }
-.compositionFlowItem--parameter {
+.compositionFlowItem--input {
   flex: 0 1 auto;
   min-width: 0;
 }
@@ -3811,7 +3811,7 @@ a.tool {
   .compositionFlowItem--metric {
     flex-basis: 100%;
   }
-  .compositionFlowItem--parameter {
+  .compositionFlowItem--input {
     flex-basis: 100%;
   }
 }

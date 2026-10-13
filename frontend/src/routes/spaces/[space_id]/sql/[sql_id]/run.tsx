@@ -13,8 +13,8 @@ import { SqlResultTable } from "~/components/SqlResultTable";
 import { sqlApi } from "~/lib/ugoite-client";
 import {
   canCreateSavedSqlComposition,
-  type CompositionVariableType,
   type CompositionResultType,
+  type CompositionVariableType,
 } from "~/lib/composition-api";
 import type { CompositionStudioSeed } from "~/lib/composition-draft";
 import { spaceCompositionNewPath } from "~/lib/space-path";
@@ -291,7 +291,8 @@ export default function SpaceSqlRunRoute() {
     try {
       // The seed reuses the save-as-tool computation: the exact Saved SQL
       // revision with server-owned column types from this result page
-      // (json fallback, unique columns required) and same-named variables.
+      // (json fallback, unique columns required). Variable bindings and
+      // Composition inputs are authored explicitly in Studio.
       const columns = [...result.columns];
       if (
         columns.length === 0 || new Set(columns).size !== columns.length
@@ -315,25 +316,12 @@ export default function SpaceSqlRunRoute() {
             name: column,
             type: (schemaByName.get(column) ?? "json") as CompositionResultType,
           })),
-          variables: Object.fromEntries(
-            current.variables.map((variable) => [
-              variable.name,
-              { parameter: variable.name },
-            ]),
-          ),
+          variables: {},
           variableTypes: Object.fromEntries(
             current.variables.map((variable) => [
               variable.name,
               variable.type as CompositionVariableType,
             ]),
-          ),
-          // The run that was just executed supplies the parameter defaults
-          // so the seeded Studio opens showing the same result.
-          variableDefaults: Object.fromEntries(
-            current.variables.flatMap((variable) => {
-              const value = state().parameters?.[variable.name];
-              return value === undefined ? [] : [[variable.name, value]];
-            }),
           ),
         },
       };

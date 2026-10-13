@@ -13,18 +13,17 @@ import { createSignal } from "solid-js";
 import {
   CompositionDesignCanvas,
   designBlockIdForComponent,
-  designBlockIdForParameter,
 } from "./CompositionDesignCanvas";
 import {
-  addParameter,
+  addInputComponent,
   addSavedSqlSource,
   addTableDisplay,
   addTextDisplay,
+  addVariable,
   type CompositionDraft,
   createEmptyDraft,
   type DraftInsertTarget,
   moveDisplay,
-  placeParameterControl,
   toStudioDocument,
 } from "~/lib/composition-draft";
 import { setLocale } from "~/lib/i18n";
@@ -39,17 +38,17 @@ const sqlSeed = () => ({
   variables: {},
 });
 
-/** One heading text, one table, one placed parameter across two rows. */
+/** One heading text, one table, one placed variable across two rows. */
 const seedDraft = (): CompositionDraft => {
   let draft = createEmptyDraft("Studio");
   draft = addSavedSqlSource(draft, sqlSeed()).draft;
-  const month = addParameter(draft, {
+  const month = addVariable(draft, {
     id: "month",
     label: "Month",
     type: "date",
     required: true,
   });
-  if (!month.ok) throw new Error("expected parameter");
+  if (!month.ok) throw new Error("expected variable");
   draft = month.draft;
   const heading = addTextDisplay(
     draft,
@@ -71,12 +70,12 @@ const seedDraft = (): CompositionDraft => {
     )
   );
   if (!headingRow) throw new Error("expected heading row");
-  const placed = placeParameterControl(draft, "month", {
+  const placed = addInputComponent(draft, "month", {
     rowId: headingRow.id,
     rowIndex: 0,
     itemIndex: 0,
   });
-  if (!placed.ok) throw new Error("expected parameter placement");
+  if (!placed.ok) throw new Error("expected variable placement");
   return placed.draft;
 };
 
@@ -108,7 +107,7 @@ function Harness(
             kind: "text" as const,
           })),
       }}
-      parameterValues={{}}
+      variableValues={{}}
       sources={{}}
       selectedId={selectedId()}
       highlightedIds={props.highlightedIds}
@@ -152,13 +151,13 @@ describe("CompositionDesignCanvas", () => {
   it("selects canvas blocks without touching the draft", () => {
     const { container } = renderHarness();
 
-    // Two placed rows plus the parameter block: three selectable frames.
+    // Two placed rows plus the variable block: three selectable frames.
     const frames = container.querySelectorAll(".designBlock");
     expect(frames).toHaveLength(3);
 
     fireEvent.click(frames[0]);
     expect(harnessCalls.selected).toEqual([
-      designBlockIdForParameter("month"),
+      designBlockIdForComponent(seedDraft().inputs[0].draftId),
     ]);
     expect(harnessCalls.draft).toHaveLength(0);
 
@@ -167,7 +166,7 @@ describe("CompositionDesignCanvas", () => {
     expect(toggle).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(toggle);
     expect(harnessCalls.selected).toEqual([
-      designBlockIdForParameter("month"),
+      designBlockIdForComponent(seedDraft().inputs[0].draftId),
       null,
     ]);
     expect(harnessCalls.draft).toHaveLength(0);
@@ -184,23 +183,14 @@ describe("CompositionDesignCanvas", () => {
 
   it("selects repeated Inputs by component identity", () => {
     const initial = seedDraft();
-    const withSecondInput: CompositionDraft = {
-      ...initial,
-      layoutRows: initial.layoutRows.map((row, index) =>
-        index === 0
-          ? {
-            ...row,
-            items: [
-              ...row.items,
-              {
-                kind: "parameter" as const,
-                parameterId: "month",
-                inputComponentId: "input-month-secondary",
-                label: "Secondary month",
-              },
-            ],
-          }
-          : row
+    const added = addInputComponent(initial, "month");
+    if (!added.ok) throw new Error("expected repeated Input");
+    const withSecondInput = {
+      ...added.draft,
+      inputs: added.draft.inputs.map((input) =>
+        input.draftId === added.draftId
+          ? { ...input, label: "Secondary month" }
+          : input
       ),
     };
     renderHarness(withSecondInput);
@@ -210,7 +200,7 @@ describe("CompositionDesignCanvas", () => {
     );
 
     expect(harnessCalls.selected).toEqual([
-      "input:input-month-secondary",
+      designBlockIdForComponent(added.draftId!),
     ]);
   });
 
@@ -249,10 +239,11 @@ describe("CompositionDesignCanvas", () => {
     expect(entries.join(" ")).not.toContain("Metric");
     expect(entries.join(" ")).not.toContain("Table");
 
-    // The placed month control leaves no parameter to offer.
-    expect(dialog.querySelector(".designPaletteParams")).toHaveTextContent(
-      "Add a parameter to begin.",
-    );
+    // Repeated Inputs are ordinary components, so an existing variable stays
+    // available for another placement.
+    expect(
+      screen.getByRole("button", { name: "Add Input for Month" }),
+    ).toBeInTheDocument();
   });
 
   it("opens the data picker before a source exists", () => {
@@ -325,7 +316,7 @@ describe("CompositionDesignCanvas", () => {
     expect(harnessCalls.picker).toHaveLength(0);
   });
 
-  it("offers data and hides parameter section without sources or parameters", () => {
+  it("offers data and hides variable section without sources or variables", () => {
     renderHarness(createEmptyDraft("Studio"));
 
     fireEvent.click(screen.getByRole("button", { name: "Add to design" }));
@@ -337,7 +328,7 @@ describe("CompositionDesignCanvas", () => {
     // Text and data insertion are always available.
     expect(entries.join(" ")).toContain("Text");
     expect(entries.join(" ")).toContain("Data");
-    // The parameters section needs a declared parameter, not an empty state.
+    // The variables section needs a declared variable, not an empty state.
     expect(dialog.querySelector(".designPaletteParams")).toBeNull();
   });
 
@@ -368,12 +359,12 @@ describe("CompositionDesignCanvas", () => {
     );
     expect(texts).toHaveLength(2);
     const placed = document.spec.layout.rows.flatMap((row) => row.items).filter(
-      (item) => item.kind === "component" && item.component === "disp-3",
+      (item) => item.kind === "component" && item.component === "disp-4",
     );
     expect(placed).toHaveLength(1);
     // Selection follows the inserted block for the inspector.
     expect(harnessCalls.selected).toEqual([
-      designBlockIdForComponent("disp-3"),
+      designBlockIdForComponent("disp-4"),
     ]);
   });
 
@@ -392,15 +383,15 @@ describe("CompositionDesignCanvas", () => {
     ).toHaveLength(2);
   });
 
-  it("places existing parameter controls without creating parameters", () => {
+  it("places existing variable controls without creating variables", () => {
     let draft = createEmptyDraft("Studio");
     draft = addSavedSqlSource(draft, sqlSeed()).draft;
-    const region = addParameter(draft, {
+    const region = addVariable(draft, {
       id: "region",
       type: "string",
       required: false,
     });
-    if (!region.ok) throw new Error("expected parameter");
+    if (!region.ok) throw new Error("expected variable");
     draft = region.draft;
     renderHarness(draft);
 
@@ -410,15 +401,15 @@ describe("CompositionDesignCanvas", () => {
     const dialog = screen.getByRole("dialog", { name: "Add to design" });
     fireEvent.click(
       Array.from(dialog.querySelectorAll(".designPaletteItem")).find((entry) =>
-        entry.textContent === "Parameter 1"
+        entry.textContent === "Variable 1"
       ) as HTMLElement,
     );
     expect(screen.queryByText("region")).not.toBeInTheDocument();
 
     expect(harnessCalls.draft).toHaveLength(1);
     const next = harnessCalls.draft[0];
-    // The semantic parameter list is untouched; only placement changes.
-    expect(next.parameters.map((parameter) => parameter.id)).toEqual([
+    // The semantic variable list is untouched; only placement changes.
+    expect(next.variables.map((variable) => variable.id)).toEqual([
       "region",
     ]);
     const document = toStudioDocument(next);
@@ -426,40 +417,40 @@ describe("CompositionDesignCanvas", () => {
       document.spec.layout.rows.flatMap((row) => row.items),
     ).toContainEqual({
       kind: "component",
-      component: "input-region",
+      component: "input-1",
     });
     expect(harnessCalls.selected).toEqual([
-      designBlockIdForParameter("region"),
+      designBlockIdForComponent("input-1"),
     ]);
   });
 
-  it("uses localized ordinals for unlabeled parameter palette entries", () => {
+  it("uses localized ordinals for unlabeled variable palette entries", () => {
     let draft = createEmptyDraft("Studio");
     for (const id of ["month_key", "region_key"]) {
-      const parameter = addParameter(draft, {
+      const variable = addVariable(draft, {
         id,
         type: "string",
         required: false,
       });
-      if (!parameter.ok) throw new Error("expected parameter");
-      draft = parameter.draft;
+      if (!variable.ok) throw new Error("expected variable");
+      draft = variable.draft;
     }
     renderHarness(draft);
 
     fireEvent.click(
       screen.getAllByRole("button", { name: "Add to design" })[0],
     );
-    expect(screen.getByRole("button", { name: "Place Parameter 1" }))
+    expect(screen.getByRole("button", { name: "Add Input for Variable 1" }))
       .toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Place Parameter 2" }))
+    expect(screen.getByRole("button", { name: "Add Input for Variable 2" }))
       .toBeInTheDocument();
     expect(screen.queryByText("month_key")).not.toBeInTheDocument();
     expect(screen.queryByText("region_key")).not.toBeInTheDocument();
 
     setLocale("ja");
-    expect(screen.getByRole("button", { name: "パラメーター1を配置" }))
+    expect(screen.getByRole("button", { name: "変数1の入力を追加" }))
       .toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "パラメーター2を配置" }))
+    expect(screen.getByRole("button", { name: "変数2の入力を追加" }))
       .toBeInTheDocument();
   });
 
@@ -492,7 +483,7 @@ describe("CompositionDesignCanvas", () => {
     );
     expect(headingRow?.items).toEqual([
       { kind: "component", component: "disp-1" },
-      { kind: "component", component: "input-month" },
+      { kind: "component", component: "input-3" },
     ]);
 
     // Every reorder control is a native button in visual order.
@@ -553,13 +544,13 @@ describe("CompositionDesignCanvas", () => {
       container.querySelector(".designCanvas .compositionFlowRow"),
     ).not.toBeNull();
     expect(
-      container.querySelector(".designCanvas .compositionFlowItem--parameter"),
+      container.querySelector(".designCanvas .compositionFlowItem--input"),
     ).not.toBeNull();
     expect(
       container.querySelector(".designCanvas .compositionFlowItem--text"),
     ).not.toBeNull();
     const css = stylesheet();
-    // Narrow viewports stack metric and parameter blocks while tables keep
+    // Narrow viewports stack metric and variable blocks while tables keep
     // scrolling in their own viewport; inline gaps go full-width instead of
     // squeezing the 390px single column.
     expect(css).toMatch(
@@ -581,7 +572,7 @@ describe("CompositionDesignCanvas", () => {
     expect(document.spec.components.map((component) => component.id)).toEqual([
       "disp-2",
       "disp-1",
-      "input-month",
+      "input-3",
     ]);
     // Cross-row neighbors exchange positions so every component stays placed.
     expect(
@@ -594,7 +585,7 @@ describe("CompositionDesignCanvas", () => {
       document.spec.layout.rows.flatMap((row) => row.items),
     ).toContainEqual({
       kind: "component",
-      component: "input-month",
+      component: "input-3",
     });
   });
 });

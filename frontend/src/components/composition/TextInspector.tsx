@@ -9,10 +9,11 @@ import {
   type DraftDisplay,
   setTextContent,
   setTextStyle,
+  setTextVariable,
 } from "~/lib/composition-draft";
 import type { CompositionTextStyle } from "~/lib/composition-api";
+import { compositionVariableDisplayName } from "~/lib/composition-variable-name";
 import { t } from "~/lib/i18n";
-import { compositionParameterDisplayName } from "~/lib/composition-parameter-name";
 
 const textStyles: readonly CompositionTextStyle[] = [
   "title",
@@ -57,27 +58,62 @@ export function TextInspector(props: {
             <div class="ui-field">
               <label
                 class="ui-label"
+                for={`studio-inspector-text-content-${entry().draftId}`}
+              >
+                {t("composition.studioTextContent")}
+              </label>
+              <select
+                id={`studio-inspector-text-content-${entry().draftId}`}
+                class="ui-input"
+                value={entry().content.kind === "literal"
+                  ? "literal"
+                  : `variable:${entry().content.variable}`}
+                onChange={(event) => {
+                  const selected = event.currentTarget.value;
+                  if (selected === "literal") {
+                    props.apply(
+                      setTextContent(props.draft, entry().draftId, ""),
+                    );
+                    return;
+                  }
+                  if (selected.startsWith("variable:")) {
+                    props.apply(
+                      setTextVariable(
+                        props.draft,
+                        entry().draftId,
+                        selected.slice("variable:".length),
+                      ),
+                    );
+                  }
+                }}
+              >
+                <option value="literal">
+                  {t("composition.studioTextLiteral")}
+                </option>
+                <For
+                  each={props.draft.variables.filter((item) =>
+                    item.type === "string"
+                  )}
+                >
+                  {(variable) => (
+                    <option value={`variable:${variable.id}`}>
+                      {compositionVariableDisplayName(
+                        props.draft.variables,
+                        variable.id,
+                      )}
+                    </option>
+                  )}
+                </For>
+              </select>
+            </div>
+            <div class="ui-field">
+              <label
+                class="ui-label"
                 for={`studio-inspector-text-${entry().draftId}`}
               >
                 {t("composition.studioText")}
               </label>
-              <Show
-                when={entry().content.kind === "literal"}
-                fallback={
-                  <input
-                    id={`studio-inspector-text-${entry().draftId}`}
-                    class="ui-input"
-                    value={compositionParameterDisplayName(
-                      props.draft.parameters,
-                      entry().content.kind === "variable"
-                        ? entry().content.variable
-                        : "",
-                    )}
-                    readOnly
-                    aria-readonly="true"
-                  />
-                }
-              >
+              <Show when={entry().content.kind === "literal"}>
                 <input
                   id={`studio-inspector-text-${entry().draftId}`}
                   class="ui-input"

@@ -11,7 +11,11 @@ import type {
 } from "./entry-query-composition";
 import type { Form } from "./types";
 import { compositionFormFieldName } from "./composition-field-name";
+import { compositionVariableDisplayName } from "./composition-variable-name";
+import type { DraftVariable } from "./composition-draft";
 import { formApi } from "./ugoite-client";
+
+type StudioVariableName = Pick<DraftVariable, "id" | "label">;
 
 /**
  * Studio EntryQuery capability source. The draft Knowledge carries only
@@ -47,15 +51,38 @@ export const studioBindingName = (value: unknown): string | undefined => {
 };
 
 /** Display text for a variable binding; the shared dialog edits strings. */
-export const studioBindingText = (name: string): string => `{{${name}}}`;
+export const studioBindingText = (
+  name: string,
+  variables: readonly StudioVariableName[] = [],
+): string => {
+  const displayName = compositionVariableDisplayName(variables, name);
+  const duplicates =
+    variables.filter((variable) =>
+      compositionVariableDisplayName(variables, variable.id) === displayName
+    ).length;
+  const uniqueName = duplicates > 1
+    ? `${displayName} (${
+      variables.findIndex((variable) => variable.id === name) + 1
+    })`
+    : displayName;
+  return `{{${uniqueName}}}`;
+};
 
 /**
  * Round-trip `{{name}}` display text back to a variable binding so a
  * dialog apply never silently flattens a binding to a plain string.
  */
-export const studioParseBindingText = (text: string): unknown => {
+export const studioParseBindingText = (
+  text: string,
+  variables: readonly StudioVariableName[] = [],
+): unknown | undefined => {
   const binding = /^\{\{([^}]+)\}\}$/.exec(text);
-  if (binding && binding[1].length > 0) return { variable: binding[1] };
+  if (binding && binding[1].length > 0) {
+    const matches = variables.filter((variable) =>
+      studioBindingText(variable.id, variables) === text
+    );
+    return matches.length === 1 ? { variable: matches[0].id } : undefined;
+  }
   return text;
 };
 
@@ -134,12 +161,15 @@ export const studioFallbackCapabilities = (
 /** Draft filter to the shared dialog shape; bindings become `{{name}}`. */
 export const studioFilterToEntryFilter = (
   filter: EntryQueryCompositionFilter,
+  variables: readonly StudioVariableName[] = [],
 ): EntryFilter => {
   const binding = studioBindingName(filter.value);
   return {
     field: { kind: "property", field_id: filter.field_id },
     operator: filter.operator,
-    value: binding !== undefined ? studioBindingText(binding) : filter.value,
+    value: binding !== undefined
+      ? studioBindingText(binding, variables)
+      : filter.value,
   };
 };
 
@@ -150,11 +180,13 @@ export const studioFilterToEntryFilter = (
  */
 export const studioEntryFilterToComposition = (
   filter: EntryFilter,
+  variables: readonly StudioVariableName[] = [],
 ): EntryQueryCompositionFilter | undefined => {
   if (filter.field.kind !== "property") return undefined;
   const raw = typeof filter.value === "string"
-    ? studioParseBindingText(filter.value)
+    ? studioParseBindingText(filter.value, variables)
     : filter.value;
+  if (raw === undefined) return undefined;
   return {
     field_id: filter.field.field_id,
     operator: filter.operator,

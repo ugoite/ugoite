@@ -18,8 +18,8 @@ import {
 } from "~/lib/entry-query-composition";
 import {
   canCreateSavedSqlComposition,
-  type CompositionVariableType,
   compositionResultTypeFromSql,
+  type CompositionVariableType,
 } from "~/lib/composition-api";
 import {
   type DraftEntryQuerySeed,
@@ -101,7 +101,9 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
     controller = current;
     setLoad({ status: "loading" });
     void Promise.all([
-      currentMetricOnly ? Promise.resolve([] as Form[]) : formApi.list(currentSpaceId),
+      currentMetricOnly
+        ? Promise.resolve([] as Form[])
+        : formApi.list(currentSpaceId),
       sqlApi.list(currentSpaceId),
     ]).then(
       ([listedForms, listedSql]) => {
@@ -312,12 +314,7 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
           revisionId: current.revision_id,
           name: displaySqlName(current),
           expectedResult,
-          variables: Object.fromEntries(
-            current.variables.map((variable) => [
-              variable.name,
-              { parameter: variable.name },
-            ]),
-          ),
+          variables: {},
           variableTypes: Object.fromEntries(
             current.variables.map((variable) => [
               variable.name,
@@ -388,9 +385,11 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
                       {t("composition.studioCurrentSources")}
                     </h3>
                     <RowList label={t("composition.studioCurrentSources")}>
-                      <For each={(props.existingSources ?? []).filter((source) =>
-                        !metricOnly() || source.kind === "saved_sql"
-                      )}>
+                      <For
+                        each={(props.existingSources ?? []).filter((source) =>
+                          !metricOnly() || source.kind === "saved_sql"
+                        )}
+                      >
                         {(source) => (
                           <RowListItem
                             main={
@@ -423,30 +422,30 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
                     role="tablist"
                     aria-labelledby={titleId}
                   >
-                  <button
-                    type="button"
-                    role="tab"
-                    id={formsTabId}
-                    aria-selected={tab() === "forms"}
-                    aria-controls={formsPanelId}
-                    class="tab"
-                    classList={{ active: tab() === "forms" }}
-                    onClick={() => setTab("forms")}
-                  >
-                    {t("composition.studioForms")}
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    id={sqlTabId}
-                    aria-selected={tab() === "savedSql"}
-                    aria-controls={sqlPanelId}
-                    class="tab"
-                    classList={{ active: tab() === "savedSql" }}
-                    onClick={() => setTab("savedSql")}
-                  >
-                    {t("spaceShell.title.savedSql")}
-                  </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      id={formsTabId}
+                      aria-selected={tab() === "forms"}
+                      aria-controls={formsPanelId}
+                      class="tab"
+                      classList={{ active: tab() === "forms" }}
+                      onClick={() => setTab("forms")}
+                    >
+                      {t("composition.studioForms")}
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      id={sqlTabId}
+                      aria-selected={tab() === "savedSql"}
+                      aria-controls={sqlPanelId}
+                      class="tab"
+                      classList={{ active: tab() === "savedSql" }}
+                      onClick={() => setTab("savedSql")}
+                    >
+                      {t("spaceShell.title.savedSql")}
+                    </button>
                   </div>
                 </Show>
                 <Show when={!metricOnly() && tab() === "forms"}>

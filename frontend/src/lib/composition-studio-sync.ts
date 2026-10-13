@@ -24,18 +24,18 @@ export const STUDIO_MODES: readonly StudioMode[] = [
 export const STUDIO_SPLIT_GATE_MEDIA = "(max-width: 760px)";
 export const STUDIO_SHEET_GATE_MEDIA = "(max-width: 560px)";
 
-const INPUT_BLOCK_PREFIX = "input:";
-
 /**
  * Block to source mapping for Design to Data synchronization. Metric and
- * table blocks resolve to their component source; text blocks and parameter
- * controls have no source, so the caller keeps the current Data selection.
+ * table blocks resolve to their component source; text and Input components
+ * have no source, so the caller keeps the current Data selection.
  */
 export const sourceDraftIdForBlock = (
   draft: CompositionDraft,
   blockId: string | null,
 ): string | null => {
-  if (!blockId || blockId.startsWith(INPUT_BLOCK_PREFIX)) return null;
+  if (!blockId || draft.inputs.some((input) => input.draftId === blockId)) {
+    return null;
+  }
   const display = draft.displays.find((entry) => entry.draftId === blockId);
   if (!display || display.kind === "text") return null;
   return display.sourceDraftId;
@@ -59,8 +59,8 @@ export const blockIdsUsingSource = (
 
 /**
  * Visible-component sources for the bounded preview discipline: draft
- * source IDs referenced by placed non-text components, in layout order.
- * Text blocks emit no source request; unplaced declarations are excluded.
+ * source IDs referenced by placed data components, in layout order.
+ * Text/Input blocks emit no source request; unplaced declarations are excluded.
  */
 export const visibleComponentSourceIds = (
   draft: CompositionDraft,

@@ -356,7 +356,7 @@ features:
       path: frontend/src/components/CompositionDataWorkspace.test.tsx
       selector:
         kind: test
-        name: keeps parameter bindings through the shared dialog round trip
+        name: shows variable labels in the shared filter dialog and preserves bindings
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.entry-query-translation
@@ -692,7 +692,7 @@ features:
       path: frontend/src/lib/composition-draft.test.ts
       selector:
         kind: test
-        name: seeds a saved sql entry point with mapped variables and placed controls
+        name: seeds the exact Saved SQL revision without promoting run values to defaults
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
@@ -703,7 +703,7 @@ features:
       path: frontend/src/lib/composition-draft.test.ts
       selector:
         kind: test
-        name: seeds saved sql without variables with a table and no parameter controls
+        name: seeds saved sql without variables with a table and no variable controls
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.ordered-component-layout
@@ -712,7 +712,7 @@ features:
       path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
       selector:
         kind: test
-        name: seeds the studio from a saved sql seed with a table and placed controls using localized parameter labels
+        name: seeds the studio from Saved SQL without inventing variables or Inputs
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
@@ -730,7 +730,7 @@ features:
       path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
       selector:
         kind: test
-        name: discloses Parameters in Data mode only once a source exists
+        name: offers the Variables editor before any source exists
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.parameter-placement

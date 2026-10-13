@@ -13,14 +13,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CompositionStudio } from "./CompositionStudio";
 import {
   addEntryQuerySource,
+  addInputComponent,
   addMetricDisplay,
-  addParameter,
   addSavedSqlSource,
   addTableDisplay,
   addTextDisplay,
+  addVariable,
   type CompositionDraft,
   createEmptyDraft,
-  placeParameterControl,
 } from "~/lib/composition-draft";
 import { setLocale } from "~/lib/i18n";
 
@@ -64,6 +64,11 @@ vi.mock("~/lib/composition-api", () => ({
 }));
 
 vi.mock("~/lib/ugoite-client", () => ({
+  entryApi: {
+    getRevision: vi.fn().mockResolvedValue({
+      fields: { variables: [] },
+    }),
+  },
   sqlApi: {
     get: (...args: unknown[]) =>
       (sqlGetMock as (...call: unknown[]) => unknown)(...args),
@@ -130,6 +135,7 @@ const seedDraft = (): CompositionDraft => {
     name: "Monthly totals",
     expectedResult: [{ name: "total", type: "float" as const }],
     variables: {},
+    variableTypes: {},
   }).draft;
   draft = addEntryQuerySource(draft, {
     formId: "11111111-1111-4111-8111-111111111111",
@@ -141,13 +147,13 @@ const seedDraft = (): CompositionDraft => {
       projection: { kind: "preview" as const },
     },
   }).draft;
-  const month = addParameter(draft, {
+  const month = addVariable(draft, {
     id: "month",
     label: "Month",
     type: "date",
     required: true,
   });
-  if (!month.ok) throw new Error("expected month parameter");
+  if (!month.ok) throw new Error("expected month variable");
   draft = month.draft;
   const metric = addMetricDisplay(
     draft,
@@ -163,8 +169,8 @@ const seedDraft = (): CompositionDraft => {
   const text = addTextDisplay(draft, { text: "Summary", style: "heading" });
   if (!text.ok) throw new Error("expected text block");
   draft = text.draft;
-  const placed = placeParameterControl(draft, "month");
-  if (!placed.ok) throw new Error("expected parameter placement");
+  const placed = addInputComponent(draft, "month");
+  if (!placed.ok) throw new Error("expected variable placement");
   return placed.draft;
 };
 
@@ -349,14 +355,16 @@ describe("CompositionStudioMobile", () => {
     await screen.findByRole("heading", { name: "Monthly totals" });
   });
 
-  it("unplaces a parameter from the narrow Inspector sheet but keeps its declaration", async () => {
+  it("unplaces a variable from the narrow Inspector sheet but keeps its declaration", async () => {
     setViewportWidth(390);
     renderStudio();
 
     fireEvent.click(screen.getByRole("button", { name: "Select Month" }));
     const dialog = await screen.findByRole("dialog", { name: "Month" });
     fireEvent.click(
-      within(dialog).getByRole("button", { name: "Unplace Month" }),
+      within(dialog).getByRole("button", {
+        name: "Remove Input for Month",
+      }),
     );
 
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -364,7 +372,7 @@ describe("CompositionStudioMobile", () => {
       screen.queryByRole("button", { name: "Select Month" }),
     ).toBeNull();
     fireEvent.click(modeRadios().data);
-    fireEvent.click(screen.getByRole("tab", { name: "Parameters" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Variables" }));
     expect(
       screen.getByRole("button", { name: "Remove Month" }),
     ).toBeInTheDocument();
