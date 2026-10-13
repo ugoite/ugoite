@@ -1323,7 +1323,6 @@ mod tests {
 
         assert!(Type::Float.accepts_value(&json!(1.25)));
         assert!(Type::Float.accepts_value(&json!(1.0)));
-        assert!(Type::Float.accepts_value(&json!(1)));
         assert!(!Type::Float.accepts_value(&json!("1.25")));
 
         assert!(Type::Date.accepts_value(&json!("2024-02-29")));
@@ -1346,6 +1345,15 @@ mod tests {
                 "accepted {invalid}"
             );
         }
+    }
+
+    #[test]
+    fn float_type_accepts_integral_json_numbers() {
+        use super::CompositionVariableType;
+        use serde_json::json;
+
+        assert!(CompositionVariableType::Float.accepts_value(&json!(1)));
+        assert!(!CompositionVariableType::Integer.accepts_value(&json!(1.0)));
     }
 
     #[test]

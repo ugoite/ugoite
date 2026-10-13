@@ -94,6 +94,9 @@ before a Composition can be saved.
   underflows to zero. This accepts `1`, `1.25`, `.5`, and `1e3`; it rejects
   `1.`, `1,25`, `NaN`, `Infinity`, overflow, and underflow to zero. Finite
   binary64 rounding is the declared `float` type's numeric behavior.
+  A finite JSON number with integral spelling, such as `1`, is still a Float
+  value. Saved SQL binding checks the declared Composition and SQL variable
+  types exactly; it never infers the type from the JSON number's spelling.
 - `date`: accept exactly ten ASCII characters in `YYYY-MM-DD` form, with a
   four-digit year from 0001 through 9999, and require a real Gregorian date.
   Do not accept whitespace, reduced precision, or a date-time value.
