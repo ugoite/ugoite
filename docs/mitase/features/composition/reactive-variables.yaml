@@ -722,6 +722,33 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.code-free-studio-authoring
+      - id: browser-typed-variable-journey-evidence
+        role: evidence
+        facet: frontend-tests
+        responsibility: Record Browser evidence for explicit typed Saved SQL bindings, ordinary labeled Inputs, exact-revision reopen, and suppression of a late prior-variable response without claiming the untested Text or runtime-value-persistence portions of Studio authoring.
+        targets:
+          - id: typed-variable-authoring-and-reopen
+            adapter: typescript
+            path: e2e/composition-golden-journey.test.ts
+            selector:
+              kind: test
+              name: Browser saves a tool once, reopens its exact revision from Home, and pages parameterized results with model connection disabled
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-variable-declarations
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.input-component-binding
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-source-binding
+          - id: stale-variable-response-through-labeled-inputs
+            adapter: typescript
+            path: e2e/composition-stale-response.test.ts
+            selector:
+              kind: test
+              name: Late parameter-A responses change neither rows, metric, error, loading, finalization, nor pagination
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.stale-result-and-state-safety
       - id: cli-typed-variable-query
         role: implementation
         facet: cli

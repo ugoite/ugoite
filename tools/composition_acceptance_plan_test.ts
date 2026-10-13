@@ -60,11 +60,11 @@ const PLAN_PATH = "e2e/fixtures/composition/acceptance-plan.json";
 const ARCHIVE_PATH = "e2e/fixtures/composition/evidence-archive.json";
 
 const EXPECTED_BROWSER_STEPS = [
-  "Open a parameterized Saved SQL result and save it as a tool through the Browser dialog.",
+  "Open a parameterized Saved SQL result, declare typed Composition Variables, bind the SQL variable names explicitly, and place labeled Input components before saving the tool through Studio.",
   "Delay and interrupt the first save response after commit, then retry with the same Idempotency-Key and verify one history publication and the original receipt revision.",
   "Close the browser context, rediscover the saved tool from Space Home, and open the exact revision named by the receipt.",
-  "Change declared parameters, advance a result page, and confirm the displayed rows come from the existing query response without Browser aggregation.",
-  "Change a parameter, Space, or source while an earlier request is delayed and confirm stale success, error, finalization, and loading updates are discarded.",
+  "Use the labeled Inputs to change declared Variable values, advance a result page, and confirm the displayed rows come from the existing query response without Browser aggregation.",
+  "Change a Variable, Space, or source while an earlier request is delayed and confirm stale success, error, finalization, and loading updates are discarded.",
   "Confirm page, scroll, result, continuation, and cache state are absent from the saved Composition.",
 ];
 

@@ -19,20 +19,27 @@ criteria remain unverified. The Browser journey source is in
   run creates a unique server-backed Space, a parameterized Saved SQL query, and
   101 matching rows across two result pages, plus one excluded row.
 
-The Browser test opens the seeded query, saves it with “Save as tool”, and
-forces a delayed response loss after the server commits. Retrying must reuse the
-same `Idempotency-Key`, return the same receipt and exact revision, and leave
-one history publication. A fresh browser context rediscovers that exact revision
-from Home, applies the Composition's declared parameter defaults, and reads page
-one and page two. Changing the date parameter resets the result page and narrows
+The Browser test opens the seeded query, saves it with “Save as tool”, declares
+typed date Variables, binds Saved SQL variable names explicitly, and places
+ordinary Inputs with user-facing labels before saving. It then forces a delayed
+response loss after the server commits. Retrying must reuse the same
+`Idempotency-Key`, return the same receipt and exact revision, and leave one
+history publication. A fresh browser context rediscovers that exact revision
+from Home, sees the declared defaults in the labeled Inputs, and reads page one
+and page two. Changing the Start date Input resets the result page and narrows
 the rows. The journey does not connect a model or persist Browser Work.
+
+Run the delayed stale-response case separately with
+`bash e2e/scripts/run-e2e-parity.sh composition-stale`. It uses the same
+user-facing date labels and holds an earlier Saved SQL response while the Inputs
+move to the current date window.
 
 The CLI Core/Remote parity selector is implemented as a Rust CLI-process
 integration test in `crates/ugoite-cli/tests/test_journey_remote.rs`; it uses
 one shared filesystem-backed Space to compare exact-revision inspect,
 parameterized `entry_query`, and raw export. Its fixture contains one
-Composition revision, so older-than-latest selector behavior is tracked in
-issue #3681. Its scope does not cover saved-SQL query execution or
-unknown/broken raw recovery. The remaining recovery, complete cross-surface,
-and exact-candidate release evidence selectors remain planned. The E2E seed
-does not implement a second parser, resolver, or query engine.
+Composition revision, so older-than-latest selector behavior is tracked in issue
+#3681. Its scope does not cover saved-SQL query execution or unknown/broken raw
+recovery. The remaining recovery, complete cross-surface, and exact-candidate
+release evidence selectors remain planned. The E2E seed does not implement a
+second parser, resolver, or query engine.
