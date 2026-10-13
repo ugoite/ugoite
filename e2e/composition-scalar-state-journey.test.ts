@@ -319,10 +319,24 @@ async function openSavedComposition(
   ).toBeVisible();
 }
 
-function metricOutput(page: Page, label: string) {
+function metricSection(page: Page, label: string) {
   return page.locator("section.section").filter({
     has: page.getByRole("heading", { name: label, exact: true }),
-  }).locator("output.compositionMetric");
+  });
+}
+
+function metricOutput(page: Page, label: string) {
+  return metricSection(page, label).locator("output.compositionMetric");
+}
+
+async function waitForMetricResults(page: Page, labels: string[]) {
+  await Promise.all(
+    labels.map((label) =>
+      expect(metricSection(page, label).getByRole("status")).toHaveCount(0, {
+        timeout: 30_000,
+      })
+    ),
+  );
 }
 
 async function openOwnerPage(
@@ -351,6 +365,12 @@ test.describe("Composition scalar state journey", () => {
     test.setTimeout(120_000);
     const { freshContext, page } = await openOwnerPage(browser, context, seed);
     try {
+      await waitForMetricResults(page, [
+        "All rows",
+        "Rows with amount",
+        "Amount total",
+        "Amount average",
+      ]);
       await expect(metricOutput(page, "All rows")).toHaveText("3");
       await expect(metricOutput(page, "Rows with amount")).toHaveText("2");
       await expect(metricOutput(page, "Amount total")).toHaveText("30");
@@ -364,12 +384,12 @@ test.describe("Composition scalar state journey", () => {
     test.setTimeout(120_000);
     const { freshContext, page } = await openOwnerPage(browser, context, seed);
     try {
-      const zeroRowsSection = page.locator("section.section").filter({
-        has: page.getByRole("heading", {
-          name: "No matching rows",
-          exact: true,
-        }),
-      });
+      await waitForMetricResults(page, [
+        "No matching rows",
+        "Empty sum",
+        "Empty count",
+      ]);
+      const zeroRowsSection = metricSection(page, "No matching rows");
       await expect(zeroRowsSection.getByRole("alert")).toContainText(
         await page.locator("html").getAttribute("lang").then((locale) =>
           locale === "ja"
