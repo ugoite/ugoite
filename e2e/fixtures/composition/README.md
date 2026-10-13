@@ -8,9 +8,8 @@ surface as a user-created tool.
 `acceptance-plan.json` describes the full B0–B6 plan and the reactive-variable
 Studio journey. Planned selectors are locators, not release evidence. Scoped
 Browser journey results and their JUnit artifacts are recorded under
-`evidence/`; other selectors and release criteria remain unverified. The
-Browser journey sources are
-`e2e/composition-golden-journey.test.ts` and
+`evidence/`; other selectors and release criteria remain unverified. The Browser
+journey sources are `e2e/composition-golden-journey.test.ts` and
 `e2e/composition-studio-journey.test.ts`.
 
 - `unknown-format-version.ugcomp.yaml` is a raw-payload candidate for
@@ -31,12 +30,19 @@ from Home, sees the declared defaults in the labeled Inputs, and reads page one
 and page two. Changing the Start date Input resets the result page and narrows
 the rows. The journey does not connect a model or persist Browser Work.
 
-The Studio journey declares a string Variable with a default, binds an Input
-and Text to it, and binds date Inputs to the exact Saved SQL revision. It reads
-the exact saved Composition revision to verify those bindings. A runtime edit
+The Studio journey declares a string Variable with a default, binds an Input and
+Text to it, and binds date Inputs to the exact Saved SQL revision. It reads the
+exact saved Composition revision to verify those bindings. A runtime edit
 updates Text immediately without another SQL request. Reloading that revision
-restores the declared default without publishing a second Composition
-revision.
+restores the declared default without publishing a second Composition revision.
+
+The reactive metric journey seeds Amount values 10, 20, and 30, then creates a
+regular Saved SQL query for `COUNT(*)` and `SUM(Amount)` filtered by a typed
+minimum. Studio binds an integer Variable and labeled Input to that exact query
+revision and creates one Metric for each result column. After saving and
+reopening from Space Home, minimum 0 displays 3 and 60; changing it to 20
+displays 2 and 50 from the server query. Reload restores the saved default and
+leaves Composition history at one revision.
 
 Run the delayed stale-response case separately with
 `bash e2e/scripts/run-e2e-parity.sh composition-stale`. It uses the same
