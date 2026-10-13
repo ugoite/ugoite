@@ -47,7 +47,7 @@ requirements:
         governed_by: [POL-UI-009#rule.governance]
       - id: typed-parameter-binding
         kind: behavior
-        statement: Composition variables declare a unique identifier, exact type, required flag, optional exact-type default, and optional authored label. Inputs reference a declared variable and own no persisted value; variable-bound Text references only a declared string variable. User-facing variable surfaces use the authored label or localized declaration-order ordinal, while IDs stay binding-only. Saved SQL variable names bind explicitly to Composition variables through the existing typed SQL parameters; no same-name binding is inferred. Type compatibility is decided by Rust-owned validation and diagnostics, never by Browser inference. SQL APIs retain their `parameters` and `parameter_types` contract.
+        statement: Composition variables declare a unique identifier, exact type, required flag, optional exact-type default, and optional authored label. Inputs reference a declared variable and own no persisted value; variable-bound Text references only a declared string variable. User-facing variable surfaces use the authored label or localized declaration-order ordinal, while IDs stay binding-only. Asynchronous default parsing applies only while that declaration remains present with the same type; removal or type change cannot be undone by a stale parser result. Saved SQL variable names bind explicitly to Composition variables through the existing typed SQL parameters; no same-name binding is inferred. Type compatibility is decided by Rust-owned validation and diagnostics, never by Browser inference. SQL APIs retain their `parameters` and `parameter_types` contract.
         governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
       - id: side-effect-free-preview
         kind: behavior
@@ -487,6 +487,15 @@ requirements:
                 criterion: REQ-FE-070#criterion.typed-parameter-binding
                 covers: [FEAT-FE-014#binding.frontend/target.composition-variable-list]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableList.test.tsx, test: surfaces guarded removal without deleting } }
+          - id: variable-stale-default-parse-after-remove
+            adapter: typescript
+            path: frontend/src/components/CompositionVariableList.test.tsx
+            selector: { kind: test, name: does not restore a removed variable when its default parse resolves }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.typed-parameter-binding
+                covers: [FEAT-FE-014#binding.frontend/target.composition-variable-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableList.test.tsx, test: does not restore a removed variable when its default parse resolves } }
           - id: variable-generated-id-hidden
             adapter: typescript
             path: frontend/src/components/CompositionVariableList.test.tsx

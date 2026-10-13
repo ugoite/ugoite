@@ -61,11 +61,22 @@ export function CompositionVariableList(props: CompositionVariableListProps) {
     });
   };
 
+  const invalidateDefaultInput = (variableId: string) => {
+    defaultInputGenerations.set(
+      variableId,
+      (defaultInputGenerations.get(variableId) ?? 0) + 1,
+    );
+    clearDefaultInputValue(variableId);
+  };
+
   const updateDefault = async (variable: DraftVariable, raw: string) => {
-    const latest = () =>
-      props.variables.find((item) => item.id === variable.id) ?? variable;
-    const saveDefault = (value: unknown | undefined) =>
-      props.onUpdate({ ...latest(), default: value });
+    const currentVariable = () =>
+      props.variables.find((item) => item.id === variable.id);
+    const saveDefault = (value: unknown | undefined) => {
+      const current = currentVariable();
+      if (!current || current.type !== variable.type) return;
+      props.onUpdate({ ...current, default: value });
+    };
 
     const generation = (defaultInputGenerations.get(variable.id) ?? 0) + 1;
     defaultInputGenerations.set(variable.id, generation);
@@ -80,7 +91,8 @@ export function CompositionVariableList(props: CompositionVariableListProps) {
     try {
       const parsed = await parseCompositionVariableInput(variable.type, raw);
       if (defaultInputGenerations.get(variable.id) !== generation) return;
-      if (latest().type !== variable.type) return;
+      const current = currentVariable();
+      if (!current || current.type !== variable.type) return;
 
       if (parsed.status === "valid") {
         saveDefault(parsed.value);
@@ -149,6 +161,7 @@ export function CompositionVariableList(props: CompositionVariableListProps) {
                     })}
                     onClick={() => {
                       const reason = props.onRemove(variable.id);
+                      if (!reason) invalidateDefaultInput(variable.id);
                       setRemoveError(reason ?? null);
                     }}
                   />
@@ -198,11 +211,7 @@ export function CompositionVariableList(props: CompositionVariableListProps) {
                   })}
                   onChange={(event) =>
                     (() => {
-                      defaultInputGenerations.set(
-                        variable.id,
-                        (defaultInputGenerations.get(variable.id) ?? 0) + 1,
-                      );
-                      clearDefaultInputValue(variable.id);
+                      invalidateDefaultInput(variable.id);
                       props.onUpdate({
                         ...variable,
                         type: event.currentTarget

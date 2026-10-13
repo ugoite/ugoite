@@ -1,4 +1,5 @@
 import "@testing-library/jest-dom/vitest";
+import { createSignal } from "solid-js";
 import {
   cleanup,
   fireEvent,
@@ -10,12 +11,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
 import { CompositionVariableList } from "./CompositionVariableList";
 import type { DraftVariable } from "~/lib/composition-draft";
+import * as variableProtocol from "~/lib/ugoite-client/protocol";
 
 describe("composition variable list", () => {
   beforeEach(() => {
     setLocale("en");
   });
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
 
   const month: DraftVariable = { id: "month", type: "date", required: true };
 
@@ -260,5 +265,59 @@ describe("composition variable list", () => {
     expect(
       screen.getByText("This variable is used by a data source."),
     ).toBeInTheDocument();
+  });
+
+  it("does not restore a removed variable when its default parse resolves", async () => {
+    const integer: DraftVariable = {
+      id: "limit",
+      type: "integer",
+      required: false,
+    };
+    let resolveParse!: (value: { status: "valid"; value: number }) => void;
+    const pendingParse = new Promise<{ status: "valid"; value: number }>(
+      (resolve) => {
+        resolveParse = resolve;
+      },
+    );
+    vi.spyOn(variableProtocol, "parseCompositionVariableInput")
+      .mockReturnValue(pendingParse as never);
+
+    const [variables, setVariables] = createSignal<DraftVariable[]>([integer]);
+    const onUpdate = vi.fn((updated: DraftVariable) => {
+      setVariables((current) =>
+        current.map((item) => item.id === updated.id ? updated : item)
+      );
+    });
+    const onRemove = vi.fn((variableId: string) => {
+      setVariables((current) =>
+        current.filter((item) => item.id !== variableId)
+      );
+      return undefined;
+    });
+
+    render(() => (
+      <CompositionVariableList
+        variables={variables()}
+        headingId="params"
+        onAdd={() => {}}
+        onUpdate={onUpdate}
+        onRemove={onRemove}
+      />
+    ));
+
+    fireEvent.input(screen.getByLabelText("Default for Variable 1"), {
+      target: { value: "42" },
+    });
+    expect(onUpdate).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Remove Variable 1" }));
+    expect(onRemove).toHaveBeenCalledWith("limit");
+    expect(variables()).toEqual([]);
+
+    resolveParse({ status: "valid", value: 42 });
+    await pendingParse;
+    await waitFor(() => expect(variables()).toEqual([]));
+
+    expect(onUpdate).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Variable 1")).not.toBeInTheDocument();
   });
 });

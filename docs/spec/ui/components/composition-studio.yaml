@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-10-09"
+updated: "2026-10-13"
 component_group:
   id: composition-studio
   title: Composition Studio
@@ -202,6 +202,7 @@ components:
     row_label: authored-human-label-else-localized-ordinal-by-declaration-order
     identifier: stable-internal-reference-never-a-display-fallback
     binding: typed-composition-variable-declaration-with-exact-type-default-and-required-state
+    default_parsing: shared-rust-domain-parser-ignores-results-after-removal-or-type-change
     input_components: ordinary-layout-components-reference-one-declared-variable-and-own-no-value
     type_compatibility: rust-owned-diagnostics
   - id: studio-tags
