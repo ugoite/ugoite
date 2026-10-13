@@ -6,6 +6,10 @@ import {
   waitFor,
   within,
 } from "@solidjs/testing-library";
+import {
+  computeAccessibleDescription,
+  computeAccessibleName,
+} from "dom-accessibility-api";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import DeviceApprovalRoute from "./device";
 import { spaceApi } from "~/lib/ugoite-client";
@@ -193,9 +197,14 @@ describe("/device", () => {
     expect(requestSummary).toHaveTextContent(
       "MCP client requested MCP actions: read.",
     );
-    expect(screen.getByLabelText("Space")).toHaveValue(requestedSpaceUid);
-    expect(screen.getByRole("option", { name: "Current Space" }))
-      .toBeInTheDocument();
+    const approvalSelect = screen.getByLabelText("Space");
+    expect(approvalSelect).toHaveValue(requestedSpaceUid);
+    expect(approvalSelect).toHaveAccessibleName("Space");
+    const requestedSpaceOption = screen.getByRole("option", {
+      name: "Current Space",
+    });
+    expect(requestedSpaceOption).toHaveValue(requestedSpaceUid);
+    expect(requestedSpaceOption.selected).toBe(true);
 
     fireEvent.click(reviewButton);
     const dialog = await screen.findByRole("dialog");
@@ -203,10 +212,31 @@ describe("/device", () => {
     expect(dialog).toHaveAccessibleDescription(
       "Approve MCP client for actions: read in the selected Space: Current Space?",
     );
-    expect(document.body.textContent).not.toContain(userCode);
-    expect(document.body.textContent).not.toContain(firstSpaceUid);
-    expect(document.body.textContent).not.toContain(requestedSpaceUid);
-    expect(document.body.textContent).not.toContain(resource);
+    const renderedElements = Array.from(
+      document.body.querySelectorAll<HTMLElement>("*"),
+    );
+    const userFacingText = [
+      document.body.textContent ?? "",
+      ...renderedElements.flatMap((element) => [
+        computeAccessibleName(element),
+        computeAccessibleDescription(element),
+        element.getAttribute("title") ?? "",
+      ]),
+      ...Array.from(
+        document.body.querySelectorAll("label"),
+        (label) => label.textContent ?? "",
+      ),
+    ].join("\n");
+    for (
+      const internalIdentifier of [
+        userCode,
+        firstSpaceUid,
+        requestedSpaceUid,
+        resource,
+      ]
+    ) {
+      expect(userFacingText).not.toContain(internalIdentifier);
+    }
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Approve MCP access" }),
     );
