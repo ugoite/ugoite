@@ -138,7 +138,7 @@ ugoite composition save <FILE> --composition-id <ID> --base-revision <REVISION_I
 ugoite composition inspect <ID> [--revision <REVISION_ID>] [--raw]
 ugoite composition lint <FILE>
 ugoite composition export <ID> --output <FILE> [--revision <REVISION_ID>]
-ugoite composition query <ID> [--revision <REVISION_ID>] [--param KEY=VALUE]
+ugoite composition query <ID> [--revision <REVISION_ID>] [--var ID=VALUE]...
 ugoite sql lint <SQL>
 ugoite sql query <SQL_OR_FILE>
 ugoite sql count <SQL_OR_FILE>
@@ -179,6 +179,12 @@ request after an uncertain result to recover its publication receipt.
 revision against its exact current base. `lint` validates a file offline
 without a Space, and `export` writes the stored raw spec to a new file
 without parsing it.
+
+`composition query` accepts repeated `--var ID=VALUE` assignments and parses
+each value against the declared Composition type. `--var ID=` explicitly
+unsets a variable and bypasses its default; omitting the assignment allows
+the declared default to apply. SQL query `--param` options keep their separate
+SQL binding behavior.
 
 | Outcome | Task page | Command authority |
 | --- | --- | --- |

@@ -1571,6 +1571,7 @@ spec:
     - id: month_start
       type: date
       required: true
+      default: "2026-01-01"
     - id: month_end
       type: date
       required: true
@@ -1736,9 +1737,9 @@ spec:
         composition_id.as_str(),
         "--revision",
         revision_id.as_str(),
-        "--param",
+        "--var",
         "month_start=2026-01-01",
-        "--param",
+        "--var",
         "month_end=2026-02-01",
     ];
     let core_query = stdout_json(
@@ -1756,7 +1757,7 @@ spec:
             .as_array()
             .map(Vec::len),
         Some(2),
-        "the date parameters should include the two January rows only"
+        "the date variables should include the two January rows only"
     );
 
     let latest_query_args = [
@@ -1765,9 +1766,9 @@ spec:
         composition_id.as_str(),
         "--revision",
         latest_revision_id.as_str(),
-        "--param",
+        "--var",
         "month_start=2026-01-01",
-        "--param",
+        "--var",
         "month_end=2026-02-01",
     ];
     let core_latest_query = stdout_json(
@@ -1786,6 +1787,82 @@ spec:
         Some(1),
         "the newer literal filter should select one January row"
     );
+
+    let legacy_parameter_args = [
+        "composition",
+        "query",
+        composition_id.as_str(),
+        "--param",
+        "month_start=2026-01-01",
+    ];
+    let legacy_parameter = run_cli(&fixture.config_path, &legacy_parameter_args).await;
+    assert!(!legacy_parameter.status.success());
+    assert!(
+        String::from_utf8_lossy(&legacy_parameter.stderr).contains("unexpected argument '--param'")
+    );
+
+    let unknown_unset_args = [
+        "composition",
+        "query",
+        composition_id.as_str(),
+        "--revision",
+        revision_id.as_str(),
+        "--var",
+        "unknown_variable=",
+    ];
+    let core_unknown_unset = stdout_json(
+        &run_cli(&core_config_path, &unknown_unset_args).await,
+        "Core unknown-variable explicit unset",
+    );
+    let remote_unknown_unset = stdout_json(
+        &run_cli(&fixture.config_path, &unknown_unset_args).await,
+        "Remote unknown-variable explicit unset",
+    );
+    assert_eq!(core_unknown_unset, remote_unknown_unset);
+    assert_eq!(core_unknown_unset["ok"], false);
+    let unknown_diagnostic = core_unknown_unset["diagnostics"]
+        .as_array()
+        .expect("Core diagnostics")
+        .iter()
+        .find(|diagnostic| diagnostic["variable_id"] == "unknown_variable")
+        .expect("unknown unset is diagnosed");
+    assert_eq!(unknown_diagnostic["code"], "variable_unknown");
+    assert_eq!(unknown_diagnostic["variable_id"], "unknown_variable");
+
+    let explicit_unset_args = [
+        "composition",
+        "query",
+        composition_id.as_str(),
+        "--revision",
+        revision_id.as_str(),
+        "--var",
+        "month_start=",
+        "--var",
+        "month_end=2026-02-01",
+    ];
+    let core_explicit_unset = stdout_json(
+        &run_cli(&core_config_path, &explicit_unset_args).await,
+        "Core explicit-unset Composition query",
+    );
+    let remote_explicit_unset = stdout_json(
+        &run_cli(&fixture.config_path, &explicit_unset_args).await,
+        "Remote explicit-unset Composition query",
+    );
+    assert_eq!(core_explicit_unset, remote_explicit_unset);
+    assert_eq!(
+        core_explicit_unset["ok"], false,
+        "explicit unset must bypass the declared month_start default"
+    );
+    assert!(core_explicit_unset["plan"].is_null());
+    let explicit_unset_diagnostics = core_explicit_unset["diagnostics"]
+        .as_array()
+        .expect("explicit-unset diagnostics");
+    assert!(!explicit_unset_diagnostics.is_empty());
+    let missing_diagnostic = explicit_unset_diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic["variable_id"] == "month_start")
+        .expect("required variable unset is diagnosed");
+    assert_eq!(missing_diagnostic["code"], "variable_missing");
 
     let output_dir = fixture.config_path.parent().expect("fixture config parent");
     let core_export_path = output_dir.join("core-composition-export.ugcomp.yaml");
@@ -2083,7 +2160,7 @@ async fn test_cli_composition_unsupported_version_recovery_matches_core_remote()
     // Exact raw carrier bytes for a future document version. The typed
     // parser must reject this revision while raw recovery preserves it
     // byte for byte.
-    let future_yaml = "format: ugoite.composition\nformat_version: 99\nname: CLI future tool\nkind: dashboard\ntags: []\nspec:\n  parameters: []\n  sources:\n    - id: future_rows\n      kind: entry_query\n      form_id: \"00000000-0000-7000-8000-000000000099\"\n      field_schema: []\n      query:\n        filters: []\n        sort: []\n        projection:\n          kind: preview\n  components:\n    - id: future_table\n      kind: table\n      source: future_rows\n  layout:\n    kind: flow\n    rows:\n      - id: detail\n        items:\n          - kind: component\n            component: future_table\n";
+    let future_yaml = "format: ugoite.composition\nformat_version: 99\nname: CLI future tool\nkind: dashboard\ntags: []\nspec:\n  variables: []\n  sources:\n    - id: future_rows\n      kind: entry_query\n      form_id: \"00000000-0000-7000-8000-000000000099\"\n      field_schema: []\n      query:\n        filters: []\n        sort: []\n        projection:\n          kind: preview\n  components:\n    - id: future_table\n      kind: table\n      source: future_rows\n  layout:\n    kind: flow\n    rows:\n      - id: detail\n        items:\n          - kind: component\n            component: future_table\n";
     let seeded = seed_raw_composition_revision(
         service.operator(),
         &service.workspace_path(&fixture.space_id),

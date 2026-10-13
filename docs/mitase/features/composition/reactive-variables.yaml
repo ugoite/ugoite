@@ -44,6 +44,8 @@ features:
               - kind: documents
                 anchor: REQ-COMP-007#criterion.portable-variable-contract
               - kind: documents
+                anchor: REQ-COMP-007#criterion.cli-variable-query
+              - kind: documents
                 anchor: REQ-COMP-007#criterion.code-free-studio-authoring
               - kind: documents
                 anchor: REQ-COMP-007#criterion.responsive-accessible-inputs
@@ -413,3 +415,76 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.code-free-studio-authoring
+      - id: cli-typed-variable-query
+        role: implementation
+        facet: cli
+        responsibility: Parse repeated typed Composition `--var` assignments and carry explicit unsets separately through local and remote resolution and Metric queries, rejecting the prerelease Composition `--param` flag.
+        targets:
+          - id: cli-variable-assignment-parser
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector:
+              kind: symbol
+              name: parse_cli_variables
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.cli-variable-query
+          - id: cli-variable-query-dispatch
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector:
+              kind: symbol
+              name: query_composition
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.cli-variable-query
+      - id: cli-typed-variable-query-evidence
+        role: evidence
+        facet: cli-tests
+        responsibility: Verify the shared typed lexical contract, rejection of the prerelease Composition `--param` flag, explicit-unset encoding, matching Core/Remote behavior when an unset required variable has a declared default, and Core's unknown-variable diagnostic for an explicitly unset unknown ID.
+        targets:
+          - id: cli-variable-lexical-and-unset-parser
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector:
+              kind: symbol
+              name: tests::query_cli_variables_follow_the_shared_domain_types
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.cli-variable-query
+          - id: cli-unknown-empty-unset-parser
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector:
+              kind: symbol
+              name: tests::query_cli_variables_send_unknown_empty_assignments_as_unsets
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.cli-variable-query
+          - id: cli-metric-variable-unset-request
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector:
+              kind: symbol
+              name: tests::saved_sql_metric_query_carries_variables_and_explicit_unsets_at_the_exact_revision
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.cli-variable-query
+          - id: cli-variable-unset-core-remote-parity
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_journey_remote.rs
+            selector:
+              kind: test
+              name: test_cli_composition_inspect_query_export_match_core_remote
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.cli-variable-query
+          - id: cli-unknown-unset-core-diagnostic
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_journey_remote.rs
+            selector:
+              kind: test
+              name: test_cli_composition_inspect_query_export_match_core_remote
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.cli-variable-query
