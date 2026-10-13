@@ -185,9 +185,11 @@ async function seedStaleComposition(
     "    - id: input_month_start",
     "      kind: input",
     "      variable: month_start",
+    "      label: Start date",
     "    - id: input_month_end",
     "      kind: input",
     "      variable: month_end",
+    "      label: End date",
     "    - id: total",
     "      kind: metric",
     "      source: window_rows",
@@ -346,8 +348,8 @@ test.describe("Composition Stale Response", () => {
       { waitUntil: "domcontentloaded" },
     );
 
-    await page.getByLabel("Parameter 1").fill(PARAM_A_START);
-    await page.getByLabel("Parameter 2").fill(PARAM_A_END);
+    await page.getByLabel("Start date").fill(PARAM_A_START);
+    await page.getByLabel("End date").fill(PARAM_A_END);
     await page.waitForFunction(
       () => {
         const probe = (window as ProbeWindow).__compositionStaleProbe;
@@ -357,8 +359,8 @@ test.describe("Composition Stale Response", () => {
       { timeout: 30_000 },
     );
 
-    await page.getByLabel("Parameter 1").fill(PARAM_B_START);
-    await page.getByLabel("Parameter 2").fill(PARAM_B_END);
+    await page.getByLabel("Start date").fill(PARAM_B_START);
+    await page.getByLabel("End date").fill(PARAM_B_END);
     await expectUi(page, {
       metric: String(CURRENT_AMOUNT),
       alerts: [],

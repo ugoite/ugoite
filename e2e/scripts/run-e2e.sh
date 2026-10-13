@@ -3,7 +3,7 @@
 # fallback via `run-e2e-parity.sh`.
 #
 # Usage: ./e2e/scripts/run-e2e.sh [test-type]
-#   test-type: "smoke", "late-query-response", "composition-golden", "composition-studio", "composition-metric", "asset-owned", "smoke-and-asset-owned",
+#   test-type: "smoke", "late-query-response", "composition-golden", "composition-stale", "composition-studio", "composition-metric", "asset-owned", "smoke-and-asset-owned",
 #     "owner-recovery", "mobile-ui", "query-measurement",
 #     "sql-export-remote-auth", "portable-space",
 #     "entries", "navigation", "screenshot", or "full"
@@ -288,6 +288,9 @@ case "$TEST_TYPE" in
   composition-golden)
     run_e2e_task composition-golden "$base_report_file" "$ENFORCE_CI_GATES"
     ;;
+  composition-stale)
+    run_e2e_task composition-stale "$base_report_file" "$ENFORCE_CI_GATES"
+    ;;
   composition-studio)
     run_e2e_task composition-studio "$base_report_file" "$ENFORCE_CI_GATES"
     ;;
@@ -340,7 +343,7 @@ case "$TEST_TYPE" in
     ;;
   *)
     echo "Unknown test type: $TEST_TYPE"
-    echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|late-query-response|composition-golden|composition-studio|composition-metric|asset-owned|smoke-and-asset-owned|owner-recovery|mobile-ui|query-measurement|sql-export-remote-auth|portable-space|entries|navigation|screenshot|full]"
+    echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|late-query-response|composition-golden|composition-stale|composition-studio|composition-metric|asset-owned|smoke-and-asset-owned|owner-recovery|mobile-ui|query-measurement|sql-export-remote-auth|portable-space|entries|navigation|screenshot|full]"
     exit 1
     ;;
 esac

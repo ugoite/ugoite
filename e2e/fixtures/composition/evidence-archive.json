@@ -105,6 +105,32 @@
       "artifact": "e2e/fixtures/composition/evidence/composition-stale-response-junit-b6.xml",
       "artifact_digest": "1adb33425555cf4b95621d5329a53c3a928c6b842f8c3a1ec20d4115854428a3",
       "gap": "This record covers only the stale-response suppression Browser evidence on the stated source commit. Release-candidate byte promotion remains unverified. No release candidate was built or promoted."
+    },
+    {
+      "source_sha": "448086909fbd9230c787798feb0ee19b8b50a7e4",
+      "candidate_sha": "448086909fbd9230c787798feb0ee19b8b50a7e4",
+      "command": "build:wasm:release + activate release WASM; E2E_FRONTEND_MODE=static E2E_ENFORCE_CI_GATES=true PLAYWRIGHT_JUNIT_OUTPUT_FILE=<out> bash e2e/scripts/run-e2e.sh composition-golden",
+      "selector": "e2e/composition-golden-journey.test.ts#test:Browser saves a tool once, reopens its exact revision from Home, and pages parameterized results with model connection disabled",
+      "surface": "Browser + Server (direct-process static frontend E2E)",
+      "fixture": "e2e/fixtures/composition/space-seed/manifest.json; Form, entries, and parameterized user-query Saved SQL seeded by the test",
+      "environment": "macOS arm64 host; frontend static SPA + direct-process debug server; Deno 2.8.3; Playwright Chromium 1.60.0",
+      "result": "passed (1 passed, 0 skipped)",
+      "artifact": "e2e/fixtures/composition/evidence/composition-golden-journey-typed-variables-junit.xml",
+      "artifact_digest": "21c3c9077be82773d93bd9c4299948deb1496091196a5e889c1cbdc7010ea105",
+      "gap": "This record covers only the stated Browser journey on this source commit. It does not claim the full reactive-variable plan is complete. No release candidate was built or promoted."
+    },
+    {
+      "source_sha": "448086909fbd9230c787798feb0ee19b8b50a7e4",
+      "candidate_sha": "448086909fbd9230c787798feb0ee19b8b50a7e4",
+      "command": "build:wasm:release + activate release WASM; E2E_FRONTEND_MODE=static E2E_ENFORCE_CI_GATES=true PLAYWRIGHT_JUNIT_OUTPUT_FILE=<out> bash e2e/scripts/run-e2e.sh composition-stale",
+      "selector": "e2e/composition-stale-response.test.ts#test:Late parameter-A responses change neither rows, metric, error, loading, finalization, nor pagination",
+      "surface": "Browser + Server (direct-process static frontend E2E)",
+      "fixture": "self-seeded via API (no fixture file): Form, two entries, parameterized user-query Saved SQL, and Composition source bindings",
+      "environment": "macOS arm64 host; frontend static SPA + direct-process debug server; Deno 2.8.3; Playwright Chromium 1.60.0",
+      "result": "passed (1 passed, 0 skipped)",
+      "artifact": "e2e/fixtures/composition/evidence/composition-stale-response-typed-variables-junit.xml",
+      "artifact_digest": "cbd2a03d220959322cb10c28062c87c892cfeb3c6bdfca39478f591b41792e85",
+      "gap": "This record covers only the stated Browser journey on this source commit. It does not claim the full reactive-variable plan is complete. No release candidate was built or promoted."
     }
   ]
 }
