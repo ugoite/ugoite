@@ -83,7 +83,7 @@ describe("composition studio sync", () => {
   it("keeps the Data selection for text, parameter, and unknown blocks", () => {
     const draft = seedDraft();
     expect(sourceDraftIdForBlock(draft, "disp-3")).toBeNull();
-    expect(sourceDraftIdForBlock(draft, "param:month")).toBeNull();
+    expect(sourceDraftIdForBlock(draft, "input:input-month")).toBeNull();
     expect(sourceDraftIdForBlock(draft, null)).toBeNull();
     expect(sourceDraftIdForBlock(draft, "disp-999")).toBeNull();
   });

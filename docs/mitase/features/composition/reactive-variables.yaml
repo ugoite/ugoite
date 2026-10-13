@@ -22,13 +22,21 @@ features:
               - kind: documents
                 anchor: REQ-COMP-007#criterion.typed-variable-declarations
               - kind: documents
+                anchor: REQ-COMP-007#criterion.typed-input-lexical-contract
+              - kind: documents
                 anchor: REQ-COMP-007#criterion.input-component-binding
               - kind: documents
+                anchor: REQ-COMP-007#criterion.input-runtime-synchronization
+              - kind: documents
                 anchor: REQ-COMP-007#criterion.direct-text-binding
+              - kind: documents
+                anchor: REQ-COMP-007#criterion.direct-text-reactivity
               - kind: documents
                 anchor: REQ-COMP-007#criterion.typed-source-binding
               - kind: documents
                 anchor: REQ-COMP-007#criterion.dependency-driven-execution
+              - kind: documents
+                anchor: REQ-COMP-007#criterion.selective-source-refresh
               - kind: documents
                 anchor: REQ-COMP-007#criterion.stale-result-and-state-safety
               - kind: documents
@@ -39,3 +47,369 @@ features:
                 anchor: REQ-COMP-007#criterion.code-free-studio-authoring
               - kind: documents
                 anchor: REQ-COMP-007#criterion.responsive-accessible-inputs
+      - id: typed-variable-domain
+        role: implementation
+        facet: domain
+        responsibility: Represent exact typed variable declarations, raw Input parse outcomes, direct string-variable Text references, and Input component references in the portable Composition model.
+        targets:
+          - id: variable-declaration-and-input-parser
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector:
+              kind: symbol
+              name: CompositionVariableType::parse_input
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.typed-variable-declarations
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+          - id: input-component-model
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector:
+              kind: symbol
+              name: CompositionComponent
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.input-component-binding
+          - id: direct-text-reference-model
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector:
+              kind: symbol
+              name: CompositionTextContent
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.direct-text-binding
+          - id: source-variable-reference-model
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector:
+              kind: symbol
+              name: CompositionSource
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.typed-source-binding
+      - id: typed-variable-domain-evidence
+        role: evidence
+        facet: domain-tests
+        responsibility: Verify the locale-independent typed Input boundaries, exact defaults, repeated Input references, direct string-only Text references, and declared variable references in portable Composition documents.
+        targets:
+          - id: exact-input-lexical-contract
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector:
+              kind: symbol
+              name: tests::typed_input_parser_enforces_the_pinned_lexical_contract
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-variable-declarations
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-input-lexical-contract
+          - id: exact-variable-defaults
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector:
+              kind: symbol
+              name: tests::variable_defaults_must_match_the_type_and_lexical_contract
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-variable-declarations
+          - id: repeated-input-reference
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector:
+              kind: symbol
+              name: tests::multiple_inputs_can_reference_one_variable
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.input-component-binding
+          - id: direct-text-requires-string-variable
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector:
+              kind: symbol
+              name: tests::variable_text_requires_a_declared_string_variable
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.direct-text-binding
+          - id: declared-source-variable-reference
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector:
+              kind: symbol
+              name: tests::unknown_variable_source_references_are_invalid
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-source-binding
+      - id: wasm-variable-input-parser
+        role: implementation
+        facet: wasm
+        responsibility: Expose a stateless typed Input action that delegates raw values to the shared Domain parser and returns unset, valid typed scalar, or invalid without JavaScript coercion.
+        targets:
+          - id: wasm-variable-input-action
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector:
+              kind: symbol
+              name: invoke_domain
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+      - id: browser-variable-input-parser
+        role: implementation
+        facet: browser
+        responsibility: Provide a typed Browser helper for the stateless WASM action without duplicating Composition lexical parsing.
+        targets:
+          - id: browser-variable-input-helper
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.ts
+            selector:
+              kind: symbol
+              name: parseCompositionVariableInput
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+      - id: wasm-variable-input-parser-evidence
+        role: evidence
+        facet: wasm-tests
+        responsibility: Verify protocol outcomes against the native Domain parser and exercise the action in the actual wasm32 runtime.
+        targets:
+          - id: wasm-native-variable-input-parity
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector:
+              kind: symbol
+              name: tests::composition_variable_input_protocol_matches_native_domain_contract
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-input-lexical-contract
+          - id: wasm32-variable-input-runtime
+            adapter: typescript
+            path: crates/ugoite-wasm/tests/composition_parity.ts
+            selector:
+              kind: symbol
+              name: main
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-input-lexical-contract
+      - id: browser-variable-input-parser-evidence
+        role: evidence
+        facet: frontend-tests
+        responsibility: Verify the Browser helper preserves the Domain parser's exact status and typed values for each supported variable type.
+        targets:
+          - id: browser-variable-input-outcomes
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.test.ts
+            selector:
+              kind: test
+              name: parses Composition Input with the shared Rust Domain contract without coercion
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-input-lexical-contract
+      - id: core-typed-variable-resolution
+        role: implementation
+        facet: core
+        responsibility: Bind transient variable values without coercion, distinguish omitted values from explicit unsets that override defaults, preserve exact Saved SQL variable types in the existing typed SQL request, resolve Input and Text locally, and build dependency edges independently of Layout order.
+        targets:
+          - id: runtime-variable-binding
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector:
+              kind: symbol
+              name: bind_variables
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.typed-variable-declarations
+          - id: explicit-unset-binding
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector:
+              kind: symbol
+              name: bind_variables_with_unset
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+          - id: typed-saved-sql-variable-binding
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector:
+              kind: symbol
+              name: compile_saved_sql_source
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.typed-source-binding
+          - id: local-components-and-dependency-index
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector:
+              kind: symbol
+              name: resolve_composition_parts
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.input-component-binding
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.direct-text-binding
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.dependency-driven-execution
+      - id: core-typed-variable-resolution-evidence
+        role: evidence
+        facet: core-tests
+        responsibility: Verify exact runtime type checks, explicit unset default bypass, unchanged typed Saved SQL request parameters, local Input and Text bindings without extra source work, deterministic dependency edges, and isolation of affected Saved SQL requests.
+        targets:
+          - id: runtime-value-validation
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector:
+              kind: symbol
+              name: tests::invalid_supplied_value_does_not_fall_back_to_a_default
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-variable-declarations
+          - id: explicit-unset-default-bypass
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector:
+              kind: symbol
+              name: tests::explicit_unset_overrides_defaults_and_reports_required_values_missing
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-input-lexical-contract
+          - id: missing-and-unknown-variable-diagnostics
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector:
+              kind: symbol
+              name: tests::required_missing_and_unknown_names_have_stable_order
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-variable-declarations
+          - id: saved-sql-exact-variable-types
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector:
+              kind: symbol
+              name: tests::saved_sql_source_checks_variable_types_and_literal_values
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-source-binding
+          - id: saved-sql-supported-variable-types
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector:
+              kind: symbol
+              name: tests::saved_sql_source_binds_every_supported_sql_variable_type
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-source-binding
+          - id: local-input-binding
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector:
+              kind: symbol
+              name: tests::input_components_resolve_through_semantic_variable_values
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.input-component-binding
+          - id: variable-backed-text-reference
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector:
+              kind: symbol
+              name: tests::dependency_index_is_semantic_and_independent_of_layout_order
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.direct-text-binding
+          - id: semantic-dependency-index
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector:
+              kind: symbol
+              name: tests::dependency_index_is_semantic_and_independent_of_layout_order
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.dependency-driven-execution
+      - id: browser-typed-input-control
+        role: implementation
+        facet: frontend
+        responsibility: Present timezone-bearing timestamps in an editable text control so their declared lexical form can be preserved.
+        targets:
+          - id: parameter-control
+            adapter: typescript
+            path: frontend/src/components/composition/ParameterControl.tsx
+            selector:
+              kind: symbol
+              name: ParameterControl
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+      - id: browser-typed-input-control-evidence
+        role: evidence
+        facet: frontend-tests
+        responsibility: Verify timezone-bearing Timestamp values remain visible and their raw text reaches the typed Input change path unchanged.
+        targets:
+          - id: timestamp-input-preservation
+            adapter: typescript
+            path: frontend/src/components/composition/ParameterControl.test.tsx
+            selector:
+              kind: test
+              name: preserves timezone-bearing timestamp values in a text input
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-input-lexical-contract
+      - id: browser-explicit-unset-transport
+        role: implementation
+        facet: frontend
+        responsibility: Preserve explicit empty Input as a separate unset list through resolve, preview, and metric requests without sending it as a typed JSON null.
+        targets:
+          - id: composition-explicit-unset-adapter
+            adapter: typescript
+            path: frontend/src/lib/composition-api.ts
+            selector:
+              kind: symbol
+              name: compositionApi
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+      - id: browser-explicit-unset-transport-evidence
+        role: evidence
+        facet: frontend-tests
+        responsibility: Verify an explicitly unset Input is carried separately from typed values in the portable Browser request.
+        targets:
+          - id: composition-explicit-unset-request
+            adapter: typescript
+            path: frontend/src/lib/composition-api.test.ts
+            selector:
+              kind: test
+              name: sends an explicit unset separately from typed variable values
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-input-lexical-contract
+      - id: studio-typed-variable-defaults
+        role: implementation
+        facet: frontend
+        responsibility: Author numeric variable defaults through the shared Domain lexical parser and keep invalid drafts unsaveable.
+        targets:
+          - id: parameter-default-editor
+            adapter: typescript
+            path: frontend/src/components/CompositionParameterList.tsx
+            selector:
+              kind: symbol
+              name: CompositionParameterList
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.code-free-studio-authoring
+      - id: studio-typed-variable-defaults-evidence
+        role: evidence
+        facet: frontend-tests
+        responsibility: Verify a numeric variable default is parsed by the shared Domain parser and invalid numeric text remains raw in the draft.
+        targets:
+          - id: numeric-default-parser
+            adapter: typescript
+            path: frontend/src/components/CompositionParameterList.test.tsx
+            selector:
+              kind: test
+              name: parses numeric defaults through the shared Domain parser
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.code-free-studio-authoring

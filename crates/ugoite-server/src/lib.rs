@@ -45,6 +45,7 @@ use tower_http::{
     trace::TraceLayer,
 };
 use ugoite_api_client::{
+    CompositionDependencyIndex as ApiCompositionDependencyIndex,
     CompositionDiagnosticCode as ApiCompositionDiagnosticCode, CompositionEntryIntegrity,
     CompositionEntryMetadata, CompositionHistoryPage, CompositionLintError,
     CompositionLintResponse, CompositionLintValue, CompositionListItem, CompositionListPage,
@@ -62,9 +63,11 @@ use ugoite_api_client::{
     CompositionRestoreRequest as ApiCompositionRestoreRequest, CompositionRestoreResponse,
     CompositionResultFieldType as ApiCompositionResultFieldType, CompositionRevisionMetadata,
     CompositionRevisionReference, CompositionSaveRequest as ApiCompositionSaveRequest,
-    CompositionSaveResponse,
+    CompositionSaveResponse, CompositionSourceConsumers as ApiCompositionSourceConsumers,
+    CompositionVariableConsumers as ApiCompositionVariableConsumers,
 };
 use ugoite_core::composition::{
+    CompositionDependencyIndex as CoreCompositionDependencyIndex,
     CompositionDiagnostic as CoreCompositionDiagnostic, PreviewCompositionPlan,
     ResolvedComponentKind, ResolvedCompositionPlan,
 };
@@ -76,10 +79,10 @@ use ugoite_core::composition_metric::{
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
 use ugoite_domain::composition::{
     CompositionMetricPresentation as DomainCompositionMetricPresentation,
-    CompositionParameter as DomainCompositionParameter,
-    CompositionParameterFormat as DomainCompositionParameterFormat,
-    CompositionParameterType as DomainCompositionParameterType,
     CompositionResultFieldType as DomainCompositionResultFieldType,
+    CompositionVariable as DomainCompositionVariable,
+    CompositionVariableFormat as DomainCompositionVariableFormat,
+    CompositionVariableType as DomainCompositionVariableType,
 };
 use ugoite_domain::id::{validate_decoded_space_id, validate_identifier, IdentifierKind};
 use ugoite_domain::identity::{
@@ -11458,6 +11461,7 @@ async fn resolve_composition_handler(
             &composition_id,
             &request.revision_id,
             &request.parameters,
+            &request.unset_variables,
             &principals,
         )
         .await
@@ -11506,6 +11510,7 @@ async fn preview_composition_handler(
             &space_id,
             &request.yaml,
             &request.parameters,
+            &request.unset_variables,
             &principals,
         )
         .await
@@ -11585,6 +11590,7 @@ async fn composition_metric_query_handler(
                 target,
                 component_id: request.component_id,
                 parameters: request.parameters,
+                unset_variables: request.unset_variables,
             },
         )
         .await
@@ -11605,26 +11611,26 @@ fn validate_composition_uuid(value: &str, label: &str) -> ApiResult<()> {
 }
 
 fn api_composition_parameter_definition(
-    parameter: &DomainCompositionParameter,
+    variable: &DomainCompositionVariable,
 ) -> CompositionParameterDefinition {
     CompositionParameterDefinition {
-        id: parameter.id.clone(),
-        label: parameter.label.clone(),
-        parameter_type: match parameter.parameter_type {
-            DomainCompositionParameterType::String => ApiCompositionParameterType::String,
-            DomainCompositionParameterType::Boolean => ApiCompositionParameterType::Boolean,
-            DomainCompositionParameterType::Integer => ApiCompositionParameterType::Integer,
-            DomainCompositionParameterType::Float => ApiCompositionParameterType::Float,
-            DomainCompositionParameterType::Date => ApiCompositionParameterType::Date,
-            DomainCompositionParameterType::Timestamp => ApiCompositionParameterType::Timestamp,
+        id: variable.id.clone(),
+        label: variable.label.clone(),
+        parameter_type: match variable.variable_type {
+            DomainCompositionVariableType::String => ApiCompositionParameterType::String,
+            DomainCompositionVariableType::Boolean => ApiCompositionParameterType::Boolean,
+            DomainCompositionVariableType::Integer => ApiCompositionParameterType::Integer,
+            DomainCompositionVariableType::Float => ApiCompositionParameterType::Float,
+            DomainCompositionVariableType::Date => ApiCompositionParameterType::Date,
+            DomainCompositionVariableType::Timestamp => ApiCompositionParameterType::Timestamp,
         },
-        required: parameter.required,
-        default: parameter
+        required: variable.required,
+        default: variable
             .default
             .as_ref()
             .map(|value| value.as_json_value().clone()),
-        format: parameter.format.map(|format| match format {
-            DomainCompositionParameterFormat::YearMonth => ApiCompositionParameterFormat::YearMonth,
+        format: variable.format.map(|format| match format {
+            DomainCompositionVariableFormat::YearMonth => ApiCompositionParameterFormat::YearMonth,
         }),
     }
 }
@@ -11638,7 +11644,7 @@ fn composition_resolve_diagnostics_response(
         .map(|diagnostic| {
             Ok(CompositionResolveDiagnostic {
                 code: api_composition_diagnostic_code(diagnostic.code)?,
-                parameter_id: diagnostic.parameter_id,
+                parameter_id: diagnostic.variable_id,
             })
         })
         .collect::<ApiResult<Vec<_>>>()?;
@@ -11718,6 +11724,7 @@ fn composition_resolve_success_response(
     };
     let (sources, component_bindings) =
         api_composition_sources_and_bindings(plan.sources, plan.component_bindings)?;
+    let dependencies = api_composition_dependency_index(plan.dependencies);
     Ok(CompositionResolveResponse {
         ok: true,
         parameter_definitions,
@@ -11725,6 +11732,7 @@ fn composition_resolve_success_response(
             composition_revision,
             sources,
             component_bindings,
+            dependencies,
         }),
         diagnostics: Vec::new(),
     })
@@ -11737,6 +11745,7 @@ fn composition_preview_success_response(
     let draft_fingerprint = plan.draft_fingerprint.clone();
     let (sources, component_bindings) =
         api_composition_sources_and_bindings(plan.sources, plan.component_bindings)?;
+    let dependencies = api_composition_dependency_index(plan.dependencies);
     Ok(CompositionPreviewResponse {
         ok: true,
         draft_fingerprint: Some(draft_fingerprint.clone()),
@@ -11745,6 +11754,7 @@ fn composition_preview_success_response(
             draft_fingerprint,
             sources,
             component_bindings,
+            dependencies,
         }),
         diagnostics: Vec::new(),
     })
@@ -11760,7 +11770,7 @@ fn composition_preview_diagnostics_response(
         .map(|diagnostic| {
             Ok(CompositionResolveDiagnostic {
                 code: api_composition_diagnostic_code(diagnostic.code)?,
-                parameter_id: diagnostic.parameter_id,
+                parameter_id: diagnostic.variable_id,
             })
         })
         .collect::<ApiResult<Vec<_>>>()?;
@@ -11771,6 +11781,40 @@ fn composition_preview_diagnostics_response(
         plan: None,
         diagnostics,
     })
+}
+
+fn api_composition_dependency_index(
+    dependencies: CoreCompositionDependencyIndex,
+) -> ApiCompositionDependencyIndex {
+    ApiCompositionDependencyIndex {
+        variable_consumers: dependencies
+            .variable_consumers
+            .into_iter()
+            .map(|(id, consumers)| {
+                (
+                    id,
+                    ApiCompositionVariableConsumers {
+                        input_component_ids: consumers.input_component_ids,
+                        text_component_ids: consumers.text_component_ids,
+                        source_ids: consumers.source_ids,
+                    },
+                )
+            })
+            .collect(),
+        source_consumers: dependencies
+            .source_consumers
+            .into_iter()
+            .map(|(id, consumers)| {
+                (
+                    id,
+                    ApiCompositionSourceConsumers {
+                        metric_component_ids: consumers.metric_component_ids,
+                        table_component_ids: consumers.table_component_ids,
+                    },
+                )
+            })
+            .collect(),
+    }
 }
 
 fn api_composition_sources_and_bindings(
@@ -11822,12 +11866,14 @@ fn api_composition_sources_and_bindings(
         .map(|binding| CompositionResolvedComponentBinding {
             component_id: binding.component_id,
             kind: match binding.kind {
+                ResolvedComponentKind::Input => CompositionResolvedComponentKind::Input,
                 ResolvedComponentKind::Metric => CompositionResolvedComponentKind::Metric,
                 ResolvedComponentKind::Tabular => CompositionResolvedComponentKind::Table,
                 ResolvedComponentKind::Text => CompositionResolvedComponentKind::Text,
             },
             label: binding.label,
             source_id: binding.source_id,
+            variable_id: binding.variable_id,
             result_property_key: binding.result_property_key,
             expected_result_type: binding
                 .expected_result_type
@@ -11886,7 +11932,19 @@ fn composition_lint_response(yaml: &str) -> ApiResult<CompositionLintResponse> {
 fn api_composition_diagnostic_code(
     code: ugoite_domain::composition::CompositionDiagnosticCode,
 ) -> ApiResult<ApiCompositionDiagnosticCode> {
-    ApiCompositionDiagnosticCode::from_code(code.as_str()).ok_or_else(|| {
+    let api_code = match code {
+        ugoite_domain::composition::CompositionDiagnosticCode::VariableUnknown => {
+            Some(ApiCompositionDiagnosticCode::ParameterUnknown)
+        }
+        ugoite_domain::composition::CompositionDiagnosticCode::VariableMissing => {
+            Some(ApiCompositionDiagnosticCode::ParameterMissing)
+        }
+        ugoite_domain::composition::CompositionDiagnosticCode::VariableTypeMismatch => {
+            Some(ApiCompositionDiagnosticCode::ParameterTypeMismatch)
+        }
+        _ => ApiCompositionDiagnosticCode::from_code(code.as_str()),
+    };
+    api_code.ok_or_else(|| {
         ApiError::from_core(anyhow!(
             "Composition diagnostic is missing from the portable API contract"
         ))
@@ -14572,12 +14630,14 @@ mod authentication_regression_tests {
             kind: CompositionKind::Dashboard,
             tags,
             spec: CompositionSpec {
-                parameters: Vec::new(),
+                variables: Vec::new(),
                 sources: Vec::new(),
                 components: vec![CompositionComponent::Text {
                     id: "note".to_string(),
                     label: None,
-                    text: "Note".to_string(),
+                    content: ugoite_domain::composition::CompositionTextContent::Literal {
+                        text: "Note".to_string(),
+                    },
                     style: TextStyle::Body,
                 }],
                 layout: DashboardFlowLayout {
@@ -15536,12 +15596,14 @@ mod authentication_regression_tests {
             kind: CompositionKind::Dashboard,
             tags: Vec::new(),
             spec: CompositionSpec {
-                parameters: Vec::new(),
+                variables: Vec::new(),
                 sources: Vec::new(),
                 components: vec![CompositionComponent::Text {
                     id: "note".to_string(),
                     label: None,
-                    text: "Note".to_string(),
+                    content: ugoite_domain::composition::CompositionTextContent::Literal {
+                        text: "Note".to_string(),
+                    },
                     style: TextStyle::Body,
                 }],
                 layout: DashboardFlowLayout {
@@ -15733,7 +15795,7 @@ mod authentication_regression_tests {
             kind: CompositionKind::Dashboard,
             tags: Vec::new(),
             spec: CompositionSpec {
-                parameters: Vec::new(),
+                variables: Vec::new(),
                 sources: vec![CompositionSource::EntryQuery {
                     id: "private-source-id".to_string(),
                     form_id,
@@ -15757,7 +15819,9 @@ mod authentication_regression_tests {
                 components: vec![CompositionComponent::Text {
                     id: "note".to_string(),
                     label: None,
-                    text: "Note".to_string(),
+                    content: ugoite_domain::composition::CompositionTextContent::Literal {
+                        text: "Note".to_string(),
+                    },
                     style: TextStyle::Body,
                 }],
                 layout: DashboardFlowLayout {
@@ -15931,7 +15995,7 @@ mod authentication_regression_tests {
                 kind: CompositionKind::Dashboard,
                 tags: Vec::new(),
                 spec: CompositionSpec {
-                    parameters: Vec::new(),
+                    variables: Vec::new(),
                     sources: vec![CompositionSource::SavedSql {
                         id: "private-sql-source".to_string(),
                         entry_id: ugoite_domain::id::EntryId::from_uuid(source_entry_id),
@@ -15948,7 +16012,9 @@ mod authentication_regression_tests {
                     components: vec![CompositionComponent::Text {
                         id: "note".to_string(),
                         label: None,
-                        text: "Note".to_string(),
+                        content: ugoite_domain::composition::CompositionTextContent::Literal {
+                            text: "Note".to_string(),
+                        },
                         style: TextStyle::Body,
                     }],
                     layout: DashboardFlowLayout {
@@ -16086,9 +16152,9 @@ mod authentication_regression_tests {
     ) -> anyhow::Result<()> {
         use ugoite_domain::composition::{
             CompositionComponent, CompositionDocument, CompositionFormat, CompositionKind,
-            CompositionMetricPresentation, CompositionParameter, CompositionParameterReference,
-            CompositionParameterType, CompositionResultColumn, CompositionResultFieldType,
-            CompositionSource, CompositionSpec, CompositionValue, DashboardFlowLayout, FlowItem,
+            CompositionMetricPresentation, CompositionResultColumn, CompositionResultFieldType,
+            CompositionSource, CompositionSpec, CompositionValue, CompositionVariable,
+            CompositionVariableReference, CompositionVariableType, DashboardFlowLayout, FlowItem,
             FlowLayoutKind, FlowRow,
         };
         use ugoite_domain::id::{EntryId, RevisionId};
@@ -16153,10 +16219,10 @@ mod authentication_regression_tests {
             kind: CompositionKind::Dashboard,
             tags: Vec::new(),
             spec: CompositionSpec {
-                parameters: vec![CompositionParameter {
+                variables: vec![CompositionVariable {
                     id: "minimum".to_string(),
                     label: None,
-                    parameter_type: CompositionParameterType::Integer,
+                    variable_type: CompositionVariableType::Integer,
                     required: true,
                     default: None,
                     format: None,
@@ -16171,28 +16237,35 @@ mod authentication_regression_tests {
                     }],
                     variables: BTreeMap::from([(
                         "minimum".to_string(),
-                        CompositionValue::Parameter(CompositionParameterReference {
-                            parameter: "minimum".to_string(),
+                        CompositionValue::Variable(CompositionVariableReference {
+                            variable: "minimum".to_string(),
                         }),
                     )]),
                 }],
-                components: vec![CompositionComponent::Metric {
-                    id: "parameter_total".to_string(),
-                    label: None,
-                    source: "metric_sql".to_string(),
-                    column: "total".to_string(),
-                    presentation: Some(CompositionMetricPresentation::Number {
-                        unit: Some("USD".to_string()),
-                        fraction_digits: Some(2),
-                    }),
-                }],
+                components: vec![
+                    CompositionComponent::Input {
+                        id: "minimum_input".to_string(),
+                        label: None,
+                        variable: "minimum".to_string(),
+                    },
+                    CompositionComponent::Metric {
+                        id: "parameter_total".to_string(),
+                        label: None,
+                        source: "metric_sql".to_string(),
+                        column: "total".to_string(),
+                        presentation: Some(CompositionMetricPresentation::Number {
+                            unit: Some("USD".to_string()),
+                            fraction_digits: Some(2),
+                        }),
+                    },
+                ],
                 layout: DashboardFlowLayout {
                     kind: FlowLayoutKind::Flow,
                     rows: vec![FlowRow {
                         id: "main".to_string(),
                         items: vec![
-                            FlowItem::Parameter {
-                                parameter: "minimum".to_string(),
+                            FlowItem::Component {
+                                component: "minimum_input".to_string(),
                             },
                             FlowItem::Component {
                                 component: "parameter_total".to_string(),
@@ -16229,12 +16302,15 @@ mod authentication_regression_tests {
                         kind: CompositionKind::Dashboard,
                         tags: Vec::new(),
                         spec: CompositionSpec {
-                            parameters: Vec::new(),
+                            variables: Vec::new(),
                             sources: Vec::new(),
                             components: vec![CompositionComponent::Text {
                                 id: "note".to_string(),
                                 label: None,
-                                text: "Updated".to_string(),
+                                content:
+                                    ugoite_domain::composition::CompositionTextContent::Literal {
+                                        text: "Updated".to_string(),
+                                    },
                                 style: ugoite_domain::composition::TextStyle::Body,
                             }],
                             layout: DashboardFlowLayout {
@@ -16307,7 +16383,7 @@ mod authentication_regression_tests {
         assert_eq!(resolve_status, StatusCode::OK, "{resolve_body}");
         assert_eq!(resolve_body["ok"], true);
         assert_eq!(
-            resolve_body["plan"]["component_bindings"][0]["presentation"],
+            resolve_body["plan"]["component_bindings"][1]["presentation"],
             json!({"kind": "number", "unit": "USD", "fraction_digits": 2})
         );
 
@@ -16362,9 +16438,9 @@ mod authentication_regression_tests {
     ) -> anyhow::Result<()> {
         use ugoite_domain::composition::{
             CompositionComponent, CompositionDocument, CompositionFieldSchemaEntry,
-            CompositionKind, CompositionParameter, CompositionParameterReference,
-            CompositionParameterType, CompositionQueryOperator, CompositionResultColumn,
+            CompositionKind, CompositionQueryOperator, CompositionResultColumn,
             CompositionResultFieldType, CompositionSource, CompositionSpec, CompositionValue,
+            CompositionVariable, CompositionVariableReference, CompositionVariableType,
             DashboardFlowLayout, EntryQueryFilterTemplate, EntryQueryProjectionTemplate,
             EntryQueryTemplate, FlowItem, FlowLayoutKind, FlowRow, TextStyle,
         };
@@ -16420,7 +16496,28 @@ mod authentication_regression_tests {
             .await?;
 
         let document =
-            |name: &str, parameters: Vec<CompositionParameter>, sources: Vec<CompositionSource>| {
+            |name: &str, variables: Vec<CompositionVariable>, sources: Vec<CompositionSource>| {
+                let mut components = vec![CompositionComponent::Text {
+                    id: "note".to_string(),
+                    label: None,
+                    content: ugoite_domain::composition::CompositionTextContent::Literal {
+                        text: "Note".to_string(),
+                    },
+                    style: TextStyle::Body,
+                }];
+                let mut items = vec![FlowItem::Component {
+                    component: "note".to_string(),
+                }];
+                if variables.iter().any(|variable| variable.id == "month") {
+                    components.push(CompositionComponent::Input {
+                        id: "month_input".to_string(),
+                        label: None,
+                        variable: "month".to_string(),
+                    });
+                    items.push(FlowItem::Component {
+                        component: "month_input".to_string(),
+                    });
+                }
                 CompositionDocument {
                     format: ugoite_domain::composition::CompositionFormat::UgoiteComposition,
                     format_version: 1,
@@ -16428,38 +16525,31 @@ mod authentication_regression_tests {
                     kind: CompositionKind::Dashboard,
                     tags: Vec::new(),
                     spec: CompositionSpec {
-                        parameters,
+                        variables,
                         sources,
-                        components: vec![CompositionComponent::Text {
-                            id: "note".to_string(),
-                            label: None,
-                            text: "Note".to_string(),
-                            style: TextStyle::Body,
-                        }],
+                        components,
                         layout: DashboardFlowLayout {
                             kind: FlowLayoutKind::Flow,
                             rows: vec![FlowRow {
                                 id: "main".to_string(),
-                                items: vec![FlowItem::Component {
-                                    component: "note".to_string(),
-                                }],
+                                items,
                             }],
                         },
                     },
                 }
             };
-        let month_parameter = || CompositionParameter {
+        let month_parameter = || CompositionVariable {
             id: "month".to_string(),
             label: Some("Month".to_string()),
-            parameter_type: CompositionParameterType::String,
+            variable_type: CompositionVariableType::String,
             required: true,
             default: None,
             format: None,
         };
-        let unlabelled_parameter = || CompositionParameter {
+        let unlabelled_parameter = || CompositionVariable {
             id: "region".to_string(),
             label: None,
-            parameter_type: CompositionParameterType::String,
+            variable_type: CompositionVariableType::String,
             required: false,
             default: None,
             format: None,
@@ -16512,8 +16602,8 @@ mod authentication_regression_tests {
                 filters: vec![EntryQueryFilterTemplate {
                     field_id: source_field_id,
                     operator: CompositionQueryOperator::Equals,
-                    value: CompositionValue::Parameter(CompositionParameterReference {
-                        parameter: "month".to_string(),
+                    value: CompositionValue::Variable(CompositionVariableReference {
+                        variable: "month".to_string(),
                     }),
                 }],
                 sort: Vec::new(),
@@ -16530,6 +16620,11 @@ mod authentication_regression_tests {
             vec![older_source, older_metric_source],
         );
         older_document.spec.components = vec![
+            CompositionComponent::Input {
+                id: "month_input".to_string(),
+                label: None,
+                variable: "month".to_string(),
+            },
             CompositionComponent::Metric {
                 id: "monthly_total".to_string(),
                 label: Some("Monthly total".to_string()),
@@ -16548,8 +16643,8 @@ mod authentication_regression_tests {
             rows: vec![FlowRow {
                 id: "summary".to_string(),
                 items: vec![
-                    FlowItem::Parameter {
-                        parameter: "month".to_string(),
+                    FlowItem::Component {
+                        component: "month_input".to_string(),
                     },
                     FlowItem::Component {
                         component: "rows".to_string(),
@@ -16651,6 +16746,11 @@ mod authentication_regression_tests {
         assert_eq!(
             older_body["plan"]["component_bindings"],
             json!([
+                {
+                    "component_id":"month_input",
+                    "kind":"input",
+                    "variable_id":"month"
+                },
                 {"component_id":"rows", "kind":"table", "source_id":"older_entries"},
                 {
                     "component_id":"monthly_total",
@@ -16661,6 +16761,11 @@ mod authentication_regression_tests {
                     "expected_result_type":"integer"
                 }
             ])
+        );
+        assert_eq!(
+            older_body["plan"]["dependencies"]["variable_consumers"]["month"]
+                ["input_component_ids"],
+            json!(["month_input"])
         );
         assert_eq!(
             older_body["plan"]["sources"][0]["request"]["query"]["filters"],
@@ -16706,9 +16811,9 @@ mod authentication_regression_tests {
         let domain_codes = [
             DomainCode::UnsupportedFormatVersion,
             DomainCode::InvalidComposition,
-            DomainCode::ParameterUnknown,
-            DomainCode::ParameterMissing,
-            DomainCode::ParameterTypeMismatch,
+            DomainCode::VariableUnknown,
+            DomainCode::VariableMissing,
+            DomainCode::VariableTypeMismatch,
             DomainCode::SourceUnavailable,
             DomainCode::MissingField,
             DomainCode::FieldTypeChanged,
@@ -16723,8 +16828,14 @@ mod authentication_regression_tests {
         for domain in domain_codes {
             let api = api_composition_diagnostic_code(domain)
                 .expect("domain diagnostic is represented by the portable API");
-            assert_eq!(domain.as_str(), api.as_str());
-            assert_eq!(serde_json::to_value(api)?, json!(domain.as_str()));
+            let expected = match domain {
+                DomainCode::VariableUnknown => "parameter_unknown",
+                DomainCode::VariableMissing => "parameter_missing",
+                DomainCode::VariableTypeMismatch => "parameter_type_mismatch",
+                other => other.as_str(),
+            };
+            assert_eq!(expected, api.as_str());
+            assert_eq!(serde_json::to_value(api)?, json!(expected));
         }
 
         // Removed existence-revealing codes must stay out of the portable API.
@@ -16779,7 +16890,12 @@ mod authentication_regression_tests {
             .as_array()
             .expect("OpenAPI Composition diagnostic enum");
         for domain in domain_codes {
-            let expected = domain.as_str();
+            let expected = match domain {
+                DomainCode::VariableUnknown => "parameter_unknown",
+                DomainCode::VariableMissing => "parameter_missing",
+                DomainCode::VariableTypeMismatch => "parameter_type_mismatch",
+                other => other.as_str(),
+            };
             assert!(
                 openapi_codes.contains(&json!(expected)),
                 "OpenAPI must publish Composition diagnostic code {expected}"

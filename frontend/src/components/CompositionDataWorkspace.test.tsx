@@ -634,7 +634,7 @@ describe("CompositionDataWorkspace", () => {
         filters: [{
           field_id: 101,
           operator: "equals",
-          value: { parameter: "month" },
+          value: { variable: "month" },
         }],
         sort: [],
         projection: { kind: "preview" as const },
@@ -662,7 +662,7 @@ describe("CompositionDataWorkspace", () => {
         filters: [{
           field_id: 101,
           operator: "equals",
-          value: { parameter: "month" },
+          value: { variable: "month" },
         }],
       },
     });

@@ -134,7 +134,7 @@ let sqlCreated = false;
 let entryCreated = false;
 let compositionCreated = false;
 
-function compositionYaml(name: string, sqlId: string, revisionId: string) {
+function compositionYaml(name: string, formId: string, fieldId: number) {
   return [
     "format: ugoite.composition",
     "format_version: 1",
@@ -142,29 +142,18 @@ function compositionYaml(name: string, sqlId: string, revisionId: string) {
     "kind: dashboard",
     "tags: []",
     "spec:",
-    "  parameters:",
-    "    - id: from_date",
-    "      type: date",
-    "      required: true",
-    "      default: 2026-01-01",
     "  sources:",
     "    - id: compact_rows",
-    "      kind: saved_sql",
-    `      entry_id: \"${sqlId}\"`,
-    `      revision_id: \"${revisionId}\"`,
-    "      expected_result:",
-    "        - name: total",
-    "          type: float",
-    "        - name: merchant",
-    "          type: string",
-    "      variables:",
-    "        from_date:",
-    "          parameter: from_date",
+    "      kind: entry_query",
+    `      form_id: \"${formId}\"`,
+    "      field_schema:",
+    `        - field_id: ${fieldId}`,
+    "          field_type: string",
+    "      query:",
+    "        projection:",
+    "          kind: fields",
+    `          fields: [${fieldId}]`,
     "  components:",
-    "    - id: total",
-    "      kind: metric",
-    "      source: compact_rows",
-    "      column: total",
     "    - id: rows",
     "      kind: table",
     "      source: compact_rows",
@@ -173,8 +162,6 @@ function compositionYaml(name: string, sqlId: string, revisionId: string) {
     "    rows:",
     "      - id: main",
     "        items:",
-    "          - kind: component",
-    "            component: total",
     "          - kind: component",
     "            component: rows",
     "",
@@ -211,16 +198,25 @@ async function seedCompactControlSurfaces(
   );
   expect(formsResponse.ok()).toBe(true);
   const forms = await formsResponse.json() as Array<{
+    id?: string;
     name?: string;
     sql_relation?: string;
-    fields?: Record<string, { sql_column?: string }>;
+    fields?: Record<string, {
+      id?: number;
+      sql_column?: string;
+      query_capability?: { field?: { field_id?: number } };
+    }>;
   }>;
   const form = forms.find((candidate) => candidate.name === formName);
+  const merchantFieldId = form?.fields?.Merchant?.query_capability?.field
+    ?.field_id ?? form?.fields?.Merchant?.id;
   const relation = form?.sql_relation;
   const dateColumn = form?.fields?.Date?.sql_column;
   const merchantColumn = form?.fields?.Merchant?.sql_column;
   const amountColumn = form?.fields?.Amount?.sql_column;
   expect(relation).toBeTruthy();
+  expect(form?.id).toBeTruthy();
+  expect(merchantFieldId).toBeTruthy();
   expect(dateColumn).toBeTruthy();
   expect(merchantColumn).toBeTruthy();
   expect(amountColumn).toBeTruthy();
@@ -297,8 +293,8 @@ async function seedCompactControlSurfaces(
       data: {
         yaml: compositionYaml(
           `Compact Controls ${suffix}`,
-          sql.id,
-          sql.revision_id,
+          form!.id!,
+          merchantFieldId!,
         ),
       },
     },

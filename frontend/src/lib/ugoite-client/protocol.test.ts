@@ -5,6 +5,7 @@ import {
   canonicalizeCompositionDocument,
   encodeSpreadsheetCsv,
   getWasmSupportedOperations,
+  parseCompositionVariableInput,
   prepareApiRequest,
   protocolFetch,
   protocolFetchResponse,
@@ -33,7 +34,7 @@ const typedCompositionDocument = {
   name: "Monthly expenses",
   tags: [],
   spec: {
-    parameters: [{
+    variables: [{
       id: "month_start",
       type: "date",
       required: true,
@@ -45,14 +46,20 @@ const typedCompositionDocument = {
       entry_id: "00000000-0000-7000-8000-000000000020",
       revision_id: "00000000-0000-7000-8000-000000000021",
       expected_result: [{ name: "amount", type: "json" }],
-      variables: { month_start: { parameter: "month_start" } },
+      variables: { month_start: { variable: "month_start" } },
     }],
-    components: [{ id: "results_table", kind: "table", source: "sql_results" }],
+    components: [
+      { id: "month_start_input", kind: "input", variable: "month_start" },
+      { id: "results_table", kind: "table", source: "sql_results" },
+    ],
     layout: {
       kind: "flow",
       rows: [{
         id: "main",
-        items: [{ kind: "component", component: "results_table" }],
+        items: [
+          { kind: "component", component: "month_start_input" },
+          { kind: "component", component: "results_table" },
+        ],
       }],
     },
   },
@@ -71,17 +78,61 @@ describe("portable Ugoite API protocol WASM", () => {
       format_version: 1,
       name: "Monthly expenses",
       spec: {
+        variables: [{ id: "month_start", type: "date" }],
         sources: [{
           kind: "saved_sql",
           entry_id: "00000000-0000-7000-8000-000000000020",
           revision_id: "00000000-0000-7000-8000-000000000021",
         }],
+        components: [
+          {
+            id: "month_start_input",
+            kind: "input",
+            variable: "month_start",
+          },
+          {
+            id: "results_table",
+            kind: "table",
+            source: "sql_results",
+          },
+        ],
       },
     });
     expect(canonical.canonical_yaml).toContain(
       "revision_id: 00000000-0000-7000-8000-000000000021",
     );
     expect(canonical.fingerprint).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("parses Composition Input with the shared Rust Domain contract without coercion", async () => {
+    const cases = [
+      ["string", "", { status: "unset" }],
+      ["string", "日本語", { status: "valid", value: "日本語" }],
+      ["string", "x".repeat(4097), { status: "invalid" }],
+      ["boolean", "false", { status: "valid", value: false }],
+      ["boolean", "FALSE", { status: "invalid" }],
+      ["integer", "9007199254740991", {
+        status: "valid",
+        value: 9_007_199_254_740_991,
+      }],
+      ["integer", "1.0", { status: "invalid" }],
+      ["float", "1", { status: "valid", value: 1 }],
+      ["float", "1e-4000", { status: "invalid" }],
+      ["float", "1e309", { status: "invalid" }],
+      ["date", "2024-02-29", { status: "valid", value: "2024-02-29" }],
+      ["date", "2025-02-29", { status: "invalid" }],
+      ["timestamp", "2026-10-13T23:59:59.123456789+09:00", {
+        status: "valid",
+        value: "2026-10-13T23:59:59.123456789+09:00",
+      }],
+      ["timestamp", "2026-10-13T14:59:59", { status: "invalid" }],
+    ] as const;
+
+    for (const [type, raw, expected] of cases) {
+      await expect(parseCompositionVariableInput(type, raw)).resolves.toEqual(
+        expected,
+      );
+    }
   });
 
   it("uses the shared spreadsheet-safe CSV encoder", async () => {

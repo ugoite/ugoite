@@ -248,7 +248,7 @@ features:
       path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
       selector:
         kind: test
-        name: loads and resolves only the exact revision and binds typed parameter changes
+        name: resolves typed Input changes against the exact revision
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.exact-composition-revision

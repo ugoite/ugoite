@@ -1,7 +1,9 @@
 //! Restricted YAML parsing for the typed Composition v1 contract.
 
+use super::CompositionVariableType;
 use super::{CompositionDiagnosticCode, CompositionDocument};
 use serde_json::Value;
+use serde_saphyr::granit_parser::{Event, Parser, ScalarStyle};
 use serde_saphyr::{DuplicateKeyPolicy, MergeKeyPolicy};
 
 /// Maximum UTF-8 input size accepted by the Composition YAML parser.
@@ -41,7 +43,89 @@ pub fn parse_composition_yaml(
             .map_err(|_| CompositionDiagnosticCode::InvalidComposition)?;
 
     document.validate_format_version()?;
+    validate_float_default_lexemes(input, &document)?;
     super::canonical::normalize_composition_document(&document)
+}
+
+fn validate_float_default_lexemes(
+    input: &str,
+    document: &CompositionDocument,
+) -> Result<(), CompositionDiagnosticCode> {
+    if !document.spec.variables.iter().any(|variable| {
+        variable.variable_type == CompositionVariableType::Float && variable.default.is_some()
+    }) {
+        return Ok(());
+    }
+
+    let mut default_scalars = Vec::new();
+    let mut frames = Vec::new();
+    for event in Parser::new_from_str(input) {
+        let (event, span) = event.map_err(|_| CompositionDiagnosticCode::InvalidComposition)?;
+        match event {
+            Event::Scalar(value, style, _, _) => {
+                if let Some(Frame::Mapping(key)) = frames.last_mut() {
+                    if let Some(key) = key.take() {
+                        if key == "default" {
+                            let raw = span
+                                .slice(input)
+                                .ok_or(CompositionDiagnosticCode::InvalidComposition)?;
+                            default_scalars.push((raw.to_owned(), style));
+                        }
+                    } else {
+                        *key = Some(value.into_owned());
+                    }
+                }
+            }
+            Event::MappingStart(..) => {
+                consume_mapping_value(&mut frames);
+                frames.push(Frame::Mapping(None));
+            }
+            Event::SequenceStart(..) => {
+                consume_mapping_value(&mut frames);
+                frames.push(Frame::Sequence);
+            }
+            Event::MappingEnd => {
+                frames.pop();
+            }
+            Event::SequenceEnd => {
+                frames.pop();
+            }
+            _ => {}
+        }
+    }
+
+    let mut defaults = default_scalars.into_iter();
+    for variable in &document.spec.variables {
+        if variable.default.is_none() {
+            continue;
+        }
+
+        let (raw, style) = defaults
+            .next()
+            .ok_or(CompositionDiagnosticCode::InvalidComposition)?;
+        if variable.variable_type == CompositionVariableType::Float
+            && style == ScalarStyle::Plain
+            && super::parse_variable_float(&raw).is_none()
+        {
+            return Err(CompositionDiagnosticCode::InvalidComposition);
+        }
+    }
+
+    if defaults.next().is_some() {
+        return Err(CompositionDiagnosticCode::InvalidComposition);
+    }
+    Ok(())
+}
+
+fn consume_mapping_value(frames: &mut [Frame]) {
+    if let Some(Frame::Mapping(key)) = frames.last_mut() {
+        key.take();
+    }
+}
+
+enum Frame {
+    Sequence,
+    Mapping(Option<String>),
 }
 
 fn probe_document_envelope(input: &str) -> Result<(), CompositionDiagnosticCode> {
@@ -134,9 +218,9 @@ mod tests {
         );
         assert_eq!(document.name, "Monthly expenses");
         assert!(document.tags.is_empty());
-        assert_eq!(document.spec.parameters.len(), 2);
+        assert_eq!(document.spec.variables.len(), 2);
         assert_eq!(document.spec.sources.len(), 2);
-        assert_eq!(document.spec.components.len(), 2);
+        assert_eq!(document.spec.components.len(), 4);
         assert_eq!(document.spec.layout.rows.len(), 1);
         let CompositionSource::EntryQuery { query, .. } = &document.spec.sources[0] else {
             panic!("first sample source should be an EntryQuery")
@@ -292,7 +376,7 @@ future_alias: *shared
             "format: ugoite.composition\nformat_version: 1\nname: Example\nname: Duplicate\nkind: dashboard\ntags: []\nspec: {}\n",
             "format: ugoite.composition\nformat_version: 1\nname: Example\nkind: dashboard\ntags: []\nspec: {}\n---\nformat: ugoite.composition\nformat_version: 1\n",
             "format: ugoite.composition\nformat_version: 1\nname: &name Example\nkind: dashboard\ntags: []\nspec: {}\n",
-            "format: ugoite.composition\nformat_version: 1\nname: Example\nkind: dashboard\ntags: []\nspec: {<<: {parameters: [], sources: [], components: [], layout: {kind: flow, rows: []}}}\n",
+            "format: ugoite.composition\nformat_version: 1\nname: Example\nkind: dashboard\ntags: []\nspec: {<<: {variables: [], sources: [], components: [], layout: {kind: flow, rows: []}}}\n",
             "format: ugoite.composition\nformat_version: 1\nname: !custom Example\nkind: dashboard\ntags: []\nspec: {}\n",
             "format: ugoite.composition\nformat_version: 1\nname: Example\nkind: dashboard\ntags: []\nspec: {}\nextra: true\n",
             "format: ugoite.composition\nformat_version: 1\nname: 2026\nkind: dashboard\ntags: []\nspec: {}\n",
@@ -311,6 +395,55 @@ future_alias: *shared
     }
 
     #[test]
+    fn rejects_the_unreleased_parameter_grammar_without_aliases() {
+        let legacy_parameters = "format: ugoite.composition\nformat_version: 1\nname: Example\nkind: dashboard\ntags: []\nspec:\n  parameters:\n    - id: heading\n      type: string\n      required: true\n  sources: []\n  components: []\n  layout: {kind: flow, rows: []}\n";
+        assert_eq!(
+            parse_composition_yaml(legacy_parameters),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+
+        let legacy_text = "format: ugoite.composition\nformat_version: 1\nname: Example\nkind: dashboard\ntags: []\nspec:\n  variables: []\n  sources: []\n  components:\n    - id: heading\n      kind: text\n      text: Heading\n      style: heading\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: component\n            component: heading\n";
+        assert_eq!(
+            parse_composition_yaml(legacy_text),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+
+        let legacy_layout_item = "format: ugoite.composition\nformat_version: 1\nname: Example\nkind: dashboard\ntags: []\nspec:\n  variables: []\n  sources: []\n  components: []\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: parameter\n            parameter: heading\n";
+        assert_eq!(
+            parse_composition_yaml(legacy_layout_item),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
+
+    #[test]
+    fn float_defaults_reject_overflow_and_underflow_to_zero() {
+        for numeric_token in ["1e309", "1e-4000"] {
+            let input = format!(
+                "format: ugoite.composition\nformat_version: 1\nname: Example\nkind: dashboard\ntags: []\nspec:\n  variables:\n    - id: ratio\n      type: float\n      required: false\n      default: {numeric_token}\n  sources: []\n  components:\n    - id: marker\n      kind: text\n      content: {{kind: literal, text: marker}}\n      style: body\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: component\n            component: marker\n"
+            );
+            assert_eq!(
+                parse_composition_yaml(&input),
+                Err(CompositionDiagnosticCode::InvalidComposition),
+                "accepted float default {numeric_token}"
+            );
+        }
+    }
+
+    #[test]
+    fn float_defaults_accept_finite_json_number_notation() {
+        for numeric_token in ["1", "1.0"] {
+            let input = format!(
+                "format: ugoite.composition\nformat_version: 1\nname: Example\nkind: dashboard\ntags: []\nspec:\n  variables:\n    - id: ratio\n      type: float\n      required: false\n      default: {numeric_token}\n  sources: []\n  components:\n    - id: marker\n      kind: text\n      content: {{kind: literal, text: marker}}\n      style: body\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: component\n            component: marker\n"
+            );
+
+            assert!(
+                parse_composition_yaml(&input).is_ok(),
+                "unexpected acceptance for float default {numeric_token}"
+            );
+        }
+    }
+
+    #[test]
     fn leaves_date_like_literals_as_strings() {
         let input = r#"
 format: ugoite.composition
@@ -319,23 +452,27 @@ name: Example
 kind: dashboard
 tags: []
 spec:
-  parameters:
+  variables:
     - id: date_default
       type: date
       required: false
       default: 2026-10-02
+  components:
+    - id: date_input
+      kind: input
+      variable: date_default
   layout:
     kind: flow
     rows:
       - id: main
         items:
-          - kind: parameter
-            parameter: date_default
+          - kind: component
+            component: date_input
 "#;
         let document = parse_composition_yaml(input).unwrap();
 
         assert!(matches!(
-            &document.spec.parameters[0].default,
+            &document.spec.variables[0].default,
             Some(CompositionLiteral(value)) if value == &serde_json::Value::String("2026-10-02".to_owned())
         ));
     }
@@ -354,10 +491,10 @@ spec:
 
     #[test]
     fn enforces_the_per_collection_item_limit() {
-        let at_limit = parameters_document(MAX_COMPOSITION_COLLECTION_ITEMS);
+        let at_limit = variables_document(MAX_COMPOSITION_COLLECTION_ITEMS);
         assert!(parse_composition_yaml(&at_limit).is_ok());
 
-        let over_limit = parameters_document(MAX_COMPOSITION_COLLECTION_ITEMS + 1);
+        let over_limit = variables_document(MAX_COMPOSITION_COLLECTION_ITEMS + 1);
         assert_eq!(
             parse_composition_yaml(&over_limit),
             Err(CompositionDiagnosticCode::InvalidComposition)
@@ -461,21 +598,18 @@ spec:
         input
     }
 
-    fn parameters_document(count: usize) -> String {
+    fn variables_document(count: usize) -> String {
         let mut input = String::from(
-            "format: ugoite.composition\nformat_version: 1\nname: Example\nkind: dashboard\ntags: []\nspec:\n  parameters:\n",
+            "format: ugoite.composition\nformat_version: 1\nname: Example\nkind: dashboard\ntags: []\nspec:\n  variables:\n",
         );
         for index in 0..count {
             input.push_str(&format!(
-                "    - id: parameter_{index}\n      type: string\n      required: true\n"
+                "    - id: variable_{index}\n      type: string\n      required: false\n"
             ));
         }
-        input.push_str("  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n");
-        for index in 0..count {
-            input.push_str(&format!(
-                "          - kind: parameter\n            parameter: parameter_{index}\n"
-            ));
-        }
+        input.push_str(
+            "  components:\n    - id: marker\n      kind: text\n      content:\n        kind: literal\n        text: marker\n      style: body\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: component\n            component: marker\n",
+        );
         input
     }
 

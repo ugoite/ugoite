@@ -33,6 +33,10 @@ pub struct CompositionMetricQueryRequest {
     pub component_id: String,
     #[serde(default)]
     pub parameters: BTreeMap<String, Value>,
+    /// Variables explicitly left unset; omission from both fields uses the
+    /// declared default when one exists.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unset_variables: Vec<String>,
 }
 
 /// One successfully evaluated metric value and its portable meaning.
@@ -66,7 +70,7 @@ pub fn encode_composition_metric_value(
             _ => {
                 return Err(CompositionDiagnostic {
                     code: CompositionDiagnosticCode::MetricResultTypeMismatch,
-                    parameter_id: None,
+                    variable_id: None,
                 });
             }
         }
@@ -76,7 +80,7 @@ pub fn encode_composition_metric_value(
     validate_composition_metric_scalar_value(result_type, &encoded).map_err(|code| {
         CompositionDiagnostic {
             code: code.into(),
-            parameter_id: None,
+            variable_id: None,
         }
     })?;
     Ok(encoded)
@@ -121,7 +125,7 @@ impl CompositionMetricQueryResponse {
                 .map(|diagnostic| CompositionMetricQueryDiagnostic {
                     code: diagnostic.code,
                     component_id: None,
-                    parameter_id: diagnostic.parameter_id,
+                    parameter_id: diagnostic.variable_id,
                 })
                 .collect(),
         }
@@ -135,7 +139,7 @@ pub fn evaluate_saved_sql_metric_probe(
 ) -> Result<Value, CompositionDiagnostic> {
     let diagnostic = |code| CompositionDiagnostic {
         code,
-        parameter_id: None,
+        variable_id: None,
     };
     if binding.kind != ResolvedComponentKind::Metric {
         return Err(diagnostic(CompositionDiagnosticCode::InvalidComposition));
@@ -222,6 +226,7 @@ mod tests {
             kind: ResolvedComponentKind::Metric,
             label: Some("合計".to_owned()),
             source_id: Some("monthly_sql".to_owned()),
+            variable_id: None,
             result_property_key: Some("total".to_owned()),
             expected_result_type: Some(result_type),
             presentation: None,

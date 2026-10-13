@@ -15262,6 +15262,13 @@
               "$ref": "#/components/schemas/JsonValue"
             },
             "default": {}
+          },
+          "unset_variables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Variable names explicitly left unset. Omission from both fields uses a declared default; an unset name must not also appear in parameters."
           }
         },
         "additionalProperties": false
@@ -15282,6 +15289,13 @@
               "$ref": "#/components/schemas/JsonValue"
             },
             "default": {}
+          },
+          "unset_variables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Variable names explicitly left unset. Omission from both fields uses a declared default; an unset name must not also appear in parameters."
           }
         },
         "additionalProperties": false
@@ -15309,6 +15323,10 @@
               "$ref": "#/components/schemas/CompositionResolvedComponentBinding"
             },
             "default": []
+          },
+          "dependencies": {
+            "$ref": "#/components/schemas/CompositionDependencyIndex",
+            "description": "Validated variable/source consumers for reactive scheduling. Omitted when empty."
           }
         },
         "additionalProperties": false
@@ -15421,6 +15439,10 @@
               "$ref": "#/components/schemas/CompositionResolvedComponentBinding"
             },
             "description": "Stable display bindings in the resolver's section order."
+          },
+          "dependencies": {
+            "$ref": "#/components/schemas/CompositionDependencyIndex",
+            "description": "Validated variable/source consumers for reactive scheduling. Omitted when empty."
           }
         },
         "additionalProperties": false
@@ -15438,6 +15460,7 @@
           "kind": {
             "type": "string",
             "enum": [
+              "input",
               "metric",
               "table",
               "text"
@@ -15445,6 +15468,10 @@
           },
           "label": {
             "type": "string"
+          },
+          "variable_id": {
+            "type": "string",
+            "description": "Declared variable selected by an Input or variable-backed Text component."
           },
           "source_id": {
             "type": "string"
@@ -15457,6 +15484,63 @@
           },
           "presentation": {
             "$ref": "#/components/schemas/CompositionMetricPresentation"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompositionDependencyIndex": {
+        "type": "object",
+        "properties": {
+          "variable_consumers": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CompositionVariableConsumers"
+            },
+            "description": "Variable ID to Input, Text, and source consumers."
+          },
+          "source_consumers": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CompositionSourceConsumers"
+            },
+            "description": "Source ID to Metric and Table consumers."
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompositionVariableConsumers": {
+        "type": "object",
+        "properties": {
+          "input_component_ids": {
+            "type": "array",
+            "items": {"type": "string"},
+            "uniqueItems": true
+          },
+          "text_component_ids": {
+            "type": "array",
+            "items": {"type": "string"},
+            "uniqueItems": true
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {"type": "string"},
+            "uniqueItems": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompositionSourceConsumers": {
+        "type": "object",
+        "properties": {
+          "metric_component_ids": {
+            "type": "array",
+            "items": {"type": "string"},
+            "uniqueItems": true
+          },
+          "table_component_ids": {
+            "type": "array",
+            "items": {"type": "string"},
+            "uniqueItems": true
           }
         },
         "additionalProperties": false
@@ -16181,6 +16265,13 @@
               "$ref": "#/components/schemas/JsonValue"
             },
             "default": {}
+          },
+          "unset_variables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Variable names explicitly left unset. Omission from both fields uses a declared default; an unset name must not also appear in parameters."
           }
         },
         "additionalProperties": false

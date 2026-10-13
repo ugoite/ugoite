@@ -6,6 +6,7 @@
 
 use crate::form::{FieldType, ListItemDefinition};
 use crate::id::{EntryId, FieldId, FormId, RevisionId};
+use chrono::{DateTime, Datelike, NaiveDate};
 use serde::de::Error as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -94,7 +95,7 @@ pub enum CompositionKind {
 #[serde(deny_unknown_fields)]
 pub struct CompositionSpec {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub parameters: Vec<CompositionParameter>,
+    pub variables: Vec<CompositionVariable>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<CompositionSource>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -105,28 +106,95 @@ pub struct CompositionSpec {
 impl CompositionSpec {
     /// Return components in layout row order and each row's item order.
     ///
-    /// A component must have a unique ID and be placed exactly once by the
-    /// layout; a parameter control must reference a declared parameter
-    /// exactly once. Unknown, duplicate, or missing component references,
-    /// unknown or duplicate parameter references, empty layouts, empty rows,
-    /// duplicate row IDs, and required parameters without a default and
-    /// without a layout control make the layout invalid. The top-level
-    /// component declaration order is never a fallback.
+    /// Components are placed exactly once; Inputs reference declared variables
+    /// and required variables without defaults have a placed Input. Layout
+    /// order is presentation-only and does not define query execution order.
     pub fn components_in_render_order(
         &self,
     ) -> Result<Vec<&CompositionComponent>, CompositionDiagnosticCode> {
-        let mut components_by_id = HashMap::with_capacity(self.components.len());
-        for component in &self.components {
-            if components_by_id.insert(component.id(), component).is_some() {
+        let mut variables_by_id = HashMap::with_capacity(self.variables.len());
+        for variable in &self.variables {
+            if !variable.is_well_formed()
+                || variables_by_id
+                    .insert(variable.id.as_str(), variable)
+                    .is_some()
+            {
                 return Err(CompositionDiagnosticCode::InvalidComposition);
             }
         }
 
-        let mut parameters_by_id = HashMap::with_capacity(self.parameters.len());
-        for parameter in &self.parameters {
-            if parameters_by_id
-                .insert(parameter.id.as_str(), parameter)
-                .is_some()
+        let known_variables: HashSet<_> = variables_by_id.keys().copied().collect();
+        let value_uses_known_variable = |value: &CompositionValue| match value {
+            CompositionValue::Variable(reference) => {
+                known_variables.contains(reference.variable.as_str())
+            }
+            CompositionValue::Literal(_) => true,
+        };
+
+        for source in &self.sources {
+            match source {
+                CompositionSource::EntryQuery { query, .. } => {
+                    if query
+                        .text
+                        .as_ref()
+                        .is_some_and(|value| !value_uses_known_variable(value))
+                        || query
+                            .filters
+                            .iter()
+                            .any(|filter| !value_uses_known_variable(&filter.value))
+                    {
+                        return Err(CompositionDiagnosticCode::InvalidComposition);
+                    }
+                }
+                CompositionSource::SavedSql { variables, .. } => {
+                    if variables
+                        .values()
+                        .any(|value| !value_uses_known_variable(value))
+                    {
+                        return Err(CompositionDiagnosticCode::InvalidComposition);
+                    }
+                }
+            }
+        }
+
+        let mut components_by_id = HashMap::with_capacity(self.components.len());
+        let mut input_variables = HashSet::with_capacity(self.variables.len());
+        for component in &self.components {
+            if component.id().trim().is_empty()
+                || components_by_id.insert(component.id(), component).is_some()
+            {
+                return Err(CompositionDiagnosticCode::InvalidComposition);
+            }
+            match component {
+                CompositionComponent::Input { variable, .. } => {
+                    if !known_variables.contains(variable.as_str()) {
+                        return Err(CompositionDiagnosticCode::InvalidComposition);
+                    }
+                    input_variables.insert(variable.as_str());
+                }
+                CompositionComponent::Text {
+                    content: CompositionTextContent::Variable { variable },
+                    ..
+                } => {
+                    if !variables_by_id
+                        .get(variable.as_str())
+                        .is_some_and(|definition| {
+                            definition.variable_type == CompositionVariableType::String
+                        })
+                    {
+                        return Err(CompositionDiagnosticCode::InvalidComposition);
+                    }
+                }
+                CompositionComponent::Text { .. }
+                | CompositionComponent::Metric { .. }
+                | CompositionComponent::Table { .. } => {}
+            }
+        }
+
+        for variable in &self.variables {
+            if variable.required
+                && variable.default.is_none()
+                && !input_variables.contains(variable.id.as_str())
             {
                 return Err(CompositionDiagnosticCode::InvalidComposition);
             }
@@ -138,36 +206,22 @@ impl CompositionSpec {
 
         let mut row_ids = HashSet::with_capacity(self.layout.rows.len());
         let mut rendered_ids = HashSet::with_capacity(self.components.len());
-        let mut placed_parameters = HashSet::with_capacity(self.parameters.len());
         let mut ordered = Vec::with_capacity(self.components.len());
         for row in &self.layout.rows {
-            if !row_ids.insert(row.id.as_str()) {
-                return Err(CompositionDiagnosticCode::InvalidComposition);
-            }
-            if row.items.is_empty() {
+            if row.id.trim().is_empty() || !row_ids.insert(row.id.as_str()) || row.items.is_empty()
+            {
                 return Err(CompositionDiagnosticCode::InvalidComposition);
             }
             for item in &row.items {
-                match item {
-                    FlowItem::Component { component } => {
-                        if !rendered_ids.insert(component.as_str()) {
-                            return Err(CompositionDiagnosticCode::InvalidComposition);
-                        }
-                        let component = components_by_id
-                            .get(component.as_str())
-                            .copied()
-                            .ok_or(CompositionDiagnosticCode::InvalidComposition)?;
-                        ordered.push(component);
-                    }
-                    FlowItem::Parameter { parameter } => {
-                        if !parameters_by_id.contains_key(parameter.as_str()) {
-                            return Err(CompositionDiagnosticCode::InvalidComposition);
-                        }
-                        if !placed_parameters.insert(parameter.as_str()) {
-                            return Err(CompositionDiagnosticCode::InvalidComposition);
-                        }
-                    }
+                let FlowItem::Component { component } = item;
+                if !rendered_ids.insert(component.as_str()) {
+                    return Err(CompositionDiagnosticCode::InvalidComposition);
                 }
+                let component = components_by_id
+                    .get(component.as_str())
+                    .copied()
+                    .ok_or(CompositionDiagnosticCode::InvalidComposition)?;
+                ordered.push(component);
             }
         }
 
@@ -175,82 +229,71 @@ impl CompositionSpec {
             return Err(CompositionDiagnosticCode::InvalidComposition);
         }
 
-        for parameter in &self.parameters {
-            if parameter.required
-                && parameter.default.is_none()
-                && !placed_parameters.contains(parameter.id.as_str())
-            {
-                return Err(CompositionDiagnosticCode::InvalidComposition);
-            }
-        }
-
-        Ok(ordered)
-    }
-
-    /// Return declared parameters with layout-placed controls first in layout
-    /// row and item order, then unplaced parameters in declaration order.
-    ///
-    /// Unknown or duplicate parameter references make the placement invalid.
-    /// Row structure and component placement stay owned by
-    /// [`components_in_render_order`](Self::components_in_render_order); this
-    /// helper only orders the existing semantic definitions for callers that
-    /// expose placed parameters first.
-    pub fn parameters_in_placement_order(
-        &self,
-    ) -> Result<Vec<&CompositionParameter>, CompositionDiagnosticCode> {
-        let mut declared = HashMap::with_capacity(self.parameters.len());
-        for parameter in &self.parameters {
-            if declared.insert(parameter.id.as_str(), parameter).is_some() {
-                return Err(CompositionDiagnosticCode::InvalidComposition);
-            }
-        }
-
-        let mut seen = HashSet::with_capacity(self.parameters.len());
-        let mut ordered = Vec::with_capacity(self.parameters.len());
-        for row in &self.layout.rows {
-            for item in &row.items {
-                if let FlowItem::Parameter { parameter } = item {
-                    let Some(definition) = declared.get(parameter.as_str()).copied() else {
-                        return Err(CompositionDiagnosticCode::InvalidComposition);
-                    };
-                    if !seen.insert(parameter.as_str()) {
-                        return Err(CompositionDiagnosticCode::InvalidComposition);
-                    }
-                    ordered.push(definition);
-                }
-            }
-        }
-        for parameter in &self.parameters {
-            if !seen.contains(parameter.id.as_str()) {
-                ordered.push(parameter);
-            }
-        }
         Ok(ordered)
     }
 }
 
-/// A value that can be supplied to a Composition source.
+/// Maximum UTF-8 byte length accepted for a typed Composition string value.
+pub const MAX_COMPOSITION_VARIABLE_STRING_BYTES: usize = 4 * 1024;
+
+/// A typed value declared by a Composition and shared by its Inputs, Text,
+/// and data Sources.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct CompositionParameter {
+pub struct CompositionVariable {
     pub id: String,
-    /// Optional display text; parameter binding continues to use `id`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     #[serde(rename = "type")]
-    pub parameter_type: CompositionParameterType,
+    pub variable_type: CompositionVariableType,
     pub required: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_variable_default"
+    )]
     pub default: Option<CompositionLiteral>,
-    /// A display/input hint. It does not define an expression or conversion.
+    /// A presentation hint that never changes the value's type or parsing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub format: Option<CompositionParameterFormat>,
+    pub format: Option<CompositionVariableFormat>,
 }
 
-/// Supported Composition parameter value types.
+fn deserialize_variable_default<'de, D>(
+    deserializer: D,
+) -> Result<Option<CompositionLiteral>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = CompositionLiteral::deserialize(deserializer)?;
+    if value.as_json_value().is_null() {
+        return Err(D::Error::custom(
+            "Composition variable defaults cannot be null",
+        ));
+    }
+    Ok(Some(value))
+}
+
+impl CompositionVariable {
+    fn is_well_formed(&self) -> bool {
+        !self.id.trim().is_empty()
+            && self
+                .label
+                .as_deref()
+                .is_none_or(|label| !label.trim().is_empty())
+            && self
+                .default
+                .as_ref()
+                .is_none_or(|value| self.variable_type.accepts_value(value.as_json_value()))
+            && self
+                .format
+                .is_none_or(|_| self.variable_type == CompositionVariableType::Date)
+    }
+}
+
+/// Supported typed Composition variable values.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CompositionParameterType {
+pub enum CompositionVariableType {
     String,
     Boolean,
     Integer,
@@ -259,11 +302,267 @@ pub enum CompositionParameterType {
     Timestamp,
 }
 
-/// Supported presentation hints for typed parameter values.
+impl CompositionVariableType {
+    /// Return whether a JSON scalar is a valid value of this exact type.
+    ///
+    /// These checks are shared by Domain defaults and Core runtime bindings;
+    /// callers must not coerce values before invoking them.
+    pub fn accepts_value(self, value: &Value) -> bool {
+        match self {
+            Self::String => value.as_str().is_some_and(valid_variable_string),
+            Self::Boolean => value.is_boolean(),
+            Self::Integer => value.as_i64().is_some_and(|value| {
+                (-(9_007_199_254_740_991_i64)..=9_007_199_254_740_991_i64).contains(&value)
+            }),
+            Self::Float => value.as_f64().is_some_and(f64::is_finite),
+            Self::Date => value.as_str().is_some_and(valid_variable_date),
+            Self::Timestamp => value.as_str().is_some_and(valid_variable_timestamp),
+        }
+    }
+
+    /// Parse one locale-independent raw Input buffer without coercion.
+    ///
+    /// Empty text is `Unset`; malformed text is `Invalid`. Callers retain the
+    /// raw buffer separately so an invalid edit remains visible without
+    /// turning it into a guessed typed value.
+    pub fn parse_input(self, raw: &str) -> CompositionVariableInputValue {
+        if raw.is_empty() {
+            return CompositionVariableInputValue::Unset;
+        }
+
+        let value = match self {
+            Self::String if valid_variable_string(raw) => Value::String(raw.to_owned()),
+            Self::Boolean => match raw {
+                "true" => Value::Bool(true),
+                "false" => Value::Bool(false),
+                _ => return CompositionVariableInputValue::Invalid,
+            },
+            Self::Integer => match parse_variable_integer(raw) {
+                Some(value) => Value::from(value),
+                None => return CompositionVariableInputValue::Invalid,
+            },
+            Self::Float => match parse_variable_float(raw) {
+                Some(value) => {
+                    let Some(number) = serde_json::Number::from_f64(value) else {
+                        return CompositionVariableInputValue::Invalid;
+                    };
+                    Value::Number(number)
+                }
+                None => return CompositionVariableInputValue::Invalid,
+            },
+            Self::Date if valid_variable_date(raw) => Value::String(raw.to_owned()),
+            Self::Timestamp if valid_variable_timestamp(raw) => Value::String(raw.to_owned()),
+            _ => return CompositionVariableInputValue::Invalid,
+        };
+
+        if self.accepts_value(&value) {
+            CompositionVariableInputValue::Valid(value)
+        } else {
+            CompositionVariableInputValue::Invalid
+        }
+    }
+}
+
+/// The outcome of validating one raw Composition Input buffer.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CompositionVariableInputValue {
+    Unset,
+    Valid(Value),
+    Invalid,
+}
+
+/// Supported variable display hints. Hints never change value parsing.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum CompositionParameterFormat {
+pub enum CompositionVariableFormat {
     YearMonth,
+}
+
+fn valid_variable_string(value: &str) -> bool {
+    value.len() <= MAX_COMPOSITION_VARIABLE_STRING_BYTES
+        && value
+            .chars()
+            .all(|character| !character.is_control() || matches!(character, '\t' | '\n' | '\r'))
+}
+
+fn parse_variable_integer(raw: &str) -> Option<i64> {
+    if raw.len() > 17 || !raw.is_ascii() {
+        return None;
+    }
+
+    let digits = raw
+        .strip_prefix('+')
+        .or_else(|| raw.strip_prefix('-'))
+        .unwrap_or(raw)
+        .as_bytes();
+    if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+
+    let value = raw.parse::<i64>().ok()?;
+    (-(9_007_199_254_740_991_i64)..=9_007_199_254_740_991_i64)
+        .contains(&value)
+        .then_some(value)
+}
+
+fn parse_variable_float(raw: &str) -> Option<f64> {
+    if raw.len() > 64 || !raw.is_ascii() || raw.is_empty() {
+        return None;
+    }
+
+    let bytes = raw.as_bytes();
+    let mut index = usize::from(matches!(bytes[0], b'+' | b'-'));
+    if index == bytes.len() {
+        return None;
+    }
+
+    let integer_start = index;
+    while index < bytes.len() && bytes[index].is_ascii_digit() {
+        index += 1;
+    }
+    let has_integer_digits = index > integer_start;
+
+    let mut has_fraction_digits = false;
+    if index < bytes.len() && bytes[index] == b'.' {
+        index += 1;
+        let fraction_start = index;
+        while index < bytes.len() && bytes[index].is_ascii_digit() {
+            index += 1;
+        }
+        has_fraction_digits = index > fraction_start;
+        if !has_fraction_digits {
+            return None;
+        }
+    }
+    if !has_integer_digits && !has_fraction_digits {
+        return None;
+    }
+
+    if index < bytes.len() && matches!(bytes[index], b'e' | b'E') {
+        index += 1;
+        if index < bytes.len() && matches!(bytes[index], b'+' | b'-') {
+            index += 1;
+        }
+        let exponent_start = index;
+        while index < bytes.len() && bytes[index].is_ascii_digit() {
+            index += 1;
+        }
+        if index == exponent_start {
+            return None;
+        }
+    }
+    if index != bytes.len() {
+        return None;
+    }
+
+    let mantissa_end = bytes
+        .iter()
+        .position(|byte| matches!(*byte, b'e' | b'E'))
+        .unwrap_or(bytes.len());
+    if !bytes[..mantissa_end]
+        .iter()
+        .any(|byte| matches!(*byte, b'1'..=b'9'))
+    {
+        return Some(if bytes[0] == b'-' { -0.0 } else { 0.0 });
+    }
+
+    let value = raw.parse::<f64>().ok()?;
+    if !value.is_finite() || (value == 0.0 && bytes.iter().any(|byte| matches!(byte, b'1'..=b'9')))
+    {
+        return None;
+    }
+    Some(value)
+}
+
+fn valid_variable_date(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() != 10
+        || !value.is_ascii()
+        || bytes[4] != b'-'
+        || bytes[7] != b'-'
+        || !bytes
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| matches!(index, 4 | 7) || byte.is_ascii_digit())
+    {
+        return false;
+    }
+
+    NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        .ok()
+        .is_some_and(|date| {
+            (1..=9999).contains(&date.year()) && date.format("%Y-%m-%d").to_string() == value
+        })
+}
+
+fn valid_variable_timestamp(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if !(20..=35).contains(&bytes.len())
+        || !value.is_ascii()
+        || bytes[4] != b'-'
+        || bytes[7] != b'-'
+        || bytes[10] != b'T'
+        || bytes[13] != b':'
+        || bytes[16] != b':'
+        || !valid_variable_date(&value[..10])
+    {
+        return false;
+    }
+
+    let zone_start = if bytes.last() == Some(&b'Z') {
+        bytes.len() - 1
+    } else {
+        if bytes.len() < 25 {
+            return false;
+        }
+        let zone_start = bytes.len() - 6;
+        if !matches!(bytes[zone_start], b'+' | b'-') || bytes[zone_start + 3] != b':' {
+            return false;
+        }
+        let hour = decimal_pair(bytes[zone_start + 1], bytes[zone_start + 2]);
+        let minute = decimal_pair(bytes[zone_start + 4], bytes[zone_start + 5]);
+        if hour.is_none_or(|hour| hour > 23)
+            || minute.is_none_or(|minute| minute > 59)
+            || (bytes[zone_start] == b'-' && hour == Some(0) && minute == Some(0))
+        {
+            return false;
+        }
+        zone_start
+    };
+
+    let local = &bytes[..zone_start];
+    if local.len() < 19 {
+        return false;
+    }
+    let time_digits = [11, 12, 14, 15, 17, 18];
+    if !time_digits
+        .iter()
+        .all(|index| local[*index].is_ascii_digit())
+    {
+        return false;
+    }
+    let hour = decimal_pair(local[11], local[12]);
+    let minute = decimal_pair(local[14], local[15]);
+    let second = decimal_pair(local[17], local[18]);
+    if hour.is_none_or(|hour| hour > 23)
+        || minute.is_none_or(|minute| minute > 59)
+        || second.is_none_or(|second| second > 59)
+    {
+        return false;
+    }
+    if local.len() > 19
+        && (local[19] != b'.'
+            || !(1..=9).contains(&(local.len() - 20))
+            || !local[20..].iter().all(u8::is_ascii_digit))
+    {
+        return false;
+    }
+
+    DateTime::parse_from_rfc3339(value).is_ok()
+}
+
+fn decimal_pair(tens: u8, ones: u8) -> Option<u8> {
+    (tens.is_ascii_digit() && ones.is_ascii_digit()).then_some((tens - b'0') * 10 + (ones - b'0'))
 }
 
 /// A source definition in a dashboard.
@@ -394,7 +693,7 @@ impl<'de> Deserialize<'de> for CompositionFieldSchemaEntry {
 }
 
 /// An EntryQuery template. The resolver compiles this into the existing
-/// bounded `EntryQuery` type after binding parameters.
+/// bounded `EntryQuery` type after binding variables.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EntryQueryTemplate {
@@ -419,7 +718,7 @@ const fn default_composition_page_limit() -> usize {
     DEFAULT_COMPOSITION_PAGE_LIMIT
 }
 
-/// A filter whose value may be a literal or a named parameter reference.
+/// A filter whose value may be a literal or a named variable reference.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EntryQueryFilterTemplate {
@@ -474,15 +773,15 @@ pub enum EntryQueryDisplaySystemField {
     UpdatedAt,
 }
 
-/// A source value expressed directly or as a named parameter reference.
+/// A source value expressed directly or as a Composition variable reference.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum CompositionValue {
-    Parameter(CompositionParameterReference),
+    Variable(CompositionVariableReference),
     Literal(CompositionLiteral),
 }
 
-/// A JSON scalar used as a parameter default or source literal.
+/// A JSON scalar used as a variable default or source literal.
 ///
 /// YAML object and sequence values are intentionally not literals in the
 /// Composition query contract.
@@ -517,8 +816,8 @@ impl<'de> Deserialize<'de> for CompositionLiteral {
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct CompositionParameterReference {
-    pub parameter: String,
+pub struct CompositionVariableReference {
+    pub variable: String,
 }
 
 /// Portable formatting hints for a metric value. These fields affect display
@@ -548,12 +847,17 @@ impl CompositionMetricPresentation {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CompositionComponent {
-    Text {
+    Input {
         id: String,
-        /// Optional display text; component identity continues to use IDs.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         label: Option<String>,
-        text: String,
+        variable: String,
+    },
+    Text {
+        id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+        content: CompositionTextContent,
         style: TextStyle,
     },
     Metric {
@@ -577,28 +881,38 @@ pub enum CompositionComponent {
     },
 }
 
+/// Text content is a literal or a direct reference to a string variable.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CompositionTextContent {
+    Literal { text: String },
+    Variable { variable: String },
+}
+
 impl CompositionComponent {
     pub fn id(&self) -> &str {
         match self {
-            Self::Text { id, .. } | Self::Metric { id, .. } | Self::Table { id, .. } => id,
+            Self::Input { id, .. }
+            | Self::Text { id, .. }
+            | Self::Metric { id, .. }
+            | Self::Table { id, .. } => id,
         }
     }
 
-    /// The referenced source, if the component reads from one. Text carries
-    /// no source binding; the core resolver skips it when compiling requests.
+    /// The referenced source, if the component reads from one.
     pub fn source_id(&self) -> Option<&str> {
         match self {
-            Self::Text { .. } => None,
-            Self::Metric { source, .. } => Some(source),
-            Self::Table { source, .. } => Some(source),
+            Self::Input { .. } | Self::Text { .. } => None,
+            Self::Metric { source, .. } | Self::Table { source, .. } => Some(source),
         }
     }
 
     pub fn label(&self) -> Option<&str> {
         match self {
-            Self::Text { label, .. } | Self::Metric { label, .. } | Self::Table { label, .. } => {
-                label.as_deref()
-            }
+            Self::Input { label, .. }
+            | Self::Text { label, .. }
+            | Self::Metric { label, .. }
+            | Self::Table { label, .. } => label.as_deref(),
         }
     }
 
@@ -649,7 +963,7 @@ pub enum FlowLayoutKind {
     Flow,
 }
 
-/// One stable layout row carrying ordered component and parameter items.
+/// One stable layout row carrying ordered component items.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FlowRow {
@@ -657,14 +971,10 @@ pub struct FlowRow {
     pub items: Vec<FlowItem>,
 }
 
-/// One layout placement: a component reference or a parameter control.
-///
-/// Parameters keep their semantic definition under `spec.parameters`; the
-/// layout only places a control bound to the parameter ID.
+/// One layout placement. Inputs are ordinary components in the flow.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum FlowItem {
-    Parameter { parameter: String },
     Component { component: String },
 }
 
@@ -681,9 +991,9 @@ pub enum FlowItem {
 pub enum CompositionDiagnosticCode {
     UnsupportedFormatVersion,
     InvalidComposition,
-    ParameterUnknown,
-    ParameterMissing,
-    ParameterTypeMismatch,
+    VariableUnknown,
+    VariableMissing,
+    VariableTypeMismatch,
     SourceUnavailable,
     MissingField,
     FieldTypeChanged,
@@ -701,9 +1011,9 @@ impl CompositionDiagnosticCode {
         match self {
             Self::UnsupportedFormatVersion => "unsupported_format_version",
             Self::InvalidComposition => "invalid_composition",
-            Self::ParameterUnknown => "parameter_unknown",
-            Self::ParameterMissing => "parameter_missing",
-            Self::ParameterTypeMismatch => "parameter_type_mismatch",
+            Self::VariableUnknown => "variable_unknown",
+            Self::VariableMissing => "variable_missing",
+            Self::VariableTypeMismatch => "variable_type_mismatch",
             Self::SourceUnavailable => "source_unavailable",
             Self::MissingField => "missing_field",
             Self::FieldTypeChanged => "field_type_changed",
@@ -742,12 +1052,6 @@ mod tests {
     fn component_item(id: &str) -> FlowItem {
         FlowItem::Component {
             component: id.to_owned(),
-        }
-    }
-
-    fn parameter_item(id: &str) -> FlowItem {
-        FlowItem::Parameter {
-            parameter: id.to_owned(),
         }
     }
 
@@ -794,22 +1098,19 @@ mod tests {
     }
 
     #[test]
-    fn components_follow_layout_row_and_item_order() {
+    fn components_follow_layout_row_and_item_order_independent_of_declarations() {
         let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
-        spec.components.push(CompositionComponent::Table {
-            id: "last".to_string(),
-            label: None,
-            source: "expense_rows".to_string(),
-        });
         spec.components.reverse();
         spec.layout = flow_layout(vec![
             layout_row(
                 "controls",
-                vec![parameter_item("month_start"), parameter_item("month_end")],
+                vec![
+                    component_item("month_end_input"),
+                    component_item("month_start_input"),
+                ],
             ),
-            layout_row("detail", vec![component_item("transactions")]),
             layout_row("summary", vec![component_item("total")]),
-            layout_row("later", vec![component_item("last")]),
+            layout_row("detail", vec![component_item("transactions")]),
         ]);
 
         let component_ids: Vec<_> = spec
@@ -819,56 +1120,321 @@ mod tests {
             .map(CompositionComponent::id)
             .collect();
 
-        assert_eq!(component_ids, ["transactions", "total", "last"]);
-    }
-
-    #[test]
-    fn placed_parameters_come_first_in_layout_order() {
-        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
-        // Declare an unplaced optional parameter after the placed ones.
-        spec.parameters[1].required = false;
-        spec.parameters.push(
-            serde_json::from_value(serde_json::json!({
-                "id": "region",
-                "type": "string",
-                "required": false,
-            }))
-            .unwrap(),
-        );
-        // Placement order is the reverse of declaration order.
-        spec.layout.rows[0].items = vec![
-            parameter_item("month_end"),
-            parameter_item("month_start"),
-            spec.layout.rows[0].items[2].clone(),
-            spec.layout.rows[0].items[3].clone(),
-        ];
-
-        let ordered_ids: Vec<_> = spec
-            .parameters_in_placement_order()
-            .expect("placed parameters order")
-            .into_iter()
-            .map(|parameter| parameter.id.as_str())
-            .collect();
-
-        assert_eq!(ordered_ids, ["month_end", "month_start", "region"]);
-    }
-
-    #[test]
-    fn unknown_and_duplicate_parameter_placements_have_no_order() {
-        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
-        spec.layout.rows[0].items.push(parameter_item("unknown"));
         assert_eq!(
-            spec.parameters_in_placement_order(),
+            component_ids,
+            [
+                "month_end_input",
+                "month_start_input",
+                "total",
+                "transactions"
+            ]
+        );
+    }
+
+    #[test]
+    fn multiple_inputs_can_reference_one_variable() {
+        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
+        spec.components.push(CompositionComponent::Input {
+            id: "month_start_secondary".to_owned(),
+            label: Some("Start date".to_owned()),
+            variable: "month_start".to_owned(),
+        });
+        spec.layout.rows[0]
+            .items
+            .push(component_item("month_start_secondary"));
+
+        assert!(spec.components_in_render_order().is_ok());
+    }
+
+    #[test]
+    fn unknown_input_variable_is_invalid() {
+        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
+        let CompositionComponent::Input { variable, .. } = &mut spec.components[0] else {
+            panic!("first component should be an Input")
+        };
+        *variable = "unknown".to_owned();
+
+        assert_eq!(
+            spec.components_in_render_order(),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
+
+    #[test]
+    fn variable_text_requires_a_declared_string_variable() {
+        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
+        spec.variables.push(super::CompositionVariable {
+            id: "enabled".to_owned(),
+            label: None,
+            variable_type: super::CompositionVariableType::Boolean,
+            required: false,
+            default: None,
+            format: None,
+        });
+        spec.components.push(CompositionComponent::Text {
+            id: "enabled_text".to_owned(),
+            label: None,
+            content: super::CompositionTextContent::Variable {
+                variable: "enabled".to_owned(),
+            },
+            style: TextStyle::Body,
+        });
+        spec.layout.rows[0]
+            .items
+            .push(component_item("enabled_text"));
+
+        assert_eq!(
+            spec.components_in_render_order(),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
+
+    #[test]
+    fn unknown_variable_source_references_are_invalid() {
+        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
+        let CompositionSource::EntryQuery { query, .. } = &mut spec.sources[0] else {
+            panic!("first source should be an EntryQuery")
+        };
+        query.filters[0].value = CompositionValue::Variable(super::CompositionVariableReference {
+            variable: "unknown".to_owned(),
+        });
+
+        assert_eq!(
+            spec.components_in_render_order(),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
+
+    #[test]
+    fn duplicate_variable_ids_are_invalid() {
+        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
+        spec.variables.push(spec.variables[0].clone());
+
+        assert_eq!(
+            spec.components_in_render_order(),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
+
+    #[test]
+    fn required_variable_without_default_needs_a_placed_input() {
+        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
+        spec.components
+            .retain(|component| component.id() != "month_end_input");
+        spec.layout.rows[0]
+            .items
+            .retain(|item| *item != component_item("month_end_input"));
+
+        assert_eq!(
+            spec.components_in_render_order(),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
+
+    #[test]
+    fn optional_or_defaulted_variable_does_not_require_an_input() {
+        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
+        spec.variables[0].required = false;
+        spec.components
+            .retain(|component| component.id() != "month_start_input");
+        spec.layout.rows[0]
+            .items
+            .retain(|item| *item != component_item("month_start_input"));
+        assert!(spec.components_in_render_order().is_ok());
+
+        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
+        spec.variables[1].default =
+            Some(serde_json::from_value(serde_json::json!("2026-11-01")).unwrap());
+        spec.components
+            .retain(|component| component.id() != "month_end_input");
+        spec.layout.rows[0]
+            .items
+            .retain(|item| *item != component_item("month_end_input"));
+        assert!(spec.components_in_render_order().is_ok());
+    }
+
+    #[test]
+    fn variable_defaults_must_match_the_type_and_lexical_contract() {
+        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
+        spec.variables[0].default =
+            Some(serde_json::from_value(serde_json::json!("2026-02-30")).unwrap());
+        assert_eq!(
+            spec.components_in_render_order(),
             Err(CompositionDiagnosticCode::InvalidComposition)
         );
 
         let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
-        spec.layout
-            .rows
-            .push(layout_row("repeated", vec![parameter_item("month_start")]));
+        spec.variables[0].default = Some(serde_json::from_value(serde_json::json!(false)).unwrap());
         assert_eq!(
-            spec.parameters_in_placement_order(),
+            spec.components_in_render_order(),
             Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
+
+    #[test]
+    fn explicit_null_variable_defaults_are_rejected_but_omitted_defaults_are_allowed() {
+        let yaml_with_null = MONTHLY_EXPENSE.replace(
+            "  sources:\n",
+            "    - id: amount\n      type: float\n      required: false\n      default: null\n  sources:\n",
+        );
+        assert_eq!(
+            super::canonicalize_composition_yaml(&yaml_with_null),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+
+        let yaml_without_default = MONTHLY_EXPENSE.replace(
+            "  sources:\n",
+            "    - id: amount\n      type: float\n      required: false\n  sources:\n",
+        );
+        assert!(super::canonicalize_composition_yaml(&yaml_without_default).is_ok());
+
+        let mut json_with_null = serde_json::to_value(
+            super::parse_composition_yaml(MONTHLY_EXPENSE).expect("valid fixture document"),
+        )
+        .expect("fixture serializes to JSON");
+        json_with_null["spec"]["variables"][0]["default"] = serde_json::Value::Null;
+        assert_eq!(
+            super::canonicalize_composition_document_value(json_with_null),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
+
+    #[test]
+    fn variable_types_enforce_bounded_locale_independent_values() {
+        use super::{CompositionVariableType as Type, MAX_COMPOSITION_VARIABLE_STRING_BYTES};
+        use serde_json::json;
+
+        assert!(Type::String.accepts_value(&json!("")));
+        assert!(
+            Type::String.accepts_value(&json!("x".repeat(MAX_COMPOSITION_VARIABLE_STRING_BYTES)))
+        );
+        assert!(!Type::String
+            .accepts_value(&json!("x".repeat(MAX_COMPOSITION_VARIABLE_STRING_BYTES + 1))));
+        assert!(!Type::String.accepts_value(&json!("bad\u{0000}control")));
+        assert!(Type::String.accepts_value(&json!("line one\nline two")));
+
+        assert!(Type::Boolean.accepts_value(&json!(false)));
+        assert!(!Type::Boolean.accepts_value(&json!("false")));
+
+        assert!(Type::Integer.accepts_value(&json!(9_007_199_254_740_991_i64)));
+        assert!(Type::Integer.accepts_value(&json!(-9_007_199_254_740_991_i64)));
+        assert!(!Type::Integer.accepts_value(&json!(9_007_199_254_740_992_i64)));
+        assert!(!Type::Integer.accepts_value(&json!(1.0)));
+
+        assert!(Type::Float.accepts_value(&json!(1.25)));
+        assert!(Type::Float.accepts_value(&json!(1.0)));
+        assert!(Type::Float.accepts_value(&json!(1)));
+        assert!(!Type::Float.accepts_value(&json!("1.25")));
+
+        assert!(Type::Date.accepts_value(&json!("2024-02-29")));
+        assert!(!Type::Date.accepts_value(&json!("2025-02-29")));
+        assert!(!Type::Date.accepts_value(&json!("2026-1-01")));
+        assert!(!Type::Date.accepts_value(&json!("0000-01-01")));
+
+        assert!(Type::Timestamp.accepts_value(&json!("2026-10-13T23:59:59.123456789+09:00")));
+        assert!(Type::Timestamp.accepts_value(&json!("2026-10-13T14:59:59Z")));
+        for invalid in [
+            "2026-10-13T14:59:59",
+            "2026-10-13T14:59:60Z",
+            "2026-10-13T14:59:59-00:00",
+            "2026-10-13t14:59:59z",
+            "2026-10-13T14:59:59.1234567890Z",
+            "2026-10-13T25:59:59Z",
+        ] {
+            assert!(
+                !Type::Timestamp.accepts_value(&json!(invalid)),
+                "accepted {invalid}"
+            );
+        }
+    }
+
+    #[test]
+    fn typed_input_parser_enforces_the_pinned_lexical_contract() {
+        use super::{CompositionVariableInputValue as Parsed, CompositionVariableType as Type};
+
+        assert_eq!(Type::String.parse_input(""), Parsed::Unset);
+        assert_eq!(
+            Type::String.parse_input("preserve\ttext\n"),
+            Parsed::Valid(serde_json::json!("preserve\ttext\n"))
+        );
+        assert_eq!(Type::String.parse_input(&"é".repeat(2049)), Parsed::Invalid);
+
+        assert_eq!(
+            Type::Boolean.parse_input("true"),
+            Parsed::Valid(serde_json::json!(true))
+        );
+        assert_eq!(
+            Type::Boolean.parse_input("false"),
+            Parsed::Valid(serde_json::json!(false))
+        );
+        for invalid in ["True", "FALSE", " true", "0", "yes"] {
+            assert_eq!(Type::Boolean.parse_input(invalid), Parsed::Invalid);
+        }
+
+        assert_eq!(
+            Type::Integer.parse_input("+00042"),
+            Parsed::Valid(serde_json::json!(42))
+        );
+        assert_eq!(
+            Type::Integer.parse_input("-9007199254740991"),
+            Parsed::Valid(serde_json::json!(-9_007_199_254_740_991_i64))
+        );
+        assert_eq!(
+            Type::Integer.parse_input("9007199254740991"),
+            Parsed::Valid(serde_json::json!(9_007_199_254_740_991_i64))
+        );
+        for invalid in [
+            "-",
+            "+",
+            " 1",
+            "1 ",
+            "1.0",
+            "1e2",
+            "9007199254740992",
+            "123456789012345678",
+        ] {
+            assert_eq!(Type::Integer.parse_input(invalid), Parsed::Invalid);
+        }
+
+        for valid in ["1", "1.25", ".5", "+.5", "-1.0", "1e3", "5e-324", "0e-9999"] {
+            assert!(
+                matches!(Type::Float.parse_input(valid), Parsed::Valid(_)),
+                "rejected {valid}"
+            );
+        }
+        assert_eq!(Type::Float.parse_input(""), Parsed::Unset);
+        for invalid in [
+            "1.", "1,25", "NaN", "Infinity", "1e309", "1e-324", " 1", "1 ",
+        ] {
+            assert_eq!(
+                Type::Float.parse_input(invalid),
+                Parsed::Invalid,
+                "accepted {invalid}"
+            );
+        }
+        let max_float_token = format!("1{}", "0".repeat(63));
+        assert!(matches!(
+            Type::Float.parse_input(&max_float_token),
+            Parsed::Valid(_)
+        ));
+        assert_eq!(
+            Type::Float.parse_input(&(max_float_token + "0")),
+            Parsed::Invalid
+        );
+
+        assert_eq!(Type::Date.parse_input(""), Parsed::Unset);
+        assert!(matches!(
+            Type::Date.parse_input("2024-02-29"),
+            Parsed::Valid(_)
+        ));
+        assert_eq!(Type::Date.parse_input("2025-02-29"), Parsed::Invalid);
+        assert!(matches!(
+            Type::Timestamp.parse_input("2026-10-13T14:59:59.123456789+09:00"),
+            Parsed::Valid(_)
+        ));
+        assert_eq!(
+            Type::Timestamp.parse_input("2026-10-13T14:59:59"),
+            Parsed::Invalid
         );
     }
 
@@ -961,9 +1527,9 @@ mod tests {
     }
 
     #[test]
-    fn unknown_parameter_references_are_invalid() {
+    fn unknown_layout_references_are_invalid() {
         let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
-        spec.layout.rows[0].items.push(parameter_item("unknown"));
+        spec.layout.rows[0].items.push(component_item("unknown"));
 
         assert_eq!(
             spec.components_in_render_order(),
@@ -972,11 +1538,12 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_parameter_placements_are_invalid() {
+    fn duplicate_input_placements_are_invalid() {
         let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
-        spec.layout
-            .rows
-            .push(layout_row("repeated", vec![parameter_item("month_start")]));
+        spec.layout.rows.push(layout_row(
+            "repeated",
+            vec![component_item("month_start_input")],
+        ));
 
         assert_eq!(
             spec.components_in_render_order(),
@@ -985,22 +1552,11 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_parameter_ids_are_invalid() {
-        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
-        spec.parameters.push(spec.parameters[0].clone());
-
-        assert_eq!(
-            spec.components_in_render_order(),
-            Err(CompositionDiagnosticCode::InvalidComposition)
-        );
-    }
-
-    #[test]
-    fn required_parameter_without_default_needs_a_layout_control() {
+    fn required_variable_without_default_needs_a_layout_input() {
         let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
         spec.layout.rows[0]
             .items
-            .retain(|item| *item != parameter_item("month_end"));
+            .retain(|item| *item != component_item("month_end_input"));
 
         assert_eq!(
             spec.components_in_render_order(),
@@ -1009,21 +1565,25 @@ mod tests {
     }
 
     #[test]
-    fn optional_and_defaulted_parameters_do_not_need_a_layout_control() {
+    fn optional_and_defaulted_variables_do_not_need_an_input() {
         let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
-        spec.parameters[0].required = false;
+        spec.variables[0].required = false;
+        spec.components
+            .retain(|component| component.id() != "month_start_input");
         spec.layout.rows[0]
             .items
-            .retain(|item| *item != parameter_item("month_start"));
+            .retain(|item| *item != component_item("month_start_input"));
 
         assert!(spec.components_in_render_order().is_ok());
 
         let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
-        spec.parameters[1].default =
+        spec.variables[1].default =
             Some(serde_json::from_value(serde_json::json!("2026-11-01")).unwrap());
+        spec.components
+            .retain(|component| component.id() != "month_end_input");
         spec.layout.rows[0]
             .items
-            .retain(|item| *item != parameter_item("month_end"));
+            .retain(|item| *item != component_item("month_end_input"));
 
         assert!(spec.components_in_render_order().is_ok());
     }
@@ -1043,7 +1603,9 @@ mod tests {
         let component = CompositionComponent::Text {
             id: "heading".to_string(),
             label: None,
-            text: "Summary".to_string(),
+            content: super::CompositionTextContent::Literal {
+                text: "Summary".to_string(),
+            },
             style: TextStyle::Heading,
         };
         assert_eq!(component.id(), "heading");
@@ -1053,7 +1615,7 @@ mod tests {
             serde_json::json!({
                 "kind": "text",
                 "id": "heading",
-                "text": "Summary",
+                "content": {"kind": "literal", "text": "Summary"},
                 "style": "heading",
             })
         );
@@ -1082,7 +1644,7 @@ mod tests {
     #[test]
     fn document_uses_the_portable_envelope_field_names() {
         let document: CompositionDocument = serde_json::from_str(
-            r#"{"format":"ugoite.composition","format_version":1,"kind":"dashboard","name":"Example","tags":["demo"],"spec":{"parameters":[],"sources":[],"components":[],"layout":{"kind":"flow","rows":[]}}}"#,
+            r#"{"format":"ugoite.composition","format_version":1,"kind":"dashboard","name":"Example","tags":["demo"],"spec":{"variables":[],"sources":[],"components":[],"layout":{"kind":"flow","rows":[]}}}"#,
         )
         .unwrap();
 
@@ -1094,7 +1656,7 @@ mod tests {
         assert_eq!(
             document.spec,
             CompositionSpec {
-                parameters: vec![],
+                variables: vec![],
                 sources: vec![],
                 components: vec![],
                 layout: DashboardFlowLayout {
@@ -1109,7 +1671,7 @@ mod tests {
     #[test]
     fn unknown_model_fields_are_rejected() {
         let result = serde_json::from_str::<CompositionDocument>(
-            r#"{"format":"ugoite.composition","format_version":1,"kind":"dashboard","name":"Example","tags":[],"spec":{"parameters":[],"sources":[],"components":[],"layout":{"kind":"flow","rows":[]}},"extra":true}"#,
+            r#"{"format":"ugoite.composition","format_version":1,"kind":"dashboard","name":"Example","tags":[],"spec":{"variables":[],"sources":[],"components":[],"layout":{"kind":"flow","rows":[]}},"extra":true}"#,
         );
         assert!(result.is_err());
     }
@@ -1159,7 +1721,7 @@ mod tests {
             "name": "Monthly expenses",
             "tags": [],
             "spec": {
-                "parameters": [
+                "variables": [
                     {"id": "search", "type": "string", "required": false},
                     {"id": "month", "type": "date", "required": true, "format": "year-month"}
                 ],
@@ -1170,7 +1732,7 @@ mod tests {
                         "form_id": "00000000-0000-7000-8000-000000000010",
                         "field_schema": [{"field_id": 100, "field_type": "string"}],
                         "query": {
-                            "text": {"parameter": "search"},
+                            "text": {"variable": "search"},
                             "filters": [{"field_id": 100, "operator": "contains", "value": "rent"}],
                             "sort": [{"field_id": 100, "direction": "asc"}],
                             "projection": {"kind": "fields", "fields": [100]}
@@ -1182,7 +1744,7 @@ mod tests {
                         "entry_id": "00000000-0000-7000-8000-000000000020",
                         "revision_id": "00000000-0000-7000-8000-000000000021",
                         "expected_result": [{"name": "total", "type": "float"}],
-                        "variables": {"month": {"parameter": "month"}}
+                        "variables": {"month": {"variable": "month"}}
                     }
                 ],
                 "components": [
@@ -1206,7 +1768,7 @@ mod tests {
         assert_eq!(query.page_limit, DEFAULT_COMPOSITION_PAGE_LIMIT);
         assert!(matches!(
             &query.text,
-            Some(CompositionValue::Parameter(reference)) if reference.parameter == "search"
+            Some(CompositionValue::Variable(reference)) if reference.variable == "search"
         ));
         assert_eq!(document.spec.sources[1].id(), "monthly_total");
         assert!(matches!(
@@ -1217,11 +1779,12 @@ mod tests {
     }
 
     #[test]
-    fn parameter_reference_and_literal_values_reject_unknown_mapping_keys() {
+    fn variable_reference_and_literal_values_reject_unknown_mapping_keys() {
         assert!(
-            serde_json::from_str::<CompositionValue>(r#"{"parameter":"month","extra":true}"#)
+            serde_json::from_str::<CompositionValue>(r#"{"variable":"month","extra":true}"#)
                 .is_err()
         );
+        assert!(serde_json::from_str::<CompositionValue>(r#"{"parameter":"month"}"#).is_err());
         assert!(serde_json::from_str::<CompositionValue>(r#"{"unrecognized":"value"}"#).is_err());
         assert!(serde_json::from_str::<CompositionValue>(r#"["not", "scalar"]"#).is_err());
     }
@@ -1238,16 +1801,16 @@ mod tests {
                 "invalid_composition",
             ),
             (
-                CompositionDiagnosticCode::ParameterUnknown,
-                "parameter_unknown",
+                CompositionDiagnosticCode::VariableUnknown,
+                "variable_unknown",
             ),
             (
-                CompositionDiagnosticCode::ParameterMissing,
-                "parameter_missing",
+                CompositionDiagnosticCode::VariableMissing,
+                "variable_missing",
             ),
             (
-                CompositionDiagnosticCode::ParameterTypeMismatch,
-                "parameter_type_mismatch",
+                CompositionDiagnosticCode::VariableTypeMismatch,
+                "variable_type_mismatch",
             ),
             (
                 CompositionDiagnosticCode::SourceUnavailable,
@@ -1327,9 +1890,9 @@ mod tests {
         let frozen_codes = [
             "unsupported_format_version",
             "invalid_composition",
-            "parameter_unknown",
-            "parameter_missing",
-            "parameter_type_mismatch",
+            "variable_unknown",
+            "variable_missing",
+            "variable_type_mismatch",
             "source_unavailable",
             "missing_field",
             "field_type_changed",
@@ -1411,7 +1974,7 @@ mod tests {
         );
 
         // Dashboard flow layout (ADR-019 re-freeze): flow is the only layout
-        // kind; rows carry stable IDs with ordered component and parameter
+        // kind; rows carry stable IDs with ordered component
         // items. Components are text, metric, or table; text styles are the
         // fixed title, heading, body, and caption roles.
         assert_eq!(
@@ -1425,13 +1988,6 @@ mod tests {
             .unwrap(),
             serde_json::json!({"kind": "component", "component": "total"})
         );
-        assert_eq!(
-            serde_json::to_value(FlowItem::Parameter {
-                parameter: "month".to_string(),
-            })
-            .unwrap(),
-            serde_json::json!({"kind": "parameter", "parameter": "month"})
-        );
         for (style, spelling) in [
             (TextStyle::Title, "\"title\""),
             (TextStyle::Heading, "\"heading\""),
@@ -1443,7 +1999,9 @@ mod tests {
         let text_component = CompositionComponent::Text {
             id: "heading".to_string(),
             label: None,
-            text: "Summary".to_string(),
+            content: super::CompositionTextContent::Literal {
+                text: "Summary".to_string(),
+            },
             style: TextStyle::Heading,
         };
         assert_eq!(

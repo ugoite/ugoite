@@ -84,7 +84,6 @@ const harnessCalls = vi.hoisted(() => ({
   draft: [] as CompositionDraft[],
   selected: [] as (string | null)[],
   picker: [] as { target: DraftInsertTarget }[],
-  parameters: [] as [string, unknown | undefined][],
 }));
 
 function Harness(
@@ -122,9 +121,6 @@ function Harness(
         setDraft(next);
       }}
       onRequestDisplayPicker={(target) => harnessCalls.picker.push({ target })}
-      onParameterChange={(parameterId, value) => {
-        harnessCalls.parameters.push([parameterId, value]);
-      }}
       onNext={() => {}}
       onPrevious={() => {}}
       onRetry={() => {}}
@@ -149,7 +145,6 @@ describe("CompositionDesignCanvas", () => {
     harnessCalls.draft.length = 0;
     harnessCalls.selected.length = 0;
     harnessCalls.picker.length = 0;
-    harnessCalls.parameters.length = 0;
   });
 
   afterEach(() => cleanup());
@@ -185,6 +180,38 @@ describe("CompositionDesignCanvas", () => {
       "data-block-id",
       designBlockIdForComponent("disp-1"),
     );
+  });
+
+  it("selects repeated Inputs by component identity", () => {
+    const initial = seedDraft();
+    const withSecondInput: CompositionDraft = {
+      ...initial,
+      layoutRows: initial.layoutRows.map((row, index) =>
+        index === 0
+          ? {
+            ...row,
+            items: [
+              ...row.items,
+              {
+                kind: "parameter" as const,
+                parameterId: "month",
+                inputComponentId: "input-month-secondary",
+                label: "Secondary month",
+              },
+            ],
+          }
+          : row
+      ),
+    };
+    renderHarness(withSecondInput);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Select Secondary month" }),
+    );
+
+    expect(harnessCalls.selected).toEqual([
+      "input:input-month-secondary",
+    ]);
   });
 
   it("soft-highlights source blocks without changing the selection", () => {
@@ -397,7 +424,10 @@ describe("CompositionDesignCanvas", () => {
     const document = toStudioDocument(next);
     expect(
       document.spec.layout.rows.flatMap((row) => row.items),
-    ).toContainEqual({ kind: "parameter", parameter: "region" });
+    ).toContainEqual({
+      kind: "component",
+      component: "input-region",
+    });
     expect(harnessCalls.selected).toEqual([
       designBlockIdForParameter("region"),
     ]);
@@ -462,7 +492,7 @@ describe("CompositionDesignCanvas", () => {
     );
     expect(headingRow?.items).toEqual([
       { kind: "component", component: "disp-1" },
-      { kind: "parameter", parameter: "month" },
+      { kind: "component", component: "input-month" },
     ]);
 
     // Every reorder control is a native button in visual order.
@@ -505,7 +535,6 @@ describe("CompositionDesignCanvas", () => {
     fireEvent.click(screen.getByRole("button", { name: "Select Summary" }));
 
     expect(harnessCalls.picker).toHaveLength(0);
-    expect(harnessCalls.parameters).toHaveLength(0);
     expect(harnessCalls.draft.length).toBeGreaterThan(0);
     // Sources never change shape across text and placement operations.
     const sources = harnessCalls.draft.map((draft) =>
@@ -552,6 +581,7 @@ describe("CompositionDesignCanvas", () => {
     expect(document.spec.components.map((component) => component.id)).toEqual([
       "disp-2",
       "disp-1",
+      "input-month",
     ]);
     // Cross-row neighbors exchange positions so every component stays placed.
     expect(
@@ -562,6 +592,9 @@ describe("CompositionDesignCanvas", () => {
     ).toContainEqual({ kind: "component", component: "disp-1" });
     expect(
       document.spec.layout.rows.flatMap((row) => row.items),
-    ).toContainEqual({ kind: "parameter", parameter: "month" });
+    ).toContainEqual({
+      kind: "component",
+      component: "input-month",
+    });
   });
 });

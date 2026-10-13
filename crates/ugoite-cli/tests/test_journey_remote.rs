@@ -1567,7 +1567,7 @@ name: CLI parity
 kind: dashboard
 tags: []
 spec:
-  parameters:
+  variables:
     - id: month_start
       type: date
       required: true
@@ -1590,11 +1590,11 @@ spec:
           - field_id: {date_id}
             operator: gte
             value:
-              parameter: month_start
+              variable: month_start
           - field_id: {date_id}
             operator: lt
             value:
-              parameter: month_end
+              variable: month_end
         sort:
           - field_id: {date_id}
             direction: asc
@@ -1602,6 +1602,12 @@ spec:
           kind: fields
           fields: [{date_id}, {merchant_id}, {amount_id}]
   components:
+    - id: month_start_input
+      kind: input
+      variable: month_start
+    - id: month_end_input
+      kind: input
+      variable: month_end
     - id: transactions
       kind: table
       source: expense_rows
@@ -1610,10 +1616,10 @@ spec:
     rows:
       - id: main
         items:
-          - kind: parameter
-            parameter: month_start
-          - kind: parameter
-            parameter: month_end
+          - kind: component
+            component: month_start_input
+          - kind: component
+            component: month_end_input
           - kind: component
             component: transactions
 "#
@@ -1641,9 +1647,9 @@ spec:
     let revised_yaml = yaml
         .replacen("name: CLI parity", "name: CLI parity revised", 1)
         .replacen(
-            "              parameter: month_end\n        sort:\n",
+            "              variable: month_end\n        sort:\n",
             &format!(
-                "              parameter: month_end\n          - field_id: {merchant_id}\n            operator: equals\n            value: January-10\n        sort:\n"
+                "              variable: month_end\n          - field_id: {merchant_id}\n            operator: equals\n            value: January-10\n        sort:\n"
             ),
             1,
         );
@@ -1861,7 +1867,7 @@ name: CLI broken reference
 kind: dashboard
 tags: []
 spec:
-  parameters: []
+  variables: []
   sources:
     - id: missing_rows
       kind: entry_query

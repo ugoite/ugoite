@@ -295,7 +295,7 @@ describe("composition draft model", () => {
       name: "Monthly review",
       tags: ["finance"],
       spec: {
-        parameters: [{
+        variables: [{
           id: "month",
           label: "Month",
           type: "date",
@@ -310,7 +310,7 @@ describe("composition draft model", () => {
             entry_id: "sql-1",
             revision_id: "sql-rev-1",
             expected_result: [{ name: "total", type: "float" }],
-            variables: { month: { parameter: "month" } },
+            variables: { month: { variable: "month" } },
           },
           {
             kind: "entry_query",
@@ -386,7 +386,7 @@ describe("composition draft model", () => {
       name: "Tools",
       tags: [],
       spec: {
-        parameters: [],
+        variables: [],
         sources: [{ kind: "future_source", id: "src-1" }],
         components: [],
         layout: { kind: "flow", rows: [{ id: "main", items: [] }] },
@@ -404,7 +404,7 @@ describe("composition draft model", () => {
       name: "Tools",
       tags: [],
       spec: {
-        parameters: [],
+        variables: [],
         sources: [{
           kind: "saved_sql",
           id: sourceId,
@@ -430,6 +430,68 @@ describe("composition draft model", () => {
     expect(draft.sources[0].name).not.toContain("internal-revision-identity");
   });
 
+  it("keeps generated display ids clear of preserved Input ids", () => {
+    const document: CompositionStudioDocument = {
+      format: "ugoite.composition",
+      format_version: 1,
+      kind: "dashboard",
+      name: "Tools",
+      tags: [],
+      spec: {
+        variables: [{
+          id: "title",
+          type: "string",
+          required: false,
+        }],
+        sources: [],
+        components: [
+          {
+            kind: "text",
+            id: "heading",
+            content: { kind: "literal", text: "Heading" },
+            style: "heading",
+          },
+          {
+            kind: "input",
+            id: "disp-1",
+            variable: "title",
+          },
+        ],
+        layout: {
+          kind: "flow",
+          rows: [{
+            id: "main",
+            items: [
+              { kind: "component", component: "disp-1" },
+              { kind: "component", component: "heading" },
+            ],
+          }],
+        },
+      },
+    };
+
+    const draft = draftFromDocument(document, {});
+    const restored = toStudioDocument(draft);
+    expect(draft.displays[0].draftId).toBe("disp-2");
+    expect(restored.spec.components.map((component) => component.id)).toEqual([
+      "disp-2",
+      "disp-1",
+    ]);
+    expect(restored.spec.layout.rows[0].items).toEqual([
+      { kind: "component", component: "disp-1" },
+      { kind: "component", component: "disp-2" },
+    ]);
+
+    const added = addTextDisplay(draft, { text: "Note" });
+    if (!added.ok || !added.draftId) throw new Error("expected text block");
+    const afterInsert = toStudioDocument(added.draft);
+    expect(added.draftId).toBe("disp-3");
+    expect(
+      new Set(afterInsert.spec.components.map((component) => component.id)),
+    )
+      .toEqual(new Set(["disp-1", "disp-2", "disp-3"]));
+  });
+
   it("restores multi-row layout order with text and parameter placement", () => {
     // Labeled-fixture shape with semantic ids: an entry_query source with
     // parameter-bound filters, a saved_sql source with variable bindings, a
@@ -442,7 +504,7 @@ describe("composition draft model", () => {
       name: "Monthly expenses",
       tags: [],
       spec: {
-        parameters: [
+        variables: [
           {
             id: "month_start",
             label: "Start month",
@@ -473,12 +535,12 @@ describe("composition draft model", () => {
                 {
                   field_id: 100,
                   operator: "gte",
-                  value: { parameter: "month_start" },
+                  value: { variable: "month_start" },
                 },
                 {
                   field_id: 100,
                   operator: "lt",
-                  value: { parameter: "month_end" },
+                  value: { variable: "month_end" },
                 },
               ],
               sort: [{ field_id: 100, direction: "desc" }],
@@ -492,8 +554,8 @@ describe("composition draft model", () => {
             revision_id: "00000000-0000-7000-8000-000000000021",
             expected_result: [{ name: "total", type: "float" }],
             variables: {
-              month_start: { parameter: "month_start" },
-              month_end: { parameter: "month_end" },
+              month_start: { variable: "month_start" },
+              month_end: { variable: "month_end" },
             },
           },
         ],
@@ -501,7 +563,7 @@ describe("composition draft model", () => {
           {
             kind: "text",
             id: "summary_title",
-            text: "Monthly summary",
+            content: { kind: "literal", text: "Monthly summary" },
             style: "heading",
           },
           {
@@ -517,6 +579,23 @@ describe("composition draft model", () => {
             label: "Expense transactions",
             source: "expense_rows",
           },
+          {
+            kind: "input",
+            id: "input-month_start",
+            label: "Beginning",
+            variable: "month_start",
+          },
+          {
+            kind: "input",
+            id: "input-month_start-secondary",
+            label: "Start again",
+            variable: "month_start",
+          },
+          {
+            kind: "input",
+            id: "input-month_end",
+            variable: "month_end",
+          },
         ],
         layout: {
           kind: "flow",
@@ -524,8 +603,12 @@ describe("composition draft model", () => {
             {
               id: "controls",
               items: [
-                { kind: "parameter", parameter: "month_start" },
-                { kind: "parameter", parameter: "month_end" },
+                { kind: "component", component: "input-month_start" },
+                {
+                  kind: "component",
+                  component: "input-month_start-secondary",
+                },
+                { kind: "component", component: "input-month_end" },
               ],
             },
             {
@@ -557,8 +640,23 @@ describe("composition draft model", () => {
       "detail",
     ]);
     expect(draft.layoutRows[0].items).toEqual([
-      { kind: "parameter", parameterId: "month_start" },
-      { kind: "parameter", parameterId: "month_end" },
+      {
+        kind: "parameter",
+        parameterId: "month_start",
+        inputComponentId: "input-month_start",
+        label: "Beginning",
+      },
+      {
+        kind: "parameter",
+        parameterId: "month_start",
+        inputComponentId: "input-month_start-secondary",
+        label: "Start again",
+      },
+      {
+        kind: "parameter",
+        parameterId: "month_end",
+        inputComponentId: "input-month_end",
+      },
     ]);
     expect(draft.layoutRows[1].items).toEqual([
       { kind: "component", draftId: "disp-1" },
@@ -571,7 +669,7 @@ describe("composition draft model", () => {
     expect(draft.displays[0]).toEqual({
       kind: "text",
       draftId: "disp-1",
-      text: "Monthly summary",
+      content: { kind: "literal", text: "Monthly summary" },
       style: "heading",
     });
     expect(draft.displays[1]).toMatchObject({
@@ -597,9 +695,9 @@ describe("composition draft model", () => {
           {
             field_id: 100,
             operator: "gte",
-            value: { parameter: "month_start" },
+            value: { variable: "month_start" },
           },
-          { field_id: 100, operator: "lt", value: { parameter: "month_end" } },
+          { field_id: 100, operator: "lt", value: { variable: "month_end" } },
         ],
       },
     });
@@ -621,30 +719,35 @@ describe("composition draft model", () => {
     );
     for (const row of emitted.spec.layout.rows) {
       for (const item of row.items) {
-        if (item.kind === "component") {
-          expect(emittedById.has(item.component)).toBe(true);
-        } else {
-          expect(
-            document.spec.parameters.some((parameter) =>
-              parameter.id === item.parameter
-            ),
-          ).toBe(true);
-        }
+        expect(emittedById.has(item.component)).toBe(true);
       }
     }
     expect(
       emitted.spec.layout.rows.flatMap((row) => row.items),
     ).toEqual([
-      { kind: "parameter", parameter: "month_start" },
-      { kind: "parameter", parameter: "month_end" },
+      { kind: "component", component: "input-month_start" },
+      { kind: "component", component: "input-month_start-secondary" },
+      { kind: "component", component: "input-month_end" },
       { kind: "component", component: "disp-1" },
       { kind: "component", component: "disp-2" },
       { kind: "component", component: "disp-3" },
     ]);
     expect(emitted.spec.components).toContainEqual({
+      kind: "input",
+      id: "input-month_start",
+      label: "Beginning",
+      variable: "month_start",
+    });
+    expect(emitted.spec.components).toContainEqual({
+      kind: "input",
+      id: "input-month_start-secondary",
+      label: "Start again",
+      variable: "month_start",
+    });
+    expect(emitted.spec.components).toContainEqual({
       kind: "text",
       id: "disp-1",
-      text: "Monthly summary",
+      content: { kind: "literal", text: "Monthly summary" },
       style: "heading",
     });
     expect(emitted.spec.components).toContainEqual({
@@ -672,7 +775,7 @@ describe("composition draft model", () => {
       name: "Monthly expenses",
       tags: [],
       spec: {
-        parameters: [],
+        variables: [],
         sources: [
           {
             kind: "entry_query",
@@ -704,6 +807,126 @@ describe("composition draft model", () => {
     expect(draftSaveReadiness(draft)).toEqual({ ready: true });
   });
 
+  it("round-trips variable-bound Text and keeps it through style edits", () => {
+    let draft = createEmptyDraft("Variable text");
+    const variable = addParameter(draft, {
+      id: "greeting",
+      type: "string",
+      required: false,
+    });
+    if (!variable.ok) throw new Error("expected variable");
+    draft = variable.draft;
+    const text = addTextDisplay(draft, { text: "Hello" });
+    if (!text.ok) throw new Error("expected text");
+
+    const document = toStudioDocument(text.draft);
+    const literal = document.spec.components.find((component) =>
+      component.kind === "text"
+    );
+    if (!literal || literal.kind !== "text") {
+      throw new Error("expected text component");
+    }
+    literal.content = { kind: "variable", variable: "greeting" };
+
+    const restored = draftFromDocument(document, {});
+    expect(restored.displays[0]).toMatchObject({
+      kind: "text",
+      content: { kind: "variable", variable: "greeting" },
+    });
+    expect(
+      toStudioDocument(restored).spec.components.find((component) =>
+        component.kind === "text"
+      ),
+    ).toMatchObject({
+      kind: "text",
+      content: { kind: "variable", variable: "greeting" },
+    });
+
+    const styled = setTextStyle(restored, "disp-1", "caption");
+    expect(styled.ok).toBe(true);
+    if (!styled.ok) throw new Error("expected text style update");
+    expect(toStudioDocument(styled.draft).spec.components[0]).toMatchObject({
+      kind: "text",
+      content: { kind: "variable", variable: "greeting" },
+      style: "caption",
+    });
+  });
+
+  it("removes and retargets one Input without changing sibling Inputs", () => {
+    let draft = createEmptyDraft("Repeated Input");
+    const month = addParameter(draft, {
+      id: "month",
+      type: "date",
+      required: false,
+    });
+    if (!month.ok) throw new Error("expected month");
+    draft = month.draft;
+    const region = addParameter(draft, {
+      id: "region",
+      type: "string",
+      required: false,
+    });
+    if (!region.ok) throw new Error("expected region");
+    draft = region.draft;
+    const placed = placeParameterControl(draft, "month");
+    if (!placed.ok) throw new Error("expected first Input");
+    draft = {
+      ...placed.draft,
+      layoutRows: placed.draft.layoutRows.map((row, index) =>
+        index === 0
+          ? {
+            ...row,
+            items: [
+              ...row.items,
+              {
+                kind: "parameter" as const,
+                parameterId: "month",
+                inputComponentId: "input-month-secondary",
+                label: "Secondary month",
+              },
+            ],
+          }
+          : row
+      ),
+    };
+
+    const retargeted = retargetParameterControl(
+      draft,
+      "input-month-secondary",
+      "month",
+      "region",
+    );
+    expect(retargeted.ok).toBe(true);
+    if (!retargeted.ok) throw new Error("expected targeted retarget");
+    expect(retargeted.draft.layoutRows[0].items).toEqual([
+      { kind: "parameter", parameterId: "month" },
+      {
+        kind: "parameter",
+        parameterId: "region",
+        inputComponentId: "input-month-secondary",
+        label: "Secondary month",
+      },
+    ]);
+
+    const removed = unplaceParameterControl(draft, "input-month");
+    expect(removed.ok).toBe(true);
+    if (!removed.ok) throw new Error("expected targeted removal");
+    expect(removed.draft.layoutRows[0].items).toEqual([{
+      kind: "parameter",
+      parameterId: "month",
+      inputComponentId: "input-month-secondary",
+      label: "Secondary month",
+    }]);
+    expect(toStudioDocument(removed.draft).spec.components).toContainEqual({
+      kind: "input",
+      id: "input-month-secondary",
+      label: "Secondary month",
+      variable: "month",
+    });
+    expect(toStudioDocument(removed.draft).spec.components).not
+      .toContainEqual({ kind: "input", id: "input-month", variable: "month" });
+  });
+
   it("rejects removed Metric calculation shapes and unknown component/layout kinds", () => {
     const base = (): CompositionStudioDocument => ({
       format: "ugoite.composition",
@@ -712,7 +935,7 @@ describe("composition draft model", () => {
       name: "Monthly expenses",
       tags: [],
       spec: {
-        parameters: [{ id: "month", type: "date", required: false }],
+        variables: [{ id: "month", type: "date", required: false }],
         sources: [
           {
             kind: "saved_sql",
@@ -828,7 +1051,7 @@ describe("composition draft model", () => {
         withComponents([{
           kind: "text",
           id: "summary_title",
-          text: "Monthly summary",
+          content: { kind: "literal", text: "Monthly summary" },
           style: "banner",
         }], textRow),
         {},
@@ -839,7 +1062,7 @@ describe("composition draft model", () => {
         withComponents([{
           kind: "text",
           id: "summary_title",
-          text: 42,
+          content: { kind: "literal", text: 42 as never },
           style: "heading",
         }], textRow),
         {},
@@ -921,14 +1144,22 @@ describe("composition draft model", () => {
     expect(document.spec.components).toContainEqual({
       kind: "text",
       id: "disp-1",
-      text: "Summary",
+      content: { kind: "literal", text: "Summary" },
       style: "heading",
+    });
+    expect(document.spec.components).toContainEqual({
+      kind: "input",
+      id: "input-month",
+      variable: "month",
     });
     // Every component lands exactly once; the control references semantics.
     const items = document.spec.layout.rows.flatMap((row) => row.items);
     expect(items).toContainEqual({ kind: "component", component: "disp-1" });
     expect(items).toContainEqual({ kind: "component", component: "disp-2" });
-    expect(items).toContainEqual({ kind: "parameter", parameter: "month" });
+    expect(items).toContainEqual({
+      kind: "component",
+      component: "input-month",
+    });
     expect(unplacedParameters(draft)).toHaveLength(0);
 
     // Placing twice or placing unknown parameters stays rejected.
@@ -942,7 +1173,7 @@ describe("composition draft model", () => {
     });
 
     // Unplacing keeps the semantic parameter for the Data section.
-    const unplaced = unplaceParameterControl(draft, "month");
+    const unplaced = unplaceParameterControl(draft, "input-month");
     expect(unplaced.ok).toBe(true);
     if (!unplaced.ok) throw new Error("expected unplacement");
     expect(unplaced.draft.parameters.map((parameter) => parameter.id)).toEqual([
@@ -952,7 +1183,10 @@ describe("composition draft model", () => {
       toStudioDocument(unplaced.draft).spec.layout.rows.flatMap((row) =>
         row.items
       ),
-    ).not.toContainEqual({ kind: "parameter", parameter: "month" });
+    ).not.toContainEqual({
+      kind: "component",
+      component: "input-month",
+    });
   });
 
   it("reorders rows and items within rows only", () => {
@@ -1032,7 +1266,7 @@ describe("composition draft model", () => {
       ok: false,
       error: "parameter-referenced",
     });
-    const unplaced = unplaceParameterControl(placed.draft, "month");
+    const unplaced = unplaceParameterControl(placed.draft, "input-month");
     if (!unplaced.ok) throw new Error("expected unplacement");
     expect(removeParameter(unplaced.draft, "month").ok).toBe(true);
   });
@@ -1179,7 +1413,7 @@ describe("composition draft model", () => {
     if (!styled.ok) throw new Error("expected style change");
     expect(toStudioDocument(styled.draft).spec.components[0]).toMatchObject({
       kind: "text",
-      text: "New heading",
+      content: { kind: "literal", text: "New heading" },
       style: "title",
     });
     // Text edits never reshape sources, so they never refetch.
@@ -1234,16 +1468,29 @@ describe("composition draft model", () => {
       items: [...row.items],
     }));
 
-    const retargeted = retargetParameterControl(draft, "month", "region");
+    const retargeted = retargetParameterControl(
+      draft,
+      "input-month",
+      "month",
+      "region",
+    );
     expect(retargeted.ok).toBe(true);
     if (!retargeted.ok) throw new Error("expected retarget");
     const items = toStudioDocument(retargeted.draft).spec.layout.rows.flatMap(
       (row) => row.items,
     );
-    expect(items).toContainEqual({ kind: "parameter", parameter: "region" });
+    expect(items).toContainEqual({
+      kind: "component",
+      component: "input-month",
+    });
     expect(items).not.toContainEqual({
-      kind: "parameter",
-      parameter: "month",
+      kind: "component",
+      component: "input-region",
+    });
+    expect(toStudioDocument(retargeted.draft).spec.components).toContainEqual({
+      kind: "input",
+      id: "input-month",
+      variable: "region",
     });
     // Same row, same position; declarations untouched with no label override.
     expect(retargeted.draft.layoutRows.map((row) => row.id)).toEqual(
@@ -1253,26 +1500,23 @@ describe("composition draft model", () => {
       retargeted.draft.parameters.map((parameter) => parameter.id),
     ).toEqual(["month", "region", "quarter"]);
 
-    expect(retargetParameterControl(draft, "month", "month")).toEqual({
-      ok: true,
-      draft,
-    });
-    expect(retargetParameterControl(draft, "month", "nope")).toEqual({
-      ok: false,
-      error: "unknown-parameter",
-    });
-    expect(retargetParameterControl(draft, "nope", "region")).toEqual({
-      ok: false,
-      error: "unknown-parameter",
-    });
-    expect(retargetParameterControl(draft, "region", "month")).toEqual({
-      ok: false,
-      error: "parameter-already-placed",
-    });
-    expect(retargetParameterControl(draft, "region", "quarter")).toEqual({
-      ok: false,
-      error: "unknown-block",
-    });
+    expect(retargetParameterControl(draft, "input-month", "month", "month"))
+      .toEqual({
+        ok: true,
+        draft,
+      });
+    expect(retargetParameterControl(draft, "input-month", "month", "nope"))
+      .toEqual({
+        ok: false,
+        error: "unknown-parameter",
+      });
+    expect(retargetParameterControl(draft, "input-month", "nope", "region"))
+      .toEqual({
+        ok: false,
+        error: "unknown-parameter",
+      });
+    expect(retargetParameterControl(draft, "missing-input", "region", "month"))
+      .toEqual({ ok: false, error: "unknown-block" });
   });
 
   it("maps entry-query filter edits onto the draft with existing operators", () => {
@@ -1313,13 +1557,20 @@ describe("composition draft model", () => {
         { field_id: 1, operator: "equals", value: { nested: true } },
       ]),
     ).toEqual({ ok: false, error: "invalid-query" });
+    expect(
+      setEntryQueryFilters(draft, "src-1", [{
+        field_id: 1,
+        operator: "equals",
+        value: { parameter: "month" } as never,
+      }]),
+    ).toEqual({ ok: false, error: "invalid-query" });
     expect(setEntryQueryFilters(draft, "nope", [])).toEqual({
       ok: false,
       error: "unknown-source",
     });
     // Parameter-bound values keep their shape through the same channel.
     const bound = setEntryQueryFilters(draft, "src-1", [
-      { field_id: 1, operator: "gte", value: { parameter: "month" } },
+      { field_id: 1, operator: "gte", value: { variable: "month" } },
     ]);
     expect(bound.ok).toBe(true);
   });

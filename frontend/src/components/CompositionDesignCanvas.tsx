@@ -17,6 +17,7 @@ import {
   type DraftInsertTarget,
   type DraftLayoutItem,
   type DraftLayoutRow,
+  inputComponentIdForVariable,
   moveLayoutItem,
   moveLayoutRow,
   placeParameterControl,
@@ -24,9 +25,11 @@ import {
 } from "~/lib/composition-draft";
 import { t } from "~/lib/i18n";
 import { compositionParameterDisplayName } from "~/lib/composition-parameter-name";
+import { safeText } from "~/lib/display-value";
 import type {
   CompositionFlowLayoutItem,
   CompositionParameterDefinition,
+  CompositionResolvedComponentBinding,
   CompositionResolvePlan,
   CompositionTextStyle,
 } from "~/lib/composition-api";
@@ -35,8 +38,10 @@ import type { CompositionSourcePageState } from "~/lib/composition-query-handle"
 /** Transient canvas selection: component/parameter identity, never pixels. */
 export const designBlockIdForComponent = (draftId: string): string => draftId;
 
-export const designBlockIdForParameter = (parameterId: string): string =>
-  `param:${parameterId}`;
+export const designBlockIdForParameter = (
+  parameterId: string,
+  inputComponentId = inputComponentIdForVariable(parameterId),
+): string => `input:${inputComponentId}`;
 
 export interface CompositionDesignCanvasProps {
   draft: CompositionDraft;
@@ -57,7 +62,6 @@ export interface CompositionDesignCanvasProps {
   onDraftChange: (draft: CompositionDraft) => void;
   /** Display insertion opens the shared kind/source picker at a target. */
   onRequestDisplayPicker: (target: DraftInsertTarget) => void;
-  onParameterChange: (parameterId: string, value: unknown | undefined) => void;
   fieldNames?: CompositionFieldNames;
   metricQueryContext?: CompositionMetricQueryContext;
   onNext: (sourceId: string) => void;
@@ -87,7 +91,8 @@ const blockName = (
   item: DraftLayoutItem,
 ): string => {
   if (item.kind === "parameter") {
-    return compositionParameterDisplayName(draft.parameters, item.parameterId);
+    return item.label?.trim() ||
+      compositionParameterDisplayName(draft.parameters, item.parameterId);
   }
   const display = draft.displays.find((entry) =>
     entry.draftId === item.draftId
@@ -95,7 +100,12 @@ const blockName = (
   if (!display) return t("composition.studioDisplay");
   if (display.label) return display.label;
   if (display.kind === "text") {
-    return display.text || t("composition.studioText");
+    return display.content.kind === "literal"
+      ? display.content.text || t("composition.studioText")
+      : compositionParameterDisplayName(
+        draft.parameters,
+        display.content.variable,
+      );
   }
   return displayDefaultName(display, draft.sources);
 };
@@ -298,15 +308,33 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
     > = {};
     for (const display of props.draft.displays) {
       if (display.kind === "text") {
-        entries[display.draftId] = { text: display.text, style: display.style };
+        entries[display.draftId] = {
+          text: display.content.kind === "literal"
+            ? display.content.text
+            : safeText(props.parameterValues[display.content.variable]),
+          style: display.style,
+        };
       }
     }
     return entries;
   };
   const visibleRows = () =>
     props.draft.layoutRows.filter((row) => row.items.length > 0);
+  const flowItem = (item: DraftLayoutItem): CompositionFlowLayoutItem =>
+    item.kind === "component"
+      ? { kind: "component", component: item.draftId }
+      : {
+        kind: "component",
+        component: item.inputComponentId ??
+          inputComponentIdForVariable(item.parameterId),
+      };
+  const flowRows = () =>
+    visibleRows().map((row) => ({
+      ...row,
+      items: row.items.map(flowItem),
+    }));
   const statusOwner = () =>
-    flowSourceStatusOwner(visibleRows(), bindingById(), sourceById());
+    flowSourceStatusOwner(flowRows(), bindingById(), sourceById());
 
   const gapKey = (target: DraftInsertTarget): string =>
     `${target.rowId ?? `new:${target.rowIndex}`}:${target.itemIndex}`;
@@ -350,11 +378,6 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
     if (moved.ok) props.onDraftChange(moved.draft);
   };
 
-  const flowItem = (item: DraftLayoutItem): CompositionFlowLayoutItem =>
-    item.kind === "component"
-      ? { kind: "component", component: item.draftId }
-      : { kind: "parameter", parameter: item.parameterId };
-
   const renderGap = (target: DraftInsertTarget, inline: boolean) => (
     <div class={inline ? "designGap designGap--inline" : "designGap"}>
       <button
@@ -381,16 +404,42 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
   ) => {
     const blockId = () =>
       item.kind === "parameter"
-        ? designBlockIdForParameter(item.parameterId)
+        ? designBlockIdForParameter(
+          item.parameterId,
+          item.inputComponentId ??
+            inputComponentIdForVariable(item.parameterId),
+        )
         : designBlockIdForComponent(item.draftId);
     const selected = () => props.selectedId === blockId();
     const highlighted = () => props.highlightedIds?.has(blockId()) ?? false;
     const name = () => blockName(props.draft, item);
-    const binding = () =>
-      item.kind === "component" ? bindingById().get(item.draftId) : undefined;
+    const binding = (): CompositionResolvedComponentBinding | undefined => {
+      const itemId = item.kind === "component"
+        ? item.draftId
+        : item.inputComponentId ??
+          inputComponentIdForVariable(item.parameterId);
+      const resolved = bindingById().get(itemId);
+      if (resolved || item.kind === "component") return resolved;
+      return {
+        component_id: itemId,
+        kind: "input",
+        variable_id: item.parameterId,
+      };
+    };
+    const inputDisplayName = () => {
+      const current = binding();
+      if (current?.kind !== "input") return undefined;
+      return current.label?.trim() ||
+        (item.kind === "parameter" ? item.label?.trim() : undefined) ||
+        compositionParameterDisplayName(
+          props.draft.parameters,
+          current.variable_id,
+        );
+    };
     const ownsSourceStatus = () => {
       const current = binding();
       return current !== undefined && current.kind !== "text" &&
+        current.kind !== "input" &&
         statusOwner().get(
             (current as { source_id: string }).source_id,
           ) === current.component_id;
@@ -457,17 +506,11 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
             item={flowItem(item)}
             binding={binding()}
             texts={texts()}
-            definition={item.kind === "parameter"
-              ? definitionById().get(item.parameterId)
+            definition={binding()?.kind === "input"
+              ? definitionById().get(binding()!.variable_id)
               : undefined}
-            parameterDisplayName={item.kind === "parameter"
-              ? compositionParameterDisplayName(
-                props.draft.parameters,
-                item.parameterId,
-              )
-              : undefined}
+            parameterDisplayName={inputDisplayName()}
             parameterValues={props.parameterValues}
-            onParameterChange={props.onParameterChange}
             sources={props.sources}
             sourceById={sourceById()}
             ownsSourceStatus={ownsSourceStatus()}

@@ -72,10 +72,17 @@ export interface EntryQueryCompositionFieldSchemaEntry {
 /** Mirrors `MAX_COMPOSITION_COLLECTION_ITEMS` in `ugoite-domain`. */
 export const MAX_COMPOSITION_FIELD_SCHEMA_ITEMS = 256;
 
+export type EntryQueryCompositionValue =
+  | null
+  | string
+  | boolean
+  | number
+  | { variable: string };
+
 export interface EntryQueryCompositionFilter {
   field_id: number;
   operator: EntryFilterOperator;
-  value: unknown;
+  value: EntryQueryCompositionValue;
 }
 
 export interface EntryQueryCompositionSort {
@@ -94,7 +101,7 @@ export interface EntryQueryCompositionSource {
   kind: "entry_query";
   form_id: string;
   query: {
-    text?: string;
+    text?: string | { variable: string };
     filters: EntryQueryCompositionFilter[];
     sort: EntryQueryCompositionSort[];
     projection: EntryQueryCompositionProjection;
@@ -401,7 +408,7 @@ export interface EntryQueryCompositionDocument {
   name: string;
   tags: string[];
   spec: {
-    parameters: [];
+    variables: [];
     sources: Array<
       EntryQueryCompositionSource & {
         field_schema: EntryQueryCompositionFieldSchemaEntry[];
@@ -412,10 +419,7 @@ export interface EntryQueryCompositionDocument {
       kind: "flow";
       rows: Array<{
         id: string;
-        items: Array<
-          | { kind: "component"; component: string }
-          | { kind: "parameter"; parameter: string }
-        >;
+        items: Array<{ kind: "component"; component: string }>;
       }>;
     };
   };
@@ -435,7 +439,7 @@ export const buildEntryQueryCompositionDocument = (
     name: name.trim(),
     tags: [],
     spec: {
-      parameters: [],
+      variables: [],
       sources: [{ ...source, field_schema: fieldSchema }],
       components: [{ id: componentId, kind: "table", source: source.id }],
       layout: {

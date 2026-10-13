@@ -309,7 +309,11 @@ export function createCompositionQueryHandle(
 
   const setParameter = (parameterId: string, value: unknown | undefined) => {
     const next = { ...parameters() };
-    if (value === undefined) delete next[parameterId];
+    if (value === undefined) {
+      // Null is an internal marker for an explicit unset. The API adapter
+      // moves it to `unset_variables`; it is never sent as a variable value.
+      next[parameterId] = null;
+    }
     else next[parameterId] = value;
     setParameters(next);
     const current = state();

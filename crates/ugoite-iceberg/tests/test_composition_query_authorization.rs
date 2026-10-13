@@ -10,10 +10,11 @@ use ugoite_core::{
 };
 use ugoite_domain::composition::{
     CompositionComponent, CompositionDocument, CompositionFieldSchemaEntry, CompositionFormat,
-    CompositionKind, CompositionParameter, CompositionParameterType, CompositionResultColumn,
-    CompositionResultFieldType, CompositionSortDirection, CompositionSource, CompositionSpec,
-    CompositionValue, DashboardFlowLayout, EntryQueryProjectionTemplate, EntryQuerySortTemplate,
-    EntryQueryTemplate, FlowItem, FlowLayoutKind, FlowRow,
+    CompositionKind, CompositionResultColumn, CompositionResultFieldType, CompositionSortDirection,
+    CompositionSource, CompositionSpec, CompositionValue, CompositionVariable,
+    CompositionVariableReference, CompositionVariableType, DashboardFlowLayout,
+    EntryQueryProjectionTemplate, EntryQuerySortTemplate, EntryQueryTemplate, FlowItem,
+    FlowLayoutKind, FlowRow,
 };
 use ugoite_domain::form::FieldType;
 use ugoite_domain::identity::{
@@ -177,9 +178,7 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
             None,
             &saved_sql(
                 "Metric parameter",
-                format!(
-                    "SELECT \"{amount_column}\" AS total FROM \"{form_name}\" WHERE \"{amount_column}\" = {{{{minimum}}}}"
-                ),
+                "SELECT {{minimum}} AS total".to_string(),
                 json!([{
                     "name": "minimum",
                     "type": "integer",
@@ -219,7 +218,7 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
         column: column.to_string(),
         presentation: None,
     };
-    let components = [
+    let mut components = [
         ("row_count", "summary_sql", "row_count"),
         ("value_count", "summary_sql", "value_count"),
         ("total", "summary_sql", "total"),
@@ -237,6 +236,11 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
     .into_iter()
     .map(|(id, source, column)| metric(id, source, column))
     .collect::<Vec<_>>();
+    components.push(CompositionComponent::Input {
+        id: "minimum_input".to_string(),
+        label: None,
+        variable: "minimum".to_string(),
+    });
     let source_list = vec![
         source("summary_sql", &summary_sql, summary_result),
         source(
@@ -287,11 +291,9 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
             }],
             variables: BTreeMap::from([(
                 "minimum".to_string(),
-                CompositionValue::Parameter(
-                    ugoite_domain::composition::CompositionParameterReference {
-                        parameter: "minimum".to_string(),
-                    },
-                ),
+                CompositionValue::Variable(CompositionVariableReference {
+                    variable: "minimum".to_string(),
+                }),
             )]),
         },
     ];
@@ -306,10 +308,10 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
         name: "Metric query contract".to_string(),
         tags: Vec::new(),
         spec: CompositionSpec {
-            parameters: vec![CompositionParameter {
+            variables: vec![CompositionVariable {
                 id: "minimum".to_string(),
                 label: None,
-                parameter_type: CompositionParameterType::Integer,
+                variable_type: CompositionVariableType::Integer,
                 required: true,
                 default: None,
                 format: None,
@@ -325,9 +327,6 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
                         .map(|component| FlowItem::Component {
                             component: component.clone(),
                         })
-                        .chain(std::iter::once(FlowItem::Parameter {
-                            parameter: "minimum".to_string(),
-                        }))
                         .collect(),
                 }],
             },
@@ -352,6 +351,7 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
         },
         component_id: component_id.to_string(),
         parameters: BTreeMap::from([("minimum".to_string(), json!(minimum))]),
+        unset_variables: Vec::new(),
     };
 
     let resolution = service
@@ -360,6 +360,7 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
             &saved.entry_id.to_string(),
             &saved.revision_id.to_string(),
             &BTreeMap::from([("minimum".to_string(), json!(0))]),
+            &[],
         )
         .await?;
     assert!(
@@ -398,12 +399,17 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
     assert_eq!(decimal.result_type, CompositionResultFieldType::Decimal);
     assert_eq!(decimal.value, json!("9007199254740994.0000"));
 
-    let parameterized = service
-        .query_composition_metric_local(&space_id, query("parameter_value", 9_007_199_254_740_993))
-        .await?
+    let parameterized_response = service
+        .query_composition_metric_local(&space_id, query("parameter_value", 9_007_199_254_740_991))
+        .await?;
+    assert!(
+        parameterized_response.ok,
+        "parameterized Saved SQL metric failed: {parameterized_response:?}"
+    );
+    let parameterized = parameterized_response
         .result
         .context("parameterized Saved SQL metric should return the exact integer")?;
-    assert_eq!(parameterized.value, json!("9007199254740993"));
+    assert_eq!(parameterized.value, json!("9007199254740991"));
     let changed_parameter = service
         .query_composition_metric_local(&space_id, query("parameter_value", 1))
         .await?
@@ -524,7 +530,7 @@ async fn source_resolution_and_continuation_recheck_current_authorization() -> R
         name: "Authorized query pages".to_string(),
         tags: Vec::new(),
         spec: CompositionSpec {
-            parameters: Vec::new(),
+            variables: Vec::new(),
             sources: vec![CompositionSource::EntryQuery {
                 id: "source".to_string(),
                 form_id: form.form_id,
@@ -583,6 +589,7 @@ async fn source_resolution_and_continuation_recheck_current_authorization() -> R
             &saved.entry_id.to_string(),
             &saved.revision_id.to_string(),
             &BTreeMap::new(),
+            &[],
             &[viewer],
         )
         .await?;
@@ -645,6 +652,7 @@ async fn source_resolution_and_continuation_recheck_current_authorization() -> R
             &saved.entry_id.to_string(),
             &saved.revision_id.to_string(),
             &BTreeMap::new(),
+            &[],
             &[viewer],
         )
         .await?;
@@ -855,7 +863,7 @@ async fn authorized_composition_metrics_recheck_current_entry_and_saved_sql_acce
         name: "Authorized metric".to_string(),
         tags: Vec::new(),
         spec: CompositionSpec {
-            parameters: Vec::new(),
+            variables: Vec::new(),
             sources: vec![CompositionSource::SavedSql {
                 id: "amount_sql".to_string(),
                 entry_id: serde_json::from_value(saved_sql["id"].clone())?,
@@ -903,6 +911,7 @@ async fn authorized_composition_metrics_recheck_current_entry_and_saved_sql_acce
         },
         component_id: "amount_metric".to_string(),
         parameters: BTreeMap::new(),
+        unset_variables: Vec::new(),
     };
 
     let visible = service

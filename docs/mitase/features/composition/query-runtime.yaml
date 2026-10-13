@@ -252,8 +252,8 @@ features:
   - id: layout-order-resolver-evidence
     role: evidence
     facet: core-tests
-    responsibility: Verify layout render order with interleaved text and parameter items, sourceless text
-      bindings, query-stable layout edits, semantic parameter values for placed controls, and saved-revision
+    responsibility: Verify layout render order with interleaved Text, Input, and data components, sourceless Text
+      bindings, query-stable layout edits, semantic variable values for placed Inputs, and saved-revision
       and draft-preview parity.
     targets:
     - id: text-bindings-without-source-requests
@@ -270,7 +270,7 @@ features:
       path: crates/ugoite-core/src/composition.rs
       selector:
         kind: symbol
-        name: layout_order_interleaves_text_and_parameter_items_across_rows
+        name: layout_order_interleaves_inputs_text_and_data_components_across_rows
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.ordered-component-layout
@@ -283,12 +283,12 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.used-field-fingerprint
-    - id: parameter-controls-use-semantic-values
+    - id: input-components-use-semantic-values
       adapter: rust
       path: crates/ugoite-core/src/composition.rs
       selector:
         kind: symbol
-        name: parameter_items_resolve_through_semantic_parameter_values
+        name: input_components_resolve_through_semantic_variable_values
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.parameter-placement
@@ -304,15 +304,15 @@ features:
   - id: layout-order-service-evidence
     role: evidence
     facet: iceberg-tests
-    responsibility: Verify draft preview exposes semantic parameter definitions with layout-placed controls
-      first in layout row and item order.
+    responsibility: Verify draft preview exposes variable definitions in declaration order while placed Input
+      components remain ordinary layout-ordered components.
     targets:
-    - id: preview-placed-parameter-order
+    - id: preview-variable-definitions
       adapter: rust
       path: crates/ugoite-iceberg/tests/test_composition_preview.rs
       selector:
         kind: test
-        name: preview_exposes_placed_parameters_in_layout_order
+        name: preview_exposes_variable_definitions_in_declaration_order
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.draft-preview

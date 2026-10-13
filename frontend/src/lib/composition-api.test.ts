@@ -190,7 +190,7 @@ describe("compositionApi", () => {
       name: "Tool",
       tags: [],
       spec: {
-        parameters: [],
+        variables: [],
         sources: [],
         components: [],
         layout: { kind: "flow", rows: [] },
@@ -226,6 +226,29 @@ describe("compositionApi", () => {
     );
   });
 
+  it("sends an explicit unset separately from typed variable values", async () => {
+    vi.mocked(protocolFetch).mockResolvedValue({ ok: false });
+
+    await compositionApi.resolve(
+      "space-1",
+      "composition-1",
+      "revision-2",
+      { limit: null, label: "ready" },
+      signal,
+    );
+
+    expect(protocolFetch).toHaveBeenCalledWith(
+      "composition.resolve",
+      { space_id: "space-1", composition_id: "composition-1" },
+      {
+        revision_id: "revision-2",
+        parameters: { label: "ready" },
+        unset_variables: ["limit"],
+      },
+      { signal },
+    );
+  });
+
   it("queries one metric through the bounded portable operation", async () => {
     const request = {
       target: {
@@ -233,7 +256,7 @@ describe("compositionApi", () => {
         yaml: "format: ugoite.composition\n",
       },
       component_id: "sql_total",
-      parameters: { month: "2026-10" },
+      parameters: { month: null },
     };
     vi.mocked(protocolFetch).mockResolvedValue({
       ok: true,
@@ -251,7 +274,12 @@ describe("compositionApi", () => {
     expect(protocolFetch).toHaveBeenCalledWith(
       "composition.metric.query",
       { space_id: "space-1" },
-      request,
+      {
+        target: request.target,
+        component_id: request.component_id,
+        parameters: {},
+        unset_variables: ["month"],
+      },
       { signal },
     );
   });
@@ -279,7 +307,7 @@ describe("compositionApi", () => {
       { month_start: "2026-10-01", include_zero: false },
     );
 
-    expect(document.spec.parameters).toEqual([
+    expect(document.spec.variables).toEqual([
       {
         id: "month_start",
         type: "date",
@@ -298,15 +326,32 @@ describe("compositionApi", () => {
         { name: "day", type: "json" },
       ],
       variables: {
-        month_start: { parameter: "month_start" },
-        include_zero: { parameter: "include_zero" },
+        month_start: { variable: "month_start" },
+        include_zero: { variable: "include_zero" },
       },
     }]);
-    expect(document.spec.components).toEqual([{
-      id: "results_table",
-      kind: "table",
-      source: "sql_results",
-    }]);
+    expect(document.spec.components).toEqual([
+      {
+        id: "input-month_start",
+        kind: "input",
+        variable: "month_start",
+      },
+      {
+        id: "input-include_zero",
+        kind: "input",
+        variable: "include_zero",
+      },
+      {
+        id: "results_table",
+        kind: "table",
+        source: "sql_results",
+      },
+    ]);
+    expect(document.spec.layout.rows[0].items).toEqual([
+      { kind: "component", component: "input-month_start" },
+      { kind: "component", component: "input-include_zero" },
+      { kind: "component", component: "results_table" },
+    ]);
   });
 
   it("stores the server-owned column types unchanged and never infers from rows", () => {

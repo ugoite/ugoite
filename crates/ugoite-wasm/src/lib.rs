@@ -221,6 +221,32 @@ fn invoke_domain(request: serde_json::Value) -> String {
             .cloned()
             .ok_or_else(|| "value is required".to_string())?;
         match action {
+            "domain.parse_composition_variable_input" => {
+                let variable_type =
+                    serde_json::from_value::<ugoite_domain::composition::CompositionVariableType>(
+                        payload
+                            .get("type")
+                            .cloned()
+                            .ok_or_else(|| "type is required".to_string())?,
+                    )
+                    .map_err(|error| error.to_string())?;
+                let raw = payload
+                    .get("raw")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| "raw must be a string".to_string())?;
+                let outcome = variable_type.parse_input(raw);
+                Ok(match outcome {
+                    ugoite_domain::composition::CompositionVariableInputValue::Unset => {
+                        serde_json::json!({"status": "unset"})
+                    }
+                    ugoite_domain::composition::CompositionVariableInputValue::Valid(value) => {
+                        serde_json::json!({"status": "valid", "value": value})
+                    }
+                    ugoite_domain::composition::CompositionVariableInputValue::Invalid => {
+                        serde_json::json!({"status": "invalid"})
+                    }
+                })
+            }
             "domain.encode_spreadsheet_csv" => {
                 let rows: Vec<Vec<String>> =
                     serde_json::from_value(payload).map_err(|error| error.to_string())?;
@@ -817,6 +843,149 @@ mod tests {
             assert_eq!(response["ok"], false, "{response}");
             assert_eq!(response["error"]["kind"], "composition_diagnostic");
             assert_eq!(response["error"]["code"], native_error.as_str());
+        }
+    }
+
+    #[test]
+    fn composition_variable_input_protocol_matches_native_domain_contract() {
+        use ugoite_domain::composition::{CompositionVariableInputValue, CompositionVariableType};
+
+        let cases = [
+            (
+                CompositionVariableType::String,
+                "",
+                serde_json::json!({"status": "unset"}),
+            ),
+            (
+                CompositionVariableType::String,
+                "日本語",
+                serde_json::json!({"status": "valid", "value": "日本語"}),
+            ),
+            (
+                CompositionVariableType::String,
+                "\0",
+                serde_json::json!({"status": "invalid"}),
+            ),
+            (
+                CompositionVariableType::Boolean,
+                "true",
+                serde_json::json!({"status": "valid", "value": true}),
+            ),
+            (
+                CompositionVariableType::Boolean,
+                "TRUE",
+                serde_json::json!({"status": "invalid"}),
+            ),
+            (
+                CompositionVariableType::Integer,
+                "+9007199254740991",
+                serde_json::json!({"status": "valid", "value": 9_007_199_254_740_991_i64}),
+            ),
+            (
+                CompositionVariableType::Integer,
+                "1.0",
+                serde_json::json!({"status": "invalid"}),
+            ),
+            (
+                CompositionVariableType::Integer,
+                "9007199254740992",
+                serde_json::json!({"status": "invalid"}),
+            ),
+            (
+                CompositionVariableType::Float,
+                "1",
+                serde_json::json!({"status": "valid", "value": 1.0}),
+            ),
+            (
+                CompositionVariableType::Float,
+                "1e-4000",
+                serde_json::json!({"status": "invalid"}),
+            ),
+            (
+                CompositionVariableType::Float,
+                "1e309",
+                serde_json::json!({"status": "invalid"}),
+            ),
+            (
+                CompositionVariableType::Date,
+                "2024-02-29",
+                serde_json::json!({"status": "valid", "value": "2024-02-29"}),
+            ),
+            (
+                CompositionVariableType::Date,
+                "2025-02-29",
+                serde_json::json!({"status": "invalid"}),
+            ),
+            (
+                CompositionVariableType::Timestamp,
+                "2026-10-13T23:59:59.123456789+09:00",
+                serde_json::json!({
+                    "status": "valid",
+                    "value": "2026-10-13T23:59:59.123456789+09:00"
+                }),
+            ),
+            (
+                CompositionVariableType::Timestamp,
+                "2026-10-13T14:59:59",
+                serde_json::json!({"status": "invalid"}),
+            ),
+        ];
+
+        for (variable_type, raw, expected) in cases {
+            let native = match variable_type.parse_input(raw) {
+                CompositionVariableInputValue::Unset => serde_json::json!({"status": "unset"}),
+                CompositionVariableInputValue::Valid(value) => {
+                    serde_json::json!({"status": "valid", "value": value})
+                }
+                CompositionVariableInputValue::Invalid => {
+                    serde_json::json!({"status": "invalid"})
+                }
+            };
+            assert_eq!(
+                native, expected,
+                "native parser case {variable_type:?} {raw:?}"
+            );
+
+            let request = serde_json::json!({
+                "action": "domain.parse_composition_variable_input",
+                "value": {"type": variable_type, "raw": raw},
+            });
+            let response: Value =
+                serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+            assert_eq!(
+                response["ok"], true,
+                "{variable_type:?} {raw:?}: {response}"
+            );
+            assert_eq!(response["value"], expected, "{variable_type:?} {raw:?}");
+        }
+
+        let oversized_string =
+            "x".repeat(ugoite_domain::composition::MAX_COMPOSITION_VARIABLE_STRING_BYTES + 1);
+        let oversized_request = serde_json::json!({
+            "action": "domain.parse_composition_variable_input",
+            "value": {"type": "string", "raw": oversized_string},
+        });
+        let oversized_response: Value =
+            serde_json::from_str(&super::invoke_json(&oversized_request.to_string())).unwrap();
+        assert_eq!(oversized_response["ok"], true, "{oversized_response}");
+        assert_eq!(
+            oversized_response["value"],
+            serde_json::json!({"status": "invalid"})
+        );
+
+        for payload in [
+            serde_json::json!({"raw": "1"}),
+            serde_json::json!({"type": "decimal", "raw": "1"}),
+            serde_json::json!({"type": "integer", "raw": 1}),
+        ] {
+            let request = serde_json::json!({
+                "action": "domain.parse_composition_variable_input",
+                "value": payload,
+            });
+            let response: Value =
+                serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+            assert_eq!(response["ok"], false, "{response}");
+            assert_eq!(response["error"]["kind"], "domain_validation", "{response}");
         }
     }
 

@@ -22,7 +22,9 @@ export const displayDefaultName = (
 ): string => {
   if (display.label) return display.label;
   if (display.kind === "text") {
-    return display.text || t("composition.studioText");
+    return display.content.kind === "literal"
+      ? display.content.text || t("composition.studioText")
+      : display.content.variable;
   }
   const name = sourceName(sources, display.sourceDraftId);
   if (display.kind === "table") return name;

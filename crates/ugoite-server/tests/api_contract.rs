@@ -1634,6 +1634,25 @@ fn openapi_documents_composition_preview_without_publication() {
         plan["properties"]["component_bindings"]["items"]["$ref"],
         "#/components/schemas/CompositionResolvedComponentBinding"
     );
+    assert_eq!(
+        plan["properties"]["dependencies"]["$ref"],
+        "#/components/schemas/CompositionDependencyIndex"
+    );
+    assert_eq!(
+        snapshot["components"]["schemas"]["CompositionResolvePlan"]["properties"]["dependencies"]
+            ["$ref"],
+        "#/components/schemas/CompositionDependencyIndex"
+    );
+    assert_eq!(
+        snapshot["components"]["schemas"]["CompositionDependencyIndex"]["properties"]
+            ["variable_consumers"]["additionalProperties"]["$ref"],
+        "#/components/schemas/CompositionVariableConsumers"
+    );
+    assert_eq!(
+        snapshot["components"]["schemas"]["CompositionDependencyIndex"]["properties"]
+            ["source_consumers"]["additionalProperties"]["$ref"],
+        "#/components/schemas/CompositionSourceConsumers"
+    );
     assert!(plan["required"]
         .as_array()
         .expect("required preview plan fields")
@@ -1744,6 +1763,15 @@ fn openapi_documents_composition_resolve_metric_result_type() {
     );
 
     let binding = &snapshot["components"]["schemas"]["CompositionResolvedComponentBinding"];
+    assert!(binding["properties"]["kind"]["enum"]
+        .as_array()
+        .expect("component binding kinds")
+        .contains(&serde_json::json!("input")));
+    assert_eq!(binding["properties"]["variable_id"]["type"], "string");
+    assert!(!binding["required"]
+        .as_array()
+        .expect("required component fields")
+        .contains(&serde_json::json!("variable_id")));
     assert_eq!(
         binding["properties"]["expected_result_type"]["$ref"],
         "#/components/schemas/CompositionResultFieldType"

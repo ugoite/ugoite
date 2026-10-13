@@ -108,7 +108,7 @@ const lintDocument = {
   name: "Monthly review",
   tags: ["finance"],
   spec: {
-    parameters: [],
+    variables: [],
     sources: [{
       kind: "saved_sql",
       id: "src-1",
@@ -269,10 +269,10 @@ describe("Composition edit route", () => {
     expect(screen.queryByText("src-1")).not.toBeInTheDocument();
   });
 
-  it("opens canonical revisions when empty parameters and variables are omitted", async () => {
-    const { parameters: _parameters, ...specWithoutParameters } =
+  it("opens canonical revisions when empty variables are omitted", async () => {
+    const { variables: _variables, ...specWithoutVariables } =
       lintDocument.spec;
-    const [{ variables: _variables, ...savedSqlSource }] =
+    const [{ variables: _sourceVariables, ...savedSqlSource }] =
       lintDocument.spec.sources;
     lintMock.mockResolvedValueOnce({
       ok: true,
@@ -280,7 +280,7 @@ describe("Composition edit route", () => {
         document: {
           ...lintDocument,
           spec: {
-            ...specWithoutParameters,
+            ...specWithoutVariables,
             sources: [savedSqlSource],
           },
         },
@@ -299,7 +299,7 @@ describe("Composition edit route", () => {
     expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
   });
 
-  it("refuses explicit null parameters as malformed", async () => {
+  it("refuses explicit null variables as malformed", async () => {
     lintMock.mockResolvedValueOnce({
       ok: true,
       value: {
@@ -307,7 +307,7 @@ describe("Composition edit route", () => {
           ...lintDocument,
           spec: {
             ...lintDocument.spec,
-            parameters: null,
+            variables: null,
           },
         },
         canonical_yaml: storedYaml,
@@ -323,7 +323,7 @@ describe("Composition edit route", () => {
   });
 
   it("refuses explicit null Saved SQL variables as malformed", async () => {
-    const { parameters: _parameters, ...specWithoutParameters } =
+    const { variables: _variables, ...specWithoutVariables } =
       lintDocument.spec;
     lintMock.mockResolvedValueOnce({
       ok: true,
@@ -331,7 +331,7 @@ describe("Composition edit route", () => {
         document: {
           ...lintDocument,
           spec: {
-            ...specWithoutParameters,
+            ...specWithoutVariables,
             sources: [{ ...lintDocument.spec.sources[0], variables: null }],
           },
         },
@@ -484,7 +484,7 @@ describe("Composition edit route", () => {
           name: "Monthly expenses",
           tags: [],
           spec: {
-            parameters: [
+            variables: [
               {
                 id: "month_start",
                 label: "Start month",
@@ -499,14 +499,19 @@ describe("Composition edit route", () => {
               entry_id: "sql-1",
               revision_id: "sql-rev-1",
               expected_result: [{ name: "total", type: "float" }],
-              variables: { month_start: { parameter: "month_start" } },
+              variables: { month_start: { variable: "month_start" } },
             }],
             components: [
               {
                 kind: "text",
                 id: "summary_title",
-                text: "Monthly summary",
+                content: { kind: "literal", text: "Monthly summary" },
                 style: "heading",
+              },
+              {
+                kind: "input",
+                id: "input-month_start",
+                variable: "month_start",
               },
               {
                 kind: "metric",
@@ -521,7 +526,10 @@ describe("Composition edit route", () => {
               rows: [
                 {
                   id: "controls",
-                  items: [{ kind: "parameter", parameter: "month_start" }],
+                  items: [{
+                    kind: "component",
+                    component: "input-month_start",
+                  }],
                 },
                 {
                   id: "summary",

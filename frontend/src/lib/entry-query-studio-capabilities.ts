@@ -32,29 +32,30 @@ const fallbackOperators: EntryFilterOperator[] = [
   "gte",
 ];
 
-/** Extract a `{parameter}` binding name, if the value is exactly one. */
+/** Extract a `{variable}` binding name, if the value is exactly one. */
 export const studioBindingName = (value: unknown): string | undefined => {
   if (value !== null && typeof value === "object") {
     const record = value as Record<string, unknown>;
     if (
-      typeof record.parameter === "string" && record.parameter.length > 0
+      Object.keys(record).length === 1 &&
+      typeof record.variable === "string" && record.variable.length > 0
     ) {
-      return record.parameter;
+      return record.variable;
     }
   }
   return undefined;
 };
 
-/** Display text for a parameter binding; the shared dialog edits strings. */
+/** Display text for a variable binding; the shared dialog edits strings. */
 export const studioBindingText = (name: string): string => `{{${name}}}`;
 
 /**
- * Round-trip `{{name}}` display text back to a parameter binding so a
+ * Round-trip `{{name}}` display text back to a variable binding so a
  * dialog apply never silently flattens a binding to a plain string.
  */
 export const studioParseBindingText = (text: string): unknown => {
   const binding = /^\{\{([^}]+)\}\}$/.exec(text);
-  if (binding && binding[1].length > 0) return { parameter: binding[1] };
+  if (binding && binding[1].length > 0) return { variable: binding[1] };
   return text;
 };
 
@@ -145,7 +146,7 @@ export const studioFilterToEntryFilter = (
 /**
  * Shared dialog filter back to the draft shape. Non-property refs have no
  * draft grammar and fail closed with `undefined`; `{{name}}` text becomes
- * a parameter binding again.
+ * a variable binding again.
  */
 export const studioEntryFilterToComposition = (
   filter: EntryFilter,

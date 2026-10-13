@@ -24,7 +24,7 @@ export const STUDIO_MODES: readonly StudioMode[] = [
 export const STUDIO_SPLIT_GATE_MEDIA = "(max-width: 760px)";
 export const STUDIO_SHEET_GATE_MEDIA = "(max-width: 560px)";
 
-const PARAMETER_BLOCK_PREFIX = "param:";
+const INPUT_BLOCK_PREFIX = "input:";
 
 /**
  * Block to source mapping for Design to Data synchronization. Metric and
@@ -35,7 +35,7 @@ export const sourceDraftIdForBlock = (
   draft: CompositionDraft,
   blockId: string | null,
 ): string | null => {
-  if (!blockId || blockId.startsWith(PARAMETER_BLOCK_PREFIX)) return null;
+  if (!blockId || blockId.startsWith(INPUT_BLOCK_PREFIX)) return null;
   const display = draft.displays.find((entry) => entry.draftId === blockId);
   if (!display || display.kind === "text") return null;
   return display.sourceDraftId;

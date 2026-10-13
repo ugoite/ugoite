@@ -272,7 +272,7 @@ run = [
 ]
 
 [tasks."check:wasm:composition-parity"]
-description = "Verify Composition canonicalization and diagnostics in the actual WASM runtime"
+description = "Verify Composition canonicalization, diagnostics, and typed Input parsing in the actual WASM runtime"
 run = "deno run -A crates/ugoite-wasm/tests/composition_parity.ts"
 
 [tasks."profile:composition:parser"]
