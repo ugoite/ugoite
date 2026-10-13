@@ -170,6 +170,19 @@
       "artifact": "e2e/fixtures/composition/evidence/composition-studio-query-path-assertions-junit.xml",
       "artifact_digest": "238c2c0a0550f5d2abb0a8c25618b7d521324a6615bf9fdcfab985a4a0444bbb",
       "gap": "This record covers only the Studio variable journey and included 390px inspector case on the stated source commit. It verifies both the Saved SQL Table and Composition Metric query paths ran before a Text-only edit and neither was requested again afterward, while the declared variable and saved SQL binding are present. It does not claim the full reactive-variable contract or broader recovery and ACL coverage. No release candidate was built or promoted."
+    },
+    {
+      "source_sha": "042f0b4ff89ec30ff58dbe2b0be6f4a4639753ae",
+      "candidate_sha": "042f0b4ff89ec30ff58dbe2b0be6f4a4639753ae",
+      "command": "E2E_FRONTEND_MODE=static UGOITE_SKIP_PLAYWRIGHT_DEPS=1 E2E_ENFORCE_CI_GATES=true UGOITE_E2E_STARTUP_TIMEOUT_SECONDS=180 PLAYWRIGHT_JUNIT_OUTPUT_FILE=test-results/composition-metric-junit.xml bash e2e/scripts/run-e2e.sh composition-metric",
+      "selector": "e2e/composition-revision-stale-response.test.ts#test:Composition revision stale response › discard a delayed metric response after navigating to another exact revision",
+      "surface": "Browser + Server (direct-process static frontend E2E)",
+      "fixture": "self-seeded via API: Space, Form, two entries, parameterized user-query Saved SQL, and two append-only Composition revisions with different typed date defaults",
+      "environment": "macOS 26.6.1 arm64; static SPA + direct-process debug backend; Deno 2.8.3; Playwright 1.60.0 (Chromium)",
+      "result": "passed (4 passed, 0 skipped)",
+      "artifact": "e2e/fixtures/composition/evidence/composition-revision-stale-response-junit.xml",
+      "artifact_digest": "be60b9497337ccf445fece288c311ea93ac478027fa5b1dee5428d4e5d94a1dd",
+      "gap": "This record covers the exact-revision navigation stale-Metric selector in the required Composition Metric lane, which also ran the Saved SQL metric and Studio journeys. It verifies the delayed first-revision value (15) did not replace the second-revision value (8), error, or loading state after history navigation. It does not establish A17, A24, the full reactive-variable contract, or release-candidate byte promotion. No release candidate was built or promoted."
     }
   ]
 }
