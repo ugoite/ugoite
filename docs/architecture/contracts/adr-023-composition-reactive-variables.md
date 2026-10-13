@@ -60,7 +60,10 @@ The initial types are string, boolean, integer, float, date, and timestamp.
 Type is mandatory. Defaults must have that exact type. Do not infer types,
 coerce values, or add nullable variables in this phase. Unset is not empty
 string, zero, or SQL NULL. A required variable without a default needs a
-placed Input in an interactive Composition.
+placed Input in an interactive Composition. An explicit unset overrides its
+default; resolving a required unset returns `variable_missing` with the
+variable ID. The Browser keeps dependent Sources invalid, shows no prior page
+as current, and does not query those Sources until the variable is valid.
 
 An Input contains a component ID, a reference to one declared variable, and an
 optional display label. It stores no second value, arbitrary input type,
@@ -249,6 +252,7 @@ changes.
 | A24 | composition_runtime_isolation_includes_space_and_principal | Use same IDs/values in different Spaces or principals | Responses, cache identity, and authorization never cross-contaminate. |
 | A25 | typed_variable_lexical_limits_and_temporal_values_are_strict | Exercise each typed Input at its accepted boundary and one value outside it | String byte/control limits, exact boolean tokens, integer acceptance of `+0000000000000001` at 17 bytes and rejection of `+00000000000000001` at 18 bytes, surrounding whitespace, decimal/exponent forms, and values outside the safe-integer range, float tokens at 64/65 bytes, finite overflow, underflow to zero, real calendar dates, and explicit-offset RFC 3339 timestamps are enforced consistently; raw invalid text is preserved without SQL execution. |
 | A26 | variable_filter_changes_golden_aggregate_values | Run the expense journey with minimum 0, then 20 | The [10, 20, 30] fixture yields count 3 / sum 60, then count 2 / sum 50; the separate no-filter NULL aggregate case remains unchanged. |
+| A27 | required_unset_keeps_resolution_diagnostic_and_blocks_source | Load a Composition with a ready dependent Source, then explicitly unset its required variable | Resolution returns `variable_missing` for that variable; the prior Source page is hidden and no new Source request runs. |
 
 ## Delivery order
 

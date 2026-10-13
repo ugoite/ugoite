@@ -21,6 +21,10 @@ requirements:
         kind: behavior
         statement: An Input component references one declared variable and owns no persisted value or setter expression. A required variable without a default has a placed Input, and each placed Input is an ordinary Component referenced once by Layout.
         governed_by: [POL-000#rule.foundation-precedence]
+      - id: required-variable-unset-diagnostic
+        kind: behavior
+        statement: An explicit unset overrides a declared default. Resolving a required unset returns a `variable_missing` diagnostic with its variable ID; the Browser keeps dependent Sources invalid, hides their prior pages, and does not query them until the variable is valid.
+        governed_by: [POL-004#rule.governance]
       - id: input-runtime-synchronization
         kind: behavior
         statement: Multiple Inputs bound to the same variable display one shared current raw value and validation state; editing any bound Input updates every other bound Input in the same UI cycle.
@@ -290,6 +294,10 @@ requirements:
                 criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
                 covers: [FEAT-COMP-008#binding.core-typed-variable-resolution-evidence/target.explicit-unset-default-bypass]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::explicit_unset_overrides_defaults_and_reports_required_values_missing } }
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.required-variable-unset-diagnostic
+                covers: [FEAT-COMP-008#binding.core-typed-variable-resolution-evidence/target.explicit-unset-default-bypass]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::explicit_unset_overrides_defaults_and_reports_required_values_missing } }
           - id: explicit-unset-request-case
             adapter: typescript
             path: frontend/src/lib/composition-api.test.ts
@@ -343,6 +351,10 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-007#criterion.stale-result-and-state-safety
                 covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime/target.composition-query-work-handle]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: does not query a source when a required variable is explicitly unset } }
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.required-variable-unset-diagnostic
+                covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime-evidence/target.required-unset-stops-dependent-source-query]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: does not query a source when a required variable is explicitly unset } }
           - id: browser-malformed-raw-hides-source-results
             adapter: typescript
