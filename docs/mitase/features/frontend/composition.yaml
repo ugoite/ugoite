@@ -399,6 +399,10 @@ features:
                 criterion: REQ-FE-070#criterion.metric-saved-lifecycle
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio-contract]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Composition Studio builds a reusable tool from existing knowledge" } }
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.code-free-studio-authoring
+                covers: [FEAT-COMP-008#binding.studio-typed-variable-defaults/target.variable-default-editor]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Composition Studio builds a reusable tool from existing knowledge" } }
           - id: metric-multiple-row-recovery
             adapter: typescript
             path: e2e/composition-metric-journey.test.ts
