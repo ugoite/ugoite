@@ -168,7 +168,7 @@ export function entryQueryDisplayColumns(
         key: name,
         label: name,
         text: (row) => propertyText(row, name),
-      numeric: (row) => typeof row.properties?.[name] === "number",
+        numeric: (row) => typeof row.properties?.[name] === "number",
       }),
     )
     : [];
@@ -273,6 +273,11 @@ export function CompositionEntryQueryTable(props: {
         <Show when={status() === "invalid"}>
           <p class="ui-text-danger" role="alert">
             {t("composition.variableInvalid")}
+          </p>
+        </Show>
+        <Show when={status() === "waiting"}>
+          <p class="ui-muted" role="status" aria-live="polite">
+            {t("composition.waitingForInputs")}
           </p>
         </Show>
         <Show when={status() === "ready" && rows().length === 0 && !failed()}>

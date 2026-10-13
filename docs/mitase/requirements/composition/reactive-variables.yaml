@@ -53,6 +53,10 @@ requirements:
         kind: security
         statement: A SQL response is accepted only for its current Space, authorization/publication context, Composition revision, variable-subset fingerprint, and exact Saved SQL revision. Identical variable, source, and component identifiers do not allow results or cache identity to cross Space boundaries. Older generations are discarded; pending or failed requests never present prior success as current. Current ACL, bounded execution, NULL/zero/zero-row/multiple-row distinctions, exact numeric handling, and SQL diagnostics remain in force.
         governed_by: [POL-000#rule.foundation-precedence]
+      - id: source-waiting-when-resolution-blocked
+        kind: behavior
+        statement: After the Browser has a resolved plan, malformed raw input blocks further resolution and SQL requests. An explicitly unset required variable still goes through the resolver for its authoritative missing-variable diagnostic, while dependent Sources remain invalid and are not queried. A changed Source whose own inputs are valid hides its previous result and reports a waiting state while another input blocks the plan; a Source depending on a blocked input stays invalid. Unchanged ready Sources retain their pages and cursors. Pending changes resume after all blocking inputs become valid, and only affected Sources refresh.
+        governed_by: [POL-004#rule.governance]
       - id: runtime-values-are-transient
         kind: behavior
         statement: Composition Entry revisions persist variable declarations and defaults, Sources, Components, and Layout. Runtime values, raw invalid input, query results, pending state, and errors are Work and are not persisted by preview, use, implicit save, URL, local storage, or server session.
@@ -79,7 +83,7 @@ requirements:
         governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
       - id: responsive-accessible-inputs
         kind: quality
-        statement: At 390px width, variable Inputs, labels, invalid/loading/results states, and recovery actions remain understandable and operable by keyboard and screen reader; internal variable IDs are not primary labels.
+        statement: At 390px width, variable Inputs, labels, invalid/loading/waiting/results states, and recovery actions remain understandable and operable by keyboard and screen reader; internal variable IDs are not primary labels.
         governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance, POL-UI-005#rule.governance]
     bindings:
       - id: typed-variable-domain-verification
@@ -422,6 +426,42 @@ requirements:
                 criterion: REQ-COMP-007#criterion.stale-result-and-state-safety
                 covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime-evidence/target.incomplete-metric-dependencies-discard-delayed-result]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: invalidates a metric when its dependency index becomes incomplete } }
+          - id: browser-changed-source-waits-for-input
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.test.ts
+            selector: { kind: test, name: waits on changed sources until required inputs are valid and preserves unrelated paging }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.source-waiting-when-resolution-blocked
+                covers: [FEAT-COMP-009#binding.browser-source-waiting-evidence/target.changed-source-waits-for-blocking-input]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: waits on changed sources until required inputs are valid and preserves unrelated paging } }
+          - id: browser-metric-waits-for-blocked-plan
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.test.tsx
+            selector: { kind: test, name: keeps an unaffected metric ready and waits for changed inputs while another variable blocks resolution }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.source-waiting-when-resolution-blocked
+                covers: [FEAT-COMP-009#binding.browser-source-waiting-evidence/target.metric-waits-for-blocking-input]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: keeps an unaffected metric ready and waits for changed inputs while another variable blocks resolution } }
+          - id: browser-saved-sql-table-waiting-state
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.test.tsx
+            selector: { kind: test, name: renders an accessible waiting state for a blocked Saved SQL table }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.source-waiting-when-resolution-blocked
+                covers: [FEAT-COMP-009#binding.browser-source-waiting-evidence/target.saved-sql-table-waiting-state]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: renders an accessible waiting state for a blocked Saved SQL table } }
+          - id: browser-entry-table-waiting-state
+            adapter: typescript
+            path: frontend/src/components/CompositionEntryQueryTable.test.tsx
+            selector: { kind: test, name: shows a concise accessible waiting state while resolution is blocked }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.source-waiting-when-resolution-blocked
+                covers: [FEAT-COMP-009#binding.browser-source-waiting-evidence/target.entry-query-table-waiting-state]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionEntryQueryTable.test.tsx, test: shows a concise accessible waiting state while resolution is blocked } }
           - id: browser-input-uses-shared-domain-parser
             adapter: typescript
             path: frontend/src/lib/ugoite-client/protocol.test.ts
