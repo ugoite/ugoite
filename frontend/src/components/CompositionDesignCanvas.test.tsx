@@ -468,17 +468,28 @@ describe("CompositionDesignCanvas", () => {
 
     const select = screen.getByRole("button", { name: "Select Variable 1" });
     expect(select).toHaveAttribute("aria-label", "Select Variable 1");
-    expect(document.body).not.toHaveTextContent(bindingId);
-    for (const element of document.querySelectorAll("[aria-label], [title]")) {
-      expect(element.getAttribute("aria-label") ?? "").not.toContain(
-        bindingId,
-      );
-      expect(element.getAttribute("title") ?? "").not.toContain(bindingId);
-    }
+    fireEvent.click(select);
+
+    const expectInternalIdHidden = () => {
+      expect(document.body).not.toHaveTextContent(bindingId);
+      for (
+        const element of document.querySelectorAll("[aria-label], [title]")
+      ) {
+        expect(element.getAttribute("aria-label") ?? "").not.toContain(
+          bindingId,
+        );
+        expect(element.getAttribute("title") ?? "").not.toContain(bindingId);
+      }
+    };
+
+    const selectedBlock = document.querySelector('[data-selected="true"]');
+    expect(selectedBlock?.querySelectorAll("[title]")).toHaveLength(2);
+    expectInternalIdHidden();
 
     setLocale("ja");
     expect(screen.getByRole("button", { name: "変数1を選択" }))
       .toHaveAttribute("aria-label", "変数1を選択");
+    expectInternalIdHidden();
   });
 
   it("uses a localized variable name for variable-bound Text blocks", () => {

@@ -795,7 +795,7 @@ features:
       - id: studio-variable-identity-presentation-evidence
         role: evidence
         facet: frontend-tests
-        responsibility: Verify unlabelled variable IDs stay out of variable-bound Text names and Inspector removal labels and titles.
+        responsibility: Verify unlabelled variable IDs stay out of variable-bound Text names, placed Input canvas names and action titles, and Inspector removal labels and titles.
         targets:
           - id: canvas-variable-text-name
             adapter: typescript
