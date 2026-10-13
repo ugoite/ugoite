@@ -93,7 +93,7 @@ describe("/spaces/:space_id/assets/:asset_id", () => {
     expect(container.querySelectorAll(".actionbar")).toHaveLength(1);
   });
 
-  it("REQ-UX-LIST-001: keeps Entry IDs out of asset references and blocked-delete labels", async () => {
+  it("REQ-UX-LIST-001: keeps Entry IDs out of asset references and reveals Asset ID only on demand", async () => {
     vi.mocked(assetApi.list).mockResolvedValue([
       item(),
       item({ entry_id: "entry-2", field: "Cover" }),
@@ -134,12 +134,15 @@ describe("/spaces/:space_id/assets/:asset_id", () => {
       "href",
       "/spaces/default/entries/entry-2",
     );
-    // Exact IDs stay advanced-only inside the disclosure.
-    expect(
-      screen.getByText("01900000-0000-7000-8000-000000000001").closest(
-        "details",
-      ),
-    ).not.toBeNull();
+    // The exact Asset ID stays hidden until its advanced disclosure opens.
+    const assetId = screen.getByText("01900000-0000-7000-8000-000000000001");
+    const advancedDetails = assetId.closest("details");
+    expect(advancedDetails).not.toBeNull();
+    if (!advancedDetails) throw new Error("Advanced details were not rendered");
+    expect(advancedDetails).not.toHaveAttribute("open");
+    expect(assetId).not.toBeVisible();
+    fireEvent.click(within(advancedDetails).getByText("Advanced details"));
+    expect(assetId).toBeVisible();
   });
 
   it("PR6: blocks delete while a visible Entry references the asset", async () => {

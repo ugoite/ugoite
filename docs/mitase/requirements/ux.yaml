@@ -584,12 +584,12 @@ requirements:
           - id: pr6-asset-detail-rows
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/assets/[asset_id].test.tsx"
-            selector: { kind: test, name: "REQ-UX-LIST-001: keeps Entry IDs out of asset references and blocked-delete labels" }
+            selector: { kind: test, name: "REQ-UX-LIST-001: keeps Entry IDs out of asset references and reveals Asset ID only on demand" }
             claims:
               - kind: verifies
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
                 covers: [FEAT-UX-003#binding.list-baseline/target.asset-entry-reference-surface]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/assets/[asset_id].test.tsx", test: "REQ-UX-LIST-001: keeps Entry IDs out of asset references and blocked-delete labels" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/assets/[asset_id].test.tsx", test: "REQ-UX-LIST-001: keeps Entry IDs out of asset references and reveals Asset ID only on demand" } }
   - id: REQ-UX-LIST-002
     title: One-Row Action Bar at 390px
     description: Primary list and workspace action bars remain in a single row without wrapping or horizontal scrolling at a 390px viewport.
