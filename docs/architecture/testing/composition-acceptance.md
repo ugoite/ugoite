@@ -266,6 +266,12 @@ and the stable multiple-rows diagnostic with no Browser aggregation), the
 stale-response journey (a late parameter-A response changes neither rows,
 metric, error, loading, finalization, nor pagination), the raw recovery and
 caller-visible contract journey, and the save-receipt reconciliation journey.
+The exact-revision navigation journey holds the first revision's authorized
+Metric response while the Browser follows Composition History to a later
+append-only revision, then verifies that releasing the old value cannot alter
+the later revision's result, error, or loading state. Its JUnit artifact
+records the complete required Composition Metric lane run, including the
+revision-navigation selector.
 Each record states its own gap; unexecuted selectors remain unverified. A
 representative performance baseline
 (`e2e/fixtures/composition/evidence/performance-baseline.json`, regression

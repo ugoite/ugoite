@@ -54,7 +54,7 @@
       "Delay and interrupt the first save response after commit, then retry with the same Idempotency-Key and verify one history publication and the original receipt revision.",
       "Close the browser context, rediscover the saved tool from Space Home, and open the exact revision named by the receipt.",
       "Use the labeled Inputs to change declared Variable values, advance a result page, and confirm the displayed rows come from the existing query response without Browser aggregation.",
-      "Change a Variable, Space, or source while an earlier request is delayed and confirm stale success, error, finalization, and loading updates are discarded.",
+      "Change a Variable or Space, switch a source, or navigate through Composition History to another exact revision while a request is delayed; confirm stale success, error, finalization, and loading updates are discarded.",
       "Confirm page, scroll, result, continuation, and cache state are absent from the saved Composition."
     ]
   },
@@ -143,7 +143,7 @@
         "id": "stale_browser_request_state",
         "surface": "Browser",
         "boundary": "Transient Composition query generation state",
-        "expectation": "Parameter, Space, and source changes suppress stale success, error, finalization, and loading-state updates."
+        "expectation": "Variable, Space, source, and exact Composition revision changes suppress stale success, error, finalization, and loading-state updates."
       },
       {
         "id": "portable_surface_contract_parity",
@@ -395,6 +395,13 @@
           "selector": {
             "kind": "test",
             "name": "Browser saves a tool once, reopens its exact revision from Home, and pages parameterized results with model connection disabled"
+          }
+        },
+        {
+          "path": "e2e/composition-revision-stale-response.test.ts",
+          "selector": {
+            "kind": "test",
+            "name": "discard a delayed metric response after navigating to another exact revision"
           }
         }
       ]
