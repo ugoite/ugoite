@@ -746,6 +746,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-COMP-007#criterion.code-free-studio-authoring
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.authoring-default-parse-lifecycle
       - id: studio-typed-variable-defaults-evidence
         role: evidence
         facet: frontend-tests
