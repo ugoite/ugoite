@@ -40,6 +40,7 @@ impl UgoiteService {
                         composition_id,
                         revision_id,
                         &request.parameters,
+                        &request.unset_variables,
                     )
                     .await?;
                 (
@@ -52,7 +53,12 @@ impl UgoiteService {
             }
             CompositionMetricQueryTarget::Draft { yaml } => {
                 let preview = self
-                    .preview_composition_local(space_id, yaml, &request.parameters)
+                    .preview_composition_local(
+                        space_id,
+                        yaml,
+                        &request.parameters,
+                        &request.unset_variables,
+                    )
                     .await?;
                 (
                     preview
@@ -105,6 +111,7 @@ impl UgoiteService {
                         composition_id,
                         revision_id,
                         &request.parameters,
+                        &request.unset_variables,
                         principal_ids,
                     )
                     .await?;
@@ -123,6 +130,7 @@ impl UgoiteService {
                         space_id,
                         yaml,
                         &request.parameters,
+                        &request.unset_variables,
                         principal_ids,
                     )
                     .await?;

@@ -1,5 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@solidjs/testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CompositionParameterDefinition } from "~/lib/composition-api";
 import { ParameterControl } from "./ParameterControl";
@@ -7,7 +13,7 @@ import { ParameterControl } from "./ParameterControl";
 describe("Composition ParameterControl", () => {
   afterEach(() => cleanup());
 
-  it("preserves timezone-bearing timestamp values in a text input", () => {
+  it("preserves timezone-bearing timestamp values in a text input", async () => {
     const definition: CompositionParameterDefinition = {
       id: "created_at",
       type: "timestamp",
@@ -31,6 +37,62 @@ describe("Composition ParameterControl", () => {
     fireEvent.input(input, {
       target: { value: "2026-10-13T05:59:59Z" },
     });
-    expect(onChange).toHaveBeenCalledWith("2026-10-13T05:59:59Z");
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledWith("2026-10-13T05:59:59Z");
+    });
+  });
+
+  it("uses the Domain parser for numeric Inputs without coercing invalid text", async () => {
+    const definition: CompositionParameterDefinition = {
+      id: "limit",
+      type: "integer",
+      required: true,
+      default: 0,
+    };
+    const onChange = vi.fn();
+    render(() => (
+      <ParameterControl
+        definition={definition}
+        displayName="Limit"
+        value={undefined}
+        onChange={onChange}
+      />
+    ));
+
+    const input = screen.getByLabelText("Limit");
+    expect(input).toHaveAttribute("type", "text");
+
+    fireEvent.input(input, { target: { value: "+00042" } });
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith(42));
+
+    fireEvent.input(input, { target: { value: "1.0" } });
+    await waitFor(() => expect(onChange).toHaveBeenLastCalledWith("1.0"));
+    expect(input).toHaveValue("1.0");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("keeps an underflowing Float token raw instead of converting it to zero", async () => {
+    const definition: CompositionParameterDefinition = {
+      id: "ratio",
+      type: "float",
+      required: false,
+    };
+    const onChange = vi.fn();
+    render(() => (
+      <ParameterControl
+        definition={definition}
+        displayName="Ratio"
+        value={undefined}
+        onChange={onChange}
+      />
+    ));
+
+    const input = screen.getByLabelText("Ratio");
+    fireEvent.input(input, { target: { value: "1e-4000" } });
+    await waitFor(() => {
+      expect(onChange).toHaveBeenLastCalledWith("1e-4000");
+    });
+    expect(input).toHaveValue("1e-4000");
+    expect(input).toHaveAttribute("aria-invalid", "true");
   });
 });

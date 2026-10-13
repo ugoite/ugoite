@@ -86,8 +86,20 @@ pub fn bind_variables(
     variables: &[CompositionVariable],
     supplied: &BTreeMap<String, Value>,
 ) -> VariableBindings {
+    bind_variables_with_unset(variables, supplied, &[])
+}
+
+/// Bind caller values and defaults while honoring variables explicitly left
+/// unset by an Input. Explicitly unset names override declaration defaults;
+/// omission from both collections continues to select the default.
+pub fn bind_variables_with_unset(
+    variables: &[CompositionVariable],
+    supplied: &BTreeMap<String, Value>,
+    unset_variables: &[String],
+) -> VariableBindings {
     let mut bindings = VariableBindings::default();
     let mut declared = BTreeSet::new();
+    let explicitly_unset = unset_variables.iter().cloned().collect::<BTreeSet<_>>();
 
     for variable in variables {
         if !declared.insert(variable.id.clone()) {
@@ -116,6 +128,26 @@ pub fn bind_variables(
     }
 
     for variable in variables {
+        if explicitly_unset.contains(&variable.id) {
+            if supplied.contains_key(&variable.id) {
+                bindings.invalid_values.insert(variable.id.clone());
+                bindings
+                    .diagnostics
+                    .push(CompositionDiagnostic::for_variable(
+                        CompositionDiagnosticCode::VariableTypeMismatch,
+                        &variable.id,
+                    ));
+            } else if variable.required {
+                bindings
+                    .diagnostics
+                    .push(CompositionDiagnostic::for_variable(
+                        CompositionDiagnosticCode::VariableMissing,
+                        &variable.id,
+                    ));
+            }
+            continue;
+        }
+
         let value = supplied.get(&variable.id).or_else(|| {
             variable
                 .default
@@ -147,15 +179,19 @@ pub fn bind_variables(
         }
     }
 
-    for name in supplied.keys() {
-        if !declared.contains(name) {
-            bindings
-                .diagnostics
-                .push(CompositionDiagnostic::for_variable(
-                    CompositionDiagnosticCode::VariableUnknown,
-                    name,
-                ));
-        }
+    let unknown_names = supplied
+        .keys()
+        .cloned()
+        .chain(explicitly_unset.iter().cloned())
+        .filter(|name| !declared.contains(name))
+        .collect::<BTreeSet<_>>();
+    for name in unknown_names {
+        bindings
+            .diagnostics
+            .push(CompositionDiagnostic::for_variable(
+                CompositionDiagnosticCode::VariableUnknown,
+                &name,
+            ));
     }
 
     bindings
@@ -865,8 +901,21 @@ pub struct PreviewCompositionPlan {
 pub fn resolve_composition(
     input: ResolveInput<'_>,
 ) -> Result<ResolvedCompositionPlan, Vec<CompositionDiagnostic>> {
-    let (sources, component_bindings, dependencies) =
-        resolve_composition_parts(input.spec, input.variables, input.current_sources)?;
+    resolve_composition_with_unset(input, &[])
+}
+
+/// Resolve a saved Composition while distinguishing explicit unset values
+/// from absent values that should use their declared defaults.
+pub fn resolve_composition_with_unset(
+    input: ResolveInput<'_>,
+    unset_variables: &[String],
+) -> Result<ResolvedCompositionPlan, Vec<CompositionDiagnostic>> {
+    let (sources, component_bindings, dependencies) = resolve_composition_parts(
+        input.spec,
+        input.variables,
+        unset_variables,
+        input.current_sources,
+    )?;
     Ok(ResolvedCompositionPlan {
         composition_revision: input.composition_revision,
         sources,
@@ -885,8 +934,20 @@ pub fn resolve_composition_preview(
     current_sources: &[CurrentSourceDescriptor<'_>],
     draft_fingerprint: String,
 ) -> Result<PreviewCompositionPlan, Vec<CompositionDiagnostic>> {
+    resolve_composition_preview_with_unset(spec, variables, &[], current_sources, draft_fingerprint)
+}
+
+/// Resolve a draft Composition while distinguishing explicit unset values
+/// from absent values that should use their declared defaults.
+pub fn resolve_composition_preview_with_unset(
+    spec: &CompositionSpec,
+    variables: &BTreeMap<String, Value>,
+    unset_variables: &[String],
+    current_sources: &[CurrentSourceDescriptor<'_>],
+    draft_fingerprint: String,
+) -> Result<PreviewCompositionPlan, Vec<CompositionDiagnostic>> {
     let (sources, component_bindings, dependencies) =
-        resolve_composition_parts(spec, variables, current_sources)?;
+        resolve_composition_parts(spec, variables, unset_variables, current_sources)?;
     Ok(PreviewCompositionPlan {
         draft_fingerprint,
         sources,
@@ -899,6 +960,7 @@ pub fn resolve_composition_preview(
 fn resolve_composition_parts(
     spec: &CompositionSpec,
     variables: &BTreeMap<String, Value>,
+    unset_variables: &[String],
     current_sources: &[CurrentSourceDescriptor<'_>],
 ) -> Result<
     (
@@ -908,7 +970,7 @@ fn resolve_composition_parts(
     ),
     Vec<CompositionDiagnostic>,
 > {
-    let bindings = bind_variables(&spec.variables, variables);
+    let bindings = bind_variables_with_unset(&spec.variables, variables, unset_variables);
     if !bindings.diagnostics.is_empty() {
         return Err(bindings.diagnostics);
     }
@@ -1328,10 +1390,11 @@ fn wall_timestamp_nanos_are_representable(timestamp: NaiveDateTime) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        bind_variables, compile_entry_query_source, compile_saved_sql_source, resolve_composition,
-        resolve_composition_preview, resolve_value_template, CompositionDiagnostic,
-        CompositionRevisionRef, CurrentSourceDescriptor, ResolveInput, ResolvedSourceRequest,
-        SavedSqlRevisionMetadata, VariableBindings,
+        bind_variables, bind_variables_with_unset, compile_entry_query_source,
+        compile_saved_sql_source, resolve_composition, resolve_composition_preview,
+        resolve_value_template, CompositionDiagnostic, CompositionRevisionRef,
+        CurrentSourceDescriptor, ResolveInput, ResolvedSourceRequest, SavedSqlRevisionMetadata,
+        VariableBindings,
     };
     use crate::entry_query::EntryFieldRef;
     use serde_json::{json, Value};
@@ -1709,6 +1772,60 @@ mod tests {
         let bound = resolve_value_template(&variable_ref("month_start"), &bindings).unwrap();
         assert_eq!(bound.value, json!("2026-10-01"));
         assert_eq!(bound.variable_type, Some(CompositionVariableType::Date));
+    }
+
+    #[test]
+    fn explicit_unset_overrides_defaults_and_reports_required_values_missing() {
+        let variables = [
+            variable(
+                "required_limit",
+                CompositionVariableType::Integer,
+                true,
+                Some(literal(json!(12))),
+                None,
+            ),
+            variable(
+                "optional_label",
+                CompositionVariableType::String,
+                false,
+                Some(literal(json!("default"))),
+                None,
+            ),
+        ];
+        let explicitly_unset = ["optional_label".to_owned(), "required_limit".to_owned()];
+
+        let bindings = bind_variables_with_unset(&variables, &BTreeMap::new(), &explicitly_unset);
+
+        assert_eq!(bindings.values, BTreeMap::new());
+        assert_eq!(
+            bindings.diagnostics,
+            vec![CompositionDiagnostic {
+                code: CompositionDiagnosticCode::VariableMissing,
+                variable_id: Some("required_limit".to_owned()),
+            }]
+        );
+    }
+
+    #[test]
+    fn explicit_unset_cannot_conflict_with_a_supplied_value() {
+        let variables = [variable(
+            "limit",
+            CompositionVariableType::Integer,
+            false,
+            Some(literal(json!(12))),
+            None,
+        )];
+        let supplied = BTreeMap::from([("limit".to_owned(), json!(14))]);
+
+        let bindings = bind_variables_with_unset(&variables, &supplied, &["limit".to_owned()]);
+
+        assert_eq!(
+            bindings.diagnostics,
+            vec![CompositionDiagnostic {
+                code: CompositionDiagnosticCode::VariableTypeMismatch,
+                variable_id: Some("limit".to_owned()),
+            }]
+        );
     }
 
     #[test]

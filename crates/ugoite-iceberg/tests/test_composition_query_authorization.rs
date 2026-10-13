@@ -351,6 +351,7 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
         },
         component_id: component_id.to_string(),
         parameters: BTreeMap::from([("minimum".to_string(), json!(minimum))]),
+        unset_variables: Vec::new(),
     };
 
     let resolution = service
@@ -359,6 +360,7 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
             &saved.entry_id.to_string(),
             &saved.revision_id.to_string(),
             &BTreeMap::from([("minimum".to_string(), json!(0))]),
+            &[],
         )
         .await?;
     assert!(
@@ -587,6 +589,7 @@ async fn source_resolution_and_continuation_recheck_current_authorization() -> R
             &saved.entry_id.to_string(),
             &saved.revision_id.to_string(),
             &BTreeMap::new(),
+            &[],
             &[viewer],
         )
         .await?;
@@ -649,6 +652,7 @@ async fn source_resolution_and_continuation_recheck_current_authorization() -> R
             &saved.entry_id.to_string(),
             &saved.revision_id.to_string(),
             &BTreeMap::new(),
+            &[],
             &[viewer],
         )
         .await?;
@@ -907,6 +911,7 @@ async fn authorized_composition_metrics_recheck_current_entry_and_saved_sql_acce
         },
         component_id: "amount_metric".to_string(),
         parameters: BTreeMap::new(),
+        unset_variables: Vec::new(),
     };
 
     let visible = service

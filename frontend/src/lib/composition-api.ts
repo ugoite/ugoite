@@ -380,6 +380,7 @@ export interface CompositionMetricQueryRequest {
   target: CompositionMetricQueryTarget;
   component_id: string;
   parameters: Record<string, unknown>;
+  unset_variables?: string[];
 }
 
 export interface CompositionMetricQueryValue {
@@ -400,6 +401,18 @@ export interface CompositionMetricQueryResponse {
   result?: CompositionMetricQueryValue;
   diagnostics?: CompositionMetricQueryDiagnostic[];
 }
+
+const splitParameterSnapshot = (
+  snapshot: Record<string, unknown>,
+): { parameters: Record<string, unknown>; unset_variables: string[] } => {
+  const parameters: Record<string, unknown> = {};
+  const unset_variables: string[] = [];
+  for (const [id, value] of Object.entries(snapshot)) {
+    if (value === null) unset_variables.push(id);
+    else parameters[id] = value;
+  }
+  return { parameters, unset_variables };
+};
 
 export type CompositionSourcePage =
   | { kind: "entry_query"; page: EntryPage }
@@ -631,10 +644,17 @@ export const compositionApi = {
     parameters: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<CompositionResolveResponse> {
+    const snapshot = splitParameterSnapshot(parameters);
     return await protocolFetch<CompositionResolveResponse>(
       "composition.resolve",
       { space_id: spaceId, composition_id: compositionId },
-      { revision_id: revisionId, parameters },
+      {
+        revision_id: revisionId,
+        parameters: snapshot.parameters,
+        ...(snapshot.unset_variables.length > 0
+          ? { unset_variables: snapshot.unset_variables }
+          : {}),
+      },
       { signal },
     );
   },
@@ -646,10 +666,17 @@ export const compositionApi = {
     parameters: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<CompositionPreviewResponse> {
+    const snapshot = splitParameterSnapshot(parameters);
     return await protocolFetch<CompositionPreviewResponse>(
       "composition.preview",
       { space_id: spaceId },
-      { yaml, parameters },
+      {
+        yaml,
+        parameters: snapshot.parameters,
+        ...(snapshot.unset_variables.length > 0
+          ? { unset_variables: snapshot.unset_variables }
+          : {}),
+      },
       { signal },
     );
   },
@@ -660,10 +687,20 @@ export const compositionApi = {
     request: CompositionMetricQueryRequest,
     signal?: AbortSignal,
   ): Promise<CompositionMetricQueryResponse> {
+    const { parameters, unset_variables: explicitlyUnset = [], ...requestBody } =
+      request;
+    const snapshot = splitParameterSnapshot(parameters);
+    const unset_variables = [
+      ...new Set([...explicitlyUnset, ...snapshot.unset_variables]),
+    ];
     return await protocolFetch<CompositionMetricQueryResponse>(
       "composition.metric.query",
       { space_id: spaceId },
-      request,
+      {
+        ...requestBody,
+        parameters: snapshot.parameters,
+        ...(unset_variables.length > 0 ? { unset_variables } : {}),
+      },
       { signal },
     );
   },

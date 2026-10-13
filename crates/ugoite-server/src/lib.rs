@@ -11461,6 +11461,7 @@ async fn resolve_composition_handler(
             &composition_id,
             &request.revision_id,
             &request.parameters,
+            &request.unset_variables,
             &principals,
         )
         .await
@@ -11509,6 +11510,7 @@ async fn preview_composition_handler(
             &space_id,
             &request.yaml,
             &request.parameters,
+            &request.unset_variables,
             &principals,
         )
         .await
@@ -11588,6 +11590,7 @@ async fn composition_metric_query_handler(
                 target,
                 component_id: request.component_id,
                 parameters: request.parameters,
+                unset_variables: request.unset_variables,
             },
         )
         .await

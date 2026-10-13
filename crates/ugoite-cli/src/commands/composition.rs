@@ -806,6 +806,7 @@ fn composition_metric_query_request(
         },
         component_id: component_id.to_string(),
         parameters: context.parameters.clone(),
+        unset_variables: Vec::new(),
     }
 }
 
@@ -821,7 +822,7 @@ async fn resolve_composition(
         SpaceTarget::Core { .. } => {
             let service = local_service.context("local Composition service is unavailable")?;
             let resolution = service
-                .resolve_composition_local(space_id, composition_id, revision_id, &parameters)
+                .resolve_composition_local(space_id, composition_id, revision_id, &parameters, &[])
                 .await?;
             if let Some(plan) = resolution.plan {
                 Ok(CompositionQueryResolution::Plan(Box::new(
@@ -1123,6 +1124,7 @@ async fn execute_composition_metrics(
                     },
                     component_id: binding.component_id.clone(),
                     parameters: context.parameters.clone(),
+                    unset_variables: Vec::new(),
                 };
                 let response = local_service
                     .context("local Composition Metric query service is unavailable")?

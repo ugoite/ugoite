@@ -112,7 +112,7 @@ async fn draft_preview_resolves_without_publication() -> Result<()> {
         canonicalize_composition(&document).map_err(|code| anyhow::anyhow!(code.as_str()))?;
 
     let preview = service
-        .preview_composition_local(&space_id, &canonical.yaml, &BTreeMap::new())
+        .preview_composition_local(&space_id, &canonical.yaml, &BTreeMap::new(), &[])
         .await
         .context("draft preview should resolve")?;
     assert!(preview.diagnostics.is_empty());
@@ -131,7 +131,7 @@ async fn draft_preview_resolves_without_publication() -> Result<()> {
     // Reformatting the same draft keeps the fingerprint; the plan follows.
     let reformatted = format!("{}\n", canonical.yaml);
     let reparsed = service
-        .preview_composition_local(&space_id, &reformatted, &BTreeMap::new())
+        .preview_composition_local(&space_id, &reformatted, &BTreeMap::new(), &[])
         .await
         .context("reformatted draft preview should resolve")?;
     assert_eq!(
@@ -151,7 +151,7 @@ async fn draft_preview_resolves_without_publication() -> Result<()> {
 async fn invalid_draft_preview_reports_diagnostics_without_identity() -> Result<()> {
     let (service, space_id, _document) = setup_preview_space().await?;
     let preview = service
-        .preview_composition_local(&space_id, "not: [valid", &BTreeMap::new())
+        .preview_composition_local(&space_id, "not: [valid", &BTreeMap::new(), &[])
         .await
         .context("invalid draft preview should report diagnostics")?;
     assert!(preview.plan.is_none());
@@ -222,6 +222,7 @@ async fn preview_exposes_variable_definitions_in_declaration_order() -> Result<(
             &space_id,
             &canonical.yaml,
             &BTreeMap::from([("month".to_string(), json!("2026-10"))]),
+            &[],
         )
         .await
         .context("placed variables should preview")?;

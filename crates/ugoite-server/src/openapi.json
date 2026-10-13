@@ -15262,6 +15262,13 @@
               "$ref": "#/components/schemas/JsonValue"
             },
             "default": {}
+          },
+          "unset_variables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Variable names explicitly left unset. Omission from both fields uses a declared default; an unset name must not also appear in parameters."
           }
         },
         "additionalProperties": false
@@ -15282,6 +15289,13 @@
               "$ref": "#/components/schemas/JsonValue"
             },
             "default": {}
+          },
+          "unset_variables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Variable names explicitly left unset. Omission from both fields uses a declared default; an unset name must not also appear in parameters."
           }
         },
         "additionalProperties": false
@@ -16251,6 +16265,13 @@
               "$ref": "#/components/schemas/JsonValue"
             },
             "default": {}
+          },
+          "unset_variables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Variable names explicitly left unset. Omission from both fields uses a declared default; an unset name must not also appear in parameters."
           }
         },
         "additionalProperties": false

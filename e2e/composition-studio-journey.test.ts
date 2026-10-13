@@ -581,13 +581,9 @@ test.describe("Composition Studio Journey", () => {
       await expect(page.getByLabel("Parameter 1")).toHaveValue(
         seed.monthStart,
       );
-      await expect(page.getByLabel("Parameter 1")).toHaveAttribute(
-        "readonly",
-      );
+      await expect(page.getByLabel("Parameter 1")).toBeEditable();
       await expect(page.getByLabel("Parameter 2")).toHaveValue(seed.monthEnd);
-      await expect(page.getByLabel("Parameter 2")).toHaveAttribute(
-        "readonly",
-      );
+      await expect(page.getByLabel("Parameter 2")).toBeEditable();
       await expect(page.getByLabel("month_start")).toHaveCount(0);
       await expect(page.getByLabel("month_end")).toHaveCount(0);
       await expect(

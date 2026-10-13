@@ -5,6 +5,7 @@ import type { CompositionParameterType } from "~/lib/composition-api";
 import { compositionParameterDisplayName } from "~/lib/composition-parameter-name";
 import type { DraftParameter } from "~/lib/composition-draft";
 import { t } from "~/lib/i18n";
+import { parseCompositionVariableInput } from "~/lib/ugoite-client/protocol";
 
 const parameterTypes: CompositionParameterType[] = [
   "string",
@@ -25,7 +26,7 @@ const displayValue = (parameter: DraftParameter): string => {
   return "";
 };
 
-const needsSharedNumericParser = (
+const isNumericParameter = (
   type: CompositionParameterType,
 ): boolean => type === "integer" || type === "float";
 
@@ -50,6 +51,58 @@ export function CompositionParameterList(props: CompositionParameterListProps) {
     "string",
   );
   const [removeError, setRemoveError] = createSignal<string | null>(null);
+  const [defaultInputValues, setDefaultInputValues] = createSignal<
+    Record<string, string>
+  >({});
+  const defaultInputGenerations = new Map<string, number>();
+
+  const clearDefaultInputValue = (parameterId: string) => {
+    setDefaultInputValues((current) => {
+      if (!(parameterId in current)) return current;
+      const next = { ...current };
+      delete next[parameterId];
+      return next;
+    });
+  };
+
+  const updateDefault = async (parameter: DraftParameter, raw: string) => {
+    const latest = () =>
+      props.parameters.find((item) => item.id === parameter.id) ?? parameter;
+    const saveDefault = (value: unknown | undefined) =>
+      props.onUpdate({ ...latest(), default: value });
+
+    if (!isNumericParameter(parameter.type)) {
+      saveDefault(raw === "" ? undefined : raw);
+      return;
+    }
+
+    const generation = (defaultInputGenerations.get(parameter.id) ?? 0) + 1;
+    defaultInputGenerations.set(parameter.id, generation);
+    setDefaultInputValues((current) => ({
+      ...current,
+      [parameter.id]: raw,
+    }));
+    // Mark the draft invalid immediately while the shared parser resolves.
+    // This prevents a stale, previously valid default from being saved.
+    saveDefault(raw === "" ? undefined : raw);
+
+    try {
+      const parsed = await parseCompositionVariableInput(parameter.type, raw);
+      if (defaultInputGenerations.get(parameter.id) !== generation) return;
+      if (latest().type !== parameter.type) return;
+
+      if (parsed.status === "valid") {
+        saveDefault(parsed.value);
+        clearDefaultInputValue(parameter.id);
+      } else if (parsed.status === "unset") {
+        saveDefault(undefined);
+        clearDefaultInputValue(parameter.id);
+      }
+    } catch {
+      // Leave the raw invalid default in the draft; Rust canonicalization
+      // blocks saving it if the portable parser cannot be reached.
+    }
+  };
 
   const addParameter = () => {
     const id = newId().trim();
@@ -159,30 +212,19 @@ export function CompositionParameterList(props: CompositionParameterListProps) {
                     <input
                       class="ui-input"
                       type="text"
-                      inputMode={parameter.type === "integer" ||
-                          parameter.type === "float"
-                        ? "decimal"
-                        : undefined}
-                      value={displayValue(parameter)}
-                      readOnly={needsSharedNumericParser(parameter.type)}
-                      aria-readonly={needsSharedNumericParser(parameter.type)
-                        ? "true"
-                        : undefined}
+                      value={defaultInputValues()[parameter.id] ??
+                        displayValue(parameter)}
                       aria-label={t("composition.studioParameterDefaultName", {
                         name: compositionParameterDisplayName(
                           props.parameters,
                           parameter.id,
                         ),
                       })}
-                      onChange={(event) => {
-                        if (needsSharedNumericParser(parameter.type)) return;
-                        props.onUpdate({
-                          ...parameter,
-                          default: event.currentTarget.value === ""
-                            ? undefined
-                            : event.currentTarget.value,
-                        });
-                      }}
+                      onInput={(event) =>
+                        void updateDefault(
+                          parameter,
+                          event.currentTarget.value,
+                        )}
                     />
                   }
                 >

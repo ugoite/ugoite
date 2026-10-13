@@ -210,7 +210,7 @@ features:
       - id: core-typed-variable-resolution
         role: implementation
         facet: core
-        responsibility: Bind transient variable values without coercion, preserve exact Saved SQL variable types in the existing typed SQL request, resolve Input and Text locally, and build dependency edges independently of Layout order.
+        responsibility: Bind transient variable values without coercion, distinguish omitted values from explicit unsets that override defaults, preserve exact Saved SQL variable types in the existing typed SQL request, resolve Input and Text locally, and build dependency edges independently of Layout order.
         targets:
           - id: runtime-variable-binding
             adapter: rust
@@ -221,6 +221,15 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-COMP-007#criterion.typed-variable-declarations
+          - id: explicit-unset-binding
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector:
+              kind: symbol
+              name: bind_variables_with_unset
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
           - id: typed-saved-sql-variable-binding
             adapter: rust
             path: crates/ugoite-core/src/composition.rs
@@ -246,7 +255,7 @@ features:
       - id: core-typed-variable-resolution-evidence
         role: evidence
         facet: core-tests
-        responsibility: Verify exact runtime type checks, unchanged typed Saved SQL request parameters, local Input and Text bindings without extra source work, deterministic dependency edges, and isolation of affected Saved SQL requests.
+        responsibility: Verify exact runtime type checks, explicit unset default bypass, unchanged typed Saved SQL request parameters, local Input and Text bindings without extra source work, deterministic dependency edges, and isolation of affected Saved SQL requests.
         targets:
           - id: runtime-value-validation
             adapter: rust
@@ -257,6 +266,15 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.typed-variable-declarations
+          - id: explicit-unset-default-bypass
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector:
+              kind: symbol
+              name: tests::explicit_unset_overrides_defaults_and_reports_required_values_missing
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-input-lexical-contract
           - id: missing-and-unknown-variable-diagnostics
             adapter: rust
             path: crates/ugoite-core/src/composition.rs
@@ -339,3 +357,59 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.typed-input-lexical-contract
+      - id: browser-explicit-unset-transport
+        role: implementation
+        facet: frontend
+        responsibility: Preserve explicit empty Input as a separate unset list through resolve, preview, and metric requests without sending it as a typed JSON null.
+        targets:
+          - id: composition-explicit-unset-adapter
+            adapter: typescript
+            path: frontend/src/lib/composition-api.ts
+            selector:
+              kind: symbol
+              name: compositionApi
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+      - id: browser-explicit-unset-transport-evidence
+        role: evidence
+        facet: frontend-tests
+        responsibility: Verify an explicitly unset Input is carried separately from typed values in the portable Browser request.
+        targets:
+          - id: composition-explicit-unset-request
+            adapter: typescript
+            path: frontend/src/lib/composition-api.test.ts
+            selector:
+              kind: test
+              name: sends an explicit unset separately from typed variable values
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-input-lexical-contract
+      - id: studio-typed-variable-defaults
+        role: implementation
+        facet: frontend
+        responsibility: Author numeric variable defaults through the shared Domain lexical parser and keep invalid drafts unsaveable.
+        targets:
+          - id: parameter-default-editor
+            adapter: typescript
+            path: frontend/src/components/CompositionParameterList.tsx
+            selector:
+              kind: symbol
+              name: CompositionParameterList
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.code-free-studio-authoring
+      - id: studio-typed-variable-defaults-evidence
+        role: evidence
+        facet: frontend-tests
+        responsibility: Verify a numeric variable default is parsed by the shared Domain parser and invalid numeric text remains raw in the draft.
+        targets:
+          - id: numeric-default-parser
+            adapter: typescript
+            path: frontend/src/components/CompositionParameterList.test.tsx
+            selector:
+              kind: test
+              name: parses numeric defaults through the shared Domain parser
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.code-free-studio-authoring

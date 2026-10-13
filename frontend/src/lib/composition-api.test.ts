@@ -226,6 +226,29 @@ describe("compositionApi", () => {
     );
   });
 
+  it("sends an explicit unset separately from typed variable values", async () => {
+    vi.mocked(protocolFetch).mockResolvedValue({ ok: false });
+
+    await compositionApi.resolve(
+      "space-1",
+      "composition-1",
+      "revision-2",
+      { limit: null, label: "ready" },
+      signal,
+    );
+
+    expect(protocolFetch).toHaveBeenCalledWith(
+      "composition.resolve",
+      { space_id: "space-1", composition_id: "composition-1" },
+      {
+        revision_id: "revision-2",
+        parameters: { label: "ready" },
+        unset_variables: ["limit"],
+      },
+      { signal },
+    );
+  });
+
   it("queries one metric through the bounded portable operation", async () => {
     const request = {
       target: {
@@ -233,7 +256,7 @@ describe("compositionApi", () => {
         yaml: "format: ugoite.composition\n",
       },
       component_id: "sql_total",
-      parameters: { month: "2026-10" },
+      parameters: { month: null },
     };
     vi.mocked(protocolFetch).mockResolvedValue({
       ok: true,
@@ -251,7 +274,12 @@ describe("compositionApi", () => {
     expect(protocolFetch).toHaveBeenCalledWith(
       "composition.metric.query",
       { space_id: "space-1" },
-      request,
+      {
+        target: request.target,
+        component_id: request.component_id,
+        parameters: {},
+        unset_variables: ["month"],
+      },
       { signal },
     );
   });

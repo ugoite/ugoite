@@ -2993,7 +2993,8 @@ mod tests {
 
         let resolve_body = json!({
             "revision_id": "01900000-0000-7000-8000-000000000003",
-            "parameters": {"month": "2026-10"}
+            "parameters": {"month": "2026-10"},
+            "unset_variables": ["include_archived"]
         });
         let resolve = prepare_request(
             "composition.resolve",
@@ -3010,6 +3011,12 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<Value>(resolve.body.as_deref().expect("resolve body"))
                 .expect("resolve request JSON"),
+            resolve_body
+        );
+        let resolve_request: CompositionResolveRequest =
+            serde_json::from_value(resolve_body.clone()).expect("resolve request DTO");
+        assert_eq!(
+            serde_json::to_value(resolve_request).expect("serialize resolve request DTO"),
             resolve_body
         );
 
@@ -3101,7 +3108,8 @@ mod tests {
 
         let preview_body = json!({
             "yaml": "format: ugoite.composition\n",
-            "parameters": {"month": "2026-10"}
+            "parameters": {"month": "2026-10"},
+            "unset_variables": ["include_archived"]
         });
         let preview = prepare_request(
             "composition.preview",
@@ -3117,6 +3125,12 @@ mod tests {
                 .expect("preview request JSON"),
             preview_body
         );
+        let preview_request: CompositionPreviewRequest =
+            serde_json::from_value(preview_body.clone()).expect("preview request DTO");
+        assert_eq!(
+            serde_json::to_value(preview_request).expect("serialize preview request DTO"),
+            preview_body
+        );
 
         let metric_body = json!({
             "target": {
@@ -3125,7 +3139,8 @@ mod tests {
                 "revision_id": "01900000-0000-7000-8000-000000000011"
             },
             "component_id": "monthly_total",
-            "parameters": {"month": "2026-10"}
+            "parameters": {"month": "2026-10"},
+            "unset_variables": ["include_archived"]
         });
         let metric_query = prepare_request(
             "composition.metric.query",

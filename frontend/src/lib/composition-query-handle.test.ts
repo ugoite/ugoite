@@ -147,6 +147,45 @@ describe("CompositionQueryHandle", () => {
     handle.dispose();
   });
 
+  it("keeps an explicit unset marker so a declared default is not restored", async () => {
+    const response = resolved("2026-03-01") as CompositionResolveResponse;
+    response.parameter_definitions = [{
+      id: "month_start",
+      type: "string",
+      required: true,
+      default: "starting",
+    }];
+    response.plan!.sources = [];
+    response.plan!.component_bindings = [];
+    const api: CompositionQueryApi = {
+      get: vi.fn().mockResolvedValue({
+        revision: {
+          entry_id: identity.compositionId,
+          revision_id: identity.revisionId,
+        },
+        fields: { name: "Budget" },
+        unmapped_field_values: {},
+      }),
+      resolve: vi.fn().mockResolvedValue(response),
+      querySource: vi.fn(),
+    };
+    const handle = createCompositionQueryHandle(api);
+
+    await handle.open(identity);
+    handle.setParameter("month_start", undefined);
+
+    await vi.waitFor(() => expect(api.resolve).toHaveBeenCalledTimes(2));
+    expect(api.resolve).toHaveBeenLastCalledWith(
+      identity.spaceId,
+      identity.compositionId,
+      identity.revisionId,
+      { month_start: null },
+      expect.any(AbortSignal),
+    );
+    expect(handle.parameters()).toEqual({ month_start: null });
+    handle.dispose();
+  });
+
   it("pins get and resolve to the selected revision and ignores a stale parameter response", async () => {
     const oldPage = deferred<ReturnType<typeof entryPage>>();
     const currentPage = deferred<ReturnType<typeof entryPage>>();

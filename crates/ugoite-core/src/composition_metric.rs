@@ -33,6 +33,10 @@ pub struct CompositionMetricQueryRequest {
     pub component_id: String,
     #[serde(default)]
     pub parameters: BTreeMap<String, Value>,
+    /// Variables explicitly left unset; omission from both fields uses the
+    /// declared default when one exists.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unset_variables: Vec<String>,
 }
 
 /// One successfully evaluated metric value and its portable meaning.

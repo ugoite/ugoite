@@ -1,5 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
 import { CompositionParameterList } from "./CompositionParameterList";
@@ -95,11 +101,11 @@ describe("composition parameter list", () => {
     });
 
     const defaultInput = screen.getByLabelText("Default for Parameter 1");
-    fireEvent.change(defaultInput, { target: { value: "2026-10-01" } });
+    fireEvent.input(defaultInput, { target: { value: "2026-10-01" } });
     expect(onUpdate).toHaveBeenCalledWith({ ...month, default: "2026-10-01" });
   });
 
-  it("keeps numeric defaults read-only until the shared parser is available", () => {
+  it("parses numeric defaults through the shared Domain parser", async () => {
     const integer: DraftParameter = {
       id: "limit",
       type: "integer",
@@ -119,9 +125,20 @@ describe("composition parameter list", () => {
 
     const input = screen.getByLabelText("Default for Parameter 1");
     expect(input).toHaveValue("0");
-    expect(input).toHaveAttribute("readonly");
-    fireEvent.change(input, { target: { value: "12" } });
-    expect(onUpdate).not.toHaveBeenCalled();
+    expect(input).not.toHaveAttribute("readonly");
+    fireEvent.input(input, { target: { value: "+00042" } });
+    await waitFor(() => {
+      expect(onUpdate).toHaveBeenLastCalledWith({ ...integer, default: 42 });
+    });
+
+    fireEvent.input(input, { target: { value: "1.0" } });
+    await waitFor(() => {
+      expect(onUpdate).toHaveBeenLastCalledWith({
+        ...integer,
+        default: "1.0",
+      });
+    });
+    expect(input).toHaveValue("1.0");
   });
 
   it("maps the boolean choice to its typed literal without parsing arbitrary input", () => {
@@ -206,7 +223,7 @@ describe("composition parameter list", () => {
       .toBeInTheDocument();
     expect(screen.queryByLabelText("Default for month_key")).not
       .toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Default for Month"), {
+    fireEvent.input(screen.getByLabelText("Default for Month"), {
       target: { value: "2026-10-01" },
     });
     expect(onUpdate).toHaveBeenCalledWith({

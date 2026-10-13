@@ -248,6 +248,10 @@ pub struct CompositionPreviewRequest {
     pub yaml: String,
     #[serde(default)]
     pub parameters: BTreeMap<String, Value>,
+    /// Variables explicitly left unset; omission from both fields uses the
+    /// declared default when one exists.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unset_variables: Vec<String>,
 }
 
 /// Caller-visible result of a side-effect-free Composition preview pass.
@@ -290,6 +294,10 @@ pub struct CompositionMetricQueryRequest {
     pub component_id: String,
     #[serde(default)]
     pub parameters: BTreeMap<String, Value>,
+    /// Variables explicitly left unset; omission from both fields uses the
+    /// declared default when one exists.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unset_variables: Vec<String>,
 }
 
 /// One successful display value selected from a Saved SQL result.
@@ -357,6 +365,10 @@ pub struct CompositionResolveRequest {
     pub revision_id: String,
     #[serde(default)]
     pub parameters: BTreeMap<String, Value>,
+    /// Variables explicitly left unset; omission from both fields uses the
+    /// declared default when one exists.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unset_variables: Vec<String>,
 }
 
 /// Caller-visible result of a side-effect-free Composition resolution pass.

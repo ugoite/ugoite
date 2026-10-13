@@ -113,6 +113,11 @@ exact type agreement with the pinned Saved SQL revision before mapping the
 typed value to the existing SQL parameters and parameter_types request fields.
 SQL text is never rewritten, interpolated, or concatenated.
 
+Runtime requests distinguish omitted values from explicit unsets. Omission
+selects a declared default; an Input that parses as unset is named in the
+request's `unset_variables` list and overrides that default. An explicit unset
+is never encoded as a typed value or SQL NULL.
+
 ### 3. Text is literal or a direct string-variable reference
 
 Text content is a discriminated choice: a literal string or a direct reference
@@ -222,7 +227,7 @@ changes.
 | A08 | scalar_result_distinguishes_zero_rows_null_and_zero | Compare zero rows, one-row NULL, numeric 0 | Three distinct states/results are preserved. |
 | A09 | unrelated_variable_does_not_requery_source | Change variable unused by a SQL Source | That Source is not requested again; Table paging is unchanged. |
 | A10 | rapid_input_keeps_only_latest_source_generation | Dispatch two or more requests for one Source while an earlier request remains unresolved (advance fake debounce timers if needed); resolve responses in reverse order | Only the response for the latest Source generation is accepted; earlier responses are discarded. |
-| A11 | invalid_raw_input_blocks_query_and_stale_result | With two Inputs bound to one integer variable, first establish a successful result, then enter incomplete/invalid input such as -, empty, or 1.5 in either Input | Both Inputs show the same raw invalid buffer, no SQL runs, dependent output is unavailable, and prior success is not current. |
+| A11 | invalid_raw_input_blocks_query_and_stale_result | With two Inputs bound to one required integer variable that has a default, first establish a successful result, then enter incomplete/invalid input such as -, empty, or 1.5 in either Input | Both Inputs show the same raw buffer; empty overrides the default; no SQL runs; dependent output is unavailable; and prior success is not current. |
 | A12 | sql_variable_binding_rejects_implicit_type_conversion | Bind string to SQL date or float to SQL integer | Exact type mismatch; no implicit conversion. |
 | A13 | invalid_variable_grammar_fails_lint_and_save | Duplicate/unknown IDs, invalid defaults, unknown references, unbound required variable | Lint/save fails deterministically. |
 | A14 | sql_source_uses_typed_parameter_binding | Bind $minimum as a typed SQL parameter | SQL text is unchanged and the value cannot become SQL syntax. |

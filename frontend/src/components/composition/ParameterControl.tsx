@@ -1,6 +1,7 @@
-import { Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import { t } from "~/lib/i18n";
 import type { CompositionParameterDefinition } from "~/lib/composition-api";
+import { parseCompositionVariableInput } from "~/lib/ugoite-client/protocol";
 
 export const parameterDisplayValue = (
   definition: CompositionParameterDefinition,
@@ -15,19 +16,6 @@ export const parameterDisplayValue = (
   return "";
 };
 
-export const serializeParameterInput = (
-  definition: CompositionParameterDefinition,
-  value: string,
-): unknown | undefined => {
-  if (value === "") return undefined;
-  if (definition.type === "boolean") return value === "true";
-  if (definition.type === "integer" || definition.type === "float") {
-    const numeric = Number(value);
-    return Number.isFinite(numeric) ? numeric : value;
-  }
-  return value;
-};
-
 /**
  * One layout-placed Input bound to transient Work state. Values are sent to
  * the existing resolver on edit and never written to the saved revision.
@@ -39,10 +27,47 @@ export function ParameterControl(props: {
   onChange: (value: unknown | undefined) => void;
   invalid?: boolean;
 }) {
+  const [rawValue, setRawValue] = createSignal<string | undefined>();
+  const [parseInvalid, setParseInvalid] = createSignal(false);
+  let inputGeneration = 0;
   const label = () => props.displayName;
-  const value = () => parameterDisplayValue(props.definition, props.value);
-  const handleInput = (raw: string) =>
-    props.onChange(serializeParameterInput(props.definition, raw));
+  const value = () =>
+    rawValue() ??
+      parameterDisplayValue(props.definition, props.value);
+  const handleInput = async (raw: string) => {
+    setRawValue(raw);
+    setParseInvalid(false);
+    const generation = ++inputGeneration;
+    try {
+      const parsed = await parseCompositionVariableInput(
+        props.definition.type,
+        raw,
+      );
+      if (generation !== inputGeneration) return;
+
+      if (parsed.status === "valid") {
+        props.onChange(parsed.value);
+        setRawValue(undefined);
+        return;
+      }
+      if (parsed.status === "unset") {
+        props.onChange(undefined);
+        setRawValue(undefined);
+        return;
+      }
+
+      // Keep malformed raw text visible and let Core reject its untyped value.
+      // In particular, never guess a number using JavaScript's Number().
+      setParseInvalid(true);
+      props.onChange(raw);
+    } catch {
+      if (generation !== inputGeneration) return;
+      // If WASM is unavailable, the raw string remains untyped and Core still
+      // validates it against the declared variable type.
+      setParseInvalid(true);
+      props.onChange(raw);
+    }
+  };
 
   return (
     <div class="ui-field">
@@ -53,22 +78,12 @@ export function ParameterControl(props: {
           fallback={
             <input
               class="ui-input"
-              type={props.definition.type === "date"
-                ? "date"
-                : props.definition.type === "integer" ||
-                    props.definition.type === "float"
-                ? "number"
-                : "text"}
-              step={props.definition.type === "integer"
-                ? "1"
-                : props.definition.type === "float"
-                ? "any"
-                : undefined}
+              type="text"
               required={props.definition.required || undefined}
               value={value()}
               aria-required={props.definition.required || undefined}
-              aria-invalid={props.invalid || undefined}
-              onInput={(event) => handleInput(event.currentTarget.value)}
+              aria-invalid={props.invalid || parseInvalid() || undefined}
+              onInput={(event) => void handleInput(event.currentTarget.value)}
             />
           }
         >
@@ -77,8 +92,8 @@ export function ParameterControl(props: {
             required={props.definition.required || undefined}
             value={value()}
             aria-required={props.definition.required || undefined}
-            aria-invalid={props.invalid || undefined}
-            onInput={(event) => handleInput(event.currentTarget.value)}
+            aria-invalid={props.invalid || parseInvalid() || undefined}
+            onInput={(event) => void handleInput(event.currentTarget.value)}
           >
             <option value="">—</option>
             <option value="true">{t("composition.booleanTrue")}</option>

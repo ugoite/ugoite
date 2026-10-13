@@ -15,7 +15,7 @@ requirements:
         governed_by: [POL-000#rule.foundation-precedence]
       - id: typed-input-lexical-contract
         kind: behavior
-        statement: Typed Input parsing is locale-independent and follows the bounded per-type lexical grammar and value limits in ADR-023 section 2.1. Empty input is unset; malformed, over-limit, overflow, non-finite, or underflow-to-zero values remain invalid and cannot be bound to a query. Defaults use the same type and lexical rules.
+        statement: Typed Input parsing is locale-independent and follows the bounded per-type lexical grammar and value limits in ADR-023 section 2.1. Empty Input is explicitly unset and overrides a declaration default; omission selects the default. Unset is carried separately from typed values and is never SQL NULL. Malformed, over-limit, overflow, non-finite, or underflow-to-zero values remain invalid and cannot be bound to a query. Defaults use the same type and lexical rules.
         governed_by: [POL-000#rule.foundation-precedence]
       - id: input-component-binding
         kind: behavior
@@ -231,3 +231,40 @@ requirements:
                 criterion: REQ-COMP-007#criterion.dependency-driven-execution
                 covers: [FEAT-COMP-008#binding.core-typed-variable-resolution/target.local-components-and-dependency-index]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::dependency_index_is_semantic_and_independent_of_layout_order } }
+      - id: typed-variable-studio-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Studio edits typed numeric defaults through the shared Domain parser without saving malformed values.
+        targets:
+          - id: numeric-default-parser-case
+            adapter: typescript
+            path: frontend/src/components/CompositionParameterList.test.tsx
+            selector: { kind: test, name: parses numeric defaults through the shared Domain parser }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.code-free-studio-authoring
+                covers: [FEAT-COMP-008#binding.studio-typed-variable-defaults/target.parameter-default-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: parses numeric defaults through the shared Domain parser } }
+      - id: typed-variable-explicit-unset-verification
+        role: verification
+        facet: verification
+        responsibility: Verify an explicitly unset Input bypasses defaults and stays separate from typed Browser request values.
+        targets:
+          - id: explicit-unset-default-bypass-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::explicit_unset_overrides_defaults_and_reports_required_values_missing }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+                covers: [FEAT-COMP-008#binding.core-typed-variable-resolution-evidence/target.explicit-unset-default-bypass]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::explicit_unset_overrides_defaults_and_reports_required_values_missing } }
+          - id: explicit-unset-request-case
+            adapter: typescript
+            path: frontend/src/lib/composition-api.test.ts
+            selector: { kind: test, name: sends an explicit unset separately from typed variable values }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+                covers: [FEAT-COMP-008#binding.browser-explicit-unset-transport-evidence/target.composition-explicit-unset-request]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-api.test.ts, test: sends an explicit unset separately from typed variable values } }
