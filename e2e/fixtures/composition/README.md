@@ -13,7 +13,7 @@ journey sources are `e2e/composition-golden-journey.test.ts` and
 `e2e/composition-studio-journey.test.ts`.
 
 The Form and Saved SQL source ACL revocation selectors, plus the Space-isolation
-selector in B7, are covered by
+and same-BrowserContext principal-switch selectors in B7, are covered by
 `e2e/composition-source-acl-isolation.test.ts`.
 
 - `unknown-format-version.ugcomp.yaml` is a raw-payload candidate for
