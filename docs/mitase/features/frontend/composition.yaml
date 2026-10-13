@@ -442,7 +442,7 @@ features:
             selector: { kind: test, name: "Composition Studio saves and reopens a filtered SQL metric" }
             claims:
               - kind: verifies
-                criterion: REQ-COMP-007#criterion.studio-saved-sql-aggregate-metric-journey
+                criterion: REQ-COMP-007#criterion.studio-filtered-sql-metric-journey
                 covers: [FEAT-COMP-008#binding.browser-typed-variable-journey-evidence/target.studio-filtered-sql-metric-reopen]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Composition Studio saves and reopens a filtered SQL metric" } }
           - id: metric-multiple-row-recovery

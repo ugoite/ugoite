@@ -880,7 +880,7 @@ features:
               name: Composition Studio saves and reopens a filtered SQL metric
             claims:
               - kind: evidences
-                anchor: REQ-COMP-007#criterion.studio-saved-sql-aggregate-metric-journey
+                anchor: REQ-COMP-007#criterion.studio-filtered-sql-metric-journey
           - id: revision-navigation-discards-old-metric-response
             adapter: typescript
             path: e2e/composition-revision-stale-response.test.ts

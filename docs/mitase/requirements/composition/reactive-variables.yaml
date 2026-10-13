@@ -73,7 +73,7 @@ requirements:
         kind: quality
         statement: Studio creates stable variable IDs internally and uses an authored label or localized declaration ordinal for variable-bound Text and Input names; ordinary visible labels, accessible names, and titles never expose variable IDs.
         governed_by: [POL-UI-002#rule.governance, POL-UI-005#rule.governance]
-      - id: studio-saved-sql-aggregate-metric-journey
+      - id: studio-filtered-sql-metric-journey
         kind: behavior
         statement: Studio can save and reopen a Composition with an integer minimum bound to an exact Saved SQL revision that returns COUNT(*) and SUM(Amount); minimum 0 displays 3 and 60 for Amount values 10, 20, and 30, and changing the Input to 20 displays 2 and 50 from the dependent SQL result. Reload restores the default without appending a Composition revision.
         governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
@@ -431,7 +431,7 @@ requirements:
                 criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
                 covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime-evidence/target.browser-sync-domain-parser]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/ugoite-client/protocol.test.ts, test: parses Composition Input synchronously after preparing the shared WASM parser } }
-      - id: studio-saved-sql-aggregate-metric-verification
+      - id: studio-filtered-sql-metric-verification
         role: verification
         facet: verification
         responsibility: Verify the typed Saved SQL metric journey through Studio creation, exact-revision reopen, server-side aggregate re-evaluation, transient Input changes, and unchanged Composition history.
@@ -442,7 +442,7 @@ requirements:
             selector: { kind: test, name: "Composition Studio saves and reopens a filtered SQL metric" }
             claims:
               - kind: verifies
-                criterion: REQ-COMP-007#criterion.studio-saved-sql-aggregate-metric-journey
+                criterion: REQ-COMP-007#criterion.studio-filtered-sql-metric-journey
                 covers: [FEAT-COMP-008#binding.browser-typed-variable-journey-evidence/target.studio-filtered-sql-metric-reopen]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Composition Studio saves and reopens a filtered SQL metric" } }
       - id: cli-typed-variable-query-verification
