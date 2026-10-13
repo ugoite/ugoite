@@ -244,13 +244,16 @@ and denied source references share `source_unavailable` without exposing source
 IDs or metadata. Resolve grants no query authorization: the existing query path
 rechecks current access during execution and each continuation page.
 
-The acceptance plan also reserves two real Browser/server cases: an already
-visible Saved SQL Metric and Table data must disappear after the viewer's Saved
-SQL Read access is revoked, and one live Browser must show the authorized Metric
-and Table results for the currently selected Space when variable, source, and
-component IDs are reused across Spaces. The exact revision is checked under
-owner and viewer principals; denial responses must conceal Saved SQL/Form
-identity, SQL text, and protected result text. These selectors do not count as runtime evidence until their
+The acceptance plan also reserves two real Browser/server cases: already
+visible Saved SQL Metric and Table data must disappear after the viewer's Form
+or Saved SQL Read access is revoked, and one live Browser must show the authorized
+Metric and Table results for the currently selected Space when variable, source,
+and component IDs are reused across Spaces. The exact revision is checked under
+owner and viewer principals. Revoking Form Read produces a generic execution
+error; revoking Saved SQL Read produces `source_unavailable`. In both cases,
+Metric and Table data clear before reload, replaying the earlier SQL request
+returns no data, and details the viewer is no longer authorized to read remain
+concealed. These selectors do not count as runtime evidence until their
 Playwright run is recorded in the evidence archive.
 
 ## Run evidence

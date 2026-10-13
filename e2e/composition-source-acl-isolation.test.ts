@@ -32,9 +32,12 @@ type CompositionSeed = {
 };
 
 type MetricResponse = {
-  ok: boolean;
+  httpStatus?: number;
+  ok?: boolean;
   result?: { component_id: string; value: unknown };
   diagnostics?: Array<{ code: string }>;
+  code?: string;
+  message?: string;
 };
 
 function sqlIdentifier(value: string): string {
@@ -230,8 +233,10 @@ async function metricResponse(
   const response = await page.waitForResponse((candidate) =>
     candidate.url().includes(METRIC_QUERY_PATH)
   );
-  expect(response.ok()).toBe(true);
-  return await response.json() as MetricResponse;
+  return {
+    ...await response.json() as Omit<MetricResponse, "httpStatus">,
+    httpStatus: response.status(),
+  };
 }
 
 function sqlPageResponse(page: import("@playwright/test").Page) {
@@ -247,7 +252,7 @@ function compositionPath(seed: CompositionSeed): string {
 test.describe("Composition Saved SQL ACL and runtime isolation", () => {
   test.beforeAll(async ({ request }) => await waitForServers(request));
 
-  test("Viewer Metric clears after Saved SQL Read is revoked", async ({ browser, context, request }) => {
+  test("Viewer Metric and Table clear after Form or Saved SQL Read is revoked", async ({ browser, context, request }) => {
     test.setTimeout(180_000);
     const space = await createSpace(request, "acl-revocation");
     const suffix = crypto.randomUUID().slice(0, 8);
@@ -317,7 +322,146 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
       );
       expect(compositionRead.ok()).toBe(true);
 
-      const policyResponse = await request.put(
+      const assertSourceReadRevocation = async (
+        inputValue: string,
+        revokedRead: "form" | "saved_sql",
+      ) => {
+        // Replay the exact request captured while authorized. SQL execution
+        // must re-check current source access rather than trust an earlier plan.
+        const replayedSqlResponse = await viewerContext.request.post(
+          getBackendUrl(`/spaces/${seed.spaceId}/sql/query`),
+          { data: authorizedSqlRequest },
+        );
+        const replayedSqlBody = await replayedSqlResponse.text();
+        expect(replayedSqlResponse.ok()).toBe(false);
+
+        const compositionReadAfterRevocation = await viewerContext.request.get(
+          getBackendUrl(
+            `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/history/${seed.compositionRevisionId}`,
+          ),
+        );
+        expect(compositionReadAfterRevocation.ok()).toBe(true);
+
+        const revokedMetricResponse = metricResponse(page);
+        await page.getByRole("textbox", { name: "Lookup key", exact: true })
+          .fill(inputValue);
+        await expect(page.locator("output.compositionMetric")).toHaveCount(0);
+        const deniedBody = await revokedMetricResponse;
+        await expect(page.getByRole("table")).toHaveCount(0);
+        await expect(page.locator("body")).not.toContainText(
+          seed.protectedValue,
+        );
+        if (revokedRead === "saved_sql") {
+          expect(deniedBody).toMatchObject({
+            ok: false,
+            diagnostics: [{ code: "source_unavailable" }],
+          });
+        } else {
+          expect(deniedBody.httpStatus).toBeGreaterThanOrEqual(400);
+          expect(deniedBody.httpStatus).toBeLessThan(500);
+        }
+
+        // Revisit the same revision. A revoked Saved SQL source is hidden
+        // during resolution; a still-readable Saved SQL source can resolve,
+        // but its execution remains blocked by the revoked Form Read policy.
+        const reloadedSqlResponse = revokedRead === "form"
+          ? sqlPageResponse(page)
+          : undefined;
+        await page.reload({ waitUntil: "domcontentloaded" });
+        if (reloadedSqlResponse) {
+          const response = await reloadedSqlResponse;
+          expect(response.ok()).toBe(false);
+        }
+        const resolveResponse = await viewerContext.request.post(
+          getBackendUrl(
+            `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/resolve`,
+          ),
+          {
+            data: {
+              revision_id: seed.compositionRevisionId,
+              variables: { [VARIABLE_ID]: "match" },
+            },
+          },
+        );
+        expect(resolveResponse.ok()).toBe(true);
+        const resolveBody = await resolveResponse.json() as {
+          ok: boolean;
+          diagnostics?: Array<{ code: string }>;
+        };
+        if (revokedRead === "saved_sql") {
+          expect(resolveBody).toMatchObject({
+            ok: false,
+            diagnostics: [{ code: "source_unavailable" }],
+          });
+        } else {
+          expect(resolveBody.ok).toBe(true);
+        }
+        const deniedText = JSON.stringify([deniedBody, resolveBody]);
+        const concealedValues = [
+          seed.formId,
+          seed.formName,
+          seed.savedSqlText,
+          seed.protectedValue,
+          ...(revokedRead === "saved_sql"
+            ? [seed.savedSqlId, seed.savedSqlRevisionId, seed.savedSqlName]
+            : []),
+        ];
+        for (const privateValue of concealedValues) {
+          expect(deniedText).not.toContain(privateValue);
+          expect(replayedSqlBody).not.toContain(privateValue);
+          await expect(page.locator("body")).not.toContainText(privateValue);
+        }
+        if (revokedRead === "saved_sql") {
+          await expect(
+            page.getByRole("alert").filter({
+              hasText: SOURCE_UNAVAILABLE_DIAGNOSTIC,
+            }),
+          ).toBeVisible();
+        }
+        await expect(page.locator("output.compositionMetric")).toHaveCount(0);
+        await expect(page.getByRole("table")).toHaveCount(0);
+        await expect(page.locator("body")).not.toContainText(
+          seed.protectedValue,
+        );
+      };
+
+      const formPolicyResponse = await request.put(
+        getBackendUrl(`/spaces/${seed.spaceId}/policies/form/${seed.formName}`),
+        {
+          data: {
+            policy_id: crypto.randomUUID(),
+            inherit_space_role: false,
+            grants: [],
+          },
+        },
+      );
+      expect(formPolicyResponse.status()).toBe(200);
+      await assertSourceReadRevocation("form-access-revoked", "form");
+
+      const restoreFormPolicyResponse = await request.put(
+        getBackendUrl(`/spaces/${seed.spaceId}/policies/form/${seed.formName}`),
+        {
+          data: {
+            policy_id: crypto.randomUUID(),
+            inherit_space_role: true,
+            grants: [],
+          },
+        },
+      );
+      expect(restoreFormPolicyResponse.status()).toBe(200);
+      const restoredMetricResponse = metricResponse(page);
+      const restoredSqlPageResponse = sqlPageResponse(page);
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await expect(page.locator("output.compositionMetric")).toContainText(
+        seed.protectedValue,
+      );
+      await expect(page.getByRole("table")).toContainText(seed.protectedValue);
+      expect((await restoredMetricResponse).result?.value).toBe(
+        seed.protectedValue,
+      );
+      expect((await restoredSqlPageResponse).ok()).toBe(true);
+
+      const savedSqlPolicyResponse = await request.put(
         getBackendUrl(
           `/spaces/${seed.spaceId}/policies/saved_sql/${seed.savedSqlId}`,
         ),
@@ -329,86 +473,8 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
           },
         },
       );
-      expect(policyResponse.status()).toBe(200);
-
-      // Replay the exact request captured while authorized. SQL execution must
-      // re-check current Saved SQL Read rather than trusting a prior UI plan.
-      const replayedSqlResponse = await viewerContext.request.post(
-        getBackendUrl(`/spaces/${seed.spaceId}/sql/query`),
-        { data: authorizedSqlRequest },
-      );
-      expect(replayedSqlResponse.ok()).toBe(false);
-      const replayedSqlBody = await replayedSqlResponse.text();
-
-      const compositionReadAfterRevocation = await viewerContext.request.get(
-        getBackendUrl(
-          `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/history/${seed.compositionRevisionId}`,
-        ),
-      );
-      expect(compositionReadAfterRevocation.ok()).toBe(true);
-
-      const revokedMetricResponse = metricResponse(page);
-      await page.getByRole("textbox", { name: "Lookup key", exact: true })
-        .fill("match-again");
-      await expect(page.locator("output.compositionMetric")).toHaveCount(0);
-      const deniedBody = await revokedMetricResponse;
-      await expect(page.getByRole("table")).toHaveCount(0);
-      await expect(page.locator("body")).not.toContainText(
-        seed.protectedValue,
-      );
-      expect(deniedBody).toMatchObject({
-        ok: false,
-        diagnostics: [{ code: "source_unavailable" }],
-      });
-
-      // Revisit the same revision. Resolution must stop at the generic
-      // source_unavailable diagnostic before Metric or Table query execution.
-      await page.reload({ waitUntil: "domcontentloaded" });
-      const resolveResponse = await viewerContext.request.post(
-        getBackendUrl(
-          `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/resolve`,
-        ),
-        {
-          data: {
-            revision_id: seed.compositionRevisionId,
-            variables: { [VARIABLE_ID]: "match" },
-          },
-        },
-      );
-      expect(resolveResponse.ok()).toBe(true);
-      const resolveBody = await resolveResponse.json() as {
-        ok: boolean;
-        diagnostics?: Array<{ code: string }>;
-      };
-      expect(resolveBody).toMatchObject({
-        ok: false,
-        diagnostics: [{ code: "source_unavailable" }],
-      });
-      const replayedSqlText = replayedSqlBody;
-      const deniedText = JSON.stringify([deniedBody, resolveBody]);
-      for (
-        const privateValue of [
-          seed.savedSqlId,
-          seed.savedSqlRevisionId,
-          seed.savedSqlName,
-          seed.savedSqlText,
-          seed.formId,
-          seed.formName,
-          seed.protectedValue,
-        ]
-      ) {
-        expect(deniedText).not.toContain(privateValue);
-        expect(replayedSqlText).not.toContain(privateValue);
-        await expect(page.locator("body")).not.toContainText(privateValue);
-      }
-      await expect(
-        page.getByRole("alert").filter({
-          hasText: SOURCE_UNAVAILABLE_DIAGNOSTIC,
-        }),
-      ).toBeVisible();
-      await expect(page.locator("output.compositionMetric")).toHaveCount(0);
-      await expect(page.getByRole("table")).toHaveCount(0);
-      await expect(page.locator("body")).not.toContainText(seed.protectedValue);
+      expect(savedSqlPolicyResponse.status()).toBe(200);
+      await assertSourceReadRevocation("saved-sql-access-revoked", "saved_sql");
 
       const ownerContext = await browser.newContext({
         storageState: await context.storageState(),

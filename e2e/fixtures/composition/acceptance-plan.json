@@ -146,10 +146,10 @@
         "expectation": "Variable, Space, source, and exact Composition revision changes suppress stale success, error, finalization, and loading-state updates."
       },
       {
-        "id": "revoked_saved_sql_read_clears_browser_metric",
+        "id": "revoked_source_read_clears_browser_outputs",
         "surface": "Browser and Server",
-        "boundary": "Viewer-visible Composition with a current exact-revision Saved SQL Read policy",
-        "expectation": "After the viewer’s Saved SQL Read is revoked while Composition access remains, the dependent Metric returns source_unavailable and both Metric and Table clear prior data; neither response exposes Saved SQL/Form identity, SQL text, or protected result text."
+        "boundary": "Viewer-visible exact Composition revision with independently controlled Form and Saved SQL Read policies",
+        "expectation": "After either Form Read or Saved SQL Read is revoked while Composition access remains, Metric and Table clear prior data before reload and replaying the formerly authorized SQL request cannot return data. Form Read revocation produces a generic execution error while Saved SQL Read revocation returns source_unavailable; unauthorized Form/Saved SQL identity, SQL text, and protected result text remain concealed."
       },
       {
         "id": "composition_runtime_results_are_principal_and_space_isolated",
@@ -466,7 +466,7 @@
           "path": "e2e/composition-source-acl-isolation.test.ts",
           "selector": {
             "kind": "test",
-            "name": "Viewer Metric clears after Saved SQL Read is revoked"
+            "name": "Viewer Metric and Table clear after Form or Saved SQL Read is revoked"
           }
         },
         {
