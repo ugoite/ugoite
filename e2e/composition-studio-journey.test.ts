@@ -697,12 +697,16 @@ test.describe("Composition Studio Journey", () => {
         savedYaml.match(
           new RegExp(`${sqlName}:\\s*\\n\\s+variable:\\s*([^\\n]+)`),
         )?.[1];
-      expect(boundVariableId("month_start")).toBe(
-        declaredVariableId("Month start"),
-      );
-      expect(boundVariableId("month_end")).toBe(
-        declaredVariableId("Month end"),
-      );
+      const monthStartVariable = declaredVariableId("Month start");
+      const monthStartBinding = boundVariableId("month_start");
+      expect(monthStartVariable).toBeTruthy();
+      expect(monthStartBinding).toBeTruthy();
+      expect(monthStartBinding).toBe(monthStartVariable);
+      const monthEndVariable = declaredVariableId("Month end");
+      const monthEndBinding = boundVariableId("month_end");
+      expect(monthEndVariable).toBeTruthy();
+      expect(monthEndBinding).toBeTruthy();
+      expect(monthEndBinding).toBe(monthEndVariable);
     } finally {
       await buildContext.close();
     }
@@ -710,13 +714,17 @@ test.describe("Composition Studio Journey", () => {
     const journeyContext = await openOwnerContext(browser, storageState);
     try {
       const page = await journeyContext.newPage();
+      let sqlQueryCount = 0;
       let metricQueryCount = 0;
       page.on("request", (request) => {
+        const pathname = new URL(request.url()).pathname;
         if (
-          new URL(request.url()).pathname.endsWith(
-            "/compositions/metric-query",
-          )
-        ) metricQueryCount += 1;
+          pathname.endsWith("/sql/query") ||
+          pathname.endsWith("/sql/query/count")
+        ) sqlQueryCount += 1;
+        if (pathname.endsWith("/compositions/metric-query")) {
+          metricQueryCount += 1;
+        }
       });
       // Home rediscovers the tool; the exact revision keeps its values.
       await openToolFromHome(
@@ -755,7 +763,8 @@ test.describe("Composition Studio Journey", () => {
       }
 
       // A Text-only variable update is synchronous and must not re-execute the
-      // independent Saved SQL Metric source.
+      // Saved SQL Table or Metric source.
+      const initialSqlQueryCount = sqlQueryCount;
       const initialMetricQueryCount = metricQueryCount;
       await page.getByLabel("Report title", { exact: true }).fill(
         "Transient report title",
@@ -764,6 +773,7 @@ test.describe("Composition Studio Journey", () => {
         page.getByText("Transient report title", { exact: true }),
       ).toBeVisible();
       await page.waitForTimeout(500);
+      expect(sqlQueryCount).toBe(initialSqlQueryCount);
       expect(metricQueryCount).toBe(initialMetricQueryCount);
 
       // Runtime edits live only in Work: a fresh load of the saved revision
