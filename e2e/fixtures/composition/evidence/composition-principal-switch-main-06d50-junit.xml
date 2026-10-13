@@ -1,0 +1,10 @@
+<testsuites id="" name="" tests="3" failures="0" skipped="0" errors="0" time="20.192442000000003">
+<testsuite name="composition-source-acl-isolation.test.ts" timestamp="2026-10-13T19:11:09.944Z" hostname="" tests="3" failures="0" skipped="0" time="18.359" errors="0">
+<testcase name="Composition Saved SQL ACL and runtime isolation › Viewer Metric and Table clear after Form or Saved SQL Read is revoked" classname="composition-source-acl-isolation.test.ts" time="6.399">
+</testcase>
+<testcase name="Composition Saved SQL ACL and runtime isolation › Space switching shows only the selected Metric result" classname="composition-source-acl-isolation.test.ts" time="5.638">
+</testcase>
+<testcase name="Composition Saved SQL ACL and runtime isolation › Switching principal in one BrowserContext hides the prior Metric and Table results" classname="composition-source-acl-isolation.test.ts" time="6.322">
+</testcase>
+</testsuite>
+</testsuites>

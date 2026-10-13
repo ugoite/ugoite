@@ -261,6 +261,19 @@
       "artifact": "e2e/fixtures/composition/evidence/composition-principal-switch-junit.xml",
       "artifact_digest": "13e8c9e86b3191117539db16ddafef6a7ffefadb04ac04a5455a8a3c9c540b46",
       "gap": "This record covers only the same-BrowserContext owner-to-viewer principal switch selector on the stated source commit. It verifies the prior Metric/Table values disappear at sign-out and remain concealed when the invited viewer resolves the same Composition without Saved SQL Read. It does not cover every principal role, other browser profiles, or all persistence/cache boundaries. No release candidate was built or promoted."
+    },
+    {
+      "source_sha": "cf0cec39a38ac3324b28f3c748535e3b7b6b9535",
+      "candidate_sha": "cf0cec39a38ac3324b28f3c748535e3b7b6b9535",
+      "command": "UGOITE_E2E_BACKEND_BINARY=target/rust/release/ugoite-server E2E_FRONTEND_MODE=static E2E_ENFORCE_CI_GATES=true UGOITE_SKIP_PLAYWRIGHT_DEPS=1 E2E_STORAGE_ROOT=.tmp/e2e-composition-principal-merged PLAYWRIGHT_JUNIT_OUTPUT_FILE=fixtures/composition/evidence/composition-principal-switch-main-06d50-junit.xml PLAYWRIGHT_OUTPUT_DIR=test-results/composition-principal-switch-merged-results bash e2e/scripts/run-e2e.sh composition-source-acl-isolation",
+      "selector": "e2e/composition-source-acl-isolation.test.ts#test:Switching principal in one BrowserContext hides the prior Metric and Table results",
+      "surface": "Browser + Server (direct-process static frontend E2E)",
+      "fixture": "self-seeded via API: Space, Form, Entry, parameterized user-query Saved SQL, Composition with shared source/input/Metric/Table IDs, owner session, invited viewer, and a denied Saved SQL Read policy",
+      "environment": "macOS 26.6.1 arm64; static SPA + direct-process release backend; Deno 2.8.3; Playwright 1.60.0 (Chromium 148.0.7778.96)",
+      "result": "passed (3 passed, 0 skipped)",
+      "artifact": "e2e/fixtures/composition/evidence/composition-principal-switch-main-06d50-junit.xml",
+      "artifact_digest": "242d8c139a3496378d9d264d05968e10fbf92a500b9d94e2306c09b309776ae2",
+      "gap": "This record validates only the same-BrowserContext owner-to-viewer principal switch selector on the merged main state. It verifies the prior Metric/Table values disappear at sign-out and remain concealed when the invited viewer resolves the same Composition without Saved SQL Read. It does not cover every principal role, other browser profiles, or all persistence/cache boundaries. No release candidate was built or promoted."
     }
   ]
 }
