@@ -131,6 +131,19 @@
       "artifact": "e2e/fixtures/composition/evidence/composition-stale-response-typed-variables-junit.xml",
       "artifact_digest": "cbd2a03d220959322cb10c28062c87c892cfeb3c6bdfca39478f591b41792e85",
       "gap": "This record covers only the stated Browser journey on this source commit. It does not claim the full reactive-variable plan is complete. No release candidate was built or promoted."
+    },
+    {
+      "source_sha": "e9dba6702db8f67863b016583110925ef5d3f5ed",
+      "candidate_sha": "e9dba6702db8f67863b016583110925ef5d3f5ed",
+      "command": "UGOITE_E2E_STARTUP_TIMEOUT_SECONDS=180 E2E_FRONTEND_MODE=dev E2E_ENFORCE_CI_GATES=true PLAYWRIGHT_JUNIT_OUTPUT_FILE=fixtures/composition/evidence/composition-studio-typed-variables-junit.xml bash e2e/scripts/run-e2e.sh composition-studio",
+      "selector": "e2e/composition-studio-journey.test.ts#test:Composition Studio builds a reusable tool from existing knowledge",
+      "surface": "Browser + Server (direct-process dev E2E)",
+      "fixture": "self-seeded via API: Space, Form, entries, parameterized Saved SQL, and Studio-created Composition",
+      "environment": "macOS 26.6.1 arm64; direct-process debug server + frontend dev; Deno 2.8.3; Playwright 1.60.0 (Chromium)",
+      "result": "passed (2 passed, 0 skipped)",
+      "artifact": "e2e/fixtures/composition/evidence/composition-studio-typed-variables-junit.xml",
+      "artifact_digest": "cf25b8f27af504c5ef2720ac28912656b2bebfe6c857af8536ef1001dbf851ff",
+      "gap": "This record covers the Studio variable lifecycle selector and the included 390px Studio inspector case on this source commit. It does not claim the full reactive-variable contract or broader recovery and ACL coverage. No release candidate was built or promoted."
     }
   ]
 }
