@@ -281,6 +281,15 @@ requirements:
                 criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
                 covers: [FEAT-COMP-008#binding.browser-explicit-unset-transport-evidence/target.composition-explicit-unset-request]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-api.test.ts, test: sends an explicit unset separately from typed variable values } }
+          - id: server-explicit-unset-route-case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::composition_routes_preserve_explicit_unsets_and_skip_source_queries }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+                covers: [FEAT-COMP-008#binding.server-explicit-unset-route-evidence/target.explicit-unset-route-boundary]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::composition_routes_preserve_explicit_unsets_and_skip_source_queries } }
       - id: browser-reactive-variable-runtime-verification
         role: verification
         facet: verification

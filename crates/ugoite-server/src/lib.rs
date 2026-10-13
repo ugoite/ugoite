@@ -16422,6 +16422,250 @@ mod authentication_regression_tests {
     }
 
     #[tokio::test]
+    async fn composition_routes_preserve_explicit_unsets_and_skip_source_queries(
+    ) -> anyhow::Result<()> {
+        use ugoite_domain::composition::{
+            canonicalize_composition, CompositionComponent, CompositionDocument, CompositionFormat,
+            CompositionKind, CompositionResultColumn, CompositionResultFieldType,
+            CompositionSource, CompositionSpec, CompositionValue, CompositionVariable,
+            CompositionVariableReference, CompositionVariableType, DashboardFlowLayout, FlowItem,
+            FlowLayoutKind, FlowRow,
+        };
+        use ugoite_domain::id::{EntryId, RevisionId};
+
+        let state = AppState::new_for_tests(format!(
+            "memory://server-composition-explicit-unsets-{}",
+            Uuid::now_v7()
+        ))?;
+        let principal_id = Uuid::from_u128(347421);
+        let space_id = state
+            .service
+            .create_space_for_principal("composition-explicit-unsets", principal_id, "Unset test")
+            .await?
+            .to_string();
+        let sql = state
+            .service
+            .create_saved_sql_authorized_for_principals(
+                &space_id,
+                None,
+                &saved_sql::SqlPayload {
+                    name: Some("Explicit unset metric".to_string()),
+                    kind: saved_sql::SqlKind::UserQuery,
+                    metadata: None,
+                    sql: "SELECT {{optional_value}} + {{required_value}} AS total FROM unset_probe_source_missing".to_string(),
+                    variables: json!([
+                        {
+                            "name": "optional_value",
+                            "type": "integer",
+                            "description": "Optional value"
+                        },
+                        {
+                            "name": "required_value",
+                            "type": "integer",
+                            "description": "Required value"
+                        }
+                    ]),
+                },
+                &principal_id.to_string(),
+                &[principal_id],
+            )
+            .await?;
+        let sql_entry_id = EntryId::from_uuid(Uuid::parse_str(
+            sql["id"].as_str().context("Saved SQL id")?,
+        )?);
+        let sql_revision_id = RevisionId::from_uuid(Uuid::parse_str(
+            sql["revision_id"]
+                .as_str()
+                .context("Saved SQL revision id")?,
+        )?);
+        let document = CompositionDocument {
+            format: CompositionFormat::UgoiteComposition,
+            format_version: 1,
+            name: "Explicit unset boundary".to_string(),
+            kind: CompositionKind::Dashboard,
+            tags: Vec::new(),
+            spec: CompositionSpec {
+                variables: vec![
+                    CompositionVariable {
+                        id: "optional_value".to_string(),
+                        label: None,
+                        variable_type: CompositionVariableType::Integer,
+                        required: false,
+                        default: Some(serde_json::from_value(json!(11))?),
+                        format: None,
+                    },
+                    CompositionVariable {
+                        id: "required_value".to_string(),
+                        label: None,
+                        variable_type: CompositionVariableType::Integer,
+                        required: true,
+                        default: Some(serde_json::from_value(json!(13))?),
+                        format: None,
+                    },
+                ],
+                sources: vec![CompositionSource::SavedSql {
+                    id: "metric_source".to_string(),
+                    entry_id: sql_entry_id,
+                    revision_id: sql_revision_id,
+                    expected_result: vec![CompositionResultColumn {
+                        name: "total".to_string(),
+                        result_type: CompositionResultFieldType::Integer,
+                    }],
+                    variables: BTreeMap::from([
+                        (
+                            "optional_value".to_string(),
+                            CompositionValue::Variable(CompositionVariableReference {
+                                variable: "optional_value".to_string(),
+                            }),
+                        ),
+                        (
+                            "required_value".to_string(),
+                            CompositionValue::Variable(CompositionVariableReference {
+                                variable: "required_value".to_string(),
+                            }),
+                        ),
+                    ]),
+                }],
+                components: vec![CompositionComponent::Metric {
+                    id: "total_metric".to_string(),
+                    label: None,
+                    source: "metric_source".to_string(),
+                    column: "total".to_string(),
+                    presentation: None,
+                }],
+                layout: DashboardFlowLayout {
+                    kind: FlowLayoutKind::Flow,
+                    rows: vec![FlowRow {
+                        id: "main".to_string(),
+                        items: vec![FlowItem::Component {
+                            component: "total_metric".to_string(),
+                        }],
+                    }],
+                },
+            },
+        };
+        let draft_yaml = canonicalize_composition(&document)
+            .map_err(|code| anyhow::anyhow!(code.as_str()))?
+            .yaml;
+        let saved = state
+            .service
+            .save_composition_authorized_for_principals(
+                &space_id,
+                ugoite_iceberg::composition::CompositionSaveRequest {
+                    entry_id: None,
+                    base_revision_id: None,
+                    document,
+                },
+                &principal_id.to_string(),
+                &[principal_id],
+            )
+            .await?;
+        let route = reversible_knowledge_route(
+            state.clone(),
+            reversible_knowledge_identity(principal_id, state.service.space_uid(&space_id).await?),
+        );
+
+        // The marker is a separate request field. No JSON null is sent as a
+        // typed value, so an unset can never become a SQL NULL parameter.
+        let resolve_unset = || {
+            Request::post(format!(
+                "/spaces/{space_id}/compositions/{}/resolve",
+                saved.entry_id
+            ))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                json!({
+                    "revision_id": saved.revision_id.to_string(),
+                    "variables": {},
+                    "unset_variables": ["optional_value"]
+                })
+                .to_string(),
+            ))
+        };
+        let (resolve_status, resolve_body) = route_json(route.clone(), resolve_unset()?).await?;
+        assert_eq!(resolve_status, StatusCode::OK, "{resolve_body}");
+        assert_eq!(resolve_body["ok"], false);
+        assert_eq!(
+            resolve_body["diagnostics"],
+            json!([{"code": "variable_missing"}])
+        );
+
+        let (preview_status, preview_body) = route_json(
+            route.clone(),
+            Request::post(format!("/spaces/{space_id}/compositions/preview"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    json!({
+                        "yaml": draft_yaml,
+                        "variables": {},
+                        "unset_variables": ["optional_value"]
+                    })
+                    .to_string(),
+                ))?,
+        )
+        .await?;
+        assert_eq!(preview_status, StatusCode::OK, "{preview_body}");
+        assert_eq!(preview_body["ok"], false);
+        assert_eq!(
+            preview_body["diagnostics"],
+            json!([{"code": "variable_missing"}])
+        );
+
+        let saved_target = json!({
+            "kind": "saved_revision",
+            "composition_id": saved.entry_id.to_string(),
+            "revision_id": saved.revision_id.to_string()
+        });
+        let metric_request = |unset: &str| {
+            Request::post(format!("/spaces/{space_id}/compositions/metric-query"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    json!({
+                        "target": saved_target.clone(),
+                        "component_id": "total_metric",
+                        "variables": {},
+                        "unset_variables": [unset]
+                    })
+                    .to_string(),
+                ))
+        };
+        let (optional_metric_status, optional_metric_body) =
+            route_json(route.clone(), metric_request("optional_value")?).await?;
+        assert_eq!(
+            optional_metric_status,
+            StatusCode::OK,
+            "{optional_metric_body}"
+        );
+        assert_eq!(optional_metric_body["ok"], false);
+        assert_eq!(
+            optional_metric_body["diagnostics"][0]["code"],
+            "variable_missing"
+        );
+        assert_eq!(optional_metric_body["result"], Value::Null);
+
+        // The Saved SQL references a deliberately absent relation. With the
+        // required value explicitly unset, the missing-value diagnostic must
+        // win before the metric service can execute that query.
+        let (required_metric_status, required_metric_body) =
+            route_json(route, metric_request("required_value")?).await?;
+        assert_eq!(
+            required_metric_status,
+            StatusCode::OK,
+            "{required_metric_body}"
+        );
+        assert_eq!(required_metric_body["ok"], false);
+        assert_eq!(
+            required_metric_body["diagnostics"],
+            json!([{
+                "code": "variable_missing",
+                "variable_id": "required_value"
+            }])
+        );
+        assert_eq!(required_metric_body["result"], Value::Null);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn composition_resolve_uses_exact_requested_revision_with_newer_revision_available(
     ) -> anyhow::Result<()> {
         use ugoite_domain::composition::{
