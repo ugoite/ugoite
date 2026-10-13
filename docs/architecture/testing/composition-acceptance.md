@@ -253,7 +253,10 @@ owner and viewer principals. Revoking Form Read produces a generic execution
 error; revoking Saved SQL Read produces `source_unavailable`. In both cases,
 Metric and Table data clear before reload, replaying the earlier SQL request
 returns no data, and details the viewer is no longer authorized to read remain
-concealed. These selectors do not count as runtime evidence until their
+concealed. Form identity is concealed after Form Read revocation; Saved SQL
+identity and details are concealed after Saved SQL Read revocation. SQL text and
+protected result text remain concealed in both cases. These selectors do not
+count as runtime evidence until their
 Playwright run is recorded in the evidence archive.
 
 ## Run evidence

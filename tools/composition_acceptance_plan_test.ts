@@ -148,7 +148,7 @@ const EXPECTED_RECOVERY_CASES = [
     boundary:
       "Viewer-visible exact Composition revision with independently controlled Form and Saved SQL Read policies",
     expectation:
-      "After either Form Read or Saved SQL Read is revoked while Composition access remains, Metric and Table clear prior data before reload and replaying the formerly authorized SQL request cannot return data. Form Read revocation produces a generic execution error while Saved SQL Read revocation returns source_unavailable; unauthorized Form/Saved SQL identity, SQL text, and protected result text remain concealed.",
+      "After either Form Read or Saved SQL Read is revoked while Composition access remains, Metric and Table clear prior data before reload and replaying the formerly authorized SQL request cannot return data. Form Read revocation produces a generic execution error while Saved SQL Read revocation returns source_unavailable. Form identity is concealed when Form Read is revoked; Saved SQL identity and details are concealed when Saved SQL Read is revoked. SQL text and protected result text remain concealed in both cases.",
   },
   {
     id: "composition_runtime_results_are_principal_and_space_isolated",

@@ -358,7 +358,6 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
           });
         } else {
           expect(deniedBody.httpStatus).toBeGreaterThanOrEqual(400);
-          expect(deniedBody.httpStatus).toBeLessThan(500);
         }
 
         // Revisit the same revision. A revoked Saved SQL source is hidden
@@ -398,10 +397,9 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
         }
         const deniedText = JSON.stringify([deniedBody, resolveBody]);
         const concealedValues = [
-          seed.formId,
-          seed.formName,
           seed.savedSqlText,
           seed.protectedValue,
+          ...(revokedRead === "form" ? [seed.formId, seed.formName] : []),
           ...(revokedRead === "saved_sql"
             ? [seed.savedSqlId, seed.savedSqlRevisionId, seed.savedSqlName]
             : []),

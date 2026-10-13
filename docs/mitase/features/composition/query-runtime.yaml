@@ -423,7 +423,7 @@ features:
   - id: browser-source-read-revocation-and-space-isolation-evidence
     role: evidence
     facet: frontend-tests
-    responsibility: Verify a live Browser clears a previously visible exact-revision Saved SQL Metric and Table after Form or Saved SQL Read is revoked, confirms the corresponding execution path cannot return protected data, conceals identity the viewer is no longer authorized to read, and keeps identical variable/source/component bindings isolated across Spaces.
+    responsibility: Verify a live Browser clears a previously visible exact-revision Saved SQL Metric and Table after Form or Saved SQL Read is revoked, confirms the corresponding execution path cannot return protected data, conceals Form identity after Form Read revocation and Saved SQL identity/details after Saved SQL Read revocation, and keeps SQL text and protected result text concealed in both cases. Also verify identical variable/source/component bindings stay isolated across Spaces.
     targets:
     - id: revoked-source-read-clears-visible-metric-and-table
       adapter: typescript
