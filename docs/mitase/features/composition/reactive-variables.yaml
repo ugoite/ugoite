@@ -908,6 +908,8 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.stale-result-and-state-safety
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.saved-sql-metric-presentation
           - id: scalar-result-distinguishes-zero-rows-null-and-zero
             adapter: typescript
             path: e2e/composition-scalar-state-journey.test.ts
@@ -917,6 +919,8 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.stale-result-and-state-safety
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.saved-sql-metric-presentation
       - id: cli-typed-variable-query
         role: implementation
         facet: cli
