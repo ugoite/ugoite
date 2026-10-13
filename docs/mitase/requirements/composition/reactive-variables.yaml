@@ -152,10 +152,6 @@ requirements:
                 criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
                 covers: [FEAT-COMP-008#binding.wasm-variable-input-parser-evidence/target.wasm-native-variable-input-parity]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::composition_variable_input_protocol_matches_native_domain_contract } }
-              - kind: verifies
-                criterion: REQ-COMP-007#criterion.portable-variable-contract
-                covers: [FEAT-COMP-008#binding.wasm-variable-input-parser-evidence/target.wasm-native-variable-input-parity]
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::composition_variable_input_protocol_matches_native_domain_contract } }
           - id: browser-variable-input-result-case
             adapter: typescript
             path: frontend/src/lib/ugoite-client/protocol.test.ts
@@ -165,10 +161,6 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
-                covers: [FEAT-COMP-008#binding.browser-variable-input-parser-evidence/target.browser-variable-input-outcomes]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/ugoite-client/protocol.test.ts, test: parses Composition Input with the shared Rust Domain contract without coercion } }
-              - kind: verifies
-                criterion: REQ-COMP-007#criterion.portable-variable-contract
                 covers: [FEAT-COMP-008#binding.browser-variable-input-parser-evidence/target.browser-variable-input-outcomes]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/ugoite-client/protocol.test.ts, test: parses Composition Input with the shared Rust Domain contract without coercion } }
       - id: typed-variable-core-verification

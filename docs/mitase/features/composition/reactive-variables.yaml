@@ -156,8 +156,6 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
-              - kind: satisfies
-                criterion: REQ-COMP-007#criterion.portable-variable-contract
       - id: browser-variable-input-parser
         role: implementation
         facet: browser
@@ -172,8 +170,6 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
-              - kind: satisfies
-                criterion: REQ-COMP-007#criterion.portable-variable-contract
       - id: wasm-variable-input-parser-evidence
         role: evidence
         facet: wasm-tests
@@ -188,8 +184,6 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.typed-input-lexical-contract
-              - kind: evidences
-                anchor: REQ-COMP-007#criterion.portable-variable-contract
           - id: wasm32-variable-input-runtime
             adapter: typescript
             path: crates/ugoite-wasm/tests/composition_parity.ts
@@ -199,8 +193,6 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.typed-input-lexical-contract
-              - kind: evidences
-                anchor: REQ-COMP-007#criterion.portable-variable-contract
       - id: browser-variable-input-parser-evidence
         role: evidence
         facet: frontend-tests

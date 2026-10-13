@@ -48,5 +48,6 @@ export {
   type UgoiteApiOperation,
   type CompositionVariableInputParseResult,
   type CompositionVariableInputType,
+  type CompositionVariableInputValueByType,
   validateAssetReference,
 } from "./protocol";

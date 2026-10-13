@@ -233,9 +233,20 @@ export type CompositionVariableInputType =
   | "date"
   | "timestamp";
 
-export type CompositionVariableInputParseResult =
+export type CompositionVariableInputValueByType = {
+  string: string;
+  boolean: boolean;
+  integer: number;
+  float: number;
+  date: string;
+  timestamp: string;
+};
+
+export type CompositionVariableInputParseResult<
+  T extends CompositionVariableInputType = CompositionVariableInputType,
+> =
   | { status: "unset" }
-  | { status: "valid"; value: string | boolean | number }
+  | { status: "valid"; value: CompositionVariableInputValueByType[T] }
   | { status: "invalid" };
 
 /** Canonicalize a typed Composition document through the shared Rust domain. */
@@ -248,11 +259,13 @@ export const canonicalizeCompositionDocument = async (
   });
 
 /** Parse raw Composition Input text using the shared Rust Domain contract. */
-export const parseCompositionVariableInput = async (
-  type: CompositionVariableInputType,
+export const parseCompositionVariableInput = async <
+  T extends CompositionVariableInputType,
+>(
+  type: T,
   raw: string,
-): Promise<CompositionVariableInputParseResult> =>
-  await invokeProtocol<CompositionVariableInputParseResult>({
+): Promise<CompositionVariableInputParseResult<T>> =>
+  await invokeProtocol<CompositionVariableInputParseResult<T>>({
     action: "domain.parse_composition_variable_input",
     value: { type, raw },
   });
