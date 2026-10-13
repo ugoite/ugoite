@@ -185,6 +185,32 @@
       "gap": "This record covers the exact-revision navigation stale-Metric selector in the required Composition Metric lane, which also ran the Saved SQL metric and Studio journeys. It verifies the delayed first-revision value (15) did not replace the second-revision value (8), error, or loading state after history navigation. It does not establish A17, A24, the full reactive-variable contract, or release-candidate byte promotion. No release candidate was built or promoted."
     },
     {
+      "source_sha": "4b9589c089b7ad8baca3f2eb316eae9968d8876b",
+      "candidate_sha": "4b9589c089b7ad8baca3f2eb316eae9968d8876b",
+      "command": "UGOITE_E2E_BACKEND_BINARY=target/rust/release/ugoite-server E2E_FRONTEND_MODE=static E2E_ENFORCE_CI_GATES=true UGOITE_SKIP_PLAYWRIGHT_DEPS=1 E2E_STORAGE_ROOT=.tmp/e2e-composition-source-acl-isolation-final-fresh PLAYWRIGHT_JUNIT_OUTPUT_FILE=fixtures/composition/evidence/composition-source-acl-isolation-junit.xml bash e2e/scripts/run-e2e.sh composition-source-acl-isolation",
+      "surface": "Browser + Server (direct-process static frontend E2E)",
+      "fixture": "self-seeded via API: Space, Form, Entry, exact Saved SQL revision, Composition with shared Metric and Table, viewer principal, and independently controlled ACL policies",
+      "environment": "macOS arm64 host; static SPA + direct-process release backend; Deno 2.8.3; Playwright 1.60.0 (Chromium)",
+      "result": "passed (1 passed, 0 skipped)",
+      "artifact": "e2e/fixtures/composition/evidence/composition-source-acl-isolation-junit.xml",
+      "artifact_digest": "08051cf814ba49b7d714a1c29e6746c5017db1ca5042bd07a8a641a4109749cd",
+      "gap": "This record covers only the stated Browser/server selector on this source commit. It does not independently capture the Browser-initiated SQL query response after revocation before reload, and it is not release evidence. No release candidate was built or promoted.",
+      "selector": "e2e/composition-source-acl-isolation.test.ts#test:Viewer Metric and Table clear after Form or Saved SQL Read is revoked"
+    },
+    {
+      "source_sha": "4b9589c089b7ad8baca3f2eb316eae9968d8876b",
+      "candidate_sha": "4b9589c089b7ad8baca3f2eb316eae9968d8876b",
+      "command": "UGOITE_E2E_BACKEND_BINARY=target/rust/release/ugoite-server E2E_FRONTEND_MODE=static E2E_ENFORCE_CI_GATES=true UGOITE_SKIP_PLAYWRIGHT_DEPS=1 E2E_STORAGE_ROOT=.tmp/e2e-composition-source-acl-isolation-final-fresh PLAYWRIGHT_JUNIT_OUTPUT_FILE=fixtures/composition/evidence/composition-source-acl-isolation-junit.xml bash e2e/scripts/run-e2e.sh composition-source-acl-isolation",
+      "surface": "Browser + Server (direct-process static frontend E2E)",
+      "fixture": "self-seeded via API: Space, Form, Entry, exact Saved SQL revision, Composition with shared Metric and Table, viewer principal, and independently controlled ACL policies",
+      "environment": "macOS arm64 host; static SPA + direct-process release backend; Deno 2.8.3; Playwright 1.60.0 (Chromium)",
+      "result": "passed (1 passed, 0 skipped)",
+      "artifact": "e2e/fixtures/composition/evidence/composition-source-acl-isolation-junit.xml",
+      "artifact_digest": "08051cf814ba49b7d714a1c29e6746c5017db1ca5042bd07a8a641a4109749cd",
+      "gap": "This record covers only the stated Browser/server selector on this source commit. It does not independently capture the Browser-initiated SQL query response after revocation before reload, and it is not release evidence. No release candidate was built or promoted.",
+      "selector": "e2e/composition-source-acl-isolation.test.ts#test:Space switching shows only the selected Metric result"
+    },
+    {
       "source_sha": "ff95326b9429e5aaf793c1d71f18509f12f2f997",
       "candidate_sha": "ff95326b9429e5aaf793c1d71f18509f12f2f997",
       "command": "E2E_FRONTEND_MODE=static UGOITE_SKIP_PLAYWRIGHT_DEPS=1 E2E_ENFORCE_CI_GATES=true UGOITE_E2E_STARTUP_TIMEOUT_SECONDS=180 PLAYWRIGHT_JUNIT_OUTPUT_FILE=fixtures/composition/evidence/composition-studio-a26-junit.xml bash e2e/scripts/run-e2e.sh composition-metric",

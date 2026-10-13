@@ -467,6 +467,11 @@ description = "Run saved SQL Composition Metric authoring and cardinality E2E"
 env = { PLAYWRIGHT_JUNIT_OUTPUT_FILE = "test-results/composition-metric-junit.xml", PLAYWRIGHT_OUTPUT_DIR = "test-results/composition-metric-results" }
 run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:composition-metric"
 
+[tasks."test:e2e:composition-source-acl-isolation"]
+description = "Run Composition source ACL revocation and Space isolation E2E"
+env = { PLAYWRIGHT_JUNIT_OUTPUT_FILE = "test-results/composition-source-acl-isolation-junit.xml", PLAYWRIGHT_OUTPUT_DIR = "test-results/composition-source-acl-isolation-results" }
+run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:composition-source-acl-isolation"
+
 [tasks."test:e2e:owner-recovery"]
 description = "Run the required owner-approved Space access recovery E2E"
 run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:owner-recovery"
@@ -624,6 +629,7 @@ run = [
   { task = "test:e2e:navigation" },
   { task = "test:e2e:mobile-ui" },
   { task = "test:e2e:composition-metric" },
+  { task = "test:e2e:composition-source-acl-isolation" },
   { task = "test:e2e:owner-recovery" },
   { task = "test:e2e:portable-space", env = { UGOITE_PORTABLE_CLI_BINARY = "target/rust/release/ugoite" } },
 ]
@@ -644,6 +650,7 @@ run = [
   { task = "test:e2e:navigation" },
   { task = "test:e2e:mobile-ui" },
   { task = "test:e2e:composition-metric" },
+  { task = "test:e2e:composition-source-acl-isolation" },
 ]
 
 [tasks."ci:lane:e2e-owner"]

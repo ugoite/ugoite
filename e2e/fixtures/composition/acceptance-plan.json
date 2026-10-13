@@ -162,6 +162,18 @@
         "expectation": "Variable, Space, source, and exact Composition revision changes suppress stale success, error, finalization, and loading-state updates."
       },
       {
+        "id": "revoked_source_read_clears_browser_outputs",
+        "surface": "Browser and Server",
+        "boundary": "Viewer-visible exact Composition revision with independently controlled Form and Saved SQL Read policies",
+        "expectation": "After either Form Read or Saved SQL Read is revoked while Composition access remains, Metric and Table clear prior data before reload and replaying the formerly authorized SQL request cannot return data. Form Read revocation produces a generic execution error while Saved SQL Read revocation returns source_unavailable. Form identity is concealed when Form Read is revoked; Saved SQL identity and details are concealed when Saved SQL Read is revoked. SQL text and protected result text remain concealed in both cases."
+      },
+      {
+        "id": "composition_runtime_results_are_space_isolated",
+        "surface": "Browser and Server",
+        "boundary": "One live browser session switching between Space-owned exact Composition revisions",
+        "expectation": "Identical variable, source, and component identifiers with identical typed inputs show only the current Space's authorized Metric and Table results."
+      },
+      {
         "id": "portable_surface_contract_parity",
         "surface": "Rust API client, TypeScript protocol, Server OpenAPI, CLI core/remote",
         "boundary": "Shared operation inventory and transport adapters",
@@ -458,6 +470,26 @@
           "path": "docs/architecture/testing/composition-acceptance.md",
           "selector": {
             "kind": "file"
+          }
+        }
+      ]
+    },
+    {
+      "id": "B7",
+      "outcome": "Current Form or Saved SQL Read revocation clears previously visible Metric and Table data, and live Browser navigation keeps Composition results isolated by Space.",
+      "reserved_selectors": [
+        {
+          "path": "e2e/composition-source-acl-isolation.test.ts",
+          "selector": {
+            "kind": "test",
+            "name": "Viewer Metric and Table clear after Form or Saved SQL Read is revoked"
+          }
+        },
+        {
+          "path": "e2e/composition-source-acl-isolation.test.ts",
+          "selector": {
+            "kind": "test",
+            "name": "Space switching shows only the selected Metric result"
           }
         }
       ]

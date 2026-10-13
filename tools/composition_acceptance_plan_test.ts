@@ -157,6 +157,22 @@ const EXPECTED_RECOVERY_CASES = [
       "Variable, Space, source, and exact Composition revision changes suppress stale success, error, finalization, and loading-state updates.",
   },
   {
+    id: "revoked_source_read_clears_browser_outputs",
+    surface: "Browser and Server",
+    boundary:
+      "Viewer-visible exact Composition revision with independently controlled Form and Saved SQL Read policies",
+    expectation:
+      "After either Form Read or Saved SQL Read is revoked while Composition access remains, Metric and Table clear prior data before reload and replaying the formerly authorized SQL request cannot return data. Form Read revocation produces a generic execution error while Saved SQL Read revocation returns source_unavailable. Form identity is concealed when Form Read is revoked; Saved SQL identity and details are concealed when Saved SQL Read is revoked. SQL text and protected result text remain concealed in both cases.",
+  },
+  {
+    id: "composition_runtime_results_are_space_isolated",
+    surface: "Browser and Server",
+    boundary:
+      "One live browser session switching between Space-owned exact Composition revisions",
+    expectation:
+      "Identical variable, source, and component identifiers with identical typed inputs show only the current Space's authorized Metric and Table results.",
+  },
+  {
     id: "portable_surface_contract_parity",
     surface:
       "Rust API client, TypeScript protocol, Server OpenAPI, CLI core/remote",
@@ -222,6 +238,10 @@ const EXPECTED_RESERVED_SELECTORS: Record<string, string[]> = {
     "e2e/composition-recovery-authorization.test.ts#test:Composition raw recovery and ACL denial preserve caller-visible contracts",
     "e2e/composition-save-receipt.test.ts#test:Composition save reconciles a lost response without duplicate publication",
     "docs/architecture/testing/composition-acceptance.md#file",
+  ],
+  B7: [
+    "e2e/composition-source-acl-isolation.test.ts#test:Viewer Metric and Table clear after Form or Saved SQL Read is revoked",
+    "e2e/composition-source-acl-isolation.test.ts#test:Space switching shows only the selected Metric result",
   ],
 };
 
@@ -391,7 +411,7 @@ Deno.test(
     );
     assertEquals(
       plan.milestones.map(({ id }) => id),
-      ["B0", "B1", "B2", "B3", "B4", "B5", "B6"],
+      ["B0", "B1", "B2", "B3", "B4", "B5", "B6", "B7"],
     );
 
     for (const milestone of plan.milestones) {

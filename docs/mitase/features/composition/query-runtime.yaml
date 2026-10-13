@@ -429,6 +429,35 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.saved-sql-metric-presentation
+  - id: browser-source-read-revocation-and-space-isolation-evidence
+    role: evidence
+    facet: frontend-tests
+    responsibility: Verify a live Browser clears a previously visible exact-revision Saved SQL Metric and Table after Form or Saved SQL Read is revoked, confirms the corresponding execution path cannot return protected data, conceals Form identity after Form Read revocation and Saved SQL identity/details after Saved SQL Read revocation, and keeps SQL text and protected result text concealed in both cases. Also verify identical variable/source/component bindings stay isolated across Spaces.
+    targets:
+    - id: revoked-source-read-clears-visible-metric-and-table
+      adapter: typescript
+      path: e2e/composition-source-acl-isolation.test.ts
+      selector:
+        kind: test
+        name: Viewer Metric and Table clear after Form or Saved SQL Read is revoked
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.current-authorization
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.concealed-unavailable-references
+      - kind: evidences
+        anchor: REQ-COMP-007#criterion.stale-result-and-state-safety
+    - id: same-runtime-identifiers-stay-space-isolated
+      adapter: typescript
+      path: e2e/composition-source-acl-isolation.test.ts
+      selector:
+        kind: test
+        name: Space switching shows only the selected Metric result
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.current-authorization
+      - kind: evidences
+        anchor: REQ-COMP-007#criterion.stale-result-and-state-safety
   contracts:
   - id: saved-sql-metric-result-contract
     kind: custom

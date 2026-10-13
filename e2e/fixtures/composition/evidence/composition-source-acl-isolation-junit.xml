@@ -1,0 +1,8 @@
+<testsuites id="" name="" tests="2" failures="0" skipped="0" errors="0" time="15.960737000000002">
+<testsuite name="composition-source-acl-isolation.test.ts" timestamp="2026-10-13T14:13:10.206Z" hostname="" tests="2" failures="0" skipped="0" time="13.409" errors="0">
+<testcase name="Composition Saved SQL ACL and runtime isolation › Viewer Metric and Table clear after Form or Saved SQL Read is revoked" classname="composition-source-acl-isolation.test.ts" time="7.337">
+</testcase>
+<testcase name="Composition Saved SQL ACL and runtime isolation › Space switching shows only the selected Metric result" classname="composition-source-acl-isolation.test.ts" time="6.072">
+</testcase>
+</testsuite>
+</testsuites>
