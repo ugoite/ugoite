@@ -239,7 +239,7 @@ mod tests {
                 Ok(())
             );
         }
-        for value in ["", "01", "-0", "1.0", "1e3"] {
+        for value in ["", "+42", "01", "-01", "-0", "1.0", "1e3"] {
             assert_eq!(
                 validate_composition_metric_scalar_value(
                     CompositionResultFieldType::Integer,

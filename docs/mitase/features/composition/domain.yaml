@@ -129,9 +129,9 @@ features:
   - id: portable-envelope-domain-evidence
     role: evidence
     facet: domain-tests
-    responsibility: Verify the fixed envelope field names in the shared Rust contract and pin the byte,
-      nesting-depth, and collection parser limits through the frozen v1 contract test; ordered descriptors,
-      restricted YAML rejection, fingerprint inputs, and runtime enforcement across native and WASM are
+    responsibility: Verify the fixed envelope field names in the shared Rust contract and pin the input-byte,
+      nesting-depth, collection-item, YAML-node, parser-event, and total scalar-byte budgets through the frozen
+      v1 contract test; ordered descriptors, restricted YAML rejection, and native/WASM behavior parity are
       evidenced by portable-envelope-wasm-parity.
     targets:
     - id: portable-envelope-fields
@@ -219,8 +219,8 @@ features:
     role: evidence
     facet: wasm-tests
     responsibility: Keep the fixed marker, tags, ordered result descriptors, canonical bytes, fingerprint,
-      unknown-field rejection, diagnostics, and parser resource limits aligned between native Rust and
-      WASM.
+      unknown-field rejection, and diagnostics aligned between native Rust and WASM using the shared Rust
+      parser. Parser resource-budget values are pinned by the domain parser tests.
     targets:
     - id: ordered-result-descriptor-validation
       adapter: rust
@@ -414,7 +414,7 @@ features:
   - id: metric-runtime-value-domain
     role: implementation
     facet: domain
-    responsibility: Validate selected scalar metric values, including exact decimal strings and date/time formats, with the shared Rust domain semantics.
+    responsibility: Validate selected scalar metric values, including exact integer and decimal strings, finite float numbers, nullable scalar results, and normalized date/time formats, with the shared Rust domain semantics.
     targets:
     - id: metric-runtime-value-validator
       adapter: rust
@@ -428,8 +428,9 @@ features:
   - id: metric-runtime-value-evidence
     role: evidence
     facet: domain-tests
-    responsibility: Verify exact Decimal values preserve fractional scale and accepted normalized date/time values,
-      with stable rejection of invalid decimal, calendar, clock, precision, and offset forms.
+    responsibility: Verify exact integer and Decimal representations, finite Float values, SQL NULL, and
+      accepted normalized date/time values, with stable rejection of malformed values and invalid calendar,
+      clock, precision, and offset forms.
     targets:
     - id: accepted-metric-date-time-values
       adapter: rust
@@ -455,6 +456,24 @@ features:
       selector:
         kind: symbol
         name: tests::validates_exact_decimal_metric_strings_without_losing_scale
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.metric-runtime-values
+    - id: exact-integer-and-nullable-metric-values
+      adapter: rust
+      path: crates/ugoite-domain/src/composition_metric.rs
+      selector:
+        kind: symbol
+        name: tests::validates_nullable_scalar_results_and_exact_numeric_representations
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.metric-runtime-values
+    - id: finite-float-metric-json-values
+      adapter: rust
+      path: crates/ugoite-domain/src/composition_metric.rs
+      selector:
+        kind: symbol
+        name: tests::validates_typed_scalar_values
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.metric-runtime-values

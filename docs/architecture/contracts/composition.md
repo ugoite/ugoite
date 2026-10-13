@@ -12,8 +12,11 @@ implementation and test evidence. The full end-to-end runtime journey and
 release acceptance remain incomplete; see the
 [acceptance plan](../testing/composition-acceptance.md). Post-freeze semantic
 changes require a v1 compatibility ruling recorded against this contract.
-ADR-023 supersedes ADR-019 for typed variables, Input components, and variable
-references, and authorizes the prerelease grammar without a compatibility
+[ADR-023](./adr-023-composition-reactive-variables.md) supersedes ADR-019 for
+typed variables, Input components, and variable references. Its §2.1 is the
+normative source for typed Input lexical/value constraints and typed defaults;
+this contract describes how those values move through the Composition schema
+and runtime. ADR-023 authorizes the prerelease grammar without a compatibility
 reader or migration. ADR-019 still governs the flow `layout` AST, component
 placement, and presentation order. `format_version` stays 1.
 
@@ -24,13 +27,13 @@ Frozen v1 pin (see `composition_v1_freeze_pins_portable_contract` in
 | Item | Frozen value |
 | ---- | ------------ |
 | Envelope | `format: ugoite.composition`, `format_version: 1`, `kind: dashboard` only |
-| Parser limits | 64 KiB YAML bytes, nesting depth 64, 256 collection items |
+| Parser limits | 64 KiB YAML bytes, nesting depth 64, 4,096 nodes, 8,192 parser events, 32 KiB total scalar bytes, 256 items per collection |
 | Tags | document tags are the sole semantic value and equal stored Entry tags |
 | Source grammar | `entry_query` (Form scope, six filter operators, two sort directions, fields/preview projection, optional Created/Updated display columns) and exact `saved_sql` (EntryId + RevisionId, ordered unique `expected_result`, eight logical types) |
 | Metric identity | one Saved SQL source ID and one declared output-column name; optional label and display-only presentation |
 | Components | `input` / `text` / `metric` / `table`; `flow` layout rows/items, unique row and component IDs, exactly-once component placement, input components for required variables without defaults, empty layouts and empty rows invalid; text styles `title` / `heading` / `body` / `caption` |
 | Fingerprints | document SHA-256 over normalized value; per-source schema fingerprints over FormId + used-field snapshot |
-| Diagnostics | 14 caller-visible codes; missing/denied sources conceal as `source_unavailable` |
+| Diagnostics | 15 caller-visible codes; missing/denied sources conceal as `source_unavailable` |
 | Operations | `lint`, `list`, `get`, `history`, `resolve`, `save`, `restore` (export stays a CLI file operation) |
 | Idempotency | `Idempotency-Key` required on save/restore; same key + same payload replays, differing payload conflicts |
 | Raw recovery | unsupported versions and broken references keep raw inspect, export, and history |
@@ -54,7 +57,7 @@ no separate database or hidden catalog becomes authoritative.
 The exchange format is a restricted `.ugcomp.yaml` document at format version
 `1`. Its envelope is ordered as `format`, `format_version`, `kind`, `name`,
 `tags`, and `spec`. `format` is the fixed value `ugoite.composition`, and
-`kind` is `dashboard` for v0.2.2. `tags` are the Composition Entry's tags and
+`kind` is `dashboard`. `tags` are the Composition Entry's tags and
 are saved and read as the same ordered list as `EntryMetadata.tags`; a save
 request has no second tag value. The `spec` contains typed variables, sources,
 components, and a first-class dashboard flow `layout`. A source identifies either an Entry query template
@@ -76,7 +79,7 @@ otherwise uses it, such as in a projection. Each snapshot row contains
 The complete illustrative document is maintained in
 `crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml`.
 It is a contract fixture for domain, parser, canonicalization, and WASM parity
-tests, not an assertion that persistence or rendering is already shipped.
+tests; by itself, it does not cover the persistence and Browser rendering paths.
 The `saved-sql-metric-columns.ugcomp.yaml` fixture covers several Metrics
 selecting different columns from one Saved SQL source while a Table uses an
 independent EntryQuery source. A Metric stores only its Saved SQL source ID,
@@ -84,7 +87,8 @@ one declared output column, and optional presentation metadata. SQL performs
 COUNT, SUM, AVG, MIN, MAX, and any later-supported calculation. A Metric
 does not store an operation, Form FieldId, expression, or client aggregation
 configuration. The shared Rust/WASM model validates the column against the
-source's ordered result descriptor and rejects non-scalar types. The source
+source's ordered result descriptor; the seven scalar logical types are
+Metric-selectable, while `json` remains available to Tables. The source
 pins one Saved SQL Entry and exact revision and can be shared by Metrics and
 Tables. The query adapter consumes at most two rows and succeeds only for
 exactly one row; it never chooses a prefix row or rewrites SQL to add
@@ -93,8 +97,11 @@ SQL NULL remains a successful present scalar value.
 
 The typed v1 model supports `string`, `boolean`, `integer`, `float`, `date`, and
 `timestamp` variables. A variable may carry a typed default and a display
-format hint; `year-month` is a hint and does not evaluate an expression or
-change the variable value. Variables and `input`/`text`/`metric`/`table` components may
+format hint; the current `year-month` hint is valid only for `date` variables,
+does not evaluate an expression, and does not change the variable value. The
+accepted Input spellings, bounds, and value rules are defined in
+[ADR-023 §2.1](./adr-023-composition-reactive-variables.md#21-typed-input-values-are-bounded-and-locale-independent).
+Variables and `input`/`text`/`metric`/`table` components may
 also carry optional display `label` text. A label is emitted in canonical YAML
 and included in the document fingerprint when present, and omitted when
 absent. Labels do not replace stable variable, component, source, or field IDs
@@ -114,11 +121,16 @@ bind to the Saved SQL revision's existing named SQL parameters; SQL request
 fields `parameters` and `parameter_types` keep their meanings. Each expected
 result field has a unique non-empty output name and
 one portable logical type: `string`, `boolean`, `integer`, `float`, `decimal`,
-`date`, `timestamp`, or `json`. Decimal scalar values are JSON strings in
-plain notation with no exponent, no leading integer zeros, and no negative
-zero; fractional scale, including trailing zeroes, is preserved. The descriptor describes the exact revision's expected
-result shape; it does not claim that a SQL backend can statically infer the
-shape. Backend SQL type names are not part of the portable contract.
+`date`, `timestamp`, or `json`. Metric integer values are JSON strings in the
+canonical base-10 form `0`, `[1-9][0-9]*`, or `-[1-9][0-9]*`, preserving exact
+precision and rejecting leading plus signs, leading zeroes, and negative zero.
+Float values are finite JSON numbers. Decimal values are JSON strings in plain
+notation with no exponent, no leading integer zeros, and no negative zero;
+fractional scale, including trailing zeroes, is preserved. SQL `NULL` is
+returned as JSON `null` for every supported scalar result type. The descriptor
+describes the exact revision's expected result shape; it does not claim that a
+SQL backend can statically infer the shape. Backend SQL type names are not part
+of the portable contract.
 Dashboard components are
 `input`, `text`, `metric`, or `table`. An `input` component binds a variable.
 A `text` component carries inline `text` and one
@@ -188,6 +200,9 @@ WASM action `domain.parse_composition_variable_input`. It returns `unset`,
 `valid` with the exact typed JSON scalar, or `invalid` by delegating to the
 Domain parser. The Browser keeps raw text and validation state as transient
 Work; only a valid typed scalar may enter the Composition query snapshot.
+Empty Input is unset and explicitly overrides a default; omission selects the
+default. Invalid raw text remains visible without being coerced or sent to a
+query.
 
 The v1 syntax rejects duplicate mapping keys, multiple documents, anchors and
 aliases, merge keys, unsupported/custom tags, implicit timestamp

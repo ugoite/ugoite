@@ -1879,7 +1879,7 @@ mod tests {
     fn composition_v1_freeze_pins_portable_contract() {
         use super::yaml::{
             MAX_COMPOSITION_COLLECTION_ITEMS, MAX_COMPOSITION_YAML_BYTES,
-            MAX_COMPOSITION_YAML_DEPTH,
+            MAX_COMPOSITION_YAML_DEPTH, MAX_YAML_EVENTS, MAX_YAML_NODES, MAX_YAML_SCALAR_BYTES,
         };
 
         // Canonical envelope: fixed marker, version 1, dashboard only.
@@ -1894,6 +1894,9 @@ mod tests {
         assert_eq!(MAX_COMPOSITION_YAML_BYTES, 64 * 1024);
         assert_eq!(MAX_COMPOSITION_YAML_DEPTH, 64);
         assert_eq!(MAX_COMPOSITION_COLLECTION_ITEMS, 256);
+        assert_eq!(MAX_YAML_NODES, 4_096);
+        assert_eq!(MAX_YAML_EVENTS, 8_192);
+        assert_eq!(MAX_YAML_SCALAR_BYTES, 32 * 1024);
 
         // Bounded page size shared by Composition query templates.
         assert_eq!(DEFAULT_COMPOSITION_PAGE_LIMIT, 100);
