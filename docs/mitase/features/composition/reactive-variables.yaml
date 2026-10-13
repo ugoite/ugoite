@@ -26,6 +26,8 @@ features:
               - kind: documents
                 anchor: REQ-COMP-007#criterion.input-component-binding
               - kind: documents
+                anchor: REQ-COMP-007#criterion.required-variable-unset-diagnostic
+              - kind: documents
                 anchor: REQ-COMP-007#criterion.input-runtime-synchronization
               - kind: documents
                 anchor: REQ-COMP-007#criterion.direct-text-binding
@@ -453,6 +455,8 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.typed-input-lexical-contract
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.required-variable-unset-diagnostic
           - id: missing-and-unknown-variable-diagnostics
             adapter: rust
             path: crates/ugoite-core/src/composition.rs
@@ -602,7 +606,7 @@ features:
       - id: browser-reactive-variable-runtime-evidence
         role: evidence
         facet: frontend-tests
-        responsibility: Verify canonical synchronous parsing, shared Input raw/typed state, selective page refresh, pagination race safety, fail-closed dependency handling, and stale Metric response suppression.
+        responsibility: Verify canonical synchronous parsing, shared Input raw/typed state, required-unset diagnostics and Source suppression, selective page refresh, pagination race safety, fail-closed dependency handling, and stale Metric response suppression.
         targets:
           - id: synchronous-shared-input-state
             adapter: typescript
@@ -689,6 +693,8 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.stale-result-and-state-safety
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.required-variable-unset-diagnostic
           - id: malformed-raw-hides-source-results
             adapter: typescript
             path: frontend/src/lib/composition-query-handle.test.ts

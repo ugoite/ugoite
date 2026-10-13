@@ -229,8 +229,22 @@ describe("CompositionQueryHandle", () => {
 
     await handle.open(identity);
     expect(api.querySource).toHaveBeenCalledOnce();
+    expect(handle.state().sources.sql_results?.status).toBe("ready");
+    expect(handle.state().sources.sql_results?.page).toEqual(
+      savedSqlPage("initial"),
+    );
     handle.setVariableRaw("month_start", "");
     await vi.waitFor(() => expect(api.resolve).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => {
+      expect(handle.state().resolving).toBe(false);
+      expect(handle.state().resolved).toMatchObject({
+        ok: false,
+        diagnostics: [{
+          code: "variable_missing",
+          variable_id: "month_start",
+        }],
+      });
+    });
 
     expect(api.resolve).toHaveBeenLastCalledWith(
       identity.spaceId,
@@ -239,7 +253,14 @@ describe("CompositionQueryHandle", () => {
       { month_start: null },
       expect.any(AbortSignal),
     );
-    expect(handle.state().sources.sql_results?.status).toBe("invalid");
+    expect(handle.state().resolved?.diagnostics).toEqual([{
+      code: "variable_missing",
+      variable_id: "month_start",
+    }]);
+    expect(handle.state().sources.sql_results).toMatchObject({
+      status: "invalid",
+    });
+    expect(handle.state().sources.sql_results?.page).toBeUndefined();
     expect(api.querySource).toHaveBeenCalledOnce();
     handle.dispose();
   });
