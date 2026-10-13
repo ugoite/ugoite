@@ -5,13 +5,16 @@ set under `crates/ugoite-domain/tests/fixtures/composition/`. The Browser E2E
 uses the Browser save flow so its Composition is produced by the same public
 surface as a user-created tool.
 
-`acceptance-plan.json` describes the full B0–B6 plan and the reactive-variable
+`acceptance-plan.json` describes the full B0–B7 plan and the reactive-variable
 Studio journey. Planned selectors are locators, not release evidence. Scoped
 Browser journey results and their JUnit artifacts are recorded under
 `evidence/`; other selectors and release criteria remain unverified. The
 Browser journey sources are
 `e2e/composition-golden-journey.test.ts` and
 `e2e/composition-studio-journey.test.ts`.
+
+The Saved SQL source ACL and Space-isolation selectors in B7 are covered by
+`e2e/composition-source-acl-isolation.test.ts`.
 
 - `unknown-format-version.ugcomp.yaml` is a raw-payload candidate for
   unsupported-format recovery.

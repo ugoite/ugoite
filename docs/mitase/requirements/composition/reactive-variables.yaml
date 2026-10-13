@@ -47,7 +47,7 @@ requirements:
         governed_by: [POL-004#rule.governance]
       - id: stale-result-and-state-safety
         kind: security
-        statement: A SQL response is accepted only for its current Composition revision, variable-subset fingerprint, exact Saved SQL revision, and authorization/publication context. Older generations are discarded; pending or failed requests never present prior success as current. Current ACL, bounded execution, NULL/zero/zero-row/multiple-row distinctions, exact numeric handling, and SQL diagnostics remain in force.
+        statement: A SQL response is accepted only for its current Space, authenticated principal authorization/publication context, Composition revision, variable-subset fingerprint, and exact Saved SQL revision. Identical variable, source, and component identifiers do not allow results or cache identity to cross Space or principal boundaries. Older generations are discarded; pending or failed requests never present prior success as current. Current ACL, bounded execution, NULL/zero/zero-row/multiple-row distinctions, exact numeric handling, and SQL diagnostics remain in force.
         governed_by: [POL-000#rule.foundation-precedence]
       - id: runtime-values-are-transient
         kind: behavior

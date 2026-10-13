@@ -143,6 +143,22 @@ const EXPECTED_RECOVERY_CASES = [
       "Variable, Space, source, and exact Composition revision changes suppress stale success, error, finalization, and loading-state updates.",
   },
   {
+    id: "revoked_saved_sql_read_clears_browser_metric",
+    surface: "Browser and Server",
+    boundary:
+      "Viewer-visible Composition with a current exact-revision Saved SQL Read policy",
+    expectation:
+      "After the viewer’s Saved SQL Read is revoked while Composition access remains, the dependent Metric returns source_unavailable and both Metric and Table clear prior data; neither response exposes Saved SQL/Form identity, SQL text, or protected result text.",
+  },
+  {
+    id: "composition_runtime_results_are_principal_and_space_isolated",
+    surface: "Browser and Server",
+    boundary:
+      "One live browser session switching between Space-owned exact Composition revisions and different principals reading one revision",
+    expectation:
+      "Identical variable, source, and component identifiers with identical typed inputs show only the current Space's authorized Metric and Table results; a principal without current Saved SQL Read sees no cached protected value.",
+  },
+  {
     id: "portable_surface_contract_parity",
     surface:
       "Rust API client, TypeScript protocol, Server OpenAPI, CLI core/remote",
@@ -208,6 +224,10 @@ const EXPECTED_RESERVED_SELECTORS: Record<string, string[]> = {
     "e2e/composition-recovery-authorization.test.ts#test:Composition raw recovery and ACL denial preserve caller-visible contracts",
     "e2e/composition-save-receipt.test.ts#test:Composition save reconciles a lost response without duplicate publication",
     "docs/architecture/testing/composition-acceptance.md#file",
+  ],
+  B7: [
+    "e2e/composition-source-acl-isolation.test.ts#test:Viewer Metric clears after Saved SQL Read is revoked",
+    "e2e/composition-source-acl-isolation.test.ts#test:Space switching shows only the selected Metric result",
   ],
 };
 
@@ -364,7 +384,7 @@ Deno.test(
     );
     assertEquals(
       plan.milestones.map(({ id }) => id),
-      ["B0", "B1", "B2", "B3", "B4", "B5", "B6"],
+      ["B0", "B1", "B2", "B3", "B4", "B5", "B6", "B7"],
     );
 
     for (const milestone of plan.milestones) {
