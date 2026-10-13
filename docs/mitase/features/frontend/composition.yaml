@@ -401,8 +401,41 @@ features:
                 runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Composition Studio builds a reusable tool from existing knowledge" } }
               - kind: verifies
                 criterion: REQ-COMP-007#criterion.code-free-studio-authoring
-                covers: [FEAT-COMP-008#binding.studio-typed-variable-defaults/target.variable-default-editor]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Composition Studio builds a reusable tool from existing knowledge" } }
+                covers:
+                  - FEAT-COMP-008#binding.studio-typed-variable-defaults/target.variable-default-editor
+                  - FEAT-COMP-008#binding.browser-typed-variable-journey-evidence/target.studio-text-transient-save-reopen
+                runner:
+                  runner: e2e-playwright
+                  arguments:
+                    file: e2e/composition-studio-journey.test.ts
+                    test: "Composition Studio builds a reusable tool from existing knowledge"
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.direct-text-binding
+                covers:
+                  - FEAT-COMP-008#binding.browser-typed-variable-journey-evidence/target.studio-text-transient-save-reopen
+                runner:
+                  runner: e2e-playwright
+                  arguments:
+                    file: e2e/composition-studio-journey.test.ts
+                    test: "Composition Studio builds a reusable tool from existing knowledge"
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.direct-text-reactivity
+                covers:
+                  - FEAT-COMP-008#binding.browser-typed-variable-journey-evidence/target.studio-text-transient-save-reopen
+                runner:
+                  runner: e2e-playwright
+                  arguments:
+                    file: e2e/composition-studio-journey.test.ts
+                    test: "Composition Studio builds a reusable tool from existing knowledge"
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.runtime-values-are-transient
+                covers:
+                  - FEAT-COMP-008#binding.browser-typed-variable-journey-evidence/target.studio-text-transient-save-reopen
+                runner:
+                  runner: e2e-playwright
+                  arguments:
+                    file: e2e/composition-studio-journey.test.ts
+                    test: "Composition Studio builds a reusable tool from existing knowledge"
           - id: metric-multiple-row-recovery
             adapter: typescript
             path: e2e/composition-metric-journey.test.ts

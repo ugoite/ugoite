@@ -258,7 +258,10 @@ Each record describes one past run only; records do not assert current plan
 status and are not release verification. The archive holds the Browser golden
 save/reopen/paged-results journey (save retry after commit, exact-revision
 reopen from Home, parameterized paged results with model connection
-disabled), the metric reopen journey (exact-revision metric scalar display
+disabled), the Studio reactive-variable journey (Saved SQL variable bindings
+on the exact saved revision, direct variable-backed Text updates without a new
+SQL request, and default restoration without another Composition revision),
+the metric reopen journey (exact-revision metric scalar display
 and the stable multiple-rows diagnostic with no Browser aggregation), the
 stale-response journey (a late parameter-A response changes neither rows,
 metric, error, loading, finalization, nor pagination), the raw recovery and
