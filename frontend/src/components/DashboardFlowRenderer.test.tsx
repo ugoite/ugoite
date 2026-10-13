@@ -185,7 +185,9 @@ describe("DashboardFlowRenderer", () => {
     expect(input).toHaveValue("2026-10-01");
     expect(input).not.toHaveAttribute("readonly");
     fireEvent.input(input, { target: { value: "2026-11-01" } });
-    expect(onParameterChange).toHaveBeenCalledWith("month", "2026-11-01");
+    await waitFor(() => {
+      expect(onParameterChange).toHaveBeenCalledWith("month", "2026-11-01");
+    });
     expect(screen.queryByLabelText("month")).toBeNull();
     // Unplaced optional parameters render no in-flow control.
     expect(screen.queryByLabelText("Region")).toBeNull();
@@ -271,7 +273,7 @@ describe("DashboardFlowRenderer", () => {
     await waitFor(() => expect(query).not.toHaveBeenCalled());
   });
 
-  it("binds parameter changes to transient work state", () => {
+  it("binds parameter changes to transient work state", async () => {
     const onParameterChange = vi.fn();
     renderFlow({
       onParameterChange,
@@ -309,7 +311,9 @@ describe("DashboardFlowRenderer", () => {
     expect(input).not.toHaveAttribute("readonly");
     expect(input).toHaveAttribute("aria-required", "true");
     fireEvent.input(input, { target: { value: "true" } });
-    expect(onParameterChange).toHaveBeenCalledWith("include_archived", true);
+    await waitFor(() => {
+      expect(onParameterChange).toHaveBeenCalledWith("include_archived", true);
+    });
   });
 
   it("delegates flow metrics and tables to source-native presenters", async () => {
