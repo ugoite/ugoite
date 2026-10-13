@@ -806,6 +806,15 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.studio-variable-identity-presentation
+          - id: canvas-unlabeled-input-name
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector:
+              kind: test
+              name: uses localized ordinals for unlabeled placed Input canvas names
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.studio-variable-identity-presentation
           - id: variable-creation-hides-generated-id
             adapter: typescript
             path: frontend/src/components/CompositionVariableList.test.tsx
