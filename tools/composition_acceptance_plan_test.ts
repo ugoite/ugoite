@@ -173,6 +173,14 @@ const EXPECTED_RECOVERY_CASES = [
       "Identical variable, source, and component identifiers with identical typed inputs show only the current Space's authorized Metric and Table results.",
   },
   {
+    id: "principal_change_clears_browser_outputs",
+    surface: "Browser and Server",
+    boundary:
+      "One live BrowserContext switching from the Space owner to a viewer without Saved SQL Read and reopening the same exact Composition revision",
+    expectation:
+      "After the owner sees protected Metric and Table values, signing out clears those values from the visible page. The viewer can still read the Composition but receives source_unavailable for its Saved SQL Source; the same Metric and Table results and protected values never reappear.",
+  },
+  {
     id: "portable_surface_contract_parity",
     surface:
       "Rust API client, TypeScript protocol, Server OpenAPI, CLI core/remote",
@@ -242,6 +250,7 @@ const EXPECTED_RESERVED_SELECTORS: Record<string, string[]> = {
   B7: [
     "e2e/composition-source-acl-isolation.test.ts#test:Viewer Metric and Table clear after Form or Saved SQL Read is revoked",
     "e2e/composition-source-acl-isolation.test.ts#test:Space switching shows only the selected Metric result",
+    "e2e/composition-source-acl-isolation.test.ts#test:Switching principal in one BrowserContext hides the prior Metric and Table results",
   ],
 };
 
