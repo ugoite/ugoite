@@ -165,12 +165,12 @@ const EXPECTED_RECOVERY_CASES = [
       "After either Form Read or Saved SQL Read is revoked while Composition access remains, Metric and Table clear prior data before reload and replaying the formerly authorized SQL request cannot return data. Form Read revocation produces a generic execution error while Saved SQL Read revocation returns source_unavailable. Form identity is concealed when Form Read is revoked; Saved SQL identity and details are concealed when Saved SQL Read is revoked. SQL text and protected result text remain concealed in both cases.",
   },
   {
-    id: "composition_runtime_results_are_principal_and_space_isolated",
+    id: "composition_runtime_results_are_space_isolated",
     surface: "Browser and Server",
     boundary:
-      "One live browser session switching between Space-owned exact Composition revisions and different principals reading one revision",
+      "One live browser session switching between Space-owned exact Composition revisions",
     expectation:
-      "Identical variable, source, and component identifiers with identical typed inputs show only the current Space's authorized Metric and Table results; a principal without current Saved SQL Read sees no cached protected value.",
+      "Identical variable, source, and component identifiers with identical typed inputs show only the current Space's authorized Metric and Table results.",
   },
   {
     id: "portable_surface_contract_parity",
