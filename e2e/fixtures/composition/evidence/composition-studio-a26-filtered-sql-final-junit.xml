@@ -1,0 +1,18 @@
+<testsuites id="" name="" tests="5" failures="0" skipped="0" errors="0" time="85.904618">
+<testsuite name="composition-metric-journey.test.ts" timestamp="2026-10-13T16:07:02.063Z" hostname="" tests="1" failures="0" skipped="0" time="5.338" errors="0">
+<testcase name="Composition Metric Journey › Browser reopens a Saved SQL metric at its exact revision and reports multiple matching rows" classname="composition-metric-journey.test.ts" time="5.338">
+</testcase>
+</testsuite>
+<testsuite name="composition-revision-stale-response.test.ts" timestamp="2026-10-13T16:07:02.063Z" hostname="" tests="1" failures="0" skipped="0" time="5.284" errors="0">
+<testcase name="Composition revision stale response › discard a delayed metric response after navigating to another exact revision" classname="composition-revision-stale-response.test.ts" time="5.284">
+</testcase>
+</testsuite>
+<testsuite name="composition-studio-journey.test.ts" timestamp="2026-10-13T16:07:02.063Z" hostname="" tests="3" failures="0" skipped="0" time="64.692" errors="0">
+<testcase name="Composition Studio Journey › Composition Studio builds a reusable tool from existing knowledge" classname="composition-studio-journey.test.ts" time="33.192">
+</testcase>
+<testcase name="Composition Studio Journey › Composition Studio saves and reopens a filtered SQL metric" classname="composition-studio-journey.test.ts" time="27.39">
+</testcase>
+<testcase name="Composition Studio Journey › Composition Studio inspector stays usable at a 390px viewport" classname="composition-studio-journey.test.ts" time="4.11">
+</testcase>
+</testsuite>
+</testsuites>

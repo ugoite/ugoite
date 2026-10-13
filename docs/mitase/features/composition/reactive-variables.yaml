@@ -827,7 +827,7 @@ features:
       - id: browser-typed-variable-journey-evidence
         role: evidence
         facet: frontend-tests
-        responsibility: Record Browser evidence for explicit typed Saved SQL bindings, ordinary labeled Inputs, exact-revision reopen, Studio direct variable-backed Text with transient values, and suppression of late variable-change and revision-navigation responses.
+        responsibility: Record Browser evidence for explicit typed Saved SQL bindings, ordinary labeled Inputs, exact-revision reopen, Studio direct variable-backed Text with transient values, filtered SQL Metric updates, and suppression of late variable-change and revision-navigation responses.
         targets:
           - id: typed-variable-authoring-and-reopen
             adapter: typescript
@@ -872,6 +872,15 @@ features:
                 anchor: REQ-COMP-007#criterion.runtime-values-are-transient
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.code-free-studio-authoring
+          - id: studio-filtered-sql-metric-reopen
+            adapter: typescript
+            path: e2e/composition-studio-journey.test.ts
+            selector:
+              kind: test
+              name: Composition Studio saves and reopens a filtered SQL metric
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.studio-filtered-sql-metric-journey
           - id: revision-navigation-discards-old-metric-response
             adapter: typescript
             path: e2e/composition-revision-stale-response.test.ts

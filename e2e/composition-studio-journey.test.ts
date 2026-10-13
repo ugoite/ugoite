@@ -22,6 +22,15 @@ type StudioSeedState = {
   purposes: string[];
 };
 
+type ReactiveMetricSeed = {
+  spaceId: string;
+  formName: string;
+  savedSqlId: string;
+  savedSqlRevisionId: string;
+  savedSqlName: string;
+  toolName: string;
+};
+
 type StudioHistoryPage = {
   revisions: Array<{ revision: { revision_id: string } }>;
   total: number;
@@ -190,6 +199,87 @@ async function seedStudioKnowledge(
   };
 }
 
+async function seedReactiveMetricKnowledge(
+  request: APIRequestContext,
+): Promise<ReactiveMetricSeed> {
+  const spaceId = await createSpace(request);
+  const suffix = crypto.randomUUID().slice(0, 8);
+  const formName = `FilteredExpense${suffix}`;
+  const savedSqlName = `Filtered expense totals ${suffix}`;
+  const toolName = `Filtered expense dashboard ${suffix}`;
+
+  const formResponse = await request.post(
+    getBackendUrl(`/spaces/${spaceId}/forms`),
+    {
+      data: {
+        name: formName,
+        version: 1,
+        template: `# ${formName}\n\n## Amount\n`,
+        fields: { Amount: { type: "double", required: true } },
+      },
+    },
+  );
+  expect([200, 201]).toContain(formResponse.status());
+
+  const formsResponse = await request.get(
+    getBackendUrl(`/spaces/${spaceId}/forms`),
+  );
+  expect(formsResponse.ok()).toBe(true);
+  const forms = await formsResponse.json() as Array<{
+    name?: string;
+    sql_relation?: string;
+    fields?: Record<string, { sql_column?: string }>;
+  }>;
+  const form = forms.find((candidate) => candidate.name === formName);
+  expect(form?.sql_relation).toBeTruthy();
+  const amountColumn = form?.fields?.Amount?.sql_column;
+  expect(amountColumn).toBeTruthy();
+
+  for (const amount of [10, 20, 30]) {
+    const entryResponse = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/entries`),
+      { data: { form: formName, fields: { Amount: amount } } },
+    );
+    expect(entryResponse.status()).toBe(201);
+  }
+
+  const amount = sqlIdentifier(amountColumn!);
+  const sqlResponse = await request.post(
+    getBackendUrl(`/spaces/${spaceId}/sql`),
+    {
+      data: {
+        name: savedSqlName,
+        kind: "user-query",
+        sql:
+          `SELECT COUNT(*) AS matching_count, SUM(${amount}) AS total_amount FROM ${
+            sqlIdentifier(form!.sql_relation!)
+          } WHERE ${amount} >= $minimum`,
+        variables: [{
+          type: "integer",
+          name: "minimum",
+          description: "Minimum expense amount included.",
+        }],
+      },
+    },
+  );
+  expect([200, 201]).toContain(sqlResponse.status());
+  const savedSql = await sqlResponse.json() as {
+    id?: string;
+    revision_id?: string;
+  };
+  expect(savedSql.id).toBeTruthy();
+  expect(savedSql.revision_id).toBeTruthy();
+
+  return {
+    spaceId,
+    formName,
+    savedSqlId: savedSql.id!,
+    savedSqlRevisionId: savedSql.revision_id!,
+    savedSqlName,
+    toolName,
+  };
+}
+
 async function expectHistoryTotal(
   request: APIRequestContext,
   spaceId: string,
@@ -297,6 +387,21 @@ async function addStudioStringVariable(
 ): Promise<void> {
   await page.getByLabel("New variable label", { exact: true }).fill(label);
   await page.getByLabel("Type", { exact: true }).selectOption("string");
+  await page.getByRole("button", { name: "Add variable", exact: true }).click();
+  const defaultInput = page.getByLabel(`Default for ${label}`, {
+    exact: true,
+  });
+  await expect(defaultInput).toBeVisible();
+  await defaultInput.fill(defaultValue);
+}
+
+async function addStudioIntegerVariable(
+  page: Page,
+  label: string,
+  defaultValue: string,
+): Promise<void> {
+  await page.getByLabel("New variable label", { exact: true }).fill(label);
+  await page.getByLabel("Type", { exact: true }).selectOption("integer");
   await page.getByRole("button", { name: "Add variable", exact: true }).click();
   const defaultInput = page.getByLabel(`Default for ${label}`, {
     exact: true,
@@ -884,6 +989,149 @@ test.describe("Composition Studio Journey", () => {
       await expect(
         page.getByText("Total spent", { exact: true }),
       ).toHaveCount(0);
+    } finally {
+      await journeyContext.close();
+    }
+  });
+
+  test("Composition Studio saves and reopens a filtered SQL metric", async ({ browser, context, request }) => {
+    test.setTimeout(120_000);
+    const seed = await seedReactiveMetricKnowledge(request);
+    const storageState = await context.storageState();
+    let compositionId = "";
+    let revisionId = "";
+
+    const buildContext = await openOwnerContext(browser, storageState);
+    try {
+      const page = await buildContext.newPage();
+      await page.goto(
+        getFrontendUrl(
+          `/spaces/${seed.spaceId}/sql/${seed.savedSqlId}/variables`,
+        ),
+        { waitUntil: "domcontentloaded" },
+      );
+      const minimumInput = page.getByRole("textbox", {
+        name: "minimum integer",
+        exact: true,
+      });
+      await expect(minimumInput).toBeVisible();
+      await minimumInput.fill("0");
+      await page.getByRole("button", { name: "Run", exact: true }).click();
+      await expect(page).toHaveURL(
+        new RegExp(`/spaces/${seed.spaceId}/sql/${seed.savedSqlId}/run$`),
+      );
+      const sqlResult = page.getByRole("table");
+      await expect(sqlResult.locator("tbody tr")).toHaveCount(1);
+      await expect(sqlResult).toContainText("3", { timeout: 30_000 });
+      await expect(sqlResult).toContainText("60", { timeout: 30_000 });
+
+      await page.getByRole("button", { name: "Save as tool" }).click();
+      await expect(page).toHaveURL(
+        new RegExp(`/spaces/${seed.spaceId}/compositions/new$`),
+      );
+      await page.getByLabel("Name", { exact: true }).fill(seed.toolName);
+      await page.getByRole("radio", { name: "Data", exact: true }).click();
+      const dataTabs = page.getByRole("tablist", { name: "Data" });
+      await dataTabs.getByRole("tab", { name: "Variables", exact: true })
+        .click();
+      await addStudioIntegerVariable(page, "Minimum amount", "0");
+
+      await dataTabs.getByRole("tab", { name: "Sources", exact: true })
+        .click();
+      await page.getByRole("button", { name: seed.savedSqlName, exact: true })
+        .click();
+      await bindSavedSqlVariable(page, "minimum", "Minimum amount");
+
+      await addStudioInput(page, "Minimum amount", "Minimum amount");
+      await addMetricDisplay(
+        page,
+        seed.savedSqlName,
+        "matching_count",
+        "Matching expenses",
+      );
+      await addMetricDisplay(
+        page,
+        seed.savedSqlName,
+        "total_amount",
+        "Total amount",
+      );
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(page).toHaveURL(
+        new RegExp(
+          `/spaces/${seed.spaceId}/compositions/[^/]+/[^/]+$`,
+        ),
+      );
+      const saved = revisionFromUrl(page.url());
+      compositionId = saved.compositionId;
+      revisionId = saved.revisionId;
+      await expectHistoryTotal(request, seed.spaceId, compositionId, 1);
+
+      const exactResponse = await request.get(
+        getBackendUrl(
+          `/spaces/${seed.spaceId}/compositions/${compositionId}/history/${revisionId}`,
+        ),
+      );
+      expect(exactResponse.ok()).toBe(true);
+      const exactRevision = await exactResponse.json() as StudioRawRevision;
+      expect(exactRevision.revision.revision_id).toBe(revisionId);
+      expect(String(exactRevision.fields["spec"])).toContain(
+        `revision_id: ${seed.savedSqlRevisionId}`,
+      );
+    } finally {
+      await buildContext.close();
+    }
+
+    const journeyContext = await openOwnerContext(browser, storageState);
+    try {
+      const page = await journeyContext.newPage();
+      let metricQueryCount = 0;
+      page.on("request", (request) => {
+        if (
+          new URL(request.url()).pathname.endsWith("/compositions/metric-query")
+        ) {
+          metricQueryCount += 1;
+        }
+      });
+
+      await openToolFromHome(
+        page,
+        seed.spaceId,
+        compositionId,
+        revisionId,
+        seed.toolName,
+      );
+      const matchingExpenses = page.locator("section.section").filter({
+        has: page.getByRole("heading", {
+          name: "Matching expenses",
+          exact: true,
+        }),
+      }).locator("output.compositionMetric");
+      const totalAmount = page.locator("section.section").filter({
+        has: page.getByRole("heading", { name: "Total amount", exact: true }),
+      }).locator("output.compositionMetric");
+
+      await expect(page.getByLabel("Minimum amount", { exact: true }))
+        .toHaveValue("0");
+      await expect(matchingExpenses).toHaveText("3", { timeout: 30_000 });
+      await expect(totalAmount).toHaveText("60", { timeout: 30_000 });
+      const initialQueryCount = metricQueryCount;
+      expect(initialQueryCount).toBeGreaterThan(0);
+
+      await page.getByLabel("Minimum amount", { exact: true }).fill("20");
+      await expect(matchingExpenses).toHaveText("2", { timeout: 30_000 });
+      await expect(totalAmount).toHaveText("50", { timeout: 30_000 });
+      await expect.poll(() => metricQueryCount).toBeGreaterThan(
+        initialQueryCount,
+      );
+
+      // Input state is transient: reload returns to the saved default and does
+      // not append a Composition revision.
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await expect(page.getByLabel("Minimum amount", { exact: true }))
+        .toHaveValue("0");
+      await expect(matchingExpenses).toHaveText("3", { timeout: 30_000 });
+      await expect(totalAmount).toHaveText("60", { timeout: 30_000 });
+      await expectHistoryTotal(request, seed.spaceId, compositionId, 1);
     } finally {
       await journeyContext.close();
     }
