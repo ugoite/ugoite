@@ -351,6 +351,8 @@ export function createCompositionPreviewHandle(
     previewController?.abort();
     previewController = undefined;
     abortSources();
+    // Do not let an invalidated draft's defaults shadow the current draft.
+    setVariables({});
     setState({ previewing: false, sources: {} });
   };
 

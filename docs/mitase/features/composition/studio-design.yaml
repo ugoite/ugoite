@@ -438,6 +438,15 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-007#criterion.stale-result-and-state-safety
+    - id: browser-studio-split-preview-default-sync
+      adapter: typescript
+      path: frontend/src/components/CompositionStudioSync.test.tsx
+      selector:
+        kind: test
+        name: shows changed variable defaults in Split while the replacement preview is debounced
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-007#criterion.studio-preview-default-synchronization
     - id: browser-studio-split-narrow
       adapter: typescript
       path: frontend/src/components/CompositionStudioSync.test.tsx

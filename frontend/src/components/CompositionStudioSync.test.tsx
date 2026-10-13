@@ -22,6 +22,7 @@ import {
   type CompositionDraft,
   createEmptyDraft,
   setMetricSource,
+  setTextVariable,
 } from "~/lib/composition-draft";
 import { setLocale } from "~/lib/i18n";
 
@@ -153,6 +154,26 @@ const seedDraft = (): CompositionDraft => {
   const placed = addInputComponent(draft, "month");
   if (!placed.ok) throw new Error("expected variable placement");
   return placed.draft;
+};
+
+const seedDraftWithVariablePreview = (): CompositionDraft => {
+  const added = addVariable(seedDraft(), {
+    id: "heading",
+    label: "Heading",
+    type: "string",
+    required: true,
+    default: "Old heading",
+  });
+  if (!added.ok) throw new Error("expected heading variable");
+
+  const text = addTextDisplay(added.draft, { style: "heading" });
+  if (!text.ok || !text.draftId) throw new Error("expected text block");
+  const boundText = setTextVariable(text.draft, text.draftId, "heading");
+  if (!boundText.ok) throw new Error("expected variable-bound text");
+
+  const input = addInputComponent(boundText.draft, "heading");
+  if (!input.ok) throw new Error("expected heading input");
+  return input.draft;
 };
 
 const sourceOnlyDraft = (): CompositionDraft =>
@@ -423,6 +444,31 @@ describe("CompositionStudioSync", () => {
     expect(
       await screen.findByText("128400", { selector: "output" }),
     ).toBeInTheDocument();
+  });
+
+  it("shows changed variable defaults in Split while the replacement preview is debounced", async () => {
+    renderStudio(seedDraftWithVariablePreview());
+    await waitFor(() => expect(previewMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(modeRadios().data);
+    fireEvent.click(screen.getByRole("tab", { name: "Variables" }));
+    expect(screen.getByLabelText("Default for Heading")).toHaveValue(
+      "Old heading",
+    );
+
+    // Keep the replacement preview inside the debounce window. Its previous
+    // variable snapshot must not override the current draft default in the
+    // shared Split canvas after the author returns to Design.
+    vi.useFakeTimers();
+    fireEvent.input(screen.getByLabelText("Default for Heading"), {
+      target: { value: "New heading" },
+    });
+    fireEvent.click(modeRadios().split);
+
+    expect(screen.getByText("New heading")).toBeInTheDocument();
+    expect(screen.queryByText("Old heading")).toBeNull();
+    expect(screen.getByLabelText("Heading")).toHaveValue("New heading");
+    expect(previewMock).toHaveBeenCalledTimes(1);
   });
 
   it("rejects a successful metric preview with a different draft fingerprint", async () => {
