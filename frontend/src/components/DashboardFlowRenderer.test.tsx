@@ -8,8 +8,8 @@ import { DashboardFlowRenderer } from "./DashboardFlowRenderer";
 import { compositionApi } from "~/lib/composition-api";
 import { setLocale } from "~/lib/i18n";
 import type {
-  CompositionVariableDefinition,
   CompositionResolvePlan,
+  CompositionVariableDefinition,
 } from "~/lib/composition-api";
 
 const stylesheet = () => readFileSync(join(__dirname, "..", "app.css"), "utf8");
@@ -207,7 +207,7 @@ describe("DashboardFlowRenderer", () => {
           composition_id: "tool-1",
           revision_id: "revision-1",
         },
-        parameters: { month: "2026-10-01" },
+        variables: { month: "2026-10-01" },
       }),
       expect.any(AbortSignal),
     );
@@ -400,7 +400,7 @@ describe("DashboardFlowRenderer", () => {
           revision_id: "revision-1",
         },
         component_id: "total",
-        parameters: { month: "2026-10-01" },
+        variables: { month: "2026-10-01" },
       },
       expect.any(AbortSignal),
     );
