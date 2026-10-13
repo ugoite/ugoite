@@ -211,7 +211,6 @@ export function createCompositionQueryHandle(
     abortSources();
   };
 
-  const definitions = () => variableDefinitions;
   const inputStates = () => variableInputs();
   const variables = () => variableSnapshot(variableInputs());
   const blockedVariables = () => {
@@ -522,7 +521,6 @@ export function createCompositionQueryHandle(
     const current = state();
     if (!current.identity || !current.composition) return;
     const changed = new Set(pendingSourceIds);
-    const force = forceResolve;
     pendingSourceIds.clear();
     forceResolve = false;
     const requestResolutionGeneration = ++resolutionGeneration;
