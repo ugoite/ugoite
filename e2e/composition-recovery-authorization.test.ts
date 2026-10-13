@@ -152,13 +152,13 @@ test.describe("Composition Recovery Authorization", () => {
       getBackendUrl(
         `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/resolve`,
       ),
-      { data: { revision_id: seed.revisionId, parameters: {} } },
+      { data: { revision_id: seed.revisionId, variables: {} } },
     );
     expect(resolveResponse.ok()).toBe(true);
     const resolved = await resolveResponse.json();
     expect(resolved).toEqual({
       ok: false,
-      parameter_definitions: [],
+      variable_definitions: [],
       diagnostics: [{ code: "source_unavailable" }],
     });
     expect(JSON.stringify(resolved)).not.toContain("removed_form_rows");

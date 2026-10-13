@@ -546,7 +546,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
         ...defaultParameterValues(snapshot),
         ...previewHandle.parameters(),
       };
-      const parameters = Object.fromEntries(
+      const variables = Object.fromEntries(
         metric.draft.parameters.flatMap((parameter) => {
           const value = availableValues[parameter.id];
           return value === undefined ? [] : [[parameter.id, value]];
@@ -555,7 +555,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
       const response = await compositionApi.queryMetric(spaceId(), {
         target: { kind: "draft", yaml: canonical.canonical_yaml },
         component_id: metric.draftId,
-        parameters,
+        variables,
       });
       if (
         !response.ok || !response.result ||
