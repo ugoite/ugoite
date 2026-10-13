@@ -836,7 +836,7 @@ features:
       - id: browser-typed-variable-journey-evidence
         role: evidence
         facet: frontend-tests
-        responsibility: Record Browser evidence for explicit typed Saved SQL bindings, ordinary labeled Inputs, exact-revision reopen, Studio direct variable-backed Text with transient values, filtered SQL Metric updates, and suppression of late variable-change and revision-navigation responses.
+        responsibility: Record Browser evidence for explicit typed Saved SQL bindings, ordinary labeled Inputs, exact-revision reopen, Studio direct variable-backed Text with transient values, filtered SQL Metric updates, suppression of late variable-change and revision-navigation responses, SQL aggregate NULL and empty-set semantics, and distinct scalar zero-row, NULL, and numeric-zero states.
         targets:
           - id: typed-variable-authoring-and-reopen
             adapter: typescript
@@ -896,6 +896,24 @@ features:
             selector:
               kind: test
               name: discard a delayed metric response after navigating to another exact revision
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.stale-result-and-state-safety
+          - id: sql-aggregates-preserve-null-and-empty-semantics
+            adapter: typescript
+            path: e2e/composition-scalar-state-journey.test.ts
+            selector:
+              kind: test
+              name: sql_aggregates_preserve_null_and_empty_semantics
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.stale-result-and-state-safety
+          - id: scalar-result-distinguishes-zero-rows-null-and-zero
+            adapter: typescript
+            path: e2e/composition-scalar-state-journey.test.ts
+            selector:
+              kind: test
+              name: scalar_result_distinguishes_zero_rows_null_and_zero
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.stale-result-and-state-safety
