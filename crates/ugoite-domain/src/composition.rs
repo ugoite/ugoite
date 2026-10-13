@@ -1376,6 +1376,10 @@ mod tests {
             Parsed::Valid(serde_json::json!(42))
         );
         assert_eq!(
+            Type::Integer.parse_input("+0000000000000001"),
+            Parsed::Valid(serde_json::json!(1))
+        );
+        assert_eq!(
             Type::Integer.parse_input("-9007199254740991"),
             Parsed::Valid(serde_json::json!(-9_007_199_254_740_991_i64))
         );
@@ -1391,6 +1395,7 @@ mod tests {
             "1.0",
             "1e2",
             "9007199254740992",
+            "+00000000000000001",
             "123456789012345678",
         ] {
             assert_eq!(Type::Integer.parse_input(invalid), Parsed::Invalid);
