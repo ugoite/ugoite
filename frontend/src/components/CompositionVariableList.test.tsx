@@ -13,6 +13,14 @@ import { CompositionVariableList } from "./CompositionVariableList";
 import type { DraftVariable } from "~/lib/composition-draft";
 import * as variableProtocol from "~/lib/ugoite-client/protocol";
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((complete) => {
+    resolve = complete;
+  });
+  return { promise, resolve };
+}
+
 describe("composition variable list", () => {
   beforeEach(() => {
     setLocale("en");
@@ -319,5 +327,169 @@ describe("composition variable list", () => {
 
     expect(onUpdate).toHaveBeenCalledTimes(1);
     expect(screen.queryByText("Variable 1")).not.toBeInTheDocument();
+  });
+
+  it("ignores a pending default parse after removing and re-adding the same ID", async () => {
+    const integer: DraftVariable = {
+      id: "variable_1",
+      type: "integer",
+      required: false,
+    };
+    const pending = deferred<{ status: "valid"; value: number }>();
+    vi.spyOn(variableProtocol, "parseCompositionVariableInput")
+      .mockReturnValue(pending.promise as never);
+
+    const [variables, setVariables] = createSignal<DraftVariable[]>([integer]);
+    const onUpdate = vi.fn((updated: DraftVariable) => {
+      setVariables((current) =>
+        current.map((item) => item.id === updated.id ? updated : item)
+      );
+    });
+    const onAdd = vi.fn((variable: DraftVariable) => {
+      setVariables((current) => [...current, variable]);
+    });
+    const onRemove = vi.fn((variableId: string) => {
+      setVariables((current) =>
+        current.filter((item) => item.id !== variableId)
+      );
+      return undefined;
+    });
+
+    render(() => (
+      <CompositionVariableList
+        variables={variables()}
+        headingId="params"
+        onAdd={onAdd}
+        onUpdate={onUpdate}
+        onRemove={onRemove}
+      />
+    ));
+
+    fireEvent.change(screen.getAllByLabelText("Type")[1], {
+      target: { value: "integer" },
+    });
+    fireEvent.input(screen.getByLabelText("Default for Variable 1"), {
+      target: { value: "42" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Remove Variable 1" }));
+    expect(variables()).toEqual([]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
+    expect(onAdd).toHaveBeenCalledWith({
+      id: "variable_1",
+      type: "integer",
+      required: true,
+    });
+    expect(variables()).toEqual([{
+      id: "variable_1",
+      type: "integer",
+      required: true,
+    }]);
+
+    pending.resolve({ status: "valid", value: 42 });
+    await pending.promise;
+
+    expect(variables()).toEqual([{
+      id: "variable_1",
+      type: "integer",
+      required: true,
+    }]);
+    expect(onUpdate).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText("Default for Variable 1")).toHaveValue("");
+  });
+
+  it("ignores a pending default parse after the variable type changes", async () => {
+    const integer: DraftVariable = {
+      id: "limit",
+      type: "integer",
+      required: false,
+    };
+    const pending = deferred<{ status: "valid"; value: number }>();
+    vi.spyOn(variableProtocol, "parseCompositionVariableInput")
+      .mockReturnValue(pending.promise as never);
+
+    const [variables, setVariables] = createSignal<DraftVariable[]>([integer]);
+    const onUpdate = vi.fn((updated: DraftVariable) => {
+      setVariables((current) =>
+        current.map((item) => item.id === updated.id ? updated : item)
+      );
+    });
+
+    render(() => (
+      <CompositionVariableList
+        variables={variables()}
+        headingId="params"
+        onAdd={() => {}}
+        onUpdate={onUpdate}
+        onRemove={() => undefined}
+      />
+    ));
+
+    fireEvent.input(screen.getByLabelText("Default for Variable 1"), {
+      target: { value: "42" },
+    });
+    fireEvent.change(screen.getByLabelText("Type for Variable 1"), {
+      target: { value: "float" },
+    });
+    expect(variables()).toEqual([{
+      ...integer,
+      type: "float",
+      default: undefined,
+    }]);
+
+    pending.resolve({ status: "valid", value: 42 });
+    await pending.promise;
+
+    expect(variables()).toEqual([{
+      ...integer,
+      type: "float",
+      default: undefined,
+    }]);
+    expect(onUpdate).toHaveBeenCalledTimes(2);
+    expect(screen.getByLabelText("Default for Variable 1")).toHaveValue("");
+  });
+
+  it("keeps a pending default parse valid when removal is blocked", async () => {
+    const integer: DraftVariable = {
+      id: "limit",
+      type: "integer",
+      required: false,
+    };
+    const pending = deferred<{ status: "valid"; value: number }>();
+    vi.spyOn(variableProtocol, "parseCompositionVariableInput")
+      .mockReturnValue(pending.promise as never);
+
+    const [variables, setVariables] = createSignal<DraftVariable[]>([integer]);
+    const onUpdate = vi.fn((updated: DraftVariable) => {
+      setVariables((current) =>
+        current.map((item) => item.id === updated.id ? updated : item)
+      );
+    });
+    const onRemove = vi.fn(() => "This variable is used by a data source.");
+
+    render(() => (
+      <CompositionVariableList
+        variables={variables()}
+        headingId="params"
+        onAdd={() => {}}
+        onUpdate={onUpdate}
+        onRemove={onRemove}
+      />
+    ));
+
+    fireEvent.input(screen.getByLabelText("Default for Variable 1"), {
+      target: { value: "42" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Remove Variable 1" }));
+    expect(screen.getByText("This variable is used by a data source."))
+      .toBeInTheDocument();
+    expect(variables()).toEqual([{ ...integer, default: "42" }]);
+
+    pending.resolve({ status: "valid", value: 42 });
+    await pending.promise;
+
+    expect(variables()).toEqual([{ ...integer, default: 42 }]);
+    expect(onUpdate).toHaveBeenCalledTimes(2);
+    expect(screen.getByLabelText("Default for Variable 1")).toHaveValue("42");
   });
 });
