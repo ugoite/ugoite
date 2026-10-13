@@ -140,6 +140,94 @@ describe("CompositionRenderer", () => {
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
+  it("keeps an unaffected metric ready and waits for changed inputs while another variable blocks resolution", async () => {
+    const [variables, setVariables] = createSignal({
+      month: "2026-03",
+      status: "active",
+    });
+    const [invalidVariables, setInvalidVariables] = createSignal<string[]>([]);
+    const query = vi.spyOn(compositionApi, "queryMetric").mockImplementation(
+      async (_spaceId, request) => ({
+        ok: true,
+        result: {
+          component_id: "total",
+          result_type: "integer",
+          value: request.variables.month === "2026-03" ? "42" : "84",
+        },
+      }),
+    );
+    const metricPlan = {
+      ...plan,
+      component_bindings: [plan.component_bindings[0]],
+    };
+    const dependencies = {
+      variable_consumers: {
+        month: { source_ids: ["summary"] },
+        status: { source_ids: ["other"] },
+      },
+    };
+    render(() => (
+      <CompositionRenderer
+        plan={metricPlan}
+        sources={{}}
+        metricQueryContext={{
+          spaceId: "space-1",
+          target: {
+            kind: "saved_revision",
+            composition_id: "tool-1",
+            revision_id: "revision-1",
+          },
+          variables: variables(),
+          invalidVariables: invalidVariables(),
+          dependencies,
+        }}
+        onNext={() => {}}
+        onPrevious={() => {}}
+        onRetry={() => {}}
+      />
+    ));
+
+    expect(await screen.findByText("42", { selector: "output" }))
+      .toBeInTheDocument();
+    setInvalidVariables(["status"]);
+    expect(screen.getByText("42", { selector: "output" })).toBeInTheDocument();
+    expect(query).toHaveBeenCalledOnce();
+
+    setVariables({ month: "2026-04", status: "active" });
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Waiting for input…",
+    );
+    expect(screen.queryByText("42", { selector: "output" }))
+      .not.toBeInTheDocument();
+    expect(query).toHaveBeenCalledOnce();
+
+    setInvalidVariables([]);
+    expect(await screen.findByText("84", { selector: "output" }))
+      .toBeInTheDocument();
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  it("renders an accessible waiting state for a blocked Saved SQL table", () => {
+    setLocale("ja");
+    const tablePlan = {
+      ...plan,
+      component_bindings: [plan.component_bindings[1]],
+    };
+    render(() => (
+      <CompositionRenderer
+        plan={tablePlan}
+        sources={{ summary: { status: "waiting", cursorStack: [undefined] } }}
+        onNext={() => {}}
+        onPrevious={() => {}}
+        onRetry={() => {}}
+      />
+    ));
+
+    expect(screen.getByRole("status")).toHaveTextContent("入力待ち…");
+    expect(screen.queryByText("結果を読み込み中…"))
+      .not.toBeInTheDocument();
+  });
+
   it("invalidates a metric when an unset dependency becomes invalid without changing its null value", async () => {
     const [invalidVariables, setInvalidVariables] = createSignal<string[]>([]);
     let resolveQuery!: (response: CompositionMetricQueryResponse) => void;

@@ -344,6 +344,11 @@ export function CompositionSavedSqlTable(props: {
             {t("composition.variableInvalid")}
           </p>
         </Show>
+        <Show when={status() === "waiting"}>
+          <p class="ui-muted" role="status" aria-live="polite">
+            {t("composition.waitingForInputs")}
+          </p>
+        </Show>
         <Show when={status() === "ready" && rows().length === 0 && !failed()}>
           <p class="ui-muted">{t("composition.queryEmpty")}</p>
         </Show>
@@ -392,12 +397,14 @@ export function CompositionMetric(props: {
   const [serverFailed, setServerFailed] = createSignal(false);
   const [serverInvalid, setServerInvalid] = createSignal(false);
   const [serverVariableInvalid, setServerVariableInvalid] = createSignal(false);
+  const [serverWaiting, setServerWaiting] = createSignal(false);
   const [serverRetry, setServerRetry] = createSignal(0);
   let serverGeneration = 0;
   let serverController: AbortController | undefined;
   let serverTimer: ReturnType<typeof setTimeout> | undefined;
   let lastRequestSignature: string | undefined;
   let lastRequestRetry: number | undefined;
+  let lastSuccessfulSourceSignature: string | undefined;
 
   createEffect(() => {
     const context = props.metricQueryContext;
@@ -432,6 +439,29 @@ export function CompositionMetric(props: {
     );
     const invalidVariable = !!context && (!dependencyIndexComplete ||
       invalidSourceVariables.length > 0);
+    const sourceValueSignature = context
+      ? JSON.stringify([
+        context.spaceId,
+        context.target.kind === "saved_revision"
+          ? [
+            context.target.kind,
+            context.target.composition_id,
+            context.target.revision_id,
+          ]
+          : [
+            context.target.kind,
+            context.target.yaml,
+            context.draftFingerprint,
+          ],
+        props.binding.source_id,
+        [...sourceVariables].sort(),
+        Object.entries(variables)
+          .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0),
+      ])
+      : "no-context";
+    const globallyBlockedVariables = [
+      ...(context?.invalidVariables ?? []),
+    ].sort();
     const requestSignature = context
       ? JSON.stringify([
         context.spaceId,
@@ -455,6 +485,7 @@ export function CompositionMetric(props: {
           ]),
         dependencyIndexComplete,
         invalidSourceVariables,
+        globallyBlockedVariables,
       ])
       : "no-context";
     if (
@@ -468,14 +499,29 @@ export function CompositionMetric(props: {
     serverTimer = undefined;
     serverController?.abort();
     serverController = undefined;
-    setServerResult(undefined);
     setServerFailed(false);
     setServerInvalid(false);
-    setServerVariableInvalid(invalidVariable);
     if (invalidVariable) {
+      setServerResult(undefined);
+      setServerWaiting(false);
+      setServerVariableInvalid(true);
       setServerLoading(false);
       return;
     }
+    setServerVariableInvalid(false);
+    const blockedByAnotherVariable = globallyBlockedVariables.length > 0;
+    if (blockedByAnotherVariable) {
+      const currentResult = serverResult();
+      const unchangedSuccessfulValue =
+        sourceValueSignature === lastSuccessfulSourceSignature &&
+        currentResult?.ok === true && currentResult.result !== undefined;
+      if (!unchangedSuccessfulValue) setServerResult(undefined);
+      setServerWaiting(!unchangedSuccessfulValue);
+      setServerLoading(false);
+      return;
+    }
+    setServerWaiting(false);
+    setServerResult(undefined);
     if (!context) {
       setServerLoading(false);
       setServerFailed(true);
@@ -529,6 +575,7 @@ export function CompositionMetric(props: {
               setServerInvalid(true);
               return;
             }
+            lastSuccessfulSourceSignature = sourceValueSignature;
           }
           setServerResult(result);
         },
@@ -578,6 +625,11 @@ export function CompositionMetric(props: {
       </Show>
       <Show when={serverLoading()}>
         <LocalBusyIndicator label={t("composition.queryLoading")} />
+      </Show>
+      <Show when={!serverLoading() && serverWaiting()}>
+        <p class="ui-muted" role="status" aria-live="polite">
+          {t("composition.waitingForInputs")}
+        </p>
       </Show>
       <Show when={!serverLoading() && serverFailed()}>
         <p class="ui-text-danger" role="alert">

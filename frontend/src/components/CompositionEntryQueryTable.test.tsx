@@ -1,7 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
-import { entryQueryDisplayColumns } from "./CompositionEntryQueryTable";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { render, screen } from "@solidjs/testing-library";
+import {
+  CompositionEntryQueryTable,
+  entryQueryDisplayColumns,
+} from "./CompositionEntryQueryTable";
 import type { CompositionResolvedSource } from "~/lib/composition-api";
 import type { EntryQueryResult } from "~/lib/entry-query";
+import { setLocale } from "~/lib/i18n";
 
 const source = (
   projection: Extract<
@@ -258,5 +263,31 @@ describe("entryQueryDisplayColumns", () => {
     expect(visibleText.every((text) => !text.includes(row.form_id))).toBe(
       true,
     );
+  });
+});
+
+describe("CompositionEntryQueryTable", () => {
+  afterEach(() => setLocale("en"));
+
+  it("shows a concise accessible waiting state while resolution is blocked", () => {
+    setLocale("ja");
+    render(() => (
+      <CompositionEntryQueryTable
+        binding={{
+          component_id: "entries_table",
+          kind: "table",
+          source_id: "entries",
+        }}
+        source={source({ kind: "preview" })}
+        sourceState={{ status: "waiting", cursorStack: [undefined] }}
+        ownsSourceStatus
+        onNext={() => {}}
+        onPrevious={() => {}}
+        onRetry={() => {}}
+      />
+    ));
+
+    expect(screen.getByRole("status")).toHaveTextContent("入力待ち…");
+    expect(screen.queryByText("結果を読み込み中…")).not.toBeInTheDocument();
   });
 });
