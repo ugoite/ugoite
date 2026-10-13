@@ -2,7 +2,7 @@ import { Show } from "solid-js";
 import { t } from "~/lib/i18n";
 import type { CompositionVariableDefinition } from "~/lib/composition-api";
 
-export const parameterDisplayValue = (
+export const variableDisplayValue = (
   definition: CompositionVariableDefinition,
   value: unknown,
 ): string => {
@@ -19,7 +19,7 @@ export const parameterDisplayValue = (
  * One layout-placed Input bound to transient Work state. Values are sent to
  * the existing resolver on edit and never written to the saved revision.
  */
-export function ParameterControl(props: {
+export function InputControl(props: {
   definition: CompositionVariableDefinition;
   displayName: string;
   value: unknown;
@@ -30,7 +30,7 @@ export function ParameterControl(props: {
   const label = () => props.displayName;
   const value = () =>
     props.rawValue ??
-      parameterDisplayValue(props.definition, props.value);
+      variableDisplayValue(props.definition, props.value);
 
   return (
     <div class="ui-field">

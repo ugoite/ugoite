@@ -14,7 +14,7 @@ features:
     facet: frontend
     responsibility: Provide Browser adapters for exact Composition reads and existing source queries,
       keeping query state transient. Render bounded lists, exact revisions, source-native tables, flow
-        layout, text, parameter controls, and server-evaluated metric values through existing contracts.
+        layout, Text bindings, Input controls, and server-evaluated Metric values through existing contracts.
     targets:
     - id: browser-composition-api
       adapter: typescript
@@ -83,10 +83,9 @@ features:
         criterion: REQ-COMP-002#criterion.text-style-enum
     - id: browser-parameter-control
       adapter: typescript
-      path: frontend/src/components/composition/ParameterControl.tsx
+      path: frontend/src/components/composition/InputControl.tsx
       selector:
-        kind: symbol
-        name: ParameterControl
+        kind: file
       claims:
       - kind: satisfies
         criterion: REQ-COMP-002#criterion.parameter-placement
@@ -208,7 +207,7 @@ features:
       path: frontend/src/lib/composition-query-handle.test.ts
       selector:
         kind: test
-        name: pins get and resolve to the selected revision and ignores a stale parameter response
+        name: pins get and resolve to the selected revision and ignores a stale variable response
       claims:
       - kind: evidences
         anchor: REQ-COMP-006#criterion.work-state-is-transient
@@ -232,18 +231,18 @@ features:
         anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
       - kind: evidences
         anchor: REQ-COMP-006#criterion.work-state-is-transient
-    - id: browser-saved-sql-parameter-generation
+    - id: browser-saved-sql-variable-generation
       adapter: typescript
       path: frontend/src/lib/composition-query-handle.test.ts
       selector:
         kind: test
-        name: resets Saved SQL continuations on parameter change and discards its stale page
+        name: resets Saved SQL continuations on variable change and discards its stale page
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
       - kind: evidences
         anchor: REQ-COMP-006#criterion.work-state-is-transient
-    - id: browser-exact-parameter-resolution
+    - id: browser-exact-variable-resolution
       adapter: typescript
       path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
       selector:
@@ -252,12 +251,12 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.exact-composition-revision
-    - id: browser-required-parameter-diagnostic
+    - id: browser-required-variable-diagnostic
       adapter: typescript
       path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
       selector:
         kind: test
-        name: renders deterministic diagnostics and retains the parameter control
+        name: renders deterministic diagnostics and retains the Input control
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.typed-dashboard-model
@@ -356,7 +355,7 @@ features:
       path: frontend/src/components/DashboardFlowRenderer.test.tsx
       selector:
         kind: test
-        name: renders rows in order with parameter controls interleaved
+        name: renders rows in order with Input controls interleaved
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.ordered-component-layout

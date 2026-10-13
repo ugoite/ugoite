@@ -131,7 +131,7 @@ async function seedStudioKnowledge(
   }
 
   // Plain column selects with ORDER BY keep this fixture deterministic while
-  // exercising parameter binding; the January window matches exactly one
+  // exercising Saved SQL variable binding; the January window matches one
   // row so both metrics render scalars instead of the multiple-rows diagnostic.
   const sql = `SELECT ${sqlIdentifier(amountColumn!)} AS total, ${
     sqlIdentifier(quantityColumn!)
@@ -270,6 +270,58 @@ async function addMetricDisplay(
   await addCanvasDisplay(page, "Metric", sourceName, column, label);
 }
 
+async function addStudioDateVariable(
+  page: Page,
+  label: string,
+  defaultValue: string,
+): Promise<void> {
+  await page.getByLabel("New variable label", { exact: true }).fill(label);
+  await page.getByLabel("Type", { exact: true }).selectOption("date");
+  await page.getByRole("button", { name: "Add variable", exact: true }).click();
+  const defaultInput = page.getByLabel(`Default for ${label}`, {
+    exact: true,
+  });
+  await expect(defaultInput).toBeVisible();
+  await defaultInput.fill(defaultValue);
+}
+
+async function bindSavedSqlVariable(
+  page: Page,
+  sqlVariable: string,
+  compositionVariable: string,
+): Promise<void> {
+  const binding = page.getByLabel(`SQL variable ${sqlVariable}`, {
+    exact: true,
+  });
+  await expect(binding).toBeVisible();
+  await binding.selectOption({ label: compositionVariable });
+  await expect(binding.locator("option:checked")).toHaveText(
+    compositionVariable,
+  );
+}
+
+async function addStudioInput(
+  page: Page,
+  variableName: string,
+  inputLabel: string,
+): Promise<void> {
+  await page.getByRole("radio", { name: "Design", exact: true }).click();
+  await page.getByRole("button", { name: "Add to design", exact: true })
+    .first().click();
+  const palette = page.getByRole("dialog", {
+    name: "Add to design",
+    exact: true,
+  });
+  await palette.getByRole("button", {
+    name: `Add Input for ${variableName}`,
+    exact: true,
+  }).click();
+  // Adding an Input selects it and opens its inspector automatically.
+  await page.getByLabel(`Input label for ${variableName}`, {
+    exact: true,
+  }).fill(inputLabel);
+}
+
 async function openToolFromHome(
   page: Page,
   spaceId: string,
@@ -402,8 +454,8 @@ test.describe("Composition Studio Journey", () => {
         timeout: 30_000,
       });
 
-      // Studio opens prefilled from the Saved SQL run, save-ready with a
-      // default Table on the seeded source: the canvas owns the block.
+      // Studio opens with the pinned Saved SQL source, ready for explicit
+      // Composition-variable declarations and bindings.
       await page.getByRole("button", { name: "Save as tool" }).click();
       await expect(page).toHaveURL(
         new RegExp(
@@ -418,14 +470,36 @@ test.describe("Composition Studio Journey", () => {
           exact: true,
         }),
       ).toBeVisible();
-      // Studio modes: Split pairs the Design canvas with the Data pane for
-      // the seeded source, so the build below covers add, label, params,
-      // and preview without leaving the mode.
+      // Studio modes: Split pairs Design with Data for the seeded source.
       await page.getByRole("radio", { name: "Split", exact: true }).click();
       await expect(
         page.getByRole("button", { name: seed.savedSqlName, exact: true }),
       ).toBeVisible();
       await nameInput.fill(seed.toolName);
+
+      // Declare typed Composition variables and bind the Saved SQL names
+      // through their visible labels. Values from the standalone SQL run are
+      // deliberately authored again as defaults in the Composition.
+      await page.getByRole("radio", { name: "Data", exact: true }).click();
+      const dataTabs = page.getByRole("tablist", { name: "Data" });
+      await dataTabs.getByRole("tab", { name: "Variables", exact: true })
+        .click();
+      await addStudioDateVariable(page, "Month start", seed.monthStart);
+      await addStudioDateVariable(page, "Month end", seed.monthEnd);
+
+      await dataTabs.getByRole("tab", { name: "Sources", exact: true })
+        .click();
+      await page.getByRole("button", {
+        name: seed.savedSqlName,
+        exact: true,
+      }).click();
+      await bindSavedSqlVariable(page, "month_start", "Month start");
+      await bindSavedSqlVariable(page, "month_end", "Month end");
+
+      // Inputs are ordinary layout components. The labels users see at run
+      // time are authored separately from the SQL variable names.
+      await addStudioInput(page, "Month start", "Start date");
+      await addStudioInput(page, "Month end", "End date");
 
       // Two metric displays on the seeded Saved SQL source, each bound to
       // its own exact-scalar column of the single January row.
@@ -439,6 +513,7 @@ test.describe("Composition Studio Journey", () => {
       ).toBeVisible();
 
       // EntryQuery source through the Data source navigator.
+      await page.getByRole("radio", { name: "Split", exact: true }).click();
       await page.getByRole("button", { name: "Add source", exact: true })
         .click();
       const sourceDialog = page.getByRole("dialog");
@@ -493,10 +568,8 @@ test.describe("Composition Studio Journey", () => {
         }),
       ).toBeVisible();
 
-      // Data mode opens on Sources and keeps Parameters and Tags in their own
-      // tabs. Capture the default-first path before saving.
+      // Data mode keeps Sources, Variables, and Tags in their own tabs.
       await page.getByRole("radio", { name: "Data", exact: true }).click();
-      const dataTabs = page.getByRole("tablist", { name: "Data" });
       await expect(
         dataTabs.getByRole("tab", { name: "Sources", exact: true }),
       ).toHaveAttribute("aria-selected", "true");
@@ -507,16 +580,16 @@ test.describe("Composition Studio Journey", () => {
         body: await page.screenshot({ fullPage: true }),
         contentType: "image/png",
       });
-      await dataTabs.getByRole("tab", { name: "Parameters", exact: true })
+      await dataTabs.getByRole("tab", { name: "Variables", exact: true })
         .click();
-      await test.info().attach("composition-studio-data-parameters", {
+      await test.info().attach("composition-studio-data-variables", {
         body: await page.screenshot({ fullPage: true }),
         contentType: "image/png",
       });
-      await expect(page.getByLabel("Default for Parameter 1")).toHaveValue(
+      await expect(page.getByLabel("Default for Month start")).toHaveValue(
         seed.monthStart,
       );
-      await expect(page.getByLabel("Default for Parameter 2")).toHaveValue(
+      await expect(page.getByLabel("Default for Month end")).toHaveValue(
         seed.monthEnd,
       );
       await expect(page.getByLabel("Default for month_start")).toHaveCount(0);
@@ -578,12 +651,12 @@ test.describe("Composition Studio Journey", () => {
         firstRevisionId,
         seed.toolName,
       );
-      await expect(page.getByLabel("Parameter 1")).toHaveValue(
+      await expect(page.getByLabel("Start date")).toHaveValue(
         seed.monthStart,
       );
-      await expect(page.getByLabel("Parameter 1")).toBeEditable();
-      await expect(page.getByLabel("Parameter 2")).toHaveValue(seed.monthEnd);
-      await expect(page.getByLabel("Parameter 2")).toBeEditable();
+      await expect(page.getByLabel("Start date")).toBeEditable();
+      await expect(page.getByLabel("End date")).toHaveValue(seed.monthEnd);
+      await expect(page.getByLabel("End date")).toBeEditable();
       await expect(page.getByLabel("month_start")).toHaveCount(0);
       await expect(page.getByLabel("month_end")).toHaveCount(0);
       await expect(
@@ -617,6 +690,19 @@ test.describe("Composition Studio Journey", () => {
       await expect(page.getByLabel("Name", { exact: true })).toHaveValue(
         seed.toolName,
       );
+      await expect(
+        page.getByRole("button", { name: "Select Start date", exact: true }),
+      ).toBeVisible();
+      await page.getByRole("button", {
+        name: "Select Start date",
+        exact: true,
+      }).click();
+      const inputVariable = page.getByLabel("Variables", { exact: true });
+      await expect(inputVariable.locator("option:checked")).toHaveText(
+        "Month start",
+      );
+      await expect(page.getByLabel("Input label for Month start"))
+        .toHaveValue("Start date");
       await page.getByRole("button", { name: "Select Total", exact: true })
         .click();
       await page.getByLabel("Label", { exact: true }).fill("Total spent");
@@ -634,6 +720,8 @@ test.describe("Composition Studio Journey", () => {
       await expect(
         page.getByRole("heading", { name: "Total spent", exact: true }),
       ).toBeVisible();
+      await expect(page.getByLabel("Start date")).toHaveValue(seed.monthStart);
+      await expect(page.getByLabel("End date")).toHaveValue(seed.monthEnd);
 
       // History lists both revisions; restoring the first appends a third.
       await page.goto(
@@ -800,9 +888,9 @@ test.describe("Composition Studio Journey", () => {
       await expect(
         page.getByRole("button", { name: seed.savedSqlName, exact: true }),
       ).toBeVisible();
-      await dataTabs.getByRole("tab", { name: "Parameters", exact: true })
+      await dataTabs.getByRole("tab", { name: "Variables", exact: true })
         .click();
-      await expect(page.getByLabel("Default for Parameter 1")).toHaveValue(
+      await expect(page.getByLabel("Default for Variable 1")).toHaveValue(
         seed.monthStart,
       );
       await expect(page.getByLabel("Default for month_start")).toHaveCount(0);

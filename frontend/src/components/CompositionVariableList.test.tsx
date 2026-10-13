@@ -8,105 +8,113 @@ import {
 } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
-import { CompositionParameterList } from "./CompositionParameterList";
-import type { DraftParameter } from "~/lib/composition-draft";
+import { CompositionVariableList } from "./CompositionVariableList";
+import type { DraftVariable } from "~/lib/composition-draft";
 
-describe("composition parameter list", () => {
+describe("composition variable list", () => {
   beforeEach(() => {
     setLocale("en");
   });
   afterEach(() => cleanup());
 
-  const month: DraftParameter = { id: "month", type: "date", required: true };
+  const month: DraftVariable = { id: "month", type: "date", required: true };
 
   it("shows one next-action line when empty", () => {
     render(() => (
-      <CompositionParameterList
-        parameters={[]}
+      <CompositionVariableList
+        variables={[]}
         headingId="params"
-        referencedIds={new Set()}
         onAdd={() => {}}
         onUpdate={() => {}}
         onRemove={() => undefined}
       />
     ));
-    expect(screen.getByText("Add a parameter to begin.")).toBeInTheDocument();
+    expect(screen.getByText("Add a variable to begin.")).toBeInTheDocument();
   });
 
-  it("names the disabled reason on the add control without prose", () => {
+  it("creates a labeled variable without displaying its generated id", () => {
+    const onAdd = vi.fn();
     render(() => (
-      <CompositionParameterList
-        parameters={[]}
+      <CompositionVariableList
+        variables={[]}
         headingId="params"
-        referencedIds={new Set()}
-        onAdd={() => {}}
+        onAdd={onAdd}
         onUpdate={() => {}}
         onRemove={() => undefined}
       />
     ));
 
-    // An empty id needs a parameter name; the reason reuses the existing
-    // parameter-name vocabulary in the accessible name and title.
-    const empty = screen.getByRole("button", {
-      name: "Add parameter: Parameter name",
+    fireEvent.input(screen.getByLabelText("New variable label"), {
+      target: { value: "Revenue" },
     });
-    expect(empty).toBeDisabled();
-    expect(empty).toHaveAttribute("title", "Add parameter: Parameter name");
+    fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
+    expect(onAdd).toHaveBeenCalledWith({
+      id: "variable_1",
+      type: "string",
+      required: true,
+      label: "Revenue",
+    });
+    expect(screen.queryByText("variable_1")).not.toBeInTheDocument();
   });
 
-  it("names the colliding id when the parameter already exists", () => {
+  it("selects an unused generated id without exposing it", () => {
+    const onAdd = vi.fn();
     render(() => (
-      <CompositionParameterList
-        parameters={[month]}
+      <CompositionVariableList
+        variables={[
+          { id: "variable_1", type: "string", required: false },
+          { id: "variable_3", type: "string", required: false },
+        ]}
         headingId="params"
-        referencedIds={new Set(["month"])}
-        onAdd={() => {}}
+        onAdd={onAdd}
         onUpdate={() => {}}
         onRemove={() => undefined}
       />
     ));
 
-    const idInput = screen.getByLabelText("Parameter name");
-    fireEvent.input(idInput, { target: { value: "month" } });
-    const taken = screen.getByRole("button", {
-      name: "Add parameter: month",
+    fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
+    expect(onAdd).toHaveBeenCalledWith({
+      id: "variable_2",
+      type: "string",
+      required: true,
     });
-    expect(taken).toBeDisabled();
-    expect(taken).toHaveAttribute("title", "Add parameter: month");
+    expect(screen.queryByText("variable_1")).not.toBeInTheDocument();
+    expect(screen.queryByText("variable_3")).not.toBeInTheDocument();
   });
 
-  it("adds typed parameters and edits defaults inline", () => {
+  it("adds typed variables and edits defaults inline", () => {
     const onAdd = vi.fn();
     const onUpdate = vi.fn();
     render(() => (
-      <CompositionParameterList
-        parameters={[month]}
+      <CompositionVariableList
+        variables={[month]}
         headingId="params"
-        referencedIds={new Set(["month"])}
         onAdd={onAdd}
         onUpdate={onUpdate}
         onRemove={() => undefined}
       />
     ));
-    expect(screen.getByText("Parameter 1")).toBeInTheDocument();
+    expect(screen.getByText("Variable 1")).toBeInTheDocument();
     expect(screen.queryByText("month")).not.toBeInTheDocument();
 
-    const idInput = screen.getByLabelText("Parameter name");
-    fireEvent.input(idInput, { target: { value: "region" } });
-    fireEvent.click(screen.getByRole("button", { name: "Add parameter" }));
+    fireEvent.input(screen.getByLabelText("New variable label"), {
+      target: { value: "Region" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
     expect(onAdd).toHaveBeenCalledWith({
-      id: "region",
+      id: "variable_1",
       type: "string",
       required: true,
+      label: "Region",
     });
 
-    const defaultInput = screen.getByLabelText("Default for Parameter 1");
+    const defaultInput = screen.getByLabelText("Default for Variable 1");
     fireEvent.input(defaultInput, { target: { value: "2026-10-01" } });
     expect(onUpdate).toHaveBeenCalledWith({ ...month, default: "2026-10-01" });
   });
 
   it("parses numeric defaults through the shared Domain parser", async () => {
-    const integer: DraftParameter = {
+    const integer: DraftVariable = {
       id: "limit",
       type: "integer",
       required: false,
@@ -114,8 +122,8 @@ describe("composition parameter list", () => {
     };
     const onUpdate = vi.fn();
     render(() => (
-      <CompositionParameterList
-        parameters={[integer]}
+      <CompositionVariableList
+        variables={[integer]}
         headingId="params"
         onAdd={() => {}}
         onUpdate={onUpdate}
@@ -123,7 +131,7 @@ describe("composition parameter list", () => {
       />
     ));
 
-    const input = screen.getByLabelText("Default for Parameter 1");
+    const input = screen.getByLabelText("Default for Variable 1");
     expect(input).toHaveValue("0");
     expect(input).not.toHaveAttribute("readonly");
     fireEvent.input(input, { target: { value: "+00042" } });
@@ -142,7 +150,7 @@ describe("composition parameter list", () => {
   });
 
   it("maps the boolean choice to its typed literal without parsing arbitrary input", () => {
-    const boolean: DraftParameter = {
+    const boolean: DraftVariable = {
       id: "include_archived",
       type: "boolean",
       required: false,
@@ -150,8 +158,8 @@ describe("composition parameter list", () => {
     };
     const onUpdate = vi.fn();
     render(() => (
-      <CompositionParameterList
-        parameters={[boolean]}
+      <CompositionVariableList
+        variables={[boolean]}
         headingId="params"
         onAdd={() => {}}
         onUpdate={onUpdate}
@@ -159,21 +167,21 @@ describe("composition parameter list", () => {
       />
     ));
 
-    fireEvent.change(screen.getByLabelText("Default for Parameter 1"), {
+    fireEvent.change(screen.getByLabelText("Default for Variable 1"), {
       target: { value: "true" },
     });
     expect(onUpdate).toHaveBeenCalledWith({ ...boolean, default: true });
   });
 
-  it("uses localized ordinal labels instead of unlabeled parameter keys", () => {
-    const region: DraftParameter = {
+  it("uses localized ordinal labels instead of unlabeled variable keys", () => {
+    const region: DraftVariable = {
       id: "region_key",
       type: "string",
       required: false,
     };
     render(() => (
-      <CompositionParameterList
-        parameters={[month, region]}
+      <CompositionVariableList
+        variables={[month, region]}
         headingId="params"
         onAdd={() => {}}
         onUpdate={() => {}}
@@ -181,24 +189,24 @@ describe("composition parameter list", () => {
       />
     ));
 
-    expect(screen.getByText("Parameter 1")).toBeInTheDocument();
-    expect(screen.getByText("Parameter 2")).toBeInTheDocument();
+    expect(screen.getByText("Variable 1")).toBeInTheDocument();
+    expect(screen.getByText("Variable 2")).toBeInTheDocument();
     expect(screen.queryByText("month")).not.toBeInTheDocument();
     expect(screen.queryByText("region_key")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Default for Parameter 2"))
+    expect(screen.getByLabelText("Default for Variable 2"))
       .toBeInTheDocument();
 
     setLocale("ja");
-    expect(screen.getByText("パラメーター1")).toBeInTheDocument();
-    expect(screen.getByText("パラメーター2")).toBeInTheDocument();
-    expect(screen.getByLabelText("パラメーター2の既定値"))
+    expect(screen.getByText("変数1")).toBeInTheDocument();
+    expect(screen.getByText("変数2")).toBeInTheDocument();
+    expect(screen.getByLabelText("変数2の既定値"))
       .toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "パラメーター1を削除" }))
+    expect(screen.getByRole("button", { name: "変数1を削除" }))
       .toBeInTheDocument();
   });
 
-  it("uses the declared label while keeping the parameter name for updates and removal", () => {
-    const labeledMonth: DraftParameter = {
+  it("uses the declared label while keeping the variable name for updates and removal", () => {
+    const labeledMonth: DraftVariable = {
       ...month,
       id: "month_key",
       label: "Month",
@@ -206,10 +214,9 @@ describe("composition parameter list", () => {
     const onUpdate = vi.fn();
     const onRemove = vi.fn(() => undefined);
     render(() => (
-      <CompositionParameterList
-        parameters={[labeledMonth]}
+      <CompositionVariableList
+        variables={[labeledMonth]}
         headingId="params"
-        referencedIds={new Set(["month_key"])}
         onAdd={() => {}}
         onUpdate={onUpdate}
         onRemove={onRemove}
@@ -236,23 +243,22 @@ describe("composition parameter list", () => {
   });
 
   it("surfaces guarded removal without deleting", () => {
-    const onRemove = vi.fn(() => "This parameter is used by a data source.");
+    const onRemove = vi.fn(() => "This variable is used by a data source.");
     render(() => (
-      <CompositionParameterList
-        parameters={[month]}
+      <CompositionVariableList
+        variables={[month]}
         headingId="params"
-        referencedIds={new Set(["month"])}
         onAdd={() => {}}
         onUpdate={() => {}}
         onRemove={onRemove}
       />
     ));
     fireEvent.click(
-      screen.getByRole("button", { name: "Remove Parameter 1" }),
+      screen.getByRole("button", { name: "Remove Variable 1" }),
     );
     expect(onRemove).toHaveBeenCalledWith("month");
     expect(
-      screen.getByText("This parameter is used by a data source."),
+      screen.getByText("This variable is used by a data source."),
     ).toBeInTheDocument();
   });
 });

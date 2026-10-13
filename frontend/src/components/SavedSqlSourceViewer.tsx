@@ -1,27 +1,37 @@
-import { createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { A } from "@solidjs/router";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
+import { IconButton } from "~/components/IconButton";
 import { ResultPagination } from "~/components/ResultPagination";
 import { SqlResultTable } from "~/components/SqlResultTable";
 import {
-  type CompositionVariableType,
   type CompositionResolveDiagnostic,
   type CompositionResolvedSource,
   compositionResultTypeFromSql,
+  type CompositionVariableType,
 } from "~/lib/composition-api";
-import type { DraftSource } from "~/lib/composition-draft";
-import type { SavedSqlRevisionUpdate } from "~/lib/composition-draft";
+import {
+  type DraftSource,
+  type DraftVariable,
+  type SavedSqlRevisionUpdate,
+  savedSqlVariableTypesFromFields,
+} from "~/lib/composition-draft";
+import { compositionVariableDisplayName } from "~/lib/composition-variable-name";
 import type { CompositionSourcePageState } from "~/lib/composition-query-handle";
 import { t } from "~/lib/i18n";
 import { normalizeSqlVariables } from "~/lib/sql";
-import { sqlApi } from "~/lib/ugoite-client";
+import { entryApi, sqlApi } from "~/lib/ugoite-client";
 import type { SqlEntry, SqlQueryPage } from "~/lib/types";
 
 export type SavedSqlSource = Extract<DraftSource, { kind: "saved_sql" }>;
 
 type EntryLoad =
   | { status: "loading" }
-  | { status: "ready"; entry: SqlEntry }
+  | {
+    status: "ready";
+    entry: SqlEntry;
+    pinnedVariableTypes: Record<string, CompositionVariableType>;
+  }
   | { status: "error" };
 
 const isAbort = (error: unknown): boolean =>
@@ -34,8 +44,16 @@ interface SavedSqlSourceViewerProps {
   /** Exact revision update; composition save stays a separate explicit save. */
   onUpdateRevision: (
     revision: SavedSqlRevisionUpdate,
-    variableTypes: Record<string, CompositionVariableType>,
   ) => boolean;
+  variables: readonly DraftVariable[];
+  onVariableTypes: (
+    variableTypes: Record<string, CompositionVariableType>,
+  ) => void;
+  onVariableBinding: (
+    sqlVariable: string,
+    variableId: string | undefined,
+  ) => boolean;
+  onEditVariables: () => void;
   /** Existing Saved SQL editor route for the Edit action. */
   editHref: string;
   planSources: readonly CompositionResolvedSource[];
@@ -65,10 +83,21 @@ export function SavedSqlSourceViewer(props: SavedSqlSourceViewerProps) {
   const reload = () => {
     const requestGeneration = ++generation;
     setLoad({ status: "loading" });
-    void sqlApi.get(props.spaceId, props.source.entryId).then(
-      (entry) => {
+    void Promise.all([
+      sqlApi.get(props.spaceId, props.source.entryId),
+      entryApi.getRevision(
+        props.spaceId,
+        props.source.entryId,
+        props.source.revisionId,
+      ),
+    ]).then(
+      ([entry, revision]) => {
         if (requestGeneration !== generation) return;
-        setLoad({ status: "ready", entry });
+        const pinnedVariableTypes = savedSqlVariableTypesFromFields(
+          revision.fields,
+        );
+        props.onVariableTypes(pinnedVariableTypes);
+        setLoad({ status: "ready", entry, pinnedVariableTypes });
       },
       (error: unknown) => {
         if (requestGeneration !== generation || isAbort(error)) return;
@@ -79,7 +108,12 @@ export function SavedSqlSourceViewer(props: SavedSqlSourceViewerProps) {
     );
   };
 
-  reload();
+  createEffect(() => {
+    props.spaceId;
+    props.source.entryId;
+    props.source.revisionId;
+    reload();
+  });
   onCleanup(() => {
     generation += 1;
   });
@@ -124,22 +158,22 @@ export function SavedSqlSourceViewer(props: SavedSqlSourceViewerProps) {
             column.type,
           ]),
         );
-        const ok = props.onUpdateRevision(
-          {
-            revisionId: current.revision_id,
-            expectedResult: columns.map((name) => ({
-              name,
-              type: compositionResultTypeFromSql(schemaByName.get(name)),
-            })),
-            variableNames: current.variables.map((variable) => variable.name),
-          },
-          Object.fromEntries(
-            current.variables.map((variable) => [
-              variable.name,
-              variable.type as CompositionVariableType,
-            ]),
-          ),
+        const exactRevision = await entryApi.getRevision(
+          props.spaceId,
+          current.id,
+          current.revision_id,
         );
+        const variableTypes = savedSqlVariableTypesFromFields(
+          exactRevision.fields,
+        );
+        const ok = props.onUpdateRevision({
+          revisionId: current.revision_id,
+          expectedResult: columns.map((name) => ({
+            name,
+            type: compositionResultTypeFromSql(schemaByName.get(name)),
+          })),
+          variableTypes,
+        });
         if (!ok) setUpdateError(t("composition.studioCannotAdd"));
       } catch (error) {
         if (!isAbort(error)) setUpdateError(t("composition.queryFailed"));
@@ -188,25 +222,66 @@ export function SavedSqlSourceViewer(props: SavedSqlSourceViewerProps) {
             </section>
 
             <section aria-label={t("sqlPage.variables")}>
-              <h3 class="ui-label">{t("sqlPage.variables")}</h3>
+              <div class="flex items-center justify-between gap-2">
+                <h3 class="ui-label">{t("sqlPage.variables")}</h3>
+                <IconButton
+                  icon="edit"
+                  label={t("composition.studioEditVariables")}
+                  onClick={props.onEditVariables}
+                />
+              </div>
               <Show
-                when={Object.keys(props.source.variables).length > 0}
+                when={Object.keys(
+                  load().status === "ready" ? load().pinnedVariableTypes : {},
+                ).length > 0}
                 fallback={<p class="ui-muted">{t("sqlPage.noVariables")}</p>}
               >
                 <ul class="ui-stack-sm">
-                  <For each={Object.entries(props.source.variables)}>
-                    {([name, binding]) => (
+                  <For
+                    each={Object.entries(
+                      load().status === "ready"
+                        ? load().pinnedVariableTypes
+                        : {},
+                    )}
+                  >
+                    {([name, type]) => (
                       <li>
-                        <span class="pill">
+                        <label class="ui-field">
                           <span>{name}</span>
-                          {binding.parameter !== name
-                            ? (
-                              <span class="ui-muted">
-                                {binding.parameter}
-                              </span>
-                            )
-                            : null}
-                        </span>
+                          <span class="ui-muted">{type}</span>
+                          <select
+                            class="ui-input"
+                            aria-label={t("composition.studioBindSqlVariable", {
+                              name,
+                            })}
+                            value={Object.hasOwn(props.source.variables, name)
+                              ? props.source.variables[name]?.variable ?? ""
+                              : ""}
+                            onChange={(event) =>
+                              props.onVariableBinding(
+                                name,
+                                event.currentTarget.value || undefined,
+                              )}
+                          >
+                            <option value="">
+                              {t("composition.studioChooseVariable")}
+                            </option>
+                            <For
+                              each={props.variables.filter((variable) =>
+                                variable.type === type
+                              )}
+                            >
+                              {(variable) => (
+                                <option value={variable.id}>
+                                  {compositionVariableDisplayName(
+                                    props.variables,
+                                    variable.id,
+                                  )}
+                                </option>
+                              )}
+                            </For>
+                          </select>
+                        </label>
                       </li>
                     )}
                   </For>

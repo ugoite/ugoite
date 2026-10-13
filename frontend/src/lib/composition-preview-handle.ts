@@ -21,7 +21,7 @@ export interface CompositionResolvedSourcePageState {
 }
 
 export interface CompositionPreviewHandleState {
-  /** Last requested candidate YAML; kept as Work for parameter re-preview. */
+  /** Last requested candidate YAML; kept as Work for variable re-preview. */
   yaml?: string;
   spaceId?: string;
   identity?: CompositionPreviewIdentity;
@@ -47,7 +47,7 @@ export interface CompositionPreviewQueryApi {
   preview: (
     spaceId: string,
     yaml: string,
-    parameters: Record<string, unknown>,
+    variables: Record<string, unknown>,
     signal?: AbortSignal,
   ) => Promise<CompositionPreviewResponse>;
   querySource: (
@@ -91,7 +91,7 @@ export function createCompositionPreviewHandle(
     previewing: false,
     sources: {},
   });
-  const [parameters, setParameters] = createSignal<Record<string, unknown>>({});
+  const [variables, setVariables] = createSignal<Record<string, unknown>>({});
 
   let disposed = false;
   let generation = 0;
@@ -121,7 +121,7 @@ export function createCompositionPreviewHandle(
     previewController?.abort();
     abortSources();
     lastScope = scope === undefined ? undefined : { ...scope };
-    setParameters({ ...values });
+    setVariables({ ...values });
     setState({
       yaml,
       spaceId,
@@ -260,12 +260,12 @@ export function createCompositionPreviewHandle(
     }
   };
 
-  const setParameter = (parameterId: string, value: unknown | undefined) => {
+  const setVariable = (variableId: string, value: unknown | undefined) => {
     const current = state();
     if (!current.yaml || !current.spaceId) return;
-    const nextValues = { ...parameters() };
-    if (value === undefined) delete nextValues[parameterId];
-    else nextValues[parameterId] = value;
+    const nextValues = { ...variables() };
+    if (value === undefined) delete nextValues[variableId];
+    else nextValues[variableId] = value;
     void preview(current.spaceId, current.yaml, nextValues, lastScope);
   };
 
@@ -356,10 +356,10 @@ export function createCompositionPreviewHandle(
 
   return {
     state,
-    parameters,
+    variables,
     preview,
     invalidate,
-    setParameter,
+    setVariable,
     ensureSource,
     next,
     previous,

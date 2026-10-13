@@ -32,6 +32,7 @@ import type {
 } from "~/lib/entry-query-composition";
 import {
   type DraftSource,
+  type DraftVariable,
   MAX_ENTRY_PROJECTION_FIELDS,
 } from "~/lib/composition-draft";
 import type {
@@ -58,9 +59,12 @@ import { t } from "~/lib/i18n";
 
 export type EntryQuerySource = Extract<DraftSource, { kind: "entry_query" }>;
 
-const filterValueText = (value: unknown): string => {
+const filterValueText = (
+  value: unknown,
+  variables: readonly DraftVariable[],
+): string => {
   const binding = studioBindingName(value);
-  if (binding !== undefined) return studioBindingText(binding);
+  if (binding !== undefined) return studioBindingText(binding, variables);
   if (value === null || value === undefined) return "";
   return String(value);
 };
@@ -84,6 +88,7 @@ type EditorDefinitionLoad =
 interface EntryQuerySourceEditorProps {
   spaceId: string;
   source: EntryQuerySource;
+  variables?: readonly DraftVariable[];
   /** Narrow draft updaters; each returns false when the edit is rejected. */
   onFilters: (filters: EntryQueryCompositionFilter[]) => boolean;
   onSort: (sort: EntryQueryCompositionSort[]) => boolean;
@@ -201,7 +206,10 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
   const applyDialogFilters = (filters: EntryFilter[]) => {
     const next: EntryQueryCompositionFilter[] = [];
     for (const filter of filters) {
-      const converted = studioEntryFilterToComposition(filter);
+      const converted = studioEntryFilterToComposition(
+        filter,
+        props.variables ?? [],
+      );
       // No draft grammar for the ref: fail closed and keep the dialog open.
       if (!converted) return;
       next.push(converted);
@@ -221,7 +229,7 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
 
   // Genuinely incapable fields never reach the dialog's own dropdowns. With
   // zero capable fields the Add control disables with the reason in its
-  // accessible name and title, mirroring the Add-parameter gate; the reason
+  // accessible name and title, mirroring the Add-variable gate; the reason
   // reuses existing vocabulary and renders no visible prose.
   const filterCapable = () =>
     capabilities().some((field) =>
@@ -415,7 +423,7 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
                   <span>
                     {fieldName(filter.field_id)}{" "}
                     {operatorLabel(filter.operator)}{" "}
-                    {filterValueText(filter.value)}
+                    {filterValueText(filter.value, props.variables ?? [])}
                   </span>
                   <button
                     class="ui-button ui-button-secondary"
@@ -575,7 +583,9 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
             fields={capabilities()}
             projection={{ kind: "preview" }}
             previewSystemFields={[]}
-            filters={props.source.query.filters.map(studioFilterToEntryFilter)}
+            filters={props.source.query.filters.map((filter) =>
+              studioFilterToEntryFilter(filter, props.variables ?? [])
+            )}
             sort={props.source.query.sort.map(studioSortToEntrySort)}
             onApply={(draft) => {
               if (mode() === "filter" && draft.filters) {

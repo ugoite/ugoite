@@ -13,7 +13,7 @@ features:
     role: implementation
     facet: frontend
     responsibility: Implement the Composition Studio Design workspace, including canvas and inspector
-      editing, selected-block removal and parameter unplacement, mode coordination, responsive inspector
+      editing, selected-block removal and Input unplacement, mode coordination, responsive inspector
       presentation, selection, and save readiness.
     targets:
     - id: browser-design-canvas
@@ -119,7 +119,7 @@ features:
   - id: studio-design-evidence
     role: evidence
     facet: frontend-tests
-    responsibility: Verify selected-block removal in the inline and narrow inspectors, parameter-only
+    responsibility: Verify selected-block removal in the inline and narrow inspectors, Input-only
       unplacement, canvas action ownership, workspace editing, mode coordination, selection, and save
       readiness.
     targets:
@@ -148,7 +148,7 @@ features:
       path: frontend/src/components/CompositionDesignCanvas.test.tsx
       selector:
         kind: test
-        name: places existing parameter controls without creating parameters
+        name: places existing variable controls without creating variables
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.parameter-placement
@@ -184,7 +184,7 @@ features:
       path: frontend/src/components/CompositionInspector.test.tsx
       selector:
         kind: test
-        name: labels parameter removal as unplacing its canvas control
+        name: removes the selected Input component without removing its variable
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.parameter-placement
@@ -204,7 +204,7 @@ features:
       path: frontend/src/components/CompositionStudioMobile.test.tsx
       selector:
         kind: test
-        name: unplaces a parameter from the narrow Inspector sheet but keeps its declaration
+        name: unplaces a variable from the narrow Inspector sheet but keeps its declaration
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.parameter-placement
@@ -333,7 +333,7 @@ features:
       path: frontend/src/components/CompositionInspector.test.tsx
       selector:
         kind: test
-        name: changes parameter placement targets without a label override
+        name: changes the selected Input's variable binding
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.parameter-placement
@@ -379,7 +379,7 @@ features:
       path: frontend/src/lib/composition-draft.test.ts
       selector:
         kind: test
-        name: retargets parameter controls in place without touching declarations
+        name: retargets variable controls in place without touching declarations
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.parameter-placement
@@ -406,7 +406,7 @@ features:
       path: frontend/src/components/CompositionStudioSync.test.tsx
       selector:
         kind: test
-        name: auto-selects the block source in Data and keeps text and parameter selections
+        name: auto-selects the block source in Data and keeps text and variable selections
       claims:
       - kind: evidences
         anchor: REQ-COMP-006#criterion.work-state-is-transient
@@ -545,7 +545,7 @@ features:
       path: frontend/src/lib/composition-studio-sync.test.ts
       selector:
         kind: test
-        name: keeps the Data selection for text, parameter, and unknown blocks
+        name: keeps the Data selection for text, variable, and unknown blocks
       claims:
       - kind: evidences
         anchor: REQ-COMP-006#criterion.work-state-is-transient
@@ -590,7 +590,7 @@ features:
       path: frontend/src/components/CompositionDesignCanvas.test.tsx
       selector:
         kind: test
-        name: offers data and hides parameter section without sources or parameters
+        name: offers data and hides variable section without sources or variables
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.ordered-component-layout
@@ -605,24 +605,6 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.text-style-enum
-    - id: browser-parameter-add-reason
-      adapter: typescript
-      path: frontend/src/components/CompositionParameterList.test.tsx
-      selector:
-        kind: test
-        name: names the disabled reason on the add control without prose
-      claims:
-      - kind: evidences
-        anchor: REQ-COMP-002#criterion.parameter-placement
-    - id: browser-parameter-add-taken-reason
-      adapter: typescript
-      path: frontend/src/components/CompositionParameterList.test.tsx
-      selector:
-        kind: test
-        name: names the colliding id when the parameter already exists
-      claims:
-      - kind: evidences
-        anchor: REQ-COMP-002#criterion.parameter-placement
     - id: browser-studio-save-readiness-matrix
       adapter: typescript
       path: frontend/src/lib/composition-draft.test.ts
@@ -661,7 +643,7 @@ features:
       path: frontend/src/components/CompositionStudioSync.test.tsx
       selector:
         kind: test
-        name: separates Data sources, Parameters, and Tags into tabs in Data mode
+        name: separates Data sources, Variables, and Tags into tabs in Data mode
       claims:
       - kind: evidences
         anchor: REQ-COMP-006#criterion.work-state-is-transient

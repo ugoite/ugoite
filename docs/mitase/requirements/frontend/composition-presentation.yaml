@@ -5,13 +5,13 @@ category: Composition user-facing identities
 requirements:
   - id: REQ-FE-077
     title: Composition User-Facing Identities
-    description: Composition parameter keys and revision IDs are stable internal references. User-facing labels use authored human names or localized ordinal labels; revision identity remains in navigation state.
+    description: Composition variable IDs and revision IDs are stable internal references. User-facing labels use authored human names or localized ordinal labels; revision identity remains in navigation state.
     priority: medium
     status: planned
     criteria:
       - id: parameter-display-names
         kind: behavior
-        statement: Composition parameter surfaces use an authored human label when present and otherwise a localized ordinal based on declaration order. Diagnostic messages use the same label and a generic localized parameter name for unknown keys. Stable parameter keys remain binding-only and never appear in the parameter list, design palette, placement inspector, runtime control, diagnostics, or saved revision.
+        statement: Composition variable surfaces use an authored human label when present and otherwise a localized ordinal based on declaration order. Diagnostic messages use the same label and a generic localized variable name for unknown IDs. Stable variable IDs remain binding-only and never appear in the Variables list, Design palette, placement Inspector, runtime Input, diagnostics, or saved revision.
         governed_by: [POL-UI-002#rule.governance, POL-UI-005#rule.governance]
       - id: history-hides-revision-identifiers
         kind: behavior
@@ -21,45 +21,54 @@ requirements:
       - id: composition-presentation-verification
         role: verification
         facet: verification
-        responsibility: Verify localized parameter labels and hidden revision identifiers through exact frontend tests.
+        responsibility: Verify localized variable labels and hidden revision identifiers through exact frontend tests.
         targets:
-          - id: parameter-list-ordinal-label
+          - id: variable-list-ordinal-label
             adapter: typescript
-            path: frontend/src/components/CompositionParameterList.test.tsx
-            selector: { kind: test, name: uses localized ordinal labels instead of unlabeled parameter keys }
+            path: frontend/src/components/CompositionVariableList.test.tsx
+            selector: { kind: test, name: uses localized ordinal labels instead of unlabeled variable keys }
             claims:
               - kind: verifies
                 criterion: REQ-FE-077#criterion.parameter-display-names
-                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: uses localized ordinal labels instead of unlabeled parameter keys } }
-          - id: parameter-palette-ordinal-label
+                covers: [FEAT-FE-014#binding.frontend/target.composition-variable-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableList.test.tsx, test: uses localized ordinal labels instead of unlabeled variable keys } }
+          - id: variable-created-id-hidden
+            adapter: typescript
+            path: frontend/src/components/CompositionVariableList.test.tsx
+            selector: { kind: test, name: creates a labeled variable without displaying its generated id }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-077#criterion.parameter-display-names
+                covers: [FEAT-FE-014#binding.frontend/target.composition-variable-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableList.test.tsx, test: creates a labeled variable without displaying its generated id } }
+          - id: variable-palette-ordinal-label
             adapter: typescript
             path: frontend/src/components/CompositionDesignCanvas.test.tsx
-            selector: { kind: test, name: uses localized ordinals for unlabeled parameter palette entries }
+            selector: { kind: test, name: uses localized ordinals for unlabeled variable palette entries }
             claims:
               - kind: verifies
                 criterion: REQ-FE-077#criterion.parameter-display-names
                 covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: uses localized ordinals for unlabeled parameter palette entries } }
-          - id: parameter-inspector-ordinal-label
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: uses localized ordinals for unlabeled variable palette entries } }
+          - id: variable-inspector-ordinal-label
             adapter: typescript
             path: frontend/src/components/CompositionInspector.test.tsx
-            selector: { kind: test, name: uses localized ordinal labels for unlabeled parameter placement }
+            selector: { kind: test, name: uses localized ordinal labels for unlabeled variable placement }
             claims:
               - kind: verifies
                 criterion: REQ-FE-077#criterion.parameter-display-names
                 covers: [FEAT-FE-014#binding.frontend/target.composition-inspector]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionInspector.test.tsx, test: uses localized ordinal labels for unlabeled parameter placement } }
-          - id: parameter-runtime-ordinal-label
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionInspector.test.tsx, test: uses localized ordinal labels for unlabeled variable placement } }
+          - id: variable-runtime-ordinal-label
             adapter: typescript
             path: frontend/src/components/DashboardFlowRenderer.test.tsx
-            selector: { kind: test, name: uses localized ordinal labels for unlabeled runtime parameters }
+            selector: { kind: test, name: uses localized ordinal labels for unlabeled runtime variables }
             claims:
               - kind: verifies
                 criterion: REQ-FE-077#criterion.parameter-display-names
-                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-control]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/DashboardFlowRenderer.test.tsx, test: uses localized ordinal labels for unlabeled runtime parameters } }
-          - id: parameter-saved-revision-ordinal-label
+                covers: [FEAT-FE-014#binding.frontend/target.composition-input-control]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/DashboardFlowRenderer.test.tsx, test: uses localized ordinal labels for unlabeled runtime variables } }
+          - id: variable-saved-revision-ordinal-label
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
             selector: { kind: test, name: uses declaration order for localized ordinals when placement order differs }
@@ -68,33 +77,24 @@ requirements:
                 criterion: REQ-FE-077#criterion.parameter-display-names
                 covers: [FEAT-FE-014#binding.frontend/target.composition-use-surface]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: uses declaration order for localized ordinals when placement order differs } }
-          - id: parameter-diagnostic-labels
+          - id: variable-diagnostic-labels
             adapter: typescript
             path: frontend/src/components/CompositionRenderer.test.tsx
-            selector: { kind: test, name: uses localized parameter names instead of binding keys in diagnostics }
+            selector: { kind: test, name: uses localized variable names instead of binding keys in diagnostics }
             claims:
               - kind: verifies
                 criterion: REQ-FE-077#criterion.parameter-display-names
                 covers: [FEAT-FE-014#binding.frontend/target.composition-diagnostic-message]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: uses localized parameter names instead of binding keys in diagnostics } }
-          - id: parameter-studio-diagnostic-labels
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: uses localized variable names instead of binding keys in diagnostics } }
+          - id: variable-studio-diagnostic-labels
             adapter: typescript
             path: frontend/src/components/CompositionStudioSync.test.tsx
-            selector: { kind: test, name: uses authored parameter labels in studio diagnostics }
+            selector: { kind: test, name: uses authored variable labels in studio diagnostics }
             claims:
               - kind: verifies
                 criterion: REQ-FE-077#criterion.parameter-display-names
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: uses authored parameter labels in studio diagnostics } }
-          - id: parameter-studio-seed-label
-            adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
-            selector: { kind: test, name: seeds the studio from a saved sql seed with a table and placed controls using localized parameter labels }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-077#criterion.parameter-display-names
-                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-seed]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from a saved sql seed with a table and placed controls using localized parameter labels" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: uses authored variable labels in studio diagnostics } }
           - id: history-revision-identifiers-hidden
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx

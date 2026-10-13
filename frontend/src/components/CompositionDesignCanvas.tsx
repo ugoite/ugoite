@@ -12,43 +12,36 @@ import type {
 import { IconButton } from "~/components/IconButton";
 import { UiIcon } from "~/components/UiIcon";
 import {
+  addInputComponent,
   addTextDisplay,
   type CompositionDraft,
   type DraftInsertTarget,
   type DraftLayoutItem,
   type DraftLayoutRow,
-  inputComponentIdForVariable,
   moveLayoutItem,
   moveLayoutRow,
-  placeParameterControl,
-  unplacedParameters,
 } from "~/lib/composition-draft";
 import { t } from "~/lib/i18n";
-import { compositionParameterDisplayName } from "~/lib/composition-parameter-name";
+import { compositionVariableDisplayName } from "~/lib/composition-variable-name";
 import { safeText } from "~/lib/display-value";
 import type {
   CompositionFlowLayoutItem,
-  CompositionVariableDefinition,
   CompositionResolvedComponentBinding,
   CompositionResolvePlan,
   CompositionTextStyle,
+  CompositionVariableDefinition,
 } from "~/lib/composition-api";
 import type { CompositionSourcePageState } from "~/lib/composition-query-handle";
 
-/** Transient canvas selection: component/parameter identity, never pixels. */
+/** Transient canvas selection: component identity, never pixels. */
 export const designBlockIdForComponent = (draftId: string): string => draftId;
-
-export const designBlockIdForParameter = (
-  parameterId: string,
-  inputComponentId = inputComponentIdForVariable(parameterId),
-): string => `input:${inputComponentId}`;
 
 export interface CompositionDesignCanvasProps {
   draft: CompositionDraft;
   /** Debounced shared preview plan; empty while the preview is pending. */
   plan: Pick<CompositionResolvePlan, "sources" | "component_bindings">;
-  /** Transient parameter values owned by the preview handle. */
-  parameterValues: Readonly<Record<string, unknown>>;
+  /** Transient variable values owned by the preview handle. */
+  variableValues: Readonly<Record<string, unknown>>;
   sources: Record<string, CompositionSourcePageState>;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
@@ -77,7 +70,9 @@ const blockIcon = (
   index: number,
 ): "canvas-text" | "canvas-metric" | "canvas-table" | "canvas-input" => {
   const item = row.items[index];
-  if (item.kind === "parameter") return "canvas-input";
+  if (draft.inputs.some((input) => input.draftId === item.draftId)) {
+    return "canvas-input";
+  }
   const display = draft.displays.find((entry) =>
     item.kind === "component" && entry.draftId === item.draftId
   );
@@ -90,9 +85,10 @@ const blockName = (
   draft: CompositionDraft,
   item: DraftLayoutItem,
 ): string => {
-  if (item.kind === "parameter") {
-    return item.label?.trim() ||
-      compositionParameterDisplayName(draft.parameters, item.parameterId);
+  const input = draft.inputs.find((entry) => entry.draftId === item.draftId);
+  if (input) {
+    return input.label?.trim() ||
+      compositionVariableDisplayName(draft.variables, input.variable);
   }
   const display = draft.displays.find((entry) =>
     entry.draftId === item.draftId
@@ -102,8 +98,8 @@ const blockName = (
   if (display.kind === "text") {
     return display.content.kind === "literal"
       ? display.content.text || t("composition.studioText")
-      : compositionParameterDisplayName(
-        draft.parameters,
+      : compositionVariableDisplayName(
+        draft.variables,
         display.content.variable,
       );
   }
@@ -115,15 +111,15 @@ const blockName = (
  * the canvas column so it can never visually collide with the inspector;
  * the backdrop blocks canvas selection while open, and dismissal returns
  * focus to the invoking gap control. Data insertion is always available and
- * offers direct Form and Saved SQL selection when no source exists. The
- * parameters section stays hidden until a parameter exists, so no
- * disabled-with-reason copy is needed. Text insertion is always available.
+ * offers direct Form and Saved SQL selection when no source exists. Input
+ * placement creates a component each time, so variables can have multiple
+ * independent controls. Text insertion is always available.
  */
 function PaletteDialog(props: {
   target: DraftInsertTarget;
   draft: CompositionDraft;
   onInsertText: (target: DraftInsertTarget) => void;
-  onInsertParameter: (target: DraftInsertTarget, parameterId: string) => void;
+  onInsertInput: (target: DraftInsertTarget, variableId: string) => void;
   onRequestDisplayPicker: (target: DraftInsertTarget) => void;
   onClose: () => void;
 }) {
@@ -151,8 +147,7 @@ function PaletteDialog(props: {
     });
   });
 
-  const hasParameters = () => props.draft.parameters.length > 0;
-  const unplaced = () => unplacedParameters(props.draft);
+  const variables = () => props.draft.variables;
 
   const handleKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Escape") {
@@ -220,42 +215,33 @@ function PaletteDialog(props: {
               <span>{t("composition.studioData")}</span>
             </button>
           </div>
-          <Show when={hasParameters()}>
+          <Show when={variables().length > 0}>
             <div class="designPaletteParams">
-              <span class="ui-label">{t("composition.studioParameters")}</span>
-              <Show
-                when={unplaced().length > 0}
-                fallback={
-                  <p class="ui-muted">
-                    {t("composition.studioEmptyParameters")}
-                  </p>
-                }
-              >
-                <For each={unplaced()}>
-                  {(parameter) => (
-                    <button
-                      type="button"
-                      class="designPaletteItem"
-                      aria-label={t("composition.studioPlaceParameter", {
-                        name: compositionParameterDisplayName(
-                          props.draft.parameters,
-                          parameter.id,
-                        ),
-                      })}
-                      onClick={() =>
-                        props.onInsertParameter(insertTarget, parameter.id)}
-                    >
-                      <UiIcon name="canvas-input" />
-                      <span>
-                        {compositionParameterDisplayName(
-                          props.draft.parameters,
-                          parameter.id,
-                        )}
-                      </span>
-                    </button>
-                  )}
-                </For>
-              </Show>
+              <span class="ui-label">{t("composition.studioVariables")}</span>
+              <For each={variables()}>
+                {(variable) => (
+                  <button
+                    type="button"
+                    class="designPaletteItem"
+                    aria-label={t("composition.studioPlaceInput", {
+                      name: compositionVariableDisplayName(
+                        props.draft.variables,
+                        variable.id,
+                      ),
+                    })}
+                    onClick={() =>
+                      props.onInsertInput(insertTarget, variable.id)}
+                  >
+                    <UiIcon name="canvas-input" />
+                    <span>
+                      {compositionVariableDisplayName(
+                        props.draft.variables,
+                        variable.id,
+                      )}
+                    </span>
+                  </button>
+                )}
+              </For>
             </div>
           </Show>
         </div>
@@ -275,17 +261,17 @@ function PaletteDialog(props: {
 export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
   const definitionById = () =>
     new Map(
-      props.draft.parameters.map((parameter) => [
-        parameter.id,
+      props.draft.variables.map((variable) => [
+        variable.id,
         {
-          id: parameter.id,
-          ...(parameter.label ? { label: parameter.label } : {}),
-          type: parameter.type,
-          required: parameter.required,
-          ...(parameter.default === undefined
+          id: variable.id,
+          ...(variable.label ? { label: variable.label } : {}),
+          type: variable.type,
+          required: variable.required,
+          ...(variable.default === undefined
             ? {}
-            : { default: parameter.default }),
-          ...(parameter.format ? { format: parameter.format } : {}),
+            : { default: variable.default }),
+          ...(variable.format ? { format: variable.format } : {}),
         } satisfies CompositionVariableDefinition,
       ]),
     );
@@ -311,7 +297,7 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
         entries[display.draftId] = {
           text: display.content.kind === "literal"
             ? display.content.text
-            : safeText(props.parameterValues[display.content.variable]),
+            : safeText(props.variableValues[display.content.variable]),
           style: display.style,
         };
       }
@@ -320,14 +306,10 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
   };
   const visibleRows = () =>
     props.draft.layoutRows.filter((row) => row.items.length > 0);
-  const flowItem = (item: DraftLayoutItem): CompositionFlowLayoutItem =>
-    item.kind === "component"
-      ? { kind: "component", component: item.draftId }
-      : {
-        kind: "component",
-        component: item.inputComponentId ??
-          inputComponentIdForVariable(item.parameterId),
-      };
+  const flowItem = (item: DraftLayoutItem): CompositionFlowLayoutItem => ({
+    kind: "component",
+    component: item.draftId,
+  });
   const flowRows = () =>
     visibleRows().map((row) => ({
       ...row,
@@ -355,11 +337,11 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
     }
   };
 
-  const insertParameter = (target: DraftInsertTarget, parameterId: string) => {
-    const placed = placeParameterControl(props.draft, parameterId, target);
-    if (placed.ok) {
+  const insertInput = (target: DraftInsertTarget, variableId: string) => {
+    const placed = addInputComponent(props.draft, variableId, target);
+    if (placed.ok && placed.draftId) {
       props.onDraftChange(placed.draft);
-      props.onSelect(designBlockIdForParameter(parameterId));
+      props.onSelect(designBlockIdForComponent(placed.draftId));
       props.onPaletteTarget(null);
     }
   };
@@ -402,37 +384,31 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
     itemIndex: number,
     rowItemCount: number,
   ) => {
-    const blockId = () =>
-      item.kind === "parameter"
-        ? designBlockIdForParameter(
-          item.parameterId,
-          item.inputComponentId ??
-            inputComponentIdForVariable(item.parameterId),
-        )
-        : designBlockIdForComponent(item.draftId);
+    const blockId = () => designBlockIdForComponent(item.draftId);
     const selected = () => props.selectedId === blockId();
     const highlighted = () => props.highlightedIds?.has(blockId()) ?? false;
     const name = () => blockName(props.draft, item);
     const binding = (): CompositionResolvedComponentBinding | undefined => {
-      const itemId = item.kind === "component"
-        ? item.draftId
-        : item.inputComponentId ??
-          inputComponentIdForVariable(item.parameterId);
+      const itemId = item.draftId;
       const resolved = bindingById().get(itemId);
-      if (resolved || item.kind === "component") return resolved;
+      if (resolved) return resolved;
+      const input = props.draft.inputs.find((entry) =>
+        entry.draftId === itemId
+      );
+      if (!input) return undefined;
       return {
         component_id: itemId,
         kind: "input",
-        variable_id: item.parameterId,
+        variable_id: input.variable,
+        ...(input.label ? { label: input.label } : {}),
       };
     };
     const inputDisplayName = () => {
       const current = binding();
       if (current?.kind !== "input") return undefined;
       return current.label?.trim() ||
-        (item.kind === "parameter" ? item.label?.trim() : undefined) ||
-        compositionParameterDisplayName(
-          props.draft.parameters,
+        compositionVariableDisplayName(
+          props.draft.variables,
           current.variable_id,
         );
     };
@@ -509,8 +485,8 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
             definition={binding()?.kind === "input"
               ? definitionById().get(binding()!.variable_id)
               : undefined}
-            parameterDisplayName={inputDisplayName()}
-            variableValues={props.parameterValues}
+            inputDisplayName={inputDisplayName()}
+            variableValues={props.variableValues}
             sources={props.sources}
             sourceById={sourceById()}
             ownsSourceStatus={ownsSourceStatus()}
@@ -605,7 +581,7 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
             target={target()}
             draft={props.draft}
             onInsertText={insertText}
-            onInsertParameter={insertParameter}
+            onInsertInput={insertInput}
             onRequestDisplayPicker={props.onRequestDisplayPicker}
             onClose={() => props.onPaletteTarget(null)}
           />

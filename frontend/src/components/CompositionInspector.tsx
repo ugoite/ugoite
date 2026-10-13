@@ -4,20 +4,17 @@ import {
   type InspectorApply,
 } from "~/components/composition/InspectorFields";
 import { MetricInspector } from "~/components/composition/MetricInspector";
-import { ParameterPlacementInspector } from "~/components/composition/ParameterPlacementInspector";
+import { InputInspector } from "~/components/composition/InputInspector";
 import { TableInspector } from "~/components/composition/TableInspector";
 import { TextInspector } from "~/components/composition/TextInspector";
 import { IconButton } from "~/components/IconButton";
 import {
   type CompositionDraft,
   type DraftDisplay,
-  inputComponentIdForVariable,
 } from "~/lib/composition-draft";
 import { displayDefaultName } from "~/lib/composition-display-name";
-import { compositionParameterDisplayName } from "~/lib/composition-parameter-name";
+import { compositionVariableDisplayName } from "~/lib/composition-variable-name";
 import { t } from "~/lib/i18n";
-
-const INPUT_BLOCK_PREFIX = "input:";
 
 export type { CompositionInspectorDataJump };
 
@@ -27,46 +24,22 @@ export interface CompositionInspectorProps {
   selectedId: string | null;
   /** Single draft mutation channel shared with the canvas. */
   onDraftChange: (draft: CompositionDraft) => void;
-  /** Remove the selected display or unplace the selected parameter control. */
+  /** Remove the selected display or Input component. */
   onRemove: () => void;
   onDataJump: (jump: CompositionInspectorDataJump) => void;
 }
 
 type InspectorSelection =
   | { kind: "component"; display: DraftDisplay }
-  | {
-    kind: "parameter";
-    parameterId: string;
-    inputComponentId: string;
-  };
+  | { kind: "input"; inputId: string };
 
 const resolveSelection = (
   draft: CompositionDraft,
   selectedId: string | null,
 ): InspectorSelection | undefined => {
   if (!selectedId) return undefined;
-  if (selectedId.startsWith(INPUT_BLOCK_PREFIX)) {
-    const inputComponentId = selectedId.slice(INPUT_BLOCK_PREFIX.length);
-    for (const row of draft.layoutRows) {
-      for (const item of row.items) {
-        if (item.kind !== "parameter") continue;
-        const componentId = item.inputComponentId ??
-          inputComponentIdForVariable(item.parameterId);
-        if (
-          componentId === inputComponentId &&
-          draft.parameters.some((parameter) =>
-            parameter.id === item.parameterId
-          )
-        ) {
-          return {
-            kind: "parameter",
-            parameterId: item.parameterId,
-            inputComponentId,
-          };
-        }
-      }
-    }
-    return undefined;
+  if (draft.inputs.some((input) => input.draftId === selectedId)) {
+    return { kind: "input", inputId: selectedId };
   }
   const display = draft.displays.find((entry) => entry.draftId === selectedId);
   return display ? { kind: "component", display } : undefined;
@@ -75,13 +48,12 @@ const resolveSelection = (
 /**
  * Inspector for the selected canvas block only. Metric edits bind label,
  * Saved SQL source, and result column; table edits bind label and source; text edits
- * bind content and fixed style; parameter controls show the owned parameter
- * ref and retarget placement without any label override. Every edit flows
+ * bind content and fixed style; Input components bind one variable and an
+ * optional label. Every edit flows
  * through draft updaters into the shared debounced preview; text, label,
  * and style edits never reshape sources, so they never refetch. Without a
  * resolvable selection the inspector renders nothing: no panel, no prose.
- * Selected displays are removed here; selected parameter controls are only
- * unplaced, leaving their declarations in Parameters.
+ * Every selected Component can be removed without deleting its variable.
  */
 export function CompositionInspector(props: CompositionInspectorProps) {
   const selection = () => resolveSelection(props.draft, props.selectedId);
@@ -94,7 +66,7 @@ export function CompositionInspector(props: CompositionInspectorProps) {
     <Show when={selection()}>
       {(entry) => (
         <Show
-          when={entry().kind === "parameter"}
+          when={entry().kind === "input"}
           fallback={
             <ComponentInspector
               draft={props.draft}
@@ -105,22 +77,21 @@ export function CompositionInspector(props: CompositionInspectorProps) {
             />
           }
         >
-          <ParameterPlacementInspector
+          <InputInspector
             draft={props.draft}
-            parameterId={(entry() as { parameterId: string }).parameterId}
-            inputComponentId={(entry() as {
-              inputComponentId: string;
-            }).inputComponentId}
+            inputId={(entry() as { inputId: string }).inputId}
             apply={apply}
             actions={(() => {
-              const parameterId = (entry() as {
-                parameterId: string;
-              }).parameterId;
-              const name = compositionParameterDisplayName(
-                props.draft.parameters,
-                parameterId,
+              const inputId = (entry() as { inputId: string }).inputId;
+              const input = props.draft.inputs.find((item) =>
+                item.draftId === inputId
               );
-              const label = t("composition.studioUnplaceParameter", { name });
+              const name = input?.label?.trim() ||
+                compositionVariableDisplayName(
+                  props.draft.variables,
+                  input?.variable ?? "",
+                );
+              const label = t("composition.studioRemoveInput", { name });
               return (
                 <IconButton
                   icon="trash"

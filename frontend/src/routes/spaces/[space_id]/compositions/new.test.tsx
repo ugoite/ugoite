@@ -22,6 +22,7 @@ const {
   sqlListMock,
   sqlGetMock,
   sqlQueryMock,
+  entryRevisionMock,
   navigateMock,
 } = vi.hoisted(() => ({
   canonicalizeMock: vi.fn(),
@@ -33,6 +34,7 @@ const {
   sqlListMock: vi.fn(),
   sqlGetMock: vi.fn(),
   sqlQueryMock: vi.fn(),
+  entryRevisionMock: vi.fn(),
   navigateMock: vi.fn(),
 }));
 
@@ -92,6 +94,10 @@ vi.mock("~/lib/composition-api", () => ({
 }));
 
 vi.mock("~/lib/ugoite-client", () => ({
+  entryApi: {
+    getRevision: (...args: unknown[]) =>
+      (entryRevisionMock as (...call: unknown[]) => unknown)(...args),
+  },
   formApi: {
     list: (...args: unknown[]) =>
       (formListMock as (...call: unknown[]) => unknown)(...args),
@@ -235,6 +241,10 @@ describe("Composition studio shell", () => {
     formListMock.mockResolvedValue([taskForm]);
     sqlListMock.mockResolvedValue([monthlyEntry]);
     sqlGetMock.mockResolvedValue(monthlyEntry);
+    entryRevisionMock.mockResolvedValue({
+      revision_id: "sql-rev-1",
+      fields: { variables: [] },
+    });
     sqlQueryMock.mockResolvedValue({
       columns: ["total"],
       rows: [[1]],
@@ -270,7 +280,7 @@ describe("Composition studio shell", () => {
     );
 
     // True modes: a blank Design shows the finished shape only — header,
-    // mode switch, Design canvas area, inspector slot. Parameters, Tags,
+    // mode switch, Design canvas area, inspector slot. Variables, Tags,
     // the Data workspace, and the Preview section never render here. The
     // legacy Display section is gone; the canvas owns display editing.
     const modes = screen.getByRole("radiogroup", { name: "Studio mode" });
@@ -282,7 +292,7 @@ describe("Composition studio shell", () => {
       screen.queryByRole("heading", { name: "Display" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("heading", { name: "Parameters" }),
+      screen.queryByRole("heading", { name: "Variables" }),
     ).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Tags" })).not
       .toBeInTheDocument();
@@ -335,8 +345,8 @@ describe("Composition studio shell", () => {
     });
 
     // Data mode lists existing sources without a competing source action.
-    // Parameters disclose progressively only once a source exists; Tags
-    // remain on their own tab.
+    // Variables are available before a source exists; Tags remain on their
+    // own tab.
     fireEvent.click(within(modes).getByRole("radio", { name: "Data" }));
     expect(
       screen.getAllByRole("heading", { level: 2 }).map((heading) =>
@@ -347,31 +357,27 @@ describe("Composition studio shell", () => {
       .toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tab", { name: "Tags" })).toBeInTheDocument();
     expect(
-      screen.queryByRole("heading", { name: "Parameters" }),
+      screen.queryByRole("heading", { name: "Variables" }),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Select Tasks" }),
     ).not.toBeInTheDocument();
-    expect(container.querySelectorAll("p")).toHaveLength(0);
+    expect(container.querySelector("#studio-data-variables-panel"))
+      .toHaveAttribute("hidden");
     expect(screen.queryByRole("button", { name: "Add to design" }))
       .not.toBeInTheDocument();
   });
 
-  it("discloses Parameters in Data mode only once a source exists", async () => {
+  it("offers the Variables editor before any source exists", async () => {
     render(() => <CompositionNewRoute />);
     showDataMode();
 
-    expect(
-      screen.queryByRole("heading", { name: "Parameters" }),
-    ).not.toBeInTheDocument();
-    await addSourceViaPicker("Tasks");
-
-    expect(screen.getByRole("tab", { name: "Parameters" }))
+    expect(screen.getByRole("tab", { name: "Variables" }))
       .toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Parameters" }))
-      .not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("tab", { name: "Parameters" }));
-    expect(screen.getByRole("heading", { name: "Parameters" }))
+    fireEvent.click(screen.getByRole("tab", { name: "Variables" }));
+    expect(screen.getByRole("heading", { name: "Variables" }))
+      .toBeInTheDocument();
+    expect(screen.getByLabelText("New variable label"))
       .toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Tags" })).not
       .toBeInTheDocument();
@@ -745,7 +751,7 @@ describe("Composition studio shell", () => {
     expect(saveMock).not.toHaveBeenCalled();
   });
 
-  it("seeds the studio from a saved sql seed with a table and placed controls using localized parameter labels", () => {
+  it("seeds the studio from Saved SQL without inventing variables or Inputs", () => {
     locationControls.state = {
       seed: {
         kind: "saved_sql",
@@ -754,7 +760,7 @@ describe("Composition studio shell", () => {
           revisionId: "sql-rev-1",
           name: "Monthly",
           expectedResult: [{ name: "total", type: "float" }],
-          variables: { month: { parameter: "month" } },
+          variables: {},
           variableTypes: { month: "date" },
         },
       },
@@ -766,15 +772,15 @@ describe("Composition studio shell", () => {
     expect(screen.getByRole("button", { name: "Monthly" }))
       .toBeInTheDocument();
     expect(screen.getByLabelText("Name")).toHaveValue("Monthly");
-    // The seed carries a default Table on the new source with the variable
-    // control placed, so the canvas owns a visible block on open.
+    // The seed carries a default Table but no Composition variable or Input;
+    // SQL variable mappings are authored explicitly in the Data workspace.
     showDesignMode();
-    expect(screen.getByLabelText("Parameter 1")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Variable 1")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("month")).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Select Monthly" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /Save,/ })).toBeDisabled();
     // The seed is consumed once: the location state is cleared on mount so
     // back/forward never double-adds the source.
     expect(replaceState).toHaveBeenCalledWith(
@@ -815,33 +821,33 @@ describe("Composition studio shell", () => {
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
   });
 
-  it("provisions typed parameters from saved sql variables and guards removal", async () => {
+  it("does not create Composition variables from Saved SQL variables", async () => {
     sqlGetMock.mockResolvedValue({
       ...monthlyEntry,
       variables: [{ name: "month", type: "date", description: "" }],
+    });
+    entryRevisionMock.mockResolvedValue({
+      revision_id: "sql-rev-1",
+      fields: { variables: [{ name: "month", type: "date" }] },
     });
     render(() => <CompositionNewRoute />);
     showDataMode();
     await addSourceViaPicker("Monthly", "Saved SQL");
 
-    // The month parameter is provisioned from the server-declared type.
-    // Open its Data tab. Scoped to the Parameters section: the source viewer also
-    // surfaces the Saved SQL variable name in its own Variables section.
-    fireEvent.click(screen.getByRole("tab", { name: "Parameters" }));
-    const parameters = screen
-      .getByRole("heading", { name: "Parameters" })
+    fireEvent.click(screen.getByRole("tab", { name: "Variables" }));
+    const variables = screen
+      .getByRole("heading", { name: "Variables" })
       .closest("section")!;
-    expect(await within(parameters).findByText("Parameter 1"))
+    expect(await within(variables).findByText("Add a variable to begin."))
       .toBeInTheDocument();
-
-    // A referenced parameter cannot be removed silently.
-    fireEvent.click(
-      screen.getByRole("button", { name: "Remove Parameter 1" }),
+    expect(within(variables).queryByText("month")).not.toBeInTheDocument();
+    expect(entryRevisionMock).toHaveBeenCalledWith(
+      "space-1",
+      "sql-1",
+      "sql-rev-1",
     );
     expect(
-      await screen.findByText("This parameter is used by a data source."),
-    ).toBeInTheDocument();
-    expect(within(parameters).getByText("Parameter 1")).toBeInTheDocument();
-    expect(within(parameters).queryByText("month")).not.toBeInTheDocument();
+      screen.getByRole("button", { name: "Save, Enter a name to save." }),
+    ).toBeDisabled();
   });
 });

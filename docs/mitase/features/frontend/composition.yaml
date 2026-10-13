@@ -129,9 +129,9 @@ features:
                 criterion: REQ-FE-070#criterion.typed-parameter-binding
               - kind: satisfies
                 criterion: REQ-FE-077#criterion.parameter-display-names
-          - id: composition-parameter-list
+          - id: composition-variable-list
             adapter: typescript
-            path: frontend/src/components/CompositionParameterList.tsx
+            path: frontend/src/components/CompositionVariableList.tsx
             selector: { kind: file }
             claims:
               - kind: satisfies
@@ -142,19 +142,19 @@ features:
                 criterion: REQ-FE-070#criterion.structure-first-authoring
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.no-persistent-explanatory-copy
-          - id: composition-parameter-name
+          - id: composition-variable-name
             adapter: typescript
-            path: frontend/src/lib/composition-parameter-name.ts
-            selector: { kind: symbol, name: compositionParameterDisplayName }
+            path: frontend/src/lib/composition-variable-name.ts
+            selector: { kind: symbol, name: compositionVariableDisplayName }
             claims:
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.typed-parameter-binding
               - kind: satisfies
                 criterion: REQ-FE-077#criterion.parameter-display-names
-          - id: composition-parameter-control
+          - id: composition-input-control
             adapter: typescript
-            path: frontend/src/components/composition/ParameterControl.tsx
-            selector: { kind: symbol, name: ParameterControl }
+            path: frontend/src/components/composition/InputControl.tsx
+            selector: { kind: file }
             claims:
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.typed-parameter-binding
@@ -398,6 +398,10 @@ features:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.metric-saved-lifecycle
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio-contract]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Composition Studio builds a reusable tool from existing knowledge" } }
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.code-free-studio-authoring
+                covers: [FEAT-COMP-008#binding.studio-typed-variable-defaults/target.variable-default-editor]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Composition Studio builds a reusable tool from existing knowledge" } }
           - id: metric-multiple-row-recovery
             adapter: typescript

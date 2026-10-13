@@ -165,7 +165,7 @@ describe("Composition exact-revision route", () => {
     );
   });
 
-  it("renders deterministic diagnostics and retains the parameter control", async () => {
+  it("renders deterministic diagnostics and retains the Input control", async () => {
     vi.mocked(compositionApi.resolve).mockResolvedValue({
       ok: false,
       variable_definitions: [{
@@ -648,7 +648,9 @@ describe("Composition revision flow layout", () => {
     expect(screen.getByRole("heading", { name: "Changed title" }))
       .toBeInTheDocument();
     expect(compositionApi.resolve).toHaveBeenCalledOnce();
-    await waitFor(() => expect(compositionApi.resolve).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(compositionApi.resolve).toHaveBeenCalledTimes(2)
+    );
     expect(compositionApi.querySource).toHaveBeenCalledOnce();
   });
 
@@ -697,21 +699,21 @@ describe("Composition revision flow layout", () => {
     });
     const { container } = render(() => <CompositionRevisionRoute />);
 
-    expect(await screen.findByLabelText("Parameter 1")).toHaveValue(
+    expect(await screen.findByLabelText("Variable 1")).toHaveValue(
       "2026-10-01",
     );
-    expect(await screen.findByLabelText("Parameter 2")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Variable 2")).toBeInTheDocument();
     expect(container.querySelector(".compositionFlowRow")).toHaveTextContent(
-      "Parameter 2",
+      "Variable 2",
     );
     expect(container.querySelector(".compositionFlowRow")).not
-      .toHaveTextContent("Parameter 1");
+      .toHaveTextContent("Variable 1");
     expect(screen.queryByLabelText("month")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("region")).not.toBeInTheDocument();
 
     setLocale("ja");
-    expect(screen.getByLabelText("パラメーター1")).toHaveValue("2026-10-01");
-    expect(screen.getByLabelText("パラメーター2")).toBeInTheDocument();
+    expect(screen.getByLabelText("変数1")).toHaveValue("2026-10-01");
+    expect(screen.getByLabelText("変数2")).toBeInTheDocument();
   });
 
   it("shows unplaced variables outside the flow without duplication", async () => {

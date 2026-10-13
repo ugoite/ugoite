@@ -417,7 +417,7 @@ export interface CompositionMetricQueryResponse {
   diagnostics?: CompositionMetricQueryDiagnostic[];
 }
 
-const splitParameterSnapshot = (
+const splitVariableSnapshot = (
   snapshot: Record<string, unknown>,
 ): { variables: Record<string, unknown>; unset_variables: string[] } => {
   const variables: Record<string, unknown> = {};
@@ -433,7 +433,7 @@ export type CompositionSourcePage =
   | { kind: "entry_query"; page: EntryPage }
   | { kind: "saved_sql"; page: SqlQueryPage };
 
-const compositionParameterTypes = new Set<CompositionVariableType>([
+const compositionVariableTypes = new Set<CompositionVariableType>([
   "string",
   "boolean",
   "integer",
@@ -445,31 +445,23 @@ const compositionParameterTypes = new Set<CompositionVariableType>([
 export const canCreateSavedSqlComposition = (entry: SqlEntry): boolean =>
   entry.kind === "user-query" &&
   entry.variables.every((variable) =>
-    compositionParameterTypes.has(variable.type as CompositionVariableType)
+    compositionVariableTypes.has(variable.type as CompositionVariableType)
   );
 
-/** Build the smallest typed Composition that retains one exact Saved SQL revision. */
+/** Build a Table-only Composition for an exact Saved SQL revision. */
 export const buildSavedSqlCompositionDocument = (
   entry: SqlEntry,
   name: string,
   columns: readonly string[],
-  parameterValues: Record<string, unknown>,
   resultSchema?: readonly SqlResultColumn[],
 ): SavedSqlCompositionDocument => {
-  const variables = entry.variables.map((variable) => {
+  for (const variable of entry.variables) {
     if (
-      !compositionParameterTypes.has(variable.type as CompositionVariableType)
+      !compositionVariableTypes.has(variable.type as CompositionVariableType)
     ) {
-      throw new Error(`Unsupported Saved SQL parameter type: ${variable.type}`);
+      throw new Error(`Unsupported Saved SQL variable type: ${variable.type}`);
     }
-    const value = parameterValues[variable.name];
-    return {
-      id: variable.name,
-      type: variable.type as CompositionVariableType,
-      required: true as const,
-      ...(value === null || value === undefined ? {} : { default: value }),
-    };
-  });
+  }
   const sourceId = "sql_results";
   const componentId = "results_table";
   // Keep the server descriptor authoritative and map only result types that
@@ -484,7 +476,7 @@ export const buildSavedSqlCompositionDocument = (
     name: name.trim(),
     tags: [],
     spec: {
-      variables,
+      variables: [],
       sources: [{
         id: sourceId,
         kind: "saved_sql",
@@ -494,32 +486,14 @@ export const buildSavedSqlCompositionDocument = (
           name: column,
           type: compositionResultTypeFromSql(schemaByName.get(column)),
         })),
-        variables: Object.fromEntries(
-          entry.variables.map((variable) => [
-            variable.name,
-            { variable: variable.name },
-          ]),
-        ),
+        variables: {},
       }],
-      components: [
-        ...variables.map((variable) => ({
-          id: `input-${variable.id}`,
-          kind: "input" as const,
-          variable: variable.id,
-        })),
-        { id: componentId, kind: "table" as const, source: sourceId },
-      ],
+      components: [{ id: componentId, kind: "table", source: sourceId }],
       layout: {
         kind: "flow",
         rows: [{
           id: "main",
-          items: [
-            ...variables.map((variable) => ({
-              kind: "component" as const,
-              component: `input-${variable.id}`,
-            })),
-            { kind: "component" as const, component: componentId },
-          ],
+          items: [{ kind: "component", component: componentId }],
         }],
       },
     },
@@ -656,10 +630,10 @@ export const compositionApi = {
     spaceId: string,
     compositionId: string,
     revisionId: string,
-    parameters: Record<string, unknown>,
+    variables: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<CompositionResolveResponse> {
-    const snapshot = splitParameterSnapshot(parameters);
+    const snapshot = splitVariableSnapshot(variables);
     return await protocolFetch<CompositionResolveResponse>(
       "composition.resolve",
       { space_id: spaceId, composition_id: compositionId },
@@ -678,10 +652,10 @@ export const compositionApi = {
   async preview(
     spaceId: string,
     yaml: string,
-    parameters: Record<string, unknown>,
+    variables: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<CompositionPreviewResponse> {
-    const snapshot = splitParameterSnapshot(parameters);
+    const snapshot = splitVariableSnapshot(variables);
     return await protocolFetch<CompositionPreviewResponse>(
       "composition.preview",
       { space_id: spaceId },
@@ -704,7 +678,7 @@ export const compositionApi = {
   ): Promise<CompositionMetricQueryResponse> {
     const { variables, unset_variables: explicitlyUnset = [], ...requestBody } =
       request;
-    const snapshot = splitParameterSnapshot(variables);
+    const snapshot = splitVariableSnapshot(variables);
     const unset_variables = [
       ...new Set([...explicitlyUnset, ...snapshot.unset_variables]),
     ];

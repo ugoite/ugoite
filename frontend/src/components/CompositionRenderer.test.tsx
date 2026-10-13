@@ -73,12 +73,12 @@ describe("CompositionRenderer", () => {
     setLocale("en");
   });
 
-  it("uses localized parameter names instead of binding keys in diagnostics", () => {
+  it("uses localized variable names instead of binding keys in diagnostics", () => {
     const unknown = compositionDiagnosticMessage({
       code: "variable_unknown",
       variable_id: "internal_key",
     });
-    expect(unknown).toBe("Unknown variable: Parameter.");
+    expect(unknown).toBe("Unknown variable: Variable.");
     expect(unknown).not.toContain("internal_key");
 
     setLocale("ja");
@@ -86,7 +86,7 @@ describe("CompositionRenderer", () => {
       { code: "variable_missing", variable_id: "month" },
       [{ id: "month" }],
     );
-    expect(missing).toBe("パラメーター1 の値を入力してください。");
+    expect(missing).toBe("変数1 の値を入力してください。");
     expect(missing).not.toContain("month");
   });
 
@@ -427,7 +427,7 @@ describe("CompositionRenderer", () => {
   });
 
   it("applies only explicit metric formatting without rounding or losing decimal scale", async () => {
-    const [parameters, setParameters] = createSignal({ month: "2026-10" });
+    const [variables, setVariables] = createSignal({ month: "2026-10" });
     const query = vi.spyOn(compositionApi, "queryMetric")
       .mockResolvedValueOnce({
         ok: true,
@@ -468,7 +468,7 @@ describe("CompositionRenderer", () => {
             composition_id: "tool-1",
             revision_id: "revision-1",
           },
-          variables: parameters(),
+          variables: variables(),
         }}
         onNext={() => {}}
         onPrevious={() => {}}
@@ -478,7 +478,7 @@ describe("CompositionRenderer", () => {
 
     expect(await screen.findByText("12.30 USD", { selector: "output" }))
       .toBeInTheDocument();
-    setParameters({ month: "2026-11" });
+    setVariables({ month: "2026-11" });
     expect(await screen.findByText("12.345 USD", { selector: "output" }))
       .toBeInTheDocument();
     expect(query).toHaveBeenCalledTimes(2);
@@ -693,8 +693,8 @@ describe("CompositionRenderer", () => {
     );
   });
 
-  it("retries a metric query and refreshes it when parameters change", async () => {
-    const [parameters, setParameters] = createSignal({ month: "2026-10" });
+  it("retries a metric query and refreshes it when variables change", async () => {
+    const [variables, setVariables] = createSignal({ month: "2026-10" });
     const query = vi.spyOn(compositionApi, "queryMetric")
       .mockRejectedValueOnce(new Error("temporary query failure"))
       .mockResolvedValueOnce({
@@ -731,7 +731,7 @@ describe("CompositionRenderer", () => {
             composition_id: "tool-1",
             revision_id: "revision-1",
           },
-          variables: parameters(),
+          variables: variables(),
         }}
         onNext={() => {}}
         onPrevious={() => {}}
@@ -745,7 +745,7 @@ describe("CompositionRenderer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByText("12.300", { selector: "output" }))
       .toBeInTheDocument();
-    setParameters({ month: "2026-11" });
+    setVariables({ month: "2026-11" });
     expect(await screen.findByText("15.600", { selector: "output" }))
       .toBeInTheDocument();
     expect(query).toHaveBeenNthCalledWith(
@@ -762,8 +762,8 @@ describe("CompositionRenderer", () => {
     );
   });
 
-  it("discards a slow result after the metric parameters change", async () => {
-    const [parameters, setParameters] = createSignal({ month: "2026-10" });
+  it("discards a slow result after the metric variables change", async () => {
+    const [variables, setVariables] = createSignal({ month: "2026-10" });
     let resolveOld!: (result: CompositionMetricQueryResponse) => void;
     let resolveCurrent!: (result: CompositionMetricQueryResponse) => void;
     const query = vi.spyOn(compositionApi, "queryMetric")
@@ -792,7 +792,7 @@ describe("CompositionRenderer", () => {
             composition_id: "tool-1",
             revision_id: "revision-1",
           },
-          variables: parameters(),
+          variables: variables(),
         }}
         onNext={() => {}}
         onPrevious={() => {}}
@@ -800,7 +800,7 @@ describe("CompositionRenderer", () => {
       />
     ));
     await waitFor(() => expect(query).toHaveBeenCalledTimes(1));
-    setParameters({ month: "2026-11" });
+    setVariables({ month: "2026-11" });
     await waitFor(() => expect(query).toHaveBeenCalledTimes(2));
 
     resolveCurrent({

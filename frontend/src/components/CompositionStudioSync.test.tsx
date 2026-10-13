@@ -13,14 +13,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CompositionStudio } from "./CompositionStudio";
 import {
   addEntryQuerySource,
+  addInputComponent,
   addMetricDisplay,
-  addParameter,
   addSavedSqlSource,
   addTableDisplay,
   addTextDisplay,
+  addVariable,
   type CompositionDraft,
   createEmptyDraft,
-  placeParameterControl,
   setMetricSource,
 } from "~/lib/composition-draft";
 import { setLocale } from "~/lib/i18n";
@@ -84,6 +84,11 @@ vi.mock("~/lib/composition-api", () => ({
 }));
 
 vi.mock("~/lib/ugoite-client", () => ({
+  entryApi: {
+    getRevision: vi.fn().mockResolvedValue({
+      fields: { variables: [] },
+    }),
+  },
   formApi: {
     list: (...args: unknown[]) =>
       (formListMock as (...call: unknown[]) => unknown)(...args),
@@ -111,6 +116,7 @@ const seedDraft = (): CompositionDraft => {
     name: "Monthly totals",
     expectedResult: [{ name: "total", type: "float" as const }],
     variables: {},
+    variableTypes: {},
   }).draft;
   draft = addEntryQuerySource(draft, {
     formId: "11111111-1111-4111-8111-111111111111",
@@ -122,13 +128,13 @@ const seedDraft = (): CompositionDraft => {
       projection: { kind: "preview" as const },
     },
   }).draft;
-  const month = addParameter(draft, {
+  const month = addVariable(draft, {
     id: "month",
     label: "Month",
     type: "date",
     required: true,
   });
-  if (!month.ok) throw new Error("expected month parameter");
+  if (!month.ok) throw new Error("expected month variable");
   draft = month.draft;
   const metric = addMetricDisplay(
     draft,
@@ -144,8 +150,8 @@ const seedDraft = (): CompositionDraft => {
   const text = addTextDisplay(draft, { text: "Summary", style: "heading" });
   if (!text.ok) throw new Error("expected text block");
   draft = text.draft;
-  const placed = placeParameterControl(draft, "month");
-  if (!placed.ok) throw new Error("expected parameter placement");
+  const placed = addInputComponent(draft, "month");
+  if (!placed.ok) throw new Error("expected variable placement");
   return placed.draft;
 };
 
@@ -156,6 +162,7 @@ const sourceOnlyDraft = (): CompositionDraft =>
     name: "Monthly totals",
     expectedResult: [{ name: "total", type: "float" as const }],
     variables: {},
+    variableTypes: {},
   }).draft;
 
 const sqlMetricDraft = (): CompositionDraft => {
@@ -165,6 +172,7 @@ const sqlMetricDraft = (): CompositionDraft => {
     name: "Monthly totals",
     expectedResult: [{ name: "total", type: "float" as const }],
     variables: {},
+    variableTypes: {},
   });
   const alternate = addSavedSqlSource(primary.draft, {
     entryId: "sql-2",
@@ -172,6 +180,7 @@ const sqlMetricDraft = (): CompositionDraft => {
     name: "Yearly totals",
     expectedResult: [{ name: "total", type: "float" as const }],
     variables: {},
+    variableTypes: {},
   });
   const metric = addMetricDisplay(alternate.draft, "src-1", "total", "Total");
   if (!metric.ok) throw new Error("expected Saved SQL Metric");
@@ -378,25 +387,25 @@ describe("CompositionStudioSync", () => {
     expect(canonicalizeMock).toHaveBeenCalledTimes(1);
   });
 
-  it("queries a typed draft metric with its exact preview and current parameter values", async () => {
+  it("queries a typed draft metric with its exact preview and current variable values", async () => {
     previewMock.mockImplementationOnce(async () =>
       okMetricPreview("fp-studio")
     );
     const draft = seedDraft();
-    const withParameterDefault = {
+    const withVariableDefault = {
       ...draft,
       sources: draft.sources.map((source) =>
         source.kind === "saved_sql" && source.draftId === "src-1"
-          ? { ...source, variables: { period: { parameter: "month" } } }
+          ? { ...source, variables: { period: { variable: "month" } } }
           : source
       ),
-      parameters: draft.parameters.map((parameter) => ({
-        ...parameter,
-        default: parameter.id === "month" ? "2026-10-01" : parameter.default,
+      variables: draft.variables.map((variable) => ({
+        ...variable,
+        default: variable.id === "month" ? "2026-10-01" : variable.default,
       })),
     };
 
-    renderStudio(withParameterDefault);
+    renderStudio(withVariableDefault);
 
     await waitFor(() => {
       expect(queryMetricMock).toHaveBeenCalledTimes(1);
@@ -459,7 +468,7 @@ describe("CompositionStudioSync", () => {
     );
   });
 
-  it("auto-selects the block source in Data and keeps text and parameter selections", async () => {
+  it("auto-selects the block source in Data and keeps text and variable selections", async () => {
     renderStudio();
     fireEvent.click(modeRadios().split);
 
@@ -477,7 +486,7 @@ describe("CompositionStudioSync", () => {
       screen.getByRole("heading", { name: "Monthly totals" }),
     ).toBeInTheDocument();
 
-    // Parameter controls carry no source either.
+    // Variable controls carry no source either.
     fireEvent.click(screen.getByRole("button", { name: "Select Month" }));
     expect(
       screen.getByRole("heading", { name: "Monthly totals" }),
@@ -548,7 +557,7 @@ describe("CompositionStudioSync", () => {
     expect(previewMock).toHaveBeenCalledTimes(2);
   });
 
-  it("separates Data sources, Parameters, and Tags into tabs in Data mode", () => {
+  it("separates Data sources, Variables, and Tags into tabs in Data mode", () => {
     const { container } = renderStudio();
     const modes = modeRadios();
     // Top-level studio sections only: canvas block content carries its own
@@ -559,7 +568,7 @@ describe("CompositionStudioSync", () => {
       ).length;
 
     // Design renders the finished shape only: canvas plus inspector, no
-    // Data workspace, no Parameters, no Tags, no Preview section.
+    // Data workspace, no Variables, no Tags, no Preview section.
     expect(screen.getByRole("heading", { name: "Design" })).toBeInTheDocument();
     expect(topSectionCount()).toBe(1);
     expect(
@@ -569,18 +578,18 @@ describe("CompositionStudioSync", () => {
       screen.queryByRole("button", { name: "Monthly totals" }),
     ).toBeNull();
     expect(
-      screen.queryByRole("heading", { name: "Parameters" }),
+      screen.queryByRole("heading", { name: "Variables" }),
     ).toBeNull();
     expect(screen.queryByRole("heading", { name: "Tags" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Preview" })).toBeNull();
 
-    // Data renders only the active fetch-definition panel. Parameters and
+    // Data renders only the active fetch-definition panel. Variables and
     // Tags are separate tabs so the source editor stays the initial focus.
     fireEvent.click(modes.data);
     expect(screen.getByRole("heading", { name: "Data" })).toBeInTheDocument();
     const dataTabs = screen.getByRole("tablist", { name: "Data" });
     expect(within(dataTabs).getAllByRole("tab").map((tab) => tab.textContent))
-      .toEqual(["Sources", "Parameters", "Tags"]);
+      .toEqual(["Sources", "Variables", "Tags"]);
     expect(
       within(dataTabs).getAllByRole("tab").every((tab) =>
         (tab as HTMLButtonElement).tabIndex === 0
@@ -593,11 +602,11 @@ describe("CompositionStudioSync", () => {
       screen.getByRole("button", { name: "Monthly totals" }),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("heading", { name: "Parameters" }),
+      screen.queryByRole("heading", { name: "Variables" }),
     ).toBeNull();
     expect(screen.queryByRole("heading", { name: "Tags" })).toBeNull();
-    fireEvent.click(within(dataTabs).getByRole("tab", { name: "Parameters" }));
-    expect(screen.getByRole("heading", { name: "Parameters" }))
+    fireEvent.click(within(dataTabs).getByRole("tab", { name: "Variables" }));
+    expect(screen.getByRole("heading", { name: "Variables" }))
       .toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Tags" })).toBeNull();
     expect(
@@ -605,7 +614,7 @@ describe("CompositionStudioSync", () => {
     ).toBeNull();
     fireEvent.click(within(dataTabs).getByRole("tab", { name: "Tags" }));
     expect(screen.getByRole("heading", { name: "Tags" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Parameters" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Variables" })).toBeNull();
     fireEvent.click(within(dataTabs).getByRole("tab", { name: "Sources" }));
     expect(
       screen.getByRole("button", { name: "Monthly totals" }),
@@ -616,7 +625,7 @@ describe("CompositionStudioSync", () => {
     expect(screen.queryByRole("heading", { name: "Preview" })).toBeNull();
 
     // Split pairs the canvas with the Data pane and nothing else:
-    // parameters and tags edit in Data mode.
+    // variables and tags edit in Data mode.
     fireEvent.click(modes.split);
     expect(screen.getByRole("heading", { name: "Design" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Data" })).toBeInTheDocument();
@@ -628,7 +637,7 @@ describe("CompositionStudioSync", () => {
       screen.getByRole("button", { name: "Monthly totals" }),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("heading", { name: "Parameters" }),
+      screen.queryByRole("heading", { name: "Variables" }),
     ).toBeNull();
     expect(screen.queryByRole("heading", { name: "Tags" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Preview" })).toBeNull();
@@ -908,7 +917,7 @@ describe("CompositionStudioSync", () => {
     expect(previewMock).toHaveBeenCalledTimes(1);
   });
 
-  it("uses authored parameter labels in studio diagnostics", async () => {
+  it("uses authored variable labels in studio diagnostics", async () => {
     previewMock.mockImplementation(async () => ({
       ok: false,
       draft_fingerprint: "fp-bad",

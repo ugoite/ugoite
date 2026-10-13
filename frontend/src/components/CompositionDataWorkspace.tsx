@@ -17,6 +17,7 @@ import type {
 import type { CompositionVariableType } from "~/lib/composition-api";
 import type {
   CompositionDraft,
+  DraftVariable,
   SavedSqlRevisionUpdate,
 } from "~/lib/composition-draft";
 import type {
@@ -59,8 +60,18 @@ export interface CompositionDataWorkspaceProps {
   onSavedSqlRevision: (
     sourceDraftId: string,
     revision: SavedSqlRevisionUpdate,
-    variableTypes: Record<string, CompositionVariableType>,
   ) => boolean;
+  onSavedSqlVariableTypes: (
+    sourceDraftId: string,
+    variableTypes: Record<string, CompositionVariableType>,
+  ) => void;
+  onSavedSqlVariableBinding: (
+    sourceDraftId: string,
+    sqlVariable: string,
+    variableId: string | undefined,
+  ) => boolean;
+  variables: readonly DraftVariable[];
+  onEditVariables: () => void;
   savedSqlEditHref: (entryId: string) => string;
   planSources: readonly CompositionResolvedSource[];
   sourceStates: Record<string, CompositionSourcePageState>;
@@ -287,12 +298,24 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
                     <SavedSqlSourceViewer
                       spaceId={props.spaceId}
                       source={source() as SavedSqlSource}
-                      onUpdateRevision={(revision, variableTypes) =>
+                      onUpdateRevision={(revision) =>
                         props.onSavedSqlRevision(
                           (source() as SavedSqlSource).draftId,
                           revision,
+                        )}
+                      variables={props.variables}
+                      onVariableTypes={(variableTypes) =>
+                        props.onSavedSqlVariableTypes(
+                          (source() as SavedSqlSource).draftId,
                           variableTypes,
                         )}
+                      onVariableBinding={(sqlVariable, variableId) =>
+                        props.onSavedSqlVariableBinding(
+                          (source() as SavedSqlSource).draftId,
+                          sqlVariable,
+                          variableId,
+                        )}
+                      onEditVariables={props.onEditVariables}
                       editHref={props.savedSqlEditHref(
                         (source() as SavedSqlSource).entryId,
                       )}
@@ -310,6 +333,7 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
                 <EntryQuerySourceEditor
                   spaceId={props.spaceId}
                   source={source() as EntryQuerySource}
+                  variables={props.variables}
                   onFilters={(filters) =>
                     props.onEntryQueryFilters(
                       (source() as EntryQuerySource).draftId,

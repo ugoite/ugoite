@@ -380,28 +380,28 @@ requirements:
       - id: flow-renderer-verification
         role: verification
         facet: verification
-        responsibility: Verify the Browser flow renderer composes layout rows and items in order with interleaved parameter controls, fixed text styles without source fetch, and text bindings joined by component id.
+        responsibility: Verify the Browser flow renderer composes layout rows and items in order with interleaved variable-bound Input controls, fixed text styles without source fetch, and text bindings joined by component id.
         targets:
           - id: flow-row-order-case
             adapter: typescript
             path: frontend/src/components/DashboardFlowRenderer.test.tsx
-            selector: { kind: test, name: renders rows in order with parameter controls interleaved }
+            selector: { kind: test, name: renders rows in order with Input controls interleaved }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.ordered-component-layout
                 covers:
                   - FEAT-COMP-004#binding.browser-query-runtime/target.browser-dashboard-flow-renderer
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/DashboardFlowRenderer.test.tsx, test: "renders rows in order with parameter controls interleaved" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/DashboardFlowRenderer.test.tsx, test: "renders rows in order with Input controls interleaved" } }
           - id: flow-parameter-control-case
             adapter: typescript
             path: frontend/src/components/DashboardFlowRenderer.test.tsx
-            selector: { kind: test, name: binds parameter changes to transient work state }
+            selector: { kind: test, name: binds Input changes to transient Work state }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.parameter-placement
                 covers:
                   - FEAT-COMP-004#binding.browser-query-runtime/target.browser-parameter-control
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/DashboardFlowRenderer.test.tsx, test: "binds parameter changes to transient work state" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/DashboardFlowRenderer.test.tsx, test: "binds Input changes to transient Work state" } }
           - id: flow-text-style-case
             adapter: typescript
             path: frontend/src/components/DashboardFlowRenderer.test.tsx
@@ -455,13 +455,13 @@ requirements:
           - id: design-canvas-parameter-placement-case
             adapter: typescript
             path: frontend/src/components/CompositionDesignCanvas.test.tsx
-            selector: { kind: test, name: places existing parameter controls without creating parameters }
+            selector: { kind: test, name: places existing variable controls without creating variables }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.parameter-placement
                 covers:
                   - FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "places existing parameter controls without creating parameters" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "places existing variable controls without creating variables" } }
           - id: design-canvas-reorder-case
             adapter: typescript
             path: frontend/src/components/CompositionDesignCanvas.test.tsx
@@ -495,13 +495,13 @@ requirements:
           - id: inspector-unplace-parameter-case
             adapter: typescript
             path: frontend/src/components/CompositionInspector.test.tsx
-            selector: { kind: test, name: labels parameter removal as unplacing its canvas control }
+            selector: { kind: test, name: removes the selected Input component without removing its variable }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.parameter-placement
                 covers:
                   - FEAT-COMP-005#binding.studio-design-runtime/target.browser-composition-inspector
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionInspector.test.tsx, test: "labels parameter removal as unplacing its canvas control" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionInspector.test.tsx, test: "removes the selected Input component without removing its variable" } }
           - id: narrow-inspector-remove-case
             adapter: typescript
             path: frontend/src/components/CompositionStudioMobile.test.tsx
@@ -517,14 +517,14 @@ requirements:
           - id: narrow-inspector-unplace-case
             adapter: typescript
             path: frontend/src/components/CompositionStudioMobile.test.tsx
-            selector: { kind: test, name: unplaces a parameter from the narrow Inspector sheet but keeps its declaration }
+            selector: { kind: test, name: unplaces a variable from the narrow Inspector sheet but keeps its declaration }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.parameter-placement
                 covers:
                   - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-mode
                   - FEAT-COMP-005#binding.studio-design-runtime/target.browser-inspector-sheet
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "unplaces a parameter from the narrow Inspector sheet but keeps its declaration" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "unplaces a variable from the narrow Inspector sheet but keeps its declaration" } }
           - id: design-canvas-no-refetch-case
             adapter: typescript
             path: frontend/src/components/CompositionDesignCanvas.test.tsx
@@ -573,28 +573,28 @@ requirements:
           - id: studio-saved-sql-seed-case
             adapter: typescript
             path: frontend/src/lib/composition-draft.test.ts
-            selector: { kind: test, name: seeds a saved sql entry point with mapped variables and placed controls }
+            selector: { kind: test, name: seeds the exact Saved SQL revision without promoting run values to defaults }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.exact-saved-sql-revision
                 covers:
                   - FEAT-COMP-006#binding.studio-data-runtime/target.browser-studio-seed
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "seeds a saved sql entry point with mapped variables and placed controls" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "seeds the exact Saved SQL revision without promoting run values to defaults" } }
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.parameter-placement
                 covers:
                   - FEAT-COMP-006#binding.studio-data-runtime/target.browser-studio-seed
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "seeds a saved sql entry point with mapped variables and placed controls" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "seeds the exact Saved SQL revision without promoting run values to defaults" } }
           - id: studio-seed-without-variables-case
             adapter: typescript
             path: frontend/src/lib/composition-draft.test.ts
-            selector: { kind: test, name: seeds saved sql without variables with a table and no parameter controls }
+            selector: { kind: test, name: seeds saved sql without variables with a table and no variable controls }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.ordered-component-layout
                 covers:
                   - FEAT-COMP-006#binding.studio-data-runtime/target.browser-studio-seed
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "seeds saved sql without variables with a table and no parameter controls" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "seeds saved sql without variables with a table and no variable controls" } }
           - id: studio-seed-form-route-case
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx"
@@ -608,13 +608,13 @@ requirements:
           - id: studio-seed-sql-route-case
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx"
-            selector: { kind: test, name: seeds the studio from a saved sql seed with a table and placed controls using localized parameter labels }
+            selector: { kind: test, name: seeds the studio from Saved SQL without inventing variables or Inputs }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.exact-saved-sql-revision
                 covers:
                   - FEAT-COMP-006#binding.studio-data-runtime/target.browser-studio-seed
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from a saved sql seed with a table and placed controls using localized parameter labels" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from Saved SQL without inventing variables or Inputs" } }
           - id: studio-readiness-matrix-case
             adapter: typescript
             path: frontend/src/lib/composition-draft.test.ts
@@ -673,13 +673,13 @@ requirements:
           - id: inspector-parameter-retarget-case
             adapter: typescript
             path: frontend/src/components/CompositionInspector.test.tsx
-            selector: { kind: test, name: changes parameter placement targets without a label override }
+            selector: { kind: test, name: changes the selected Input's variable binding }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.parameter-placement
                 covers:
                   - FEAT-COMP-005#binding.studio-design-runtime/target.browser-composition-inspector
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionInspector.test.tsx, test: "changes parameter placement targets without a label override" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionInspector.test.tsx, test: "changes the selected Input's variable binding" } }
           - id: inspector-draft-text-edits-case
             adapter: typescript
             path: frontend/src/lib/composition-draft.test.ts
@@ -693,13 +693,13 @@ requirements:
           - id: inspector-draft-parameter-retarget-case
             adapter: typescript
             path: frontend/src/lib/composition-draft.test.ts
-            selector: { kind: test, name: retargets parameter controls in place without touching declarations }
+            selector: { kind: test, name: retargets variable controls in place without touching declarations }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.parameter-placement
                 covers:
                   - FEAT-COMP-005#binding.studio-design-runtime/target.browser-composition-inspector
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "retargets parameter controls in place without touching declarations" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "retargets variable controls in place without touching declarations" } }
       - id: edit-round-trip-verification
         role: verification
         facet: verification
@@ -718,23 +718,23 @@ requirements:
           - id: edit-round-trip-multi-row-case
             adapter: typescript
             path: frontend/src/lib/composition-draft.test.ts
-            selector: { kind: test, name: restores multi-row layout order with text and parameter placement }
+            selector: { kind: test, name: restores multi-row layout order with text and variable placement }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.ordered-component-layout
                 covers:
                   - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-round-trip
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "restores multi-row layout order with text and parameter placement" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "restores multi-row layout order with text and variable placement" } }
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.text-style-enum
                 covers:
                   - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-round-trip
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "restores multi-row layout order with text and parameter placement" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "restores multi-row layout order with text and variable placement" } }
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.parameter-placement
                 covers:
                   - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-round-trip
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "restores multi-row layout order with text and parameter placement" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "restores multi-row layout order with text and variable placement" } }
           - id: edit-round-trip-unknown-kinds-case
             adapter: typescript
             path: frontend/src/lib/composition-draft.test.ts

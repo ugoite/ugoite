@@ -86,7 +86,7 @@ describe("composition preview handle", () => {
     handle.dispose();
   });
 
-  it("re-previews the stored draft when a parameter changes", async () => {
+  it("re-previews the stored draft when a variable changes", async () => {
     const seen: Record<string, unknown>[] = [];
     const api = mockApi([
       async (values) => {
@@ -100,7 +100,7 @@ describe("composition preview handle", () => {
     ]);
     const handle = createCompositionPreviewHandle(api);
     await handle.preview("space-1", "yaml-1", {});
-    handle.setParameter("month", "2026-10");
+    handle.setVariable("month", "2026-10");
     await vi.waitFor(() => {
       expect(seen.length).toBe(2);
     });

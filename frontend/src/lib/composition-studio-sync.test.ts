@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   addEntryQuerySource,
+  addInputComponent,
   addMetricDisplay,
-  addParameter,
   addSavedSqlSource,
   addTableDisplay,
   addTextDisplay,
+  addVariable,
   type CompositionDraft,
   createEmptyDraft,
-  placeParameterControl,
   removeDisplay,
 } from "./composition-draft";
 import {
@@ -37,18 +37,18 @@ const entrySeed = (name: string) => ({
   },
 });
 
-/** Metric on src-1, table on src-2, text, placed month parameter. */
+/** Metric on src-1, table on src-2, text, placed month variable. */
 const seedDraft = (): CompositionDraft => {
   let draft = createEmptyDraft("Studio");
   draft = addSavedSqlSource(draft, sqlSeed("Monthly")).draft;
   draft = addEntryQuerySource(draft, entrySeed("Expenses")).draft;
-  const month = addParameter(draft, {
+  const month = addVariable(draft, {
     id: "month",
     label: "Month",
     type: "date",
     required: true,
   });
-  if (!month.ok) throw new Error("expected month parameter");
+  if (!month.ok) throw new Error("expected month variable");
   draft = month.draft;
   const metric = addMetricDisplay(
     draft,
@@ -64,8 +64,8 @@ const seedDraft = (): CompositionDraft => {
   const text = addTextDisplay(draft, { text: "Summary", style: "heading" });
   if (!text.ok) throw new Error("expected text block");
   draft = text.draft;
-  const placed = placeParameterControl(draft, "month");
-  if (!placed.ok) throw new Error("expected parameter placement");
+  const placed = addInputComponent(draft, "month");
+  if (!placed.ok) throw new Error("expected variable placement");
   return placed.draft;
 };
 
@@ -80,10 +80,10 @@ describe("composition studio sync", () => {
     expect(sourceDraftIdForBlock(draft, "disp-2")).toBe("src-2");
   });
 
-  it("keeps the Data selection for text, parameter, and unknown blocks", () => {
+  it("keeps the Data selection for text, variable, and unknown blocks", () => {
     const draft = seedDraft();
     expect(sourceDraftIdForBlock(draft, "disp-3")).toBeNull();
-    expect(sourceDraftIdForBlock(draft, "input:input-month")).toBeNull();
+    expect(sourceDraftIdForBlock(draft, draft.inputs[0].draftId)).toBeNull();
     expect(sourceDraftIdForBlock(draft, null)).toBeNull();
     expect(sourceDraftIdForBlock(draft, "disp-999")).toBeNull();
   });

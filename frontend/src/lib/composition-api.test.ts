@@ -304,18 +304,9 @@ describe("compositionApi", () => {
       entry,
       "Monthly expenses",
       ["amount", "day"],
-      { month_start: "2026-10-01", include_zero: false },
     );
 
-    expect(document.spec.variables).toEqual([
-      {
-        id: "month_start",
-        type: "date",
-        required: true,
-        default: "2026-10-01",
-      },
-      { id: "include_zero", type: "boolean", required: true, default: false },
-    ]);
+    expect(document.spec.variables).toEqual([]);
     expect(document.spec.sources).toEqual([{
       id: "sql_results",
       kind: "saved_sql",
@@ -325,31 +316,14 @@ describe("compositionApi", () => {
         { name: "amount", type: "json" },
         { name: "day", type: "json" },
       ],
-      variables: {
-        month_start: { variable: "month_start" },
-        include_zero: { variable: "include_zero" },
-      },
+      variables: {},
     }]);
-    expect(document.spec.components).toEqual([
-      {
-        id: "input-month_start",
-        kind: "input",
-        variable: "month_start",
-      },
-      {
-        id: "input-include_zero",
-        kind: "input",
-        variable: "include_zero",
-      },
-      {
-        id: "results_table",
-        kind: "table",
-        source: "sql_results",
-      },
-    ]);
+    expect(document.spec.components).toEqual([{
+      id: "results_table",
+      kind: "table",
+      source: "sql_results",
+    }]);
     expect(document.spec.layout.rows[0].items).toEqual([
-      { kind: "component", component: "input-month_start" },
-      { kind: "component", component: "input-include_zero" },
       { kind: "component", component: "results_table" },
     ]);
   });
@@ -370,7 +344,6 @@ describe("compositionApi", () => {
       entry,
       "Monthly expenses",
       ["total", "label", "note"],
-      {},
       [
         { name: "total", type: "float" },
         { name: "label", type: "string" },
@@ -401,7 +374,6 @@ describe("compositionApi", () => {
       entry,
       "Exact total",
       ["total"],
-      {},
       [{ name: "total", type: "decimal" }],
     );
 

@@ -171,9 +171,13 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
 
     expect(await screen.findByRole("cell", { name: "9007199254740993" }))
       .toBeInTheDocument();
-    expect(queryMock).toHaveBeenLastCalledWith("default", expect.objectContaining({
-      include_exact_integer_values: true,
-    }), expect.any(AbortSignal));
+    expect(queryMock).toHaveBeenLastCalledWith(
+      "default",
+      expect.objectContaining({
+        include_exact_integer_values: true,
+      }),
+      expect.any(AbortSignal),
+    );
   });
 
   it("REQ-FE-068: omits persistent explanatory copy from saved SQL results", async () => {
@@ -314,9 +318,8 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
                 { name: "amount", type: "float" },
                 { name: "month", type: "date" },
               ],
-              variables: { month_start: { parameter: "month_start" } },
+              variables: {},
               variableTypes: { month_start: "date" },
-              variableDefaults: { month_start: "2026-01-01" },
             },
           },
         },

@@ -1,7 +1,7 @@
 import type {
-  CompositionVariableType,
   CompositionResultType,
   CompositionTextStyle,
+  CompositionVariableType,
 } from "./composition-api";
 import type {
   EntryQueryCompositionFieldSchemaEntry,
@@ -31,13 +31,9 @@ export interface DraftSavedSqlSeed {
   revisionId: string;
   name: string;
   expectedResult: Array<{ name: string; type: CompositionResultType }>;
-  variables: Record<string, { parameter: string }>;
-  /** Declared Saved SQL variable types for parameter provisioning. */
+  variables: Record<string, { variable: string }>;
+  /** Declared variable types from this exact Saved SQL revision. */
   variableTypes?: Record<string, CompositionVariableType>;
-  /** Run-time variable values carried as parameter defaults so the seeded
-   * Studio opens with the same values that were just run. Values are stored
-   * verbatim; type mismatches surface as Rust-owned resolve diagnostics. */
-  variableDefaults?: Record<string, unknown>;
 }
 
 export interface DraftEntryQuerySeed {
@@ -87,9 +83,7 @@ export const studioSeedState = (
 };
 
 /**
- * Apply one Studio seed to a draft: add the source, provision Saved SQL
- * parameters from the server-declared variable types, place one parameter
- * control per bound variable (only when variables exist), add a default
+ * Apply one Studio seed to a draft: add the source and add a default
  * Table on the new source, and prefill the tool name from the seed source
  * name so the Studio opens with a visible block and is save-ready
  * immediately. Every seed path emits at least one layout item: the default
@@ -102,24 +96,7 @@ export const applyStudioSeed = (
   const added = seed.kind === "saved_sql"
     ? addSavedSqlSource(draft, seed.seed)
     : addEntryQuerySource(draft, seed.seed);
-  let next = seed.kind === "saved_sql" && seed.seed.variableTypes
-    ? ensureParametersForVariables(
-      added.draft,
-      seed.seed.variableTypes,
-      seed.seed.variableDefaults,
-    )
-    : added.draft;
-  if (seed.kind === "saved_sql") {
-    for (const binding of Object.values(seed.seed.variables)) {
-      if (
-        !next.parameters.some((parameter) => parameter.id === binding.parameter)
-      ) {
-        continue;
-      }
-      const placed = placeParameterControl(next, binding.parameter);
-      if (placed.ok) next = placed.draft;
-    }
-  }
+  let next = added.draft;
   // Fail-closed table placement keeps the seed one-shot and total: the
   // seeded source always exists, so this succeeds and the draft is never
   // zero-display. A rejection would keep the unplaced source only. The
@@ -167,19 +144,12 @@ export type DraftDisplay =
   };
 
 /**
- * One placed Dashboard flow row. Items reference component draft IDs or
- * semantic parameter IDs; pixel positions and widths are never stored.
+ * One placed Dashboard flow row. Every item references an ordinary
+ * component draft ID; pixel positions and widths are never stored.
  * Cross-row item moves stay out of the draft: items reorder within their
  * row and rows reorder against each other.
  */
-export type DraftLayoutItem =
-  | { kind: "component"; draftId: string }
-  | {
-    kind: "parameter";
-    parameterId: string;
-    inputComponentId?: string;
-    label?: string;
-  };
+export type DraftLayoutItem = { kind: "component"; draftId: string };
 
 export interface DraftLayoutRow {
   id: string;
@@ -196,7 +166,7 @@ export interface DraftInsertTarget {
   itemIndex: number;
 }
 
-export interface DraftParameter {
+export interface DraftVariable {
   id: string;
   type: CompositionVariableType;
   label?: string;
@@ -205,12 +175,58 @@ export interface DraftParameter {
   format?: "year-month";
 }
 
+export interface DraftInput {
+  draftId: string;
+  variable: string;
+  label?: string;
+}
+
+const savedSqlVariableTypeSet = new Set<CompositionVariableType>([
+  "string",
+  "boolean",
+  "integer",
+  "float",
+  "date",
+  "timestamp",
+]);
+
+/** Read only the typed declarations captured by one exact Saved SQL revision. */
+export const savedSqlVariableTypesFromFields = (
+  fields: Record<string, unknown> | undefined,
+): Record<string, CompositionVariableType> => {
+  const raw = fields?.variables;
+  if (raw === undefined || raw === null) return {};
+  if (!Array.isArray(raw)) throw new Error("Invalid Saved SQL variables");
+  const result: Record<string, CompositionVariableType> = {};
+  for (const item of raw) {
+    if (!item || typeof item !== "object") {
+      throw new Error("Invalid Saved SQL variable");
+    }
+    const { name, type } = item as { name?: unknown; type?: unknown };
+    if (
+      typeof name !== "string" || !name.trim() || Object.hasOwn(result, name) ||
+      typeof type !== "string" ||
+      !savedSqlVariableTypeSet.has(type as CompositionVariableType)
+    ) {
+      throw new Error("Invalid Saved SQL variable");
+    }
+    Object.defineProperty(result, name, {
+      value: type as CompositionVariableType,
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+  }
+  return result;
+};
+
 export interface CompositionDraft {
   name: string;
   tags: string[];
   sources: DraftSource[];
   displays: DraftDisplay[];
-  parameters: DraftParameter[];
+  variables: DraftVariable[];
+  inputs: DraftInput[];
   /** First-class flow rows; document layout renders from these in order. */
   layoutRows: DraftLayoutRow[];
   nextSourceSeq: number;
@@ -221,14 +237,14 @@ export interface CompositionDraft {
 export type DraftErrorCode =
   | "unknown-source"
   | "unknown-display"
-  | "unknown-parameter"
+  | "unknown-variable"
+  | "unknown-input"
   | "unknown-row"
   | "unknown-block"
   | "invalid-style"
   | "invalid-query"
-  | "duplicate-parameter"
-  | "parameter-referenced"
-  | "parameter-already-placed"
+  | "duplicate-variable"
+  | "variable-referenced"
   | "source-referenced";
 
 /** Mirrors the canonical EntryQuery projection limit. */
@@ -350,16 +366,13 @@ export const createEmptyDraft = (name = ""): CompositionDraft => ({
   tags: [],
   sources: [],
   displays: [],
-  parameters: [],
+  variables: [],
+  inputs: [],
   layoutRows: [{ id: "main", items: [] }],
   nextSourceSeq: 1,
   nextDisplaySeq: 1,
   nextRowSeq: 1,
 });
-
-/** Stable component identity for the draft's one Input placement per variable. */
-export const inputComponentIdForVariable = (variableId: string): string =>
-  `input-${variableId}`;
 
 export const setDraftName = (
   draft: CompositionDraft,
@@ -418,31 +431,16 @@ export const displaysUsingSource = (
     "sourceDraftId" in display && display.sourceDraftId === sourceDraftId
   );
 
-/** Semantic parameters with no layout control; the canvas offers these. */
-export const unplacedParameters = (
-  draft: CompositionDraft,
-): DraftParameter[] => {
-  const placed = new Set<string>();
-  for (const row of draft.layoutRows) {
-    for (const item of row.items) {
-      if (item.kind === "parameter") placed.add(item.parameterId);
-    }
-  }
-  return draft.parameters.filter((parameter) => !placed.has(parameter.id));
-};
-
 /** Layout rows with all items still referencing a known block. */
 const pruneLayoutRows = (draft: CompositionDraft): DraftLayoutRow[] => {
-  const known = new Set(draft.displays.map((display) => display.draftId));
-  const parameters = new Set(draft.parameters.map((parameter) => parameter.id));
+  const known = new Set([
+    ...draft.displays.map((display) => display.draftId),
+    ...draft.inputs.map((input) => input.draftId),
+  ]);
   return draft.layoutRows
     .map((row) => ({
       ...row,
-      items: row.items.filter((item) =>
-        item.kind === "component"
-          ? known.has(item.draftId)
-          : parameters.has(item.parameterId)
-      ),
+      items: row.items.filter((item) => known.has(item.draftId)),
     }))
     .filter((row) => row.items.length > 0);
 };
@@ -592,7 +590,7 @@ const isIntegerFieldId = (value: unknown): value is number =>
   typeof value === "number" && Number.isInteger(value);
 
 /**
- * Scalar filter values plus same-shape parameter bindings. Anything else
+ * Scalar filter values plus same-shape variable bindings. Anything else
  * (nested objects, arrays, non-finite numbers) fails closed so the draft
  * can never smuggle query semantics past the shared contract.
  */
@@ -764,15 +762,14 @@ export const setEntryQueryDisplaySystemFields = (
 export interface SavedSqlRevisionUpdate {
   revisionId: string;
   expectedResult: Array<{ name: string; type: CompositionResultType }>;
-  /** Declared variable names of the new revision, in server order. */
-  variableNames: string[];
+  /** Variable types declared by this exact revision. */
+  variableTypes: Record<string, CompositionVariableType>;
 }
 
 /**
- * Point a Saved SQL source at an exact new revision. Variable bindings keep
- * their existing parameter for same-named variables and bind same-named
- * parameters for new ones; removed variables drop their bindings. Never
- * falls back to latest: the caller passes the exact revision identity.
+ * Point a Saved SQL source at an exact new revision. Retain only existing
+ * bindings whose declared variable still exists with the same type. Never
+ * guesses a same-name Composition variable or falls back to latest.
  */
 export const setSavedSqlRevision = (
   draft: CompositionDraft,
@@ -793,11 +790,23 @@ export const setSavedSqlRevision = (
       return { ok: false, error: "invalid-query" };
     }
   }
-  const variables: Record<string, { parameter: string }> = {};
-  for (const name of revision.variableNames) {
+  const variables: Record<string, { variable: string }> = {};
+  for (const name of Object.keys(revision.variableTypes)) {
     if (!name.trim()) return { ok: false, error: "invalid-query" };
+    if (!Object.hasOwn(current.variables, name)) continue;
     const existing = current.variables[name];
-    variables[name] = existing ? { ...existing } : { parameter: name };
+    if (!existing) continue;
+    const variable = draft.variables.find((item) =>
+      item.id === existing.variable
+    );
+    if (variable?.type === revision.variableTypes[name]) {
+      Object.defineProperty(variables, name, {
+        value: { ...existing },
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
+    }
   }
   const sources = [...draft.sources];
   sources[index] = {
@@ -805,7 +814,84 @@ export const setSavedSqlRevision = (
     revisionId: revision.revisionId,
     expectedResult: revision.expectedResult.map((column) => ({ ...column })),
     variables,
+    variableTypes: { ...revision.variableTypes },
   };
+  return { ok: true, draft: { ...draft, sources } };
+};
+
+/** Record the pinned revision's type schema and remove stale bindings. */
+export const setSavedSqlVariableTypes = (
+  draft: CompositionDraft,
+  sourceDraftId: string,
+  variableTypes: Record<string, CompositionVariableType>,
+): DraftResult => {
+  const index = draft.sources.findIndex((source) =>
+    source.draftId === sourceDraftId
+  );
+  if (index < 0 || draft.sources[index].kind !== "saved_sql") {
+    return { ok: false, error: "unknown-source" };
+  }
+  const source = draft.sources[index] as Extract<
+    DraftSource,
+    { kind: "saved_sql" }
+  >;
+  const variables = Object.fromEntries(
+    Object.entries(source.variables).filter(([name, binding]) => {
+      const definition = draft.variables.find((item) =>
+        item.id === binding.variable
+      );
+      return !!definition && definition.type === variableTypes[name];
+    }),
+  );
+  const sources = [...draft.sources];
+  sources[index] = {
+    ...source,
+    variableTypes: { ...variableTypes },
+    variables,
+  };
+  return { ok: true, draft: { ...draft, sources } };
+};
+
+/** Bind one SQL variable to an exact-type Composition variable, or clear it. */
+export const setSavedSqlVariableBinding = (
+  draft: CompositionDraft,
+  sourceDraftId: string,
+  sqlVariableName: string,
+  variableId: string | undefined,
+): DraftResult => {
+  const index = draft.sources.findIndex((source) =>
+    source.draftId === sourceDraftId
+  );
+  if (index < 0 || draft.sources[index].kind !== "saved_sql") {
+    return { ok: false, error: "unknown-source" };
+  }
+  const source = draft.sources[index] as Extract<
+    DraftSource,
+    { kind: "saved_sql" }
+  >;
+  const variableTypes = source.variableTypes ?? {};
+  if (
+    !sqlVariableName.trim() || !Object.hasOwn(variableTypes, sqlVariableName)
+  ) {
+    return { ok: false, error: "invalid-query" };
+  }
+  const sqlType = variableTypes[sqlVariableName];
+  const variables = { ...source.variables };
+  if (variableId === undefined) {
+    delete variables[sqlVariableName];
+  } else {
+    const variable = draft.variables.find((item) => item.id === variableId);
+    if (!variable) return { ok: false, error: "unknown-variable" };
+    if (variable.type !== sqlType) return { ok: false, error: "invalid-query" };
+    Object.defineProperty(variables, sqlVariableName, {
+      value: { variable: variableId },
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+  }
+  const sources = [...draft.sources];
+  sources[index] = { ...source, variables };
   return { ok: true, draft: { ...draft, sources } };
 };
 
@@ -950,72 +1036,98 @@ export const addTextDisplay = (
 const nextDisplayDraftIdentity = (
   draft: CompositionDraft,
 ): { draftId: string; nextDisplaySeq: number } => {
-  const inputComponentIds = new Set(
-    draft.layoutRows.flatMap((row) =>
-      row.items.flatMap((item) =>
-        item.kind === "parameter"
-          ? [
-            item.inputComponentId ??
-              inputComponentIdForVariable(item.parameterId),
-          ]
-          : []
-      )
-    ),
-  );
   const usedIds = new Set([
     ...draft.displays.map((display) => display.draftId),
-    ...inputComponentIds,
+    ...draft.inputs.map((input) => input.draftId),
   ]);
   let seq = draft.nextDisplaySeq;
   while (usedIds.has(`disp-${seq}`)) seq += 1;
   return { draftId: `disp-${seq}`, nextDisplaySeq: seq + 1 };
 };
 
-/**
- * Place an existing semantic parameter as a layout control. Creating a
- * new parameter stays in the Parameters section; the canvas only places.
- */
-export const placeParameterControl = (
+/** Add an ordinary Input component for a declared variable. */
+export const addInputComponent = (
   draft: CompositionDraft,
-  parameterId: string,
+  variableId: string,
   target?: DraftInsertTarget,
-): DraftResult => {
-  if (!draft.parameters.some((parameter) => parameter.id === parameterId)) {
-    return { ok: false, error: "unknown-parameter" };
+): DraftResult & { draftId?: string } => {
+  if (!draft.variables.some((variable) => variable.id === variableId)) {
+    return { ok: false, error: "unknown-variable" };
   }
-  if (
-    unplacedParameters(draft).every((parameter) => parameter.id !== parameterId)
-  ) {
-    return { ok: false, error: "parameter-already-placed" };
+  const ids = new Set([
+    ...draft.displays.map((display) => display.draftId),
+    ...draft.inputs.map((input) => input.draftId),
+  ]);
+  let sequence = draft.nextDisplaySeq;
+  let draftId = `input-${sequence}`;
+  while (ids.has(draftId)) {
+    sequence += 1;
+    draftId = `input-${sequence}`;
   }
-  return insertLayoutItem(draft, { kind: "parameter", parameterId }, target);
+  const input: DraftInput = { draftId, variable: variableId };
+  const placed = insertLayoutItem(
+    {
+      ...draft,
+      nextDisplaySeq: sequence + 1,
+      inputs: [...draft.inputs, input],
+    },
+    { kind: "component", draftId },
+    target,
+  );
+  return placed.ok ? { ...placed, draftId } : placed;
 };
 
-/** Unplace a parameter control; the semantic parameter stays declared. */
-export const unplaceParameterControl = (
+/** Edit the variable binding of an existing Input component. */
+export const setInputVariable = (
   draft: CompositionDraft,
-  inputComponentId: string,
+  inputDraftId: string,
+  variableId: string,
 ): DraftResult => {
-  const placed = draft.layoutRows.some((row) =>
-    row.items.some((item) =>
-      item.kind === "parameter" &&
-      (item.inputComponentId ??
-          inputComponentIdForVariable(item.parameterId)) ===
-        inputComponentId
-    )
+  if (!draft.variables.some((variable) => variable.id === variableId)) {
+    return { ok: false, error: "unknown-variable" };
+  }
+  const index = draft.inputs.findIndex((input) =>
+    input.draftId === inputDraftId
   );
-  if (!placed) return { ok: false, error: "unknown-block" };
-  const next: CompositionDraft = {
+  if (index < 0) return { ok: false, error: "unknown-input" };
+  const inputs = [...draft.inputs];
+  inputs[index] = { ...inputs[index], variable: variableId };
+  return { ok: true, draft: { ...draft, inputs } };
+};
+
+/** Set or clear an Input's optional display label. */
+export const setInputLabel = (
+  draft: CompositionDraft,
+  inputDraftId: string,
+  label: string,
+): DraftResult => {
+  const index = draft.inputs.findIndex((input) =>
+    input.draftId === inputDraftId
+  );
+  if (index < 0) return { ok: false, error: "unknown-input" };
+  const next = { ...draft.inputs[index] };
+  if (label.trim()) next.label = label.trim();
+  else delete next.label;
+  const inputs = [...draft.inputs];
+  inputs[index] = next;
+  return { ok: true, draft: { ...draft, inputs } };
+};
+
+/** Remove one Input component and its placement; the variable remains. */
+export const removeInputComponent = (
+  draft: CompositionDraft,
+  inputDraftId: string,
+): DraftResult => {
+  if (!draft.inputs.some((input) => input.draftId === inputDraftId)) {
+    return { ok: false, error: "unknown-input" };
+  }
+  const next = {
     ...draft,
+    inputs: draft.inputs.filter((input) => input.draftId !== inputDraftId),
     layoutRows: draft.layoutRows
       .map((row) => ({
         ...row,
-        items: row.items.filter((item) =>
-          item.kind !== "parameter" ||
-          (item.inputComponentId ??
-              inputComponentIdForVariable(item.parameterId)) !==
-            inputComponentId
-        ),
+        items: row.items.filter((item) => item.draftId !== inputDraftId),
       }))
       .filter((row) => row.items.length > 0),
   };
@@ -1305,6 +1417,29 @@ export const setTextContent = (
   return { ok: true, draft: { ...draft, displays } };
 };
 
+/** Bind a Text component directly to one string variable. */
+export const setTextVariable = (
+  draft: CompositionDraft,
+  displayDraftId: string,
+  variableId: string,
+): DraftResult => {
+  const index = draft.displays.findIndex((display) =>
+    display.draftId === displayDraftId
+  );
+  if (index < 0) return { ok: false, error: "unknown-display" };
+  const current = draft.displays[index];
+  if (current.kind !== "text") return { ok: false, error: "unknown-display" };
+  const variable = draft.variables.find((item) => item.id === variableId);
+  if (!variable) return { ok: false, error: "unknown-variable" };
+  if (variable.type !== "string") return { ok: false, error: "invalid-query" };
+  const displays = [...draft.displays];
+  displays[index] = {
+    ...current,
+    content: { kind: "variable", variable: variableId },
+  };
+  return { ok: true, draft: { ...draft, displays } };
+};
+
 const textStyles: ReadonlySet<CompositionTextStyle> = new Set([
   "title",
   "heading",
@@ -1330,160 +1465,82 @@ export const setTextStyle = (
   return { ok: true, draft: { ...draft, displays } };
 };
 
-/**
- * Move a placed parameter control to another semantic parameter in place.
- * The control keeps its row and position; both declarations stay owned by
- * the Parameters section, and no label override is created.
- */
-export const retargetParameterControl = (
+export const upsertVariable = (
   draft: CompositionDraft,
-  inputComponentId: string,
-  fromParameterId: string,
-  toParameterId: string,
+  variable: DraftVariable,
 ): DraftResult => {
-  if (
-    !draft.parameters.some((parameter) => parameter.id === fromParameterId)
-  ) {
-    return { ok: false, error: "unknown-parameter" };
-  }
-  if (!draft.parameters.some((parameter) => parameter.id === toParameterId)) {
-    return { ok: false, error: "unknown-parameter" };
-  }
-  if (fromParameterId === toParameterId) return { ok: true, draft };
-  let placed = false;
-  for (const row of draft.layoutRows) {
-    for (const item of row.items) {
-      if (
-        item.kind === "parameter" && item.parameterId === fromParameterId &&
-        (item.inputComponentId ??
-            inputComponentIdForVariable(item.parameterId)) ===
-          inputComponentId
-      ) {
-        placed = true;
-      }
-    }
-  }
-  if (!placed) return { ok: false, error: "unknown-block" };
-  return {
-    ok: true,
-    draft: {
-      ...draft,
-      layoutRows: draft.layoutRows.map((row) => ({
-        ...row,
-        items: row.items.map((item) =>
-          item.kind === "parameter" && item.parameterId === fromParameterId &&
-            (item.inputComponentId ??
-                inputComponentIdForVariable(item.parameterId)) ===
-              inputComponentId
-            ? { ...item, parameterId: toParameterId, inputComponentId }
-            : item
-        ),
-      })),
-    },
-  };
-};
-
-export const upsertParameter = (
-  draft: CompositionDraft,
-  parameter: DraftParameter,
-): DraftResult => {
-  const existing = draft.parameters.findIndex((item) =>
-    item.id === parameter.id
-  );
+  const existing = draft.variables.findIndex((item) => item.id === variable.id);
   if (existing < 0) {
     return {
       ok: true,
-      draft: { ...draft, parameters: [...draft.parameters, parameter] },
+      draft: { ...draft, variables: [...draft.variables, variable] },
     };
   }
-  const parameters = [...draft.parameters];
-  parameters[existing] = parameter;
-  return { ok: true, draft: { ...draft, parameters } };
+  const variables = [...draft.variables];
+  variables[existing] = variable;
+  return { ok: true, draft: { ...draft, variables } };
 };
 
-export const addParameter = (
+export const addVariable = (
   draft: CompositionDraft,
-  parameter: DraftParameter,
+  variable: DraftVariable,
 ): DraftResult =>
-  draft.parameters.some((item) => item.id === parameter.id)
-    ? { ok: false, error: "duplicate-parameter" }
-    : upsertParameter(draft, parameter);
+  draft.variables.some((item) => item.id === variable.id)
+    ? { ok: false, error: "duplicate-variable" }
+    : upsertVariable(draft, variable);
 
-/**
- * Provision required parameters for Saved SQL variable bindings. Existing
- * parameters are kept as-is (type mismatches surface as Rust-owned resolve
- * diagnostics, never silent rebinds); missing ones are added from the
- * server-declared variable types.
- */
-export const ensureParametersForVariables = (
-  draft: CompositionDraft,
-  variableTypes: Readonly<Record<string, CompositionVariableType>>,
-  variableDefaults?: Readonly<Record<string, unknown>>,
-): CompositionDraft => {
-  let next = draft;
-  for (const [id, type] of Object.entries(variableTypes)) {
-    if (next.parameters.some((item) => item.id === id)) continue;
-    const fallback = variableDefaults?.[id];
-    const added = addParameter(next, {
-      id,
-      type,
-      required: true,
-      ...(fallback !== undefined ? { default: fallback } : {}),
-    });
-    if (added.ok) next = added.draft;
-  }
-  return next;
-};
-
-/** Caller parameter values carried by defaults; inputs stay Work. */
-export const defaultParameterValues = (
+/** Initial runtime values from explicit variable defaults; Inputs stay Work. */
+export const defaultVariableValues = (
   draft: CompositionDraft,
 ): Record<string, unknown> => {
   const values: Record<string, unknown> = {};
-  for (const parameter of draft.parameters) {
-    if (parameter.default !== undefined) {
-      values[parameter.id] = parameter.default;
+  for (const variable of draft.variables) {
+    if (variable.default !== undefined) {
+      values[variable.id] = variable.default;
     }
   }
   return values;
 };
 
-/** Parameters referenced by sources, filters, or layout controls cannot be removed silently. */
-export const removeParameter = (
+/** Variables referenced by sources, Inputs, or Text cannot be removed silently. */
+export const removeVariable = (
   draft: CompositionDraft,
-  parameterId: string,
+  variableId: string,
 ): DraftResult => {
-  if (!draft.parameters.some((item) => item.id === parameterId)) {
-    return { ok: false, error: "unknown-parameter" };
+  if (!draft.variables.some((item) => item.id === variableId)) {
+    return { ok: false, error: "unknown-variable" };
   }
-  const placed = draft.layoutRows.some((row) =>
-    row.items.some((item) =>
-      item.kind === "parameter" && item.parameterId === parameterId
+  if (draft.inputs.some((input) => input.variable === variableId)) {
+    return { ok: false, error: "variable-referenced" };
+  }
+  if (
+    draft.displays.some((display) =>
+      display.kind === "text" && display.content.kind === "variable" &&
+      display.content.variable === variableId
     )
-  );
-  if (placed) return { ok: false, error: "parameter-referenced" };
+  ) return { ok: false, error: "variable-referenced" };
   const referenced = draft.sources.some((source) => {
     if (source.kind === "saved_sql") {
       return Object.values(source.variables).some((binding) =>
-        binding.parameter === parameterId
+        binding.variable === variableId
       );
     }
     const mentions = (value: unknown): boolean => {
       if (typeof value !== "object" || value === null) return false;
       if ("variable" in value) {
-        return (value as { variable: unknown }).variable === parameterId;
+        return (value as { variable: unknown }).variable === variableId;
       }
       return false;
     };
     if (mentions(source.query.text)) return true;
     return source.query.filters.some((filter) => mentions(filter.value));
   });
-  if (referenced) return { ok: false, error: "parameter-referenced" };
+  if (referenced) return { ok: false, error: "variable-referenced" };
   return {
     ok: true,
     draft: {
       ...draft,
-      parameters: draft.parameters.filter((item) => item.id !== parameterId),
+      variables: draft.variables.filter((item) => item.id !== variableId),
     },
   };
 };
@@ -1503,15 +1560,13 @@ export const toStudioDocument = (
   name: draft.name.trim(),
   tags: [...draft.tags],
   spec: {
-    variables: draft.parameters.map((parameter) => ({
-      id: parameter.id,
-      ...(parameter.label ? { label: parameter.label } : {}),
-      type: parameter.type,
-      required: parameter.required,
-      ...(parameter.default === undefined
-        ? {}
-        : { default: parameter.default }),
-      ...(parameter.format ? { format: parameter.format } : {}),
+    variables: draft.variables.map((variable) => ({
+      id: variable.id,
+      ...(variable.label ? { label: variable.label } : {}),
+      type: variable.type,
+      required: variable.required,
+      ...(variable.default === undefined ? {} : { default: variable.default }),
+      ...(variable.format ? { format: variable.format } : {}),
     })),
     sources: draft.sources.map((source) => {
       if (source.kind === "saved_sql") {
@@ -1526,7 +1581,7 @@ export const toStudioDocument = (
           variables: Object.fromEntries(
             Object.entries(source.variables).map(([name, binding]) => [
               name,
-              { variable: binding.parameter },
+              { variable: binding.variable },
             ]),
           ),
         };
@@ -1594,19 +1649,12 @@ export const toStudioDocument = (
             : {}),
         };
       }),
-      ...draft.layoutRows.flatMap((row) =>
-        row.items.flatMap((item) =>
-          item.kind === "parameter"
-            ? [{
-              kind: "input" as const,
-              id: item.inputComponentId ??
-                inputComponentIdForVariable(item.parameterId),
-              ...(item.label === undefined ? {} : { label: item.label }),
-              variable: item.parameterId,
-            }]
-            : []
-        )
-      ),
+      ...draft.inputs.map((input) => ({
+        kind: "input" as const,
+        id: input.draftId,
+        ...(input.label === undefined ? {} : { label: input.label }),
+        variable: input.variable,
+      })),
     ],
     layout: {
       kind: "flow",
@@ -1620,15 +1668,10 @@ export const toStudioDocument = (
         const rows = (placed.length > 0 ? placed : [{ id: "main", items: [] }])
           .map((row) => ({
             id: row.id,
-            items: row.items.map((item) =>
-              item.kind === "component"
-                ? { kind: "component" as const, component: item.draftId }
-                : {
-                  kind: "component" as const,
-                  component: item.inputComponentId ??
-                    inputComponentIdForVariable(item.parameterId),
-                }
-            ),
+            items: row.items.map((item) => ({
+              kind: "component" as const,
+              component: item.draftId,
+            })),
           }));
         return rows;
       })(),
@@ -1674,7 +1717,7 @@ export const draftFromDocument = (
         variables: Object.fromEntries(
           Object.entries(
             source.variables === undefined ? {} : source.variables,
-          ).map(([key, binding]) => [key, { parameter: binding.variable }]),
+          ).map(([key, binding]) => [key, { variable: binding.variable }]),
         ),
       };
     }
@@ -1723,6 +1766,11 @@ export const draftFromDocument = (
     if (component.kind !== "input") continue;
     inputByComponentId.set(component.id, component);
   }
+  const inputs = [...inputByComponentId.values()].map((input) => ({
+    draftId: input.id,
+    variable: input.variable,
+    ...(input.label === undefined ? {} : { label: input.label }),
+  }));
   const displayComponents = document.spec.components.filter((component) =>
     component.kind !== "input"
   );
@@ -1830,12 +1878,7 @@ export const draftFromDocument = (
         if (draftId) return { kind: "component" as const, draftId };
         const input = inputByComponentId.get(item.component);
         if (input && variableIds.has(input.variable)) {
-          return {
-            kind: "parameter" as const,
-            parameterId: input.variable,
-            inputComponentId: input.id,
-            ...(input.label === undefined ? {} : { label: input.label }),
-          };
+          return { kind: "component" as const, draftId: input.id };
         }
         return fail(`layout component: ${item.component}`);
       }
@@ -1849,7 +1892,7 @@ export const draftFromDocument = (
     tags: [...document.tags],
     sources,
     displays,
-    parameters: variables.map((variable) => ({
+    variables: variables.map((variable) => ({
       id: variable.id,
       ...(variable.label ? { label: variable.label } : {}),
       type: variable.type,
@@ -1857,6 +1900,7 @@ export const draftFromDocument = (
       ...(variable.default === undefined ? {} : { default: variable.default }),
       ...(variable.format ? { format: variable.format } : {}),
     })),
+    inputs,
     layoutRows,
     nextSourceSeq: sources.length + 1,
     nextDisplaySeq,
@@ -1881,7 +1925,7 @@ export interface DraftSaveReadiness {
  * Browser save-readiness gate for Composition drafts. Mirrors the shared
  * canonical contract synchronously: a non-empty name, at least one source,
  * valid refs with every component placed exactly once and no dangling
- * refs, required parameters without a default placed as controls, complete
+ * refs, required variables without a default connected to an Input, complete
  * Metric definitions, and at least one layout item. A source-only draft
  * reports `layout` and cannot save. Canonical parsing itself stays async in
  * `canonicalizeDraft`; the save handler fails closed on its diagnostics.
@@ -1897,46 +1941,70 @@ export const draftSaveReadiness = (
   if (draft.name.trim().length === 0) return { ready: false, reason: "name" };
   if (draft.sources.length === 0) return { ready: false, reason: "sources" };
   const sourceIds = new Set(draft.sources.map((source) => source.draftId));
-  const displayIds = new Set(draft.displays.map((display) => display.draftId));
-  const parameterIds = new Set(
-    draft.parameters.map((parameter) => parameter.id),
+  const componentIds = new Set([
+    ...draft.displays.map((display) => display.draftId),
+    ...draft.inputs.map((input) => input.draftId),
+  ]);
+  const variableIds = new Set(
+    draft.variables.map((variable) => variable.id),
   );
   for (const display of draft.displays) {
-    if (display.kind === "text") continue;
+    if (display.kind === "text") {
+      if (display.content.kind === "variable") {
+        const variable = draft.variables.find((item) =>
+          item.id === display.content.variable
+        );
+        if (variable?.type !== "string") {
+          return { ready: false, reason: "refs" };
+        }
+      }
+      continue;
+    }
     if (!sourceIds.has(display.sourceDraftId)) {
       return { ready: false, reason: "refs" };
     }
   }
-  if (!draftMetricsReady(draft)) return { ready: false, reason: "metric" };
-  const placedComponents = new Map<string, number>();
-  const placedParameters = new Set<string>();
-  for (const row of draft.layoutRows) {
-    for (const item of row.items) {
-      if (item.kind === "component") {
-        if (!displayIds.has(item.draftId)) {
-          return { ready: false, reason: "refs" };
-        }
-        placedComponents.set(
-          item.draftId,
-          (placedComponents.get(item.draftId) ?? 0) + 1,
-        );
-      } else {
-        if (!parameterIds.has(item.parameterId)) {
-          return { ready: false, reason: "refs" };
-        }
-        placedParameters.add(item.parameterId);
-      }
-    }
-  }
-  for (const display of draft.displays) {
-    if (placedComponents.get(display.draftId) !== 1) {
+  for (const input of draft.inputs) {
+    if (!variableIds.has(input.variable)) {
       return { ready: false, reason: "refs" };
     }
   }
-  for (const parameter of draft.parameters) {
+  for (const source of draft.sources) {
+    if (source.kind !== "saved_sql") continue;
+    if (source.variableTypes === undefined) {
+      return { ready: false, reason: "refs" };
+    }
+    for (const [sqlVariable, type] of Object.entries(source.variableTypes)) {
+      const binding = source.variables[sqlVariable];
+      const variable = binding &&
+        draft.variables.find((item) => item.id === binding.variable);
+      if (!variable || variable.type !== type) {
+        return { ready: false, reason: "refs" };
+      }
+    }
+  }
+  if (!draftMetricsReady(draft)) return { ready: false, reason: "metric" };
+  const placedComponents = new Map<string, number>();
+  for (const row of draft.layoutRows) {
+    for (const item of row.items) {
+      if (!componentIds.has(item.draftId)) {
+        return { ready: false, reason: "refs" };
+      }
+      placedComponents.set(
+        item.draftId,
+        (placedComponents.get(item.draftId) ?? 0) + 1,
+      );
+    }
+  }
+  for (const componentId of componentIds) {
+    if (placedComponents.get(componentId) !== 1) {
+      return { ready: false, reason: "refs" };
+    }
+  }
+  for (const variable of draft.variables) {
     if (
-      parameter.required && parameter.default === undefined &&
-      !placedParameters.has(parameter.id)
+      variable.required && variable.default === undefined &&
+      !draft.inputs.some((input) => input.variable === variable.id)
     ) {
       return { ready: false, reason: "refs" };
     }

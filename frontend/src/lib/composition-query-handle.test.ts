@@ -285,7 +285,7 @@ describe("CompositionQueryHandle", () => {
     handle.dispose();
   });
 
-  it("pins get and resolve to the selected revision and ignores a stale parameter response", async () => {
+  it("pins get and resolve to the selected revision and ignores a stale variable response", async () => {
     const oldPage = deferred<ReturnType<typeof entryPage>>();
     const currentPage = deferred<ReturnType<typeof entryPage>>();
     const querySignals: AbortSignal[] = [];
@@ -539,7 +539,9 @@ describe("CompositionQueryHandle", () => {
   });
 
   it("does not page a Saved SQL source used only by Metrics", async () => {
-    const response = resolvedSavedSql("2026-03-01") as CompositionResolveResponse;
+    const response = resolvedSavedSql(
+      "2026-03-01",
+    ) as CompositionResolveResponse;
     response.plan!.component_bindings = [{
       component_id: "total",
       kind: "metric",
@@ -775,7 +777,9 @@ describe("CompositionQueryHandle", () => {
         default: "active",
       }];
       const monthSource = response.plan!.sources[0];
-      if (monthSource.kind !== "entry_query") throw new Error("expected entries");
+      if (monthSource.kind !== "entry_query") {
+        throw new Error("expected entries");
+      }
       response.plan!.sources.push({
         ...monthSource,
         source_id: "status_rows",
@@ -872,7 +876,7 @@ describe("CompositionQueryHandle", () => {
     handle.dispose();
   });
 
-  it("resets Saved SQL continuations on parameter change and discards its stale page", async () => {
+  it("resets Saved SQL continuations on variable change and discards its stale page", async () => {
     const stalePage = deferred<ReturnType<typeof savedSqlPage>>();
     const currentPage = deferred<ReturnType<typeof savedSqlPage>>();
     const signals: AbortSignal[] = [];
