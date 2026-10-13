@@ -2960,6 +2960,54 @@ mod tests {
     }
 
     #[test]
+    fn saved_sql_source_preserves_float_type_for_integral_json_number() {
+        let (entry_id, revision_id) = id_pair();
+        let variables = [variable(
+            "ratio",
+            CompositionVariableType::Float,
+            true,
+            None,
+            None,
+        )];
+        let bindings = bind_variables(
+            &variables,
+            &BTreeMap::from([("ratio".to_owned(), json!(1))]),
+        );
+        assert!(bindings.diagnostics.is_empty());
+        assert!(bindings.invalid_values.is_empty());
+
+        let source = saved_sql_source(
+            entry_id,
+            revision_id,
+            BTreeMap::from([("threshold".to_owned(), variable_ref("ratio"))]),
+        );
+        let float_revision = saved_sql_metadata(
+            entry_id,
+            revision_id,
+            BTreeMap::from([("threshold".to_owned(), "float")]),
+        );
+        let compiled = compile_saved_sql_source(&source, Some(&float_revision), &bindings)
+            .expect("integral JSON spelling preserves the declared Float variable type");
+
+        assert_eq!(compiled.request.parameters["threshold"], json!(1));
+        assert_eq!(compiled.request.parameter_types["threshold"], "float");
+
+        let integer_revision = saved_sql_metadata(
+            entry_id,
+            revision_id,
+            BTreeMap::from([("threshold".to_owned(), "integer")]),
+        );
+        assert_eq!(
+            diagnostic_codes(compile_saved_sql_source(
+                &source,
+                Some(&integer_revision),
+                &bindings
+            )),
+            vec![CompositionDiagnosticCode::VariableTypeMismatch]
+        );
+    }
+
+    #[test]
     fn saved_sql_source_preserves_typed_null_literals() {
         let (entry_id, revision_id) = id_pair();
         let source = saved_sql_source(

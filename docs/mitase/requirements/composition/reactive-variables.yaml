@@ -15,7 +15,7 @@ requirements:
         governed_by: [POL-000#rule.foundation-precedence]
       - id: typed-input-lexical-contract
         kind: behavior
-        statement: Typed Input parsing is locale-independent and follows the bounded per-type lexical grammar and value limits in ADR-023 section 2.1. Empty Input is explicitly unset and overrides a declaration default; omission selects the default. Unset is carried separately from typed values and is never SQL NULL. Malformed, over-limit, overflow, non-finite, or underflow-to-zero values remain invalid and cannot be bound to a query. Defaults use the same type and lexical rules.
+        statement: Typed Input parsing is locale-independent and follows the bounded per-type lexical grammar and value limits in ADR-023 section 2.1. A finite JSON number with integral spelling (for example, 1) remains a Float value; Saved SQL binding uses the declared Composition and SQL variable types, not the JSON number's spelling. Empty Input is explicitly unset and overrides a declaration default; omission selects the default. Unset is carried separately from typed values and is never SQL NULL. Malformed, over-limit, overflow, non-finite, or underflow-to-zero values remain invalid and cannot be bound to a query. Defaults use the same type and lexical rules.
         governed_by: [POL-000#rule.foundation-precedence]
       - id: input-component-binding
         kind: behavior
@@ -88,6 +88,15 @@ requirements:
                 criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
                 covers: [FEAT-COMP-008#binding.typed-variable-domain-evidence/target.exact-input-lexical-contract]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::typed_input_parser_enforces_the_pinned_lexical_contract } }
+          - id: integral-json-float-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::float_type_accepts_integral_json_numbers }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+                covers: [FEAT-COMP-008#binding.typed-variable-domain-evidence/target.integral-json-float]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::float_type_accepts_integral_json_numbers } }
           - id: typed-variable-default-case
             adapter: rust
             path: crates/ugoite-domain/src/composition.rs
@@ -199,6 +208,15 @@ requirements:
                 criterion: REQ-COMP-007#criterion.typed-source-binding
                 covers: [FEAT-COMP-008#binding.core-typed-variable-resolution/target.typed-saved-sql-variable-binding]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_source_checks_variable_types_and_literal_values } }
+          - id: integral-json-float-sql-type-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::saved_sql_source_preserves_float_type_for_integral_json_number }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-source-binding
+                covers: [FEAT-COMP-008#binding.core-typed-variable-resolution/target.typed-saved-sql-variable-binding]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_source_preserves_float_type_for_integral_json_number } }
           - id: supported-sql-variable-types-case
             adapter: rust
             path: crates/ugoite-core/src/composition.rs
