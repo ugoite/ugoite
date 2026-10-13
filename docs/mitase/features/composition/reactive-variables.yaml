@@ -508,10 +508,165 @@ features:
             path: frontend/src/components/composition/ParameterControl.test.tsx
             selector:
               kind: test
-              name: preserves timezone-bearing timestamp values in a text input
+              name: preserves timezone-bearing timestamps in the shared raw input state
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.typed-input-lexical-contract
+      - id: browser-reactive-variable-runtime
+        role: implementation
+        facet: frontend
+        responsibility: Keep raw input, parsed typed values, validation, exact-revision resolution, dependency-scoped source refresh, and metric invalidation in transient Browser Work state.
+        targets:
+          - id: composition-query-work-handle
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.ts
+            selector:
+              kind: symbol
+              name: createCompositionQueryHandle
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.input-runtime-synchronization
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.direct-text-reactivity
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.selective-source-refresh
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.stale-result-and-state-safety
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.runtime-values-are-transient
+          - id: browser-synchronous-domain-parser
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.ts
+            selector:
+              kind: symbol
+              name: parseCompositionVariableInputSync
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+          - id: browser-metric-source-scoping
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.tsx
+            selector:
+              kind: symbol
+              name: CompositionMetric
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.selective-source-refresh
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.stale-result-and-state-safety
+      - id: browser-variable-text-reactivity
+        role: implementation
+        facet: frontend
+        responsibility: Read the transient typed variable snapshot when joining saved Text bindings so a valid Input edit changes Text in the same Browser cycle without waiting for source resolution.
+        targets:
+          - id: route-variable-text-binding
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx
+            selector:
+              kind: symbol
+              name: flowTexts
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.direct-text-reactivity
+      - id: browser-reactive-variable-runtime-evidence
+        role: evidence
+        facet: frontend-tests
+        responsibility: Verify canonical synchronous parsing, shared Input raw/typed state, selective page refresh, pagination race safety, fail-closed dependency handling, and stale Metric response suppression.
+        targets:
+          - id: synchronous-shared-input-state
+            adapter: typescript
+            path: frontend/src/components/composition/ParameterControl.test.tsx
+            selector:
+              kind: test
+              name: synchronously shares valid typed values and invalid raw text across Inputs
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.input-runtime-synchronization
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-input-lexical-contract
+          - id: browser-sync-domain-parser
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.test.ts
+            selector:
+              kind: test
+              name: parses Composition Input synchronously after preparing the shared WASM parser
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-input-lexical-contract
+          - id: dependent-page-refresh-preserves-unrelated-pagination
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.test.ts
+            selector:
+              kind: test
+              name: preserves an unrelated page request while another source re-resolves
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.selective-source-refresh
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.stale-result-and-state-safety
+          - id: unrelated-query-error-is-not-retried
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.test.ts
+            selector:
+              kind: test
+              name: does not retry an unchanged failed source during another variable refresh
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.selective-source-refresh
+          - id: incomplete-source-dependencies-hide-prior-pages
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.test.ts
+            selector:
+              kind: test
+              name: fails closed and hides prior pages when a variable dependency index is missing
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.stale-result-and-state-safety
+          - id: invalid-input-discards-delayed-metric
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.test.tsx
+            selector:
+              kind: test
+              name: invalidates a metric when an unset dependency becomes invalid without changing its null value
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.stale-result-and-state-safety
+          - id: incomplete-metric-dependencies-discard-delayed-result
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.test.tsx
+            selector:
+              kind: test
+              name: invalidates a metric when its dependency index becomes incomplete
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.stale-result-and-state-safety
+          - id: placed-input-updates-variable-text
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector:
+              kind: test
+              name: updates variable-backed Text immediately when a placed Input changes
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.direct-text-reactivity
+          - id: required-unset-stops-dependent-source-query
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.test.ts
+            selector:
+              kind: test
+              name: does not query a source when a required variable is explicitly unset
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.stale-result-and-state-safety
+          - id: malformed-raw-hides-source-results
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.test.ts
+            selector:
+              kind: test
+              name: hides a ready source and skips queries as soon as raw input is malformed
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.stale-result-and-state-safety
       - id: browser-explicit-unset-transport
         role: implementation
         facet: frontend

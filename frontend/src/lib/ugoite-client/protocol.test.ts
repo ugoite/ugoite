@@ -6,7 +6,9 @@ import {
   encodeSpreadsheetCsv,
   getWasmSupportedOperations,
   parseCompositionVariableInput,
+  parseCompositionVariableInputSync,
   prepareApiRequest,
+  prepareCompositionVariableInputParser,
   protocolFetch,
   protocolFetchResponse,
   spreadsheetCsvRequestBytes,
@@ -67,6 +69,16 @@ const typedCompositionDocument = {
 
 describe("portable Ugoite API protocol WASM", () => {
   afterEach(() => vi.restoreAllMocks());
+
+  it("requires preparation before synchronously parsing Composition Input", async () => {
+    vi.resetModules();
+    const freshProtocol = await import("./protocol");
+
+    expect(() =>
+      freshProtocol.parseCompositionVariableInputSync("integer", "1")
+    )
+      .toThrow("Composition variable parser is not prepared");
+  });
 
   it("canonicalizes a typed Composition document through the Rust/WASM bridge", async () => {
     const canonical = await canonicalizeCompositionDocument(
@@ -133,6 +145,21 @@ describe("portable Ugoite API protocol WASM", () => {
         expected,
       );
     }
+  });
+
+  it("parses Composition Input synchronously after preparing the shared WASM parser", async () => {
+    await prepareCompositionVariableInputParser();
+
+    expect(parseCompositionVariableInputSync("integer", "+00042")).toEqual({
+      status: "valid",
+      value: 42,
+    });
+    expect(parseCompositionVariableInputSync("date", "2025-02-29")).toEqual({
+      status: "invalid",
+    });
+    expect(parseCompositionVariableInputSync("string", "")).toEqual({
+      status: "unset",
+    });
   });
 
   it("uses the shared spreadsheet-safe CSV encoder", async () => {

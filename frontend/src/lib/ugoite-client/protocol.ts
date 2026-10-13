@@ -137,6 +137,7 @@ export const UGOITE_WASM_PROTOCOL_VERSION = 1;
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 let exportsPromise: Promise<UgoiteWasmExports> | undefined;
+let loadedExports: UgoiteWasmExports | undefined;
 
 const loadExports = async (): Promise<UgoiteWasmExports> => {
   exportsPromise ??= initializeWasm().then((instance) => {
@@ -147,13 +148,16 @@ const loadExports = async (): Promise<UgoiteWasmExports> => {
         `Unsupported Ugoite WASM protocol version: ${protocolVersion}`,
       );
     }
+    loadedExports = exports;
     return exports;
   });
   return await exportsPromise;
 };
 
-const invokeProtocol = async <T>(command: unknown): Promise<T> => {
-  const exports = await loadExports();
+const invokeProtocolWithExports = <T>(
+  exports: UgoiteWasmExports,
+  command: unknown,
+): T => {
   const input = textEncoder.encode(JSON.stringify(command));
   const inputPointer = exports.ugoite_alloc(input.byteLength);
 
@@ -190,6 +194,9 @@ const invokeProtocol = async <T>(command: unknown): Promise<T> => {
     exports.ugoite_protocol_clear_result();
   }
 };
+
+const invokeProtocol = async <T>(command: unknown): Promise<T> =>
+  invokeProtocolWithExports(await loadExports(), command);
 
 export type KonaseProtocolAction =
   | "konase.version"
@@ -249,6 +256,11 @@ export type CompositionVariableInputParseResult<
   | { status: "valid"; value: CompositionVariableInputValueByType[T] }
   | { status: "invalid" };
 
+/** Load the canonical parser before rendering interactive Composition Inputs. */
+export const prepareCompositionVariableInputParser = async (): Promise<void> => {
+  await loadExports();
+};
+
 /** Canonicalize a typed Composition document through the shared Rust domain. */
 export const canonicalizeCompositionDocument = async (
   document: unknown,
@@ -269,6 +281,25 @@ export const parseCompositionVariableInput = async <
     action: "domain.parse_composition_variable_input",
     value: { type, raw },
   });
+
+/** Parse synchronously after prepareCompositionVariableInputParser resolves. */
+export const parseCompositionVariableInputSync = <
+  T extends CompositionVariableInputType,
+>(
+  type: T,
+  raw: string,
+): CompositionVariableInputParseResult<T> => {
+  if (!loadedExports) {
+    throw new Error("Composition variable parser is not prepared");
+  }
+  return invokeProtocolWithExports<CompositionVariableInputParseResult<T>>(
+    loadedExports,
+    {
+      action: "domain.parse_composition_variable_input",
+      value: { type, raw },
+    },
+  );
+};
 
 /** Exact protocol envelope for one spreadsheet-CSV encode request. */
 export const buildSpreadsheetCsvRequest = (

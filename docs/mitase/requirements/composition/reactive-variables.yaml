@@ -272,6 +272,109 @@ requirements:
                 criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
                 covers: [FEAT-COMP-008#binding.browser-explicit-unset-transport-evidence/target.composition-explicit-unset-request]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-api.test.ts, test: sends an explicit unset separately from typed variable values } }
+      - id: browser-reactive-variable-runtime-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Browser Input synchronization, direct Text reactivity, explicit unset handling, selective Source refresh, pagination safety, and stale Metric invalidation using the shared Domain parser and transient Work state.
+        targets:
+          - id: browser-input-change-resolves-current-revision
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: re-resolves the exact revision when a placed Input changes }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.input-runtime-synchronization
+                covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime/target.composition-query-work-handle]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: re-resolves the exact revision when a placed Input changes } }
+          - id: browser-variable-backed-text-reactivity
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: updates variable-backed Text immediately when a placed Input changes }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.direct-text-reactivity
+                covers: [FEAT-COMP-008#binding.browser-variable-text-reactivity/target.route-variable-text-binding]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: updates variable-backed Text immediately when a placed Input changes } }
+          - id: browser-invalid-required-unset-does-not-query-source
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.test.ts
+            selector: { kind: test, name: does not query a source when a required variable is explicitly unset }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+                covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime/target.composition-query-work-handle]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: does not query a source when a required variable is explicitly unset } }
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.stale-result-and-state-safety
+                covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime/target.composition-query-work-handle]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: does not query a source when a required variable is explicitly unset } }
+          - id: browser-malformed-raw-hides-source-results
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.test.ts
+            selector: { kind: test, name: hides a ready source and skips queries as soon as raw input is malformed }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.stale-result-and-state-safety
+                covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime-evidence/target.malformed-raw-hides-source-results]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: hides a ready source and skips queries as soon as raw input is malformed } }
+          - id: browser-unrelated-pagination-survives-refresh
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.test.ts
+            selector: { kind: test, name: preserves an unrelated page request while another source re-resolves }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.selective-source-refresh
+                covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime-evidence/target.dependent-page-refresh-preserves-unrelated-pagination]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: preserves an unrelated page request while another source re-resolves } }
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.stale-result-and-state-safety
+                covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime-evidence/target.dependent-page-refresh-preserves-unrelated-pagination]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: preserves an unrelated page request while another source re-resolves } }
+          - id: browser-unrelated-query-error-is-not-retried
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.test.ts
+            selector: { kind: test, name: does not retry an unchanged failed source during another variable refresh }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.selective-source-refresh
+                covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime-evidence/target.unrelated-query-error-is-not-retried]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: does not retry an unchanged failed source during another variable refresh } }
+          - id: browser-missing-dependencies-hide-stale-pages
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.test.ts
+            selector: { kind: test, name: fails closed and hides prior pages when a variable dependency index is missing }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.stale-result-and-state-safety
+                covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime-evidence/target.incomplete-source-dependencies-hide-prior-pages]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: fails closed and hides prior pages when a variable dependency index is missing } }
+          - id: browser-invalid-input-discards-metric-response
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.test.tsx
+            selector: { kind: test, name: invalidates a metric when an unset dependency becomes invalid without changing its null value }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.stale-result-and-state-safety
+                covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime-evidence/target.invalid-input-discards-delayed-metric]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: invalidates a metric when an unset dependency becomes invalid without changing its null value } }
+          - id: browser-incomplete-metric-dependencies-discard-response
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.test.tsx
+            selector: { kind: test, name: invalidates a metric when its dependency index becomes incomplete }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.stale-result-and-state-safety
+                covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime-evidence/target.incomplete-metric-dependencies-discard-delayed-result]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: invalidates a metric when its dependency index becomes incomplete } }
+          - id: browser-input-uses-shared-domain-parser
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.test.ts
+            selector: { kind: test, name: parses Composition Input synchronously after preparing the shared WASM parser }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+                covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime-evidence/target.browser-sync-domain-parser]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/ugoite-client/protocol.test.ts, test: parses Composition Input synchronously after preparing the shared WASM parser } }
       - id: cli-typed-variable-query-verification
         role: verification
         facet: verification

@@ -510,7 +510,7 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
               ? definitionById().get(binding()!.variable_id)
               : undefined}
             parameterDisplayName={inputDisplayName()}
-            parameterValues={props.parameterValues}
+            variableValues={props.parameterValues}
             sources={props.sources}
             sourceById={sourceById()}
             ownsSourceStatus={ownsSourceStatus()}

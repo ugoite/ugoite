@@ -20,7 +20,10 @@ import type {
   CompositionResolvePlan,
   CompositionTextStyle,
 } from "~/lib/composition-api";
-import type { CompositionSourcePageState } from "~/lib/composition-query-handle";
+import type {
+  CompositionSourcePageState,
+  CompositionVariableInputState,
+} from "~/lib/composition-query-handle";
 import { compositionParameterDisplayName } from "~/lib/composition-parameter-name";
 
 export type DashboardFlowTexts = Record<
@@ -63,12 +66,10 @@ export interface DashboardFlowItemProps {
   /** Semantic definition for Input components; absent when undeclared. */
   definition?: CompositionVariableDefinition;
   parameterDisplayName?: string;
-  parameterValues: Readonly<Record<string, unknown>>;
-  parameterInvalid?: (parameterId: string) => boolean;
-  onParameterChange?: (
-    parameterId: string,
-    value: unknown | undefined,
-  ) => void;
+  variableValues?: Readonly<Record<string, unknown>>;
+  variableInputs?: Readonly<Record<string, CompositionVariableInputState>>;
+  variableInvalid?: (variableId: string) => boolean;
+  onVariableInput?: (variableId: string, raw: string) => void;
   sources: Record<string, CompositionSourcePageState>;
   sourceById: ReadonlyMap<
     string,
@@ -99,10 +100,11 @@ export function DashboardFlowItem(props: DashboardFlowItemProps) {
           definition={props.definition}
           displayName={props.parameterDisplayName ??
             t("composition.studioParameters")}
-          value={props.parameterValues[props.definition.id]}
-          onChange={(value) =>
-            props.onParameterChange?.(props.definition.id, value)}
-          invalid={props.parameterInvalid?.(props.definition.id)}
+          value={props.variableValues?.[props.definition.id]}
+          rawValue={props.variableInputs?.[props.definition.id]?.raw}
+          onChange={(raw) =>
+            props.onVariableInput?.(props.definition.id, raw)}
+          invalid={props.variableInvalid?.(props.definition.id)}
         />
       </div>
     );
@@ -141,7 +143,10 @@ type DashboardFlowRendererProps = {
   /** Optional Input label overrides keyed by component id. */
   inputLabels?: Readonly<Record<string, string>>;
   /** Resolved sources with their layout-ordered component bindings. */
-  plan: Pick<CompositionResolvePlan, "sources" | "component_bindings">;
+  plan: Pick<
+    CompositionResolvePlan,
+    "sources" | "component_bindings" | "dependencies"
+  >;
   /** Text content and style joined by component id. */
   texts: Readonly<DashboardFlowTexts>;
   /** Semantic variable definitions used by Input component bindings. */
@@ -149,12 +154,10 @@ type DashboardFlowRendererProps = {
   /** Declaration-order definitions used only for localized display names. */
   parameterDisplayDefinitions?: readonly CompositionVariableDefinition[];
   /** Transient parameter values owned by the composition query handle. */
-  parameterValues: Readonly<Record<string, unknown>>;
-  parameterInvalid?: (parameterId: string) => boolean;
-  onParameterChange?: (
-    parameterId: string,
-    value: unknown | undefined,
-  ) => void;
+  variableValues?: Readonly<Record<string, unknown>>;
+  variableInputs?: Readonly<Record<string, CompositionVariableInputState>>;
+  variableInvalid?: (variableId: string) => boolean;
+  onVariableInput?: (variableId: string, raw: string) => void;
   sources: Record<string, CompositionSourcePageState>;
   fieldNames?: CompositionFieldNames;
   fieldKeys?: CompositionFieldKeys;
@@ -210,6 +213,13 @@ export function DashboardFlowRenderer(props: DashboardFlowRendererProps) {
       bindingById(),
       sourceById(),
     );
+  const metricQueryContext = () => props.metricQueryContext
+    ? {
+      ...props.metricQueryContext,
+      dependencies: props.metricQueryContext.dependencies ??
+        props.plan.dependencies,
+    }
+    : undefined;
 
   return (
     <div class="compositionFlow">
@@ -250,16 +260,17 @@ export function DashboardFlowRenderer(props: DashboardFlowRendererProps) {
                             binding()!.variable_id,
                           )
                         : undefined}
-                      parameterValues={props.parameterValues}
-                      parameterInvalid={props.parameterInvalid}
-                      onParameterChange={props.onParameterChange}
+                      variableValues={props.variableValues}
+                      variableInputs={props.variableInputs}
+                      variableInvalid={props.variableInvalid}
+                      onVariableInput={props.onVariableInput}
                       sources={props.sources}
                       sourceById={sourceById()}
                       ownsSourceStatus={ownsSourceStatus()}
                       fieldNames={props.fieldNames}
                       fieldKeys={props.fieldKeys}
                       fieldTypes={props.fieldTypes}
-                      metricQueryContext={props.metricQueryContext}
+                      metricQueryContext={metricQueryContext()}
                       onNext={props.onNext}
                       onPrevious={props.onPrevious}
                       onRetry={props.onRetry}

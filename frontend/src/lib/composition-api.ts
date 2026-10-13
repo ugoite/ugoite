@@ -290,10 +290,24 @@ export interface CompositionResolveDiagnostic {
   variable_id?: string;
 }
 
+/** Authoritative dependency edges produced by the Core resolver. */
+export interface CompositionDependencyIndex {
+  variable_consumers?: Record<string, {
+    input_component_ids?: string[];
+    text_component_ids?: string[];
+    source_ids?: string[];
+  }>;
+  source_consumers?: Record<string, {
+    metric_component_ids?: string[];
+    table_component_ids?: string[];
+  }>;
+}
+
 export interface CompositionResolvePlan {
   composition_revision: { entry_id: string; revision_id: string };
   sources: CompositionResolvedSource[];
   component_bindings: CompositionResolvedComponentBinding[];
+  dependencies?: CompositionDependencyIndex;
 }
 
 export type CompositionResolvedSource =
@@ -358,6 +372,7 @@ export interface CompositionPreviewPlan {
   draft_fingerprint: string;
   sources: CompositionResolvedSource[];
   component_bindings: CompositionResolvedComponentBinding[];
+  dependencies?: CompositionDependencyIndex;
 }
 
 export interface CompositionPreviewResponse {

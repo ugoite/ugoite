@@ -56,6 +56,14 @@ const plan = {
   composition_revision: { entry_id: "tool-1", revision_id: "revision-2" },
   sources: [],
   component_bindings: [],
+  dependencies: {
+    variable_consumers: {
+      month_start: {},
+      include_archived: {},
+      month: {},
+      region: {},
+    },
+  },
 };
 
 describe("Composition exact-revision route", () => {
@@ -451,6 +459,12 @@ describe("Composition revision flow layout", () => {
         source_id: "entries",
       },
     ],
+    dependencies: {
+      variable_consumers: {
+        month: { source_ids: [] },
+        region: { source_ids: [] },
+      },
+    },
   };
 
   const entryPage: CompositionSourcePage = {
@@ -540,6 +554,104 @@ describe("Composition revision flow layout", () => {
     expect(screen.getByRole("cell", { name: "Travel" })).toBeInTheDocument();
   });
 
+  it("updates variable-backed Text immediately when a placed Input changes", async () => {
+    const dynamicDocument = structuredClone(lintDocument);
+    dynamicDocument.spec.variables.push({
+      id: "title",
+      label: "Title",
+      type: "string",
+      required: true,
+      default: "Initial title",
+    });
+    dynamicDocument.spec.components.push({
+      kind: "input",
+      id: "input-title",
+      variable: "title",
+    }, {
+      kind: "text",
+      id: "dynamic_title",
+      content: { kind: "variable", variable: "title" },
+      style: "heading",
+    });
+    if (dynamicDocument.spec.layout?.kind !== "flow") {
+      throw new Error("expected a flow layout");
+    }
+    const controls = dynamicDocument.spec.layout.rows.find((row) =>
+      row.id === "controls"
+    );
+    if (!controls) throw new Error("expected the controls row");
+    controls.items.push({ kind: "component", component: "input-title" });
+    dynamicDocument.spec.layout.rows.push({
+      id: "dynamic-title",
+      items: [{ kind: "component", component: "dynamic_title" }],
+    });
+    vi.mocked(compositionApi.lint).mockResolvedValue({
+      ok: true,
+      value: {
+        document: dynamicDocument,
+        canonical_yaml: "canonical",
+        fingerprint: "fingerprint",
+      },
+    });
+    const dynamicPlan = structuredClone(flowPlan);
+    dynamicPlan.component_bindings.push({
+      component_id: "input-title",
+      kind: "input",
+      variable_id: "title",
+    }, {
+      component_id: "dynamic_title",
+      kind: "text",
+    });
+    dynamicPlan.dependencies = {
+      variable_consumers: {
+        month: { source_ids: [] },
+        region: { source_ids: [] },
+        title: {
+          input_component_ids: ["input-title"],
+          text_component_ids: ["dynamic_title"],
+          source_ids: [],
+        },
+      },
+    };
+    vi.mocked(compositionApi.resolve).mockResolvedValue({
+      ok: true,
+      variable_definitions: [{
+        id: "month",
+        label: "Month",
+        type: "date",
+        required: true,
+        default: "2026-10-01",
+        format: "year-month",
+      }, {
+        id: "region",
+        label: "Region",
+        type: "string",
+        required: false,
+      }, {
+        id: "title",
+        label: "Title",
+        type: "string",
+        required: true,
+        default: "Initial title",
+      }],
+      plan: dynamicPlan,
+    });
+    render(() => <CompositionRevisionRoute />);
+
+    expect(await screen.findByRole("heading", { name: "Initial title" }))
+      .toBeInTheDocument();
+    expect(compositionApi.querySource).toHaveBeenCalledOnce();
+    fireEvent.input(screen.getByLabelText("Title"), {
+      target: { value: "Changed title" },
+    });
+
+    expect(screen.getByRole("heading", { name: "Changed title" }))
+      .toBeInTheDocument();
+    expect(compositionApi.resolve).toHaveBeenCalledOnce();
+    await waitFor(() => expect(compositionApi.resolve).toHaveBeenCalledTimes(2));
+    expect(compositionApi.querySource).toHaveBeenCalledOnce();
+  });
+
   it("uses declaration order for localized ordinals when placement order differs", async () => {
     const variables = (lintDocument.spec.variables ?? []).map(({
       label: _label,
@@ -626,7 +738,7 @@ describe("Composition revision flow layout", () => {
       "space-1",
       "tool-1",
       "revision-2",
-      { month: "2026-02-01" },
+      { month: "2026-02-01", region: null },
       expect.any(AbortSignal),
     );
   });

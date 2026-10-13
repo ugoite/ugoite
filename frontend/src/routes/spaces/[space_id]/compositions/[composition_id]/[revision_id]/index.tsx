@@ -185,7 +185,9 @@ export default function CompositionRevisionRoute() {
           composition_id: identity.compositionId,
           revision_id: identity.revisionId,
         },
-        parameters: handle.parameters(),
+        variables: handle.variables(),
+        invalidVariables: [...handle.invalidVariables()],
+        dependencies: current().resolved?.plan?.dependencies,
         onEdit: () =>
           navigate(
             spaceCompositionEditPath(
@@ -213,6 +215,7 @@ export default function CompositionRevisionRoute() {
     (spaceId) => formApi.list(spaceId).catch(() => []),
   );
   const parameterMismatch = (parameterId: string) =>
+    handle.invalidVariables().has(parameterId) ||
     diagnostics().some((diagnostic) =>
       diagnostic.variable_id === parameterId &&
       (diagnostic.code === "variable_type_mismatch" ||
@@ -284,7 +287,7 @@ export default function CompositionRevisionRoute() {
           : [[definition.id, definition.default] as const]
       ),
     );
-    const values = { ...defaults, ...handle.parameters() };
+    const values = { ...defaults, ...handle.variables() };
     for (const component of layoutDocument()?.spec.components ?? []) {
       if (
         component.kind === "text" &&
@@ -416,9 +419,10 @@ export default function CompositionRevisionRoute() {
                       parameterDisplayDefinitions(),
                       definition.id,
                     )}
-                    value={handle.parameters()[definition.id]}
-                    onChange={(value) =>
-                      handle.setParameter(definition.id, value)}
+                    value={handle.variables()[definition.id]}
+                    rawValue={handle.variableInputs()[definition.id]?.raw}
+                    onChange={(raw) =>
+                      handle.setVariableRaw(definition.id, raw)}
                     invalid={parameterMismatch(definition.id)}
                   />
                 </FieldStackRow>
@@ -446,9 +450,10 @@ export default function CompositionRevisionRoute() {
             texts={flowTexts()}
             parameterDefinitions={parameterDisplayDefinitions()}
             parameterDisplayDefinitions={parameterDisplayDefinitions()}
-            parameterValues={handle.parameters()}
-            parameterInvalid={parameterMismatch}
-            onParameterChange={handle.setParameter}
+            variableValues={handle.variables()}
+            variableInputs={handle.variableInputs()}
+            variableInvalid={parameterMismatch}
+            onVariableInput={handle.setVariableRaw}
             sources={current().sources}
             fieldNames={fieldNames}
             fieldKeys={fieldKeys}

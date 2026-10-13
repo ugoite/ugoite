@@ -219,6 +219,11 @@ const okMetricPreview = (fingerprint: string) => ({
       source_id: "src-1",
       expected_result_type: "float",
     }],
+    dependencies: {
+      variable_consumers: {
+        month: { source_ids: ["src-1"] },
+      },
+    },
   },
 });
 
@@ -380,6 +385,11 @@ describe("CompositionStudioSync", () => {
     const draft = seedDraft();
     const withParameterDefault = {
       ...draft,
+      sources: draft.sources.map((source) =>
+        source.kind === "saved_sql" && source.draftId === "src-1"
+          ? { ...source, variables: { period: { parameter: "month" } } }
+          : source
+      ),
       parameters: draft.parameters.map((parameter) => ({
         ...parameter,
         default: parameter.id === "month" ? "2026-10-01" : parameter.default,
@@ -709,7 +719,8 @@ describe("CompositionStudioSync", () => {
     );
     renderStudio(sqlMetricDraft());
 
-    await vi.advanceTimersByTimeAsync(401);
+    // The preview debounce is 400ms and the Metric request debounce is 120ms.
+    await vi.advanceTimersByTimeAsync(521);
     expect(canonicalizeMock).toHaveBeenCalledTimes(1);
     expect(previewMock).toHaveBeenCalledTimes(1);
     expect(queryMetricMock).toHaveBeenCalledTimes(1);
