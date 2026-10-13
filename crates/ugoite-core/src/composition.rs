@@ -1867,6 +1867,40 @@ mod tests {
     }
 
     #[test]
+    fn unknown_names_only_in_unset_variables_are_reported_once_in_stable_order() {
+        let variables = [variable(
+            "declared",
+            CompositionVariableType::String,
+            false,
+            None,
+            None,
+        )];
+        let explicitly_unset = [
+            "unknown_z".to_owned(),
+            "unknown_a".to_owned(),
+            "unknown_z".to_owned(),
+            "declared".to_owned(),
+        ];
+
+        let bindings = bind_variables_with_unset(&variables, &BTreeMap::new(), &explicitly_unset);
+
+        assert_eq!(
+            bindings.diagnostics,
+            vec![
+                super::CompositionDiagnostic {
+                    code: CompositionDiagnosticCode::VariableUnknown,
+                    variable_id: Some("unknown_a".to_owned()),
+                },
+                super::CompositionDiagnostic {
+                    code: CompositionDiagnosticCode::VariableUnknown,
+                    variable_id: Some("unknown_z".to_owned()),
+                },
+            ]
+        );
+        assert!(bindings.values.is_empty());
+    }
+
+    #[test]
     fn invalid_supplied_value_does_not_fall_back_to_a_default() {
         let variables = [variable(
             "limit",
