@@ -460,7 +460,7 @@
     },
     {
       "id": "B7",
-      "outcome": "Current Saved SQL Read revocation clears previously visible Metric and Table data, and live Browser navigation keeps Composition results isolated by Space and principal.",
+      "outcome": "Current Form or Saved SQL Read revocation clears previously visible Metric and Table data, and live Browser navigation keeps Composition results isolated by Space and principal.",
       "reserved_selectors": [
         {
           "path": "e2e/composition-source-acl-isolation.test.ts",
