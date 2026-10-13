@@ -209,7 +209,10 @@ const okPreview = (fingerprint: string) => ({
   },
 });
 
-const okMetricPreview = (fingerprint: string) => ({
+const okMetricPreview = (
+  fingerprint: string,
+  variableConsumers: Record<string, { source_ids: string[] }> = {},
+) => ({
   ok: true,
   draft_fingerprint: fingerprint,
   variable_definitions: [],
@@ -228,11 +231,7 @@ const okMetricPreview = (fingerprint: string) => ({
       source_id: "src-1",
       expected_result_type: "float",
     }],
-    dependencies: {
-      variable_consumers: {
-        month: { source_ids: ["src-1"] },
-      },
-    },
+    dependencies: { variable_consumers: variableConsumers },
   },
 });
 
@@ -389,7 +388,7 @@ describe("CompositionStudioSync", () => {
 
   it("queries a typed draft metric with its exact preview and current variable values", async () => {
     previewMock.mockImplementationOnce(async () =>
-      okMetricPreview("fp-studio")
+      okMetricPreview("fp-studio", { month: { source_ids: ["src-1"] } })
     );
     const draft = seedDraft();
     const withVariableDefault = {
