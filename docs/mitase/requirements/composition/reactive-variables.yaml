@@ -23,7 +23,7 @@ requirements:
         governed_by: [POL-000#rule.foundation-precedence]
       - id: required-variable-unset-diagnostic
         kind: behavior
-        statement: An explicit unset overrides a declared default. Resolving a required unset returns a `variable_missing` diagnostic with its variable ID; the Browser keeps dependent Sources invalid, hides their prior pages, and does not query them until the variable is valid.
+        statement: Resolving a required unset returns a `variable_missing` diagnostic with its variable ID; the Browser keeps dependent Sources invalid, hides their prior pages, and does not query them until the variable is valid.
         governed_by: [POL-004#rule.governance]
       - id: input-runtime-synchronization
         kind: behavior
