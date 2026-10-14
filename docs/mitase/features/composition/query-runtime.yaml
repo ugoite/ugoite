@@ -364,7 +364,7 @@ features:
   - id: composition-metric-query-runtime
     role: implementation
     facet: service
-    responsibility: Execute the authorized exact Saved SQL revision for a Metric, then expose only the selected declared scalar column after a bounded one-row probe.
+    responsibility: Execute the authorized exact Saved SQL revision for a Metric, then expose only the selected declared scalar column after a bounded two-row cardinality check.
     targets:
     - id: composition-metric-query-service-module
       adapter: rust
