@@ -44,6 +44,11 @@ type AcceptancePlan = {
     selector: { path: string; kind: "test"; name: string };
     steps: string[];
   };
+  reactive_variable_latest_generation_journey: {
+    model_connection: string;
+    selector: { path: string; kind: "test"; name: string };
+    steps: string[];
+  };
   evidence_record_fields: string[];
   recovery_and_authorization: {
     save_enablement: {
@@ -93,6 +98,12 @@ const EXPECTED_REACTIVE_VARIABLE_METRIC_STEPS = [
   "Rediscover and reopen the saved tool from Space Home; minimum 0 displays count 3 and sum 60.",
   "Change the Input to minimum 20 and verify the authorized server SQL result updates the Metrics to count 2 and sum 50.",
   "Reload the exact Composition revision; the declared default 0 and values 3 / 60 return while history remains at one revision.",
+];
+
+const EXPECTED_REACTIVE_VARIABLE_LATEST_GENERATION_STEPS = [
+  "Seed Amount values 1, 2, and 3, then create a saved Composition whose typed minimum variable drives one Saved SQL Source used by both Metric and Table.",
+  "Edit the required minimum Input through 1, 2, and 3 while preserving each prior Metric and Table response unresolved; the test removes transport abort signals so response-generation checks are exercised independently of cancellation.",
+  "Resolve the responses in reverse order, 3 then 2 then 1, and verify only minimum 3 remains visible in both Metric and Table with no alert or stale state change.",
 ];
 
 const EXPECTED_RECOVERY_CASES = [
@@ -369,6 +380,20 @@ Deno.test(
     assertEquals(
       plan.reactive_variable_metric_journey.steps,
       EXPECTED_REACTIVE_VARIABLE_METRIC_STEPS,
+    );
+    assertEquals(
+      plan.reactive_variable_latest_generation_journey.model_connection,
+      "disabled",
+    );
+    assertEquals(plan.reactive_variable_latest_generation_journey.selector, {
+      path: "e2e/composition-latest-variable-generation.test.ts",
+      kind: "test",
+      name:
+        "Rapid typed-variable edits keep only the latest Metric and Table result",
+    });
+    assertEquals(
+      plan.reactive_variable_latest_generation_journey.steps,
+      EXPECTED_REACTIVE_VARIABLE_LATEST_GENERATION_STEPS,
     );
 
     const seedManifest = JSON.parse(
