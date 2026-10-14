@@ -860,6 +860,7 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.stale-result-and-state-safety
+          - {id: rapid-variable-edits-keep-latest-metric-and-table, adapter: typescript, path: e2e/composition-latest-variable-generation.test.ts, selector: {kind: test, name: "Rapid typed-variable edits keep only the latest Metric and Table result"}, claims: [{kind: evidences, anchor: REQ-COMP-007#criterion.stale-result-and-state-safety}]}
           - id: studio-text-transient-save-reopen
             adapter: typescript
             path: e2e/composition-studio-journey.test.ts

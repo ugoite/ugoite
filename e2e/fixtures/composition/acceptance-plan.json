@@ -89,6 +89,19 @@
       "Reload the exact Composition revision; the declared default 0 and values 3 / 60 return while history remains at one revision."
     ]
   },
+  "reactive_variable_latest_generation_journey": {
+    "model_connection": "disabled",
+    "selector": {
+      "path": "e2e/composition-latest-variable-generation.test.ts",
+      "kind": "test",
+      "name": "Rapid typed-variable edits keep only the latest Metric and Table result"
+    },
+    "steps": [
+      "Seed Amount values 1, 2, and 3, then create a saved Composition whose typed minimum variable drives one Saved SQL Source used by both Metric and Table.",
+      "Edit the required minimum Input through 1, 2, and 3 while preserving each prior Metric and Table response unresolved; the test removes transport abort signals so response-generation checks are exercised independently of cancellation.",
+      "Resolve the responses in reverse order, 3 then 2 then 1, and verify only minimum 3 remains visible in both Metric and Table with no alert or stale state change."
+    ]
+  },
   "evidence_record_fields": [
     "source_sha",
     "candidate_sha",

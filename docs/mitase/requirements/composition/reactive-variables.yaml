@@ -471,6 +471,15 @@ requirements:
                 criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
                 covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime-evidence/target.browser-sync-domain-parser]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/ugoite-client/protocol.test.ts, test: parses Composition Input synchronously after preparing the shared WASM parser } }
+          - id: browser-latest-variable-generation
+            adapter: typescript
+            path: e2e/composition-latest-variable-generation.test.ts
+            selector: { kind: test, name: "Rapid typed-variable edits keep only the latest Metric and Table result" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.stale-result-and-state-safety
+                covers: [FEAT-COMP-008#binding.browser-typed-variable-journey-evidence/target.rapid-variable-edits-keep-latest-metric-and-table]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-latest-variable-generation.test.ts, test: "Rapid typed-variable edits keep only the latest Metric and Table result" } }
       - id: studio-filtered-sql-metric-verification
         role: verification
         facet: verification
