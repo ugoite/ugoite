@@ -37,3 +37,12 @@ requirements:
                 criterion: REQ-UX-LIST-003#criterion.same-preview-entry-choices
                 covers: [FEAT-UX-015#binding.konase-entry-choice-implementation/target.konase-panel-surface, FEAT-UX-015#binding.konase-entry-choice-implementation/target.konase-panel-specification]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/konase/KonasePanel.test.tsx, test: "REQ-UX-LIST-003: scopes Entry ordinals to the active search and preserves selected labels" } }
+          - id: selected-entry-uri-survives-search-for-context-preview
+            adapter: typescript
+            path: frontend/src/components/konase/KonasePanel.test.tsx
+            selector: { kind: test, name: "REQ-UX-LIST-003: preserves the selected Entry URI for Context preview after a new search" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-003#criterion.same-preview-entry-choices
+                covers: [FEAT-UX-015#binding.konase-entry-choice-implementation/target.konase-panel-surface, FEAT-UX-015#binding.konase-entry-choice-implementation/target.konase-panel-specification]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/konase/KonasePanel.test.tsx, test: "REQ-UX-LIST-003: preserves the selected Entry URI for Context preview after a new search" } }
