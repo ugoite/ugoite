@@ -21,6 +21,7 @@ import {
   addVariable,
   type CompositionDraft,
   createEmptyDraft,
+  removeInputComponent,
   setMetricSource,
 } from "~/lib/composition-draft";
 import { setLocale } from "~/lib/i18n";
@@ -153,6 +154,15 @@ const seedDraft = (): CompositionDraft => {
   const placed = addInputComponent(draft, "month");
   if (!placed.ok) throw new Error("expected variable placement");
   return placed.draft;
+};
+
+const requiredVariableWithoutPlacedInputDraft = (): CompositionDraft => {
+  const draft = seedDraft();
+  const input = draft.inputs[0];
+  if (!input) throw new Error("expected placed Input");
+  const unplaced = removeInputComponent(draft, input.draftId);
+  if (!unplaced.ok) throw new Error("expected Input unplacement");
+  return unplaced.draft;
 };
 
 const sourceOnlyDraft = (): CompositionDraft =>
@@ -696,6 +706,21 @@ describe("CompositionStudioSync", () => {
     );
     fireEvent.click(saveButton);
     expect(canonicalizeMock).not.toHaveBeenCalled();
+    expect(saveMock).not.toHaveBeenCalled();
+  });
+
+  it("blocks saving a required variable until its Input is placed", () => {
+    renderStudio(requiredVariableWithoutPlacedInputDraft());
+
+    const save = screen.getByRole("button", {
+      name: "Save, Resolve invalid references to save.",
+    });
+    expect(save).toBeDisabled();
+    expect(save).toHaveAttribute(
+      "title",
+      "Save, Resolve invalid references to save.",
+    );
+    fireEvent.click(save);
     expect(saveMock).not.toHaveBeenCalled();
   });
 

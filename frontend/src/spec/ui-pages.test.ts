@@ -587,6 +587,21 @@ describe("UI spec YAML registry", () => {
       });
   });
 
+  it("REQ-COMP-007: documents Studio readiness for required variable Inputs", () => {
+    const studioPath = path.join(componentsDir, "composition-studio.yaml");
+    const studio = parse(readFileSync(studioPath, "utf8")) as {
+      components?: Array<Record<string, unknown>>;
+    };
+    const variables = studio.components?.find(({ id }) =>
+      id === "studio-variables"
+    );
+
+    expect(variables).toMatchObject({
+      required_variable_without_default: "input-must-be-placed-before-save",
+      blocked_save: "disabled-with-reason-in-accessible-name-and-title",
+    });
+  });
+
   it("REQ-FE-040: connects Space Settings sections to implementation and test evidence", () => {
     const page = loadPages().find(({ spec }) =>
       spec.page?.id === "space-settings"

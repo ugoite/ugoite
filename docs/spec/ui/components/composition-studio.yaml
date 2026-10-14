@@ -205,6 +205,8 @@ components:
     binding: typed-composition-variable-declaration-with-exact-type-default-and-required-state
     default_parsing: shared-rust-domain-parser-ignores-results-after-removal-or-type-change
     input_components: ordinary-layout-components-reference-one-declared-variable-and-own-no-value
+    required_variable_without_default: input-must-be-placed-before-save
+    blocked_save: disabled-with-reason-in-accessible-name-and-title
     type_compatibility: rust-owned-diagnostics
   - id: studio-tags
     type: form
