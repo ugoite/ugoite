@@ -203,8 +203,6 @@ features:
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.structure-first-authoring
               - kind: satisfies
-                criterion: REQ-FE-070#criterion.metric-authoring
-              - kind: satisfies
                 criterion: REQ-FE-070#criterion.side-effect-free-preview
               - kind: satisfies
                 criterion: REQ-FE-077#criterion.parameter-display-names
