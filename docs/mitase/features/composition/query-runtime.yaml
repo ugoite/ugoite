@@ -458,6 +458,22 @@ features:
         anchor: REQ-COMP-004#criterion.current-authorization
       - kind: evidences
         anchor: REQ-COMP-007#criterion.stale-result-and-state-safety
+  - id: browser-table-pagination-metric-independence-evidence
+    role: evidence
+    facet: frontend-tests
+    responsibility: Verify a typed Input refreshes its dependent Table and SQL Metric, and paging that Table preserves the current Input and Metric without issuing another Metric query.
+    targets:
+    - id: table-pagination-preserves-variable-and-metric
+      adapter: typescript
+      path: e2e/composition-table-metric-pagination.test.ts
+      selector:
+        kind: test
+        name: Table pagination leaves the SQL Metric and typed Input unchanged
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.saved-sql-metric-presentation
+      - kind: evidences
+        anchor: REQ-COMP-007#criterion.selective-source-refresh
   contracts:
   - id: saved-sql-metric-result-contract
     kind: custom

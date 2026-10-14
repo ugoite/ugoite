@@ -426,6 +426,13 @@
           }
         },
         {
+          "path": "e2e/composition-table-metric-pagination.test.ts",
+          "selector": {
+            "kind": "test",
+            "name": "Table pagination leaves the SQL Metric and typed Input unchanged"
+          }
+        },
+        {
           "path": "e2e/composition-revision-stale-response.test.ts",
           "selector": {
             "kind": "test",
