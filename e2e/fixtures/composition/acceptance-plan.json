@@ -102,6 +102,20 @@
       "Resolve the responses in reverse order, 3 then 2 then 1, and verify only minimum 3 remains visible in both Metric and Table with no alert or stale state change."
     ]
   },
+  "reactive_variable_invalid_input_journey": {
+    "model_connection": "disabled",
+    "selector": {
+      "path": "e2e/composition-invalid-variable-input.test.ts",
+      "kind": "test",
+      "name": "invalid_raw_input_blocks_query_and_stale_result"
+    },
+    "steps": [
+      "Open a saved Composition with a defaulted required integer variable, two Input components bound to that variable, and a Metric backed by a filtered Saved SQL Source.",
+      "Confirm the default yields a successful Metric result, then enter an incomplete integer token in the first Input and verify both Inputs synchronize while the prior result disappears without another Metric query.",
+      "Clear the second Input and verify both Inputs remain empty, the resolver reports the required variable as missing instead of applying its default, and no Metric query runs.",
+      "Enter a valid value in either Input and verify both controls synchronize and the Metric recovers from a new server result."
+    ]
+  },
   "evidence_record_fields": [
     "source_sha",
     "candidate_sha",
