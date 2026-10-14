@@ -230,6 +230,7 @@ const EXPECTED_RESERVED_SELECTORS: Record<string, string[]> = {
     "frontend/src/lib/composition-api.ts#test:composition_query_handle_discards_stale_response_state_updates",
     "frontend/src/components/CompositionRenderer.test.tsx#test:composition_renderer_delegates_to_source_native_presenters_without_client_aggregation",
     "e2e/composition-golden-journey.test.ts#test:Browser saves a tool once, reopens its exact revision from Home, and pages parameterized results with model connection disabled",
+    "e2e/composition-table-metric-pagination.test.ts#test:Table pagination leaves the SQL Metric and typed Input unchanged",
     "e2e/composition-revision-stale-response.test.ts#test:discard a delayed metric response after navigating to another exact revision",
   ],
   B6: [
