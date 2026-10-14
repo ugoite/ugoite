@@ -75,6 +75,8 @@ export function KonasePanel(props: KonasePanelProps) {
   >([
     undefined,
   ]);
+  const entryAssignedLabels = new Map<string, string>();
+  const pinnedEntryLabels = new Map<string, string>();
   const [contextPreview, setContextPreview] = createSignal<
     SelectedContextPreview
   >();
@@ -123,9 +125,27 @@ export function KonasePanel(props: KonasePanelProps) {
     candidate.spaceId === props.spaceId;
 
   const rememberEntryCandidateLabels = (entries: EntryQueryResult[]) => {
+    const selectedEntryUris = new Set(
+      selectedUris().filter((uri) => uri.startsWith("ugoite://entry/")),
+    );
+    for (const uri of pinnedEntryLabels.keys()) {
+      if (!selectedEntryUris.has(uri)) pinnedEntryLabels.delete(uri);
+    }
+
+    const newCandidates: Array<[string, string]> = [];
     for (const entry of entries) {
       const uri = `ugoite://entry/${entry.id}`;
-      entryBaseLabels.set(uri, entryCandidateLabel(entry));
+      if (pinnedEntryLabels.has(uri)) {
+        if (hasReadableEntryCandidateLabel(entry)) {
+          entryLabelsWithPreview.add(uri);
+        }
+        continue;
+      }
+      if (!entryBaseLabels.has(uri)) {
+        const label = entryCandidateLabel(entry);
+        entryBaseLabels.set(uri, label);
+        newCandidates.push([uri, label]);
+      }
       if (hasReadableEntryCandidateLabel(entry)) {
         entryLabelsWithPreview.add(uri);
       } else {
@@ -133,38 +153,81 @@ export function KonasePanel(props: KonasePanelProps) {
       }
     }
 
-    const entriesByLabel = new Map<string, string[]>();
+    const labelsByBase = new Map<string, number>();
+    for (const label of entryBaseLabels.values()) {
+      labelsByBase.set(label, (labelsByBase.get(label) ?? 0) + 1);
+    }
+    const seenByBase = new Map<string, number>();
+    const newCandidateUris = new Set(newCandidates.map(([uri]) => uri));
     for (const [uri, label] of entryBaseLabels) {
-      const matching = entriesByLabel.get(label);
-      if (matching) matching.push(uri);
-      else entriesByLabel.set(label, [uri]);
+      if (!newCandidateUris.has(uri)) {
+        seenByBase.set(label, (seenByBase.get(label) ?? 0) + 1);
+      }
     }
 
+    const reservedLabels = new Set(pinnedEntryLabels.values());
+    for (const label of entryAssignedLabels.values()) {
+      reservedLabels.add(label);
+    }
     const labels: Record<string, string> = {};
-    for (const [label, uris] of entriesByLabel) {
-      uris.forEach((uri, index) => {
-        labels[uri] = uris.length === 1
-          ? label
-          : label === t("konase.entryCandidate")
-          ? t("konase.entryOrdinalLabel", { count: index + 1 })
+    const firstNewOrdinal = entryBaseLabels.size - newCandidates.length + 1;
+    for (const [index, [uri, label]] of newCandidates.entries()) {
+      const ordinal = (seenByBase.get(label) ?? 0) + 1;
+      seenByBase.set(label, ordinal);
+      let candidate = (labelsByBase.get(label) ?? 0) > 1
+        ? label === t("konase.entryCandidate")
+          ? t("konase.entryOrdinalLabel", { count: ordinal })
           : t("konase.entryCandidateOrdinalLabel", {
             label,
-            count: index + 1,
-          });
-      });
-    }
-
-    if (new Set(Object.values(labels)).size !== Object.keys(labels).length) {
-      Array.from(entryBaseLabels).forEach(([uri, label], index) => {
-        labels[uri] = label === t("konase.entryCandidate")
-          ? t("konase.entryOrdinalLabel", { count: index + 1 })
-          : t("konase.entryCandidateIndexedLabel", {
-            label,
-            count: index + 1,
-          });
-      });
+            count: ordinal,
+          })
+        : label;
+      if (reservedLabels.has(candidate)) {
+        let fallbackOrdinal = firstNewOrdinal + index;
+        do {
+          candidate = label === t("konase.entryCandidate")
+            ? t("konase.entryOrdinalLabel", { count: fallbackOrdinal })
+            : t("konase.entryCandidateIndexedLabel", {
+              label,
+              count: fallbackOrdinal,
+            });
+          fallbackOrdinal += 1;
+        } while (reservedLabels.has(candidate));
+      }
+      entryAssignedLabels.set(uri, candidate);
+      labels[uri] = candidate;
+      reservedLabels.add(candidate);
     }
     return labels;
+  };
+
+  const startEntryCandidateSearch = () => {
+    const selectedEntryUris = new Set(
+      selectedUris().filter((uri) => uri.startsWith("ugoite://entry/")),
+    );
+    entryBaseLabels.clear();
+    entryAssignedLabels.clear();
+    entryLabelsWithPreview.forEach((uri) => {
+      if (!selectedEntryUris.has(uri)) entryLabelsWithPreview.delete(uri);
+    });
+    pinnedEntryLabels.clear();
+    for (const uri of selectedEntryUris) {
+      pinnedEntryLabels.set(
+        uri,
+        resourceLabels()[uri] || t("konase.entryCandidate"),
+      );
+    }
+    setResourceLabels((current) => {
+      const next = { ...current };
+      for (const uri of Object.keys(next)) {
+        if (
+          uri.startsWith("ugoite://entry/") && !selectedEntryUris.has(uri)
+        ) {
+          delete next[uri];
+        }
+      }
+      return next;
+    });
   };
 
   createEffect(() => {
@@ -199,7 +262,9 @@ export function KonasePanel(props: KonasePanelProps) {
       setSelectedUris([]);
       setResourceLabels({});
       entryBaseLabels.clear();
+      entryAssignedLabels.clear();
       entryLabelsWithPreview.clear();
+      pinnedEntryLabels.clear();
       setForms([]);
       setFormsLoading(false);
       setFormsLoaded(false);
@@ -422,6 +487,7 @@ export function KonasePanel(props: KonasePanelProps) {
   const searchEntries = async (
     after: string | undefined = undefined,
     nextPath?: (string | undefined)[],
+    startNewSearch = false,
   ) => {
     const spaceId = props.spaceId;
     const hostLifetime = captureLifetime();
@@ -432,6 +498,7 @@ export function KonasePanel(props: KonasePanelProps) {
     entrySearchController = controller;
     setEntrySearchLoading(true);
     setError(undefined);
+    if (startNewSearch) startEntryCandidateSearch();
     if (after === undefined) {
       setEntryRows([]);
       setEntryPage(undefined);
@@ -483,6 +550,7 @@ export function KonasePanel(props: KonasePanelProps) {
     const current = selectedUris();
     if (checked && current.includes(uri)) return;
     if (checked && current.length >= 4) return;
+    if (!checked) pinnedEntryLabels.delete(uri);
     activeHost()?.invalidateContextPreview();
     setContextPreview(undefined);
     setSelectedUris((value) =>
@@ -749,7 +817,7 @@ export function KonasePanel(props: KonasePanelProps) {
             onSubmit={(event) => {
               event.preventDefault();
               setEntryCursorPath([undefined]);
-              void searchEntries(undefined, [undefined]);
+              void searchEntries(undefined, [undefined], true);
             }}
           >
             <label>

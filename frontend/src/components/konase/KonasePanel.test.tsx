@@ -780,37 +780,37 @@ describe("KonasePanel Space authority", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Next page" }));
     const thirdCandidate = await screen.findByRole("checkbox", {
-      name: "Entry 3 · Shared preview",
+      name: "Shared preview · Entry 3",
       exact: true,
     });
     const fourthCandidate = screen.getByRole("checkbox", {
       name: "Entry 4 · Shared preview · Entry 1",
       exact: true,
     });
-    expect(within(selectedResources).getByText("Entry 1 · Shared preview"))
+    expect(within(selectedResources).getByText("Shared preview · Entry 1"))
       .toBeInTheDocument();
-    expect(within(selectedResources).getByText("Entry 2 · Shared preview"))
+    expect(within(selectedResources).getByText("Shared preview · Entry 2"))
       .toBeInTheDocument();
     expect(
       within(selectedResources).getByRole("button", {
-        name: "Remove Entry 1 · Shared preview from selected resources",
+        name: "Remove Shared preview · Entry 1 from selected resources",
       }),
     ).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/entry-[abcd]/);
     fireEvent.click(thirdCandidate);
-    expect(within(selectedResources).getByText("Entry 3 · Shared preview"))
+    expect(within(selectedResources).getByText("Shared preview · Entry 3"))
       .toBeInTheDocument();
     fireEvent.click(
       within(selectedResources).getByRole("button", {
-        name: "Remove Entry 3 · Shared preview from selected resources",
+        name: "Remove Shared preview · Entry 3 from selected resources",
       }),
     );
-    expect(within(selectedResources).queryByText("Entry 3 · Shared preview"))
+    expect(within(selectedResources).queryByText("Shared preview · Entry 3"))
       .not.toBeInTheDocument();
     expect(thirdCandidate).not.toBeChecked();
-    expect(within(selectedResources).getByText("Entry 1 · Shared preview"))
+    expect(within(selectedResources).getByText("Shared preview · Entry 1"))
       .toBeInTheDocument();
-    expect(within(selectedResources).getByText("Entry 2 · Shared preview"))
+    expect(within(selectedResources).getByText("Shared preview · Entry 2"))
       .toBeInTheDocument();
     fireEvent.click(fourthCandidate);
     expect(
@@ -849,6 +849,68 @@ describe("KonasePanel Space authority", () => {
     });
     await waitFor(() =>
       expect(screen.getByText("Fourth Entry projection")).toBeInTheDocument()
+    );
+  });
+
+  it("REQ-UX-LIST-003: scopes Entry ordinals to the active search and preserves selected labels", async () => {
+    mockConnection();
+    const candidate = (id: string) => ({
+      id,
+      form_id: "form-a",
+      revision_id: `revision-${id}`,
+      created_at_micros: 1,
+      updated_at_micros: 1,
+      preview: "Shared preview",
+    });
+    listFormsMock.mockResolvedValue([
+      { id: "form-a", name: "Note", version: 1, template: "", fields: {} },
+    ]);
+    queryEntriesMock.mockResolvedValueOnce({
+      rows: [candidate("entry-a"), candidate("entry-b")],
+      has_more: false,
+    }).mockResolvedValueOnce({
+      rows: [candidate("entry-c")],
+      has_more: false,
+    });
+
+    render(() => <KonasePanel spaceId="space-a" />);
+    fireEvent.input(screen.getByLabelText("Model API key"), {
+      target: { value: "model-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
+    await waitFor(() => expect(hostInstances).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "Search Entries" }));
+
+    fireEvent.click(await screen.findByRole("checkbox", {
+      name: "Shared preview · Entry 2",
+      exact: true,
+    }));
+    const selectedResources = screen.getByRole("list", {
+      name: "Selected resources",
+    });
+    expect(within(selectedResources).getByText("Shared preview · Entry 2"))
+      .toBeInTheDocument();
+
+    fireEvent.input(screen.getByRole("searchbox"), {
+      target: { value: "next search" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Search Entries" }));
+
+    expect(await screen.findByRole("checkbox", {
+      name: "Shared preview",
+      exact: true,
+    })).toBeInTheDocument();
+    expect(within(selectedResources).getByText("Shared preview · Entry 2"))
+      .toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/entry-[abc]/);
+    expect(queryEntriesMock).toHaveBeenLastCalledWith(
+      "space-a",
+      expect.objectContaining({
+        query: expect.objectContaining({ text: "next search" }),
+        projection: { kind: "preview" },
+        limit: 20,
+      }),
+      expect.any(AbortSignal),
     );
   });
 
