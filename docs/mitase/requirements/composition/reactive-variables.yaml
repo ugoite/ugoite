@@ -292,6 +292,20 @@ requirements:
                 criterion: REQ-COMP-007#criterion.code-free-studio-authoring
                 covers: [FEAT-COMP-008#binding.studio-typed-variable-defaults/target.variable-default-editor]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableList.test.tsx, test: does not restore a removed variable when its default parse resolves } }
+      - id: required-input-studio-save-readiness-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Studio Save is blocked when a required variable has no default and no placed Input, with the disabled reason exposed on the Save control.
+        targets:
+          - id: required-input-blocks-studio-save-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: blocks saving a required variable until its Input is placed }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.input-component-binding
+                covers: [FEAT-COMP-005#binding.studio-design-evidence/target.browser-studio-required-input-save-readiness]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: blocks saving a required variable until its Input is placed } }
       - id: typed-variable-explicit-unset-verification
         role: verification
         facet: verification

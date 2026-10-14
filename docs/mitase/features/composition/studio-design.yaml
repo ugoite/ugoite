@@ -618,6 +618,15 @@ features:
         anchor: REQ-COMP-002#criterion.ordered-component-layout
       - kind: evidences
         anchor: REQ-COMP-002#criterion.parameter-placement
+    - id: browser-studio-required-input-save-readiness
+      adapter: typescript
+      path: frontend/src/components/CompositionStudioSync.test.tsx
+      selector:
+        kind: test
+        name: blocks saving a required variable until its Input is placed
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-007#criterion.input-component-binding
     - id: browser-studio-canvas-operations
       adapter: typescript
       path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
