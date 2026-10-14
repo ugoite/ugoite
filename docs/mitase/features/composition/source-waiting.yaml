@@ -74,3 +74,14 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.source-waiting-when-resolution-blocked
+          - id: invalid-input-hides-stale-metric
+            adapter: typescript
+            path: e2e/composition-invalid-variable-input.test.ts
+            selector: { kind: test, name: invalid_raw_input_blocks_query_and_stale_result }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.required-variable-unset-diagnostic
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.stale-result-and-state-safety
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.source-waiting-when-resolution-blocked

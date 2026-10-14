@@ -476,6 +476,23 @@ requirements:
                 criterion: REQ-COMP-007#criterion.source-waiting-when-resolution-blocked
                 covers: [FEAT-COMP-009#binding.browser-source-waiting-evidence/target.entry-query-table-waiting-state]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionEntryQueryTable.test.tsx, test: shows a concise accessible waiting state while resolution is blocked } }
+          - id: browser-invalid-input-unset-and-stale-result
+            adapter: typescript
+            path: e2e/composition-invalid-variable-input.test.ts
+            selector: { kind: test, name: invalid_raw_input_blocks_query_and_stale_result }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.required-variable-unset-diagnostic
+                covers: [FEAT-COMP-009#binding.browser-source-waiting-evidence/target.invalid-input-hides-stale-metric]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-invalid-variable-input.test.ts, test: invalid_raw_input_blocks_query_and_stale_result } }
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.stale-result-and-state-safety
+                covers: [FEAT-COMP-009#binding.browser-source-waiting-evidence/target.invalid-input-hides-stale-metric]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-invalid-variable-input.test.ts, test: invalid_raw_input_blocks_query_and_stale_result } }
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.source-waiting-when-resolution-blocked
+                covers: [FEAT-COMP-009#binding.browser-source-waiting-evidence/target.invalid-input-hides-stale-metric]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-invalid-variable-input.test.ts, test: invalid_raw_input_blocks_query_and_stale_result } }
           - id: browser-input-uses-shared-domain-parser
             adapter: typescript
             path: frontend/src/lib/ugoite-client/protocol.test.ts
