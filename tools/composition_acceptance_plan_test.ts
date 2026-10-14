@@ -49,6 +49,11 @@ type AcceptancePlan = {
     selector: { path: string; kind: "test"; name: string };
     steps: string[];
   };
+  reactive_variable_invalid_input_journey: {
+    model_connection: string;
+    selector: { path: string; kind: "test"; name: string };
+    steps: string[];
+  };
   evidence_record_fields: string[];
   recovery_and_authorization: {
     save_enablement: {
@@ -104,6 +109,13 @@ const EXPECTED_REACTIVE_VARIABLE_LATEST_GENERATION_STEPS = [
   "Seed Amount values 1, 2, and 3, then create a saved Composition whose typed minimum variable drives one Saved SQL Source used by both Metric and Table.",
   "Edit the required minimum Input through 1, 2, and 3 while preserving each prior Metric and Table response unresolved; the test removes transport abort signals so response-generation checks are exercised independently of cancellation.",
   "Resolve the responses in reverse order, 3 then 2 then 1, and verify only minimum 3 remains visible in both Metric and Table with no alert or stale state change.",
+];
+
+const EXPECTED_REACTIVE_VARIABLE_INVALID_INPUT_STEPS = [
+  "Open a saved Composition with a defaulted required integer variable, two Input components bound to that variable, and a Metric backed by a filtered Saved SQL Source.",
+  "Confirm the default yields a successful Metric result, then enter an incomplete integer token in the first Input and verify both Inputs synchronize while the prior result disappears without another Metric query.",
+  "Clear the second Input and verify both Inputs remain empty, the resolver reports the required variable as missing instead of applying its default, and no Metric query runs.",
+  "Enter a valid value in either Input and verify both controls synchronize and the Metric recovers from a new server result.",
 ];
 
 const EXPECTED_RECOVERY_CASES = [
@@ -394,6 +406,19 @@ Deno.test(
     assertEquals(
       plan.reactive_variable_latest_generation_journey.steps,
       EXPECTED_REACTIVE_VARIABLE_LATEST_GENERATION_STEPS,
+    );
+    assertEquals(
+      plan.reactive_variable_invalid_input_journey.model_connection,
+      "disabled",
+    );
+    assertEquals(plan.reactive_variable_invalid_input_journey.selector, {
+      path: "e2e/composition-invalid-variable-input.test.ts",
+      kind: "test",
+      name: "invalid_raw_input_blocks_query_and_stale_result",
+    });
+    assertEquals(
+      plan.reactive_variable_invalid_input_journey.steps,
+      EXPECTED_REACTIVE_VARIABLE_INVALID_INPUT_STEPS,
     );
 
     const seedManifest = JSON.parse(
