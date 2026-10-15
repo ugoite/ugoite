@@ -710,8 +710,10 @@ async fn sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts
 
     let grouped = context
         .execute(
-            "SELECT field_100, COUNT(*) AS item_count, SUM(field_101) AS total \
-             FROM tasks GROUP BY field_100 HAVING COUNT(*) > 0 ORDER BY total DESC",
+            "SELECT field_100, COUNT(*) AS item_count, SUM(field_101) AS total, \
+             AVG(field_101) AS average, MIN(field_101) AS minimum, \
+             MAX(field_101) AS maximum FROM tasks GROUP BY field_100 \
+             HAVING COUNT(*) > 0 ORDER BY total DESC",
         )
         .await?;
     assert_eq!(
@@ -724,17 +726,49 @@ async fn sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts
         .as_any()
         .downcast_ref::<StringArray>()
         .expect("category is a string");
+    let counts = group_batch
+        .column(1)
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .expect("grouped COUNT uses Int64");
     let totals = group_batch
         .column(2)
         .as_any()
         .downcast_ref::<Int64Array>()
         .expect("grouped integer SUM uses Int64");
+    let averages = group_batch
+        .column(3)
+        .as_any()
+        .downcast_ref::<arrow_array::Float64Array>()
+        .expect("grouped integer AVG uses Float64");
+    let minimums = group_batch
+        .column(4)
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .expect("grouped integer MIN uses Int64");
+    let maximums = group_batch
+        .column(5)
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .expect("grouped integer MAX uses Int64");
     assert_eq!(categories.value(0), "food");
+    assert_eq!(counts.value(0), 2);
     assert_eq!(totals.value(0), 300);
+    assert_eq!(averages.value(0), 150.0);
+    assert_eq!(minimums.value(0), 100);
+    assert_eq!(maximums.value(0), 200);
     assert_eq!(categories.value(1), "zero");
+    assert_eq!(counts.value(1), 1);
     assert_eq!(totals.value(1), 0);
+    assert_eq!(averages.value(1), 0.0);
+    assert_eq!(minimums.value(1), 0);
+    assert_eq!(maximums.value(1), 0);
     assert_eq!(categories.value(2), "travel");
+    assert_eq!(counts.value(2), 1);
     assert_eq!(totals.value(2), -50);
+    assert_eq!(averages.value(2), -50.0);
+    assert_eq!(minimums.value(2), -50);
+    assert_eq!(maximums.value(2), -50);
 
     let plan = context
         .physical_plan_for_testing(
@@ -908,6 +942,17 @@ async fn high_cardinality_grouping_and_distinct_aggregates_are_bounded() -> anyh
     parallel.limits.max_concurrency = 4;
     parallel.limits.timeout = Duration::from_secs(30);
     let parallel_context = workspace.authorized_query_context(parallel.clone()).await?;
+    let permitted_groups = parallel_context
+        .execute("SELECT field_100, COUNT(*) FROM tasks GROUP BY field_100")
+        .await?;
+    assert_eq!(
+        permitted_groups
+            .iter()
+            .map(|batch| batch.num_rows())
+            .sum::<usize>(),
+        ENTRY_COUNT,
+        "the same 512-group query succeeds within the configured memory budget"
+    );
     let distinct_sql = "SELECT COUNT(DISTINCT amount) AS distinct_count, \
          SUM(DISTINCT amount) AS total, AVG(DISTINCT amount) AS average \
          FROM (SELECT field_101 AS amount FROM tasks \
@@ -950,10 +995,8 @@ async fn high_cardinality_grouping_and_distinct_aggregates_are_bounded() -> anyh
         .value(0);
     assert!((average - 127.5).abs() < 1e-12);
 
-    let mut group_memory_limited = aggregate_policy(&tasks, &entry_ids);
-    group_memory_limited.limits.max_rows = ENTRY_COUNT + 1;
+    let mut group_memory_limited = parallel.clone();
     group_memory_limited.limits.max_memory_bytes = 8 * 1024;
-    group_memory_limited.limits.timeout = Duration::from_secs(30);
     let group_context = workspace
         .authorized_query_context(group_memory_limited)
         .await?;
@@ -966,42 +1009,31 @@ async fn high_cardinality_grouping_and_distinct_aggregates_are_bounded() -> anyh
         Some(AuthorizedQueryError::ResourceLimitExceeded { .. })
     ));
 
-    let mut distinct_memory_limited = aggregate_policy(&tasks, &entry_ids);
-    distinct_memory_limited.limits.max_rows = ENTRY_COUNT + 1;
+    let mut distinct_memory_limited = parallel.clone();
     distinct_memory_limited.limits.max_memory_bytes = 8 * 1024;
-    distinct_memory_limited.limits.timeout = Duration::from_secs(30);
     let distinct_context = workspace
         .authorized_query_context(distinct_memory_limited)
         .await?;
-    let distinct = distinct_context
-        .execute("SELECT SUM(DISTINCT field_101) FROM tasks")
-        .await
-        .expect_err("a large DISTINCT state must stay within the configured memory budget");
-    assert!(matches!(
-        distinct.downcast_ref::<AuthorizedQueryError>(),
-        Some(AuthorizedQueryError::ResourceLimitExceeded { .. })
-    ));
+    for (sql, aggregate) in [
+        ("SELECT COUNT(DISTINCT field_101) FROM tasks", "COUNT"),
+        ("SELECT SUM(DISTINCT field_101) FROM tasks", "SUM"),
+        ("SELECT AVG(DISTINCT field_101) FROM tasks", "AVG"),
+    ] {
+        let error = distinct_context
+            .execute(sql)
+            .await
+            .expect_err("a large DISTINCT state must stay within the configured memory budget");
+        assert!(
+            matches!(
+                error.downcast_ref::<AuthorizedQueryError>(),
+                Some(AuthorizedQueryError::ResourceLimitExceeded { .. })
+            ),
+            "{aggregate} DISTINCT should fail under the configured memory limit: {error:#}"
+        );
+    }
 
-    let mut distinct_count_memory_limited = aggregate_policy(&tasks, &entry_ids);
-    distinct_count_memory_limited.limits.max_rows = ENTRY_COUNT + 1;
-    distinct_count_memory_limited.limits.max_memory_bytes = 8 * 1024;
-    distinct_count_memory_limited.limits.timeout = Duration::from_secs(30);
-    let distinct_count_context = workspace
-        .authorized_query_context(distinct_count_memory_limited)
-        .await?;
-    let distinct_count = distinct_count_context
-        .execute("SELECT COUNT(DISTINCT field_101) FROM tasks")
-        .await
-        .expect_err("a high-cardinality COUNT(DISTINCT) state must stay within the memory budget");
-    assert!(matches!(
-        distinct_count.downcast_ref::<AuthorizedQueryError>(),
-        Some(AuthorizedQueryError::ResourceLimitExceeded { .. })
-    ));
-
-    let mut row_limited = aggregate_policy(&tasks, &entry_ids);
+    let mut row_limited = parallel.clone();
     row_limited.limits.max_rows = 32;
-    row_limited.limits.max_memory_bytes = 8 * 1024 * 1024;
-    row_limited.limits.timeout = Duration::from_secs(30);
     let row_context = workspace.authorized_query_context(row_limited).await?;
     let rows = row_context
         .execute("SELECT field_100, COUNT(*) FROM tasks GROUP BY field_100")

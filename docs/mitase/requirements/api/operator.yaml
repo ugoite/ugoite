@@ -73,6 +73,14 @@ requirements:
         kind: security
         statement: COUNT, SUM, AVG, MIN, and MAX preserve their declared NULL and empty-set semantics; integer and decimal overflow and non-finite floating aggregate outputs fail without returning a wrapped or partial value.
         governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: grouped-numeric-aggregates
+        kind: security
+        statement: COUNT, SUM, AVG, MIN, and MAX return the correct values for each GROUP BY key using only rows authorized by the current query context.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: bounded-aggregate-state
+        kind: security
+        statement: High-cardinality GROUP BY and DISTINCT aggregate state obeys authorized SQL memory limits, SQL execution timeouts are enforced, and result-row limits fail the whole query without returning a prefix or partial aggregate result.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
       - id: exact-decimal-results
         kind: behavior
         statement: Decimal SQL output uses the server-owned decimal result type and an exact base-10 string row value that preserves scale without binary floating-point conversion.
@@ -160,7 +168,8 @@ requirements:
               - kind: verifies
                 criterion: REQ-API-015#criterion.checked-numeric-aggregates
                 covers:
-                  - FEAT-API-001#binding.sql-service-implementation/target.checked-numeric-aggregates
+                  - FEAT-API-001#binding.sql-service-implementation/target.checked-sum-aggregates
+                  - FEAT-API-001#binding.sql-service-implementation/target.checked-avg-aggregates
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_stateless, test: stateless_aggregate_boundaries_preserve_exact_values_and_fail_closed } }
               - kind: verifies
                 criterion: REQ-API-015#criterion.exact-integer-presentation
@@ -193,7 +202,13 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-API-015#criterion.checked-numeric-aggregates
-                covers: [FEAT-API-001#binding.sql-service-implementation/target.checked-numeric-aggregates]
+                covers: [FEAT-API-001#binding.sql-service-implementation/target.checked-sum-aggregates]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: sql_aggregate_rejects_int64_overflow_and_preserves_resource_limits } }
+              - kind: verifies
+                criterion: REQ-API-015#criterion.bounded-aggregate-state
+                covers:
+                  - FEAT-API-001#binding.sql-service-implementation/target.aggregate-memory-budget
+                  - FEAT-API-001#binding.sql-service-implementation/target.aggregate-query-execution
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: sql_aggregate_rejects_int64_overflow_and_preserves_resource_limits } }
           - id: exact-decimal-row-encoding
             adapter: rust
@@ -217,15 +232,6 @@ requirements:
                 criterion: REQ-API-015#criterion.checked-numeric-aggregates
                 covers: [FEAT-API-001#binding.sql-service-implementation/target.aggregate-error-mapping]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: tests::mapped_aggregate_failures_use_stable_safe_diagnostics } }
-          - id: checked-distinct-aggregate-state
-            adapter: rust
-            path: crates/ugoite-iceberg/tests/authorized_query.rs
-            selector: { kind: test, name: sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts }
-            claims:
-              - kind: verifies
-                criterion: REQ-API-015#criterion.checked-numeric-aggregates
-                covers: [FEAT-API-001#binding.sql-service-implementation/target.checked-numeric-aggregates]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts } }
           - id: descriptor-passthrough
             adapter: typescript
             path: frontend/src/lib/composition-api.test.ts
@@ -235,6 +241,91 @@ requirements:
                 criterion: REQ-COMP-002#criterion.server-typed-result-descriptor
                 covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-composition-api]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-api.test.ts, test: stores the server-owned column types unchanged and never infers from rows } }
+      - id: sql-aggregate-verification
+        role: verification
+        facet: verification
+        responsibility: Verify all five aggregate functions across grouped results, enforce query resource budgets for high-cardinality and DISTINCT states, and preserve the explicit stateless count contract.
+        targets:
+          - id: high-cardinality-group-and-distinct-bounds
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/authorized_query.rs
+            selector: { kind: test, name: high_cardinality_grouping_and_distinct_aggregates_are_bounded }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.bounded-aggregate-state
+                covers:
+                  - FEAT-API-001#binding.sql-service-implementation/target.aggregate-memory-budget
+                  - FEAT-API-001#binding.sql-service-implementation/target.aggregate-result-row-limit
+                  - FEAT-API-001#binding.sql-service-implementation/target.aggregate-query-execution
+                  - FEAT-API-001#binding.sql-service-implementation/target.checked-count-aggregate-memory-state
+                  - FEAT-API-001#binding.sql-service-implementation/target.checked-numeric-aggregate-memory-state
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: high_cardinality_grouping_and_distinct_aggregates_are_bounded } }
+          - id: grouped-aggregate-values
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/authorized_query.rs
+            selector: { kind: test, name: sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.checked-numeric-aggregates
+                covers:
+                  - FEAT-API-001#binding.sql-service-implementation/target.checked-count-aggregates
+                  - FEAT-API-001#binding.sql-service-implementation/target.checked-sum-aggregates
+                  - FEAT-API-001#binding.sql-service-implementation/target.checked-avg-aggregates
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts } }
+              - kind: verifies
+                criterion: REQ-API-015#criterion.grouped-numeric-aggregates
+                covers:
+                  - FEAT-API-001#binding.sql-service-implementation/target.aggregate-query-execution
+                  - FEAT-API-001#binding.sql-service-implementation/target.function-registration
+                  - FEAT-API-001#binding.sql-service-implementation/target.checked-count-aggregates
+                  - FEAT-API-001#binding.sql-service-implementation/target.checked-sum-aggregates
+                  - FEAT-API-001#binding.sql-service-implementation/target.checked-avg-aggregates
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts } }
+          - id: checked-count-update-overflow
+            adapter: rust
+            path: crates/ugoite-iceberg/src/safe_aggregates.rs
+            selector: { kind: test, name: tests::checked_count_rejects_updates_outside_the_sql_int64_result_range }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.checked-numeric-aggregates
+                covers: [FEAT-API-001#binding.sql-service-implementation/target.checked-count-aggregates]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: safe_aggregates::tests::checked_count_rejects_updates_outside_the_sql_int64_result_range } }
+          - id: checked-count-merge-overflow
+            adapter: rust
+            path: crates/ugoite-iceberg/src/safe_aggregates.rs
+            selector: { kind: test, name: tests::checked_count_rejects_partial_state_merge_outside_the_sql_int64_range }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.checked-numeric-aggregates
+                covers: [FEAT-API-001#binding.sql-service-implementation/target.checked-count-aggregates]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: safe_aggregates::tests::checked_count_rejects_partial_state_merge_outside_the_sql_int64_range } }
+          - id: stateless-count-result-rows
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_sql_stateless.rs
+            selector: { kind: test, name: stateless_count_preserves_aggregate_result_row_semantics }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.canonical-sql-count
+                covers: [FEAT-API-001#binding.sql-service-implementation/target.count-sql]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_stateless, test: stateless_count_preserves_aggregate_result_row_semantics } }
+          - id: stateless-count-full-result
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_sql_stateless.rs
+            selector: { kind: test, name: stateless_explicit_count_matches_full_result }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.canonical-sql-count
+                covers: [FEAT-API-001#binding.sql-service-implementation/target.count-sql]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_stateless, test: stateless_explicit_count_matches_full_result } }
+          - id: exact-decimal-min-max-pages
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_sql_stateless.rs
+            selector: { kind: test, name: sql_query_page_preserves_exact_decimal_minimum_and_maximum }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.exact-decimal-results
+                covers: [FEAT-API-001#binding.sql-service-implementation/target.decimal-result-encoding]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_stateless, test: sql_query_page_preserves_exact_decimal_minimum_and_maximum } }
       - id: function-policy-verification
         role: verification
         facet: verification
