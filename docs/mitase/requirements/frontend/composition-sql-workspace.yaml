@@ -14,8 +14,10 @@ requirements:
         statement: >-
           Composition inline SQL uses the shared SQL Workspace defined by
           REQ-FE-080 with a Composition-owned persistence adapter. An exact
-          Saved SQL revision is read-only; editing requires an explicit inline
-          copy or explicit Saved SQL revision update.
+          Saved SQL source is read-only in Composition; its referenced name or
+          the existing localized untitled representation is shown without a
+          second name or alias. Editing requires an explicit inline copy or an
+          explicit Saved SQL revision update.
         governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
       - id: composition-no-label-or-tag-fields
         kind: behavior

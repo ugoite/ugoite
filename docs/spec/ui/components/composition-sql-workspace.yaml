@@ -18,8 +18,9 @@ Form creates an inline SQL object whose initial editable name is copied from
 the Form, and SQL such as `SELECT * FROM "G"`; it does not create an
 EntryQuery. The SQL object's semantic name can be edited independently from its
 opaque stable source ID. A Saved SQL source displays the referenced Saved SQL
-name and stores no second name or alias. The selected SQL name has one visible
-owner and is not repeated as a second large editor heading.
+name, or the existing localized untitled representation when that name is
+absent, and stores no second name or alias. The selected SQL name has one
+visible owner and is not repeated as a second large editor heading.
 
 Desktop uses a plain source rail with full-row selection. Narrow viewports use
 an overlay drawer; selecting a source closes it, Escape closes it, focus is

@@ -42,9 +42,10 @@ a stable Composition-local ID.
   the user explicitly regenerates it through a structured operation.
 - `saved_sql` pins an existing Saved SQL Entry and exact revision. It does not
   store a second source name or display alias, copy the SQL body into
-  Composition, follow a latest revision, or rebind silently; the referenced
-  Saved SQL name is shown. Editing the pinned query requires an explicit inline
-  copy or an explicit update of the Saved SQL Entry.
+  Composition, follow a latest revision, or rebind silently; its referenced
+  Saved SQL name or the existing localized untitled representation is shown.
+  Editing the pinned query requires an explicit inline copy or an explicit
+  update of the Saved SQL Entry.
 - `entry_query`, its fields, and its Comp-specific query compiler are removed
   from the replacement grammar. No compatibility alias, fallback, or
   Composition migration is introduced.
@@ -102,10 +103,10 @@ write behavior. It removes Composition tags, source display aliases for Saved
 SQL, and user-editable labels on sources, variables, and Table/Metric/Input/Text
 components. The inline SQL object's semantic name is editable and independent
 of its stable source ID. A Saved SQL source uses the referenced Saved SQL name
-and has no separately stored name or alias. Other names are derived from the
-SQL output alias, variable ID, or Text body as appropriate. Form field names
-and accessibility names remain semantic/accessibility values and are not
-removed.
+or the existing localized untitled representation and has no separately
+stored name or alias. Other names are derived from the SQL output alias,
+variable ID, or Text body as appropriate. Form field names and accessibility
+names remain semantic/accessibility values and are not removed.
 
 No runtime input, preview, page, result, or drawer state is persisted. The
 replacement keeps the existing raw inspection, export, and Entry history

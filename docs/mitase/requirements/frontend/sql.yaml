@@ -542,8 +542,8 @@ requirements:
         statement: >-
           SQL inputs use at least 16px text at narrow widths, only result tables
           scroll horizontally, icon-only actions have accessible names and
-          44px targets, and primary actions remain reachable without page
-          overflow.
+          at least 44px targets. Primary actions remain reachable without
+          wrapped or horizontal page overflow.
         governed_by: [POL-UI-004#rule.governance, POL-UI-005#rule.governance, POL-UI-007#rule.governance]
       - id: workspace-control-size-rules
         kind: quality
