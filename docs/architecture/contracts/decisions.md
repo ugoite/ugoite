@@ -567,3 +567,16 @@ parameter layout controls, and fixed-Text-only rule; ADR-019's Layout AST and
 presentation rules remain. It inherits ADR-022's SQL-only Metric boundary and
 does not change Space, Entry, Form, Saved SQL, SQL API, ACL, or publication
 contracts. The ruling does not authorize release.
+
+## ADR-024 — SQL-first Composition sources and workspace
+
+**Status: Accepted target for prerelease Composition; implementation pending.**
+The replacement grammar, stable Form-ID binding policy, Saved SQL default
+ownership, scalar Metric boundary, transient Work boundary, and shared SQL
+Workspace are defined in
+[ADR-024](adr-024-composition-sql-first.md). It retains ADR-023's typed
+variables and direct Input/Text bindings while removing EntryQuery sources,
+Composition tags, and Composition-owned display labels. Existing published SQL,
+Form, Entry, authorization, and history contracts remain in force. ADR-024
+supersedes the current frozen Composition contract only after the replacement
+implementation is merged; it does not authorize release or a v0.2.x patch.

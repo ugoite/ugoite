@@ -4,6 +4,10 @@ description: The portable document and semantic boundaries for Composition v1.
 ---
 
 **Status:** frozen as Composition v1 (`implementation_contract_frozen = true`).
+This page records the current implementation contract. The accepted target for
+the prerelease SQL-first replacement is [ADR-024](./adr-024-composition-sql-first.md);
+that decision is not implemented by this page and does not change current
+behavior until the replacement is merged.
 The v1 domain model, restricted parser, canonicalization, fingerprinting,
 native/WASM parity, Rust Core source resolver, the portable
 `composition.save`/`composition.restore` persistence operations, the nine CLI

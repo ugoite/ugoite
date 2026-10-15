@@ -8,7 +8,7 @@ component_group:
     - /spaces/{space_id}/compositions/new
     - /spaces/{space_id}/compositions/{composition_id}/{revision_id}/edit
     - /spaces/{space_id}/compositions/{composition_id}/history
-  notes: Authoring contract for the Composition Studio uplift. The New, Edit, and History routes each carry their page spec. Steady-state surfaces carry no explanatory paragraphs. Layout v1 is implemented (Design/Data/Inspector modes over a first-class layout AST per ADR-019); the component contracts below describe the shipped Studio.
+  notes: The current Studio contract remains described below. The accepted SQL-first target is planned separately in composition-sql-workspace.yaml under ADR-024; keep current implementation evidence distinct until that replacement ships.
 components:
   - id: studio-header
     type: page-header
