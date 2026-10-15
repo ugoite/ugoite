@@ -5,7 +5,7 @@ category: Planned SQL-first Composition Studio interactions
 requirements:
   - id: REQ-FE-079
     title: SQL-first Composition Studio
-    description: The planned SQL-first Composition Studio uses the shared SQL Workspace while expressing Composition structure, names, and accessible controls directly.
+    description: The planned SQL-first Composition Studio uses the shared SQL Workspace while expressing Composition-specific structure, names, and accessible controls directly.
     priority: high
     status: planned
     criteria:
@@ -13,17 +13,20 @@ requirements:
         kind: behavior
         statement: >-
           Composition inline SQL uses the shared SQL Workspace defined by
-          REQ-FE-080. A pinned Saved SQL source is read-only; editing requires
-          an explicit inline copy or explicit Saved SQL revision update.
+          REQ-FE-080 with a Composition-owned persistence adapter. An exact
+          Saved SQL revision is read-only; editing requires an explicit inline
+          copy or explicit Saved SQL revision update.
         governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
       - id: composition-no-label-or-tag-fields
         kind: behavior
         statement: >-
           The replacement Composition editor has no tags or user-editable
-          display-label fields for sources, variables, or components. It derives
-          names from the inline SQL name, referenced Saved SQL name, SQL output
-          alias, variable ID, or Text body. The primary Save action retains a
-          visible text label.
+          display-label fields for sources, variables, or components. The
+          inline SQL object name is semantic and editable independently from
+          source ID. A Saved SQL source uses its referenced name without a
+          second name or alias. Other names come from the SQL output alias,
+          variable ID, or Text body. The primary Save action retains a visible
+          text label.
         governed_by: [POL-UI-002#rule.governance, POL-UI-003#rule.governance]
       - id: composition-structure-first-steady-state
         kind: quality
