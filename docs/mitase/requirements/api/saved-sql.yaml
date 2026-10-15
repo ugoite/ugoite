@@ -291,3 +291,21 @@ requirements:
                     test: synthetic_prebinding_revision_reads_and_runs_without_rewrite,
                   },
                 }
+
+  - id: REQ-API-020
+    title: Saved SQL variable defaults
+    description: Saved SQL variable definitions may provide a typed initial value for authoring and preview while SQL execution remains explicit.
+    priority: medium
+    status: planned
+    criteria:
+      - id: typed-variable-default
+        kind: behavior
+        statement: >-
+          A Saved SQL variable may store an optional default scalar whose type
+          exactly matches its declared SQL variable type and is validated by
+          the shared typed-value rules. Authoring and preview may initialize
+          transient input state from that value, but every SQL execution still
+          sends explicit parameters and parameter_types; the SQL request
+          contract does not apply defaults implicitly. An absent default means
+          no initial value.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]

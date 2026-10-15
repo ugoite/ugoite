@@ -1,0 +1,60 @@
+---
+title: "SQL Workspace and SQL-first Composition Studio"
+---
+
+**Status: planned.** This is the target interaction contract from
+[ADR-024](../../../architecture/contracts/adr-024-composition-sql-first.md).
+The current Composition Studio remains described in
+[`composition-studio.yaml`](composition-studio.yaml) until its replacement is
+implemented and verified.
+
+## SQL Workspace
+
+`/sql/new`, Saved SQL detail/edit, and Composition inline SQL share one SQL
+Workspace. Its adapters own only the save target. The Workspace owns SQL
+editing, typed input values, safe structured operations, preview, and the
+existing paged SQL result table.
+
+- Keep direct SQL editing available. SQL text becomes authoritative after a
+  direct edit; a structured operation may not silently rewrite it.
+- Enable structured edits only when the shared SQL parser confirms safe
+  round-trip capability. Unsupported syntax stays available in the code editor.
+- Require an explicit diff confirmation before a structured operation
+  regenerates edited SQL.
+- Keep exact Saved SQL revisions read-only in Composition. An explicit inline
+  copy or Saved SQL revision update is required to edit them.
+- Keep query page size and continuation in the stateless query request. SQL
+  text contains `LIMIT` only when the user writes it.
+- Use the existing SQL execution, authorization, resource limits, count,
+  continuation, typed results, CodeMirror, and result-table components.
+
+The secondary toolbar offers Columns, Filter, Sort, SQL structure, and
+Variables. These controls use icons with accessible names and 44px targets.
+The primary Save control retains its visible text. The SQL structure disclosure
+offers only capabilities supported by the shared SQL contract; free SQL remains
+available for CTEs, subqueries, CASE, CAST, HAVING, and other unsupported GUI
+operations. Failures that need repair show actionable diagnostics when the
+failure occurs.
+
+## Composition Data surface
+
+Composition sources are inline SQL or an exact Saved SQL revision. Selecting a
+Form creates editable SQL such as `SELECT * FROM "G"`; it does not create an
+EntryQuery. Source identity remains an opaque stable ID. The selected SQL name
+has one visible owner and is not repeated as a second large editor heading.
+
+Desktop uses a plain source rail with full-row selection. Narrow viewports use
+an overlay drawer; selecting a source closes it, Escape closes it, focus is
+restored, and the source-list control has a clear accessible name. Drawer and
+page state are transient Work.
+
+There are no Composition tags or user-editable display labels for sources,
+variables, or components. Names come from the inline SQL name, referenced Saved
+SQL name, SQL output alias, variable ID, or Text body. Form field names and
+accessible names remain available where they carry meaning.
+
+The steady state has no introductory paragraphs, duplicate SQL-type labels,
+revision banners, decorative cards, or persistent save-status summaries. Show
+only the SQL list, the selected Workspace, typed inputs when declared, and the
+current query result. A result table may scroll horizontally; the page and SQL
+editor do not. SQL text inputs use at least 16px to avoid iOS focus zoom.

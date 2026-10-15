@@ -20,6 +20,9 @@ are described in `components/asset-field.yaml`.
 The shared visual and accessibility contract for source-native Entry and SQL
 result tables, including their use in Composition revisions, is in
 `components/result-table.yaml`.
+The planned SQL-first Composition and shared SQL Workspace contract is in
+`components/composition-sql-workspace.yaml`; it is a target, not current
+implementation evidence.
 
 The current browser is server-backed and authenticated. Shared navigation and
 the Browser Konase panel reference are described in

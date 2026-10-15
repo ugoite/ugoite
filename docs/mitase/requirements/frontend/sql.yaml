@@ -429,3 +429,34 @@ requirements:
                 criterion: REQ-FE-062#criterion.supported-actions
                 covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to stateless results" } }
+
+  - id: REQ-FE-080
+    title: Shared SQL Workspace
+    description: New Saved SQL, Saved SQL detail/edit, and Composition inline SQL use one SQL authoring and preview workspace over shared SQL semantics.
+    priority: high
+    status: planned
+    criteria:
+      - id: shared-editor-and-preview
+        kind: behavior
+        statement: >-
+          SQL creation, Saved SQL editing, and Composition inline SQL share one
+          Workspace for typed variables, direct SQL editing, safe structured
+          query operations, preview, and paged native results. The save-target
+          adapter owns persistence; the Workspace owns editing and preview.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+      - id: safe-structured-operations
+        kind: behavior
+        statement: >-
+          Structured SQL operations are enabled only for syntax that the shared
+          parser/capability model can safely round-trip. Directly edited SQL
+          remains authoritative; unsupported syntax stays editable in the code
+          editor and a structured rewrite requires explicit diff confirmation.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+      - id: mobile-sql-editor-and-results
+        kind: quality
+        statement: >-
+          SQL inputs use at least 16px text at narrow widths, only result tables
+          scroll horizontally, icon-only actions have accessible names and
+          44px targets, and primary actions remain reachable without page
+          overflow.
+        governed_by: [POL-UI-004#rule.governance, POL-UI-005#rule.governance, POL-UI-007#rule.governance]
