@@ -1,0 +1,53 @@
+---
+title: "Shared SQL Workspace"
+---
+
+**Status: planned.** `/sql/new`, Saved SQL detail/edit, and Composition inline
+SQL use the same Workspace component. The owning route or Composition source
+supplies SQL state, schema, parameters, preview, count, pagination, save, and
+execution callbacks. The Workspace presents them without becoming another
+query or persistence authority.
+
+## Editing and parameter presentation
+
+- Keep direct SQL editing available. A read-only adapter can present an exact
+  pinned Saved SQL revision without enabling edits.
+- Keep SQL text controlled by the owning adapter. Workspace controls dispatch
+  explicit callbacks and do not parse or regenerate SQL themselves.
+- Present declared variables using their transient Work values or declared
+  defaults. An explicit unset value overrides the default; the Workspace does
+  not coerce or persist parameter values.
+- Give the editor an accessible name and wrap long lines within the Workspace.
+- Keep the shared SQL editor's default wrapping behavior unchanged for other
+  callers.
+
+The adapter-supplied action list is the only source of structured operations.
+The integration must enable operations only when the shared parser and
+capability model can safely round-trip them. Directly edited SQL remains
+authoritative, unsupported syntax remains available in the editor, and
+regenerating SQL requires an explicit diff confirmation. Route integration,
+parser capability gating, and diff confirmation remain unverified until their
+adapters are implemented.
+
+## Preview and results
+
+Run Query, Count rows, and page continuation are explicit actions delegated to
+the owning adapter. Preview presents loading, failure, empty, and current-page
+states with the existing typed `SqlResultTable` and `ResultPagination`. The
+adapter uses stateless SQL execution, request page size, and request
+continuation; generated SQL does not add `LIMIT` to simulate paging. Row counts
+do not run implicitly on every page.
+
+## Layout and controls
+
+- Keep the page in one column at narrow widths. Only the result-table viewport
+  scrolls horizontally.
+- Render SQL editor and variable input text at no less than 16px.
+- Give icon-only actions accessible names and at least 44px targets. Disabled
+  actions include their reason in the accessible name and title.
+- The owning route's primary Save action retains its visible text label.
+- Keep the steady state free of explanatory paragraphs and decorative cards.
+
+The Composition source rail, source naming, pinned-revision lifecycle, and
+Composition-specific drawer behavior are defined in
+[`composition-sql-workspace.yaml`](composition-sql-workspace.yaml).

@@ -1,0 +1,130 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: frontend
+category: Shared SQL Workspace
+features:
+  - id: FEAT-FE-008
+    title: Shared SQL Workspace component
+    summary: Provide a controlled SQL editing and preview surface for SQL route and Composition adapters to reuse.
+    status: planned
+    bindings:
+      - id: frontend
+        role: implementation
+        facet: frontend
+        responsibility: Keep the shared SQL editing, transient parameter presentation, explicit preview actions, adapter capabilities, and workspace control sizes connected to reusable frontend components.
+        targets:
+          - id: sql-workspace
+            adapter: typescript
+            path: frontend/src/components/SQLWorkspace.tsx
+            selector: { kind: symbol, name: SQLWorkspace }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.workspace-presentation-api
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.transient-typed-parameters
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.adapter-supplied-structured-actions
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.explicit-preview-count-and-paging
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.editor-accessibility-and-wrapping
+          - id: sql-query-editor
+            adapter: typescript
+            path: frontend/src/components/SqlQueryEditor.tsx
+            selector: { kind: symbol, name: SqlQueryEditor }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.editor-accessibility-and-wrapping
+          - id: sql-workspace-layout
+            adapter: declared
+            path: frontend/src/app.css
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.workspace-control-size-rules
+      - id: verification
+        role: verification
+        facet: verification
+        responsibility: Verify controlled SQL changes, transient variable presentation, explicit capability dispatch, preview freshness/count/page callbacks, editor accessibility, and control sizing through focused frontend tests.
+        targets:
+          - id: sql-workspace-controlled-editor
+            adapter: typescript
+            path: frontend/src/components/SQLWorkspace.test.tsx
+            selector: { kind: test, name: "REQ-FE-080: keeps SQL editing controlled and passes the accessible name" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.workspace-presentation-api
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: keeps SQL editing controlled and passes the accessible name" } }
+          - id: sql-workspace-transient-parameters
+            adapter: typescript
+            path: frontend/src/components/SQLWorkspace.test.tsx
+            selector: { kind: test, name: "REQ-FE-080: presents variable defaults and forwards raw transient values" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.transient-typed-parameters
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: presents variable defaults and forwards raw transient values" } }
+          - id: sql-workspace-adapter-actions
+            adapter: typescript
+            path: frontend/src/components/SQLWorkspace.test.tsx
+            selector: { kind: test, name: "REQ-FE-080: exposes operation reasons and never rewrites SQL on action" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.adapter-supplied-structured-actions
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: exposes operation reasons and never rewrites SQL on action" } }
+          - id: sql-workspace-preview-and-paging
+            adapter: typescript
+            path: frontend/src/components/SQLWorkspace.test.tsx
+            selector: { kind: test, name: "REQ-FE-080: keeps count explicit and delegates result paging" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.explicit-preview-count-and-paging
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: keeps count explicit and delegates result paging" } }
+          - id: sql-workspace-preview-states
+            adapter: typescript
+            path: frontend/src/components/SQLWorkspace.test.tsx
+            selector: { kind: test, name: "REQ-FE-080: reports loading and errors without presenting a stale page" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.explicit-preview-count-and-paging
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: reports loading and errors without presenting a stale page" } }
+          - id: sql-workspace-stale-preview-hidden
+            adapter: typescript
+            path: frontend/src/components/SQLWorkspace.test.tsx
+            selector: { kind: test, name: "REQ-FE-080: hides a successful result page after its inputs change" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.explicit-preview-count-and-paging
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: hides a successful result page after its inputs change" } }
+          - id: sql-workspace-empty-results
+            adapter: typescript
+            path: frontend/src/components/SQLWorkspace.test.tsx
+            selector: { kind: test, name: "REQ-FE-080: presents explicit total count and an empty result state" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.explicit-preview-count-and-paging
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: presents explicit total count and an empty result state" } }
+          - id: sql-workspace-layout
+            adapter: typescript
+            path: frontend/src/components/SQLWorkspace.test.tsx
+            selector: { kind: test, name: "REQ-FE-080: uses 16px inputs and 44px action targets" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.workspace-control-size-rules
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace, FEAT-FE-008#binding.frontend/target.sql-workspace-layout]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: uses 16px inputs and 44px action targets" } }
+          - id: sql-editor-accessibility-and-wrapping
+            adapter: typescript
+            path: frontend/src/components/SqlQueryEditor.test.tsx
+            selector: { kind: test, name: "names the SQL editor and enables line wrapping when requested" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.editor-accessibility-and-wrapping
+                covers: [FEAT-FE-008#binding.frontend/target.sql-query-editor, FEAT-FE-008#binding.frontend/target.sql-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlQueryEditor.test.tsx, test: "names the SQL editor and enables line wrapping when requested" } }

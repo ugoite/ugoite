@@ -1,30 +1,20 @@
 schema: mitase/authoring/v2
 kind: requirements
 namespace: frontend
-category: Planned SQL-first Composition and Saved SQL authoring interactions
+category: Planned SQL-first Composition Studio interactions
 requirements:
   - id: REQ-FE-079
-    title: Shared SQL Workspace and Composition Studio
-    description: The planned SQL-first authoring surfaces share SQL semantics and express their steady state through structure, names, and accessible controls.
+    title: SQL-first Composition Studio
+    description: The planned SQL-first Composition Studio uses the shared SQL Workspace while expressing Composition structure, names, and accessible controls directly.
     priority: high
     status: planned
     criteria:
-      - id: one-sql-workspace
+      - id: composition-uses-shared-workspace
         kind: behavior
         statement: >-
-          New Saved SQL, Saved SQL detail/edit, and Composition inline SQL use
-          one shared SQL Workspace for typed variables, structured query
-          operations, direct SQL editing, preview, and paged results. A pinned
-          Saved SQL source is read-only; editing requires an explicit inline
-          copy or explicit Saved SQL revision update.
-        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
-      - id: capability-gated-structured-edits
-        kind: behavior
-        statement: >-
-          Structured SQL controls are enabled only for operations that the
-          shared parser/capability model can safely round-trip. Directly edited
-          SQL remains authoritative; unsupported syntax stays editable as SQL,
-          and regenerating SQL requires an explicit diff confirmation.
+          Composition inline SQL uses the shared SQL Workspace defined by
+          REQ-FE-080. A pinned Saved SQL source is read-only; editing requires
+          an explicit inline copy or explicit Saved SQL revision update.
         governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
       - id: composition-no-label-or-tag-fields
         kind: behavior
@@ -44,11 +34,3 @@ requirements:
           narrow viewports use an accessible overlay drawer with close, Escape,
           focus restoration, and back-to-source navigation.
         governed_by: [POL-UI-002#rule.governance, POL-UI-003#rule.governance, POL-UI-006#rule.governance]
-      - id: narrow-sql-editor-and-results
-        kind: quality
-        statement: >-
-          At narrow widths, only the result table scrolls horizontally, editor
-          and input text is at least 16px, and icon-only controls have accessible
-          names and at least 44px targets. Primary actions remain reachable
-          without wrapped or horizontal page overflow.
-        governed_by: [POL-UI-004#rule.governance, POL-UI-005#rule.governance, POL-UI-007#rule.governance]
