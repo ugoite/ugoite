@@ -9,9 +9,11 @@ use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::EntryScope;
+use ugoite_domain::composition::CompositionVariableType;
 use uuid::Uuid;
 
 const SQL_FORM_NAME: &str = "SQL";
+const SQL_VARIABLE_DEFAULTS_KEY: &str = "sql_variable_defaults";
 pub(crate) const SQL_FORM_NAME_FOR_AUDIT: &str = SQL_FORM_NAME;
 const SQL_VALIDATION_PREFIX: &str = "UGOITE_SQL_VALIDATION";
 
@@ -37,6 +39,8 @@ pub struct SqlVariable {
     pub var_type: String,
     pub name: String,
     pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -292,14 +296,10 @@ fn normalize_sql_variables(value: Option<&Value>) -> Result<Value> {
             .get("type")
             .and_then(|v| v.as_str())
             .ok_or_else(|| validation_error("variables.type must be a string"))?;
-        if !matches!(
-            var_type,
-            "string" | "boolean" | "integer" | "float" | "timestamp" | "date"
-        ) {
-            return Err(validation_error(format!(
-                "variables.type is unsupported: {var_type}"
-            )));
-        }
+        let parsed_type = serde_json::from_value::<CompositionVariableType>(Value::String(
+            var_type.to_owned(),
+        ))
+        .map_err(|_| validation_error(format!("variables.type is unsupported: {var_type}")))?;
         let name = obj
             .get("name")
             .and_then(|v| v.as_str())
@@ -313,13 +313,96 @@ fn normalize_sql_variables(value: Option<&Value>) -> Result<Value> {
             .get("description")
             .and_then(|v| v.as_str())
             .ok_or_else(|| validation_error("variables.description must be a string"))?;
-        normalized.push(serde_json::json!({
+        let mut normalized_variable = serde_json::json!({
             "type": var_type,
             "name": name,
             "description": description,
-        }));
+        });
+        if let Some(default) = obj.get("default") {
+            if !parsed_type.accepts_value(default) {
+                return Err(validation_error(format!(
+                    "variables.default must be a non-null scalar matching variables.type {var_type}"
+                )));
+            }
+            normalized_variable
+                .as_object_mut()
+                .expect("normalized SQL variable is an object")
+                .insert("default".to_owned(), default.clone());
+        }
+        normalized.push(normalized_variable);
     }
     Ok(Value::Array(normalized))
+}
+
+fn sql_variable_definitions(variables: &Value) -> Result<Value> {
+    let mut definitions = variables
+        .as_array()
+        .cloned()
+        .ok_or_else(|| validation_error("variables must be an array"))?;
+    for definition in &mut definitions {
+        definition
+            .as_object_mut()
+            .ok_or_else(|| validation_error("variables items must be objects"))?
+            .remove("default");
+    }
+    Ok(Value::Array(definitions))
+}
+
+fn sql_variable_defaults(variables: &Value) -> Result<Value> {
+    let items = variables
+        .as_array()
+        .ok_or_else(|| validation_error("variables must be an array"))?;
+    let mut defaults = Map::new();
+    for item in items {
+        if let Some(default) = item.get("default") {
+            let name = item
+                .get("name")
+                .and_then(Value::as_str)
+                .ok_or_else(|| validation_error("variables.name must be a string"))?;
+            defaults.insert(name.to_owned(), default.clone());
+        }
+    }
+    Ok(Value::Object(defaults))
+}
+
+fn sql_variables_with_defaults(
+    definitions: Option<&Value>,
+    defaults: Option<&Value>,
+) -> Result<Value> {
+    let mut definitions = match definitions {
+        None | Some(Value::Null) => Vec::new(),
+        Some(Value::Array(items)) => items.clone(),
+        Some(_) => return Err(validation_error("variables must be an array")),
+    };
+    let defaults = match defaults {
+        None | Some(Value::Null) => None,
+        Some(Value::Object(defaults)) => Some(defaults),
+        Some(_) => {
+            return Err(validation_error(
+                "saved SQL variable defaults must be an object",
+            ))
+        }
+    };
+    let mut variable_names = BTreeSet::new();
+    for definition in &mut definitions {
+        let definition = definition
+            .as_object_mut()
+            .ok_or_else(|| validation_error("variables items must be objects"))?;
+        let name = definition
+            .get("name")
+            .and_then(Value::as_str)
+            .ok_or_else(|| validation_error("variables.name must be a string"))?;
+        variable_names.insert(name.to_owned());
+        if let Some(default) = defaults.and_then(|values| values.get(name)) {
+            definition.insert("default".to_owned(), default.clone());
+        }
+    }
+    if defaults.is_some_and(|values| values.keys().any(|name| !variable_names.contains(name))) {
+        return Err(validation_error(
+            "saved SQL default refers to an undeclared variable",
+        ));
+    }
+    normalize_sql_variables(Some(&Value::Array(definitions)))
 }
 
 async fn validate_sql_payload(
@@ -375,6 +458,63 @@ fn is_sql_variable_name(name: &str) -> bool {
     let mut characters = name.chars();
     matches!(characters.next(), Some(first) if first == '_' || first.is_ascii_alphabetic())
         && characters.all(|character| character == '_' || character.is_ascii_alphanumeric())
+}
+
+#[cfg(test)]
+mod variable_default_tests {
+    use super::normalize_sql_variables;
+    use serde_json::{json, Value};
+
+    #[test]
+    fn saved_sql_defaults_preserve_typed_scalar_values() {
+        let variables = json!([
+            {"type": "string", "name": "text", "description": "", "default": ""},
+            {"type": "boolean", "name": "enabled", "description": "", "default": false},
+            {"type": "integer", "name": "count", "description": "", "default": -3},
+            {"type": "float", "name": "ratio", "description": "", "default": 1.25},
+            {"type": "date", "name": "day", "description": "", "default": "2026-10-15"},
+            {"type": "timestamp", "name": "at", "description": "", "default": "2026-10-15T09:00:00Z"}
+        ]);
+
+        assert_eq!(
+            normalize_sql_variables(Some(&variables)).unwrap(),
+            variables
+        );
+        let without_default = json!([{"type": "string", "name": "legacy", "description": ""}]);
+        assert_eq!(
+            normalize_sql_variables(Some(&without_default)).unwrap(),
+            without_default,
+            "existing definitions without defaults stay valid"
+        );
+    }
+
+    #[test]
+    fn saved_sql_defaults_reject_null_compound_and_mismatched_values() {
+        let invalid = [
+            ("string", Value::Null),
+            ("string", json!(["text"])),
+            ("string", json!({"text": "value"})),
+            ("boolean", json!("true")),
+            ("integer", json!(1.5)),
+            ("integer", json!(9_007_199_254_740_992_i64)),
+            ("float", json!("1.25")),
+            ("date", json!("not-a-date")),
+            ("timestamp", json!(123)),
+        ];
+
+        for (var_type, default) in invalid {
+            let variables = json!([{
+                "type": var_type,
+                "name": "value",
+                "description": "",
+                "default": default,
+            }]);
+            assert!(
+                normalize_sql_variables(Some(&variables)).is_err(),
+                "accepted invalid {var_type} default {default}"
+            );
+        }
+    }
 }
 
 fn sql_integrity_payload(
@@ -446,7 +586,10 @@ pub(crate) fn verify_revision_integrity(
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow::anyhow!("SQL text is missing"))?
         .to_owned();
-    let variables = normalize_sql_variables(fields.get("variables"))?;
+    let variables = sql_variables_with_defaults(
+        fields.get("variables"),
+        extra_attributes.get(SQL_VARIABLE_DEFAULTS_KEY),
+    )?;
     let kind: SqlKind = serde_json::from_value(
         extra_attributes
             .get("kind")
@@ -476,11 +619,19 @@ pub(crate) fn verify_revision_integrity(
     Ok(())
 }
 
-fn sql_extra_attributes(payload: &SqlPayload) -> Value {
-    serde_json::json!({
+fn sql_extra_attributes(payload: &SqlPayload, variables: &Value) -> Result<Value> {
+    let defaults = sql_variable_defaults(variables)?;
+    let mut attributes = serde_json::json!({
         "kind": payload.kind,
         "metadata": payload.metadata,
     })
+    .as_object()
+    .cloned()
+    .expect("SQL extra attributes must be an object");
+    if !defaults.as_object().is_some_and(Map::is_empty) {
+        attributes.insert(SQL_VARIABLE_DEFAULTS_KEY.to_owned(), defaults);
+    }
+    Ok(Value::Object(attributes))
 }
 
 fn with_server_bindings(payload: &mut SqlPayload, bindings: Vec<SqlFormBinding>) {
@@ -552,14 +703,14 @@ fn sql_entry_from_row(row: &entry::EntryRow) -> Result<Value> {
         .as_object()
         .context("SQL row fields must be an object")?;
     let sql_value = fields.get("sql").and_then(|v| v.as_str()).unwrap_or("");
-    let variables = fields
-        .get("variables")
-        .cloned()
-        .unwrap_or_else(|| Value::Array(Vec::new()));
     let extra_attributes = row
         .extra_attributes
         .as_object()
         .context("SQL row extra_attributes must be an object")?;
+    let variables = sql_variables_with_defaults(
+        fields.get("variables"),
+        extra_attributes.get(SQL_VARIABLE_DEFAULTS_KEY),
+    )?;
     let kind = extra_attributes
         .get("kind")
         .cloned()
@@ -838,8 +989,11 @@ pub(crate) async fn create_sql_with_bindings<I: IntegrityProvider>(
         "sql".to_string(),
         Value::String(normalized_payload.sql.to_string()),
     );
-    fields.insert("variables".to_string(), variables.clone());
-    let extra_attributes = sql_extra_attributes(&normalized_payload);
+    fields.insert(
+        "variables".to_string(),
+        sql_variable_definitions(&variables)?,
+    );
+    let extra_attributes = sql_extra_attributes(&normalized_payload, &variables)?;
 
     let row = entry::EntryRow {
         entry_id: sql_id.to_string(),
@@ -986,8 +1140,11 @@ pub(crate) async fn update_sql_with_bindings<I: IntegrityProvider>(
         "sql".to_string(),
         Value::String(normalized_payload.sql.to_string()),
     );
-    fields.insert("variables".to_string(), variables.clone());
-    let extra_attributes = sql_extra_attributes(&normalized_payload);
+    fields.insert(
+        "variables".to_string(),
+        sql_variable_definitions(&variables)?,
+    );
+    let extra_attributes = sql_extra_attributes(&normalized_payload, &variables)?;
 
     row.updated_at = timestamp;
     row.fields = Value::Object(fields);

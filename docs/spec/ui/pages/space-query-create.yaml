@@ -71,9 +71,14 @@ components:
         - linting
         - completion
       completion_source: current authorized Form names and public field columns
+    - id: query-variable-default-editor
+      type: typed-variable-list
+      visibility: only-when-sql-contains-variables
+      behavior: each variable can have an explicitly enabled typed default or remain without a default
+      validation: ADR-023 typed-value rules; empty string is distinct from no default
     - id: query-save-button
       type: button
       variant: primary
       label: "Save"
-      behavior: explicitly save generated or edited content as ordinary user-query Saved SQL
+      behavior: explicitly save generated or edited content and typed variable defaults as ordinary user-query Saved SQL
       target_page: space-sql

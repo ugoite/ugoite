@@ -6,6 +6,10 @@ import { sqlApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
 import { displaySqlName } from "~/lib/sql-metadata";
+import {
+  parseSqlVariableDefault,
+  sqlVariableDefaultInputValue,
+} from "~/lib/sql";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
 
@@ -39,26 +43,21 @@ export default function SpaceQueryVariablesRoute() {
       );
       const parameters = Object.fromEntries(
         current.variables.map((variable) => {
-          const value = values()[variable.name] ?? "";
-          if (value === "") return [variable.name, null];
-          if (variable.type === "boolean") {
-            if (value !== "true" && value !== "false") {
-              throw new Error(
-                t("sqlPage.booleanRequired", { name: variable.name }),
-              );
-            }
-            return [variable.name, value === "true"];
+          if (!Object.hasOwn(values(), variable.name)) {
+            return [variable.name, variable.default ?? null];
           }
-          if (variable.type === "integer" || variable.type === "float") {
-            const numeric = Number(value);
-            if (!Number.isFinite(numeric)) {
-              throw new Error(
-                t("sqlPage.numberRequired", { name: variable.name }),
-              );
-            }
-            return [variable.name, numeric];
+          const raw = values()[variable.name];
+          if (raw === "") return [variable.name, null];
+          const parsed = parseSqlVariableDefault(variable.type, raw);
+          if (!parsed.valid) {
+            throw new Error(
+              t("sqlPage.defaultInvalid", {
+                name: variable.name,
+                type: variable.type,
+              }),
+            );
           }
-          return [variable.name, value];
+          return [variable.name, parsed.value];
         }),
       );
       navigate(
@@ -123,7 +122,9 @@ export default function SpaceQueryVariablesRoute() {
                           "sqlPage.variableDescription",
                           { name: variable.name },
                         )}
-                        value={values()[variable.name] ?? ""}
+                        value={Object.hasOwn(values(), variable.name)
+                          ? values()[variable.name]
+                          : sqlVariableDefaultInputValue(variable.default)}
                         onInput={(e) =>
                           handleInputChange(
                             variable.name,

@@ -2158,3 +2158,66 @@ fn openapi_publishes_response_signing_headers_and_unsigned_boundary() {
         .iter()
         .any(|value| value == "static files"));
 }
+
+#[test]
+fn openapi_documents_saved_sql_variable_defaults() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    let schemas = &snapshot["components"]["schemas"];
+    assert_eq!(
+        schemas["SavedSql"]["properties"]["variables"]["items"]["$ref"],
+        "#/components/schemas/SavedSqlVariable"
+    );
+    assert_eq!(
+        schemas["SavedSqlCreateRequest"]["properties"]["variables"]["items"]["$ref"],
+        "#/components/schemas/SavedSqlVariable"
+    );
+    let variable = &schemas["SavedSqlVariable"];
+    assert_eq!(
+        variable["properties"]["type"]["enum"],
+        serde_json::json!(["string", "boolean", "integer", "float", "date", "timestamp"])
+    );
+    let scalar_default_types = variable["properties"]["default"]["anyOf"]
+        .as_array()
+        .expect("optional default scalar schema")
+        .iter()
+        .map(|schema| schema["type"].as_str().expect("scalar JSON type"))
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        scalar_default_types,
+        BTreeSet::from(["boolean", "integer", "number", "string"])
+    );
+
+    let paths = &snapshot["paths"];
+    let sql_collection = &paths["/spaces/{space_id}/sql"];
+    assert_eq!(
+        sql_collection["get"]["responses"]["200"]["content"]["application/json"]["schema"]["items"]
+            ["$ref"],
+        "#/components/schemas/SavedSql"
+    );
+    assert_eq!(
+        sql_collection["post"]["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/SavedSqlCreateRequest"
+    );
+    assert_eq!(
+        sql_collection["post"]["responses"]["201"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/SavedSqlCreateReceipt"
+    );
+
+    let saved_sql = &paths["/spaces/{space_id}/sql/{sql_id}"];
+    assert_eq!(
+        saved_sql["get"]["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/SavedSql"
+    );
+    assert_eq!(
+        saved_sql["put"]["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/SavedSqlUpdateRequest"
+    );
+    assert_eq!(
+        saved_sql["put"]["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/SavedSql"
+    );
+
+    for request in ["SqlQueryRequest", "SqlQueryCountRequest"] {
+        assert!(schemas[request]["properties"].get("default").is_none());
+    }
+}

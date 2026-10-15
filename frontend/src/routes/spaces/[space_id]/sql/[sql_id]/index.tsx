@@ -12,16 +12,22 @@ import { ActionIconBar } from "~/components/ActionIconBar";
 import { BackLink } from "~/components/BackLink";
 import { ConfirmDestructiveAction } from "~/components/ConfirmDestructiveAction";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
+import { SqlVariableDefaultsEditor } from "~/components/SqlVariableDefaultsEditor";
 import { SqlQueryEditor } from "~/components";
 import { formatDateLabel } from "~/lib/date-format";
-import { buildSqlSchema, normalizeSqlVariables } from "~/lib/sql";
+import {
+  applySqlVariableDefaultDrafts,
+  buildSqlSchema,
+  normalizeSqlVariables,
+  type SqlVariableDefaultDraft,
+} from "~/lib/sql";
 import { formApi, sqlApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
 import { displaySqlName } from "~/lib/sql-metadata";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
-import type { Form } from "~/lib/types";
+import type { Form, SqlVariable } from "~/lib/types";
 
 export const route = spaceRoute({
   navigation: "search",
@@ -39,6 +45,10 @@ export default function SpaceSqlDetailRoute() {
   const [sqlInput, setSqlInput] = createSignal("");
   const [savedName, setSavedName] = createSignal("");
   const [savedSql, setSavedSql] = createSignal("");
+  const [savedVariables, setSavedVariables] = createSignal<SqlVariable[]>([]);
+  const [defaultDrafts, setDefaultDrafts] = createSignal<
+    Record<string, SqlVariableDefaultDraft>
+  >({});
   const [revisionId, setRevisionId] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal<"save" | "delete" | null>(null);
   const [actionError, setActionError] = createSignal<string | null>(null);
@@ -51,10 +61,17 @@ export default function SpaceSqlDetailRoute() {
     setSqlInput(current.sql);
     setSavedName(current.name ?? "");
     setSavedSql(current.sql);
+    setSavedVariables(current.variables ?? []);
+    setDefaultDrafts({});
     setRevisionId(current.revision_id);
   });
 
-  const normalized = createMemo(() => normalizeSqlVariables(sqlInput()));
+  const normalized = createMemo(() =>
+    normalizeSqlVariables(sqlInput(), savedVariables())
+  );
+  const variablesWithDefaults = createMemo(() =>
+    applySqlVariableDefaultDrafts(normalized().variables, defaultDrafts())
+  );
   const variableCount = createMemo(() => normalized().variables.length);
   const bindingDiagnostics = createMemo(() => {
     if (forms.state !== "ready") return [];
@@ -66,9 +83,13 @@ export default function SpaceSqlDetailRoute() {
         null,
     }));
   });
-  const isDirty = createMemo(() =>
-    queryName().trim() !== savedName() || sqlInput() !== savedSql()
-  );
+  const isDirty = createMemo(() => {
+    const nextVariables = variablesWithDefaults();
+    return queryName().trim() !== savedName() || sqlInput() !== savedSql() ||
+      nextVariables.invalid !== undefined ||
+      JSON.stringify(nextVariables.variables) !==
+        JSON.stringify(savedVariables());
+  });
   const queryVariablesHref = () =>
     `/spaces/${encodeURIComponent(spaceId())}/sql/${
       encodeURIComponent(sqlId())
@@ -92,6 +113,11 @@ export default function SpaceSqlDetailRoute() {
       setActionError(t("sqlPage.sqlRequired"));
       return;
     }
+    const nextVariables = variablesWithDefaults();
+    if (nextVariables.invalid) {
+      setActionError(t("sqlPage.defaultInvalid", nextVariables.invalid));
+      return;
+    }
     const name = queryName().trim() || null;
     const nextRevisionId = revisionId() ?? current.revision_id;
     setBusy("save");
@@ -101,13 +127,15 @@ export default function SpaceSqlDetailRoute() {
         kind: "user-query",
         metadata: name ? undefined : { generatedName: "untitled" },
         sql,
-        variables: normalized().variables,
+        variables: nextVariables.variables,
         parent_revision_id: nextRevisionId,
       });
       setQueryName(name ?? "");
       setSqlInput(sql);
       setSavedName(name ?? "");
       setSavedSql(sql);
+      setSavedVariables(nextVariables.variables);
+      setDefaultDrafts({});
       setRevisionId(result.revisionId);
     } catch (error) {
       setActionError(formatUserFacingError(error, "sqlPage.failedSave"));
@@ -251,8 +279,10 @@ export default function SpaceSqlDetailRoute() {
                     <ul class="list-disc space-y-1 pl-5 text-sm ui-muted">
                       <For each={bindingDiagnostics()}>
                         {(binding) => {
-                          const [technicalDetailsOpen, setTechnicalDetailsOpen] =
-                            createSignal(false);
+                          const [
+                            technicalDetailsOpen,
+                            setTechnicalDetailsOpen,
+                          ] = createSignal(false);
                           return (
                             <li>
                               {binding.currentName === binding.name
@@ -319,22 +349,13 @@ export default function SpaceSqlDetailRoute() {
                       </p>
                     }
                   >
-                    <ul class="list-disc space-y-2 pl-5 text-sm ui-muted">
-                      <For each={normalized().variables}>
-                        {(variable) => (
-                          <li>
-                            <span class="font-medium">{variable.name}</span>
-                            <span class="ml-2 text-xs">{variable.type}</span>
-                            <span class="ml-2">
-                              {variable.description || t(
-                                "sqlPage.variableDescription",
-                                { name: variable.name },
-                              )}
-                            </span>
-                          </li>
-                        )}
-                      </For>
-                    </ul>
+                    <SqlVariableDefaultsEditor
+                      idPrefix="saved-sql-variable"
+                      variables={normalized().variables}
+                      defaults={defaultDrafts()}
+                      disabled={busy() !== null || data().kind !== "user-query"}
+                      onDefaultsChange={setDefaultDrafts}
+                    />
                   </Show>
                 </div>
               </>

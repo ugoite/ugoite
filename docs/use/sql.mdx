@@ -50,6 +50,11 @@ ugoite sql saved create \
 ugoite sql saved create \
   --sql query.sql
 
+# Store a typed default with a SQL variable.
+ugoite sql saved create \
+  --sql 'SELECT field_<PriorityId> FROM "Task" WHERE field_<PriorityId> >= $minimum ORDER BY _ugoite_id' \
+  --variables '[{"name":"minimum","type":"integer","description":"","default":3}]'
+
 # Update only SQL; the current name, variables, and revision base are loaded automatically.
 ugoite sql saved update <SQL_ID> --sql updated-query.sql
 
@@ -87,6 +92,13 @@ returns a conflict. Use `--untitled` to clear a name; it cannot be combined
 with `--name`. `sql query` and `sql count` accept only one read-only `SELECT`
 statement and reject DDL, DML, and multiple statements before execution. Use
 `ugoite sql --help` for the complete option grammar.
+
+Each object in the `--variables` JSON array declares `name`, `type`, and
+`description`, and may add an optional scalar `default` that matches the
+declared type. Defaults are stored with the revision. Browser variable inputs
+show a saved default as their initial value, but neither the Browser nor CLI
+adds it to a query until the user explicitly runs with that value; CLI runs
+use `--param` and `--param-type`.
 
 </TabItem>
 </Tabs>
@@ -210,6 +222,10 @@ exact and case-sensitive: quote names such as `"Expense"`, `"expense"`, or
 `"2026-Expense"`. Legacy `form_<UUID>` SQL keeps working. Existing Saved SQL
 is not rewritten when read; editing and saving it creates a revision with
 bindings resolved by the server.
+Saved SQL variable defaults are displayed in the variable-input route and are
+sent only when the user presses Run. Clearing a displayed input sends a typed
+null value; the saved default itself remains unchanged until it is edited and
+saved on the Saved SQL detail route.
 
 The CLI can execute the current Saved SQL revision by ID:
 

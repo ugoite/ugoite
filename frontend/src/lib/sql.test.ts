@@ -1,9 +1,11 @@
 // REQ-FE-036: SQL Query Editor
 import {
+  applySqlVariableDefaultDrafts,
+  buildSqlAggregateQuery,
   buildSqlSchema,
   buildSqlStarterQuery,
   normalizeSqlVariables,
-  buildSqlAggregateQuery,
+  parseSqlVariableDefault,
   sqlAggregateFieldOptions,
   sqlFilterFieldOptions,
   sqlLintDiagnostics,
@@ -103,20 +105,38 @@ describe("sql helpers", () => {
     ).toBe(true);
   });
 
-  it("builds a starter query with the stateless SQL query total order", () => {
+  it("builds a relation starter without SQL-level paging", () => {
     expect(buildSqlStarterQuery("form_entry")).toBe(
-      'SELECT * FROM "form_entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50',
+      'SELECT * FROM "form_entry"',
     );
   });
 
-  it.each([
-    ["count-rows", "", 'SELECT COUNT(*) AS "value" FROM "Orders"'],
-    ["count-values", "Amount", 'SELECT COUNT("field_amount") AS "value" FROM "Orders"'],
-    ["sum", "Amount", 'SELECT SUM("field_amount") AS "value" FROM "Orders"'],
-    ["average", "Amount", 'SELECT AVG("field_amount") AS "value" FROM "Orders"'],
-    ["minimum", "Amount", 'SELECT MIN("field_amount") AS "value" FROM "Orders"'],
-    ["maximum", "Amount", 'SELECT MAX("field_amount") AS "value" FROM "Orders"'],
-  ] as const)("builds the %s aggregate query", (operation, fieldKey, expected) => {
+  it.each(
+    [
+      ["count-rows", "", 'SELECT COUNT(*) AS "value" FROM "Orders"'],
+      [
+        "count-values",
+        "Amount",
+        'SELECT COUNT("field_amount") AS "value" FROM "Orders"',
+      ],
+      ["sum", "Amount", 'SELECT SUM("field_amount") AS "value" FROM "Orders"'],
+      [
+        "average",
+        "Amount",
+        'SELECT AVG("field_amount") AS "value" FROM "Orders"',
+      ],
+      [
+        "minimum",
+        "Amount",
+        'SELECT MIN("field_amount") AS "value" FROM "Orders"',
+      ],
+      [
+        "maximum",
+        "Amount",
+        'SELECT MAX("field_amount") AS "value" FROM "Orders"',
+      ],
+    ] as const,
+  )("builds the %s aggregate query", (operation, fieldKey, expected) => {
     expect(buildSqlAggregateQuery(aggregateForm, operation, fieldKey).sql)
       .toBe(expected);
   });
@@ -146,19 +166,27 @@ describe("sql helpers", () => {
   });
 
   it("limits aggregate and filter fields to current compatible human labels", () => {
-    expect(sqlAggregateFieldOptions(aggregateForm, "sum").map((field) =>
-      field.label
-    )).toEqual(["Amount", "Long value"]);
-    expect(sqlAggregateFieldOptions(aggregateForm, "count-values").map((field) =>
-      field.label
-    )).toEqual(["Amount", "Category", "Long value", "Starts at"]);
-    expect(sqlAggregateFieldOptions(aggregateForm, "minimum").map((field) =>
-      field.label
-    )).toEqual(["Amount", "Long value", "Starts at"]);
-    expect(sqlFilterFieldOptions(aggregateForm).map((field) => [
-      field.label,
-      field.parameterType,
-    ])).toEqual([
+    expect(
+      sqlAggregateFieldOptions(aggregateForm, "sum").map((field) =>
+        field.label
+      ),
+    ).toEqual(["Amount", "Long value"]);
+    expect(
+      sqlAggregateFieldOptions(aggregateForm, "count-values").map((field) =>
+        field.label
+      ),
+    ).toEqual(["Amount", "Category", "Long value", "Starts at"]);
+    expect(
+      sqlAggregateFieldOptions(aggregateForm, "minimum").map((field) =>
+        field.label
+      ),
+    ).toEqual(["Amount", "Long value", "Starts at"]);
+    expect(
+      sqlFilterFieldOptions(aggregateForm).map((field) => [
+        field.label,
+        field.parameterType,
+      ]),
+    ).toEqual([
       ["Amount", "integer"],
       ["Category", "string"],
     ]);
@@ -353,6 +381,57 @@ describe("sql helpers", () => {
         query,
       ).toBe(false);
     }
+  });
+
+  it("preserves saved variable types and defaults while SQL placeholders remain", () => {
+    const existing = [
+      { type: "integer", name: "count", description: "Count", default: 7 },
+      { type: "string", name: "title", description: "Title", default: "draft" },
+    ];
+    expect(
+      normalizeSqlVariables("SELECT $title, $count", existing).variables,
+    ).toEqual([existing[1], existing[0]]);
+    expect(normalizeSqlVariables("SELECT $title", existing).variables).toEqual([
+      existing[1],
+    ]);
+  });
+
+  it("keeps default presence separate from empty and typed variable values", () => {
+    const variables = [
+      { type: "string", name: "empty", description: "" },
+      { type: "boolean", name: "enabled", description: "" },
+      { type: "integer", name: "count", description: "" },
+      { type: "date", name: "day", description: "" },
+      { type: "timestamp", name: "at", description: "" },
+    ];
+    const result = applySqlVariableDefaultDrafts(variables, {
+      empty: { enabled: true, raw: "" },
+      enabled: { enabled: true, raw: "false" },
+      count: { enabled: true, raw: "9007199254740992" },
+      day: { enabled: true, raw: "2026-02-29" },
+      at: { enabled: true, raw: "2026-10-15T09:00:00Z" },
+    });
+
+    expect(result).toEqual({
+      variables: [],
+      invalid: { name: "count", type: "integer" },
+    });
+    expect(parseSqlVariableDefault("string", "")).toEqual({
+      valid: true,
+      value: "",
+    });
+    expect(parseSqlVariableDefault("integer", "-7")).toEqual({
+      valid: true,
+      value: -7,
+    });
+    expect(parseSqlVariableDefault("date", "2026-02-28")).toEqual({
+      valid: true,
+      value: "2026-02-28",
+    });
+    expect(parseSqlVariableDefault("timestamp", "2026-10-15T09:00:00-07:00"))
+      .toEqual({ valid: true, value: "2026-10-15T09:00:00-07:00" });
+    expect(parseSqlVariableDefault("timestamp", "2026-10-15T09:00:00-00:00"))
+      .toEqual({ valid: false });
   });
 });
 

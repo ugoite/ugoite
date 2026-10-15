@@ -85,6 +85,15 @@ features:
                 criterion: REQ-FE-062#criterion.delete
               - kind: satisfies
                 criterion: REQ-FE-062#criterion.search-history-read-only
+              - kind: satisfies
+                criterion: REQ-FE-062#criterion.typed-variable-defaults
+          - id: sql-variables-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id]/variables.tsx
+            selector: { kind: symbol, name: SpaceQueryVariablesRoute }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-062#criterion.typed-variable-defaults
           - id: sql-create-route
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/sql/new.tsx
@@ -96,6 +105,8 @@ features:
                 criterion: REQ-FE-063#criterion.explicit-save-and-run
               - kind: satisfies
                 criterion: REQ-FE-063#criterion.form-aggregate-builder
+              - kind: satisfies
+                criterion: REQ-FE-063#criterion.typed-variable-defaults
           - id: sql-aggregate-builder
             adapter: typescript
             path: frontend/src/lib/sql.ts

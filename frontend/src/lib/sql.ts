@@ -2,12 +2,9 @@ import { StandardSQL } from "@codemirror/lang-sql";
 import type { SQLConfig } from "@codemirror/lang-sql";
 import type { Diagnostic } from "@codemirror/lint";
 import sqlRules from "../../../shared/sql/ugoite-sql-rules.json";
-import type { Form, FormField, SqlVariable } from "./types";
+import type { Form, FormField, SqlVariable, SqlVariableDefault } from "./types";
 
 export type SqlSchema = NonNullable<SQLConfig["schema"]>;
-
-export const SQL_QUERY_DEFAULT_LIMIT = 50;
-export const SQL_QUERY_ORDER = "ORDER BY _ugoite_updated_at DESC, _ugoite_id";
 
 const SQL_SYSTEM_COLUMNS = [
   "_ugoite_id",
@@ -35,11 +32,9 @@ function quoteSqlIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
-/** Build the runnable query shown when a user creates Saved SQL. */
+/** Build the initial relation query without embedding request paging. */
 export function buildSqlStarterQuery(sqlRelation: string): string {
-  return `SELECT * FROM ${
-    quoteSqlIdentifier(sqlRelation)
-  } ${SQL_QUERY_ORDER} LIMIT ${SQL_QUERY_DEFAULT_LIMIT}`;
+  return `SELECT * FROM ${quoteSqlIdentifier(sqlRelation)}`;
 }
 
 export type SqlAggregateOperation =
@@ -123,8 +118,8 @@ const sqlBuilderFieldsFor = (form: Form | undefined): SqlBuilderField[] => {
       column,
       fieldType: field.query_capability?.field_type ?? field.type,
       queryCapabilitySortable: field.query_capability?.sortable,
-      queryCapabilitySupportedOperators:
-        field.query_capability?.supported_operators,
+      queryCapabilitySupportedOperators: field.query_capability
+        ?.supported_operators,
     }];
   });
 };
@@ -203,9 +198,13 @@ export const buildSqlAggregateQuery = (
   }
 
   return {
-    sql: `SELECT ${expression} AS "value" FROM ${quoteSqlIdentifier(sourceName)}${filterField
-      ? ` WHERE ${quoteSqlIdentifier(filterField.column)} = {{filter_value}}`
-      : ""}`,
+    sql: `SELECT ${expression} AS "value" FROM ${
+      quoteSqlIdentifier(sourceName)
+    }${
+      filterField
+        ? ` WHERE ${quoteSqlIdentifier(filterField.column)} = {{filter_value}}`
+        : ""
+    }`,
     ...(filterField
       ? {
         parameter: {
@@ -375,11 +374,17 @@ function parseSql(sql: string): ParsedSql {
  * of the placeholder scan, so `$name` in user text is not mistaken for a
  * session parameter.
  */
-export function normalizeSqlVariables(sql: string): {
+export function normalizeSqlVariables(
+  sql: string,
+  existingVariables: SqlVariable[] = [],
+): {
   sql: string;
   variables: SqlVariable[];
 } {
   const names = new Set<string>();
+  const existingByName = new Map(
+    existingVariables.map((variable) => [variable.name, variable]),
+  );
   const parsed = parseSql(sql);
   const variablePattern =
     /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}|\$([A-Za-z_][A-Za-z0-9_]*)/g;
@@ -404,12 +409,164 @@ export function normalizeSqlVariables(sql: string): {
 
   return {
     sql: normalizedSql,
-    variables: Array.from(names).map((name) => ({
-      type: "string",
-      name,
-      description: "",
-    })),
+    variables: Array.from(names).map((name) =>
+      existingByName.get(name) ?? {
+        type: "string",
+        name,
+        description: "",
+      }
+    ),
   };
+}
+
+export interface SqlVariableDefaultDraft {
+  enabled: boolean;
+  raw: string;
+}
+
+export type SqlVariableDefaultParseResult =
+  | { valid: true; value: SqlVariableDefault }
+  | { valid: false };
+
+export function sqlVariableDefaultInputValue(
+  value: SqlVariableDefault | undefined,
+): string {
+  return value === undefined ? "" : String(value);
+}
+
+export function sqlVariableDefaultDraft(
+  variable: Pick<SqlVariable, "default">,
+): SqlVariableDefaultDraft {
+  return {
+    enabled: variable.default !== undefined,
+    raw: sqlVariableDefaultInputValue(variable.default),
+  };
+}
+
+export function parseSqlVariableDefault(
+  type: string,
+  raw: string,
+): SqlVariableDefaultParseResult {
+  switch (type) {
+    case "string":
+      return isValidSqlVariableString(raw)
+        ? { valid: true, value: raw }
+        : { valid: false };
+    case "boolean":
+      return raw === "true" || raw === "false"
+        ? { valid: true, value: raw === "true" }
+        : { valid: false };
+    case "integer": {
+      if (raw.length > 17 || !/^[+-]?\d+$/.test(raw)) return { valid: false };
+      const value = Number(raw);
+      return Number.isSafeInteger(value)
+        ? { valid: true, value }
+        : { valid: false };
+    }
+    case "float": {
+      if (
+        raw.length > 64 ||
+        !/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(raw)
+      ) return { valid: false };
+      const value = Number(raw);
+      return Number.isFinite(value) ? { valid: true, value } : { valid: false };
+    }
+    case "date":
+      return isValidSqlVariableDate(raw)
+        ? { valid: true, value: raw }
+        : { valid: false };
+    case "timestamp":
+      return isValidSqlVariableTimestamp(raw)
+        ? { valid: true, value: raw }
+        : { valid: false };
+    default:
+      return { valid: false };
+  }
+}
+
+export function applySqlVariableDefaultDrafts(
+  variables: SqlVariable[],
+  drafts: Record<string, SqlVariableDefaultDraft>,
+): { variables: SqlVariable[]; invalid?: Pick<SqlVariable, "name" | "type"> } {
+  const normalized: SqlVariable[] = [];
+  for (const variable of variables) {
+    const draft = drafts[variable.name] ?? sqlVariableDefaultDraft(variable);
+    if (!draft.enabled) {
+      const { default: _default, ...withoutDefault } = variable;
+      normalized.push(withoutDefault);
+      continue;
+    }
+    const parsed = parseSqlVariableDefault(variable.type, draft.raw);
+    if (!parsed.valid) {
+      return {
+        variables: [],
+        invalid: { name: variable.name, type: variable.type },
+      };
+    }
+    normalized.push({ ...variable, default: parsed.value });
+  }
+  return { variables: normalized };
+}
+
+function isValidSqlVariableString(value: string): boolean {
+  if (new TextEncoder().encode(value).length > 4096) return false;
+  for (const character of value) {
+    const code = character.codePointAt(0) ?? 0;
+    if (
+      (code <= 0x1f || (code >= 0x7f && code <= 0x9f)) &&
+      code !== 0x09 && code !== 0x0a && code !== 0x0d
+    ) return false;
+  }
+  return true;
+}
+
+function isValidSqlVariableDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (year < 1 || year > 9999 || month < 1 || month > 12) return false;
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const monthDays = [
+    31,
+    leapYear ? 29 : 28,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31,
+  ];
+  return day >= 1 && day <= monthDays[month - 1];
+}
+
+function isValidSqlVariableTimestamp(value: string): boolean {
+  if (value.length < 20 || value.length > 35 || !/^[\x00-\x7f]+$/.test(value)) {
+    return false;
+  }
+  const match =
+    /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})$/
+      .exec(
+        value,
+      );
+  if (!match || !isValidSqlVariableDate(match[1])) return false;
+  if (
+    Number(match[2]) > 23 ||
+    Number(match[3]) > 59 ||
+    Number(match[4]) > 59
+  ) return false;
+  if (match[6] === "-00:00") return false;
+  if (match[6] !== "Z") {
+    const hours = Number(match[6].slice(1, 3));
+    const minutes = Number(match[6].slice(4, 6));
+    if (hours > 23 || minutes > 59) return false;
+  }
+  return true;
 }
 
 export function sqlLintDiagnostics(query: string): Diagnostic[] {

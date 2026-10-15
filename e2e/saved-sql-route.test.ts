@@ -75,7 +75,7 @@ test.describe("Saved SQL route", () => {
     }
   });
 
-  test("REQ-FE-063: new saved SQL starts with a runnable total-ordered query", async ({ page, request }) => {
+  test("REQ-FE-063: new saved SQL starts with a Form relation and runs through Saved SQL", async ({ page, request }) => {
     await ensureDefaultForm(request, spaceId);
     const queryName = `Runnable starter ${Date.now()}`;
     let savedSqlId: string | undefined;
@@ -86,7 +86,10 @@ test.describe("Saved SQL route", () => {
       });
 
       await expect(page.locator(".ui-sql-editor")).toContainText(
-        /SELECT \* FROM "[^"]+" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50/,
+        /SELECT \* FROM "[^"]+"/,
+      );
+      await expect(page.locator(".ui-sql-editor")).not.toContainText(
+        /\b(?:ORDER BY|LIMIT|OFFSET)\b/i,
       );
       await page.getByLabel("Query name").fill(queryName);
       const createResponsePromise = page.waitForResponse((response) => {

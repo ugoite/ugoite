@@ -126,8 +126,8 @@ ugoite entry history <ENTRY_ID>
 ugoite entry restore <ENTRY_ID> <REVISION_ID>
 ugoite sql saved list
 ugoite sql saved get <SQL_ID>
-ugoite sql saved create --sql <SQL_OR_FILE> [--name <NAME>]
-ugoite sql saved update <SQL_ID> [--name <NAME> | --untitled] [--sql <SQL_OR_FILE>]
+ugoite sql saved create --sql <SQL_OR_FILE> [--name <NAME>] [--variables <JSON>]
+ugoite sql saved update <SQL_ID> [--name <NAME> | --untitled] [--sql <SQL_OR_FILE>] [--variables <JSON>]
 ugoite sql saved delete <SQL_ID>
 ugoite composition list
 ugoite composition history <ID> [--limit <N>] [--offset <N>]
@@ -168,6 +168,11 @@ name represents an untitled query. An omitted Saved SQL update revision uses
 the current revision read by the CLI; `--parent-revision-id` remains available
 when an automation needs an explicit concurrency precondition. Pins capture
 local operator snapshots and are managed with the `pin` command family.
+
+Saved SQL `--variables` takes a JSON array of typed variable definitions. Each
+definition may include a non-null scalar `default` matching its declared type.
+Saved SQL defaults are not applied by `sql saved run`; pass parameter values
+explicitly with `--param` and `--param-type`.
 
 Composition import and save validate the shared `.ugcomp.yaml` format and
 publish its canonical YAML to the selected Space. `import` always creates a

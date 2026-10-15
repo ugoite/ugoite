@@ -5852,7 +5852,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JsonValue"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SavedSql"
+                  }
                 }
               }
             },
@@ -6010,7 +6013,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JsonValue"
+                  "$ref": "#/components/schemas/SavedSqlCreateReceipt"
                 }
               }
             },
@@ -6152,7 +6155,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/JsonValue"
+                "$ref": "#/components/schemas/SavedSqlCreateRequest"
               }
             }
           }
@@ -6176,7 +6179,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JsonValue"
+                  "$ref": "#/components/schemas/SavedSql"
                 }
               }
             },
@@ -6330,7 +6333,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JsonValue"
+                  "$ref": "#/components/schemas/SavedSql"
                 }
               }
             },
@@ -6465,7 +6468,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/JsonValue"
+                "$ref": "#/components/schemas/SavedSqlUpdateRequest"
               }
             }
           }
@@ -14043,20 +14046,83 @@
         "required": [
           "id",
           "name",
-          "sql"
+          "kind",
+          "metadata",
+          "sql",
+          "variables",
+          "created_at",
+          "updated_at",
+          "author",
+          "updated_by",
+          "deleted_by",
+          "revision_id"
         ],
         "properties": {
           "id": {
             "type": "string"
           },
           "name": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "user-query",
+              "search-history"
+            ]
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SavedSqlMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "sql": {
             "type": "string"
           },
           "variables": {
-            "type": "array"
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SavedSqlVariable"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "author": {
+            "type": "string"
+          },
+          "updated_by": {
+            "type": "string"
+          },
+          "deleted_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revision_id": {
+            "type": "string"
           }
         },
         "additionalProperties": true
@@ -16439,6 +16505,266 @@
             "additionalProperties": false
           }
         ]
+      },
+      "SavedSqlSearchHistoryFieldCondition": {
+        "type": "object",
+        "required": [
+          "field",
+          "operator",
+          "value"
+        ],
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "operator": {
+            "type": "string",
+            "enum": [
+              "equals",
+              "contains",
+              "lt",
+              "lte",
+              "gt",
+              "gte"
+            ]
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SavedSqlSearchHistoryCriteria": {
+        "type": "object",
+        "required": [
+          "formName",
+          "tags",
+          "updatedFrom",
+          "updatedTo",
+          "fieldConditions"
+        ],
+        "properties": {
+          "formName": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "updatedFrom": {
+            "type": "string"
+          },
+          "updatedTo": {
+            "type": "string"
+          },
+          "fieldConditions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SavedSqlSearchHistoryFieldCondition"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "SavedSqlFormBinding": {
+        "type": "object",
+        "required": [
+          "name",
+          "formId"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "formId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SavedSqlMetadata": {
+        "type": "object",
+        "properties": {
+          "searchCriteria": {
+            "$ref": "#/components/schemas/SavedSqlSearchHistoryCriteria"
+          },
+          "generatedName": {
+            "type": "string",
+            "enum": [
+              "untitled"
+            ]
+          },
+          "bindingVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "formBindings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SavedSqlFormBinding"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "SavedSqlVariable": {
+        "type": "object",
+        "required": [
+          "type",
+          "name",
+          "description"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "string",
+              "boolean",
+              "integer",
+              "float",
+              "date",
+              "timestamp"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "default": {
+            "description": "Optional initial scalar value. Its JSON scalar type must match the declared variable type. It initializes authoring or preview state and is not an implicit SQL execution parameter.",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "SavedSqlCreateRequest": {
+        "type": "object",
+        "required": [
+          "kind",
+          "sql"
+        ],
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "user-query",
+              "search-history"
+            ]
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SavedSqlMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sql": {
+            "type": "string"
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SavedSqlVariable"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "SavedSqlUpdateRequest": {
+        "type": "object",
+        "required": [
+          "kind",
+          "sql",
+          "parent_revision_id"
+        ],
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "user-query",
+              "search-history"
+            ]
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SavedSqlMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sql": {
+            "type": "string"
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SavedSqlVariable"
+            }
+          },
+          "parent_revision_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SavedSqlCreateReceipt": {
+        "type": "object",
+        "required": [
+          "id",
+          "revision_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "revision_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
       }
     }
   }
