@@ -39,23 +39,37 @@ features:
                 anchor: REQ-COMP-008#criterion.space-knowledge-and-transient-work
           - id: sql-first-workspace-ui-contract
             adapter: declared
+            path: docs/spec/ui/components/sql-workspace.yaml
+            selector:
+              kind: file
+            claims:
+              - kind: documents
+                anchor: REQ-FE-080#criterion.shared-editor-and-preview
+              - kind: documents
+                anchor: REQ-FE-080#criterion.workspace-presentation-api
+              - kind: documents
+                anchor: REQ-FE-080#criterion.adapter-owned-persistence-and-execution
+              - kind: documents
+                anchor: REQ-FE-080#criterion.transient-typed-parameters
+              - kind: documents
+                anchor: REQ-FE-080#criterion.adapter-supplied-structured-actions
+              - kind: documents
+                anchor: REQ-FE-080#criterion.safe-structured-operations
+              - kind: documents
+                anchor: REQ-FE-080#criterion.explicit-preview-count-and-paging
+              - kind: documents
+                anchor: REQ-FE-080#criterion.editor-accessibility-and-wrapping
+              - kind: documents
+                anchor: REQ-FE-080#criterion.mobile-sql-editor-and-results
+          - id: sql-first-composition-ui-contract
+            adapter: declared
             path: docs/spec/ui/components/composition-sql-workspace.yaml
             selector:
               kind: file
             claims:
               - kind: documents
-                anchor: REQ-FE-079#criterion.one-sql-workspace
-              - kind: documents
-                anchor: REQ-FE-079#criterion.capability-gated-structured-edits
+                anchor: REQ-FE-079#criterion.composition-uses-shared-workspace
               - kind: documents
                 anchor: REQ-FE-079#criterion.composition-no-label-or-tag-fields
               - kind: documents
                 anchor: REQ-FE-079#criterion.composition-structure-first-steady-state
-              - kind: documents
-                anchor: REQ-FE-079#criterion.narrow-sql-editor-and-results
-              - kind: documents
-                anchor: REQ-FE-080#criterion.shared-editor-and-preview
-              - kind: documents
-                anchor: REQ-FE-080#criterion.safe-structured-operations
-              - kind: documents
-                anchor: REQ-FE-080#criterion.mobile-sql-editor-and-results

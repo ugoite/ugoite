@@ -432,17 +432,50 @@ requirements:
 
   - id: REQ-FE-080
     title: Shared SQL Workspace
-    description: New Saved SQL, Saved SQL detail/edit, and Composition inline SQL use one SQL authoring and preview workspace over shared SQL semantics.
+    description: >-
+      SQL authoring surfaces share one controlled editing and preview Workspace;
+      route adapters own persistence and query execution while SQL remains the
+      authoritative source.
     priority: high
     status: planned
     criteria:
       - id: shared-editor-and-preview
         kind: behavior
         statement: >-
-          SQL creation, Saved SQL editing, and Composition inline SQL share one
-          Workspace for typed variables, direct SQL editing, safe structured
-          query operations, preview, and paged native results. The save-target
-          adapter owns persistence; the Workspace owns editing and preview.
+          New Saved SQL, Saved SQL detail/edit, and Composition inline SQL use
+          one shared SQL Workspace for typed variables, structured query
+          operations, direct SQL editing, preview, and paged native results.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+      - id: workspace-presentation-api
+        kind: behavior
+        statement: >-
+          The reusable Workspace is a controlled presentation component. It
+          accepts SQL, schema, diagnostics, preview results, and explicit action
+          callbacks from its owner without implementing persistence or query
+          transport itself.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+      - id: adapter-owned-persistence-and-execution
+        kind: behavior
+        statement: >-
+          The owning route or Composition source adapter supplies SQL state,
+          schema, transient parameter values, query preview, count, and page
+          continuation. It owns persistence and execution; the shared Workspace
+          presents those capabilities without creating another SQL authority.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+      - id: transient-typed-parameters
+        kind: behavior
+        statement: >-
+          The shared Workspace presents declared typed parameters using their
+          transient Work values or declared defaults. Unset values remain
+          unset instead of being coerced or silently replaced by a default, and
+          the Workspace does not persist parameter values.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+      - id: adapter-supplied-structured-actions
+        kind: behavior
+        statement: >-
+          The Workspace renders only structured action capabilities supplied by
+          its owner and dispatches explicit callbacks. Activating a control does
+          not silently rewrite the SQL text.
         governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
       - id: safe-structured-operations
         kind: behavior
@@ -452,6 +485,23 @@ requirements:
           remains authoritative; unsupported syntax stays editable in the code
           editor and a structured rewrite requires explicit diff confirmation.
         governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+      - id: explicit-preview-count-and-paging
+        kind: behavior
+        statement: >-
+          The Workspace makes preview and total counting explicit actions and
+          delegates page continuation to its owner. It presents loading,
+          failure, empty, and typed result states without retaining a stale
+          result as the current preview. The owner explicitly marks a result
+          current only while it matches the SQL and transient parameter values
+          used to run it; results without that confirmation stay hidden.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+      - id: editor-accessibility-and-wrapping
+        kind: quality
+        statement: >-
+          The shared SQL editor exposes an accessible name and wraps long lines
+          in the Workspace while preserving the SQL editor's existing default
+          behavior for other consumers.
+        governed_by: [POL-UI-004#rule.governance, POL-UI-005#rule.governance]
       - id: mobile-sql-editor-and-results
         kind: quality
         statement: >-
@@ -460,3 +510,9 @@ requirements:
           44px targets, and primary actions remain reachable without page
           overflow.
         governed_by: [POL-UI-004#rule.governance, POL-UI-005#rule.governance, POL-UI-007#rule.governance]
+      - id: workspace-control-size-rules
+        kind: quality
+        statement: >-
+          Shared Workspace SQL and variable inputs use at least 16px text, and
+          primary, paging, and icon-only actions use at least 44px targets.
+        governed_by: [POL-UI-004#rule.governance, POL-UI-005#rule.governance]

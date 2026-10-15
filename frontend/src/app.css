@@ -5244,3 +5244,80 @@ a.tool {
     padding: 12px 8px;
   }
 }
+
+/* Shared SQL Workspace layout: keep narrow views in one page column. */
+.sql-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.sql-workspace__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 100%;
+}
+
+.sql-workspace__variables,
+.sql-workspace__editor,
+.sql-workspace__results {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.sql-workspace__variable-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: 1rem;
+}
+
+.sql-workspace__variable .ui-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  font-size: 16px;
+}
+
+.sql-workspace .ui-sql-editor,
+.sql-workspace .cm-content,
+.sql-workspace .cm-line {
+  font-size: 16px;
+}
+
+.sql-workspace .cm-line {
+  line-height: 1.5;
+}
+
+.sql-workspace__preview-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.sql-workspace__preview-action .btn {
+  min-height: 44px;
+}
+
+.sql-workspace__result-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.sql-workspace__result-controls .btn {
+  min-height: 44px;
+}
+
+.sql-workspace__results .result-table-viewport {
+  max-width: 100%;
+}
+
+.sql-workspace__status,
+.sql-workspace__error {
+  margin: 0;
+}
