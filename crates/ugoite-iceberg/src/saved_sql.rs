@@ -288,6 +288,8 @@ fn normalize_sql_variables(value: Option<&Value>) -> Result<Value> {
     };
 
     let mut normalized = Vec::new();
+    let mut variable_names = BTreeSet::new();
+    let mut defaulted_variable_names = BTreeSet::new();
     for item in items {
         let obj = item
             .as_object()
@@ -309,6 +311,13 @@ fn normalize_sql_variables(value: Option<&Value>) -> Result<Value> {
                 "variables.name must match [A-Za-z_][A-Za-z0-9_]*",
             ));
         }
+        let duplicate_name = !variable_names.insert(name.to_owned());
+        let has_default = obj.contains_key("default");
+        if duplicate_name && (has_default || defaulted_variable_names.contains(name)) {
+            return Err(validation_error(format!(
+                "variables with defaults must have a unique name: {name}"
+            )));
+        }
         let description = obj
             .get("description")
             .and_then(|v| v.as_str())
@@ -328,6 +337,7 @@ fn normalize_sql_variables(value: Option<&Value>) -> Result<Value> {
                 .as_object_mut()
                 .expect("normalized SQL variable is an object")
                 .insert("default".to_owned(), default.clone());
+            defaulted_variable_names.insert(name.to_owned());
         }
         normalized.push(normalized_variable);
     }
@@ -514,6 +524,25 @@ mod variable_default_tests {
                 "accepted invalid {var_type} default {default}"
             );
         }
+    }
+
+    #[test]
+    fn saved_sql_variables_reject_duplicate_names() {
+        let defaulted_duplicates = json!([
+            {"type": "string", "name": "status", "description": "", "default": "open"},
+            {"type": "string", "name": "status", "description": "", "default": "closed"}
+        ]);
+        assert!(normalize_sql_variables(Some(&defaulted_duplicates)).is_err());
+
+        let duplicate_without_defaults = json!([
+            {"type": "string", "name": "status", "description": ""},
+            {"type": "string", "name": "status", "description": ""}
+        ]);
+        assert_eq!(
+            normalize_sql_variables(Some(&duplicate_without_defaults)).unwrap(),
+            duplicate_without_defaults,
+            "legacy variable declarations without defaults remain readable"
+        );
     }
 }
 

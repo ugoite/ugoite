@@ -179,7 +179,7 @@ describe("/spaces/:space_id/sql/new", () => {
     const editor = await screen.findByRole("textbox", { name: "SQL" });
     await waitFor(() => {
       expect(editor).toHaveValue(
-        'SELECT * FROM "Entry"',
+        'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
       );
     });
     fireEvent.change(screen.getByLabelText("Form for this query"), {
@@ -190,7 +190,7 @@ describe("/spaces/:space_id/sql/new", () => {
     );
     await waitFor(() => {
       expect(editor).toHaveValue(
-        'SELECT * FROM "Review"',
+        'SELECT * FROM "Review" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
       );
     });
     fireEvent.input(screen.getByLabelText("Query name"), {
@@ -204,7 +204,7 @@ describe("/spaces/:space_id/sql/new", () => {
         kind: "user-query",
         metadata: undefined,
         sql:
-          'SELECT * FROM "Review"',
+          'SELECT * FROM "Review" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
         variables: [],
       });
     });
@@ -216,7 +216,7 @@ describe("/spaces/:space_id/sql/new", () => {
     const editor = await screen.findByRole("textbox", { name: "SQL" });
     await waitFor(() => {
       expect(editor).toHaveValue(
-        'SELECT * FROM "Entry"',
+        'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
       );
     });
     fireEvent.input(editor, {
@@ -248,7 +248,7 @@ describe("/spaces/:space_id/sql/new", () => {
     const editor = await screen.findByRole("textbox", { name: "SQL" });
     await waitFor(() =>
       expect(editor).toHaveValue(
-        'SELECT * FROM "Entry"',
+        'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
       )
     );
     fireEvent.change(screen.getByLabelText("Form for this query"), {
@@ -296,7 +296,7 @@ describe("/spaces/:space_id/sql/new", () => {
     const editor = await screen.findByRole("textbox", { name: "SQL" });
     await waitFor(() => {
       expect(editor).toHaveValue(
-        'SELECT * FROM "Entry"',
+        'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
       );
     });
     fireEvent.change(screen.getByLabelText("Form for this query"), {
@@ -357,7 +357,7 @@ describe("/spaces/:space_id/sql/new", () => {
     const editor = await screen.findByRole("textbox", { name: "SQL" });
     await waitFor(() => {
       expect(editor).toHaveValue(
-        'SELECT * FROM "Entry"',
+        'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
       );
     });
     fireEvent.input(editor, {

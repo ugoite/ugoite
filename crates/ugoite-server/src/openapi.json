@@ -14098,12 +14098,14 @@
             }
           },
           "created_at": {
-            "type": "string",
-            "format": "date-time"
+            "type": "number",
+            "format": "double",
+            "description": "Unix timestamp in seconds with fractional precision."
           },
           "updated_at": {
-            "type": "string",
-            "format": "date-time"
+            "type": "number",
+            "format": "double",
+            "description": "Unix timestamp in seconds with fractional precision."
           },
           "author": {
             "type": "string"

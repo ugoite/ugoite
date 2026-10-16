@@ -32,9 +32,9 @@ function quoteSqlIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
-/** Build the initial relation query without embedding request paging. */
+/** Build an initial relation query with stable ordering and request paging. */
 export function buildSqlStarterQuery(sqlRelation: string): string {
-  return `SELECT * FROM ${quoteSqlIdentifier(sqlRelation)}`;
+  return `SELECT * FROM ${quoteSqlIdentifier(sqlRelation)} ORDER BY _ugoite_updated_at DESC, _ugoite_id`;
 }
 
 export type SqlAggregateOperation =

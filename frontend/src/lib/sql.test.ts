@@ -105,9 +105,9 @@ describe("sql helpers", () => {
     ).toBe(true);
   });
 
-  it("builds a relation starter without SQL-level paging", () => {
+  it("builds a stable relation starter without SQL-level paging", () => {
     expect(buildSqlStarterQuery("form_entry")).toBe(
-      'SELECT * FROM "form_entry"',
+      'SELECT * FROM "form_entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
     );
   });
 

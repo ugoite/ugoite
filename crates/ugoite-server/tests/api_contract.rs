@@ -2186,6 +2186,12 @@ fn openapi_documents_saved_sql_variable_defaults() {
         scalar_default_types,
         BTreeSet::from(["boolean", "integer", "number", "string"])
     );
+    for timestamp in ["created_at", "updated_at"] {
+        assert_eq!(
+            variable_timestamp_schema(&schemas["SavedSql"]["properties"][timestamp]),
+            ("number", "double")
+        );
+    }
 
     let paths = &snapshot["paths"];
     let sql_collection = &paths["/spaces/{space_id}/sql"];
@@ -2220,4 +2226,11 @@ fn openapi_documents_saved_sql_variable_defaults() {
     for request in ["SqlQueryRequest", "SqlQueryCountRequest"] {
         assert!(schemas[request]["properties"].get("default").is_none());
     }
+}
+
+fn variable_timestamp_schema(schema: &serde_json::Value) -> (&str, &str) {
+    (
+        schema["type"].as_str().expect("timestamp JSON type"),
+        schema["format"].as_str().expect("timestamp format"),
+    )
 }

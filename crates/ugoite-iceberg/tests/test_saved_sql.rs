@@ -124,6 +124,8 @@ async fn saved_sql_variable_defaults_round_trip() -> anyhow::Result<()> {
     )
     .await?;
     assert_eq!(created["variables"][0]["default"], json!("open"));
+    assert!(created["created_at"].as_f64().is_some());
+    assert!(created["updated_at"].as_f64().is_some());
     let revision_id = created["revision_id"]
         .as_str()
         .expect("create response has a revision id");
@@ -156,6 +158,43 @@ async fn saved_sql_variable_defaults_round_trip() -> anyhow::Result<()> {
         .find(|entry| entry["id"] == "sql-defaults-1")
         .expect("saved SQL appears in list");
     assert_eq!(listed["variables"][0]["default"], json!("closed"));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn saved_sql_rejects_duplicate_variable_names_before_committing() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "sql-duplicate-defaults", "/tmp").await?;
+    let ws_path = "spaces/sql-duplicate-defaults";
+    let integrity = FakeIntegrityProvider;
+    let payload = SqlPayload {
+        name: Some("Ambiguous defaults".to_string()),
+        kind: SqlKind::UserQuery,
+        metadata: None,
+        sql: "SELECT $status".to_string(),
+        variables: json!([
+            {"type": "string", "name": "status", "description": "", "default": "open"},
+            {"type": "string", "name": "status", "description": "", "default": "closed"}
+        ]),
+    };
+
+    assert!(saved_sql::create_sql(
+        &op,
+        ws_path,
+        "sql-duplicate-defaults-1",
+        &payload,
+        "author",
+        &integrity,
+    )
+    .await
+    .is_err());
+    assert!(saved_sql::get_sql(&op, ws_path, "sql-duplicate-defaults-1")
+        .await
+        .is_err());
+    assert!(saved_sql::list_sql(&op, ws_path, EntryScope::AllCurrent)
+        .await?
+        .is_empty());
 
     Ok(())
 }
