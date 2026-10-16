@@ -226,6 +226,355 @@ describe("/spaces/:space_id/sql/new", () => {
     expect(await screen.findByText("success")).toBeInTheDocument();
   });
 
+  it("previews generated Form SQL before replacing hand-edited SQL", async () => {
+    render(() => <SpaceQueryCreateRoute />);
+    const editor = await screen.findByRole("textbox", { name: "SQL" });
+    await waitFor(() =>
+      expect(editor).toHaveValue(
+        'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
+      )
+    );
+    fireEvent.input(editor, { target: { value: "SELECT 99" } });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Generate SQL from Form" }),
+    );
+
+    expect(editor).toHaveValue("SELECT 99");
+    const proposal = screen.getByRole("region", {
+      name: "Generated SQL preview",
+    });
+    expect(proposal.querySelector(".ui-text-danger")).toHaveTextContent(
+      "− SELECT 99",
+    );
+    expect(proposal.querySelector(".ui-text-success")).toHaveTextContent(
+      '+ SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
+    );
+    const screenReaderDiffLines = Array.from(
+      proposal.querySelectorAll(".ui-sr-only"),
+      (line) => line.textContent?.trim(),
+    );
+    expect(screenReaderDiffLines).toContain("Removed SQL line: SELECT 99");
+    expect(screenReaderDiffLines).toContain(
+      'Added SQL line: SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Use generated SQL" }),
+    );
+    expect(editor).toHaveValue(
+      'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
+    );
+    expect(screen.queryByRole("region", {
+      name: "Generated SQL preview",
+    })).not.toBeInTheDocument();
+  });
+
+  it("reveals and applies captured generated SQL when the diff exceeds preview bounds", async () => {
+    render(() => <SpaceQueryCreateRoute />);
+    const editor = await screen.findByRole("textbox", { name: "SQL" });
+    await waitFor(() =>
+      expect(editor).toHaveValue(
+        'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
+      )
+    );
+    const oversizedSql = "x".repeat(256 * 1024 + 1);
+    const generatedSql =
+      'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id';
+    fireEvent.input(editor, { target: { value: oversizedSql } });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Generate SQL from Form" }),
+    );
+
+    const proposal = screen.getByRole("region", {
+      name: "Generated SQL preview",
+    });
+    expect(proposal).toHaveTextContent("SQL diff is too large to preview");
+    const disclosure = proposal.querySelector("details");
+    expect(disclosure).not.toHaveAttribute("open");
+
+    fireEvent.click(screen.getByText("Show full generated SQL"));
+
+    expect(disclosure).toHaveAttribute("open");
+    expect(disclosure?.querySelector("pre")).toHaveTextContent(generatedSql);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Use generated SQL" }),
+    );
+    expect(editor).toHaveValue(generatedSql);
+  });
+
+  it("keeps an aggregate SQL proposal tied to the edited query until applied", async () => {
+    render(() => <SpaceQueryCreateRoute />);
+    const editor = await screen.findByRole("textbox", { name: "SQL" });
+    await waitFor(() =>
+      expect(editor).toHaveValue(
+        'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
+      )
+    );
+    fireEvent.input(editor, { target: { value: "SELECT 99" } });
+    fireEvent.change(screen.getByLabelText("Form for this query"), {
+      target: { value: "review-form" },
+    });
+    fireEvent.change(screen.getByLabelText("Aggregate"), {
+      target: { value: "sum" },
+    });
+    fireEvent.change(screen.getByLabelText("Filter field"), {
+      target: { value: "Category" },
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Generate aggregate SQL" }),
+    );
+
+    expect(editor).toHaveValue("SELECT 99");
+    expect(screen.getByRole("region", {
+      name: "Generated SQL preview",
+    })).toHaveTextContent(
+      'SELECT SUM("column_amount") AS "value" FROM "Review" WHERE "column_category" = {{filter_value}}',
+    );
+    expect(
+      screen.queryByRole("checkbox", { name: "Default for filter_value" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Use generated SQL" }),
+    );
+    expect(editor).toHaveValue(
+      'SELECT SUM("column_amount") AS "value" FROM "Review" WHERE "column_category" = {{filter_value}}',
+    );
+    expect(
+      await screen.findByRole("checkbox", { name: "Default for filter_value" }),
+    ).toBeInTheDocument();
+  });
+
+  it("discards a generated SQL proposal when the editor changes", async () => {
+    render(() => <SpaceQueryCreateRoute />);
+    const editor = await screen.findByRole("textbox", { name: "SQL" });
+    await waitFor(() =>
+      expect(editor).toHaveValue(
+        'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
+      )
+    );
+    fireEvent.input(editor, { target: { value: "SELECT 99" } });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Generate SQL from Form" }),
+    );
+    expect(screen.getByRole("region", {
+      name: "Generated SQL preview",
+    })).toBeInTheDocument();
+
+    fireEvent.input(editor, { target: { value: "SELECT 100" } });
+
+    expect(editor).toHaveValue("SELECT 100");
+    expect(screen.queryByRole("region", {
+      name: "Generated SQL preview",
+    })).not.toBeInTheDocument();
+  });
+
+  it("keeps the current query and variable metadata when a proposal is dismissed", async () => {
+    render(() => <SpaceQueryCreateRoute />);
+    const editor = await screen.findByRole("textbox", { name: "SQL" });
+    await waitFor(() =>
+      expect(editor).toHaveValue(
+        'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
+      )
+    );
+    fireEvent.input(editor, { target: { value: "SELECT 99" } });
+    fireEvent.change(screen.getByLabelText("Form for this query"), {
+      target: { value: "review-form" },
+    });
+    fireEvent.change(screen.getByLabelText("Aggregate"), {
+      target: { value: "sum" },
+    });
+    fireEvent.change(screen.getByLabelText("Field"), {
+      target: { value: "Amount" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Generate aggregate SQL" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Keep current SQL" }),
+    );
+
+    expect(editor).toHaveValue("SELECT 99");
+    expect(screen.queryByRole("region", {
+      name: "Generated SQL preview",
+    })).not.toBeInTheDocument();
+
+    fireEvent.input(editor, {
+      target: { value: "SELECT {{filter_value}}" },
+    });
+
+    expect(screen.getByText("string")).toBeInTheDocument();
+    expect(screen.queryByText("integer")).not.toBeInTheDocument();
+  });
+
+  it("previews metadata-only changes before applying the generated parameter", async () => {
+    render(() => <SpaceQueryCreateRoute />);
+    const editor = await screen.findByRole("textbox", { name: "SQL" });
+    await waitFor(() =>
+      expect(editor).toHaveValue(
+        'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
+      )
+    );
+    const sql =
+      'SELECT SUM("column_amount") AS "value" FROM "Review" WHERE "column_amount" = {{filter_value}}';
+    fireEvent.input(editor, { target: { value: sql } });
+    fireEvent.change(screen.getByLabelText("Form for this query"), {
+      target: { value: "review-form" },
+    });
+    fireEvent.change(screen.getByLabelText("Aggregate"), {
+      target: { value: "sum" },
+    });
+    fireEvent.change(screen.getByLabelText("Filter field"), {
+      target: { value: "Amount" },
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Generate aggregate SQL" }),
+    );
+
+    expect(editor).toHaveValue(sql);
+    const metadata = screen.getByText("filter_value").parentElement;
+    expect(metadata).toHaveTextContent("string");
+    expect(metadata).not.toHaveTextContent("integer");
+    expect(screen.getByRole("region", {
+      name: "Generated SQL preview",
+    })).toHaveTextContent(
+      "Variable filter_value: string → integer; description: None → Amount",
+    );
+    expect(screen.getByRole("region", {
+      name: "Generated SQL preview",
+    })).toHaveTextContent("SQL unchanged");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Use generated SQL" }),
+    );
+
+    expect(editor).toHaveValue(sql);
+    const appliedMetadata = screen.getByText("filter_value").parentElement;
+    expect(appliedMetadata).toHaveTextContent("integer");
+    expect(appliedMetadata).toHaveTextContent("Amount");
+  });
+
+  it("previews removing variable metadata before applying unfiltered SQL", async () => {
+    render(() => <SpaceQueryCreateRoute />);
+    const editor = await screen.findByRole("textbox", { name: "SQL" });
+    await waitFor(() =>
+      expect(editor).toHaveValue(
+        'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
+      )
+    );
+    fireEvent.change(screen.getByLabelText("Form for this query"), {
+      target: { value: "review-form" },
+    });
+    fireEvent.change(screen.getByLabelText("Aggregate"), {
+      target: { value: "sum" },
+    });
+    fireEvent.change(screen.getByLabelText("Filter field"), {
+      target: { value: "Amount" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Generate aggregate SQL" }),
+    );
+
+    const currentVariable = screen.getByText("filter_value").parentElement;
+    expect(currentVariable).toHaveTextContent("integer");
+    expect(currentVariable).toHaveTextContent("Amount");
+
+    fireEvent.change(screen.getByLabelText("Filter field"), {
+      target: { value: "" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Generate aggregate SQL" }),
+    );
+
+    expect(editor).toHaveValue(
+      'SELECT SUM("column_amount") AS "value" FROM "Review" WHERE "column_amount" = {{filter_value}}',
+    );
+    const proposal = screen.getByRole("region", {
+      name: "Generated SQL preview",
+    });
+    expect(proposal).toHaveTextContent(
+      "Variable filter_value will be removed (integer; description: Amount)",
+    );
+    expect(proposal.querySelector(".ui-text-danger")).toHaveTextContent(
+      '− SELECT SUM("column_amount") AS "value" FROM "Review" WHERE "column_amount" = {{filter_value}}',
+    );
+    expect(proposal.querySelector(".ui-text-success")).toHaveTextContent(
+      '+ SELECT SUM("column_amount") AS "value" FROM "Review"',
+    );
+    expect(screen.getByText("filter_value").parentElement).toHaveTextContent(
+      "integer",
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Use generated SQL" }),
+    );
+
+    expect(editor).toHaveValue(
+      'SELECT SUM("column_amount") AS "value" FROM "Review"',
+    );
+    expect(screen.queryByText("filter_value")).not.toBeInTheDocument();
+    expect(screen.queryByText("integer")).not.toBeInTheDocument();
+  });
+
+  it("discards a proposal when generator settings change", async () => {
+    render(() => <SpaceQueryCreateRoute />);
+    const editor = await screen.findByRole("textbox", { name: "SQL" });
+    await waitFor(() =>
+      expect(editor).toHaveValue(
+        'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
+      )
+    );
+    fireEvent.input(editor, { target: { value: "SELECT 99" } });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Generate SQL from Form" }),
+    );
+    expect(screen.getByRole("region", {
+      name: "Generated SQL preview",
+    })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Form for this query"), {
+      target: { value: "review-form" },
+    });
+
+    expect(editor).toHaveValue("SELECT 99");
+    expect(screen.queryByRole("region", {
+      name: "Generated SQL preview",
+    })).not.toBeInTheDocument();
+  });
+
+  it("locks the reviewed SQL proposal while a save is in flight", async () => {
+    let resolveCreate!: (value: { id: string; revisionId: string }) => void;
+    sqlCreateMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveCreate = resolve;
+      }),
+    );
+    render(() => <SpaceQueryCreateRoute />);
+    const editor = await screen.findByRole("textbox", { name: "SQL" });
+    await waitFor(() =>
+      expect(editor).toHaveValue(
+        'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
+      )
+    );
+    fireEvent.input(editor, { target: { value: "SELECT 99" } });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Generate SQL from Form" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const apply = screen.getByRole("button", { name: "Use generated SQL" });
+    const dismiss = screen.getByRole("button", { name: "Keep current SQL" });
+    await waitFor(() => {
+      expect(apply).toBeDisabled();
+      expect(dismiss).toBeDisabled();
+    });
+    expect(editor).toHaveValue("SELECT 99");
+    resolveCreate({ id: "query-1", revisionId: "rev-1" });
+    await waitFor(() => expect(navigateMock).toHaveBeenCalled());
+  });
+
   it("REQ-FE-063: starts with a Form relation and keeps paging out of SQL", async () => {
     render(() => <SpaceQueryCreateRoute />);
 

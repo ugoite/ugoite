@@ -36,7 +36,7 @@ components:
     - id: query-form-generate-action
       type: button
       label: Generate SQL from Form
-      behavior: replace editor contents with a quoted Form-name starter query
+      behavior: generate a quoted Form-name starter query; when the editor has been edited, show the exact generated SQL for review and apply only after an explicit action
     - id: query-aggregate-operation-select
       type: select
       label: Aggregate
@@ -62,7 +62,15 @@ components:
     - id: query-aggregate-generate-action
       type: button
       label: Generate aggregate SQL
-      behavior: generate one-value ordinary SQL from the selected operation and fields, using a typed parameter when a filter field is selected
+      behavior: generate one-value ordinary SQL from the selected operation and fields, using a typed parameter when a filter field is selected; when the editor has been edited, show the exact generated SQL for review and apply only after an explicit action
+    - id: query-generated-sql-proposal
+      type: conditional-sql-preview
+      visibility: only-when-generated-sql-would-replace-edited-content
+      content: compact current-to-generated SQL line diff; long contiguous changes show exact removed and added line counts, high-edit-distance fallback ranges use an uncounted omission marker, and SQL beyond preview bounds uses a preview-limit marker; each summary allows an optional full generated SQL disclosure
+      actions:
+        - Use generated SQL
+        - Keep current SQL
+      behavior: propose when generated SQL or the set or metadata of SQL variables differs from edited content; mark added and removed SQL lines distinctly and show each added, removed, or changed variable type or description; applying uses the reviewed SQL and its associated variable metadata; keeping current SQL preserves the exact editor content and variable metadata; editor or generator-setting changes dismiss the proposal; both actions are disabled while saving
     - id: query-sql-editor
       type: sql-editor
       behavior: generated SQL remains editable and uses backend-owned SQL column names
