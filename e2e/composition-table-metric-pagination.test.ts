@@ -248,6 +248,10 @@ test.describe("Composition Table and Metric pagination", () => {
 
   test("Table pagination leaves the SQL Metric and typed Input unchanged", async ({ page }) => {
     test.setTimeout(120_000);
+    // This scenario resolves a Form-backed table and Saved SQL metric over
+    // 102 Entries. Keep those async page assertions bounded without using the
+    // five-second default for this larger fixture.
+    const uiExpect = expect.configure({ timeout: 20_000 });
     let metricQueryCount = 0;
     page.on("request", (request) => {
       const url = new URL(request.url());
@@ -269,43 +273,43 @@ test.describe("Composition Table and Metric pagination", () => {
     const link = page.getByRole("link", {
       name: new RegExp(`^${seed.compositionName} Dashboard`),
     });
-    await expect(link).toHaveAttribute("href", path);
+    await uiExpect(link).toHaveAttribute("href", path);
     await link.click();
-    await expect(page).toHaveURL(new RegExp(`${path}$`));
+    await uiExpect(page).toHaveURL(new RegExp(`${path}$`));
 
     const input = page.getByLabel("minimum_amount", { exact: true });
     const metric = page.locator("output.compositionMetric");
     const table = page.getByRole("table");
-    await expect(input).toHaveValue("1");
-    await expect(metric).toHaveText("101");
-    await expect(table.locator("tbody tr")).toHaveCount(100);
-    await expect(table).toContainText("Pager-001");
-    await expect(page.getByRole("button", { name: "Next", exact: true }))
+    await uiExpect(input).toHaveValue("1");
+    await uiExpect(metric).toHaveText("101");
+    await uiExpect(table.locator("tbody tr")).toHaveCount(100);
+    await uiExpect(table).toContainText("Pager-001");
+    await uiExpect(page.getByRole("button", { name: "Next", exact: true }))
       .toBeEnabled();
     const initialMetricQueries = metricQueryCount;
     expect(initialMetricQueries).toBeGreaterThan(0);
 
     await input.fill("0");
-    await expect(metric).toHaveText("102");
-    await expect(table.locator("tbody tr")).toHaveCount(100);
-    await expect(table).toContainText("Pager-000");
+    await uiExpect(metric).toHaveText("102");
+    await uiExpect(table.locator("tbody tr")).toHaveCount(100);
+    await uiExpect(table).toContainText("Pager-000");
     const metricQueriesAfterInputChange = metricQueryCount;
     expect(metricQueriesAfterInputChange).toBeGreaterThan(
       initialMetricQueries,
     );
 
     await page.getByRole("button", { name: "Next", exact: true }).click();
-    await expect(table.locator("tbody tr")).toHaveCount(2);
-    await expect(table).toContainText("Pager-100");
-    await expect(input).toHaveValue("0");
-    await expect(metric).toHaveText("102");
+    await uiExpect(table.locator("tbody tr")).toHaveCount(2);
+    await uiExpect(table).toContainText("Pager-100");
+    await uiExpect(input).toHaveValue("0");
+    await uiExpect(metric).toHaveText("102");
     expect(metricQueryCount).toBe(metricQueriesAfterInputChange);
 
     await page.getByRole("button", { name: "Previous", exact: true }).click();
-    await expect(table.locator("tbody tr")).toHaveCount(100);
-    await expect(table).toContainText("Pager-000");
-    await expect(input).toHaveValue("0");
-    await expect(metric).toHaveText("102");
+    await uiExpect(table.locator("tbody tr")).toHaveCount(100);
+    await uiExpect(table).toContainText("Pager-000");
+    await uiExpect(input).toHaveValue("0");
+    await uiExpect(metric).toHaveText("102");
     expect(metricQueryCount).toBe(metricQueriesAfterInputChange);
   });
 });
