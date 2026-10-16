@@ -77,8 +77,8 @@ The steady state has no introductory paragraphs, duplicate SQL-type labels,
 revision banners, decorative cards, or persistent save-status summaries. Show
 only the SQL list, the selected Workspace, typed inputs when declared, and the
 current query result. The primary Save action keeps a visible text label.
-Secondary Columns, Filter, Sort, Structure, and Variables actions may use
-icons; each icon-only action has an accessible name, visible focus, and a
-44px-or-larger target. Dialog options use concise text names. At 320px, 375px,
-and 390px viewport widths, the Composition source drawer supports keyboard
-navigation, Escape close, and focus restoration.
+Columns, Filter, Sort, Structure, and Variables actions follow the shared
+Workspace controls in [`sql-workspace.yaml`](sql-workspace.yaml). Dialog options
+use concise text names. At 320px, 375px, and 390px viewport widths, the
+Composition source drawer supports keyboard navigation, Escape close, and
+focus restoration.
