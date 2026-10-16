@@ -599,9 +599,9 @@ export default function SpaceQueryCreateRoute() {
         <SQLWorkspace
           id="new-sql-workspace"
           sql={sqlInput()}
-          onSqlChange={(value) => {
+          onSqlChange={(value, userInitiated = false) => {
             setReplacementProposal(null);
-            setHasUserEditedSql(true);
+            if (userInitiated) setHasUserEditedSql(true);
             setSqlInput(value);
           }}
           actions={structureActions()}

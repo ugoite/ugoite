@@ -43,7 +43,7 @@ vi.mock("~/components/SQLWorkspace", () => ({
   SQLWorkspace: (props: {
     id?: string;
     sql: string;
-    onSqlChange?: (value: string) => void;
+    onSqlChange?: (value: string, userInitiated?: boolean) => void;
     onPreview: () => void;
     onDiagnostics?: (
       diagnostics: Array<{
@@ -75,7 +75,7 @@ vi.mock("~/components/SQLWorkspace", () => ({
           value={props.sql}
           onInput={(event) => {
             const value = event.currentTarget.value;
-            props.onSqlChange?.(value);
+            props.onSqlChange?.(value, true);
             emitBackendDiagnostic(value);
           }}
         />

@@ -12,6 +12,7 @@ const codeMirrorViewMocks = vi.hoisted(() => ({
   })),
   editableOf: vi.fn((value: boolean) => ({ type: "editable", value })),
   lineWrapping: { type: "lineWrapping" },
+  dispatchUserEdit: vi.fn(),
 }));
 
 vi.mock("@codemirror/autocomplete", () => ({
@@ -98,7 +99,11 @@ vi.mock("@codemirror/view", () => {
         extensions?: unknown[];
       };
       listeners: Array<
-        (update: { docChanged: boolean; state: typeof this.state }) => void
+        (update: {
+          docChanged: boolean;
+          state: typeof this.state;
+          transactions: Array<{ isUserEvent: (event: string) => boolean }>;
+        }) => void
       >;
 
       constructor({
@@ -156,6 +161,15 @@ vi.mock("@codemirror/view", () => {
           )
           .map((extension) => extension.listener);
 
+        codeMirrorViewMocks.dispatchUserEdit.mockImplementation(
+          (insert: string, userEvent: string) => {
+            this.dispatch({
+              changes: { from: 0, to: this.state.doc.length, insert },
+              userEvent,
+            });
+          },
+        );
+
         for (const extension of state.extensions ?? []) {
           if (
             typeof extension === "object" &&
@@ -172,9 +186,11 @@ vi.mock("@codemirror/view", () => {
 
       dispatch({
         changes,
+        userEvent,
       }: {
         changes?: { from: number; to: number; insert: string };
         effects?: unknown;
+        userEvent?: string;
       }) {
         if (changes) {
           const nextValue = changes.insert;
@@ -186,7 +202,14 @@ vi.mock("@codemirror/view", () => {
             extensions: this.state.extensions,
           };
           for (const listener of this.listeners) {
-            listener({ docChanged: true, state: this.state });
+            listener({
+              docChanged: true,
+              state: this.state,
+              transactions: [{
+                isUserEvent: (event) => userEvent === event ||
+                  userEvent?.startsWith(`${event}.`) === true,
+              }],
+            });
           }
         }
       }
@@ -261,7 +284,7 @@ describe("REQ-FE-036: SQL Query Editor", () => {
     result.unmount();
   });
 
-  it("propagates editor updates through the change listener", async () => {
+  it("distinguishes controlled SQL changes from user edits", async () => {
     const [value, setValue] = createSignal(
       'SELECT * FROM "form_00000000000000000000000000000001"',
     );
@@ -275,15 +298,26 @@ describe("REQ-FE-036: SQL Query Editor", () => {
       />
     ));
 
-    setValue(
-      'SELECT _ugoite_id FROM "form_00000000000000000000000000000001"',
-    );
+    setValue("SELECT 2");
 
     await waitFor(() => {
       expect(onChange).toHaveBeenCalledWith(
-        'SELECT _ugoite_id FROM "form_00000000000000000000000000000001"',
+        "SELECT 2",
+        false,
       );
     });
+
+    codeMirrorViewMocks.dispatchUserEdit("SELECT 3", "input.type");
+    expect(onChange).toHaveBeenLastCalledWith("SELECT 3", true);
+
+    codeMirrorViewMocks.dispatchUserEdit("SELECT 4", "undo");
+    expect(onChange).toHaveBeenLastCalledWith("SELECT 4", true);
+
+    codeMirrorViewMocks.dispatchUserEdit("SELECT 5", "delete.backward");
+    expect(onChange).toHaveBeenLastCalledWith("SELECT 5", true);
+
+    codeMirrorViewMocks.dispatchUserEdit("SELECT 6", "move.drop");
+    expect(onChange).toHaveBeenLastCalledWith("SELECT 6", true);
 
     result.unmount();
   });
