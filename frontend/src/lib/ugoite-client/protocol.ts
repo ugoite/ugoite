@@ -279,10 +279,33 @@ export type SqlStructureSort = {
   direction: "asc" | "desc";
 };
 
+export type SqlStructureAggregateFunction =
+  | "count"
+  | "sum"
+  | "avg"
+  | "min"
+  | "max";
+
+export type SqlStructureAlias = {
+  name: string;
+  quoted: boolean;
+};
+
+export type SqlStructureAggregate = {
+  function: SqlStructureAggregateFunction;
+  /** Omitted only for COUNT(*). */
+  column?: string;
+  distinct: boolean;
+  alias?: SqlStructureAlias;
+};
+
 export type SqlStructureOperation =
   | { kind: "set_columns"; columns: string[] }
   | { kind: "set_filters"; filters: SqlStructureFilter[] }
-  | { kind: "set_sort"; order_by: SqlStructureSort[] };
+  | { kind: "set_sort"; order_by: SqlStructureSort[] }
+  | { kind: "set_aggregates"; aggregates: SqlStructureAggregate[] }
+  | { kind: "set_group_by"; columns: string[] }
+  | { kind: "set_distinct"; distinct: boolean };
 
 export type SqlStructureReason =
   | "invalid_context"
@@ -309,6 +332,10 @@ export type SqlStructureReason =
   | "stable_key_unavailable"
   | "stable_key_unorderable"
   | "stable_order_required"
+  | "aggregate_unsupported"
+  | "aggregate_type_unsupported"
+  | "group_by_unsupported"
+  | "distinct_unsupported"
   | "round_trip_failed";
 
 export type SqlStructureActionCapability = {
@@ -322,6 +349,9 @@ export type SqlStructureAnalysis = {
   reason?: SqlStructureReason;
   projection: string[];
   filters: SqlStructureFilter[];
+  aggregates: SqlStructureAggregate[];
+  group_by: string[];
+  distinct: boolean;
   order_by: SqlStructureSort[];
   referenced_variables: string[];
   stable_pagination: boolean;
@@ -329,6 +359,9 @@ export type SqlStructureAnalysis = {
     columns: SqlStructureActionCapability;
     filter: SqlStructureActionCapability;
     sort: SqlStructureActionCapability;
+    aggregate: SqlStructureActionCapability;
+    group_by: SqlStructureActionCapability;
+    distinct: SqlStructureActionCapability;
     stable_pagination: SqlStructureActionCapability;
   };
 };
@@ -368,7 +401,9 @@ export type CompositionVariableInputParseResult<
   | { status: "invalid" };
 
 /** Load the canonical parser before rendering interactive Composition Inputs. */
-export const prepareCompositionVariableInputParser = async (): Promise<void> => {
+export const prepareCompositionVariableInputParser = async (): Promise<
+  void
+> => {
   await loadExports();
 };
 

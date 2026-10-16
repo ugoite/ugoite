@@ -129,7 +129,11 @@ async function main(): Promise<void> {
   const proposed = proposal.value as Record<string, unknown>;
   assertEqual(proposed.status, "supported", "proposal status");
   assertEqual(proposed.base_sql, sql, "proposal source preservation");
-  assertEqual(proposed.requires_confirmation, true, "explicit diff confirmation");
+  assertEqual(
+    proposed.requires_confirmation,
+    true,
+    "explicit diff confirmation",
+  );
   const proposedSql = String(proposed.proposed_sql);
   if (!proposedSql.includes('"amount" >= $minimum')) {
     throw new Error(`Typed filter parameter was not preserved: ${proposedSql}`);
@@ -151,7 +155,125 @@ async function main(): Promise<void> {
   if (!sortedSql.includes('"_ugoite_id" ASC')) {
     throw new Error(`Stable tie-breaker was not appended: ${sortedSql}`);
   }
-  assertEqual(sortedProposal.requires_confirmation, true, "sort diff confirmation");
+  assertEqual(
+    sortedProposal.requires_confirmation,
+    true,
+    "sort diff confirmation",
+  );
+
+  const aggregateSql =
+    'SELECT DISTINCT "title", COUNT(DISTINCT "amount") AS unique_count FROM "Task" GROUP BY "title"';
+  const aggregateAnalysis = await invokeWasm(instance.exports, {
+    action: "domain.analyze_sql_structure",
+    value: { sql: aggregateSql, context },
+  });
+  const aggregateValue = aggregateAnalysis.value as Record<string, unknown>;
+  assertEqual(
+    aggregateValue.status,
+    "supported",
+    "aggregate/group analysis status",
+  );
+  assertEqual(aggregateValue.distinct, true, "SELECT DISTINCT analysis");
+  assertEqual(
+    JSON.stringify(aggregateValue.group_by),
+    JSON.stringify(["title"]),
+    "GROUP BY analysis",
+  );
+  const aggregates = aggregateValue.aggregates as Record<string, unknown>[];
+  assertEqual(aggregates.length, 1, "aggregate count");
+  assertEqual(aggregates[0].function, "count", "aggregate function");
+  assertEqual(aggregates[0].column, "amount", "aggregate column");
+  assertEqual(aggregates[0].distinct, true, "DISTINCT aggregate");
+  const alias = aggregates[0].alias as Record<string, unknown>;
+  assertEqual(alias.name, "unique_count", "aggregate alias");
+  assertEqual(alias.quoted, false, "aggregate alias quoting");
+
+  const groupedAggregate = await invokeWasm(instance.exports, {
+    action: "domain.propose_sql_structure_operation",
+    value: {
+      sql: 'SELECT "title" FROM "Task" GROUP BY "title"',
+      context,
+      operation: {
+        kind: "set_aggregates",
+        aggregates: [{
+          function: "sum",
+          column: "amount",
+          distinct: true,
+          alias: { name: "total", quoted: true },
+        }],
+      },
+    },
+  });
+  const aggregateProposal = groupedAggregate.value as Record<string, unknown>;
+  assertEqual(
+    aggregateProposal.status,
+    "supported",
+    "aggregate proposal status",
+  );
+  if (
+    !String(aggregateProposal.proposed_sql).includes(
+      'SUM(DISTINCT "amount") AS "total"',
+    )
+  ) {
+    throw new Error(
+      `DISTINCT aggregate rewrite was not preserved: ${aggregateProposal.proposed_sql}`,
+    );
+  }
+
+  const selectDistinct = await invokeWasm(instance.exports, {
+    action: "domain.propose_sql_structure_operation",
+    value: {
+      sql: 'SELECT "title" FROM "Task"',
+      context,
+      operation: { kind: "set_distinct", distinct: true },
+    },
+  });
+  const distinctProposal = selectDistinct.value as Record<string, unknown>;
+  assertEqual(
+    distinctProposal.status,
+    "supported",
+    "SELECT DISTINCT proposal status",
+  );
+  if (!String(distinctProposal.proposed_sql).startsWith("SELECT DISTINCT")) {
+    throw new Error(
+      `SELECT DISTINCT rewrite was not emitted: ${distinctProposal.proposed_sql}`,
+    );
+  }
+
+  const incompatibleDistinctSql =
+    'SELECT "title" FROM "Task" ORDER BY "_ugoite_id"';
+  const incompatibleDistinct = await invokeWasm(instance.exports, {
+    action: "domain.propose_sql_structure_operation",
+    value: {
+      sql: incompatibleDistinctSql,
+      context,
+      operation: { kind: "set_distinct", distinct: true },
+    },
+  });
+  const rejectedDistinct = incompatibleDistinct.value as Record<
+    string,
+    unknown
+  >;
+  assertEqual(
+    rejectedDistinct.status,
+    "unsupported",
+    "incompatible SELECT DISTINCT proposal status",
+  );
+  assertEqual(
+    rejectedDistinct.reason,
+    "distinct_unsupported",
+    "incompatible SELECT DISTINCT reason",
+  );
+  assertEqual(
+    rejectedDistinct.base_sql,
+    incompatibleDistinctSql,
+    "incompatible SELECT DISTINCT source preservation",
+  );
+  assertEqual(
+    rejectedDistinct.proposed_sql,
+    undefined,
+    "incompatible SELECT DISTINCT proposal omission",
+  );
 
   const unsupported = await invokeWasm(instance.exports, {
     action: "domain.analyze_sql_structure",
