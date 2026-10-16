@@ -304,17 +304,21 @@ requirements:
           exactly matches its declared SQL variable type and is validated by
           the shared typed-value rules. Authoring and preview may initialize
           transient input state from that value, but every SQL execution still
-          requires explicit parameter values. When the request selects a Saved
-          SQL revision, its variable declarations provide missing parameter
-          types; any supplied parameter_types must match those declarations.
-          The SQL request contract does not apply defaults implicitly. An
-          absent default means no initial value.
+          requires explicit parameter values. The SQL request contract does
+          not apply defaults implicitly. An absent default means no initial
+          value.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: saved-revision-parameter-types
+        kind: behavior
+        statement: >-
+          The `sql saved run` command uses the selected revision's variable
+          declarations for parameter types omitted from the request.
         governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
     bindings:
       - id: typed-variable-default-verification
         role: verification
         facet: verification
-        responsibility: Verify typed default persistence on Saved SQL revisions, CLI roundtrip, shared type validation, and explicit SQL parameter binding.
+        responsibility: Verify typed default persistence on Saved SQL revisions, CLI roundtrip, shared type validation, explicit SQL parameter binding, and selected-revision parameter type resolution.
         targets:
           - id: persistence-case
             adapter: rust
@@ -338,6 +342,15 @@ requirements:
                 criterion: REQ-API-020#criterion.typed-variable-default
                 covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_saved_sql, test: saved_sql_variable_defaults_round_trip } }
+          - id: selected-revision-parameter-types
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_sql_stateless_cli.rs
+            selector: { kind: test, name: cli_saved_sql_run_resolves_types_from_the_selected_revision }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-020#criterion.saved-revision-parameter-types
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_sql_stateless_cli, test: cli_saved_sql_run_resolves_types_from_the_selected_revision } }
           - id: typed-value-validation
             adapter: rust
             path: crates/ugoite-iceberg/src/saved_sql.rs

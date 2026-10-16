@@ -469,6 +469,8 @@ features:
               - kind: satisfies
                 criterion: REQ-API-020#criterion.typed-variable-default
               - kind: satisfies
+                criterion: REQ-API-020#criterion.saved-revision-parameter-types
+              - kind: satisfies
                 criterion: REQ-API-015#criterion.canonical-sql-page
               - kind: satisfies
                 criterion: REQ-API-015#criterion.canonical-sql-count
