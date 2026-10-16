@@ -422,6 +422,14 @@ fn parse_supported_sql(
         .map(|order_by| parse_order_by(order_by, context))
         .transpose()?
         .unwrap_or_default();
+    validate_order_by_semantics(
+        query.order_by.as_ref(),
+        select,
+        &aggregates,
+        &group_by,
+        distinct,
+        context,
+    )?;
 
     let referenced_variables = filters
         .iter()
@@ -899,6 +907,89 @@ fn parse_order_by(
             })
         })
         .collect()
+}
+
+fn validate_order_by_semantics(
+    order_by: Option<&OrderBy>,
+    select: &Select,
+    aggregates: &[SqlStructureAggregate],
+    group_by: &[String],
+    distinct: bool,
+    context: &SqlStructureContext,
+) -> Result<(), SqlStructureReason> {
+    let Some(order_by) = order_by else {
+        return Ok(());
+    };
+    let OrderByKind::Expressions(expressions) = &order_by.kind else {
+        return Err(SqlStructureReason::SortUnsupported);
+    };
+
+    let wildcard_projection = select.projection.len() == 1
+        && matches!(&select.projection[0], SelectItem::Wildcard(options)
+            if options.opt_ilike.is_none()
+                && options.opt_exclude.is_none()
+                && options.opt_except.is_none()
+                && options.opt_replace.is_none()
+                && options.opt_rename.is_none()
+                && options.opt_alias.is_none());
+
+    for expression in expressions {
+        let Expr::Identifier(identifier) = &expression.expr else {
+            return Err(SqlStructureReason::SortUnsupported);
+        };
+        let is_aggregate_alias = aggregates.iter().any(|aggregate| {
+            aggregate
+                .alias
+                .as_ref()
+                .is_some_and(|alias| identifier_matches_alias(identifier, alias))
+        });
+        if distinct {
+            let selected = wildcard_projection
+                || is_aggregate_alias
+                || select.projection.iter().any(|item| match item {
+                    SelectItem::UnnamedExpr(Expr::Identifier(projected)) => {
+                        identifiers_resolve_same(identifier, projected)
+                    }
+                    SelectItem::ExprWithAlias { alias, .. } => {
+                        identifiers_resolve_same(identifier, alias)
+                    }
+                    _ => false,
+                });
+            if !selected {
+                return Err(SqlStructureReason::DistinctUnsupported);
+            }
+        } else if !aggregates.is_empty() || !group_by.is_empty() {
+            if is_aggregate_alias {
+                continue;
+            }
+            let column = find_column_by_ident(context, identifier)
+                .ok_or(SqlStructureReason::UnknownColumn)?;
+            if !group_by.iter().any(|group| group == &column.name) {
+                return Err(SqlStructureReason::SortUnsupported);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn identifier_matches_alias(identifier: &Ident, alias: &SqlStructureAlias) -> bool {
+    let alias = if alias.quoted {
+        Ident::with_quote('"', alias.name.clone())
+    } else {
+        Ident::new(alias.name.clone())
+    };
+    identifiers_resolve_same(identifier, &alias)
+}
+
+fn identifiers_resolve_same(left: &Ident, right: &Ident) -> bool {
+    let resolved_name = |identifier: &Ident| {
+        if identifier.quote_style.is_some() {
+            identifier.value.clone()
+        } else {
+            identifier.value.to_ascii_lowercase()
+        }
+    };
+    resolved_name(left) == resolved_name(right)
 }
 
 fn filter_operator_from_binary(operator: &BinaryOperator) -> Option<SqlStructureFilterOperator> {
@@ -1904,6 +1995,18 @@ mod tests {
                 "SELECT DISTINCT ON (\"field_101\") \"field_101\" FROM \"Task\"",
                 SqlStructureReason::DistinctUnsupported,
             ),
+            (
+                "SELECT DISTINCT \"field_101\" FROM \"Task\" ORDER BY \"_ugoite_id\"",
+                SqlStructureReason::DistinctUnsupported,
+            ),
+            (
+                "SELECT \"field_101\", COUNT(*) FROM \"Task\" GROUP BY \"field_101\" ORDER BY \"field_102\"",
+                SqlStructureReason::SortUnsupported,
+            ),
+            (
+                "SELECT SUM(\"field_102\") FROM \"Task\" ORDER BY \"field_101\"",
+                SqlStructureReason::SortUnsupported,
+            ),
         ] {
             let result = analyze_sql_structure(sql, &context());
             assert_eq!(result.status, SqlStructureStatus::Unsupported, "{sql}");
@@ -1934,6 +2037,20 @@ mod tests {
         );
         assert_eq!(rejected.status, SqlStructureStatus::Unsupported);
         assert_eq!(rejected.base_sql, unsupported_sql);
+        assert!(rejected.proposed_sql.is_none());
+
+        let incompatible_distinct = "SELECT \"field_101\" FROM \"Task\" ORDER BY \"_ugoite_id\"";
+        let rejected = propose_sql_structure_operation(
+            incompatible_distinct,
+            &context(),
+            SqlStructureOperation::SetDistinct { distinct: true },
+        );
+        assert_eq!(rejected.status, SqlStructureStatus::Unsupported);
+        assert_eq!(
+            rejected.reason,
+            Some(SqlStructureReason::DistinctUnsupported)
+        );
+        assert_eq!(rejected.base_sql, incompatible_distinct);
         assert!(rejected.proposed_sql.is_none());
     }
 

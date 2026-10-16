@@ -240,6 +240,41 @@ async function main(): Promise<void> {
     );
   }
 
+  const incompatibleDistinctSql =
+    'SELECT "title" FROM "Task" ORDER BY "_ugoite_id"';
+  const incompatibleDistinct = await invokeWasm(instance.exports, {
+    action: "domain.propose_sql_structure_operation",
+    value: {
+      sql: incompatibleDistinctSql,
+      context,
+      operation: { kind: "set_distinct", distinct: true },
+    },
+  });
+  const rejectedDistinct = incompatibleDistinct.value as Record<
+    string,
+    unknown
+  >;
+  assertEqual(
+    rejectedDistinct.status,
+    "unsupported",
+    "incompatible SELECT DISTINCT proposal status",
+  );
+  assertEqual(
+    rejectedDistinct.reason,
+    "distinct_unsupported",
+    "incompatible SELECT DISTINCT reason",
+  );
+  assertEqual(
+    rejectedDistinct.base_sql,
+    incompatibleDistinctSql,
+    "incompatible SELECT DISTINCT source preservation",
+  );
+  assertEqual(
+    rejectedDistinct.proposed_sql,
+    undefined,
+    "incompatible SELECT DISTINCT proposal omission",
+  );
+
   const unsupported = await invokeWasm(instance.exports, {
     action: "domain.analyze_sql_structure",
     value: {
