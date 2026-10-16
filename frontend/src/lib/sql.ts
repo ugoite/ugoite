@@ -34,7 +34,9 @@ function quoteSqlIdentifier(value: string): string {
 
 /** Build an initial relation query with stable ordering and request paging. */
 export function buildSqlStarterQuery(sqlRelation: string): string {
-  return `SELECT * FROM ${quoteSqlIdentifier(sqlRelation)} ORDER BY _ugoite_updated_at DESC, _ugoite_id`;
+  return `SELECT * FROM ${
+    quoteSqlIdentifier(sqlRelation)
+  } ORDER BY _ugoite_updated_at DESC, _ugoite_id`;
 }
 
 export type SqlAggregateOperation =
@@ -469,7 +471,11 @@ export function parseSqlVariableDefault(
         !/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(raw)
       ) return { valid: false };
       const value = Number(raw);
-      return Number.isFinite(value) ? { valid: true, value } : { valid: false };
+      const significand = raw.split(/[eE]/, 1)[0];
+      const underflowed = value === 0 && /[1-9]/.test(significand);
+      return Number.isFinite(value) && !underflowed
+        ? { valid: true, value }
+        : { valid: false };
     }
     case "date":
       return isValidSqlVariableDate(raw)

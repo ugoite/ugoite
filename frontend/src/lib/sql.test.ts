@@ -424,6 +424,17 @@ describe("sql helpers", () => {
       valid: true,
       value: -7,
     });
+    expect(parseSqlVariableDefault("float", "1e-324")).toEqual({
+      valid: false,
+    });
+    expect(parseSqlVariableDefault("float", "0e-324")).toEqual({
+      valid: true,
+      value: 0,
+    });
+    expect(parseSqlVariableDefault("float", "-0.000e-324")).toEqual({
+      valid: true,
+      value: -0,
+    });
     expect(parseSqlVariableDefault("date", "2026-02-28")).toEqual({
       valid: true,
       value: "2026-02-28",

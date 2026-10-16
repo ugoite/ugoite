@@ -8,7 +8,7 @@ import type {
 } from "~/components/SQLWorkspace";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { t } from "~/lib/i18n";
-import { normalizeSqlVariables } from "~/lib/sql";
+import { normalizeSqlVariables, parseSqlVariableDefault } from "~/lib/sql";
 import type { SqlQueryPage, SqlVariable } from "~/lib/types";
 import { sqlApi } from "~/lib/ugoite-client";
 
@@ -87,7 +87,22 @@ function parseParameter(
   raw: string,
   useDefault: boolean,
 ): unknown {
-  if (useDefault && variable.default !== undefined) return variable.default;
+  if (useDefault && variable.default !== undefined) {
+    if (
+      variable.type === "integer" &&
+      !Number.isSafeInteger(variable.default)
+    ) {
+      throw new Error(t("sqlPage.numberRequired", { name: variable.name }));
+    }
+    if (
+      variable.type === "float" &&
+      (typeof variable.default !== "number" ||
+        !Number.isFinite(variable.default))
+    ) {
+      throw new Error(t("sqlPage.numberRequired", { name: variable.name }));
+    }
+    return variable.default;
+  }
   if (raw === "") return null;
 
   if (variable.type === "boolean") {
@@ -96,14 +111,11 @@ function parseParameter(
     throw new Error(t("sqlPage.booleanRequired", { name: variable.name }));
   }
   if (variable.type === "integer" || variable.type === "float") {
-    const value = Number(raw);
-    if (
-      !Number.isFinite(value) ||
-      (variable.type === "integer" && !Number.isInteger(value))
-    ) {
+    const parsed = parseSqlVariableDefault(variable.type, raw);
+    if (!parsed.valid || typeof parsed.value !== "number") {
       throw new Error(t("sqlPage.numberRequired", { name: variable.name }));
     }
-    return value;
+    return parsed.value;
   }
   return raw;
 }

@@ -326,6 +326,30 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     count.mockRestore();
   });
 
+  it("rejects integer parameters that JavaScript cannot represent exactly", async () => {
+    seedSqlEntry("default", {
+      id: "saved-query",
+      name: "Runnable Query",
+      kind: "user-query",
+      sql: "SELECT * FROM records WHERE id = $id",
+      variables: [{ type: "integer", name: "id", description: "Entry ID" }],
+      created_at: "2025-03-01T00:00:00Z",
+      updated_at: "2025-03-02T00:00:00Z",
+      revision_id: "rev-1",
+    });
+    const query = vi.spyOn(sqlApi, "query");
+
+    render(() => <SpaceSqlDetailRoute />);
+    fireEvent.input(await screen.findByRole("textbox", { name: "id" }), {
+      target: { value: "9007199254740993" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Run Query" }));
+
+    await waitFor(() => expect(screen.getByText("error")).toBeInTheDocument());
+    expect(query).not.toHaveBeenCalled();
+    query.mockRestore();
+  });
+
   it("previews API-projected typed defaults without adding transient values", async () => {
     seedSqlEntry("default", {
       id: "saved-query",
