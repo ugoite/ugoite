@@ -304,9 +304,11 @@ requirements:
           exactly matches its declared SQL variable type and is validated by
           the shared typed-value rules. Authoring and preview may initialize
           transient input state from that value, but every SQL execution still
-          sends explicit parameters and parameter_types; the SQL request
-          contract does not apply defaults implicitly. An absent default means
-          no initial value.
+          requires explicit parameter values. When the request selects a Saved
+          SQL revision, its variable declarations provide missing parameter
+          types; any supplied parameter_types must match those declarations.
+          The SQL request contract does not apply defaults implicitly. An
+          absent default means no initial value.
         governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
     bindings:
       - id: typed-variable-default-verification
