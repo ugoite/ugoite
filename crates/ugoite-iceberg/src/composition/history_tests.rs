@@ -5,8 +5,8 @@ use ugoite_domain::entry::{EntryOperation, EntryRevisionDraft};
 use ugoite_domain::id::RevisionId;
 use uuid::Uuid;
 
-const MONTHLY_EXPENSE: &str =
-    include_str!("../../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml");
+const SQL_FIRST_COMPOSITION: &str =
+    include_str!("../../tests/fixtures/composition-sql-first.ugcomp.yaml");
 
 #[tokio::test]
 async fn authorized_composition_history_pages_and_exact_reads_reach_revisions_after_read_cap(
@@ -20,7 +20,7 @@ async fn authorized_composition_history_pages_and_exact_reads_reach_revisions_af
         .create_space_for_principal("composition-history-pages", owner, "Owner")
         .await?
         .to_string();
-    let document = parse_composition_yaml(MONTHLY_EXPENSE)
+    let document = parse_composition_yaml(SQL_FIRST_COMPOSITION)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
     let saved = service
         .save_composition_authorized_for_principals(

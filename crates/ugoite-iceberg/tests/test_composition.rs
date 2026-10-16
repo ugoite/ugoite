@@ -4,6 +4,7 @@ use anyhow::Context;
 use chrono::Utc;
 use common::{seed_preexisting_form, setup_operator};
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::composition::parse_composition_yaml;
 use ugoite_domain::id::{EntryId, RevisionId};
@@ -14,8 +15,7 @@ use ugoite_iceberg::service::UgoiteService;
 use ugoite_iceberg::{composition, form, iceberg_store, space};
 use uuid::Uuid;
 
-const MONTHLY_EXPENSE: &str =
-    include_str!("../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml");
+const SQL_FIRST_COMPOSITION: &str = include_str!("fixtures/composition-sql-first.ugcomp.yaml");
 
 fn registry_form_definition(extension_metadata: Value, fields: Value) -> Value {
     json!({
@@ -85,9 +85,8 @@ async fn composition_save_persists_canonical_carrier_and_receipt() -> anyhow::Re
         .create_space_for_principal("composition-save-create", owner, "Owner")
         .await?
         .to_string();
-    let mut document = parse_composition_yaml(MONTHLY_EXPENSE)
+    let document = parse_composition_yaml(SQL_FIRST_COMPOSITION)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
-    document.tags = vec!["dashboard".to_string(), "finance".to_string()];
 
     let saved = service
         .save_composition_authorized_for_principals(
@@ -117,8 +116,6 @@ async fn composition_save_persists_canonical_carrier_and_receipt() -> anyhow::Re
     assert_eq!(raw.fields["kind"], json!("dashboard"));
     assert_eq!(raw.fields["format_version"], json!(1));
     assert_eq!(raw.fields["spec"], json!(saved.canonical_yaml));
-    assert_eq!(saved.document.tags, ["dashboard", "finance"]);
-    assert_eq!(raw.revision.entry.tags, saved.document.tags);
     assert_eq!(raw.revision.revision_id, saved.revision_id);
     Ok(())
 }
@@ -133,7 +130,7 @@ async fn composition_save_replays_the_original_create_and_update_after_response_
         .create_space_for_principal("composition-save-idempotency", owner, "Owner")
         .await?
         .to_string();
-    let original = parse_composition_yaml(MONTHLY_EXPENSE)
+    let original = parse_composition_yaml(SQL_FIRST_COMPOSITION)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
     let create_request = || composition::CompositionSaveRequest {
         entry_id: None,
@@ -289,7 +286,7 @@ async fn composition_save_keeps_stable_receipt_when_recovering_pre_head_publicat
         .create_space_for_principal("composition-save-pre-head-recovery", owner, "Owner")
         .await?
         .to_string();
-    let document = parse_composition_yaml(MONTHLY_EXPENSE)
+    let document = parse_composition_yaml(SQL_FIRST_COMPOSITION)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
     let created = service
         .save_composition_local_with_operation_id(
@@ -386,7 +383,7 @@ async fn concurrent_composition_save_retries_share_one_publication() -> anyhow::
         .create_space_for_principal("composition-save-idempotency-race", owner, "Owner")
         .await?
         .to_string();
-    let document = parse_composition_yaml(MONTHLY_EXPENSE)
+    let document = parse_composition_yaml(SQL_FIRST_COMPOSITION)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
     let left_request = composition::CompositionSaveRequest {
         entry_id: None,
@@ -543,7 +540,7 @@ async fn composition_save_rechecks_authorization_when_replaying_a_committed_oper
             SpaceRole::Editor,
         )
         .await?;
-    let document = parse_composition_yaml(MONTHLY_EXPENSE)
+    let document = parse_composition_yaml(SQL_FIRST_COMPOSITION)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
     let request = || composition::CompositionSaveRequest {
         entry_id: None,
@@ -625,7 +622,7 @@ async fn denied_composition_create_and_update_have_no_storage_side_effects() -> 
             SpaceRole::Viewer,
         )
         .await?;
-    let document = parse_composition_yaml(MONTHLY_EXPENSE)
+    let document = parse_composition_yaml(SQL_FIRST_COMPOSITION)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
 
     let denied_create = service
@@ -669,7 +666,7 @@ async fn denied_composition_create_and_update_have_no_storage_side_effects() -> 
             &[owner],
         )
         .await?;
-    let mut changed = document;
+    let mut changed = created.document.clone();
     changed.name.push_str(" (denied update)");
     let denied_update = service
         .save_composition_authorized_for_principals(
@@ -715,7 +712,7 @@ async fn invalid_composition_save_does_not_create_registry() -> anyhow::Result<(
         .create_space_for_principal("composition-save-invalid", owner, "Owner")
         .await?
         .to_string();
-    let mut document = parse_composition_yaml(MONTHLY_EXPENSE)
+    let mut document = parse_composition_yaml(SQL_FIRST_COMPOSITION)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
     document.format_version = 99;
 
@@ -740,9 +737,11 @@ async fn invalid_composition_save_does_not_create_registry() -> anyhow::Result<(
         .await?
         .list_forms()
         .await?;
-    assert!(forms.iter().all(|form| !form
-        .name
-        .eq_ignore_ascii_case(composition::COMPOSITION_REGISTRY_FORM_NAME)));
+    assert!(forms.iter().all(|form| {
+        !form
+            .name
+            .eq_ignore_ascii_case(composition::COMPOSITION_REGISTRY_FORM_NAME)
+    }));
     Ok(())
 }
 
@@ -757,9 +756,8 @@ async fn composition_update_requires_exact_base_and_reports_stale_revision() -> 
         .create_space_for_principal("composition-save-update", owner, "Owner")
         .await?
         .to_string();
-    let mut document = parse_composition_yaml(MONTHLY_EXPENSE)
+    let document = parse_composition_yaml(SQL_FIRST_COMPOSITION)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
-    document.tags = vec!["original".to_string()];
     let created = service
         .save_composition_authorized_for_principals(
             &space_id,
@@ -773,9 +771,8 @@ async fn composition_update_requires_exact_base_and_reports_stale_revision() -> 
         )
         .await?;
 
-    let mut changed = document;
+    let mut changed = created.document.clone();
     changed.name = "Monthly expenses updated".to_string();
-    changed.tags = vec!["updated".to_string()];
     let updated = service
         .save_composition_authorized_for_principals(
             &space_id,
@@ -791,6 +788,16 @@ async fn composition_update_requires_exact_base_and_reports_stale_revision() -> 
     assert_eq!(updated.entry_id, created.entry_id);
     assert_ne!(updated.revision_id, created.revision_id);
     assert_eq!(updated.document, changed);
+    assert!(matches!(
+        &updated.document.spec.sources[0],
+        ugoite_domain::composition::CompositionSource::InlineSql {
+            expected_result,
+            schema_fingerprint,
+            ..
+        } if expected_result.len() == 1
+            && expected_result[0].name == "total"
+            && schema_fingerprint.len() == 64
+    ));
     let current = service
         .get_composition_raw_authorized_for_principals(
             &space_id,
@@ -798,7 +805,7 @@ async fn composition_update_requires_exact_base_and_reports_stale_revision() -> 
             &[owner],
         )
         .await?;
-    assert_eq!(current.revision.entry.tags, changed.tags);
+    assert_eq!(current.revision.revision_id, updated.revision_id);
 
     let stale = service
         .save_composition_authorized_for_principals(
@@ -894,9 +901,8 @@ async fn composition_restore_appends_exact_historical_revision_with_receipt() ->
         .create_space_for_principal("composition-restore-authorized", owner, "Owner")
         .await?
         .to_string();
-    let mut original = parse_composition_yaml(MONTHLY_EXPENSE)
+    let original = parse_composition_yaml(SQL_FIRST_COMPOSITION)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
-    original.tags = vec!["original".to_string()];
     let created = service
         .save_composition_authorized_for_principals(
             &space_id,
@@ -909,9 +915,8 @@ async fn composition_restore_appends_exact_historical_revision_with_receipt() ->
             &[owner],
         )
         .await?;
-    let mut changed = original.clone();
+    let mut changed = created.document.clone();
     changed.name = "Changed after original".to_string();
-    changed.tags = vec!["changed".to_string()];
     let updated = service
         .save_composition_authorized_for_principals(
             &space_id,
@@ -938,7 +943,7 @@ async fn composition_restore_appends_exact_historical_revision_with_receipt() ->
     assert_eq!(restored.entry_id, created.entry_id);
     assert_ne!(restored.revision_id, created.revision_id);
     assert_eq!(restored.restored_from_revision_id, created.revision_id);
-    assert_eq!(restored.document, original);
+    assert_eq!(restored.document, created.document);
     assert_eq!(
         restored.receipt.committed_revision_ids,
         [restored.revision_id]
@@ -969,7 +974,6 @@ async fn composition_restore_appends_exact_historical_revision_with_receipt() ->
         current.revision.source_id.as_deref(),
         Some(created.revision_id.to_string().as_str())
     );
-    assert_eq!(current.revision.entry.tags, restored.document.tags);
     let history = service
         .composition_history_authorized_for_principals_page(
             &space_id,
@@ -1035,7 +1039,7 @@ async fn composition_restore_replays_exact_publication_and_rechecks_authorizatio
         )
         .await?;
 
-    let original = parse_composition_yaml(MONTHLY_EXPENSE)
+    let original = parse_composition_yaml(SQL_FIRST_COMPOSITION)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
     let created = service
         .save_composition_authorized_for_principals(
@@ -1049,7 +1053,7 @@ async fn composition_restore_replays_exact_publication_and_rechecks_authorizatio
             &[owner],
         )
         .await?;
-    let mut updated_document = original.clone();
+    let mut updated_document = created.document.clone();
     updated_document.name = "Before restore".to_string();
     let updated = service
         .save_composition_authorized_for_principals(
@@ -1083,7 +1087,7 @@ async fn composition_restore_replays_exact_publication_and_rechecks_authorizatio
     let restored = restore_request().await?;
     let replayed = restore_request().await?;
     assert_eq!(replayed, restored);
-    assert_eq!(restored.document, original);
+    assert_eq!(restored.document, created.document);
     assert_eq!(restored.restored_from_revision_id, created.revision_id);
     assert_eq!(
         restored.receipt.committed_revision_ids,
@@ -1328,7 +1332,7 @@ async fn concurrent_composition_restore_retries_share_one_publication() -> anyho
         .create_space_for_principal("composition-restore-idempotency-race", owner, "Owner")
         .await?
         .to_string();
-    let document = parse_composition_yaml(MONTHLY_EXPENSE)
+    let document = parse_composition_yaml(SQL_FIRST_COMPOSITION)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
     let created = service
         .save_composition_authorized_for_principals(
@@ -1471,7 +1475,7 @@ async fn denied_composition_restore_and_missing_source_leave_history_unchanged(
             SpaceRole::Viewer,
         )
         .await?;
-    let document = parse_composition_yaml(MONTHLY_EXPENSE)
+    let document = parse_composition_yaml(SQL_FIRST_COMPOSITION)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
     let created = service
         .save_composition_authorized_for_principals(
@@ -1554,7 +1558,7 @@ async fn local_composition_restore_uses_an_append_only_revision() -> anyhow::Res
         .create_space_for_principal("composition-restore-local", owner, "Owner")
         .await?
         .to_string();
-    let document = parse_composition_yaml(MONTHLY_EXPENSE)
+    let document = parse_composition_yaml(SQL_FIRST_COMPOSITION)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
     let created = service
         .save_composition_authorized_for_principals(
@@ -1782,9 +1786,8 @@ async fn local_composition_save_creates_updates_and_conflicts_with_receipts() ->
     let initial_meta: Value = serde_json::from_slice(&op.read(&meta_path).await?.to_bytes())?;
     assert_eq!(initial_meta["space_version"], "0.1");
 
-    let mut document = parse_composition_yaml(MONTHLY_EXPENSE)
+    let document = parse_composition_yaml(SQL_FIRST_COMPOSITION)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
-    document.tags = vec!["local".to_string(), "finance".to_string()];
     let create_request = || composition::CompositionSaveRequest {
         entry_id: None,
         base_revision_id: None,
@@ -1822,11 +1825,22 @@ async fn local_composition_save_creates_updates_and_conflicts_with_receipts() ->
     assert_eq!(created_raw.fields["kind"], json!("dashboard"));
     assert_eq!(created_raw.fields["format_version"], json!(1));
     assert_eq!(created_raw.fields["spec"], json!(created.canonical_yaml));
-    assert_eq!(created_raw.revision.entry.tags, ["local", "finance"]);
+    assert!(created.document.has_complete_source_descriptors());
+    let [ugoite_domain::composition::CompositionSource::InlineSql {
+        form_bindings,
+        expected_result,
+        schema_fingerprint,
+        ..
+    }] = created.document.spec.sources.as_slice()
+    else {
+        anyhow::bail!("local save should retain its inline SQL source");
+    };
+    assert!(form_bindings.is_empty());
+    assert_eq!(expected_result.len(), 1);
+    assert_eq!(schema_fingerprint.len(), 64);
 
     let mut updated_document = created.document.clone();
     updated_document.name = "Local update".to_string();
-    updated_document.tags = vec!["updated".to_string()];
     let updated = service
         .save_composition_local(
             &space_id,
@@ -1881,10 +1895,109 @@ async fn local_composition_save_creates_updates_and_conflicts_with_receipts() ->
         .get_composition_raw_local(&space_id, &created.entry_id.to_string())
         .await?;
     assert_eq!(current_raw.revision.revision_id, updated.revision_id);
-    assert_eq!(current_raw.revision.entry.tags, ["updated"]);
 
     let final_meta: Value = serde_json::from_slice(&op.read(&meta_path).await?.to_bytes())?;
     assert_eq!(final_meta["space_version"], initial_meta["space_version"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn local_composition_save_derives_inline_form_bindings_and_result_schema(
+) -> anyhow::Result<()> {
+    let service = UgoiteService::new_without_background_refresh(
+        "memory://composition-local-inline-source-descriptors",
+    )?;
+    let owner = Uuid::from_u128(3_428_095);
+    let space_id = service
+        .create_space_for_principal(
+            "composition-local-inline-source-descriptors",
+            owner,
+            "Owner",
+        )
+        .await?
+        .to_string();
+    let form_name = "LocalCompositionSource";
+    service
+        .upsert_form_result(
+            &space_id,
+            &json!({
+                "name": form_name,
+                "fields": {
+                    "amount": {"id": 203, "type": "integer", "required": false}
+                }
+            }),
+        )
+        .await?;
+    let yaml = format!(
+        r#"format: ugoite.composition
+format_version: 1
+kind: dashboard
+name: Local SQL source
+spec:
+  sources:
+    - id: amount_rows
+      kind: inline_sql
+      name: Amount rows
+      sql: SELECT "field_203" AS "amount" FROM "{form_name}"
+      form_bindings: []
+      expected_result: []
+      schema_fingerprint: ''
+  components:
+    - id: amount_metric
+      kind: metric
+      source: amount_rows
+      column: amount
+  layout:
+    kind: flow
+    rows:
+      - id: main
+        items:
+          - kind: component
+            component: amount_metric
+"#
+    );
+    let document =
+        parse_composition_yaml(&yaml).map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+    let saved = service
+        .save_composition_local(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document,
+            },
+            &owner.to_string(),
+        )
+        .await?;
+    let [ugoite_domain::composition::CompositionSource::InlineSql {
+        form_bindings,
+        expected_result,
+        schema_fingerprint,
+        ..
+    }] = saved.document.spec.sources.as_slice()
+    else {
+        anyhow::bail!("local save should retain its inline SQL source");
+    };
+    assert_eq!(form_bindings.len(), 1);
+    assert_eq!(form_bindings[0].relation, form_name);
+    assert_eq!(expected_result.len(), 1);
+    assert_eq!(expected_result[0].name, "amount");
+    assert_eq!(
+        expected_result[0].result_type,
+        ugoite_domain::composition::CompositionResultFieldType::Integer
+    );
+    assert_eq!(schema_fingerprint.len(), 64);
+
+    let resolution = service
+        .resolve_composition_local(
+            &space_id,
+            &saved.entry_id.to_string(),
+            &saved.revision_id.to_string(),
+            &BTreeMap::new(),
+            &[],
+        )
+        .await?;
+    assert!(resolution.plan.is_some(), "{:?}", resolution.diagnostics);
     Ok(())
 }
 
@@ -1898,7 +2011,7 @@ async fn invalid_local_composition_save_does_not_create_registry() -> anyhow::Re
         .create_space_for_principal("composition-local-save-invalid", owner, "Owner")
         .await?
         .to_string();
-    let mut document = parse_composition_yaml(MONTHLY_EXPENSE)
+    let mut document = parse_composition_yaml(SQL_FIRST_COMPOSITION)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
     document.format_version = 99;
 
@@ -1922,9 +2035,133 @@ async fn invalid_local_composition_save_does_not_create_registry() -> anyhow::Re
         .await?
         .list_forms()
         .await?;
-    assert!(forms.iter().all(|form| !form
-        .name
-        .eq_ignore_ascii_case(composition::COMPOSITION_REGISTRY_FORM_NAME)));
+    assert!(forms.iter().all(|form| {
+        !form
+            .name
+            .eq_ignore_ascii_case(composition::COMPOSITION_REGISTRY_FORM_NAME)
+    }));
+    Ok(())
+}
+
+#[tokio::test]
+async fn local_and_authorized_composition_saves_fail_closed_for_missing_exact_base(
+) -> anyhow::Result<()> {
+    use ugoite_domain::composition::CompositionSource;
+    use ugoite_domain::form::sql_column_name;
+    use ugoite_domain::id::FieldId;
+
+    let op = setup_operator()?;
+    let service = UgoiteService::from_operator(op, "memory://composition-save-missing-base");
+    let owner = Uuid::from_u128(3_428_095);
+    let space_id = service
+        .create_space_for_principal("composition-save-missing-base", owner, "Owner")
+        .await?
+        .to_string();
+    let form_name = "SaveBaseBinding";
+    let field_id = FieldId::new(150)?;
+    service
+        .upsert_form_result(
+            &space_id,
+            &json!({
+                "name": form_name,
+                "fields": {
+                    "amount": {"id": 150, "type": "long", "required": false}
+                }
+            }),
+        )
+        .await?;
+    service
+        .create_structured_entry_with_receipt(
+            &space_id,
+            "save-base-binding-entry",
+            form_name.to_string(),
+            Vec::new(),
+            BTreeMap::from([("amount".to_string(), json!(6))]),
+            BTreeMap::new(),
+            "owner",
+        )
+        .await?;
+
+    let mut document = parse_composition_yaml(SQL_FIRST_COMPOSITION)
+        .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+    let CompositionSource::InlineSql { sql, .. } = &mut document.spec.sources[0] else {
+        anyhow::bail!("fixture should have an inline SQL source");
+    };
+    *sql = format!(
+        "SELECT SUM(\"{}\") AS total FROM \"{form_name}\"",
+        sql_column_name(field_id)
+    );
+
+    let local_created = service
+        .save_composition_local(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document: document.clone(),
+            },
+            "local-cli",
+        )
+        .await?;
+    let authorized_created = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document,
+            },
+            &owner.to_string(),
+            &[owner],
+        )
+        .await?;
+    let absent_revision = RevisionId::from(Uuid::from_u128(3_428_096));
+
+    let local_error = service
+        .save_composition_local(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: Some(local_created.entry_id),
+                base_revision_id: Some(absent_revision),
+                document: local_created.document.clone(),
+            },
+            "local-cli",
+        )
+        .await
+        .expect_err("local saves must not fall back when an exact base is absent");
+    assert_eq!(
+        local_error.downcast_ref::<AppError>().unwrap().code(),
+        ErrorCode::EntryNotFound
+    );
+    let local_latest = service
+        .get_composition_raw_local(&space_id, &local_created.entry_id.to_string())
+        .await?;
+    assert_eq!(local_latest.revision.revision_id, local_created.revision_id);
+
+    let authorized_error = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: Some(authorized_created.entry_id),
+                base_revision_id: Some(absent_revision),
+                document: authorized_created.document.clone(),
+            },
+            &owner.to_string(),
+            &[owner],
+        )
+        .await
+        .expect_err("authorized saves must not fall back when an exact base is absent");
+    assert_eq!(
+        authorized_error.downcast_ref::<AppError>().unwrap().code(),
+        ErrorCode::EntryNotFound
+    );
+    let authorized_latest = service
+        .get_composition_raw_local(&space_id, &authorized_created.entry_id.to_string())
+        .await?;
+    assert_eq!(
+        authorized_latest.revision.revision_id,
+        authorized_created.revision_id
+    );
     Ok(())
 }
 
@@ -1938,7 +2175,7 @@ async fn missing_local_composition_update_does_not_create_registry() -> anyhow::
         .create_space_for_principal("composition-local-save-missing-entry", owner, "Owner")
         .await?
         .to_string();
-    let document = parse_composition_yaml(MONTHLY_EXPENSE)
+    let document = parse_composition_yaml(SQL_FIRST_COMPOSITION)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
 
     let error = service
@@ -1962,8 +2199,10 @@ async fn missing_local_composition_update_does_not_create_registry() -> anyhow::
         .await?
         .list_forms()
         .await?;
-    assert!(forms.iter().all(|form| !form
-        .name
-        .eq_ignore_ascii_case(composition::COMPOSITION_REGISTRY_FORM_NAME)));
+    assert!(forms.iter().all(|form| {
+        !form
+            .name
+            .eq_ignore_ascii_case(composition::COMPOSITION_REGISTRY_FORM_NAME)
+    }));
     Ok(())
 }

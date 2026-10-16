@@ -1848,18 +1848,23 @@ pub(crate) fn resolve_form_name_references_with_used(
     sql: &str,
     aliases: &BTreeMap<String, String>,
 ) -> Result<(String, BTreeSet<String>)> {
-    let (sql, used, _) = resolve_form_name_references_with_references(sql, aliases)?;
+    let (sql, used, _, _) = resolve_form_name_references_with_references(sql, aliases)?;
     Ok((sql, used))
 }
 
 pub(crate) fn collect_quoted_form_name_references(sql: &str) -> Result<BTreeSet<String>> {
-    resolve_form_name_references_with_references(sql, &BTreeMap::new()).map(|(_, _, refs)| refs)
+    resolve_form_name_references_with_references(sql, &BTreeMap::new()).map(|(_, _, refs, _)| refs)
+}
+
+pub(crate) fn collect_quoted_form_relation_names(sql: &str) -> Result<BTreeSet<String>> {
+    resolve_form_name_references_with_references(sql, &BTreeMap::new())
+        .map(|(_, _, _, relations)| relations)
 }
 
 fn resolve_form_name_references_with_references(
     sql: &str,
     aliases: &BTreeMap<String, String>,
-) -> Result<(String, BTreeSet<String>, BTreeSet<String>)> {
+) -> Result<(String, BTreeSet<String>, BTreeSet<String>, BTreeSet<String>)> {
     use datafusion::sql::parser::DFParser;
     use datafusion::sql::sqlparser::ast::{
         Ident, ObjectName, ObjectNamePart, VisitMut, VisitorMut,
@@ -1873,6 +1878,7 @@ fn resolve_form_name_references_with_references(
         changed: bool,
         used: BTreeSet<String>,
         references: BTreeSet<String>,
+        relation_names: BTreeSet<String>,
     }
 
     impl VisitorMut for AliasReferenceResolver<'_> {
@@ -1928,6 +1934,9 @@ fn resolve_form_name_references_with_references(
             {
                 return ControlFlow::Continue(());
             }
+            if relation.0.len() == 1 && identifier.quote_style == Some('"') {
+                self.relation_names.insert(name.to_string());
+            }
             if relation.0.len() == 1
                 && identifier.quote_style == Some('"')
                 && !is_legacy_relation_name(name)
@@ -1966,6 +1975,7 @@ fn resolve_form_name_references_with_references(
         changed: false,
         used: BTreeSet::new(),
         references: BTreeSet::new(),
+        relation_names: BTreeSet::new(),
     };
     for statement in &mut statements {
         let datafusion::sql::parser::Statement::Statement(statement) = statement else {
@@ -1979,7 +1989,12 @@ fn resolve_form_name_references_with_references(
         return Err(AuthorizedQueryError::invalid_query(error).into());
     }
     if !resolver.changed {
-        return Ok((sql.to_string(), resolver.used, resolver.references));
+        return Ok((
+            sql.to_string(),
+            resolver.used,
+            resolver.references,
+            resolver.relation_names,
+        ));
     }
     Ok((
         statements
@@ -1989,6 +2004,7 @@ fn resolve_form_name_references_with_references(
             .join(";\n"),
         resolver.used,
         resolver.references,
+        resolver.relation_names,
     ))
 }
 
@@ -2273,7 +2289,10 @@ mod result_schema_tests {
 
 #[cfg(test)]
 mod form_name_resolution_tests {
-    use super::{is_legacy_relation_name, resolve_form_name_references};
+    use super::{
+        collect_quoted_form_name_references, collect_quoted_form_relation_names,
+        is_legacy_relation_name, resolve_form_name_references,
+    };
     use std::collections::BTreeMap;
 
     #[test]
@@ -2319,6 +2338,20 @@ mod form_name_resolution_tests {
         assert!(is_legacy_relation_name(&format!("form_{}", "a".repeat(32))));
         assert!(is_legacy_relation_name(&format!("FORM_{}", "A".repeat(32))));
         assert!(!is_legacy_relation_name("form_not-a-uuid"));
+    }
+
+    #[test]
+    fn collects_stable_sql_relations_without_treating_them_as_form_aliases() {
+        let relation = format!("form_{}", "a".repeat(32));
+        let sql = format!("SELECT * FROM \"{relation}\"");
+
+        assert!(collect_quoted_form_name_references(&sql)
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            collect_quoted_form_relation_names(&sql).unwrap(),
+            [relation].into_iter().collect()
+        );
     }
 }
 

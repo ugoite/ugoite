@@ -1402,7 +1402,7 @@ fn openapi_documents_raw_composition_reads_and_history_bounds() {
     let list_page = &snapshot["components"]["schemas"]["CompositionListPage"];
     assert!(list_item["properties"].get("spec").is_none());
     assert!(list_page["properties"].get("total").is_none());
-    assert!(list_item["properties"]["tags"].is_object());
+    assert!(list_item["properties"].get("tags").is_none());
     let limit = &snapshot["components"]["parameters"]["CompositionHistoryLimit"]["schema"];
     assert_eq!(limit["minimum"], 1);
     assert_eq!(limit["maximum"], 100);
@@ -1628,6 +1628,16 @@ fn openapi_documents_composition_preview_without_publication() {
     let request = &snapshot["components"]["schemas"]["CompositionPreviewRequest"];
     assert!(request["properties"].get("variables").is_some());
     assert!(request["properties"].get("unset_variables").is_some());
+    assert_eq!(request["properties"]["base_entry_id"]["format"], "uuid");
+    assert_eq!(request["properties"]["base_revision_id"]["format"], "uuid");
+    assert_eq!(
+        request["dependentRequired"]["base_entry_id"],
+        serde_json::json!(["base_revision_id"])
+    );
+    assert_eq!(
+        request["dependentRequired"]["base_revision_id"],
+        serde_json::json!(["base_entry_id"])
+    );
     assert!(request["properties"].get("parameters").is_none());
     let response = &snapshot["components"]["schemas"]["CompositionPreviewResponse"];
     for result in response["oneOf"]
@@ -1736,6 +1746,10 @@ fn openapi_documents_bounded_composition_metric_queries() {
         .as_str()
         .expect("bounded metric description")
         .contains("at most two rows"));
+    assert!(metric["description"]
+        .as_str()
+        .expect("bounded metric description")
+        .contains("inline SQL uses server-derived Form ID bindings"));
 
     let request = &snapshot["components"]["schemas"]["CompositionMetricQueryRequest"];
     assert_eq!(request["additionalProperties"], false);
@@ -1750,6 +1764,16 @@ fn openapi_documents_bounded_composition_metric_queries() {
     assert!(request["properties"].get("variables").is_some());
     assert!(request["properties"].get("unset_variables").is_some());
     assert!(request["properties"].get("parameters").is_none());
+    assert_eq!(request["properties"]["base_entry_id"]["format"], "uuid");
+    assert_eq!(request["properties"]["base_revision_id"]["format"], "uuid");
+    assert_eq!(
+        request["dependentRequired"]["base_entry_id"],
+        serde_json::json!(["base_revision_id"])
+    );
+    assert_eq!(
+        request["dependentRequired"]["base_revision_id"],
+        serde_json::json!(["base_entry_id"])
+    );
     assert_eq!(
         snapshot["components"]["schemas"]["CompositionMetricQueryTarget"]["oneOf"]
             .as_array()
@@ -1856,23 +1880,58 @@ fn openapi_documents_composition_resolve_metric_result_type() {
 }
 
 #[test]
-fn openapi_documents_optional_composition_entry_query_display_system_fields() {
+fn openapi_documents_sql_only_composition_sources_without_display_labels() {
     let snapshot = ugoite_server::openapi_snapshot();
-    let entry_query = &snapshot["components"]["schemas"]["CompositionResolvedSource"]["oneOf"][0];
-    let field = &entry_query["properties"]["display_system_fields"];
-    assert_eq!(field["type"], "array");
-    assert_eq!(
-        field["items"]["$ref"],
-        "#/components/schemas/CompositionEntryQuerySystemField"
-    );
-    assert_eq!(
-        snapshot["components"]["schemas"]["CompositionEntryQuerySystemField"]["enum"],
-        serde_json::json!(["created_at", "updated_at"])
-    );
-    assert!(!entry_query["required"]
+    let sources = snapshot["components"]["schemas"]["CompositionResolvedSource"]["oneOf"]
         .as_array()
-        .expect("required EntryQuery source fields")
-        .contains(&serde_json::json!("display_system_fields")));
+        .expect("resolved SQL sources");
+    assert_eq!(sources.len(), 2);
+    assert_eq!(sources[0]["properties"]["kind"]["const"], "inline_sql");
+    assert_eq!(sources[1]["properties"]["kind"]["const"], "saved_sql");
+    for source in sources {
+        let request_description = source["properties"]["request"]["description"]
+            .as_str()
+            .expect("SQL request description");
+        assert!(request_description.contains("SQL query request"));
+    }
+    let binding = &snapshot["components"]["schemas"]["CompositionResolvedComponentBinding"];
+    assert!(binding["properties"].get("label").is_none());
+    let variable = &snapshot["components"]["schemas"]["CompositionVariableDefinition"];
+    assert!(variable["properties"].get("label").is_none());
+}
+
+#[test]
+fn openapi_documents_optional_typed_saved_sql_variable_defaults() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    let variables = &snapshot["components"]["schemas"]["SavedSql"]["properties"]["variables"];
+    assert_eq!(
+        variables["items"]["$ref"],
+        "#/components/schemas/SavedSqlVariableDefinition"
+    );
+    assert!(variables["description"]
+        .as_str()
+        .expect("Saved SQL variable defaults description")
+        .contains("not added to sql.query requests automatically"));
+
+    let definition = &snapshot["components"]["schemas"]["SavedSqlVariableDefinition"];
+    assert_eq!(
+        definition["required"],
+        serde_json::json!(["type", "name", "description"])
+    );
+    assert_eq!(
+        definition["properties"]["type"]["enum"],
+        serde_json::json!(["string", "boolean", "integer", "float", "timestamp", "date"])
+    );
+    assert_eq!(
+        definition["properties"]["default"]["anyOf"]
+            .as_array()
+            .map(Vec::len),
+        Some(3)
+    );
+    assert_eq!(
+        definition["properties"]["default"]["type"],
+        serde_json::Value::Null
+    );
 }
 
 #[test]

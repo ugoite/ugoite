@@ -70,15 +70,28 @@ function paddedCompositionYaml(yaml: string, targetBytes: number): string {
   return `${yaml}#${"x".repeat(targetBytes - currentBytes - 1)}`;
 }
 
-function compositionTagsYaml(yaml: string, count: number): string {
-  const tags = Array.from({ length: count }, (_, index) => `tag_${index}`).join(
-    ", ",
-  );
-  const taggedYaml = yaml.replace("tags: []", `tags: [${tags}]`);
-  if (taggedYaml === yaml) {
-    throw new Error("Could not build the Composition tag-limit fixture");
+function compositionSourcesYaml(yaml: string, targetCount: number): string {
+  const sourcesBlock = yaml.split("  sources:\n")[1]?.split(
+    "  components:\n",
+  )[0];
+  if (!sourcesBlock) throw new Error("Could not find the Composition sources");
+  const existingCount = (sourcesBlock.match(/^    - id:/gm) ?? []).length;
+  const additionalCount = targetCount - existingCount;
+  if (additionalCount < 0) {
+    throw new Error("Requested source count is below the SQL-first fixture");
   }
-  return taggedYaml;
+  const additionalSources = Array.from(
+    { length: additionalCount },
+    (_, index) => {
+      const id = `extra_${index}`;
+      return `    - id: ${id}\n      kind: inline_sql\n      name: ${id}\n      sql: SELECT 1\n      form_bindings: []\n      expected_result: []\n      schema_fingerprint: \"\"`;
+    },
+  ).join("\n");
+  if (!additionalSources) return yaml;
+  return yaml.replace(
+    "  components:\n",
+    `${additionalSources}\n  components:\n`,
+  );
 }
 
 function nestedFutureCompositionYaml(depth: number): string {
@@ -156,98 +169,22 @@ async function main(): Promise<void> {
   const wasmBytes = await Deno.readFile(wasmPath);
   const { instance } = await WebAssembly.instantiate(wasmBytes, {});
   const fixturePath = new URL(
-    "../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml",
-    import.meta.url,
-  );
-  const labeledFixturePath = new URL(
-    "../../ugoite-domain/tests/fixtures/composition/monthly-expense-labeled.ugcomp.yaml",
-    import.meta.url,
-  );
-  const savedSqlMetricColumnsFixturePath = new URL(
-    "../../ugoite-domain/tests/fixtures/composition/saved-sql-metric-columns.ugcomp.yaml",
+    "../../ugoite-domain/tests/fixtures/composition/sql-first.ugcomp.yaml",
     import.meta.url,
   );
   const canonicalPath = new URL(
-    "../../ugoite-domain/tests/fixtures/composition/monthly-expense.canonical.ugcomp.yaml",
+    "../../ugoite-domain/tests/fixtures/composition/sql-first.canonical.ugcomp.yaml",
     import.meta.url,
   );
   const fingerprintPath = new URL(
-    "../../ugoite-domain/tests/fixtures/composition/monthly-expense.fingerprint.txt",
-    import.meta.url,
-  );
-  const labeledCanonicalPath = new URL(
-    "../../ugoite-domain/tests/fixtures/composition/monthly-expense-labeled.canonical.ugcomp.yaml",
-    import.meta.url,
-  );
-  const labeledFingerprintPath = new URL(
-    "../../ugoite-domain/tests/fixtures/composition/monthly-expense-labeled.fingerprint.txt",
-    import.meta.url,
-  );
-  const savedSqlMetricColumnsCanonicalPath = new URL(
-    "../../ugoite-domain/tests/fixtures/composition/saved-sql-metric-columns.canonical.ugcomp.yaml",
-    import.meta.url,
-  );
-  const savedSqlMetricColumnsFingerprintPath = new URL(
-    "../../ugoite-domain/tests/fixtures/composition/saved-sql-metric-columns.fingerprint.txt",
-    import.meta.url,
-  );
-  const invalidListItemPath = new URL(
-    "../../ugoite-domain/tests/fixtures/composition/unknown-list-item-field.ugcomp.yaml",
-    import.meta.url,
-  );
-  const unknownFormatVersionPath = new URL(
-    "../../../e2e/fixtures/composition/unknown-format-version.ugcomp.yaml",
+    "../../ugoite-domain/tests/fixtures/composition/sql-first.fingerprint.txt",
     import.meta.url,
   );
   const yaml = await Deno.readTextFile(fixturePath);
-  const labeledYaml = await Deno.readTextFile(labeledFixturePath);
-  const savedSqlMetricColumnsYaml = await Deno.readTextFile(
-    savedSqlMetricColumnsFixturePath,
-  );
-  const invalidSavedSqlMetricColumnsYaml = [
-    savedSqlMetricColumnsYaml.replace(
-      "      source: monthly_summary\n      column: count",
-      "      definition:\n        kind: sql_scalar\n        source: monthly_summary\n        column: count",
-    ),
-    savedSqlMetricColumnsYaml.replace(
-      "      source: monthly_summary\n      column: count",
-      "      source: expense_rows\n      column: count",
-    ),
-    savedSqlMetricColumnsYaml.replace(
-      "      source: monthly_summary\n      column: count",
-      "      source: monthly_summary\n      value_field:\n        kind: sql_column\n        name: count",
-    ),
-    savedSqlMetricColumnsYaml.replace(
-      "      source: monthly_summary\n      column: count",
-      "      source: monthly_summary\n      column: count\n      operation: sum\n      field_id: 102",
-    ),
-    savedSqlMetricColumnsYaml.replace(
-      "      source: monthly_summary\n      column: count",
-      "      source: monthly_summary\n      column: missing",
-    ),
-  ];
-  if (
-    invalidSavedSqlMetricColumnsYaml.some((yaml) =>
-      yaml === savedSqlMetricColumnsYaml
-    )
-  ) {
-    throw new Error("Could not build every invalid SQL Metric binding fixture");
-  }
   const canonicalYaml = await Deno.readTextFile(canonicalPath);
   const fingerprint = (await Deno.readTextFile(fingerprintPath)).trim();
-  const labeledCanonicalYaml = await Deno.readTextFile(labeledCanonicalPath);
-  const labeledFingerprint = (await Deno.readTextFile(labeledFingerprintPath))
-    .trim();
-  const savedSqlMetricColumnsCanonicalYaml = await Deno.readTextFile(
-    savedSqlMetricColumnsCanonicalPath,
-  );
-  const savedSqlMetricColumnsFingerprint = (
-    await Deno.readTextFile(savedSqlMetricColumnsFingerprintPath)
-  ).trim();
-  const invalidListItemYaml = await Deno.readTextFile(invalidListItemPath);
-  const unknownFormatVersionYaml = await Deno.readTextFile(
-    unknownFormatVersionPath,
-  );
+  const unknownFormatVersionYaml =
+    "format: ugoite.composition\nformat_version: 2\nname: Future\nkind: dashboard\nspec: {}\n";
   const unreferencedComponentYaml = yaml.replace(
     "          - kind: component\n            component: transactions\n",
     "",
@@ -260,7 +197,7 @@ async function main(): Promise<void> {
     value: { yaml },
   });
   const responseValue = response.value as Record<string, unknown>;
-  assertEqual(response.ok, true, "monthly-expense parse result");
+  assertEqual(response.ok, true, "SQL-first Composition parse result");
   assertEqual(responseValue.canonical_yaml, canonicalYaml, "canonical YAML");
   assertEqual(responseValue.fingerprint, fingerprint, "semantic fingerprint");
 
@@ -286,7 +223,7 @@ async function main(): Promise<void> {
   const atCollectionLimit = await invokeWasm(
     instance.exports,
     compositionYamlResponse(
-      compositionTagsYaml(yaml, MAX_COMPOSITION_COLLECTION_ITEMS),
+      compositionSourcesYaml(yaml, MAX_COMPOSITION_COLLECTION_ITEMS),
     ),
   );
   assertEqual(
@@ -297,7 +234,7 @@ async function main(): Promise<void> {
   const overCollectionLimit = await invokeWasm(
     instance.exports,
     compositionYamlResponse(
-      compositionTagsYaml(yaml, MAX_COMPOSITION_COLLECTION_ITEMS + 1),
+      compositionSourcesYaml(yaml, MAX_COMPOSITION_COLLECTION_ITEMS + 1),
     ),
   );
   assertCompositionDiagnostic(
@@ -335,21 +272,51 @@ async function main(): Promise<void> {
   const unnormalizedTypedDocument = structuredClone(typedDocument);
   const typedSpec = unnormalizedTypedDocument.spec as Record<string, unknown>;
   const typedSources = typedSpec.sources as Record<string, unknown>[];
-  const entryQuerySource = typedSources.find((source) =>
-    source.kind === "entry_query"
+  const inlineSqlSource = typedSources.find((source) =>
+    source.kind === "inline_sql"
   );
-  if (!entryQuerySource || !Array.isArray(entryQuerySource.field_schema)) {
-    throw new Error("Typed fixture must contain an EntryQuery field schema");
+  if (!inlineSqlSource || !Array.isArray(inlineSqlSource.form_bindings)) {
+    throw new Error("Typed fixture must contain an inline SQL source binding");
   }
-  const fieldSchema = entryQuerySource.field_schema;
-  if (fieldSchema.length < 2) {
-    throw new Error("Typed fixture field schema must exercise ordering");
+  const formBindings = inlineSqlSource.form_bindings as Record<
+    string,
+    unknown
+  >[];
+  const secondBinding = { ...formBindings[0], relation: "Other" };
+  formBindings.push(secondBinding);
+  formBindings.reverse();
+  const expectedTypedDocument = structuredClone(typedDocument);
+  const expectedTypedSpec = expectedTypedDocument.spec as Record<
+    string,
+    unknown
+  >;
+  const expectedTypedSources = expectedTypedSpec.sources as Record<
+    string,
+    unknown
+  >[];
+  const expectedInlineSqlSource = expectedTypedSources.find((source) =>
+    source.kind === "inline_sql"
+  );
+  if (
+    !expectedInlineSqlSource ||
+    !Array.isArray(expectedInlineSqlSource.form_bindings)
+  ) {
+    throw new Error(
+      "Normalized fixture must contain an inline SQL source binding",
+    );
   }
-  const normalizedFieldSchema = JSON.stringify(normalizeJson(fieldSchema));
-  fieldSchema.reverse();
-  if (JSON.stringify(normalizeJson(fieldSchema)) === normalizedFieldSchema) {
-    throw new Error("Could not make the typed field schema non-normalized");
-  }
+  const expectedBindings = expectedInlineSqlSource.form_bindings as Record<
+    string,
+    unknown
+  >[];
+  expectedBindings.push({ ...expectedBindings[0], relation: "Other" });
+  expectedBindings.sort((left, right) =>
+    String(left.relation) < String(right.relation)
+      ? -1
+      : String(left.relation) > String(right.relation)
+      ? 1
+      : 0
+  );
 
   const typedCanonicalResponse = await invokeWasm(instance.exports, {
     action: "domain.canonicalize_composition_document",
@@ -362,18 +329,40 @@ async function main(): Promise<void> {
   assertEqual(typedCanonicalResponse.ok, true, "typed normalization result");
   assertJsonEqual(
     typedCanonicalValue.document,
-    typedDocument,
+    expectedTypedDocument,
     "typed normalized document",
   );
+  if (typeof typedCanonicalValue.canonical_yaml !== "string") {
+    throw new Error("typed canonical YAML must be a string");
+  }
+  if (
+    typeof typedCanonicalValue.fingerprint !== "string" ||
+    !/^[0-9a-f]{64}$/.test(typedCanonicalValue.fingerprint)
+  ) {
+    throw new Error("typed semantic fingerprint must be lowercase SHA-256");
+  }
+  const typedIdempotenceResponse = await invokeWasm(instance.exports, {
+    action: "domain.canonicalize_composition_document",
+    value: { document: typedCanonicalValue.document },
+  });
+  const typedIdempotenceValue = typedIdempotenceResponse.value as Record<
+    string,
+    unknown
+  >;
   assertEqual(
-    typedCanonicalValue.canonical_yaml,
-    canonicalYaml,
-    "typed canonical YAML",
+    typedIdempotenceResponse.ok,
+    true,
+    "typed normalization idempotence",
   );
   assertEqual(
+    typedIdempotenceValue.canonical_yaml,
+    typedCanonicalValue.canonical_yaml,
+    "typed canonical YAML idempotence",
+  );
+  assertEqual(
+    typedIdempotenceValue.fingerprint,
     typedCanonicalValue.fingerprint,
-    fingerprint,
-    "typed semantic fingerprint",
+    "typed fingerprint idempotence",
   );
 
   const futureVersionDocument = structuredClone(typedDocument);
@@ -429,54 +418,19 @@ async function main(): Promise<void> {
     "unknown v1 typed document diagnostic code",
   );
 
-  const labeledResponse = await invokeWasm(instance.exports, {
-    action: "domain.canonicalize_composition",
-    value: { yaml: labeledYaml },
-  });
-  const labeledResponseValue = labeledResponse.value as Record<string, unknown>;
-  assertEqual(labeledResponse.ok, true, "labeled monthly-expense parse result");
-  assertEqual(
-    labeledResponseValue.canonical_yaml,
-    labeledCanonicalYaml,
-    "labeled canonical YAML",
-  );
-  assertEqual(
-    labeledResponseValue.fingerprint,
-    labeledFingerprint,
-    "labeled semantic fingerprint",
-  );
-
-  const savedSqlMetricColumnsResponse = await invokeWasm(instance.exports, {
-    action: "domain.canonicalize_composition",
-    value: { yaml: savedSqlMetricColumnsYaml },
-  });
-  const savedSqlMetricColumnsResponseValue = savedSqlMetricColumnsResponse
-    .value as Record<
-      string,
-      unknown
-    >;
-  assertEqual(
-    savedSqlMetricColumnsResponse.ok,
-    true,
-    "Saved SQL metric columns parse result",
-  );
-  assertEqual(
-    savedSqlMetricColumnsResponseValue.canonical_yaml,
-    savedSqlMetricColumnsCanonicalYaml,
-    "Saved SQL metric columns canonical YAML",
-  );
-  assertEqual(
-    savedSqlMetricColumnsResponseValue.fingerprint,
-    savedSqlMetricColumnsFingerprint,
-    "Saved SQL metric columns semantic fingerprint",
-  );
-
-  const invalidMetricValueFieldYaml = yaml.replace(
+  const invalidMetricColumnYaml = yaml.replace(
     "      source: month_total\n      column: total",
-    "      source: month_total\n      value_field:\n        kind: sql_column\n        name: total",
+    "      source: month_total\n      column: missing",
   );
-  if (invalidMetricValueFieldYaml === yaml) {
-    throw new Error("Could not build a legacy metric shape rejection fixture");
+  if (invalidMetricColumnYaml === yaml) {
+    throw new Error("Could not build an invalid SQL Metric column fixture");
+  }
+  const unsupportedOldSourceYaml = yaml.replace(
+    "kind: inline_sql",
+    "kind: entry_query",
+  );
+  if (unsupportedOldSourceYaml === yaml) {
+    throw new Error("Could not build the unsupported old source-kind fixture");
   }
 
   // Keep version dispatch separate from complete v1 documents that fail
@@ -509,8 +463,8 @@ async function main(): Promise<void> {
   // v1 validation diagnostics rather than YAML or version-probe failures.
   for (
     const [invalidYaml, expectedCode] of [
-      [invalidListItemYaml, "invalid_composition"],
-      [invalidMetricValueFieldYaml, "invalid_composition"],
+      [unsupportedOldSourceYaml, "invalid_composition"],
+      [invalidMetricColumnYaml, "invalid_composition"],
       [unreferencedComponentYaml, "invalid_composition"],
     ] as const
   ) {
@@ -522,25 +476,6 @@ async function main(): Promise<void> {
     assertEqual(invalidResponse.ok, false, "invalid document result");
     assertEqual(error.kind, "composition_diagnostic", "diagnostic kind");
     assertEqual(error.code, expectedCode, "diagnostic code");
-  }
-
-  for (const invalidYaml of invalidSavedSqlMetricColumnsYaml) {
-    const invalidResponse = await invokeWasm(instance.exports, {
-      action: "domain.canonicalize_composition",
-      value: { yaml: invalidYaml },
-    });
-    const error = invalidResponse.error as Record<string, unknown>;
-    assertEqual(invalidResponse.ok, false, "invalid SQL Metric result");
-    assertEqual(
-      error.kind,
-      "composition_diagnostic",
-      "SQL Metric diagnostic kind",
-    );
-    assertEqual(
-      error.code,
-      "invalid_composition",
-      "SQL Metric diagnostic code",
-    );
   }
 
   const variableInputCases = [
@@ -616,7 +551,11 @@ async function main(): Promise<void> {
     string,
     unknown
   >;
-  assertEqual(malformedVariableInput.ok, false, "malformed Input parser result");
+  assertEqual(
+    malformedVariableInput.ok,
+    false,
+    "malformed Input parser result",
+  );
   assertEqual(
     malformedVariableInputError.kind,
     "domain_validation",

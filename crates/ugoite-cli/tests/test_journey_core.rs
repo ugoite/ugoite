@@ -11,6 +11,29 @@
 use std::process::Command;
 use std::process::Output;
 
+const BASIC_COMPOSITION_FIXTURE: &str = r#"format: ugoite.composition
+format_version: 1
+kind: dashboard
+name: Basic Composition
+spec:
+  variables: []
+  sources: []
+  components:
+    - id: note
+      kind: text
+      content:
+        kind: literal
+        text: metadata
+      style: body
+  layout:
+    kind: flow
+    rows:
+      - id: main
+        items:
+          - kind: component
+            component: note
+"#;
+
 fn ugoite_bin() -> std::path::PathBuf {
     if let Some(path) = option_env!("CARGO_BIN_EXE_ugoite") {
         return std::path::PathBuf::from(path);
@@ -921,8 +944,6 @@ async fn test_cli_core_composition_restore_receipt_replay_and_stale_base() {
     use ugoite_iceberg::composition::CompositionSaveRequest;
     use ugoite_iceberg::service::UgoiteService;
 
-    const FIXTURE: &str =
-        include_str!("../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml");
     let space = setup_parity_space("{\"Status\":{\"type\":\"string\",\"required\":true}}");
     let target = ugoite_cli::cli_config::resolve_command_target(
         Some(&space.config_path),
@@ -935,7 +956,8 @@ async fn test_cli_core_composition_restore_receipt_replay_and_stale_base() {
     };
     let service =
         UgoiteService::new_without_background_refresh(root).expect("open local Space service");
-    let original = parse_composition_yaml(FIXTURE).expect("parse source fixture");
+    let original =
+        parse_composition_yaml(BASIC_COMPOSITION_FIXTURE).expect("parse basic Composition fixture");
     let source = service
         .save_composition_local_with_operation_id(
             &space_id,
@@ -951,7 +973,7 @@ async fn test_cli_core_composition_restore_receipt_replay_and_stale_base() {
         .expect("seed source Composition revision");
 
     let mut updated_document = original;
-    updated_document.name = "Updated monthly expenses".to_string();
+    updated_document.name = "Updated basic Composition".to_string();
     let updated = service
         .save_composition_local_with_operation_id(
             &space_id,
@@ -1107,8 +1129,6 @@ async fn test_cli_core_composition_restore_receipt_replay_and_stale_base() {
 async fn test_cli_core_composition_import_save_receipts_and_prevalidation() {
     use ugoite_iceberg::service::UgoiteService;
 
-    const FIXTURE: &str =
-        include_str!("../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml");
     let dir = tempfile::tempdir().expect("Composition CLI Space directory");
     let config_path = dir.path().join("cli-config.toml");
     let space_slug = "composition-cli-core-space";
@@ -1135,7 +1155,8 @@ async fn test_cli_core_composition_import_save_receipts_and_prevalidation() {
     ));
 
     let valid_file = dir.path().join("valid-composition.ugcomp.yaml");
-    std::fs::write(&valid_file, FIXTURE).expect("write valid Composition fixture");
+    std::fs::write(&valid_file, BASIC_COMPOSITION_FIXTURE)
+        .expect("write valid Composition fixture");
     let invalid_key = run_cli(
         &config_path,
         &[
@@ -1176,7 +1197,7 @@ async fn test_cli_core_composition_import_save_receipts_and_prevalidation() {
     let invalid_file = dir.path().join("unsupported.ugcomp.yaml");
     std::fs::write(
         &invalid_file,
-        FIXTURE.replacen("format_version: 1", "format_version: 2", 1),
+        BASIC_COMPOSITION_FIXTURE.replacen("format_version: 1", "format_version: 2", 1),
     )
     .expect("write unsupported Composition");
     let invalid = run_cli(
@@ -1212,7 +1233,7 @@ async fn test_cli_core_composition_import_save_receipts_and_prevalidation() {
         .is_empty());
 
     let file = dir.path().join("monthly-expense.ugcomp.yaml");
-    std::fs::write(&file, FIXTURE).expect("write Composition fixture");
+    std::fs::write(&file, BASIC_COMPOSITION_FIXTURE).expect("write Composition fixture");
     let imported = stdout_json(
         &run_cli(
             &config_path,
@@ -1267,7 +1288,11 @@ async fn test_cli_core_composition_import_save_receipts_and_prevalidation() {
     let updated_file = dir.path().join("updated-monthly-expense.ugcomp.yaml");
     std::fs::write(
         &updated_file,
-        FIXTURE.replacen("name: Monthly expenses", "name: Monthly expense report", 1),
+        BASIC_COMPOSITION_FIXTURE.replacen(
+            "name: Basic Composition",
+            "name: Updated basic Composition",
+            1,
+        ),
     )
     .expect("write updated Composition fixture");
     let composition_id = saved["composition_id"].as_str().unwrap();

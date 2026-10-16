@@ -224,7 +224,6 @@ pub struct CompositionListItem {
     pub name: Option<Value>,
     pub kind: Option<Value>,
     pub format_version: Option<Value>,
-    pub tags: Vec<String>,
 }
 
 /// Bounded current Composition page. Authorization is evaluated by the
@@ -246,6 +245,13 @@ pub struct CompositionListPage {
 #[serde(deny_unknown_fields)]
 pub struct CompositionPreviewRequest {
     pub yaml: String,
+    /// Exact Composition revision this draft edits. Both identity fields must
+    /// be supplied together; the server uses this revision only to preserve
+    /// stable Form bindings for unchanged SQL relations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_entry_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_revision_id: Option<String>,
     #[serde(default)]
     pub variables: BTreeMap<String, Value>,
     /// Variables explicitly left unset; omission from both fields uses the
@@ -291,6 +297,12 @@ pub enum CompositionMetricQueryTarget {
 #[serde(deny_unknown_fields)]
 pub struct CompositionMetricQueryRequest {
     pub target: CompositionMetricQueryTarget,
+    /// Exact Composition revision a draft edits. Both identity fields must
+    /// be supplied together; saved-revision queries omit them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_entry_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_revision_id: Option<String>,
     pub component_id: String,
     #[serde(default)]
     pub variables: BTreeMap<String, Value>,
@@ -391,8 +403,6 @@ pub struct CompositionResolveResponse {
 #[serde(deny_unknown_fields)]
 pub struct CompositionVariableDefinition {
     pub id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub label: Option<String>,
     #[serde(rename = "type")]
     pub variable_type: CompositionVariableType,
     pub required: bool,
@@ -509,8 +519,6 @@ pub enum CompositionResultFieldType {
 pub struct CompositionResolvedComponentBinding {
     pub component_id: String,
     pub kind: CompositionResolvedComponentKind,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub label: Option<String>,
     /// The bound source for metric and table components. Text components
     /// carry no source binding; the renderer joins them with their component
     /// declaration by `component_id`.
@@ -533,16 +541,14 @@ pub struct CompositionRevisionReference {
     pub revision_id: String,
 }
 
-/// A query request compiled by the Rust core resolver. The request value is
-/// forwarded unchanged to the existing `entry.query` or `sql.query` operation.
+/// A query request compiled by the Rust core resolver. SQL sources are
+/// forwarded through the existing stateless `sql.query` operation.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CompositionResolvedSource {
-    EntryQuery {
+    InlineSql {
         source_id: String,
         request: Value,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        display_system_fields: Vec<CompositionEntryQuerySystemField>,
         source_schema_fingerprint: String,
     },
     SavedSql {
@@ -550,14 +556,6 @@ pub enum CompositionResolvedSource {
         request: Value,
         source_schema_fingerprint: String,
     },
-}
-
-/// Entry identity timestamps selected for a Composition EntryQuery table.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CompositionEntryQuerySystemField {
-    CreatedAt,
-    UpdatedAt,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

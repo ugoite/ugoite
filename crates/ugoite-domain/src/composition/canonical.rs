@@ -1,10 +1,8 @@
 //! Canonical normalization and semantic fingerprints for Composition v1.
 
 use super::{
-    CompositionComponent, CompositionDiagnosticCode, CompositionDocument,
-    CompositionFieldSchemaEntry, CompositionSource,
+    CompositionComponent, CompositionDiagnosticCode, CompositionDocument, CompositionSource,
 };
-use crate::form::{FieldType, ListItemDefinition};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
@@ -36,9 +34,6 @@ pub fn canonicalize_composition(
     )
     .map_err(|_| CompositionDiagnosticCode::InvalidComposition)?;
 
-    // serde-saphyr emits LF on all platforms. Normalize the final document
-    // terminator explicitly so golden bytes do not depend on serializer EOF
-    // behavior.
     while yaml.ends_with("\n\n") {
         yaml.pop();
     }
@@ -91,7 +86,7 @@ pub(super) fn normalize_composition_document(
     document: &CompositionDocument,
 ) -> Result<CompositionDocument, CompositionDiagnosticCode> {
     document.validate_format_version()?;
-    if !composition_collection_limits_hold(document) {
+    if document.name.trim().is_empty() || !composition_collection_limits_hold(document) {
         return Err(CompositionDiagnosticCode::InvalidComposition);
     }
     document.spec.components_in_render_order()?;
@@ -107,22 +102,8 @@ pub(super) fn normalize_composition_document(
 
     let mut normalized = document.clone();
     for source in &mut normalized.spec.sources {
-        let CompositionSource::EntryQuery { field_schema, .. } = source else {
-            continue;
-        };
-
-        if field_schema
-            .iter()
-            .any(|field| !field_schema_entry_is_valid(field))
-        {
-            return Err(CompositionDiagnosticCode::InvalidComposition);
-        }
-        field_schema.sort_by_key(|field| field.field_id);
-        if field_schema
-            .windows(2)
-            .any(|pair| pair[0].field_id == pair[1].field_id)
-        {
-            return Err(CompositionDiagnosticCode::InvalidComposition);
+        if let CompositionSource::InlineSql { form_bindings, .. } = source {
+            form_bindings.sort_by(|left, right| left.relation.cmp(&right.relation));
         }
     }
 
@@ -141,19 +122,26 @@ fn metric_bindings_are_well_formed(document: &CompositionDocument) -> bool {
             return true;
         };
 
-        let matching_sources = document
+        let mut matching_sources = document
             .spec
             .sources
             .iter()
-            .filter(|candidate| candidate.id() == source)
-            .collect::<Vec<_>>();
-        let [CompositionSource::SavedSql {
-            expected_result, ..
-        }] = matching_sources.as_slice()
-        else {
+            .filter(|candidate| candidate.id() == source);
+        let Some(source) = matching_sources.next() else {
             return false;
         };
-        let mut matching_columns = expected_result
+        if matching_sources.next().is_some() {
+            return false;
+        }
+        if !source.has_complete_source_descriptors() {
+            // The Core preview path supplies a live descriptor for an SQL
+            // draft before it can be persisted. The draft still needs a
+            // selected column, but its scalar type is not yet known here.
+            return !column.trim().is_empty();
+        }
+
+        let mut matching_columns = source
+            .expected_result()
             .iter()
             .filter(|result_column| result_column.name == *column);
         matching_columns.next().is_some_and(|result_column| {
@@ -172,8 +160,7 @@ fn metric_bindings_are_well_formed(document: &CompositionDocument) -> bool {
 fn composition_collection_limits_hold(document: &CompositionDocument) -> bool {
     let max_items = super::MAX_COMPOSITION_COLLECTION_ITEMS;
     let spec = &document.spec;
-    if document.tags.len() > max_items
-        || spec.variables.len() > max_items
+    if spec.variables.len() > max_items
         || spec.sources.len() > max_items
         || spec.components.len() > max_items
         || spec.layout.rows.len() > max_items
@@ -183,20 +170,12 @@ fn composition_collection_limits_hold(document: &CompositionDocument) -> bool {
 
     for source in &spec.sources {
         match source {
-            CompositionSource::EntryQuery {
-                field_schema,
-                query,
+            CompositionSource::InlineSql {
+                form_bindings,
+                expected_result,
                 ..
             } => {
-                if field_schema.len() > max_items
-                    || query.filters.len() > max_items
-                    || query.sort.len() > max_items
-                    || matches!(
-                        &query.projection,
-                        super::EntryQueryProjectionTemplate::Fields { fields }
-                            if fields.len() > max_items
-                    )
-                {
+                if form_bindings.len() > max_items || expected_result.len() > max_items {
                     return false;
                 }
             }
@@ -205,20 +184,7 @@ fn composition_collection_limits_hold(document: &CompositionDocument) -> bool {
                 expected_result,
                 ..
             } => {
-                if variables.len() > max_items
-                    || expected_result.is_empty()
-                    || expected_result.len() > max_items
-                    || expected_result.iter().any(|column| {
-                        column.name.trim().is_empty()
-                            || column.name.len() > super::MAX_COMPOSITION_YAML_BYTES
-                    })
-                    || expected_result
-                        .iter()
-                        .map(|column| column.name.as_str())
-                        .collect::<std::collections::BTreeSet<_>>()
-                        .len()
-                        != expected_result.len()
-                {
+                if variables.len() > max_items || expected_result.len() > max_items {
                     return false;
                 }
             }
@@ -231,402 +197,149 @@ fn composition_collection_limits_hold(document: &CompositionDocument) -> bool {
         .all(|row| row.items.len() <= max_items)
 }
 
-fn field_schema_entry_is_valid(field: &CompositionFieldSchemaEntry) -> bool {
-    match (&field.field_type, &field.reference_form, &field.list_item) {
-        (FieldType::RowReference, Some(_), None) => true,
-        (FieldType::List, None, None) => true,
-        (FieldType::List, None, Some(item)) => list_item_is_valid(item),
-        (FieldType::RowReference, None, _) => false,
-        (FieldType::List, Some(_), _) => false,
-        (_, None, None) => true,
-        _ => false,
-    }
-}
-
-fn list_item_is_valid(item: &ListItemDefinition) -> bool {
-    match (&item.field_type, &item.reference_form) {
-        (FieldType::List | FieldType::ObjectList, _) => false,
-        (FieldType::RowReference, Some(_)) => true,
-        (FieldType::RowReference, None) => false,
-        (_, None) => true,
-        (_, Some(_)) => false,
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{
-        canonicalize_composition, canonicalize_composition_yaml, normalize_composition_document,
-    };
+    use super::{canonicalize_composition, canonicalize_composition_yaml};
     use crate::composition::{
-        CompositionDiagnosticCode, CompositionDocument, CompositionMetricPresentation,
+        CompositionComponent, CompositionDiagnosticCode, CompositionMetricPresentation,
         CompositionSource,
     };
-    use crate::form::{FieldType, ListItemDefinition};
-    use crate::id::FormId;
 
-    const MONTHLY_EXPENSE: &str =
-        include_str!("../../tests/fixtures/composition/monthly-expense.ugcomp.yaml");
-    const MONTHLY_EXPENSE_LABELED: &str =
-        include_str!("../../tests/fixtures/composition/monthly-expense-labeled.ugcomp.yaml");
-    const SAVED_SQL_METRIC_COLUMNS: &str =
-        include_str!("../../tests/fixtures/composition/saved-sql-metric-columns.ugcomp.yaml");
-    const UNKNOWN_LIST_ITEM_FIELD: &str =
-        include_str!("../../tests/fixtures/composition/unknown-list-item-field.ugcomp.yaml");
+    const SQL_FIRST: &str = include_str!("../../tests/fixtures/composition/sql-first.ugcomp.yaml");
 
     #[test]
-    fn monthly_expense_canonical_bytes_and_fingerprint_match_golden_fixtures() {
-        let result = canonicalize_composition_yaml(MONTHLY_EXPENSE).unwrap();
+    fn canonical_bytes_and_fingerprint_match_the_sql_first_fixture() {
+        let result = canonicalize_composition_yaml(SQL_FIRST).unwrap();
         assert_eq!(
             result.yaml,
-            include_str!("../../tests/fixtures/composition/monthly-expense.canonical.ugcomp.yaml")
+            include_str!("../../tests/fixtures/composition/sql-first.canonical.ugcomp.yaml")
         );
         assert_eq!(
             result.fingerprint,
-            include_str!("../../tests/fixtures/composition/monthly-expense.fingerprint.txt").trim()
+            include_str!("../../tests/fixtures/composition/sql-first.fingerprint.txt").trim()
         );
         assert!(result.yaml.ends_with('\n'));
         assert!(!result.yaml.contains('\r'));
-        assert!(!result.yaml.starts_with('\u{feff}'));
-        let roundtrip = canonicalize_composition_yaml(&result.yaml).unwrap();
-        assert_eq!(roundtrip.document, result.document);
-        assert_eq!(roundtrip.yaml, result.yaml);
-        assert_eq!(roundtrip.fingerprint, result.fingerprint);
+        assert_eq!(canonicalize_composition_yaml(&result.yaml).unwrap(), result);
         assert!(result
             .document
             .spec
-            .variables
+            .sources
             .iter()
-            .all(|parameter| parameter.label.is_none()));
-        assert!(result
-            .document
-            .spec
-            .components
-            .iter()
-            .all(|component| match component {
-                super::super::CompositionComponent::Input { label, .. }
-                | super::super::CompositionComponent::Text { label, .. }
-                | super::super::CompositionComponent::Metric { label, .. }
-                | super::super::CompositionComponent::Table { label, .. } => label.is_none(),
+            .all(|source| match source {
+                CompositionSource::InlineSql { .. } | CompositionSource::SavedSql { .. } => true,
             }));
     }
 
     #[test]
-    fn labeled_monthly_expense_canonical_bytes_and_fingerprint_match_golden_fixtures() {
-        let result = canonicalize_composition_yaml(MONTHLY_EXPENSE_LABELED).unwrap();
-        assert_eq!(
-            result.yaml,
-            include_str!(
-                "../../tests/fixtures/composition/monthly-expense-labeled.canonical.ugcomp.yaml"
-            )
-        );
-        assert_eq!(
-            result.fingerprint,
-            include_str!(
-                "../../tests/fixtures/composition/monthly-expense-labeled.fingerprint.txt"
-            )
-            .trim()
-        );
-        assert_eq!(result.document.spec.variables[0].id, "month_start");
-        assert_eq!(
-            result.document.spec.variables[0].label.as_deref(),
-            Some("Start month")
-        );
-        assert!(result
-            .document
-            .spec
-            .components
-            .iter()
-            .any(|component| matches!(
-                component,
-                super::super::CompositionComponent::Metric { id, label: Some(label), .. }
-                    if id == "total" && label == "Monthly total"
-            )));
-        assert!(result
-            .document
-            .spec
-            .components
-            .iter()
-            .any(|component| matches!(
-                component,
-                super::super::CompositionComponent::Table { id, label: Some(label), .. }
-                    if id == "transactions" && label == "Expense transactions"
-            )));
-
-        let changed_label =
-            MONTHLY_EXPENSE_LABELED.replace("label: Monthly total", "label: Total expenses");
-        let changed = canonicalize_composition_yaml(&changed_label).unwrap();
-        assert_ne!(result.fingerprint, changed.fingerprint);
-    }
-
-    #[test]
-    fn saved_sql_metric_columns_match_canonical_fixture_and_share_one_source() {
-        let result = canonicalize_composition_yaml(SAVED_SQL_METRIC_COLUMNS).unwrap();
-        assert_eq!(
-            result.yaml,
-            include_str!(
-                "../../tests/fixtures/composition/saved-sql-metric-columns.canonical.ugcomp.yaml"
-            )
-        );
-        assert_eq!(
-            result.fingerprint,
-            include_str!(
-                "../../tests/fixtures/composition/saved-sql-metric-columns.fingerprint.txt"
-            )
-            .trim()
-        );
-        assert_eq!(canonicalize_composition_yaml(&result.yaml).unwrap(), result);
-
-        let columns = result.document.spec.components[..3]
-            .iter()
-            .map(|component| match component {
-                super::super::CompositionComponent::Metric { source, column, .. } => {
-                    assert_eq!(source, "monthly_summary");
-                    column.as_str()
-                }
-                _ => panic!("expected a Metric component"),
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(columns, ["count", "total", "latest"]);
-        let CompositionSource::SavedSql {
-            expected_result, ..
-        } = &result.document.spec.sources[1]
+    fn metrics_accept_either_sql_source_when_the_selected_column_is_scalar() {
+        let mut document = canonicalize_composition_yaml(SQL_FIRST).unwrap().document;
+        let inline = document.spec.sources[0].id().to_owned();
+        let CompositionComponent::Metric { source, column, .. } = &mut document.spec.components[2]
         else {
-            panic!("second source should be Saved SQL")
+            panic!("fixture component should be a Metric");
         };
-        assert_eq!(expected_result.len(), 3);
-        assert_eq!(
-            expected_result[1].result_type,
-            super::super::CompositionResultFieldType::Decimal
-        );
-    }
+        *source = inline;
+        *column = "amount".to_owned();
+        assert!(canonicalize_composition(&document).is_ok());
 
-    #[test]
-    fn canonicalization_rejects_metrics_outside_scalar_saved_sql_columns() {
-        let baseline = canonicalize_composition_yaml(SAVED_SQL_METRIC_COLUMNS)
-            .unwrap()
-            .document;
-
-        let mut entry_query_metric = baseline.clone();
-        if let super::super::CompositionComponent::Metric { source, .. } =
-            &mut entry_query_metric.spec.components[0]
-        {
-            *source = "expense_rows".to_owned();
-        }
+        let CompositionComponent::Metric { column, .. } = &mut document.spec.components[2] else {
+            unreachable!();
+        };
+        *column = "payload".to_owned();
         assert_eq!(
-            canonicalize_composition(&entry_query_metric),
+            canonicalize_composition(&document),
             Err(CompositionDiagnosticCode::InvalidComposition)
         );
+    }
 
+    #[test]
+    fn metric_rejects_missing_columns_and_non_numeric_number_presentation() {
+        let baseline = canonicalize_composition_yaml(SQL_FIRST).unwrap().document;
         let mut missing_column = baseline.clone();
-        if let super::super::CompositionComponent::Metric { column, .. } =
-            &mut missing_column.spec.components[0]
-        {
-            *column = "missing".to_owned();
-        }
+        let CompositionComponent::Metric { column, .. } = &mut missing_column.spec.components[2]
+        else {
+            panic!("fixture component should be a Metric");
+        };
+        *column = "missing".to_owned();
         assert_eq!(
             canonicalize_composition(&missing_column),
             Err(CompositionDiagnosticCode::InvalidComposition)
         );
 
-        let mut presentation_on_date = baseline.clone();
-        if let super::super::CompositionComponent::Metric { presentation, .. } =
-            &mut presentation_on_date.spec.components[2]
-        {
-            *presentation = Some(CompositionMetricPresentation::Number {
-                unit: None,
-                fraction_digits: None,
-            });
-        }
-        assert_eq!(
-            canonicalize_composition(&presentation_on_date),
-            Err(CompositionDiagnosticCode::InvalidComposition)
-        );
-    }
-
-    #[test]
-    fn formatting_comments_key_order_and_field_schema_order_do_not_change_fingerprint() {
-        let reordered_envelope = MONTHLY_EXPENSE.replacen(
-            "format: ugoite.composition\nformat_version: 1\nname: Monthly expenses\nkind: dashboard\ntags: []",
-            "# a comment\nkind: dashboard\nname: 'Monthly expenses'   \nformat_version: 1\nformat: ugoite.composition\ntags: []",
-            1,
-        );
-        let reordered_schema = reordered_envelope
-            .replacen(
-            "        - field_id: 100\n          field_type: date\n        - field_id: 101\n          field_type: string\n        - field_id: 102\n          field_type: double",
-            "        - field_id: 102\n          field_type: double\n        - field_id: 100\n          field_type: date\n        - field_id: 101\n          field_type: string",
-            1,
-            )
-            .replacen(
-                "      variables:\n        month_start:\n          variable: month_start\n        month_end:\n          variable: month_end",
-                "      variables:\n        month_end:\n          variable: month_end\n        month_start:\n          variable: month_start",
-                1,
-            );
-
-        let baseline = canonicalize_composition_yaml(MONTHLY_EXPENSE).unwrap();
-        let reformatted = canonicalize_composition_yaml(&reordered_schema).unwrap();
-        assert_eq!(baseline.document, reformatted.document);
-        assert_eq!(baseline.yaml, reformatted.yaml);
-        assert_eq!(baseline.fingerprint, reformatted.fingerprint);
-    }
-
-    #[test]
-    fn tags_and_saved_sql_result_descriptor_are_semantic_fingerprint_inputs() {
-        let baseline = canonicalize_composition_yaml(MONTHLY_EXPENSE).unwrap();
-        let changed_tags = canonicalize_composition_yaml(
-            &MONTHLY_EXPENSE.replace("tags: []", "tags: [monthly, finance]"),
-        )
-        .unwrap();
-        let changed_result_type =
-            canonicalize_composition_yaml(&MONTHLY_EXPENSE.replace("type: float", "type: integer"))
-                .unwrap();
-
-        assert_ne!(baseline.fingerprint, changed_tags.fingerprint);
-        assert_ne!(baseline.fingerprint, changed_result_type.fingerprint);
-        assert_eq!(baseline.document.tags, Vec::<String>::new());
-        assert_eq!(
-            changed_tags.document.tags,
-            ["monthly".to_string(), "finance".to_string()]
-        );
-    }
-
-    #[test]
-    fn semantic_change_changes_fingerprint() {
-        let changed = MONTHLY_EXPENSE.replace("name: Monthly expenses", "name: Expenses");
-        let baseline = canonicalize_composition_yaml(MONTHLY_EXPENSE).unwrap();
-        let changed = canonicalize_composition_yaml(&changed).unwrap();
-
-        assert_ne!(baseline.fingerprint, changed.fingerprint);
-    }
-
-    #[test]
-    fn canonicalization_rejects_unreferenced_components() {
-        let mut document = canonicalize_composition_yaml(MONTHLY_EXPENSE)
-            .unwrap()
-            .document;
-        document.spec.layout.rows[0].items.pop();
-
-        assert_eq!(
-            canonicalize_composition(&document),
-            Err(CompositionDiagnosticCode::InvalidComposition)
-        );
-    }
-
-    #[test]
-    fn canonicalization_rejects_empty_layouts() {
-        let mut document = canonicalize_composition_yaml(MONTHLY_EXPENSE)
-            .unwrap()
-            .document;
-        document.spec.layout.rows.clear();
-
-        assert_eq!(
-            canonicalize_composition(&document),
-            Err(CompositionDiagnosticCode::InvalidComposition)
-        );
-    }
-
-    #[test]
-    fn layout_and_text_changes_update_the_document_fingerprint() {
-        let baseline = canonicalize_composition_yaml(MONTHLY_EXPENSE_LABELED).unwrap();
-        let reordered_items = MONTHLY_EXPENSE_LABELED.replace(
-            "            component: summary_title\n          - kind: component\n            component: total",
-            "            component: total\n          - kind: component\n            component: summary_title",
-        );
-        assert_ne!(reordered_items, MONTHLY_EXPENSE_LABELED);
-        let reordered = canonicalize_composition_yaml(&reordered_items).unwrap();
-        assert_ne!(baseline.fingerprint, reordered.fingerprint);
-
-        let changed_text =
-            MONTHLY_EXPENSE_LABELED.replace("text: Monthly summary", "text: Summary");
-        assert_ne!(changed_text, MONTHLY_EXPENSE_LABELED);
-        let changed = canonicalize_composition_yaml(&changed_text).unwrap();
-        assert_ne!(baseline.fingerprint, changed.fingerprint);
-    }
-
-    #[test]
-    fn field_schema_preserves_list_item_and_reference_targets() {
-        let yaml = MONTHLY_EXPENSE.replace(
-            "        - field_id: 102\n          field_type: double",
-            "        - field_id: 102\n          field_type: list\n          items:\n            type: string\n        - field_id: 103\n          field_type: row_reference\n          reference_form: \"00000000-0000-7000-8000-000000000010\"",
-        );
-        let result = canonicalize_composition_yaml(&yaml).unwrap();
-        let baseline = canonicalize_composition_yaml(MONTHLY_EXPENSE).unwrap();
-        assert_ne!(result.fingerprint, baseline.fingerprint);
-        let CompositionSource::EntryQuery { field_schema, .. } = &result.document.spec.sources[0]
+        let mut number_on_date = baseline;
+        let CompositionComponent::Metric {
+            source,
+            column,
+            presentation,
+            ..
+        } = &mut number_on_date.spec.components[2]
         else {
-            panic!("expected EntryQuery source");
+            panic!("fixture component should be a Metric");
         };
-        assert_eq!(field_schema[2].field_type, FieldType::List);
+        *source = "expense_rows".to_owned();
+        *column = "Date".to_owned();
+        *presentation = Some(CompositionMetricPresentation::Number {
+            unit: None,
+            fraction_digits: None,
+        });
         assert_eq!(
-            field_schema[2].list_item,
-            Some(ListItemDefinition {
-                field_type: FieldType::String,
-                reference_form: None,
-            })
-        );
-        assert_eq!(field_schema[3].field_type, FieldType::RowReference);
-        assert_eq!(
-            field_schema[3].reference_form,
-            Some(FormId::from_uuid(
-                uuid::Uuid::parse_str("00000000-0000-7000-8000-000000000010").unwrap()
-            ))
-        );
-        assert!(result
-            .yaml
-            .contains("          items:\n            type: string\n"));
-        assert!(result
-            .yaml
-            .contains("          reference_form: 00000000-0000-7000-8000-000000000010"));
-    }
-
-    #[test]
-    fn field_schema_duplicates_and_inconsistent_metadata_are_rejected() {
-        let mut document: CompositionDocument = serde_saphyr::from_str(MONTHLY_EXPENSE).unwrap();
-        {
-            let CompositionSource::EntryQuery { field_schema, .. } = &mut document.spec.sources[0]
-            else {
-                panic!("expected EntryQuery source");
-            };
-            field_schema.push(field_schema[0].clone());
-        }
-        assert_eq!(
-            normalize_composition_document(&document),
-            Err(CompositionDiagnosticCode::InvalidComposition)
-        );
-
-        {
-            let CompositionSource::EntryQuery { field_schema, .. } = &mut document.spec.sources[0]
-            else {
-                panic!("expected EntryQuery source");
-            };
-            field_schema.pop();
-            field_schema[0].reference_form = Some(FormId::from_uuid(uuid::Uuid::nil()));
-        }
-        assert_eq!(
-            normalize_composition_document(&document),
-            Err(CompositionDiagnosticCode::InvalidComposition)
-        );
-        document.format_version = 2;
-        assert_eq!(
-            normalize_composition_document(&document),
-            Err(CompositionDiagnosticCode::UnsupportedFormatVersion)
-        );
-    }
-
-    #[test]
-    fn unknown_list_item_schema_fields_are_rejected() {
-        assert_eq!(
-            canonicalize_composition_yaml(UNKNOWN_LIST_ITEM_FIELD),
+            canonicalize_composition(&number_on_date),
             Err(CompositionDiagnosticCode::InvalidComposition)
         );
     }
 
     #[test]
-    fn typed_value_checks_version_before_the_strict_v1_schema() {
-        let document = canonicalize_composition_yaml(MONTHLY_EXPENSE)
-            .unwrap()
-            .document;
+    fn form_bindings_are_canonicalized_without_changing_sql_semantics() {
+        let mut document = canonicalize_composition_yaml(SQL_FIRST).unwrap().document;
+        let CompositionSource::InlineSql { form_bindings, .. } = &mut document.spec.sources[0]
+        else {
+            panic!("first source should be Inline SQL");
+        };
+        form_bindings.push(form_bindings[0].clone());
+        assert_eq!(
+            canonicalize_composition(&document),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
 
+    #[test]
+    fn semantic_edits_change_the_document_fingerprint() {
+        let baseline = canonicalize_composition_yaml(SQL_FIRST).unwrap();
+        let renamed = SQL_FIRST.replace("name: Monthly expenses", "name: Expenses");
+        let changed = canonicalize_composition_yaml(&renamed).unwrap();
+        assert_ne!(baseline.fingerprint, changed.fingerprint);
+
+        let changed_sql_name =
+            SQL_FIRST.replace("      name: Expense rows", "      name: Recent expenses");
+        assert_ne!(
+            baseline.fingerprint,
+            canonicalize_composition_yaml(&changed_sql_name)
+                .unwrap()
+                .fingerprint
+        );
+    }
+
+    #[test]
+    fn canonicalization_rejects_empty_or_unreferenced_layouts() {
+        let mut document = canonicalize_composition_yaml(SQL_FIRST).unwrap().document;
+        document.spec.layout.rows[0].items.pop();
+        assert_eq!(
+            canonicalize_composition(&document),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+
+        let mut document = canonicalize_composition_yaml(SQL_FIRST).unwrap().document;
+        document.spec.layout.rows.clear();
+        assert_eq!(
+            canonicalize_composition(&document),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
+
+    #[test]
+    fn value_validation_checks_version_then_rejects_unknown_v1_fields() {
+        let document = canonicalize_composition_yaml(SQL_FIRST).unwrap().document;
         let mut future_version = serde_json::to_value(&document).unwrap();
         future_version["format_version"] = serde_json::json!(2);
         future_version["future_field"] = serde_json::json!({"enabled": true});

@@ -646,19 +646,8 @@ mod abi {
 mod tests {
     use serde_json::Value;
 
-    const MONTHLY_EXPENSE_COMPOSITION: &str =
-        include_str!("../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml");
-    const MONTHLY_EXPENSE_LABELED_COMPOSITION: &str = include_str!(
-        "../../ugoite-domain/tests/fixtures/composition/monthly-expense-labeled.ugcomp.yaml"
-    );
-    const SAVED_SQL_METRIC_COLUMNS_COMPOSITION: &str = include_str!(
-        "../../ugoite-domain/tests/fixtures/composition/saved-sql-metric-columns.ugcomp.yaml"
-    );
-    const UNKNOWN_LIST_ITEM_FIELD_COMPOSITION: &str = include_str!(
-        "../../ugoite-domain/tests/fixtures/composition/unknown-list-item-field.ugcomp.yaml"
-    );
-    const UNKNOWN_FORMAT_VERSION_COMPOSITION: &str =
-        include_str!("../../../e2e/fixtures/composition/unknown-format-version.ugcomp.yaml");
+    const SQL_FIRST_COMPOSITION: &str =
+        include_str!("../../ugoite-domain/tests/fixtures/composition/sql-first.ugcomp.yaml");
 
     #[test]
     fn test_api_req_api_001_wasm_adapter_exposes_protocol_version() {
@@ -670,95 +659,44 @@ mod tests {
 
     #[test]
     fn composition_canonicalization_matches_the_native_domain_contract() {
-        for yaml in [
-            MONTHLY_EXPENSE_COMPOSITION,
-            MONTHLY_EXPENSE_LABELED_COMPOSITION,
-            SAVED_SQL_METRIC_COLUMNS_COMPOSITION,
-        ] {
-            let native = ugoite_domain::composition::canonicalize_composition_yaml(yaml).unwrap();
-            let request = serde_json::json!({
-                "action": "domain.canonicalize_composition",
-                "value": {"yaml": yaml},
-            });
-            let response: Value =
-                serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
-
-            assert_eq!(response["ok"], true, "{response}");
-            assert_eq!(
-                response["value"]["document"],
-                serde_json::to_value(native.document).unwrap()
-            );
-            assert_eq!(response["value"]["canonical_yaml"], native.yaml);
-            assert_eq!(response["value"]["fingerprint"], native.fingerprint);
-        }
-
-        let invalid_metric_shapes = [
-            MONTHLY_EXPENSE_COMPOSITION.replace(
-                "      source: month_total\n      column: total",
-                "      definition:\n        kind: sql_scalar\n        source: month_total\n        column: total",
-            ),
-            MONTHLY_EXPENSE_COMPOSITION.replace(
-                "      source: month_total\n      column: total",
-                "      source: expense_rows\n      column: total",
-            ),
-            MONTHLY_EXPENSE_COMPOSITION.replace(
-                "      source: month_total\n      column: total",
-                "      source: month_total\n      value_field:\n        kind: sql_column\n        name: total",
-            ),
-            MONTHLY_EXPENSE_COMPOSITION.replace(
-                "      source: month_total\n      column: total",
-                "      source: month_total\n      column: total\n      operation: sum\n      field_id: 102",
-            ),
-            MONTHLY_EXPENSE_COMPOSITION.replace(
-                "      source: month_total\n      column: total",
-                "      source: month_total\n      column: missing",
-            ),
-        ];
-        for yaml in invalid_metric_shapes {
-            assert_eq!(
-                ugoite_domain::composition::canonicalize_composition_yaml(&yaml),
-                Err(ugoite_domain::composition::CompositionDiagnosticCode::InvalidComposition),
-                "native domain accepted an invalid SQL Metric binding: {yaml}"
-            );
-            let request = serde_json::json!({
-                "action": "domain.canonicalize_composition",
-                "value": {"yaml": yaml},
-            });
-            let response: Value =
-                serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
-            assert_eq!(response["ok"], false, "{response}");
-            assert_eq!(response["error"]["code"], "invalid_composition");
-        }
-
         let native =
-            ugoite_domain::composition::canonicalize_composition_yaml(MONTHLY_EXPENSE_COMPOSITION)
+            ugoite_domain::composition::canonicalize_composition_yaml(SQL_FIRST_COMPOSITION)
                 .unwrap();
+        let request = serde_json::json!({
+            "action": "domain.canonicalize_composition",
+            "value": {"yaml": SQL_FIRST_COMPOSITION},
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(
+            response["value"]["document"],
+            serde_json::to_value(&native.document).unwrap()
+        );
+        assert_eq!(response["value"]["canonical_yaml"], native.yaml);
+        assert_eq!(response["value"]["fingerprint"], native.fingerprint);
+
         let normalized_document = serde_json::to_value(&native.document).unwrap();
         let mut unnormalized_document = normalized_document.clone();
-        {
-            let sources = unnormalized_document["spec"]["sources"]
-                .as_array_mut()
-                .expect("the Composition fixture has a source array");
-            let entry_query_source = sources
-                .iter_mut()
-                .find(|source| source.get("kind").and_then(Value::as_str) == Some("entry_query"))
-                .expect("the Composition fixture has an EntryQuery source");
-            let field_schema = entry_query_source["field_schema"]
-                .as_array_mut()
-                .expect("the EntryQuery fixture has a field schema");
-            field_schema.reverse();
-        }
+        let bindings = unnormalized_document["spec"]["sources"][0]["form_bindings"]
+            .as_array_mut()
+            .expect("the inline SQL source has Form bindings");
+        let mut second_binding = bindings[0].clone();
+        second_binding["relation"] = serde_json::json!("Other");
+        bindings.push(second_binding);
+        bindings.reverse();
         assert_ne!(unnormalized_document, normalized_document);
         let native_typed = ugoite_domain::composition::canonicalize_composition_document_value(
             unnormalized_document.clone(),
         )
         .unwrap();
-        assert_eq!(
-            serde_json::to_value(&native_typed.document).unwrap(),
-            normalized_document
-        );
-        assert_eq!(native_typed.yaml, native.yaml);
-        assert_eq!(native_typed.fingerprint, native.fingerprint);
+        let ugoite_domain::composition::CompositionSource::InlineSql { form_bindings, .. } =
+            &native_typed.document.spec.sources[0]
+        else {
+            panic!("first source should be Inline SQL");
+        };
+        assert_eq!(form_bindings[0].relation, "Expense");
+        assert_eq!(form_bindings[1].relation, "Other");
         let typed_request = serde_json::json!({
             "action": "domain.canonicalize_composition_document",
             "value": {"document": unnormalized_document},
@@ -774,6 +712,26 @@ mod tests {
         assert_eq!(
             typed_response["value"]["fingerprint"],
             native_typed.fingerprint
+        );
+
+        let invalid_metric_yaml = SQL_FIRST_COMPOSITION.replace(
+            "      source: month_total\n      column: total",
+            "      source: month_total\n      column: missing",
+        );
+        let native_invalid_metric =
+            ugoite_domain::composition::canonicalize_composition_yaml(&invalid_metric_yaml)
+                .unwrap_err();
+        let invalid_metric_request = serde_json::json!({
+            "action": "domain.canonicalize_composition",
+            "value": {"yaml": invalid_metric_yaml},
+        });
+        let invalid_metric_response: Value =
+            serde_json::from_str(&super::invoke_json(&invalid_metric_request.to_string())).unwrap();
+        assert_eq!(native_invalid_metric.as_str(), "invalid_composition");
+        assert_eq!(invalid_metric_response["ok"], false);
+        assert_eq!(
+            invalid_metric_response["error"]["code"],
+            native_invalid_metric.as_str()
         );
 
         let invalid_typed_request = serde_json::json!({
@@ -822,7 +780,8 @@ mod tests {
         );
 
         let mut unknown_v1_field_document = serde_json::to_value(&native.document).unwrap();
-        unknown_v1_field_document["future_field"] = serde_json::json!({"enabled": true});
+        unknown_v1_field_document["spec"]["layout"]["rows"][0]["items"][0]["future_field"] =
+            serde_json::json!({"enabled": true});
         let native_unknown_v1_error =
             ugoite_domain::composition::canonicalize_composition_document_value(
                 unknown_v1_field_document.clone(),
@@ -842,54 +801,26 @@ mod tests {
             native_unknown_v1_error.as_str()
         );
 
-        let unreferenced_component = MONTHLY_EXPENSE_COMPOSITION.replace(
+        let invalid_layout_yaml = SQL_FIRST_COMPOSITION.replace(
             "          - kind: component\n            component: transactions\n",
             "",
         );
-        assert_ne!(unreferenced_component, MONTHLY_EXPENSE_COMPOSITION);
-        let invalid_metric_value_field = MONTHLY_EXPENSE_COMPOSITION.replace(
-            "      source: month_total\n      column: total",
-            "      source: month_total\n      value_field:\n        kind: sql_column\n        name: total",
-        );
-        assert_ne!(invalid_metric_value_field, MONTHLY_EXPENSE_COMPOSITION);
-
-        // Unsupported versions use their own complete fixture; the v1 cases
-        // below reach strict validation after the supported envelope probe.
-        let version_error = ugoite_domain::composition::canonicalize_composition_yaml(
-            UNKNOWN_FORMAT_VERSION_COMPOSITION,
-        )
-        .unwrap_err();
-        let version_request = serde_json::json!({
+        assert_ne!(invalid_layout_yaml, SQL_FIRST_COMPOSITION);
+        let native_invalid_layout =
+            ugoite_domain::composition::canonicalize_composition_yaml(&invalid_layout_yaml)
+                .unwrap_err();
+        let invalid_layout_request = serde_json::json!({
             "action": "domain.canonicalize_composition",
-            "value": {"yaml": UNKNOWN_FORMAT_VERSION_COMPOSITION},
+            "value": {"yaml": invalid_layout_yaml},
         });
-        let version_response: Value =
-            serde_json::from_str(&super::invoke_json(&version_request.to_string())).unwrap();
-        assert_eq!(version_error.as_str(), "unsupported_format_version");
-        assert_eq!(version_response["ok"], false, "{version_response}");
-        assert_eq!(version_response["error"]["kind"], "composition_diagnostic");
-        assert_eq!(version_response["error"]["code"], version_error.as_str());
-
-        // Each invalid v1 document has a complete envelope and one strict
-        // schema or layout defect, so the native and WASM codes must agree.
-        for (yaml, expected_code) in [
-            (UNKNOWN_LIST_ITEM_FIELD_COMPOSITION, "invalid_composition"),
-            (invalid_metric_value_field.as_str(), "invalid_composition"),
-            (unreferenced_component.as_str(), "invalid_composition"),
-        ] {
-            let native_error =
-                ugoite_domain::composition::canonicalize_composition_yaml(yaml).unwrap_err();
-            let request = serde_json::json!({
-                "action": "domain.canonicalize_composition",
-                "value": {"yaml": yaml},
-            });
-            let response: Value =
-                serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
-            assert_eq!(native_error.as_str(), expected_code);
-            assert_eq!(response["ok"], false, "{response}");
-            assert_eq!(response["error"]["kind"], "composition_diagnostic");
-            assert_eq!(response["error"]["code"], native_error.as_str());
-        }
+        let invalid_layout_response: Value =
+            serde_json::from_str(&super::invoke_json(&invalid_layout_request.to_string())).unwrap();
+        assert_eq!(native_invalid_layout.as_str(), "invalid_composition");
+        assert_eq!(invalid_layout_response["ok"], false);
+        assert_eq!(
+            invalid_layout_response["error"]["code"],
+            native_invalid_layout.as_str()
+        );
     }
 
     #[test]

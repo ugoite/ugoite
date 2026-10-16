@@ -6,9 +6,8 @@ use ugoite_core::composition::{
     ResolvedComponentBinding, ResolvedComponentKind, ResolvedSourceRequest,
 };
 use ugoite_core::composition_metric::{
-    encode_composition_metric_value, evaluate_saved_sql_metric_probe,
-    CompositionMetricQueryRequest, CompositionMetricQueryResponse, CompositionMetricQueryTarget,
-    CompositionMetricQueryValue,
+    encode_composition_metric_value, evaluate_sql_metric_probe, CompositionMetricQueryRequest,
+    CompositionMetricQueryResponse, CompositionMetricQueryTarget, CompositionMetricQueryValue,
 };
 use ugoite_core::query::QueryLimits;
 use ugoite_core::sql_query::{SqlQueryRequest, SqlScalarProbeResult};
@@ -29,6 +28,18 @@ impl UgoiteService {
         space_id: &str,
         request: CompositionMetricQueryRequest,
     ) -> Result<CompositionMetricQueryResponse> {
+        if request.draft_base.is_some()
+            && matches!(
+                &request.target,
+                CompositionMetricQueryTarget::SavedRevision { .. }
+            )
+        {
+            return Err(AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "Composition metric query base is only valid for a draft target",
+            )
+            .into());
+        }
         let (plan, draft_fingerprint, diagnostics) = match &request.target {
             CompositionMetricQueryTarget::SavedRevision {
                 composition_id,
@@ -55,11 +66,12 @@ impl UgoiteService {
             }
             CompositionMetricQueryTarget::Draft { yaml } => {
                 let preview = self
-                    .preview_composition_local(
+                    .preview_composition_local_with_base(
                         space_id,
                         yaml,
                         &request.variables,
                         &request.unset_variables,
+                        request.draft_base,
                     )
                     .await?;
                 (
@@ -134,6 +146,18 @@ impl UgoiteService {
         request: CompositionMetricQueryRequest,
         query_limits_override: Option<&QueryLimits>,
     ) -> Result<CompositionMetricQueryResponse> {
+        if request.draft_base.is_some()
+            && matches!(
+                &request.target,
+                CompositionMetricQueryTarget::SavedRevision { .. }
+            )
+        {
+            return Err(AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "Composition metric query base is only valid for a draft target",
+            )
+            .into());
+        }
         let (plan, draft_fingerprint, diagnostics, composition_id) = match &request.target {
             CompositionMetricQueryTarget::SavedRevision {
                 composition_id,
@@ -162,12 +186,13 @@ impl UgoiteService {
             }
             CompositionMetricQueryTarget::Draft { yaml } => {
                 let preview = self
-                    .preview_composition_authorized_for_principals(
+                    .preview_composition_authorized_for_principals_with_base(
                         space_id,
                         yaml,
                         &request.variables,
                         &request.unset_variables,
                         principal_ids,
+                        request.draft_base,
                     )
                     .await?;
                 (
@@ -241,11 +266,7 @@ impl UgoiteService {
             ));
         };
         let Some(source) = sources.iter().find(|source| match source {
-            ResolvedSourceRequest::EntryQuery {
-                source_id: candidate,
-                ..
-            }
-            | ResolvedSourceRequest::SavedSql {
+            ResolvedSourceRequest::Sql {
                 source_id: candidate,
                 ..
             } => candidate == source_id,
@@ -264,53 +285,33 @@ impl UgoiteService {
             ));
         };
 
-        let value = match source {
-            ResolvedSourceRequest::SavedSql {
-                request: sql_request,
-                ..
-            } => {
-                let sql_request = sql_request.clone();
-                let probe = match principal_ids {
-                    Some(principal_ids) => match composition_id {
-                        Some(composition_id) => {
-                            self.probe_sql_scalar_authorized_for_composition_metric(
-                                space_id,
-                                principal_ids,
-                                composition_id,
-                                sql_request,
-                                query_limits_override,
-                            )
-                            .await?
-                        }
-                        None => {
-                            self.probe_sql_scalar_authorized_with_composition_access(
-                                space_id,
-                                principal_ids,
-                                None,
-                                sql_request,
-                                query_limits_override,
-                            )
-                            .await?
-                        }
-                    },
-                    None => self.probe_sql_scalar_local(space_id, sql_request).await?,
-                };
-                match evaluate_saved_sql_metric_probe(binding, &probe) {
-                    Ok(value) => value,
-                    Err(diagnostic) => {
-                        return Ok(metric_query_diagnostic(
-                            draft_fingerprint,
-                            component_id,
-                            diagnostic.code,
-                        ));
-                    }
-                }
+        let ResolvedSourceRequest::Sql {
+            request: sql_request,
+            ..
+        } = source;
+        let probe = match principal_ids {
+            Some(principal_ids) => {
+                self.probe_composition_sql_scalar_authorized(
+                    space_id,
+                    principal_ids,
+                    composition_id,
+                    sql_request.clone(),
+                    query_limits_override,
+                )
+                .await?
             }
-            ResolvedSourceRequest::EntryQuery { .. } => {
+            None => {
+                self.probe_composition_sql_scalar_local(space_id, sql_request.clone())
+                    .await?
+            }
+        };
+        let value = match evaluate_sql_metric_probe(binding, &probe) {
+            Ok(value) => value,
+            Err(diagnostic) => {
                 return Ok(metric_query_diagnostic(
                     draft_fingerprint,
                     component_id,
-                    CompositionDiagnosticCode::InvalidComposition,
+                    diagnostic.code,
                 ));
             }
         };
@@ -371,6 +372,39 @@ impl UgoiteService {
         })
     }
 
+    async fn probe_composition_sql_scalar_local(
+        &self,
+        space_id: &str,
+        request: SqlQueryRequest,
+    ) -> Result<SqlScalarProbeResult> {
+        validate_scalar_probe_request_with_inline(&request, true)?;
+        let prepared = sql_execution::prepare_sql_request(self, space_id, &request, None).await?;
+        self.validate_complete_space(space_id).await?;
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let publication = workspace.current_publication().await?;
+        let checkpoint = workspace.resolve_publication(&publication).await?;
+        let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
+        let relation_scopes = sql_execution::all_current_relation_scopes(&forms);
+        let execution_sql = sql_execution::bind_sql_to_forms(&prepared, &forms, &relation_scopes)?;
+        let (columns, result_schema, rows) =
+            index::execute_sql_scalar_probe_authorized_by_form_at_checkpoint_stateless(
+                &self.operator,
+                &self.workspace_path(space_id),
+                &execution_sql,
+                &relation_scopes,
+                prepared.parameters,
+                forms,
+                checkpoint,
+            )
+            .await?;
+        Ok(SqlScalarProbeResult {
+            columns,
+            rows,
+            result_schema,
+        })
+    }
+
     /// Probe an exact Saved SQL revision after rechecking current read and
     /// Saved SQL access for every principal and retaining the authorization
     /// lease through execution.
@@ -386,24 +420,26 @@ impl UgoiteService {
             None,
             request,
             None,
+            false,
         )
         .await
     }
 
-    async fn probe_sql_scalar_authorized_for_composition_metric(
+    async fn probe_composition_sql_scalar_authorized(
         &self,
         space_id: &str,
         principal_ids: &[Uuid],
-        composition_id: &str,
+        composition_id: Option<&str>,
         request: SqlQueryRequest,
         query_limits_override: Option<&QueryLimits>,
     ) -> Result<SqlScalarProbeResult> {
         self.probe_sql_scalar_authorized_with_composition_access(
             space_id,
             principal_ids,
-            Some(composition_id),
+            composition_id,
             request,
             query_limits_override,
+            true,
         )
         .await
     }
@@ -415,8 +451,9 @@ impl UgoiteService {
         composition_id: Option<&str>,
         request: SqlQueryRequest,
         query_limits_override: Option<&QueryLimits>,
+        allow_inline_sql: bool,
     ) -> Result<SqlScalarProbeResult> {
-        validate_scalar_probe_request(&request)?;
+        validate_scalar_probe_request_with_inline(&request, allow_inline_sql)?;
         require_nonempty_authorized_principals(principal_ids)?;
         self.validate_complete_space(space_id).await?;
         let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
@@ -491,11 +528,20 @@ impl UgoiteService {
 }
 
 fn validate_scalar_probe_request(request: &SqlQueryRequest) -> Result<()> {
+    validate_scalar_probe_request_with_inline(request, false)
+}
+
+fn validate_scalar_probe_request_with_inline(
+    request: &SqlQueryRequest,
+    allow_inline_sql: bool,
+) -> Result<()> {
     request.validate().map_err(sql_query_contract_error)?;
-    if request.saved_sql.is_none() || request.continuation.is_some() || !request.sql.is_empty() {
+    let is_exact_saved_sql = request.saved_sql.is_some() && request.sql.is_empty();
+    let is_inline_sql = allow_inline_sql && request.saved_sql.is_none() && !request.sql.is_empty();
+    if (!is_exact_saved_sql && !is_inline_sql) || request.continuation.is_some() {
         return Err(AppError::invalid_input(
             ErrorCode::InvalidInput,
-            "scalar probes require an exact Saved SQL revision and do not accept SQL text or continuations",
+            "scalar probes require one SQL source and do not accept continuations",
         )
         .into());
     }
@@ -529,15 +575,223 @@ mod tests {
     use serde_json::json;
     use std::collections::BTreeMap;
     use std::time::Duration;
+    use ugoite_core::composition::CompositionRevisionRef;
     use ugoite_core::query::{QueryLimits, SqlFunctionPolicy};
     use ugoite_domain::composition::{
-        CompositionComponent, CompositionDocument, CompositionFormat, CompositionKind,
-        CompositionResultColumn, CompositionResultFieldType, CompositionSource, CompositionSpec,
-        DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow,
+        canonicalize_composition, CompositionComponent, CompositionDocument,
+        CompositionFormBinding, CompositionFormat, CompositionKind, CompositionResultColumn,
+        CompositionResultFieldType, CompositionSource, CompositionSpec, DashboardFlowLayout,
+        FlowItem, FlowLayoutKind, FlowRow,
     };
-    use ugoite_domain::form::sql_column_name;
+    use ugoite_domain::form::{sql_column_name, FormChange, FormChangeSet};
     use ugoite_domain::id::FieldId;
     use uuid::Uuid;
+
+    #[tokio::test]
+    async fn draft_metric_uses_exact_base_bindings_and_ignores_forged_bindings() -> Result<()> {
+        let operator = Operator::new(Memory::default())?;
+        let service = UgoiteService::from_operator(
+            operator,
+            format!("memory://composition-metric-draft-base-{}", Uuid::now_v7()),
+        );
+        let owner = Uuid::now_v7();
+        let space_id = service
+            .create_space_for_principal("metric-draft-base", owner, "Owner")
+            .await?
+            .to_string();
+        let original_form_name = "MetricProvenance";
+        let amount_field = FieldId::new(101)?;
+        let original_form = service
+            .upsert_form_result(
+                &space_id,
+                &json!({
+                    "name": original_form_name,
+                    "fields": {
+                        "amount": {"id": 101, "type": "long", "required": false}
+                    }
+                }),
+            )
+            .await?;
+        service
+            .create_structured_entry_with_receipt(
+                &space_id,
+                "metric-provenance-original",
+                original_form_name.to_string(),
+                Vec::new(),
+                BTreeMap::from([("amount".to_string(), json!(5))]),
+                BTreeMap::new(),
+                "owner",
+            )
+            .await?;
+
+        let expected_result = vec![CompositionResultColumn {
+            name: "total".to_string(),
+            result_type: CompositionResultFieldType::Integer,
+        }];
+        let document = CompositionDocument {
+            format: CompositionFormat::UgoiteComposition,
+            format_version: 1,
+            kind: CompositionKind::Dashboard,
+            name: "Metric provenance".to_string(),
+            spec: CompositionSpec {
+                variables: Vec::new(),
+                sources: vec![CompositionSource::InlineSql {
+                    id: "metric_source".to_string(),
+                    name: "Total".to_string(),
+                    sql: format!(
+                        "SELECT SUM(\"{}\") AS total FROM \"{original_form_name}\"",
+                        sql_column_name(amount_field)
+                    ),
+                    form_bindings: Vec::new(),
+                    expected_result: Vec::new(),
+                    schema_fingerprint: String::new(),
+                }],
+                components: vec![CompositionComponent::Metric {
+                    id: "metric".to_string(),
+                    source: "metric_source".to_string(),
+                    column: "total".to_string(),
+                    presentation: None,
+                }],
+                layout: DashboardFlowLayout {
+                    kind: FlowLayoutKind::Flow,
+                    rows: vec![FlowRow {
+                        id: "main".to_string(),
+                        items: vec![FlowItem::Component {
+                            component: "metric".to_string(),
+                        }],
+                    }],
+                },
+            },
+        };
+        let saved = service
+            .save_composition_authorized_for_principals(
+                &space_id,
+                crate::composition::CompositionSaveRequest {
+                    entry_id: None,
+                    base_revision_id: None,
+                    document,
+                },
+                &owner.to_string(),
+                &[owner],
+            )
+            .await?;
+
+        // Rename the originally bound Form, then reuse its old name for a
+        // distinct Form with a different scalar value. The exact base must
+        // retain the original ID; an unbased draft resolves the current name.
+        let workspace = crate::iceberg_store::native_mutation_workspace(
+            service.operator(),
+            &service.workspace_path(&space_id),
+        )
+        .await?;
+        let current_form = workspace
+            .list_forms()
+            .await?
+            .into_iter()
+            .find(|candidate| candidate.id == original_form.form_id)
+            .expect("original Form remains available after save");
+        let changes = FormChangeSet {
+            form_id: original_form.form_id,
+            expected_version: Some(current_form.version),
+            changes: vec![FormChange::RenameForm {
+                name: "MetricProvenanceRenamed".to_string(),
+            }],
+        };
+        let publication = crate::system_publication_context(
+            format!(
+                "test-composition-metric-form-rename:{}",
+                original_form.form_id
+            ),
+            "form.evolve",
+            &changes,
+        )?;
+        workspace
+            .commit(publication)?
+            .evolve_form_with_receipt(&changes)
+            .await?;
+        let replacement_form = service
+            .upsert_form_result(
+                &space_id,
+                &json!({
+                    "name": original_form_name,
+                    "fields": {
+                        "amount": {"id": 101, "type": "long", "required": false}
+                    }
+                }),
+            )
+            .await?;
+        for (entry_name, amount) in [("replacement-a", 7), ("replacement-b", 8)] {
+            service
+                .create_structured_entry_with_receipt(
+                    &space_id,
+                    entry_name,
+                    original_form_name.to_string(),
+                    Vec::new(),
+                    BTreeMap::from([("amount".to_string(), json!(amount))]),
+                    BTreeMap::new(),
+                    "owner",
+                )
+                .await?;
+        }
+
+        let mut forged = saved.document.clone();
+        let CompositionSource::InlineSql {
+            form_bindings,
+            expected_result: saved_expected_result,
+            ..
+        } = &mut forged.spec.sources[0]
+        else {
+            panic!("metric source is inline SQL");
+        };
+        *form_bindings = vec![CompositionFormBinding {
+            relation: original_form_name.to_string(),
+            form_id: replacement_form.form_id,
+        }];
+        assert_eq!(*saved_expected_result, expected_result);
+        let forged_yaml = canonicalize_composition(&forged)
+            .map_err(|code| anyhow::anyhow!(code.as_str()))?
+            .yaml;
+        let request = |draft_base| CompositionMetricQueryRequest {
+            target: CompositionMetricQueryTarget::Draft {
+                yaml: forged_yaml.clone(),
+            },
+            draft_base,
+            component_id: "metric".to_string(),
+            variables: BTreeMap::new(),
+            unset_variables: Vec::new(),
+        };
+        let new_draft = service
+            .query_composition_metric_authorized_for_principals(&space_id, &[owner], request(None))
+            .await?;
+        assert!(
+            new_draft.ok,
+            "new draft metric should resolve: {new_draft:?}"
+        );
+        assert_eq!(
+            new_draft.result.expect("replacement metric").value,
+            json!("15")
+        );
+
+        let edited_draft = service
+            .query_composition_metric_authorized_for_principals(
+                &space_id,
+                &[owner],
+                request(Some(CompositionRevisionRef {
+                    entry_id: saved.entry_id,
+                    revision_id: saved.revision_id,
+                })),
+            )
+            .await?;
+        assert!(
+            edited_draft.ok,
+            "base-edited metric should resolve: {edited_draft:?}"
+        );
+        assert_eq!(
+            edited_draft.result.expect("original metric").value,
+            json!("5")
+        );
+        Ok(())
+    }
 
     #[tokio::test]
     async fn authorized_saved_sql_metric_returns_no_value_when_query_exceeds_memory_limit(
@@ -604,6 +858,7 @@ mod tests {
                 name: "total".to_string(),
                 result_type: CompositionResultFieldType::Integer,
             }],
+            schema_fingerprint: "0".repeat(64),
             variables: BTreeMap::new(),
         };
         let document = CompositionDocument {
@@ -611,13 +866,11 @@ mod tests {
             format_version: 1,
             kind: CompositionKind::Dashboard,
             name: "Metric resource limit".to_string(),
-            tags: Vec::new(),
             spec: CompositionSpec {
                 variables: Vec::new(),
                 sources: vec![source],
                 components: vec![CompositionComponent::Metric {
                     id: "metric".to_string(),
-                    label: None,
                     source: "source".to_string(),
                     column: "total".to_string(),
                     presentation: None,
@@ -662,6 +915,7 @@ mod tests {
                         composition_id: saved.entry_id.to_string(),
                         revision_id: saved.revision_id.to_string(),
                     },
+                    draft_base: None,
                     component_id: "metric".to_string(),
                     variables: BTreeMap::new(),
                     unset_variables: Vec::new(),
