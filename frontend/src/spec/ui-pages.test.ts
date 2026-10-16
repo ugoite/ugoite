@@ -61,6 +61,7 @@ const allowedComponentTypes = new Set([
   "query-results",
   "query-pagination",
   "select",
+  "typed-variable-list",
 ]);
 
 const collectYamlFiles = (dir: string): string[] => {
