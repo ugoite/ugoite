@@ -523,18 +523,20 @@ describe("UI spec YAML registry", () => {
     }
   });
 
-  it("REQ-UX-PAGINATION-001: keeps Composition paging request-owned and shares chevrons", () => {
+  it("SQL-first Composition spec: keeps paging request-owned by the SQL query handle", () => {
     const revision = loadPages().find(({ spec }) =>
       spec.page?.id === "space-composition-revision"
     );
-    const compositionComponents = revision?.spec.components?.body?.find(({ id }) =>
-      id === "composition-components"
+    const compositionComponents = revision?.spec.components?.body?.find(
+      (component) => component.id === "composition-components",
     );
     expect(compositionComponents).toMatchObject({
       pagination_owner:
         "SQL query handle; continuation and explicit count stay in stateless query requests",
     });
+  });
 
+  it("REQ-UX-PAGINATION-001: connects SQL results pagination to shared chevrons", () => {
     const sqlResults = loadPages().find(({ spec }) =>
       spec.page?.id === "space-sql-results"
     );

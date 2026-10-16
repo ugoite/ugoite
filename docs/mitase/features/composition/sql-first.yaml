@@ -108,4 +108,14 @@ features:
               kind: file
             claims:
               - kind: documents
+                anchor: REQ-COMP-008#criterion.stateless-bounded-execution
+              - kind: documents
+                anchor: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results
+          - id: sql-first-composition-history-page-contract
+            adapter: declared
+            path: docs/spec/ui/pages/space-composition-history.yaml
+            selector:
+              kind: file
+            claims:
+              - kind: documents
                 anchor: REQ-FE-079#criterion.composition-history-hides-revision-identifiers
