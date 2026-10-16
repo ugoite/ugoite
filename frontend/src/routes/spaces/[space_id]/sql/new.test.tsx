@@ -87,7 +87,14 @@ vi.mock("~/components/SQLWorkspace", () => ({
 }));
 
 vi.mock("~/components/SqlStructureToolbar", () => ({
-  SqlStructureToolbar: () => null,
+  SqlStructureToolbar: (props: { onSqlChange?: (value: string) => void }) => (
+    <button
+      type="button"
+      onClick={() => props.onSqlChange?.("SELECT 100")}
+    >
+      Apply SQL structure
+    </button>
+  ),
 }));
 
 vi.mock("~/lib/ugoite-client", () => ({
@@ -363,6 +370,32 @@ describe("/spaces/:space_id/sql/new", () => {
     })).toBeInTheDocument();
 
     fireEvent.input(editor, { target: { value: "SELECT 100" } });
+
+    expect(editor).toHaveValue("SELECT 100");
+    expect(screen.queryByRole("region", {
+      name: "Generated SQL preview",
+    })).not.toBeInTheDocument();
+  });
+
+  it("discards a generated SQL proposal when the structure toolbar edits SQL", async () => {
+    render(() => <SpaceQueryCreateRoute />);
+    const editor = await screen.findByRole("textbox", { name: "SQL" });
+    await waitFor(() =>
+      expect(editor).toHaveValue(
+        'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
+      )
+    );
+    fireEvent.input(editor, { target: { value: "SELECT 99" } });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Generate SQL from Form" }),
+    );
+    expect(screen.getByRole("region", {
+      name: "Generated SQL preview",
+    })).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Apply SQL structure" }),
+    );
 
     expect(editor).toHaveValue("SELECT 100");
     expect(screen.queryByRole("region", {

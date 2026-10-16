@@ -627,6 +627,7 @@ export default function SpaceQueryCreateRoute() {
               `new-sql:${spaceId()}:${selectedFormId()}`,
             )}
           onSqlChange={(value) => {
+            setReplacementProposal(null);
             setHasUserEditedSql(true);
             setSqlInput(value);
           }}
