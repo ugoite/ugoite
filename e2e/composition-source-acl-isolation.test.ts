@@ -357,14 +357,13 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
         await expect(page.locator("body")).not.toContainText(
           seed.protectedValue,
         );
-        if (revokedRead === "saved_sql") {
-          expect(deniedBody).toMatchObject({
-            ok: false,
-            diagnostics: [{ code: "source_unavailable" }],
-          });
-        } else {
-          expect(deniedBody.httpStatus).toBeGreaterThanOrEqual(400);
-        }
+        // Metric-query denials use a sanitized diagnostic body for both
+        // revoked source types while returning no value.
+        expect(deniedBody).toMatchObject({
+          ok: false,
+          diagnostics: [{ code: "source_unavailable" }],
+        });
+        expect(deniedBody.result).toBeUndefined();
 
         // Revisit the same revision. A revoked Saved SQL source is hidden
         // during resolution; a still-readable Saved SQL source can resolve,
