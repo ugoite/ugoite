@@ -1248,6 +1248,26 @@ impl AuthorizedQueryContext {
         .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
     }
 
+    /// Resolves the portable output schema for a stateless SQL statement
+    /// without executing its physical plan or materializing rows.
+    pub async fn stateless_result_schema(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    ) -> Result<Vec<SqlResultColumn>> {
+        let _permit = self
+            .permits
+            .clone()
+            .try_acquire_owned()
+            .map_err(AuthorizedQueryError::resource_limit)?;
+        tokio::time::timeout(
+            self.limits.timeout,
+            self.stateless_result_schema_with_permit(sql, parameters),
+        )
+        .await
+        .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
+    }
+
     /// Executes the explicit count operation for stateless SQL. It is kept
     /// separate from page execution so a normal page never performs an
     /// arbitrary count wrapper.
@@ -1369,6 +1389,16 @@ impl AuthorizedQueryContext {
             batches,
             has_order,
         })
+    }
+
+    async fn stateless_result_schema_with_permit(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    ) -> Result<Vec<SqlResultColumn>> {
+        let plan = self.prepared_plan(sql, parameters).await?;
+        let (_, result_schema) = sql_output_shape(&plan)?;
+        Ok(result_schema)
     }
 
     async fn execute_stateless_count_with_permit(

@@ -550,11 +550,10 @@ impl UgoiteService {
                 },
             })
             .await?;
-        let page = context
-            .execute_stateless_page(&bound_sql, parameters, 0, 1)
+        let result_schema = context
+            .stateless_result_schema(&bound_sql, parameters)
             .await?;
-        let expected_result = page
-            .result_schema
+        let expected_result = result_schema
             .iter()
             .map(|column| CompositionResultColumn {
                 name: column.name.clone(),

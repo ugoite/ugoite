@@ -1239,6 +1239,35 @@ async fn context_enforces_the_row_limit() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn stateless_result_schema_plans_without_executing_rows() -> anyhow::Result<()> {
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(35)),
+        "memory://authorized-query-schema-only",
+    )
+    .await?;
+    let tasks = form(36, "Tasks");
+    create_form(&workspace, &tasks).await?;
+    append(&workspace, &tasks, 37, 38, "not-a-number").await?;
+    let context = workspace
+        .authorized_query_context(policy(&tasks, &[37]))
+        .await?;
+    let sql = "SELECT CAST(field_100 AS BIGINT) AS numeric_title FROM tasks";
+
+    let schema = context.stateless_result_schema(sql, HashMap::new()).await?;
+    assert_eq!(schema.len(), 1);
+    assert_eq!(schema[0].name, "numeric_title");
+    assert_eq!(
+        schema[0].column_type,
+        ugoite_core::sql_query::SqlResultColumnType::Integer
+    );
+    assert!(context
+        .execute_stateless_page(sql, HashMap::new(), 0, 1)
+        .await
+        .is_err());
+    Ok(())
+}
+
+#[tokio::test]
 async fn system_columns_are_queryable_only_when_explicitly_allowlisted() -> anyhow::Result<()> {
     let workspace = IcebergWorkspace::memory_for_tests(
         SpaceId::from(Uuid::from_u128(40)),

@@ -174,6 +174,40 @@ async fn draft_preview_resolves_without_publication() -> Result<()> {
 }
 
 #[tokio::test]
+async fn draft_preview_resolves_sql_schema_without_executing_source_rows() -> Result<()> {
+    let (service, space_id, mut document, form_id) = setup_preview_space().await?;
+    let CompositionSource::InlineSql { sql, .. } = &mut document.spec.sources[0] else {
+        anyhow::bail!("fixture should use inline SQL");
+    };
+    *sql = format!(
+        "SELECT CAST(\"{}\" AS BIGINT) AS numeric_title FROM \"Composition-Preview\"",
+        sql_column_name(FieldId::new(100)?)
+    );
+    let canonical =
+        canonicalize_composition(&document).map_err(|code| anyhow::anyhow!(code.as_str()))?;
+
+    // The rows contain strings such as `row-0`, so execution of this cast
+    // fails. Draft resolution only needs the planned result type and must
+    // leave execution to the later preview query.
+    let preview = service
+        .preview_composition_local(&space_id, &canonical.yaml, &BTreeMap::new(), &[])
+        .await
+        .context("draft preview should resolve from the planned SQL schema")?;
+    assert!(preview.diagnostics.is_empty(), "{:?}", preview.diagnostics);
+    let plan = preview.plan.context("preview should return a plan")?;
+    assert!(matches!(
+        &plan.sources[0],
+        ugoite_core::composition::ResolvedSourceRequest::Sql {
+            request,
+            source_schema_fingerprint,
+            ..
+        } if request.sql.contains(&sql_relation_name(form_id))
+            && source_schema_fingerprint.len() == 64
+    ));
+    Ok(())
+}
+
+#[tokio::test]
 async fn parameterized_saved_sql_placeholder_previews_and_saves_with_server_schema() -> Result<()> {
     let (service, space_id, _, _) = setup_preview_space().await?;
     let sql_id = Uuid::from_u128(3_434_010);
