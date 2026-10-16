@@ -3,8 +3,6 @@ title: "Prerelease Composition graph snapshot"
 description: "Historical Composition requirements and UI specifications; not current acceptance."
 ---
 
-# Prerelease Composition graph snapshot
-
 The YAML and UI component files in this directory preserve the exact prereplacement
 Composition source at base commit `7f782d29d1d31558a610e7dfdd6c7756ef370ebf`.
 They are historical records only; they are outside the active Mitase inventory and
