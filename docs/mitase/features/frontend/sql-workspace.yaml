@@ -42,6 +42,20 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-080#criterion.workspace-control-size-rules
+          - id: sql-structure-toolbar
+            adapter: typescript
+            path: frontend/src/components/SqlStructureToolbar.tsx
+            selector: { kind: symbol, name: SqlStructureToolbar }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.safe-structured-operations
+          - id: sql-structure-context
+            adapter: typescript
+            path: frontend/src/lib/sql.ts
+            selector: { kind: symbol, name: buildSqlStructureContexts }
+            claims:
+              - kind: evidences
+                anchor: REQ-FE-080#criterion.safe-structured-operations
       - id: rust-structure-capabilities
         role: evidence
         facet: domain
@@ -152,6 +166,51 @@ features:
                 criterion: REQ-FE-080#criterion.workspace-control-size-rules
                 covers: [FEAT-FE-008#binding.frontend/target.sql-workspace, FEAT-FE-008#binding.frontend/target.sql-workspace-layout]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: uses 16px inputs and 44px action targets" } }
+          - id: sql-structure-context-map
+            adapter: typescript
+            path: frontend/src/lib/sql.test.ts
+            selector: { kind: test, name: "uses the written Form relation and intersects typed column capabilities" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.safe-structured-operations
+                covers: [FEAT-FE-008#binding.frontend/target.sql-structure-context]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: "uses the written Form relation and intersects typed column capabilities" } }
+          - id: sql-structure-confirmation
+            adapter: typescript
+            path: frontend/src/components/SqlStructureToolbar.test.tsx
+            selector: { kind: test, name: "intersects Form capabilities and changes SQL only after proposal confirmation" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.safe-structured-operations
+                covers: [FEAT-FE-008#binding.frontend/target.sql-structure-toolbar]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlStructureToolbar.test.tsx, test: "intersects Form capabilities and changes SQL only after proposal confirmation" } }
+          - id: sql-structure-template-variables
+            adapter: typescript
+            path: frontend/src/components/SqlStructureToolbar.test.tsx
+            selector: { kind: test, name: "normalizes template variables only for parser proposals" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.safe-structured-operations
+                covers: [FEAT-FE-008#binding.frontend/target.sql-structure-toolbar]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlStructureToolbar.test.tsx, test: "normalizes template variables only for parser proposals" } }
+          - id: sql-structure-stale-proposal
+            adapter: typescript
+            path: frontend/src/components/SqlStructureToolbar.test.tsx
+            selector: { kind: test, name: "discards a proposal and closes its dialog when SQL context changes" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.safe-structured-operations
+                covers: [FEAT-FE-008#binding.frontend/target.sql-structure-toolbar]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlStructureToolbar.test.tsx, test: "discards a proposal and closes its dialog when SQL context changes" } }
+          - id: sql-structure-null-filter
+            adapter: typescript
+            path: frontend/src/components/SqlStructureToolbar.test.tsx
+            selector: { kind: test, name: "offers null filters without requiring a typed variable" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.safe-structured-operations
+                covers: [FEAT-FE-008#binding.frontend/target.sql-structure-toolbar]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlStructureToolbar.test.tsx, test: "offers null filters without requiring a typed variable" } }
           - id: sql-editor-accessibility-and-wrapping
             adapter: typescript
             path: frontend/src/components/SqlQueryEditor.test.tsx
