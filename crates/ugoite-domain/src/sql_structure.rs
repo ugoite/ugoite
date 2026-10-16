@@ -2052,6 +2052,37 @@ mod tests {
         );
         assert_eq!(rejected.base_sql, incompatible_distinct);
         assert!(rejected.proposed_sql.is_none());
+
+        let incompatible_grouping = "SELECT \"field_101\" FROM \"Task\" ORDER BY \"field_102\"";
+        let rejected = propose_sql_structure_operation(
+            incompatible_grouping,
+            &context(),
+            SqlStructureOperation::SetGroupBy {
+                columns: vec!["field_101".to_owned()],
+            },
+        );
+        assert_eq!(rejected.status, SqlStructureStatus::Unsupported);
+        assert_eq!(rejected.reason, Some(SqlStructureReason::SortUnsupported));
+        assert_eq!(rejected.base_sql, incompatible_grouping);
+        assert!(rejected.proposed_sql.is_none());
+
+        let incompatible_aggregate = "SELECT * FROM \"Task\" ORDER BY \"field_101\"";
+        let rejected = propose_sql_structure_operation(
+            incompatible_aggregate,
+            &context(),
+            SqlStructureOperation::SetAggregates {
+                aggregates: vec![SqlStructureAggregate {
+                    function: SqlStructureAggregateFunction::Count,
+                    column: None,
+                    distinct: false,
+                    alias: None,
+                }],
+            },
+        );
+        assert_eq!(rejected.status, SqlStructureStatus::Unsupported);
+        assert_eq!(rejected.reason, Some(SqlStructureReason::SortUnsupported));
+        assert_eq!(rejected.base_sql, incompatible_aggregate);
+        assert!(rejected.proposed_sql.is_none());
     }
 
     #[test]
