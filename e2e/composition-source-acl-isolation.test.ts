@@ -334,6 +334,8 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
         );
         const replayedSqlBody = await replayedSqlResponse.text();
         expect(replayedSqlResponse.ok()).toBe(false);
+        expect(replayedSqlResponse.status()).toBeGreaterThanOrEqual(400);
+        expect(replayedSqlResponse.status()).toBeLessThan(500);
 
         const compositionReadAfterRevocation = await viewerContext.request.get(
           getBackendUrl(
@@ -342,6 +344,9 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
         );
         expect(compositionReadAfterRevocation.ok()).toBe(true);
 
+        const revokedSqlResponse = revokedRead === "form"
+          ? sqlPageResponse(page)
+          : undefined;
         const revokedMetricResponse = metricResponse(page);
         await page.getByRole("textbox", { name: "Lookup key", exact: true })
           .fill(inputValue);
@@ -358,6 +363,20 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
           });
         } else {
           expect(deniedBody.httpStatus).toBeGreaterThanOrEqual(400);
+          expect(deniedBody.httpStatus).toBeLessThan(500);
+        }
+
+        // With Form Read revoked, the Saved SQL source remains readable and
+        // the Browser issues its normal page query. Inspect that response
+        // before reload: execution is denied with a client error, not a
+        // server failure, and it must not disclose the protected source.
+        let deniedSqlBody: string | undefined;
+        if (revokedSqlResponse) {
+          const response = await revokedSqlResponse;
+          expect(response.ok()).toBe(false);
+          expect(response.status()).toBeGreaterThanOrEqual(400);
+          expect(response.status()).toBeLessThan(500);
+          deniedSqlBody = await response.text();
         }
 
         // Revisit the same revision. A revoked Saved SQL source is hidden
@@ -395,7 +414,11 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
         } else {
           expect(resolveBody.ok).toBe(true);
         }
-        const deniedText = JSON.stringify([deniedBody, resolveBody]);
+        const deniedText = JSON.stringify([
+          deniedBody,
+          resolveBody,
+          deniedSqlBody,
+        ]);
         const concealedValues = [
           seed.savedSqlText,
           seed.protectedValue,
