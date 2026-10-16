@@ -1,3 +1,8 @@
+---
+title: "Prerelease Composition graph snapshot"
+description: "Historical Composition requirements and UI specifications; not current acceptance."
+---
+
 # Prerelease Composition graph snapshot
 
 The YAML and UI component files in this directory preserve the exact prereplacement
