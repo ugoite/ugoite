@@ -5274,7 +5274,8 @@ a.tool {
 .sql-structure-dialog-content,
 .sql-structure-column-list,
 .sql-structure-filter-list,
-.sql-structure-sort-list {
+.sql-structure-sort-list,
+.sql-structure-aggregate-list {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -5302,7 +5303,8 @@ a.tool {
 }
 
 .sql-structure-filter-row,
-.sql-structure-sort-row {
+.sql-structure-sort-row,
+.sql-structure-aggregate-row {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1.2fr) 44px;
   align-items: end;
@@ -5314,8 +5316,17 @@ a.tool {
   grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) 44px;
 }
 
+.sql-structure-aggregate-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto 44px;
+}
+
+.sql-structure-aggregate-row--count-all {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) 44px;
+}
+
 .sql-structure-filter-row .ui-input,
 .sql-structure-sort-row .ui-input,
+.sql-structure-aggregate-row .ui-input,
 .sql-structure-dialog .ui-button,
 .sql-structure-dialog .icononly {
   box-sizing: border-box;
@@ -5364,8 +5375,13 @@ a.tool {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 
+  .sql-structure-aggregate-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
   .sql-structure-filter-row .icononly,
-  .sql-structure-sort-row .icononly {
+  .sql-structure-sort-row .icononly,
+  .sql-structure-aggregate-row .icononly {
     grid-column: 2;
     justify-self: end;
   }

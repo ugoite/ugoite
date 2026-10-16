@@ -4,6 +4,7 @@ import type { Diagnostic } from "@codemirror/lint";
 import sqlRules from "../../../shared/sql/ugoite-sql-rules.json";
 import type { Form, FormField, SqlVariable, SqlVariableDefault } from "./types";
 import type {
+  SqlStructureAggregateFunction,
   SqlStructureColumnType,
   SqlStructureContext,
   SqlStructureFilterOperator,
@@ -65,11 +66,42 @@ const sqlStructureVariableType = (
   }
 };
 
+const aggregateFunctionsForType = (
+  type: SqlStructureColumnType,
+): SqlStructureAggregateFunction[] => {
+  switch (type) {
+    case "integer":
+    case "float":
+    case "decimal":
+      return ["count", "sum", "avg", "min", "max"];
+    case "string":
+    case "boolean":
+    case "date":
+    case "timestamp":
+      return ["count", "min", "max"];
+    case "json":
+      return ["count"];
+    case "other":
+      return [];
+  }
+};
+
+const sqlStructureTypeSupportsGrouping = (
+  type: SqlStructureColumnType,
+): boolean => type !== "json" && type !== "other";
+
+const sqlStructureTypeSupportsDistinct = (
+  type: SqlStructureColumnType,
+): boolean => type !== "json" && type !== "other";
+
 export interface SqlStructureColumnCapabilities {
   projectable: boolean;
   filterable: boolean;
   sortable: boolean;
   supportedOperators: readonly SqlStructureFilterOperator[];
+  aggregateFunctions: readonly SqlStructureAggregateFunction[];
+  groupable: boolean;
+  distinctable: boolean;
 }
 
 /** Typed parser input plus the server-derived per-column action contract. */
@@ -132,6 +164,9 @@ export const buildSqlStructureContexts = (
         filterable: true,
         sortable: true,
         supportedOperators: ["eq", "not_eq", "is_null", "is_not_null"],
+        aggregateFunctions: aggregateFunctionsForType("string"),
+        groupable: true,
+        distinctable: true,
       },
       _ugoite_created_at: {
         projectable: true,
@@ -147,6 +182,9 @@ export const buildSqlStructureContexts = (
           "is_null",
           "is_not_null",
         ],
+        aggregateFunctions: aggregateFunctionsForType("timestamp"),
+        groupable: true,
+        distinctable: true,
       },
       _ugoite_updated_at: {
         projectable: true,
@@ -162,20 +200,34 @@ export const buildSqlStructureContexts = (
           "is_null",
           "is_not_null",
         ],
+        aggregateFunctions: aggregateFunctionsForType("timestamp"),
+        groupable: true,
+        distinctable: true,
       },
     };
     for (const field of Object.values(form.fields ?? {})) {
       const name = field.sql_column?.trim();
       if (!name) continue;
       const capability = field.query_capability;
+      const queryType = capability
+        ? sqlStructureColumnType(capability.field_type)
+        : undefined;
+      const projectable = capability?.projectable === true;
       columnCapabilities[name] = {
-        projectable: capability?.projectable === true,
+        projectable,
         filterable: capability?.filterable === true,
         sortable: capability?.sortable === true,
         supportedOperators: queryOperators(
           capability?.supported_operators,
           capability?.filterable === true,
         ),
+        aggregateFunctions: projectable && queryType
+          ? aggregateFunctionsForType(queryType)
+          : [],
+        groupable: projectable && queryType !== undefined &&
+          sqlStructureTypeSupportsGrouping(queryType),
+        distinctable: projectable && queryType !== undefined &&
+          sqlStructureTypeSupportsDistinct(queryType),
       };
     }
     const parser: SqlStructureContext = {
