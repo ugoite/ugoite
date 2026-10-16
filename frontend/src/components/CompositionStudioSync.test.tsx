@@ -566,6 +566,62 @@ describe("CompositionStudioSync", () => {
     expect(previewMock).toHaveBeenCalledTimes(2);
   });
 
+  it("invalidates an in-flight preview immediately when a variable default changes", async () => {
+    let resolvePrevious!: (response: unknown) => void;
+    previewMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePrevious = resolve;
+        }),
+    );
+    previewMock.mockImplementation(async () => okPreview("fp-current"));
+
+    const draft = seedDraft();
+    draft.variables = draft.variables.map((variable) => ({
+      ...variable,
+      default: variable.id === "month" ? "2026-09-01" : variable.default,
+    }));
+    renderStudio(draft);
+    await waitFor(() => {
+      expect(previewMock).toHaveBeenCalledTimes(1);
+    });
+    expect(previewMock).toHaveBeenNthCalledWith(
+      1,
+      "space-1",
+      expect.any(String),
+      { month: "2026-09-01" },
+      expect.any(AbortSignal),
+    );
+
+    fireEvent.click(modeRadios().data);
+    fireEvent.click(screen.getByRole("tab", { name: "Variables" }));
+    fireEvent.input(screen.getByLabelText("Default for Month"), {
+      target: { value: "2026-10-01" },
+    });
+
+    // Resolve the previous request inside the replacement-preview debounce
+    // window. It must not issue source queries or restore its old plan.
+    await sleep(100);
+    resolvePrevious(okPreview("fp-previous"));
+    await sleep(100);
+    expect(querySourceMock).not.toHaveBeenCalled();
+    expect(previewMock).toHaveBeenCalledTimes(1);
+
+    await waitFor(() => {
+      expect(previewMock).toHaveBeenCalledTimes(2);
+    });
+    expect(previewMock).toHaveBeenNthCalledWith(
+      2,
+      "space-1",
+      expect.any(String),
+      { month: "2026-10-01" },
+      expect.any(AbortSignal),
+    );
+    await waitFor(() => {
+      expect(querySourceMock).toHaveBeenCalled();
+    });
+  });
+
   it("separates Data sources, Variables, and Tags into tabs in Data mode", () => {
     const { container } = renderStudio();
     const modes = modeRadios();
