@@ -159,6 +159,98 @@ describe("CompositionQueryHandle", () => {
     handle.dispose();
   });
 
+  it("isolates Work when the same Composition IDs are opened in another Space", async () => {
+    const lateSpaceAPage = deferred<ReturnType<typeof entryPage>>();
+    const sourceSignals: AbortSignal[] = [];
+    let spaceAQueryCount = 0;
+    const compositionId = "shared-composition-id";
+    const revisionId = "shared-revision-id";
+    const responseForSpace = (spaceId: string) => {
+      const response = resolved(spaceId) as CompositionResolveResponse;
+      response.variable_definitions = [{
+        id: "month",
+        type: "string",
+        required: true,
+        default: `default-${spaceId}`,
+      }];
+      response.plan!.composition_revision = {
+        entry_id: compositionId,
+        revision_id: revisionId,
+      };
+      return response;
+    };
+    const api: CompositionQueryApi = {
+      get: vi.fn((_spaceId, entryId, selectedRevisionId) =>
+        Promise.resolve({
+          revision: {
+            entry_id: entryId,
+            revision_id: selectedRevisionId,
+          },
+          fields: { name: "Shared composition" },
+          unmapped_field_values: {},
+        })
+      ),
+      resolve: vi.fn((spaceId) => Promise.resolve(responseForSpace(spaceId))),
+      querySource: vi.fn((spaceId, _source, _cursor, signal) => {
+        sourceSignals.push(signal);
+        if (spaceId === "space-a") {
+          spaceAQueryCount += 1;
+          return spaceAQueryCount === 1
+            ? Promise.resolve(entryPage("space-a-initial-result"))
+            : lateSpaceAPage.promise;
+        }
+        return Promise.resolve(entryPage("space-b-result"));
+      }),
+    };
+    const handle = createCompositionQueryHandle(api);
+    const spaceA = { spaceId: "space-a", compositionId, revisionId };
+    const spaceB = { spaceId: "space-b", compositionId, revisionId };
+
+    await handle.open(spaceA);
+    expect(handle.variables()).toEqual({ month: "default-space-a" });
+    handle.setVariableRaw("month", "edited-in-space-a");
+    expect(handle.variables()).toEqual({ month: "edited-in-space-a" });
+    await vi.waitFor(() => expect(api.querySource).toHaveBeenCalledTimes(2));
+    expect(sourceSignals[1].aborted).toBe(false);
+
+    await handle.open(spaceB);
+
+    expect(api.get).toHaveBeenNthCalledWith(
+      2,
+      "space-b",
+      compositionId,
+      revisionId,
+      expect.any(AbortSignal),
+    );
+    expect(api.resolve).toHaveBeenLastCalledWith(
+      "space-b",
+      compositionId,
+      revisionId,
+      {},
+      expect.any(AbortSignal),
+    );
+    expect(sourceSignals[1].aborted).toBe(true);
+    expect(handle.state().identity).toEqual(spaceB);
+    expect(handle.variableInputs().month).toEqual({
+      raw: "default-space-b",
+      status: "valid",
+      value: "default-space-b",
+    });
+    expect(handle.state().sources.entries?.page).toEqual(
+      entryPage("space-b-result"),
+    );
+
+    lateSpaceAPage.resolve(entryPage("late-space-a-result"));
+    await lateSpaceAPage.promise;
+
+    expect(handle.state().identity).toEqual(spaceB);
+    expect(handle.variables()).toEqual({ month: "default-space-b" });
+    expect(handle.state().sources.entries?.page).toEqual(
+      entryPage("space-b-result"),
+    );
+    handle.dispose();
+  });
+
   it("keeps an explicit unset marker so a declared default is not restored", async () => {
     const response = resolved("2026-03-01") as CompositionResolveResponse;
     response.variable_definitions = [{

@@ -211,6 +211,15 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-same-id-cross-space-isolation
+      adapter: typescript
+      path: frontend/src/lib/composition-query-handle.test.ts
+      selector:
+        kind: test
+        name: isolates Work when the same Composition IDs are opened in another Space
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-007#criterion.stale-result-and-state-safety
     - id: browser-source-pagination
       adapter: typescript
       path: frontend/src/lib/composition-query-handle.test.ts

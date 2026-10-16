@@ -422,6 +422,15 @@ requirements:
                 criterion: REQ-COMP-007#criterion.stale-result-and-state-safety
                 covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime-evidence/target.incomplete-source-dependencies-hide-prior-pages]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: fails closed and hides prior pages when a variable dependency index is missing } }
+          - id: browser-same-id-cross-space-isolation
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.test.ts
+            selector: { kind: test, name: isolates Work when the same Composition IDs are opened in another Space }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.stale-result-and-state-safety
+                covers: [FEAT-COMP-004#binding.browser-query-runtime-evidence/target.browser-same-id-cross-space-isolation]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: isolates Work when the same Composition IDs are opened in another Space } }
           - id: browser-invalid-input-discards-metric-response
             adapter: typescript
             path: frontend/src/components/CompositionRenderer.test.tsx
