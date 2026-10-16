@@ -351,22 +351,11 @@ describe("/spaces/:space_id/search", () => {
     expect(screen.queryByText("Space A Form")).not.toBeInTheDocument();
   });
 
-  it("keeps save-as-tool disabled with the All-scope reason and no visible prose", () => {
+  it("does not expose the retired EntryQuery-to-Composition action", () => {
     const { container } = render(() => <SpaceSearchRoute />);
 
-    const saveButton = screen.getByRole("button", {
-      name: /Save as tool requires a Form scope/,
-    });
-    expect(saveButton).toBeDisabled();
-    expect(saveButton).toHaveAttribute(
-      "title",
-      "Save as tool, Save as tool requires a Form scope",
-    );
-    expect(saveButton.querySelector("svg")).toHaveAttribute(
-      "aria-hidden",
-      "true",
-    );
-    expect(saveButton.textContent).toBe("");
+    expect(screen.queryByRole("button", { name: /Save as tool/ }))
+      .not.toBeInTheDocument();
     const navigation = container.querySelector(
       ".entry-browser-toolbar-navigation",
     );
@@ -374,6 +363,6 @@ describe("/spaces/:space_id/search", () => {
     expect(
       navigation?.querySelector('[aria-label="Open saved queries"]'),
     ).not.toBeNull();
-    expect(navigation?.querySelector("button")).toBe(saveButton);
+    expect(navigation?.querySelector("button")).toBeNull();
   });
 });

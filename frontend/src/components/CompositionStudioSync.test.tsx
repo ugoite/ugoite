@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CompositionStudio } from "./CompositionStudio";
 import {
-  addEntryQuerySource,
+  addInlineSqlSource,
   addInputComponent,
   addMetricDisplay,
   addSavedSqlSource,
@@ -107,6 +107,19 @@ vi.mock("~/lib/ugoite-client", () => ({
 const stylesheet = () => readFileSync(join(__dirname, "..", "app.css"), "utf8");
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const blockButton = (draftId: string): HTMLButtonElement | null =>
+  document.querySelector(
+    `[data-block-id="${draftId}"] button[aria-label^="Select "]`,
+  );
+const requireBlockButton = (draftId: string): HTMLButtonElement => {
+  const button = blockButton(draftId);
+  if (!button) throw new Error(`Expected canvas block ${draftId}`);
+  return button;
+};
+const waitForBlockButton = async (draftId: string) => {
+  await waitFor(() => expect(blockButton(draftId)).not.toBeNull());
+  return requireBlockButton(draftId);
+};
 
 /** Metric Total on src-1, table Details on src-2, text Summary, month placed. */
 const seedDraft = (): CompositionDraft => {
@@ -119,33 +132,24 @@ const seedDraft = (): CompositionDraft => {
     variables: {},
     variableTypes: {},
   }).draft;
-  draft = addEntryQuerySource(draft, {
-    formId: "11111111-1111-4111-8111-111111111111",
+  draft = addInlineSqlSource(draft, {
     name: "Expenses",
-    fieldSchema: [{ field_id: 1, field_type: "string" }],
-    query: {
-      filters: [],
-      sort: [],
-      projection: { kind: "preview" as const },
-    },
+    sql: 'SELECT "Amount" AS total FROM "Expenses"',
+    formBindings: [{ relation: "Expenses", form_id: "form-1" }],
+    expectedResult: [{ name: "total", type: "float" as const }],
+    schemaFingerprint: "a".repeat(64),
   }).draft;
   const month = addVariable(draft, {
     id: "month",
-    label: "Month",
     type: "date",
     required: true,
   });
   if (!month.ok) throw new Error("expected month variable");
   draft = month.draft;
-  const metric = addMetricDisplay(
-    draft,
-    "src-1",
-    "total",
-    "Total",
-  );
+  const metric = addMetricDisplay(draft, "src-1", "total");
   if (!metric.ok) throw new Error("expected metric block");
   draft = metric.draft;
-  const table = addTableDisplay(draft, "src-2", "Details");
+  const table = addTableDisplay(draft, "src-2");
   if (!table.ok) throw new Error("expected table block");
   draft = table.draft;
   const text = addTextDisplay(draft, { text: "Summary", style: "heading" });
@@ -192,7 +196,7 @@ const sqlMetricDraft = (): CompositionDraft => {
     variables: {},
     variableTypes: {},
   });
-  const metric = addMetricDisplay(alternate.draft, "src-1", "total", "Total");
+  const metric = addMetricDisplay(alternate.draft, "src-1", "total");
   if (!metric.ok) throw new Error("expected Saved SQL Metric");
   return metric.draft;
 };
@@ -213,7 +217,11 @@ const okPreview = (fingerprint: string) => ({
       source_id: id,
       request: {},
       source_schema_fingerprint: "fp",
-      kind: "entry_query",
+      kind: id === "src-1" ? "saved_sql" : "inline_sql",
+      expected_result: [{ name: "total", type: "float" }],
+      ...(id === "src-2"
+        ? { form_bindings: [{ relation: "Expenses", form_id: "form-1" }] }
+        : {}),
     })),
     component_bindings: [],
   },
@@ -233,11 +241,11 @@ const okMetricPreview = (
       request: {},
       source_schema_fingerprint: "fp",
       kind: "saved_sql",
+      expected_result: [{ name: "total", type: "float" }],
     }],
     component_bindings: [{
       component_id: "disp-1",
       kind: "metric",
-      label: "Total",
       source_id: "src-1",
       expected_result_type: "float",
     }],
@@ -272,20 +280,16 @@ describe("CompositionStudioSync", () => {
     vi.clearAllMocks();
     canonicalizeMock.mockImplementation(
       async (document: {
-        spec: { components: { id: string; label?: string }[] };
+        spec: { components: unknown[] };
       }) => ({
-        canonical_yaml: `yaml:${
-          document.spec.components.map((component) =>
-            `${component.id}=${component.label ?? ""}`
-          ).join(",")
-        }`,
+        canonical_yaml: `yaml:${JSON.stringify(document.spec.components)}`,
         fingerprint: "canonical-fingerprint",
       }),
     );
     previewMock.mockImplementation(async () => okPreview("fp-1"));
     querySourceMock.mockImplementation(async () => ({
-      kind: "entry_query",
-      page: { rows: [], has_more: false },
+      kind: "sql",
+      page: { columns: [], rows: [], has_more: false },
     }));
     queryMetricMock.mockResolvedValue({
       ok: true,
@@ -340,7 +344,7 @@ describe("CompositionStudioSync", () => {
 
     // Design first: canvas without the Data navigator.
     expect(
-      screen.getByRole("button", { name: "Select Total" }),
+      requireBlockButton("disp-1"),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Monthly totals" }),
@@ -352,7 +356,7 @@ describe("CompositionStudioSync", () => {
       screen.getByRole("button", { name: "Monthly totals" }),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Select Total" }),
+      blockButton("disp-1"),
     ).toBeNull();
 
     fireEvent.click(modes.split);
@@ -362,7 +366,7 @@ describe("CompositionStudioSync", () => {
     ).not.toBeNull();
     // Split pairs the canvas with the Data pane for the selected block.
     expect(
-      screen.getByRole("button", { name: "Select Total" }),
+      requireBlockButton("disp-1"),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Monthly totals" }),
@@ -374,26 +378,32 @@ describe("CompositionStudioSync", () => {
     await waitFor(() => {
       expect(previewMock).toHaveBeenCalledTimes(1);
     });
+    await waitFor(() => {
+      expect(previewMock).toHaveBeenCalledTimes(2);
+    });
+    const previewCount = previewMock.mock.calls.length;
+    const canonicalizeCount = canonicalizeMock.mock.calls.length;
 
-    fireEvent.click(screen.getByRole("button", { name: "Select Total" }));
+    fireEvent.click(requireBlockButton("disp-1"));
     expect(screen.getByRole("heading", { name: "Metric" })).toBeInTheDocument();
 
     const modes = modeRadios();
     fireEvent.click(modes.data);
     // The Data selection follows the block without a preview round-trip.
-    await screen.findByRole("heading", { name: "Monthly totals" });
+    expect(screen.getByRole("button", { name: "Monthly totals" }))
+      .toHaveAttribute("aria-pressed", "true");
     fireEvent.click(modes.split);
     fireEvent.click(modes.design);
 
     // Selection and draft survive every mode switch.
     expect(screen.getByRole("heading", { name: "Metric" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Select Total" }))
+    expect(requireBlockButton("disp-1"))
       .toHaveAttribute("aria-pressed", "true");
 
     // Modes switch arrangement only: no state reset, no refetch.
     await sleep(700);
-    expect(previewMock).toHaveBeenCalledTimes(1);
-    expect(canonicalizeMock).toHaveBeenCalledTimes(1);
+    expect(previewMock).toHaveBeenCalledTimes(previewCount);
+    expect(canonicalizeMock).toHaveBeenCalledTimes(canonicalizeCount);
   });
 
   it("queries a typed draft metric with its exact preview and current variable values", async () => {
@@ -482,24 +492,24 @@ describe("CompositionStudioSync", () => {
     fireEvent.click(modeRadios().split);
 
     // No source selected yet: the pane shows the navigator only.
-    expect(
-      screen.queryByRole("heading", { name: "Monthly totals" }),
-    ).toBeNull();
+    expect(screen.getByRole("button", { name: "Monthly totals" }))
+      .toHaveAttribute("aria-pressed", "false");
 
-    fireEvent.click(screen.getByRole("button", { name: "Select Total" }));
-    await screen.findByRole("heading", { name: "Monthly totals" });
+    fireEvent.click(requireBlockButton("disp-1"));
+    expect(screen.getByRole("button", { name: "Monthly totals" }))
+      .toHaveAttribute("aria-pressed", "true");
 
     // Text blocks carry no source: the Data selection is kept, not reset.
-    fireEvent.click(screen.getByRole("button", { name: "Select Summary" }));
+    fireEvent.click(requireBlockButton("disp-3"));
     expect(
-      screen.getByRole("heading", { name: "Monthly totals" }),
-    ).toBeInTheDocument();
+      screen.getByRole("button", { name: "Monthly totals" }),
+    ).toHaveAttribute("aria-pressed", "true");
 
     // Variable controls carry no source either.
-    fireEvent.click(screen.getByRole("button", { name: "Select Month" }));
+    fireEvent.click(requireBlockButton("input-4"));
     expect(
-      screen.getByRole("heading", { name: "Monthly totals" }),
-    ).toBeInTheDocument();
+      screen.getByRole("button", { name: "Monthly totals" }),
+    ).toHaveAttribute("aria-pressed", "true");
   });
 
   it("soft-highlights using blocks distinctly from the selection", () => {
@@ -516,7 +526,7 @@ describe("CompositionStudioSync", () => {
       container.querySelectorAll(".designBlock[data-selected]"),
     ).toHaveLength(0);
 
-    fireEvent.click(screen.getByRole("button", { name: "Select Total" }));
+    fireEvent.click(requireBlockButton("disp-1"));
     // Block selection auto-selects its own source, so the highlight follows
     // the Data selection while the selection owner stays the block.
     expect(metric).toHaveAttribute("data-selected");
@@ -544,21 +554,19 @@ describe("CompositionStudioSync", () => {
     fireEvent.click(modes.split);
     fireEvent.click(modes.data);
     fireEvent.click(modes.design);
-    fireEvent.click(screen.getByRole("button", { name: "Select Summary" }));
+    fireEvent.click(requireBlockButton("disp-3"));
     expect(previewMock).toHaveBeenCalledTimes(1);
 
-    // A draft edit schedules exactly one follow-up preview. The inspector
-    // label field is scoped: the Display section renders label inputs too.
-    fireEvent.click(screen.getByRole("button", { name: "Select Total" }));
+    // A persisted text edit schedules exactly one follow-up preview.
     const inspector = screen.getByRole("complementary");
-    fireEvent.input(within(inspector).getByLabelText("Label"), {
-      target: { value: "Total v2" },
+    fireEvent.input(within(inspector).getByLabelText("Text"), {
+      target: { value: "Summary v2" },
     });
     await waitFor(() => {
       expect(previewMock).toHaveBeenCalledTimes(2);
     });
     const latestYaml = (previewMock.mock.calls[1] as unknown[])[1];
-    expect(latestYaml).toContain("Total v2");
+    expect(latestYaml).toContain("Summary v2");
 
     // The stale first response resolves last and never resurrects.
     resolveFirst(okPreview("fp-old"));
@@ -566,7 +574,7 @@ describe("CompositionStudioSync", () => {
     expect(previewMock).toHaveBeenCalledTimes(2);
   });
 
-  it("separates Data sources, Variables, and Tags into tabs in Data mode", () => {
+  it("separates Data sources and Variables into tabs in Data mode", () => {
     const { container } = renderStudio();
     const modes = modeRadios();
     // Top-level studio sections only: canvas block content carries its own
@@ -577,11 +585,11 @@ describe("CompositionStudioSync", () => {
       ).length;
 
     // Design renders the finished shape only: canvas plus inspector, no
-    // Data workspace, no Variables, no Tags, no Preview section.
+    // Data workspace, no Variables, no Preview section.
     expect(screen.getByRole("heading", { name: "Design" })).toBeInTheDocument();
     expect(topSectionCount()).toBe(1);
     expect(
-      screen.getByRole("button", { name: "Select Total" }),
+      requireBlockButton("disp-1"),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Monthly totals" }),
@@ -589,16 +597,16 @@ describe("CompositionStudioSync", () => {
     expect(
       screen.queryByRole("heading", { name: "Variables" }),
     ).toBeNull();
-    expect(screen.queryByRole("heading", { name: "Tags" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Preview" })).toBeNull();
 
     // Data renders only the active fetch-definition panel. Variables and
-    // Tags are separate tabs so the source editor stays the initial focus.
+    // Sources are separate tabs so the source editor stays the initial focus.
     fireEvent.click(modes.data);
     expect(screen.getByRole("heading", { name: "Data" })).toBeInTheDocument();
     const dataTabs = screen.getByRole("tablist", { name: "Data" });
     expect(within(dataTabs).getAllByRole("tab").map((tab) => tab.textContent))
-      .toEqual(["Sources", "Variables", "Tags"]);
+      .toEqual(["Sources", "Variables"]);
+    expect(within(dataTabs).queryByRole("tab", { name: "Tags" })).toBeNull();
     expect(
       within(dataTabs).getAllByRole("tab").every((tab) =>
         (tab as HTMLButtonElement).tabIndex === 0
@@ -613,34 +621,29 @@ describe("CompositionStudioSync", () => {
     expect(
       screen.queryByRole("heading", { name: "Variables" }),
     ).toBeNull();
-    expect(screen.queryByRole("heading", { name: "Tags" })).toBeNull();
     fireEvent.click(within(dataTabs).getByRole("tab", { name: "Variables" }));
     expect(screen.getByRole("heading", { name: "Variables" }))
       .toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Tags" })).toBeNull();
     expect(
       screen.queryByRole("button", { name: "Monthly totals" }),
     ).toBeNull();
-    fireEvent.click(within(dataTabs).getByRole("tab", { name: "Tags" }));
-    expect(screen.getByRole("heading", { name: "Tags" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Variables" })).toBeNull();
     fireEvent.click(within(dataTabs).getByRole("tab", { name: "Sources" }));
     expect(
       screen.getByRole("button", { name: "Monthly totals" }),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Select Total" }),
+      blockButton("disp-1"),
     ).toBeNull();
     expect(screen.queryByRole("heading", { name: "Preview" })).toBeNull();
 
     // Split pairs the canvas with the Data pane and nothing else:
-    // variables and tags edit in Data mode.
+    // Variables edit in Data mode.
     fireEvent.click(modes.split);
     expect(screen.getByRole("heading", { name: "Design" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Data" })).toBeInTheDocument();
     expect(topSectionCount()).toBe(1);
     expect(
-      screen.getByRole("button", { name: "Select Total" }),
+      requireBlockButton("disp-1"),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Monthly totals" }),
@@ -648,7 +651,6 @@ describe("CompositionStudioSync", () => {
     expect(
       screen.queryByRole("heading", { name: "Variables" }),
     ).toBeNull();
-    expect(screen.queryByRole("heading", { name: "Tags" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Preview" })).toBeNull();
   });
 
@@ -689,7 +691,7 @@ describe("CompositionStudioSync", () => {
       screen.getAllByRole("button", { name: "Add to design" }),
     ).toHaveLength(2);
     expect(
-      await screen.findByRole("button", { name: "Select Expenses" }),
+      await waitForBlockButton("disp-1"),
     ).toBeInTheDocument();
   });
 
@@ -730,7 +732,7 @@ describe("CompositionStudioSync", () => {
     expect(save).toBeEnabled();
 
     fireEvent.click(
-      await screen.findByRole("button", { name: "Select Total" }),
+      await waitForBlockButton("disp-1"),
     );
     fireEvent.change(screen.getByRole("combobox", { name: "Source" }), {
       target: { value: "src-2" },
@@ -760,12 +762,14 @@ describe("CompositionStudioSync", () => {
     expect(screen.getByText("128400", { selector: "output" }))
       .toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Select Total" }));
+    fireEvent.click(requireBlockButton("disp-1"));
     fireEvent.change(screen.getByRole("combobox", { name: "Source" }), {
       target: { value: "src-2" },
     });
 
-    await vi.advanceTimersByTimeAsync(401);
+    // Include the post-effect scheduling margin used by the resolved-preview
+    // case above, then leave canonicalization pending while the Metric changes.
+    await vi.advanceTimersByTimeAsync(521);
     expect(canonicalizeMock).toHaveBeenCalledTimes(1);
     expect(previewMock).toHaveBeenCalledTimes(1);
     expect(queryMetricMock).toHaveBeenCalledTimes(1);
@@ -785,7 +789,7 @@ describe("CompositionStudioSync", () => {
     expect(canonicalizeMock).toHaveBeenCalledTimes(1);
     expect(previewMock).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Select Total" }));
+    fireEvent.click(requireBlockButton("disp-1"));
     fireEvent.change(screen.getByRole("combobox", { name: "Source" }), {
       target: { value: "src-2" },
     });
@@ -844,7 +848,7 @@ describe("CompositionStudioSync", () => {
     );
 
     expect(
-      await screen.findByRole("button", { name: "Select Monthly totals" }),
+      await waitForBlockButton("disp-1"),
     ).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "Choose a source" }))
       .toBeNull();
@@ -852,7 +856,7 @@ describe("CompositionStudioSync", () => {
   });
 
   it("puts current sources first and reuses one from Design", async () => {
-    renderStudio();
+    const { container } = renderStudio();
     fireEvent.click(
       screen.getAllByRole("button", { name: "Add to design" })[0],
     );
@@ -865,15 +869,32 @@ describe("CompositionStudioSync", () => {
       name: "Add data component",
     });
     fireEvent.click(
-      within(dataPicker).getByRole("button", { name: "Expenses" }),
+      within(dataPicker).getByRole("button", {
+        name: "Choose a Form or Saved SQL",
+      }),
     );
-    expect(
-      await screen.findByRole("button", { name: "Select Expenses" }),
-    ).toBeInTheDocument();
+    const sourcePicker = screen.getByRole("dialog", { name: "Choose a source" });
+    const currentSources = await within(sourcePicker).findByRole("list", {
+      name: "In this composition",
+    });
+    const currentExpense = within(currentSources).getByRole("button", {
+      name: /Expenses/,
+    });
+    expect(currentExpense).toBeInTheDocument();
+    fireEvent.click(currentExpense);
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Choose a source" }))
+        .toBeNull();
+    });
+    expect(container.querySelectorAll('[data-block-id^="disp-"]'))
+      .toHaveLength(4);
 
     fireEvent.click(modeRadios().data);
     expect(screen.queryByRole("button", { name: "Add data" })).toBeNull();
     expect(screen.getAllByRole("button", { name: "Expenses" })).toHaveLength(1);
+    expect(
+      container.querySelectorAll(".dataWorkspaceNavigator .rowListItem"),
+    ).toHaveLength(2);
   });
 
   it("keeps display insertion in Design and source management in Data", () => {
@@ -941,7 +962,7 @@ describe("CompositionStudioSync", () => {
     expect(previewMock).toHaveBeenCalledTimes(1);
   });
 
-  it("uses authored variable labels in studio diagnostics", async () => {
+  it("uses variable IDs in studio diagnostics", async () => {
     previewMock.mockImplementation(async () => ({
       ok: false,
       draft_fingerprint: "fp-bad",
@@ -951,10 +972,10 @@ describe("CompositionStudioSync", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("alert", { name: "Diagnostics" }))
-        .toHaveTextContent("Enter a value for Month.");
+        .toHaveTextContent("Enter a value for month.");
     });
     expect(screen.getByRole("alert", { name: "Diagnostics" }))
-      .not.toHaveTextContent("month");
+      .not.toHaveTextContent("Month");
   });
 
   it("saves through one visible text button with the blocked reason in its name", () => {

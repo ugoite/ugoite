@@ -7,6 +7,7 @@ import {
   test,
 } from "@playwright/test";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
+import { completeSavedSqlCompositionYaml } from "./lib/composition.ts";
 
 type StudioSeedState = {
   spaceId: string;
@@ -312,7 +313,6 @@ async function addCanvasDisplay(
   kind: "Metric" | "Table",
   sourceName: string,
   column?: string,
-  label?: string,
 ): Promise<void> {
   // A gap opens the design palette; its Data entry opens the shared
   // Table/Metric source picker at the recorded target.
@@ -351,84 +351,47 @@ async function addCanvasDisplay(
     .toBeVisible();
   await dialog.getByRole("button", { name: "Add", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  if (label) {
-    await page.getByLabel("Label", { exact: true }).fill(label);
-  }
 }
 
 async function addMetricDisplay(
   page: Page,
   sourceName: string,
   column: string,
-  label: string,
 ): Promise<void> {
-  await addCanvasDisplay(page, "Metric", sourceName, column, label);
+  await addCanvasDisplay(page, "Metric", sourceName, column);
 }
 
-async function addStudioDateVariable(
+async function setStudioVariableDefault(
   page: Page,
-  label: string,
+  variableId: string,
   defaultValue: string,
 ): Promise<void> {
-  await page.getByLabel("New variable label", { exact: true }).fill(label);
-  await page.getByLabel("Type", { exact: true }).selectOption("date");
-  await page.getByRole("button", { name: "Add variable", exact: true }).click();
-  const defaultInput = page.getByLabel(`Default for ${label}`, {
+  const defaultInput = page.getByLabel(`Default for ${variableId}`, {
     exact: true,
   });
   await expect(defaultInput).toBeVisible();
+  await expect(defaultInput).toHaveValue("");
   await defaultInput.fill(defaultValue);
 }
 
 async function addStudioStringVariable(
   page: Page,
-  label: string,
+  variableId: string,
   defaultValue: string,
 ): Promise<void> {
-  await page.getByLabel("New variable label", { exact: true }).fill(label);
-  await page.getByLabel("Type", { exact: true }).selectOption("string");
+  await page.getByLabel("Variable ID", { exact: true }).fill(variableId);
+  await page.getByLabel("Type", { exact: true }).last().selectOption("string");
   await page.getByRole("button", { name: "Add variable", exact: true }).click();
-  const defaultInput = page.getByLabel(`Default for ${label}`, {
+  const defaultInput = page.getByLabel(`Default for ${variableId}`, {
     exact: true,
   });
   await expect(defaultInput).toBeVisible();
   await defaultInput.fill(defaultValue);
-}
-
-async function addStudioIntegerVariable(
-  page: Page,
-  label: string,
-  defaultValue: string,
-): Promise<void> {
-  await page.getByLabel("New variable label", { exact: true }).fill(label);
-  await page.getByLabel("Type", { exact: true }).selectOption("integer");
-  await page.getByRole("button", { name: "Add variable", exact: true }).click();
-  const defaultInput = page.getByLabel(`Default for ${label}`, {
-    exact: true,
-  });
-  await expect(defaultInput).toBeVisible();
-  await defaultInput.fill(defaultValue);
-}
-
-async function bindSavedSqlVariable(
-  page: Page,
-  sqlVariable: string,
-  compositionVariable: string,
-): Promise<void> {
-  const binding = page.getByLabel(`SQL variable ${sqlVariable}`, {
-    exact: true,
-  });
-  await expect(binding).toBeVisible();
-  await binding.selectOption({ label: compositionVariable });
-  await expect(binding.locator("option:checked")).toHaveText(
-    compositionVariable,
-  );
 }
 
 async function addStudioInput(
   page: Page,
-  variableName: string,
-  inputLabel: string,
+  variableId: string,
 ): Promise<void> {
   await page.getByRole("radio", { name: "Design", exact: true }).click();
   await page.getByRole("button", { name: "Add to design", exact: true })
@@ -438,16 +401,12 @@ async function addStudioInput(
     exact: true,
   });
   await palette.getByRole("button", {
-    name: `Add Input for ${variableName}`,
+    name: `Add Input for ${variableId}`,
     exact: true,
   }).click();
-  // Adding an Input selects it and opens its inspector automatically.
-  await page.getByLabel(`Input label for ${variableName}`, {
-    exact: true,
-  }).fill(inputLabel);
 }
 
-async function addStudioText(page: Page, variableLabel: string): Promise<void> {
+async function addStudioText(page: Page, variableId: string): Promise<void> {
   await page.getByRole("radio", { name: "Design", exact: true }).click();
   await page.getByRole("button", { name: "Add to design", exact: true })
     .first().click();
@@ -457,7 +416,7 @@ async function addStudioText(page: Page, variableLabel: string): Promise<void> {
   });
   await palette.getByRole("button", { name: "Text", exact: true }).click();
   await page.getByLabel("Content", { exact: true }).selectOption({
-    label: variableLabel,
+    label: variableId,
   });
 }
 
@@ -506,7 +465,6 @@ function buildMobileStudioYaml(
     "format_version: 1",
     `name: ${compositionName}`,
     "kind: dashboard",
-    "tags: []",
     "spec:",
     "  variables:",
     "    - id: month_start",
@@ -522,11 +480,8 @@ function buildMobileStudioYaml(
     "      kind: saved_sql",
     `      entry_id: "${savedSqlId}"`,
     `      revision_id: "${savedSqlRevisionId}"`,
-    "      expected_result:",
-    "        - name: total",
-    "          type: float",
-    "        - name: quantity",
-    "          type: float",
+    "      expected_result: []",
+    "      schema_fingerprint: ''",
     "      variables:",
     "        month_start:",
     "          variable: month_start",
@@ -535,7 +490,6 @@ function buildMobileStudioYaml(
     "  components:",
     "    - id: total",
     "      kind: metric",
-    "      label: Total",
     "      source: studio_rows",
     "      column: total",
     "    - id: rows",
@@ -616,16 +570,16 @@ test.describe("Composition Studio Journey", () => {
       ).toBeVisible();
       await nameInput.fill(seed.toolName);
 
-      // Declare typed Composition variables and bind the Saved SQL names
-      // through their visible labels. Values from the standalone SQL run are
-      // deliberately authored again as defaults in the Composition.
+      // The pinned SQL schema declares typed Composition variables and places
+      // required Inputs. Copying run values into Composition defaults remains
+      // an explicit authoring action.
       await page.getByRole("radio", { name: "Data", exact: true }).click();
       const dataTabs = page.getByRole("tablist", { name: "Data" });
       await dataTabs.getByRole("tab", { name: "Variables", exact: true })
         .click();
-      await addStudioDateVariable(page, "Month start", seed.monthStart);
-      await addStudioDateVariable(page, "Month end", seed.monthEnd);
-      await addStudioStringVariable(page, "Report title", "January expenses");
+      await setStudioVariableDefault(page, "month_start", seed.monthStart);
+      await setStudioVariableDefault(page, "month_end", seed.monthEnd);
+      await addStudioStringVariable(page, "report_title", "January expenses");
 
       await dataTabs.getByRole("tab", { name: "Sources", exact: true })
         .click();
@@ -633,84 +587,29 @@ test.describe("Composition Studio Journey", () => {
         name: seed.savedSqlName,
         exact: true,
       }).click();
-      await bindSavedSqlVariable(page, "month_start", "Month start");
-      await bindSavedSqlVariable(page, "month_end", "Month end");
 
-      // Inputs are ordinary layout components. The labels users see at run
-      // time are authored separately from the SQL variable names.
-      await addStudioInput(page, "Month start", "Start date");
-      await addStudioInput(page, "Month end", "End date");
-      await addStudioInput(page, "Report title", "Report title");
-      await addStudioText(page, "Report title");
+      // SQL parameter Inputs were placed with the seeded typed variables.
+      await addStudioInput(page, "report_title");
+      await addStudioText(page, "report_title");
 
       // Two metric displays on the seeded Saved SQL source, each bound to
       // its own exact-scalar column of the single January row.
-      await addMetricDisplay(page, seed.savedSqlName, "total", "Total");
-      await addMetricDisplay(page, seed.savedSqlName, "quantity", "Quantity");
-      await expect(
-        page.getByRole("button", { name: "Select Total", exact: true }),
-      ).toBeVisible();
-      await expect(
-        page.getByRole("button", { name: "Select Quantity", exact: true }),
-      ).toBeVisible();
-
-      // EntryQuery source through the Data source navigator.
-      await page.getByRole("radio", { name: "Split", exact: true }).click();
-      await page.getByRole("button", { name: "Add source", exact: true })
-        .click();
-      const sourceDialog = page.getByRole("dialog");
-      await expect(sourceDialog).toBeVisible();
-      await sourceDialog.getByRole("button", {
-        name: seed.formName,
-        exact: true,
-      }).click();
-      await expect(page.getByRole("dialog")).toHaveCount(0);
-      await expect(
-        page.getByRole("button", { name: seed.formName, exact: true }),
-      ).toHaveCount(1);
-
-      // Metric sources are Saved SQL only; the Form remains available for
-      // Tables through the same source catalog.
-      await page.getByRole("button", { name: "Add to design", exact: true })
-        .first().click();
-      const palette = page.getByRole("dialog", {
-        name: "Add to design",
-        exact: true,
-      });
-      await palette.getByRole("button", { name: "Data", exact: true })
-        .click();
-      const metricPicker = page.getByRole("dialog", {
-        name: "Add data component",
-        exact: true,
-      });
-      const kindTabs = metricPicker.getByRole("tablist", {
-        name: "Data component type",
-      });
-      await kindTabs.getByRole("tab", { name: "Metric", exact: true }).click();
-      await expect(metricPicker.getByRole("button", {
-        name: seed.formName,
-        exact: true,
-      })).toHaveCount(0);
-      await expect(metricPicker.getByRole("button", {
-        name: seed.savedSqlName,
-        exact: true,
-      })).toBeVisible();
-      await metricPicker.getByRole("button", { name: "Cancel", exact: true })
-        .click();
-
-      // Table display on the EntryQuery source through the canvas.
-      await addCanvasDisplay(page, "Table", seed.formName);
-      await expect(
-        page.getByRole("button", { name: seed.formName, exact: true }),
-      ).toHaveCount(1);
+      await addMetricDisplay(page, seed.savedSqlName, "total");
+      await addMetricDisplay(page, seed.savedSqlName, "quantity");
       await expect(
         page.getByRole("button", {
-          name: `Select ${seed.formName}`,
+          name: `Select ${seed.savedSqlName} / total`,
+          exact: true,
+        }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", {
+          name: `Select ${seed.savedSqlName} / quantity`,
           exact: true,
         }),
       ).toBeVisible();
 
-      // Data mode keeps Sources, Variables, and Tags in their own tabs.
+      // Data mode keeps Sources and Variables in their own tabs.
       await page.getByRole("radio", { name: "Data", exact: true }).click();
       await expect(
         dataTabs.getByRole("tab", { name: "Sources", exact: true }),
@@ -728,30 +627,21 @@ test.describe("Composition Studio Journey", () => {
         body: await page.screenshot({ fullPage: true }),
         contentType: "image/png",
       });
-      await expect(page.getByLabel("Default for Month start")).toHaveValue(
+      await expect(page.getByLabel("Default for month_start")).toHaveValue(
         seed.monthStart,
       );
-      await expect(page.getByLabel("Default for Month end")).toHaveValue(
+      await expect(page.getByLabel("Default for month_end")).toHaveValue(
         seed.monthEnd,
       );
-      await expect(page.getByLabel("Default for Report title")).toHaveValue(
+      await expect(page.getByLabel("Default for report_title")).toHaveValue(
         "January expenses",
       );
-      await expect(page.getByLabel("Default for month_start")).toHaveCount(0);
-      await expect(page.getByLabel("Default for month_end")).toHaveCount(0);
-      await dataTabs.getByRole("tab", { name: "Tags", exact: true }).click();
-      await expect(
-        page.getByRole("textbox", { name: "Tags", exact: true }),
-      ).toBeVisible();
-      await expect(
-        page.getByRole("button", { name: seed.savedSqlName, exact: true }),
-      ).toBeHidden();
       await page.getByRole("radio", { name: "Design", exact: true }).click();
       await expect(
-        page.getByRole("heading", { name: "Total", exact: true }),
+        page.getByRole("heading", { name: "total", exact: true }),
       ).toBeVisible({ timeout: 30_000 });
       await expect(
-        page.getByRole("heading", { name: "Quantity", exact: true }),
+        page.getByRole("heading", { name: "quantity", exact: true }),
       ).toBeVisible({ timeout: 30_000 });
       await expect(
         page.locator("output.compositionMetric").filter({
@@ -763,12 +653,13 @@ test.describe("Composition Studio Journey", () => {
           hasText: new RegExp(`^${seed.expectedQuantity}$`),
         }),
       ).toBeVisible({ timeout: 30_000 });
-      // Scope to the EntryQuery table: the canvas also renders the
-      // Saved SQL table, so the bare table role is ambiguous.
-      const previewTable = page.locator("table.result-table--entry");
-      for (const purpose of seed.purposes) {
-        await expect(previewTable).toContainText(purpose, { timeout: 30_000 });
-      }
+      const previewTable = page.locator("table.result-table--sql");
+      await expect(previewTable).toContainText(seed.expectedTotal, {
+        timeout: 30_000,
+      });
+      await expect(previewTable).toContainText(seed.expectedQuantity, {
+        timeout: 30_000,
+      });
 
       // Save once: exactly one publication.
       await page.getByRole("button", { name: "Save", exact: true }).click();
@@ -794,24 +685,16 @@ test.describe("Composition Studio Journey", () => {
       expect(typeof savedSpec).toBe("string");
       const savedYaml = String(savedSpec);
       expect(savedYaml).toContain(`revision_id: ${seed.savedSqlRevisionId}`);
-      const declaredVariableId = (label: string) =>
-        savedYaml.match(
-          new RegExp(`- id: ([^\\n]+)\\n\\s+label: ${label}\\n`),
-        )?.[1];
       const boundVariableId = (sqlName: string) =>
         savedYaml.match(
           new RegExp(`${sqlName}:\\s*\\n\\s+variable:\\s*([^\\n]+)`),
         )?.[1];
-      const monthStartVariable = declaredVariableId("Month start");
       const monthStartBinding = boundVariableId("month_start");
-      expect(monthStartVariable).toBeTruthy();
       expect(monthStartBinding).toBeTruthy();
-      expect(monthStartBinding).toBe(monthStartVariable);
-      const monthEndVariable = declaredVariableId("Month end");
+      expect(monthStartBinding).toBe("month_start");
       const monthEndBinding = boundVariableId("month_end");
-      expect(monthEndVariable).toBeTruthy();
       expect(monthEndBinding).toBeTruthy();
-      expect(monthEndBinding).toBe(monthEndVariable);
+      expect(monthEndBinding).toBe("month_end");
     } finally {
       await buildContext.close();
     }
@@ -839,19 +722,17 @@ test.describe("Composition Studio Journey", () => {
         firstRevisionId,
         seed.toolName,
       );
-      await expect(page.getByLabel("Start date")).toHaveValue(
+      await expect(page.getByLabel("month_start")).toHaveValue(
         seed.monthStart,
       );
-      await expect(page.getByLabel("Report title")).toHaveValue(
+      await expect(page.getByLabel("report_title")).toHaveValue(
         "January expenses",
       );
       await expect(page.getByText("January expenses", { exact: true }))
         .toBeVisible();
-      await expect(page.getByLabel("Start date")).toBeEditable();
-      await expect(page.getByLabel("End date")).toHaveValue(seed.monthEnd);
-      await expect(page.getByLabel("End date")).toBeEditable();
-      await expect(page.getByLabel("month_start")).toHaveCount(0);
-      await expect(page.getByLabel("month_end")).toHaveCount(0);
+      await expect(page.getByLabel("month_start")).toBeEditable();
+      await expect(page.getByLabel("month_end")).toHaveValue(seed.monthEnd);
+      await expect(page.getByLabel("month_end")).toBeEditable();
       await expect(
         page.locator("output.compositionMetric").filter({
           hasText: new RegExp(`^${seed.expectedTotal}$`),
@@ -862,10 +743,13 @@ test.describe("Composition Studio Journey", () => {
           hasText: new RegExp(`^${seed.expectedQuantity}$`),
         }),
       ).toBeVisible({ timeout: 30_000 });
-      const savedTable = page.locator("table.result-table--entry");
-      for (const purpose of seed.purposes) {
-        await expect(savedTable).toContainText(purpose, { timeout: 30_000 });
-      }
+      const savedTable = page.locator("table.result-table--sql");
+      await expect(savedTable).toContainText(seed.expectedTotal, {
+        timeout: 30_000,
+      });
+      await expect(savedTable).toContainText(seed.expectedQuantity, {
+        timeout: 30_000,
+      });
 
       // A Text-only variable update is synchronous and must not re-execute the
       // Saved SQL Table or Metric source.
@@ -873,7 +757,7 @@ test.describe("Composition Studio Journey", () => {
       const initialMetricQueryCount = metricQueryCount;
       expect(initialSqlQueryCount).toBeGreaterThan(0);
       expect(initialMetricQueryCount).toBeGreaterThan(0);
-      await page.getByLabel("Report title", { exact: true }).fill(
+      await page.getByLabel("report_title", { exact: true }).fill(
         "Transient report title",
       );
       await expect(
@@ -886,14 +770,14 @@ test.describe("Composition Studio Journey", () => {
       // Runtime edits live only in Work: a fresh load of the saved revision
       // restores the declared default and does not publish another revision.
       await page.reload({ waitUntil: "domcontentloaded" });
-      await expect(page.getByLabel("Report title")).toHaveValue(
+      await expect(page.getByLabel("report_title")).toHaveValue(
         "January expenses",
       );
       await expect(page.getByText("January expenses", { exact: true }))
         .toBeVisible();
       await expectHistoryTotal(request, seed.spaceId, compositionId, 1);
 
-      // Edit the exact revision: relabel one canvas block, save a new revision.
+      // Edit the exact revision by changing a metric's SQL result column.
       await page.goto(
         getFrontendUrl(
           `/spaces/${seed.spaceId}/compositions/${compositionId}/${firstRevisionId}/edit`,
@@ -910,21 +794,25 @@ test.describe("Composition Studio Journey", () => {
         seed.toolName,
       );
       await expect(
-        page.getByRole("button", { name: "Select Start date", exact: true }),
+        page.getByRole("button", { name: "Select month_start", exact: true }),
       ).toBeVisible();
       await page.getByRole("button", {
-        name: "Select Start date",
+        name: "Select month_start",
         exact: true,
       }).click();
       const inputVariable = page.getByLabel("Variables", { exact: true });
       await expect(inputVariable.locator("option:checked")).toHaveText(
-        "Month start",
+        "month_start",
       );
-      await expect(page.getByLabel("Input label for Month start"))
-        .toHaveValue("Start date");
-      await page.getByRole("button", { name: "Select Total", exact: true })
-        .click();
-      await page.getByLabel("Label", { exact: true }).fill("Total spent");
+      await page.getByRole("button", {
+        name: `Select ${seed.savedSqlName} / total`,
+        exact: true,
+      }).click();
+      await expect(page.getByLabel("Column", { exact: true })).toHaveValue(
+        "total",
+      );
+      await page.getByLabel("Column", { exact: true }).selectOption("quantity");
+      await expect(page.getByLabel("Label", { exact: true })).toHaveCount(0);
       await page.getByRole("button", { name: "Save", exact: true }).click();
       await expect(page).toHaveURL(
         new RegExp(
@@ -937,10 +825,13 @@ test.describe("Composition Studio Journey", () => {
       editedRevisionId = edited.revisionId;
       await expectHistoryTotal(request, seed.spaceId, compositionId, 2);
       await expect(
-        page.getByRole("heading", { name: "Total spent", exact: true }),
-      ).toBeVisible();
-      await expect(page.getByLabel("Start date")).toHaveValue(seed.monthStart);
-      await expect(page.getByLabel("End date")).toHaveValue(seed.monthEnd);
+        page.getByRole("heading", { name: "quantity", exact: true }),
+      ).toHaveCount(2);
+      await expect(
+        page.getByRole("heading", { name: "total", exact: true }),
+      ).toHaveCount(0);
+      await expect(page.getByLabel("month_start")).toHaveValue(seed.monthStart);
+      await expect(page.getByLabel("month_end")).toHaveValue(seed.monthEnd);
 
       // History lists both revisions; restoring the first appends a third.
       await page.goto(
@@ -961,7 +852,7 @@ test.describe("Composition Studio Journey", () => {
         ),
       );
       await expect(
-        page.getByRole("heading", { name: "Total", exact: true }),
+        page.getByRole("heading", { name: "total", exact: true }),
       ).toBeVisible({ timeout: 30_000 });
       await page.getByRole("button", {
         name: "Restore this revision",
@@ -984,7 +875,7 @@ test.describe("Composition Studio Journey", () => {
       expect(restored.revisionId).not.toBe(editedRevisionId);
       await expectHistoryTotal(request, seed.spaceId, compositionId, 3);
       await expect(
-        page.getByRole("heading", { name: "Total", exact: true }),
+        page.getByRole("heading", { name: "total", exact: true }),
       ).toBeVisible({ timeout: 30_000 });
       await expect(
         page.getByText("Total spent", { exact: true }),
@@ -1034,26 +925,23 @@ test.describe("Composition Studio Journey", () => {
       const dataTabs = page.getByRole("tablist", { name: "Data" });
       await dataTabs.getByRole("tab", { name: "Variables", exact: true })
         .click();
-      await addStudioIntegerVariable(page, "Minimum amount", "0");
+      await setStudioVariableDefault(page, "minimum", "0");
 
       await dataTabs.getByRole("tab", { name: "Sources", exact: true })
         .click();
       await page.getByRole("button", { name: seed.savedSqlName, exact: true })
         .click();
-      await bindSavedSqlVariable(page, "minimum", "Minimum amount");
+      await page.getByRole("radio", { name: "Design", exact: true }).click();
 
-      await addStudioInput(page, "Minimum amount", "Minimum amount");
       await addMetricDisplay(
         page,
         seed.savedSqlName,
         "matching_count",
-        "Matching expenses",
       );
       await addMetricDisplay(
         page,
         seed.savedSqlName,
         "total_amount",
-        "Total amount",
       );
       await page.getByRole("button", { name: "Save", exact: true }).click();
       await expect(page).toHaveURL(
@@ -1100,26 +988,28 @@ test.describe("Composition Studio Journey", () => {
         revisionId,
         seed.toolName,
       );
-      const matchingExpenses = page.locator("section.section").filter({
-        has: page.getByRole("heading", {
-          name: "Matching expenses",
-          exact: true,
-        }),
-      }).locator("output.compositionMetric");
-      const totalAmount = page.locator("section.section").filter({
-        has: page.getByRole("heading", { name: "Total amount", exact: true }),
-      }).locator("output.compositionMetric");
+      const metrics = page.locator(
+        ".compositionFlowItem--metric output.compositionMetric",
+      );
+      const metricValues = () =>
+        metrics.allTextContents().then((values) =>
+          values.sort((left, right) => Number(left) - Number(right))
+        );
 
-      await expect(page.getByLabel("Minimum amount", { exact: true }))
+      await expect(page.getByLabel("minimum", { exact: true }))
         .toHaveValue("0");
-      await expect(matchingExpenses).toHaveText("3", { timeout: 30_000 });
-      await expect(totalAmount).toHaveText("60", { timeout: 30_000 });
+      await expect.poll(metricValues, { timeout: 30_000 }).toEqual([
+        "3",
+        "60",
+      ]);
       const initialQueryCount = metricQueryCount;
       expect(initialQueryCount).toBeGreaterThan(0);
 
-      await page.getByLabel("Minimum amount", { exact: true }).fill("20");
-      await expect(matchingExpenses).toHaveText("2", { timeout: 30_000 });
-      await expect(totalAmount).toHaveText("50", { timeout: 30_000 });
+      await page.getByLabel("minimum", { exact: true }).fill("20");
+      await expect.poll(metricValues, { timeout: 30_000 }).toEqual([
+        "2",
+        "50",
+      ]);
       await expect.poll(() => metricQueryCount).toBeGreaterThan(
         initialQueryCount,
       );
@@ -1127,10 +1017,12 @@ test.describe("Composition Studio Journey", () => {
       // Input state is transient: reload returns to the saved default and does
       // not append a Composition revision.
       await page.reload({ waitUntil: "domcontentloaded" });
-      await expect(page.getByLabel("Minimum amount", { exact: true }))
+      await expect(page.getByLabel("minimum", { exact: true }))
         .toHaveValue("0");
-      await expect(matchingExpenses).toHaveText("3", { timeout: 30_000 });
-      await expect(totalAmount).toHaveText("60", { timeout: 30_000 });
+      await expect.poll(metricValues, { timeout: 30_000 }).toEqual([
+        "3",
+        "60",
+      ]);
       await expectHistoryTotal(request, seed.spaceId, compositionId, 1);
     } finally {
       await journeyContext.close();
@@ -1146,23 +1038,32 @@ test.describe("Composition Studio Journey", () => {
     const storageState = await context.storageState();
     const suffix = crypto.randomUUID().slice(0, 8);
     const compositionName = `Studio mobile ${suffix}`;
+    const yaml = await completeSavedSqlCompositionYaml(
+      request,
+      seed.spaceId,
+      buildMobileStudioYaml(
+        compositionName,
+        seed.savedSqlId,
+        seed.savedSqlRevisionId,
+        seed.monthStart,
+        seed.monthEnd,
+      ),
+      [{
+        id: "studio_rows",
+        savedSqlId: seed.savedSqlId,
+        savedSqlRevisionId: seed.savedSqlRevisionId,
+      }],
+    );
     const saveResponse = await request.post(
       getBackendUrl(`/spaces/${seed.spaceId}/compositions`),
       {
         headers: { "Idempotency-Key": crypto.randomUUID() },
-        data: {
-          yaml: buildMobileStudioYaml(
-            compositionName,
-            seed.savedSqlId,
-            seed.savedSqlRevisionId,
-            seed.monthStart,
-            seed.monthEnd,
-          ),
-        },
+        data: { yaml },
       },
     );
+    const saveBody = await saveResponse.text();
     expect([200, 201]).toContain(saveResponse.status());
-    const saved = await saveResponse.json() as {
+    const saved = JSON.parse(saveBody) as {
       composition_id?: string;
       revision_id?: string;
     };
@@ -1183,22 +1084,34 @@ test.describe("Composition Studio Journey", () => {
       );
       // The Design canvas owns the seeded metric block at 390px.
       const selectButton = page.getByRole("button", {
-        name: "Select Total",
+        name: `Select ${seed.savedSqlName} / total`,
         exact: true,
       });
       await expect(selectButton).toBeVisible({ timeout: 30_000 });
       await selectButton.click();
       // Below the sheet gate the tap opens the inspector as a bottom sheet
-      // reusing the wide-viewport content: same dialog name, same Label
-      // field.
+      // reusing the wide-viewport content with the selected SQL column.
       const sheet = page.getByRole("dialog", { name: "Metric" });
       await expect(sheet).toBeVisible();
-      await expect(sheet.getByLabel("Label", { exact: true })).toHaveValue(
-        "Total",
+      await expect(sheet.getByLabel("Column", { exact: true })).toHaveValue(
+        "total",
       );
+      await expect(sheet.getByLabel("Label", { exact: true })).toHaveCount(0);
       // Escape dismisses the sheet and clears the transient selection.
       await page.keyboard.press("Escape");
       await expect(page.getByRole("dialog")).toHaveCount(0);
+
+      // A 320 CSS-pixel viewport represents the effective content width at
+      // 200% browser zoom. Browser zoom itself remains a manual device check.
+      for (const width of [320, 375, 390]) {
+        await page.setViewportSize({ width, height: 844 });
+        const pageWidth = await page.evaluate(() => ({
+          client: document.documentElement.clientWidth,
+          content: document.documentElement.scrollWidth,
+        }));
+        expect(pageWidth.content).toBeLessThanOrEqual(pageWidth.client);
+      }
+      await page.setViewportSize({ width: 390, height: 844 });
 
       // The unified picker stays viewport-capped at 390px and keeps a
       // compatible source selected as the type changes.
@@ -1245,17 +1158,28 @@ test.describe("Composition Studio Journey", () => {
         page.getByRole("heading", { name: "Data", exact: true }),
       ).toBeVisible();
       const dataTabs = page.getByRole("tablist", { name: "Data" });
-      await page.getByRole("button", { name: "Show data sources", exact: true })
-        .click();
-      await expect(
-        page.getByRole("button", { name: seed.savedSqlName, exact: true }),
-      ).toBeVisible();
+      const showSources = page.getByRole("button", {
+        name: /Show data sources/,
+      });
+      if (await showSources.isVisible()) await showSources.click();
+      const sourceItems = page.getByRole("dialog", { name: "Sources" })
+        .getByRole("listitem");
+      await expect(sourceItems).toHaveCount(1);
+      await expect(sourceItems.first()).toContainText("Saved SQL");
+      await page.getByRole("dialog", { name: "Sources" }).getByRole(
+        "button",
+        { name: "Hide data sources", exact: true },
+      ).click();
+      await expect(page.getByRole("dialog", { name: "Sources" }))
+        .toHaveCount(0);
       await dataTabs.getByRole("tab", { name: "Variables", exact: true })
         .click();
-      await expect(page.getByLabel("Default for Variable 1")).toHaveValue(
-        seed.monthStart,
+      const defaultInput = page.getByLabel("Default for month_start");
+      await expect(defaultInput).toHaveValue(seed.monthStart);
+      const inputFontSize = Number.parseFloat(
+        await defaultInput.evaluate((element) => getComputedStyle(element).fontSize),
       );
-      await expect(page.getByLabel("Default for month_start")).toHaveCount(0);
+      expect(inputFontSize).toBeGreaterThanOrEqual(16);
     } finally {
       await mobileContext.close();
     }

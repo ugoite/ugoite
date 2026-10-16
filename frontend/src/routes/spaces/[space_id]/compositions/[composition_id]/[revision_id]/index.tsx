@@ -9,9 +9,6 @@ import {
 import { A, useNavigate, useParams } from "@solidjs/router";
 import {
   CompositionDiagnostics,
-  type CompositionFieldKeys,
-  type CompositionFieldNames,
-  type CompositionFieldTypeLookup,
   CompositionRenderer,
 } from "~/components/CompositionRenderer";
 import { DashboardFlowRenderer } from "~/components/DashboardFlowRenderer";
@@ -23,10 +20,8 @@ import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { compositionVariableDisplayName } from "~/lib/composition-variable-name";
 import { safeText } from "~/lib/display-value";
 import { t } from "~/lib/i18n";
-import { compositionFormFieldName } from "~/lib/composition-field-name";
 import { compositionApi, compositionDisplayName } from "~/lib/composition-api";
 import { createCompositionQueryHandle } from "~/lib/composition-query-handle";
-import { formApi } from "~/lib/ugoite-client";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import {
@@ -35,43 +30,8 @@ import {
   spaceCompositionRevisionPath,
 } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
-import type { Form, FormField } from "~/lib/types";
 
 export const route = spaceRoute({ navigation: "compositions" });
-
-const findCompositionFormField = (
-  forms: readonly Form[] | undefined,
-  formId: string,
-  fieldId: number,
-): [string, FormField] | undefined => {
-  const fields = (forms ?? []).find((form) => form.id === formId)?.fields ?? {};
-  return Object.entries(fields).find(([, field]) =>
-    (field.query_capability?.field.field_id ?? field.id) === fieldId
-  );
-};
-
-/**
- * Display-only Form field-name lookup for Composition entry_query tables.
- * Matches the stable Form id only; display names never participate so a
- * Form rename cannot change which fields resolve. Form field keys provide
- * their display names when no explicit label exists. Unresolved names remain
- * absent so the table can use its current row keys; missing Form metadata stays
- * unlabeled instead of exposing a generated field ordinal or identifier.
- * Query semantics never depend on this helper.
- */
-export const resolveCompositionFieldName = (
-  forms: readonly Form[] | undefined,
-  formId: string,
-  fieldId: number,
-): string | undefined => {
-  return compositionFormFieldName(forms, formId, fieldId);
-};
-
-export const resolveCompositionFieldKey = (
-  forms: readonly Form[] | undefined,
-  formId: string,
-  fieldId: number,
-): string | undefined => findCompositionFormField(forms, formId, fieldId)?.[0];
 
 export default function CompositionRevisionRoute() {
   const params = useParams<{
@@ -206,14 +166,6 @@ export default function CompositionRevisionRoute() {
     );
   const definitions = () => current().resolved?.variable_definitions ?? [];
   const diagnostics = () => current().resolved?.diagnostics ?? [];
-  // Authorized Form metadata for Entry display names only. Property field
-  // IDs in entry_query projections resolve to names through this existing
-  // read; query semantics never depend on it and missing metadata falls
-  // back to the current row key order.
-  const [forms] = createResource(
-    () => params.space_id,
-    (spaceId) => formApi.list(spaceId).catch(() => []),
-  );
   const variableMismatch = (variableId: string) =>
     handle.invalidVariables().has(variableId) ||
     diagnostics().some((diagnostic) =>
@@ -246,31 +198,7 @@ export default function CompositionRevisionRoute() {
     ) return undefined;
     return document;
   };
-  const variableDisplayDefinitions = () => {
-    const resolved = definitions();
-    const declarations = layoutDocument()?.spec.variables;
-    if (!declarations) {
-      return resolved.map((definition) => ({
-        ...definition,
-        label: definition.label?.trim() || t("composition.variableFallback"),
-      }));
-    }
-    const declarationIds = new Set(
-      declarations.map((definition) => definition.id),
-    );
-    return [
-      ...declarations,
-      ...resolved.filter((definition) => !declarationIds.has(definition.id)),
-    ];
-  };
-  const fieldNames: CompositionFieldNames = (formId, fieldId) =>
-    resolveCompositionFieldName(forms(), formId, fieldId);
-  const fieldKeys: CompositionFieldKeys = (formId, fieldId) =>
-    resolveCompositionFieldKey(forms(), formId, fieldId);
-  const fieldTypes: CompositionFieldTypeLookup = (_formId, fieldId, sourceId) =>
-    layoutDocument()?.spec.sources.find((source) =>
-      source.id === sourceId && source.kind === "entry_query"
-    )?.field_schema?.find((field) => field.field_id === fieldId)?.field_type;
+  const variableDisplayDefinitions = () => definitions();
   const flowRows = () => {
     const rows = layoutDocument()?.spec.layout?.rows;
     return Array.isArray(rows) ? rows : undefined;
@@ -309,14 +237,6 @@ export default function CompositionRevisionRoute() {
       (layoutDocument()?.spec.components ?? []).flatMap((component) =>
         component.kind === "input"
           ? [[component.id, component.variable] as const]
-          : []
-      ),
-    );
-  const inputLabels = () =>
-    Object.fromEntries(
-      (layoutDocument()?.spec.components ?? []).flatMap((component) =>
-        component.kind === "input" && component.label
-          ? [[component.id, component.label] as const]
           : []
       ),
     );
@@ -445,7 +365,6 @@ export default function CompositionRevisionRoute() {
           <DashboardFlowRenderer
             layout={{ rows: rows() }}
             inputVariables={inputVariables()}
-            inputLabels={inputLabels()}
             plan={resolvedPlan() ?? { sources: [], component_bindings: [] }}
             texts={flowTexts()}
             variableDefinitions={variableDisplayDefinitions()}
@@ -455,9 +374,6 @@ export default function CompositionRevisionRoute() {
             variableInvalid={variableMismatch}
             onVariableInput={handle.setVariableRaw}
             sources={current().sources}
-            fieldNames={fieldNames}
-            fieldKeys={fieldKeys}
-            fieldTypes={fieldTypes}
             metricQueryContext={metricQueryContext()}
             onNext={handle.next}
             onPrevious={handle.previous}
@@ -474,9 +390,6 @@ export default function CompositionRevisionRoute() {
             plan={plan()}
             sources={current().sources}
             texts={flowTexts()}
-            fieldNames={fieldNames}
-            fieldKeys={fieldKeys}
-            fieldTypes={fieldTypes}
             metricQueryContext={metricQueryContext()}
             onNext={handle.next}
             onPrevious={handle.previous}

@@ -112,7 +112,6 @@ const lintDocument = {
   format_version: 1,
   kind: "dashboard",
   name: "Monthly review",
-  tags: ["finance"],
   spec: {
     variables: [],
     sources: [{
@@ -196,7 +195,7 @@ describe("Composition edit route", () => {
     sqlGetMock.mockResolvedValue(savedEntry);
     entryRevisionMock.mockResolvedValue({
       revision_id: "sql-rev-1",
-      fields: { variables: [] },
+      fields: { sql: "SELECT total FROM monthly", variables: [] },
     });
     sqlQueryMock.mockResolvedValue({
       columns: ["total"],
@@ -228,10 +227,11 @@ describe("Composition edit route", () => {
     expect(await screen.findByLabelText("Name")).toHaveValue("Monthly review");
     expect(getMock).toHaveBeenCalledWith("space-1", "tool-1", "revision-1");
     expect(lintMock).toHaveBeenCalledWith(storedYaml);
+    expect(entryRevisionMock).toHaveBeenCalledWith("space-1", "sql-1", "sql-rev-1");
 
     // One Back to the opened revision, one Save, Design-first true-mode
     // structure with the single mode control: the finished shape only, no
-    // Variables, Tags, Data workspace, or Preview section.
+    // Variables, Data workspace, or Preview section.
     expect(screen.getAllByRole("link")).toHaveLength(1);
     const back = screen.getByRole("link", { name: "Back to revision" });
     expect(back).toHaveAttribute(
@@ -257,8 +257,12 @@ describe("Composition edit route", () => {
         { name: "Data" },
       ),
     );
-    expect(screen.getAllByRole("button", { name: "Monthly totals" }))
-      .toHaveLength(1);
+    const source = screen.getByRole("button", { name: "Monthly totals" });
+    expect(source).toBeInTheDocument();
+    fireEvent.click(source);
+    expect(await screen.findByRole("textbox", { name: "SQL" })).toHaveTextContent(
+      "SELECT total FROM monthly",
+    );
   });
 
   it("keeps document source IDs out of labels when names cannot be loaded", async () => {
@@ -490,7 +494,10 @@ describe("Composition edit route", () => {
     });
     entryRevisionMock.mockResolvedValueOnce({
       revision_id: "sql-rev-1",
-      fields: { variables: [{ name: "month_start", type: "date" }] },
+      fields: {
+        sql: "SELECT amount FROM expenses WHERE month >= $month_start",
+        variables: [{ name: "month_start", type: "date" }],
+      },
     });
     lintMock.mockResolvedValueOnce({
       ok: true,
@@ -500,7 +507,6 @@ describe("Composition edit route", () => {
           format_version: 1,
           kind: "dashboard",
           name: "Monthly expenses",
-          tags: [],
           spec: {
             variables: [
               {

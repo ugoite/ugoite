@@ -1,12 +1,7 @@
 import { For } from "solid-js";
 import type { JSX } from "solid-js";
 import { UiIcon, type UiIconName } from "~/components/UiIcon";
-import {
-  type CompositionDraft,
-  type DraftDisplay,
-  type DraftResult,
-  setDisplayLabel,
-} from "~/lib/composition-draft";
+import type { CompositionDraft, DraftResult } from "~/lib/composition-draft";
 import { t } from "~/lib/i18n";
 
 /**
@@ -46,39 +41,11 @@ export function InspectorShell(props: {
   );
 }
 
-export function InspectorLabelField(props: {
-  display: DraftDisplay;
-  draft: CompositionDraft;
-  apply: InspectorApply;
-}) {
-  const fieldId = () => `studio-inspector-label-${props.display.draftId}`;
-  return (
-    <div class="ui-field">
-      <label class="ui-label" for={fieldId()}>
-        {t("composition.studioLabel")}
-      </label>
-      <input
-        id={fieldId()}
-        class="ui-input"
-        value={props.display.label ?? ""}
-        onInput={(event) =>
-          props.apply(
-            setDisplayLabel(
-              props.draft,
-              props.display.draftId,
-              event.currentTarget.value,
-            ),
-          )}
-      />
-    </div>
-  );
-}
-
 export function InspectorSourceField(props: {
   draft: CompositionDraft;
   sourceDraftId: string;
   fieldId: string;
-  sourceKind?: "entry_query" | "saved_sql";
+  sourceKind?: "inline_sql" | "saved_sql";
   onPick: (sourceDraftId: string) => void;
 }) {
   const sources = () =>

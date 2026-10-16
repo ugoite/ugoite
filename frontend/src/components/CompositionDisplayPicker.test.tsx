@@ -28,17 +28,17 @@ const sqlSource: DraftSource = {
   variables: {},
 };
 
-const entrySource: DraftSource = {
-  kind: "entry_query",
+const inlineSqlSource: DraftSource = {
+  kind: "inline_sql",
   draftId: "src-2",
-  formId: "11111111-1111-4111-8111-111111111111",
-  name: "Tasks",
-  fieldSchema: [{ field_id: 100, field_type: "double" }],
-  query: {
-    filters: [],
-    sort: [],
-    projection: { kind: "preview" },
-  },
+  name: "Expenses",
+  sql: 'SELECT "Amount" AS total FROM "Expenses"',
+  formBindings: [{
+    relation: "Expenses",
+    form_id: "11111111-1111-4111-8111-111111111111",
+  }],
+  expectedResult: [{ name: "total", type: "decimal" }],
+  schemaFingerprint: "a".repeat(64),
 };
 
 const jsonOnlySource: DraftSource = {
@@ -73,7 +73,7 @@ describe("CompositionDisplayPicker", () => {
     const onAdd = vi.fn();
     render(() => (
       <CompositionDisplayPicker
-        draft={draftWithSources(sqlSource, entrySource)}
+        draft={draftWithSources(sqlSource, inlineSqlSource)}
         onAdd={onAdd}
         onClose={() => {}}
       />
@@ -132,7 +132,7 @@ describe("CompositionDisplayPicker", () => {
   it("switches Table and Metric with arrow-key tabs", () => {
     render(() => (
       <CompositionDisplayPicker
-        draft={draftWithSources(sqlSource, entrySource)}
+        draft={draftWithSources(sqlSource, inlineSqlSource)}
         onAdd={() => {}}
         onClose={() => {}}
       />
@@ -143,12 +143,12 @@ describe("CompositionDisplayPicker", () => {
     fireEvent.keyDown(tableTab, { key: "ArrowRight" });
 
     expect(metricTab).toHaveAttribute("aria-selected", "true");
-    expect(screen.queryByRole("button", { name: "Tasks" }))
-      .not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Expenses" }))
+      .toBeInTheDocument();
 
     fireEvent.keyDown(metricTab, { key: "ArrowLeft" });
     expect(tableTab).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("button", { name: "Tasks" }))
+    expect(screen.getByRole("button", { name: "Expenses" }))
       .toBeInTheDocument();
   });
 
@@ -160,7 +160,7 @@ describe("CompositionDisplayPicker", () => {
     });
     render(() => (
       <CompositionDisplayPicker
-        draft={draftWithSources(sqlSource, entrySource, jsonOnlySource)}
+        draft={draftWithSources(sqlSource, inlineSqlSource, jsonOnlySource)}
         initialKind="metric"
         onAdd={onAdd}
         onPreview={onPreview}
@@ -169,8 +169,8 @@ describe("CompositionDisplayPicker", () => {
     ));
 
     const dialog = screen.getByRole("dialog", { name: "Add data component" });
-    expect(within(dialog).queryByRole("button", { name: "Tasks" }))
-      .not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Expenses" }))
+      .toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Blobs" }))
       .toBeDisabled();
     fireEvent.click(within(dialog).getByRole("button", { name: "Monthly" }));

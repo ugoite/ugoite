@@ -11,7 +11,6 @@ import {
 import { BackLink } from "~/components/BackLink";
 import {
   CompositionDiagnostics,
-  type CompositionFieldNames,
   type CompositionMetricQueryContext,
 } from "~/components/CompositionRenderer";
 import {
@@ -36,7 +35,7 @@ import {
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { UiIcon } from "~/components/UiIcon";
 import {
-  addEntryQuerySource,
+  addInlineSqlSource,
   addMetricDisplay,
   addSavedSqlSource,
   addTableDisplay,
@@ -44,6 +43,7 @@ import {
   canonicalizeDraft,
   type CompositionDraft,
   createEmptyDraft,
+  createMetricPreviewDraft,
   defaultVariableValues,
   type DraftInsertTarget,
   draftMetricsReady,
@@ -55,16 +55,11 @@ import {
   removeInputComponent,
   removeSource,
   removeVariable,
-  type SavedSqlRevisionUpdate,
   savedSqlVariableTypesFromFields,
   setDraftName,
-  setDraftTags,
-  setEntryQueryDisplaySystemFields,
-  setEntryQueryFilters,
-  setEntryQueryProjection,
-  setEntryQuerySort,
-  setSavedSqlRevision,
-  setSavedSqlVariableBinding,
+  setInlineSql,
+  setInlineSqlDescriptor,
+  setInlineSqlName,
   setSavedSqlVariableTypes,
   upsertVariable,
 } from "~/lib/composition-draft";
@@ -72,12 +67,8 @@ import {
   compositionApi,
   type CompositionVariableType,
 } from "~/lib/composition-api";
-import type {
-  EntryQueryCompositionFilter,
-  EntryQueryCompositionProjection,
-  EntryQueryCompositionSort,
-  EntryQueryCompositionSystemField,
-} from "~/lib/entry-query-composition";
+import { buildSqlSchema } from "~/lib/sql";
+import type { Form } from "~/lib/types";
 import { createCompositionPreviewHandle } from "~/lib/composition-preview-handle";
 import {
   blockIdsUsingSource,
@@ -118,15 +109,6 @@ export interface CompositionStudioProps {
 
 const PREVIEW_DEBOUNCE_MS = 400;
 
-const parseTags = (value: string): string[] => {
-  const seen = new Set<string>();
-  for (const tag of value.split(/[,\s]+/)) {
-    const trimmed = tag.trim();
-    if (trimmed && !seen.has(trimmed)) seen.add(trimmed);
-  }
-  return [...seen];
-};
-
 export function CompositionStudio(props: CompositionStudioProps) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -147,9 +129,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const [sourcePickerKind, setSourcePickerKind] = createSignal<
     "table" | "metric" | null
   >(null);
-  const [dataPanel, setDataPanel] = createSignal<
-    "sources" | "variables" | "tags"
-  >("sources");
+  const [dataPanel, setDataPanel] = createSignal<"sources" | "variables">(
+    "sources",
+  );
   const [expandedId, setExpandedId] = createSignal<string | null>(null);
   // Transient canvas Work: selected block identity for the inspector and
   // the pending insertion target for the display picker.
@@ -283,20 +265,22 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const [saveError, setSaveError] = createSignal<string | null>(null);
   const [saveRetryAvailable, setSaveRetryAvailable] = createSignal(false);
 
-  // Form labels are display metadata only. Composition fields keep their
-  // stable field IDs, while the editor shows the authorized Form labels.
+  // SQL schema completion uses authorized Form metadata.
   const [forms] = createResource(
     () =>
-      draft().sources.some((source) => source.kind === "entry_query")
+      draft().sources.some((source) => source.kind === "inline_sql")
         ? props.spaceId
         : undefined,
     (spaceId) => formApi.list(spaceId).catch(() => []),
   );
-  const fieldNames: CompositionFieldNames = (formId, fieldId) => {
-    return compositionFormFieldName(forms(), formId, fieldId);
-  };
   const previewHandle = createCompositionPreviewHandle();
   onCleanup(previewHandle.dispose);
+  const previewBase = () => props.saveMode.kind === "update"
+    ? {
+      entryId: props.saveMode.compositionId,
+      revisionId: props.saveMode.baseRevisionId,
+    }
+    : undefined;
 
   // Saved composition documents pin revisions and bindings, while the
   // variable type schema remains owned by that Saved SQL revision. Hydrate
@@ -364,8 +348,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const saveBlockedReason = (): DraftSaveBlockedReason | undefined =>
     readiness().reason;
   // A disabled Save carries its reason in the accessible name and title,
-  // mirroring the EntryQuery seed-navigation button pattern. No prose
-  // paragraphs explain steady-state blocks.
+  // mirroring the source-picker navigation pattern. No prose paragraphs
+  // explain steady-state blocks.
   const saveReasonText = (): string | undefined => {
     switch (saveBlockedReason()) {
       case "name":
@@ -394,6 +378,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
     if (previewTimer !== undefined) clearTimeout(previewTimer);
   });
 
+  // Keep the exact draft object that produced the current preview. The
+  // resolver's server-owned SQL descriptors are copied back only when this
+  // same snapshot is still current; the preview's own canonicalization is
+  // enough to establish that correspondence.
+  let previewSnapshot: CompositionDraft | undefined;
   const schedulePreview = (snapshot: CompositionDraft) => {
     const generation = ++previewGeneration;
     if (previewTimer !== undefined) clearTimeout(previewTimer);
@@ -417,6 +406,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
           // source, and mode changes during an in-flight preview never
           // resurrect a stale fetch set; the generation guard drops the
           // stale response itself.
+          previewSnapshot = snapshot;
           await previewHandle.preview(
             spaceId(),
             canonical.canonical_yaml,
@@ -425,6 +415,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
               visibleSourceIds: visibleComponentSourceIds(draft()),
               selectedSourceId: expandedId(),
             },
+            previewBase(),
           );
         } catch {
           // canonicalizeDraft rejects only on WASM transport failure;
@@ -446,6 +437,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
     previewGeneration += 1;
     if (previewTimer !== undefined) clearTimeout(previewTimer);
     previewTimer = undefined;
+    previewSnapshot = draft();
     void previewHandle.preview(current.spaceId, current.yaml, {
       ...previewHandle.variables(),
     }, previewScope());
@@ -471,7 +463,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const addSourceSeed = (seed: CompositionSourceSeed) => {
     const added = seed.kind === "saved_sql"
       ? addSavedSqlSource(draft(), seed.seed)
-      : addEntryQuerySource(draft(), seed.seed);
+      : addInlineSqlSource(draft(), seed.seed);
     return { draft: added.draft, draftId: added.draftId };
   };
 
@@ -527,12 +519,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
     // lands at the recorded canvas target.
     const target = pendingInsert() ?? undefined;
     const added = seed.kind === "table"
-      ? addTableDisplay(draft(), seed.sourceDraftId, seed.label, target)
+      ? addTableDisplay(draft(), seed.sourceDraftId, target)
       : addMetricDisplay(
         draft(),
         seed.sourceDraftId,
         seed.column,
-        seed.label,
         target,
       );
     if (added.ok) {
@@ -555,24 +546,16 @@ export function CompositionStudio(props: CompositionStudioProps) {
   }) => {
     try {
       const snapshot = draft();
-      const source = snapshot.sources.find((entry) =>
-        entry.draftId === seed.sourceDraftId
-      );
-      if (!source) {
+      const scratch = createMetricPreviewDraft(snapshot, seed.sourceDraftId);
+      if (!scratch) {
         return { ok: false, error: t("composition.metricUnavailable") };
       }
 
       // Canonicalize an isolated one-metric draft so unfinished inspector
       // edits elsewhere cannot block the explicit picker preview.
-      const scratch: CompositionDraft = {
-        ...createEmptyDraft("Metric preview"),
-        sources: [source],
-        variables: snapshot.variables.map((variable) => ({ ...variable })),
-        nextSourceSeq: snapshot.nextSourceSeq,
-      };
       const metric = addMetricDisplay(
         scratch,
-        source.draftId,
+        seed.sourceDraftId,
         seed.column,
       );
       if (!metric.ok || !metric.draftId) {
@@ -592,6 +575,12 @@ export function CompositionStudio(props: CompositionStudioProps) {
       );
       const response = await compositionApi.queryMetric(spaceId(), {
         target: { kind: "draft", yaml: canonical.canonical_yaml },
+        ...(previewBase()
+          ? {
+            base_entry_id: previewBase()!.entryId,
+            base_revision_id: previewBase()!.revisionId,
+          }
+          : {}),
         component_id: metric.draftId,
         variables,
       });
@@ -621,13 +610,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
       addSeed(seed);
       return;
     }
-    if (kind === "metric" && seed.kind !== "saved_sql") return;
     const { draft: sourceDraft, draftId } = addSourceSeed(seed);
     if (kind === "table") {
       const table = addTableDisplay(
         sourceDraft,
         draftId,
-        undefined,
         pendingInsert() ?? undefined,
       );
       if (!table.ok || !table.draftId) return;
@@ -640,7 +627,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
       setSourcePickerKind(null);
       return;
     }
-    // Add the Saved SQL source, then choose and preview a result column before it
+    // Add the SQL source, then choose and preview a result column before it
     // enters the canvas layout.
     setDraft(sourceDraft);
     setDisplayPickerSourceId(draftId);
@@ -650,93 +637,53 @@ export function CompositionStudio(props: CompositionStudioProps) {
     setDisplayPickerOpen(true);
   };
 
+  const selectExistingSource = (sourceDraftId: string) => {
+    setPickerOpen(false);
+    if (dataSourcePickerOpen()) {
+      setExpandedId(sourceDraftId);
+      previewHandle.ensureSource(sourceDraftId);
+      setDataSourcePickerOpen(false);
+      return;
+    }
+    const kind = sourcePickerKind();
+    if (!kind) {
+      setExpandedId(sourceDraftId);
+      previewHandle.ensureSource(sourceDraftId);
+      return;
+    }
+    if (kind === "metric") {
+      setDisplayPickerSourceId(sourceDraftId);
+      setDisplayPickerKind("metric");
+      setDisplayPickerOpen(true);
+      setSourcePickerKind(null);
+      return;
+    }
+    const table = addTableDisplay(
+      draft(),
+      sourceDraftId,
+      pendingInsert() ?? undefined,
+    );
+    if (table.ok && table.draftId) {
+      setDraft(table.draft);
+      setExpandedId(sourceDraftId);
+      setSelectedId(designBlockIdForComponent(table.draftId));
+      if (sheetViewport()) setSheetOpen(true);
+    }
+    setSourcePickerKind(null);
+    setPendingInsert(null);
+  };
+
   // Data workspace edits flow through narrow draft updaters into the shared
   // debounced preview. Each returns whether the edit was accepted so the
   // editor can surface a rejection without inventing query grammar.
-  const updateEntryQueryFilters = (
-    sourceDraftId: string,
-    filters: EntryQueryCompositionFilter[],
-  ): boolean => {
-    const result = setEntryQueryFilters(draft(), sourceDraftId, filters);
+  const updateInlineSql = (sourceDraftId: string, sql: string): boolean => {
+    const result = setInlineSql(draft(), sourceDraftId, sql);
     if (result.ok) setDraft(result.draft);
     return result.ok;
   };
 
-  const updateEntryQuerySort = (
-    sourceDraftId: string,
-    sort: EntryQueryCompositionSort[],
-  ): boolean => {
-    const result = setEntryQuerySort(draft(), sourceDraftId, sort);
-    if (result.ok) setDraft(result.draft);
-    return result.ok;
-  };
-
-  const updateEntryQueryProjection = (
-    sourceDraftId: string,
-    projection: EntryQueryCompositionProjection,
-  ): boolean => {
-    const result = setEntryQueryProjection(draft(), sourceDraftId, projection);
-    if (result.ok) setDraft(result.draft);
-    return result.ok;
-  };
-
-  const updateEntryQueryDisplaySystemFields = (
-    sourceDraftId: string,
-    fields: EntryQueryCompositionSystemField[],
-  ): boolean => {
-    const result = setEntryQueryDisplaySystemFields(
-      draft(),
-      sourceDraftId,
-      fields,
-    );
-    if (result.ok) setDraft(result.draft);
-    return result.ok;
-  };
-
-  // Exact-revision update after the Saved SQL editor publishes a new
-  // revision. Compatible bindings survive; every new SQL variable is
-  // mapped explicitly in the Variables workspace.
-  const updateSavedSqlRevision = (
-    sourceDraftId: string,
-    revision: SavedSqlRevisionUpdate,
-  ): boolean => {
-    const result = setSavedSqlRevision(draft(), sourceDraftId, revision);
-    if (!result.ok) return false;
-    setDraft(result.draft);
-    return true;
-  };
-
-  const updateSavedSqlVariableTypes = (
-    sourceDraftId: string,
-    variableTypes: Record<string, CompositionVariableType>,
-  ): void => {
-    const current = draft().sources.find((source) =>
-      source.draftId === sourceDraftId
-    );
-    if (current?.kind !== "saved_sql") return;
-    if (
-      JSON.stringify(current.variableTypes ?? {}) ===
-        JSON.stringify(variableTypes)
-    ) return;
-    const result = setSavedSqlVariableTypes(
-      draft(),
-      sourceDraftId,
-      variableTypes,
-    );
-    if (result.ok) setDraft(result.draft);
-  };
-
-  const updateSavedSqlVariableBinding = (
-    sourceDraftId: string,
-    sqlVariable: string,
-    variableId: string | undefined,
-  ): boolean => {
-    const result = setSavedSqlVariableBinding(
-      draft(),
-      sourceDraftId,
-      sqlVariable,
-      variableId,
-    );
+  const updateInlineSqlName = (sourceDraftId: string, name: string): boolean => {
+    const result = setInlineSqlName(draft(), sourceDraftId, name);
     if (result.ok) setDraft(result.draft);
     return result.ok;
   };
@@ -961,6 +908,35 @@ export function CompositionStudio(props: CompositionStudioProps) {
       component_bindings: current.preview.plan?.component_bindings ?? [],
     };
   };
+  let descriptorSyncGeneration = 0;
+  createEffect(() => {
+    const snapshot = draft();
+    const current = previewState();
+    const preview = current.preview;
+    if (
+      !preview?.ok || !preview.plan || !current.yaml ||
+      previewSnapshot !== snapshot
+    ) return;
+    const generation = ++descriptorSyncGeneration;
+    if (generation !== descriptorSyncGeneration || draft() !== snapshot) return;
+    const latest = previewState();
+    if (latest.yaml !== current.yaml || latest.preview !== preview) return;
+    let next = snapshot;
+    let changed = false;
+    for (const source of preview.plan.sources) {
+      if (source.kind !== "inline_sql") continue;
+      const updated = setInlineSqlDescriptor(next, source.source_id, {
+        formBindings: source.form_bindings,
+        expectedResult: source.expected_result,
+        schemaFingerprint: source.source_schema_fingerprint,
+      });
+      if (updated.ok && updated.draft !== next) {
+        next = updated.draft;
+        changed = true;
+      }
+    }
+    if (changed) setDraft(next);
+  });
   const metricQueryContext = (): CompositionMetricQueryContext | undefined => {
     const current = previewState();
     if (
@@ -971,6 +947,12 @@ export function CompositionStudio(props: CompositionStudioProps) {
       spaceId: current.spaceId,
       target: { kind: "draft", yaml: current.yaml },
       draftFingerprint: current.identity.fingerprint,
+      ...(previewBase()
+        ? {
+          base_entry_id: previewBase()!.entryId,
+          base_revision_id: previewBase()!.revisionId,
+        }
+        : {}),
       variables: { ...previewHandle.variables() },
       dependencies: current.preview.plan?.dependencies,
     };
@@ -1004,7 +986,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
         component_id: input.draftId,
         kind: "input" as const,
         variable_id: input.variable,
-        ...(input.label ? { label: input.label } : {}),
       }));
     return {
       sources: plan?.sources ?? [],
@@ -1020,7 +1001,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const dataHeadingId = "studio-data-heading";
   const designHeadingId = "studio-design-heading";
   const variablesHeadingId = "studio-variables-heading";
-  const tagsHeadingId = "studio-tags-heading";
   const nameInputId = "studio-name";
 
   const modeIcon = (entry: StudioMode): "canvas-table" | "sql" | "columns" =>
@@ -1044,7 +1024,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
     collapsible = false,
   ) => (
     <CompositionDataWorkspace
-      spaceId={spaceId()}
       draft={draft()}
       headingId={headingId}
       selectedSourceId={expandedId()}
@@ -1053,23 +1032,21 @@ export function CompositionStudio(props: CompositionStudioProps) {
       onAddSource={openDataSourcePicker}
       onMoveSource={moveDraftSource}
       onRemoveSource={removeDraftSource}
-      onEntryQueryFilters={updateEntryQueryFilters}
-      onEntryQuerySort={updateEntryQuerySort}
-      onEntryQueryProjection={updateEntryQueryProjection}
-      onEntryQueryDisplaySystemFields={updateEntryQueryDisplaySystemFields}
-      onSavedSqlRevision={updateSavedSqlRevision}
-      onSavedSqlVariableTypes={updateSavedSqlVariableTypes}
-      onSavedSqlVariableBinding={updateSavedSqlVariableBinding}
+      onInlineSql={updateInlineSql}
+      onInlineSqlName={updateInlineSqlName}
       variables={draft().variables}
-      onEditVariables={() => setDataPanel("variables")}
+      variableValues={previewHandle.variables()}
       savedSqlEditHref={savedSqlEditHref}
+      sqlSchema={buildSqlSchema((forms() || []) as Form[])}
+      forms={(forms() || []) as Form[]}
       planSources={readyPlan()?.sources ?? []}
       sourceStates={readySources()}
-      diagnostics={previewDiagnostics() ?? []}
+      sourceCounts={previewState().counts}
       previewActive={isPreviewing()}
       onNext={(sourceId) => previewHandle.next(sourceId)}
       onPrevious={(sourceId) => previewHandle.previous(sourceId)}
       onRetry={(sourceId) => previewHandle.retry(sourceId)}
+      onCount={(sourceId) => void previewHandle.count(sourceId)}
       registerSourceRow={registerSourceRow}
     />
   );
@@ -1128,7 +1105,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
             ...previewHandle.variables(),
           }}
           sources={readySources()}
-          fieldNames={fieldNames}
           selectedId={selectedId()}
           highlightedIds={highlightedBlockIds()}
           onSelect={handleSelectBlock}
@@ -1275,18 +1251,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
             >
               {t("composition.studioVariables")}
             </button>
-            <button
-              type="button"
-              id="studio-data-tags-tab"
-              role="tab"
-              aria-selected={dataPanel() === "tags"}
-              aria-controls="studio-data-tags-panel"
-              class="tab"
-              classList={{ active: dataPanel() === "tags" }}
-              onClick={() => setDataPanel("tags")}
-            >
-              {t("composition.studioTags")}
-            </button>
           </div>
           <div
             id="studio-data-sources-panel"
@@ -1312,24 +1276,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
               onAdd={addDraftVariable}
               onUpdate={updateDraftVariable}
               onRemove={removeDraftVariable}
-            />
-          </section>
-          <section
-            id="studio-data-tags-panel"
-            role="tabpanel"
-            aria-labelledby="studio-data-tags-tab"
-            hidden={dataPanel() !== "tags"}
-            class="section"
-          >
-            <h2 id={tagsHeadingId}>{t("composition.studioTags")}</h2>
-            <input
-              class="ui-input"
-              aria-label={t("composition.studioTags")}
-              value={draft().tags.join(", ")}
-              onInput={(event) =>
-                setDraft(
-                  setDraftTags(draft(), parseTags(event.currentTarget.value)),
-                )}
             />
           </section>
         </section>
@@ -1364,13 +1310,14 @@ export function CompositionStudio(props: CompositionStudioProps) {
           legacy Preview section is gone too: the canvas previews blocks
           inline through the shared debounced handle, per-source results page
           inside the Data workspace, and resolve diagnostics render in the
-          strip above. Variables and Tags edit in Data mode only. */
+          strip above. Variables edit in Data mode only. */
       }
 
       <Show when={pickerOpen()}>
         <CompositionSourcePicker
           spaceId={spaceId()}
-          sourcePurpose={sourcePickerKind() ?? "data"}
+          existingSources={draft().sources}
+          onSelectExisting={selectExistingSource}
           onSelect={(seed) =>
             dataSourcePickerOpen()
               ? addDataSource(seed)

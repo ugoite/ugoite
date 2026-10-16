@@ -193,6 +193,86 @@ describe("sql helpers", () => {
     ]);
   });
 
+  it("builds SQL structure capabilities from trusted Form columns and typed variables", () => {
+    const [context] = buildSqlStructureContexts([{
+      id: "form-1",
+      name: "Tasks",
+      version: 1,
+      template: "task",
+      fields: {
+        title: { type: "string", required: false, sql_column: "field_title" },
+        amount: {
+          type: "float",
+          required: false,
+          sql_column: "field_amount",
+          query_capability: {
+            field: { kind: "property", field_id: 1 },
+            name: "Amount",
+            field_type: "float",
+            filterable: true,
+            sortable: true,
+            projectable: true,
+            supported_operators: ["equals"],
+          },
+        },
+        hidden: {
+          type: "string",
+          required: false,
+          sql_column: "field_hidden",
+          query_capability: {
+            field: { kind: "property", field_id: 2 },
+            name: "Hidden",
+            field_type: "string",
+            filterable: false,
+            sortable: false,
+            projectable: false,
+            supported_operators: [],
+          },
+        },
+      },
+    }], [
+      { name: "month", type: "date" },
+      { name: "complex", type: "json" },
+    ], "composition:source-1");
+
+    expect(context).toMatchObject({
+      identity: expect.stringContaining("composition:source-1"),
+      parser: {
+        relation: "Tasks",
+        columns: [
+        { name: "_ugoite_id", type: "string" },
+        { name: "_ugoite_created_at", type: "timestamp" },
+        { name: "_ugoite_updated_at", type: "timestamp" },
+        { name: "field_title", type: "string" },
+        { name: "field_amount", type: "float" },
+        { name: "field_hidden", type: "string" },
+      ],
+        variables: [{ name: "month", type: "date" }],
+        stable_key: ["_ugoite_id"],
+      },
+      columnCapabilities: {
+        field_amount: {
+          projectable: true,
+          filterable: true,
+          sortable: true,
+          supportedOperators: ["eq", "is_null", "is_not_null"],
+          aggregateFunctions: expect.any(Array),
+          groupable: true,
+          distinctable: true,
+        },
+        field_hidden: {
+          projectable: false,
+          filterable: false,
+          sortable: false,
+          supportedOperators: [],
+          aggregateFunctions: [],
+          groupable: false,
+          distinctable: false,
+        },
+      },
+    });
+  });
+
   it("rejects aggregate and filter fields unavailable in the current Form", () => {
     expect(() => buildSqlAggregateQuery(aggregateForm, "sum", "Category"))
       .toThrow("The aggregate field is unavailable");

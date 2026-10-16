@@ -22,11 +22,11 @@ pub use composition::{
     CompositionPublicationReceipt, CompositionRawRevision, CompositionResolveDiagnostic,
     CompositionResolvePlan, CompositionResolveRequest, CompositionResolveResponse,
     CompositionResolvedComponentBinding, CompositionResolvedComponentKind,
-    CompositionResolvedSource, CompositionRestoreRequest, CompositionRestoreResponse,
-    CompositionResultFieldType, CompositionRevisionMetadata, CompositionRevisionReference,
-    CompositionSaveRequest, CompositionSaveResponse, CompositionSourceConsumers,
-    CompositionVariableConsumers, CompositionVariableDefinition, CompositionVariableFormat,
-    CompositionVariableType,
+    CompositionResolvedFormBinding, CompositionResolvedResultColumn, CompositionResolvedSource,
+    CompositionRestoreRequest, CompositionRestoreResponse, CompositionResultFieldType,
+    CompositionRevisionMetadata, CompositionRevisionReference, CompositionSaveRequest,
+    CompositionSaveResponse, CompositionSourceConsumers, CompositionVariableConsumers,
+    CompositionVariableDefinition, CompositionVariableFormat, CompositionVariableType,
 };
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -2319,6 +2319,9 @@ fn failure(error: ApiProtocolError) -> ProtocolEnvelope {
 mod tests {
     use super::*;
 
+    const SQL_FIRST_COMPOSITION_YAML: &str =
+        include_str!("../../ugoite-domain/tests/fixtures/composition/sql-first.ugcomp.yaml");
+
     /// Composition v1 freeze: the exact portable operation inventory.
     /// composition.save and composition.restore require an Idempotency-Key;
     /// export stays a CLI file operation over composition.get, not an
@@ -2730,32 +2733,149 @@ mod tests {
         }))
         .is_err());
 
+        let variable_definition = CompositionVariableDefinition {
+            id: "month".to_owned(),
+            variable_type: CompositionVariableType::Date,
+            required: true,
+            default: None,
+            format: Some(CompositionVariableFormat::YearMonth),
+        };
+        let definition_wire =
+            serde_json::to_value(variable_definition).expect("variable definition DTO");
+        assert_eq!(definition_wire["id"], "month");
+        assert!(definition_wire.get("label").is_none());
+        assert!(
+            serde_json::from_value::<CompositionVariableDefinition>(json!({
+                "id": "month",
+                "type": "date",
+                "required": true,
+                "label": "Month"
+            }))
+            .is_err()
+        );
+
         let preview = CompositionPreviewRequest {
-            yaml: "format: ugoite.composition\\n".to_string(),
+            yaml: SQL_FIRST_COMPOSITION_YAML.to_owned(),
+            base_entry_id: Some("018f0000-0000-7000-8000-000000000001".to_owned()),
+            base_revision_id: Some("018f0000-0000-7000-8000-000000000002".to_owned()),
             variables: variables.clone(),
             unset_variables: Vec::new(),
         };
-        assert_variable_wire_shape(serde_json::to_value(preview).expect("preview request"));
+        let preview_wire = serde_json::to_value(preview).expect("preview request");
+        assert_variable_wire_shape(preview_wire.clone());
+        assert_eq!(
+            preview_wire["base_entry_id"],
+            "018f0000-0000-7000-8000-000000000001"
+        );
+        assert_eq!(
+            preview_wire["base_revision_id"],
+            "018f0000-0000-7000-8000-000000000002"
+        );
+        let new_preview = serde_json::from_value::<CompositionPreviewRequest>(json!({
+            "yaml": SQL_FIRST_COMPOSITION_YAML
+        }))
+        .expect("new Composition preview omits its edit base");
+        assert_eq!(new_preview.base_entry_id, None);
+        assert_eq!(new_preview.base_revision_id, None);
+        let partial_base = serde_json::from_value::<CompositionPreviewRequest>(json!({
+            "yaml": SQL_FIRST_COMPOSITION_YAML,
+            "base_entry_id": "018f0000-0000-7000-8000-000000000001"
+        }))
+        .expect("request DTO parses before the server validates the pair");
+        assert_eq!(
+            partial_base.base_entry_id.as_deref(),
+            Some("018f0000-0000-7000-8000-000000000001")
+        );
+        assert_eq!(partial_base.base_revision_id, None);
         assert!(serde_json::from_value::<CompositionPreviewRequest>(json!({
-            "yaml": "format: ugoite.composition\\n",
+            "yaml": SQL_FIRST_COMPOSITION_YAML,
             "parameters": {"month": "2026-10"}
         }))
         .is_err());
 
         let metric = CompositionMetricQueryRequest {
             target: CompositionMetricQueryTarget::Draft {
-                yaml: "format: ugoite.composition\\n".to_string(),
+                yaml: SQL_FIRST_COMPOSITION_YAML.to_owned(),
             },
+            base_entry_id: Some("018f0000-0000-7000-8000-000000000001".to_owned()),
+            base_revision_id: Some("018f0000-0000-7000-8000-000000000002".to_owned()),
             component_id: "total".to_string(),
             variables,
             unset_variables: Vec::new(),
         };
-        assert_variable_wire_shape(serde_json::to_value(metric).expect("metric request"));
+        let metric_json = serde_json::to_value(metric).expect("metric request");
+        assert_variable_wire_shape(metric_json.clone());
+        assert_eq!(
+            metric_json["base_entry_id"],
+            "018f0000-0000-7000-8000-000000000001"
+        );
+        assert_eq!(
+            metric_json["base_revision_id"],
+            "018f0000-0000-7000-8000-000000000002"
+        );
         assert!(
             serde_json::from_value::<CompositionMetricQueryRequest>(json!({
-                "target": {"kind": "draft", "yaml": "format: ugoite.composition\\n"},
+                "target": {"kind": "draft", "yaml": SQL_FIRST_COMPOSITION_YAML},
+                "base_entry_id": "018f0000-0000-7000-8000-000000000001",
+                "component_id": "total"
+            }))
+            .is_ok(),
+            "the transport DTO leaves pair validation to the server"
+        );
+        assert!(
+            serde_json::from_value::<CompositionMetricQueryRequest>(json!({
+                "target": {"kind": "draft", "yaml": SQL_FIRST_COMPOSITION_YAML},
                 "component_id": "total",
                 "parameters": {"month": "2026-10"}
+            }))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn composition_inline_sql_resolved_request_round_trips_sql_first_shape() {
+        let inline_sql = json!({
+            "kind": "inline_sql",
+            "source_id": "expense_rows",
+            "request": {
+                "sql": "SELECT \"amount\" FROM \"__form_10\" WHERE \"Date\" >= $month_start",
+                "parameters": {"month_start": "2026-10-01"},
+                "parameter_types": {"month_start": "date"},
+                "limit": 100
+            },
+            "source_schema_fingerprint": "a".repeat(64),
+            "form_bindings": [{"relation": "expenses", "form_id": "form-1"}],
+            "expected_result": [{"name": "amount", "type": "decimal"}]
+        });
+        let source: CompositionResolvedSource =
+            serde_json::from_value(inline_sql.clone()).expect("inline SQL source DTO");
+        assert_eq!(
+            serde_json::to_value(&source).expect("serialize inline SQL source DTO"),
+            inline_sql
+        );
+        assert_eq!(
+            inline_sql["request"]["parameters"]["month_start"],
+            "2026-10-01"
+        );
+        assert!(inline_sql["request"].get("saved_sql").is_none());
+
+        let component_binding = json!({
+            "component_id": "transactions",
+            "kind": "table",
+            "source_id": "expense_rows"
+        });
+        let binding: CompositionResolvedComponentBinding =
+            serde_json::from_value(component_binding.clone()).expect("binding DTO");
+        assert_eq!(
+            serde_json::to_value(binding).expect("serialize binding DTO"),
+            component_binding
+        );
+        assert!(
+            serde_json::from_value::<CompositionResolvedComponentBinding>(json!({
+                "component_id": "transactions",
+                "kind": "table",
+                "source_id": "expense_rows",
+                "label": "Expense rows"
             }))
             .is_err()
         );
@@ -2838,7 +2958,7 @@ mod tests {
         let lint = prepare_request(
             "composition.lint",
             &json!({}),
-            Some(&json!({"yaml": "format_version: 1\n"})),
+            Some(&json!({"yaml": SQL_FIRST_COMPOSITION_YAML})),
         )
         .expect("Composition lint request");
         assert_eq!(lint.method, HttpMethod::Post);
@@ -2847,12 +2967,10 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<Value>(lint.body.as_deref().expect("lint body"))
                 .expect("lint request JSON"),
-            json!({"yaml": "format_version: 1\n"})
+            json!({"yaml": SQL_FIRST_COMPOSITION_YAML})
         );
 
-        let save_body = json!({
-            "yaml": "format: ugoite.composition\nformat_version: 1\nkind: dashboard\nname: Monthly\ntags: []\nspec: {}\n"
-        });
+        let save_body = json!({"yaml": SQL_FIRST_COMPOSITION_YAML});
         let save_create = prepare_request(
             "composition.save",
             &json!({"space_id": "demo", "idempotency_key": "composition-attempt-create"}),
@@ -2893,7 +3011,7 @@ mod tests {
         let save_update_body = json!({
             "composition_id": "01900000-0000-7000-8000-000000000002",
             "base_revision_id": "01900000-0000-7000-8000-000000000003",
-            "yaml": "format: ugoite.composition\nformat_version: 1\nkind: dashboard\nname: Monthly\ntags: []\nspec: {}\n"
+            "yaml": SQL_FIRST_COMPOSITION_YAML
         });
         let save_update = prepare_request(
             "composition.save",
@@ -3003,7 +3121,7 @@ mod tests {
         let save_response = json!({
             "composition_id": "01900000-0000-7000-8000-000000000002",
             "revision_id": "01900000-0000-7000-8000-000000000003",
-            "canonical_yaml": "format: ugoite.composition\nformat_version: 1\n",
+            "canonical_yaml": SQL_FIRST_COMPOSITION_YAML,
             "receipt": {
                 "command_id": "command-1",
                 "catalog_generation": 4,
@@ -3024,7 +3142,7 @@ mod tests {
             "composition_id": "01900000-0000-7000-8000-000000000002",
             "revision_id": "01900000-0000-7000-8000-000000000006",
             "restored_from_revision_id": "01900000-0000-7000-8000-000000000004",
-            "canonical_yaml": "format: ugoite.composition\nformat_version: 1\n",
+            "canonical_yaml": SQL_FIRST_COMPOSITION_YAML,
             "receipt": {
                 "command_id": "restore-command-1",
                 "catalog_generation": 5,
@@ -3075,7 +3193,6 @@ mod tests {
             "ok": true,
             "variable_definitions": [{
                 "id": "month",
-                "label": "Month",
                 "type": "date",
                 "required": true,
                 "default": "2026-10-01",
@@ -3091,6 +3208,18 @@ mod tests {
                     "revision_id": "01900000-0000-7000-8000-000000000003"
                 },
                 "sources": [{
+                    "kind": "inline_sql",
+                    "source_id": "expense_rows",
+                    "request": {
+                        "sql": "SELECT \"amount\" FROM \"__form_10\" WHERE \"Date\" >= $month_start",
+                        "parameters": {"month_start": "2026-10-01"},
+                        "parameter_types": {"month_start": "date"},
+                        "limit": 100
+                    },
+                    "source_schema_fingerprint": "a".repeat(64),
+                    "form_bindings": [],
+                    "expected_result": [{"name": "amount", "type": "decimal"}]
+                }, {
                     "kind": "saved_sql",
                     "source_id": "monthly-total",
                     "request": {
@@ -3100,16 +3229,16 @@ mod tests {
                             "revision_id": "01900000-0000-7000-8000-000000000005"
                         }
                     },
-                    "source_schema_fingerprint": "b".repeat(64)
+                    "source_schema_fingerprint": "b".repeat(64),
+                    "expected_result": [{"name": "total_amount", "type": "integer"}]
                 }],
                 "component_bindings": [{
                     "component_id": "rows",
                     "kind": "table",
-                    "source_id": "monthly-total"
+                    "source_id": "expense_rows"
                 }, {
                     "component_id": "total",
                     "kind": "metric",
-                    "label": "Total",
                     "source_id": "monthly-total",
                     "result_property_key": "total_amount",
                     "expected_result_type": "integer"
@@ -3125,8 +3254,7 @@ mod tests {
         // Text bindings carry layout position with no source request.
         let text_binding = json!({
             "component_id": "note",
-            "kind": "text",
-            "label": "Note"
+            "kind": "text"
         });
         let text_dto: CompositionResolvedComponentBinding =
             serde_json::from_value(text_binding.clone()).expect("text binding DTO");
@@ -3170,7 +3298,7 @@ mod tests {
         );
 
         let preview_body = json!({
-            "yaml": "format: ugoite.composition\n",
+            "yaml": SQL_FIRST_COMPOSITION_YAML,
             "variables": {"month": "2026-10"},
             "unset_variables": ["include_archived"]
         });
@@ -3227,7 +3355,7 @@ mod tests {
         );
 
         let draft_metric_body = json!({
-            "target": {"kind": "draft", "yaml": "format: ugoite.composition\\n"},
+            "target": {"kind": "draft", "yaml": SQL_FIRST_COMPOSITION_YAML},
             "component_id": "sql_total",
             "variables": {}
         });
@@ -3324,7 +3452,7 @@ mod tests {
             "ok": true,
             "value": {
                 "document": {"format_version": 1},
-                "canonical_yaml": "format_version: 1\n",
+                "canonical_yaml": SQL_FIRST_COMPOSITION_YAML,
                 "fingerprint": "a".repeat(64)
             }
         });
@@ -3413,8 +3541,7 @@ mod tests {
                 "updated_at": 1720000000.5,
                 "name": "Monthly expenses",
                 "kind": "dashboard",
-                "format_version": 1,
-                "tags": ["finance"]
+                "format_version": 1
             }],
             "offset": 25,
             "limit": 25,
@@ -3426,6 +3553,9 @@ mod tests {
             serde_json::to_value(&list_page_dto).expect("serialize Composition list DTO"),
             list_page
         );
+        assert!(serde_json::to_value(&list_page_dto).unwrap()["items"][0]
+            .get("tags")
+            .is_none());
         assert!(list_page["items"][0].get("spec").is_none());
         for (operation, body, expected) in [
             ("composition.list", list_page.to_string(), list_page),

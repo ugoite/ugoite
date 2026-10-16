@@ -6,11 +6,10 @@ import {
   test,
 } from "@playwright/test";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
+import { completeInlineSqlCompositionYaml } from "./lib/composition.ts";
 
 type FormFieldSummary = {
-  id?: number;
   sql_column?: string;
-  query_capability?: { field?: { field_id?: number } };
 };
 
 type FormSummary = {
@@ -42,38 +41,25 @@ function sqlIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
-function fieldId(field: FormFieldSummary | undefined): number {
-  const resolved = field?.query_capability?.field?.field_id ?? field?.id;
-  expect(resolved).toBeTruthy();
-  return resolved!;
-}
-
-function buildEntryQueryYaml(
+function buildInlineSqlYaml(
   name: string,
-  formId: string,
-  fieldIds: number[],
-  pageLimit?: number,
+  sourceName: string,
+  sql: string,
 ): string {
   const lines = [
     "format: ugoite.composition",
     "format_version: 1",
     `name: ${name}`,
     "kind: dashboard",
-    "tags: []",
     "spec:",
     "  sources:",
     "    - id: narrow_rows",
-    "      kind: entry_query",
-    `      form_id: "${formId}"`,
-    "      field_schema:",
-    ...fieldIds.map((field) =>
-      `        - field_id: ${field}\n          field_type: string`
-    ),
-    "      query:",
-    ...(pageLimit === undefined ? [] : [`        page_limit: ${pageLimit}`]),
-    "        projection:",
-    "          kind: fields",
-    `          fields: [${fieldIds.join(", ")}]`,
+    "      kind: inline_sql",
+    `      name: ${sourceName}`,
+    `      sql: ${sql}`,
+    "      form_bindings: []",
+    "      expected_result: []",
+    "      schema_fingerprint: ''",
     "  components:",
     "    - id: narrow_table",
     "      kind: table",
@@ -161,8 +147,6 @@ async function seedNarrowSurfaces(
   const betaField = form!.fields?.Beta;
   expect(alphaField?.sql_column).toBeTruthy();
   expect(betaField?.sql_column).toBeTruthy();
-  const alphaFieldId = fieldId(alphaField);
-  const betaFieldId = fieldId(betaField);
 
   for (const alpha of alphaValues) {
     const entryResponse = await request.post(
@@ -219,25 +203,43 @@ async function seedNarrowSurfaces(
   const manyColumn = (await manyColumnSql.json()) as { id?: string };
   expect(manyColumn.id).toBeTruthy();
 
-  const oneColumn = await saveComposition(
+  const oneColumnYaml = await completeInlineSqlCompositionYaml(
     request,
     spaceId,
-    buildEntryQueryYaml(
+    buildInlineSqlYaml(
       `Narrow one column ${suffix}`,
-      form!.id!,
-      [alphaFieldId],
+      `Narrow one column ${suffix} rows`,
+      `SELECT ${alphaColumn} AS label FROM ${sqlIdentifier(formName)}`,
     ),
+    {
+      id: "narrow_rows",
+      relation: formName,
+      formId: form!.id!,
+      expectedResult: [{ name: "label", type: "string" }],
+    },
   );
-  const twoColumn = await saveComposition(
+  const oneColumn = await saveComposition(request, spaceId, oneColumnYaml);
+  const twoColumnYaml = await completeInlineSqlCompositionYaml(
     request,
     spaceId,
-    buildEntryQueryYaml(
+    buildInlineSqlYaml(
       `Narrow two column ${suffix}`,
-      form!.id!,
-      [alphaFieldId, betaFieldId],
-      2,
+      `Narrow two column ${suffix} rows`,
+      `SELECT ${alphaColumn} AS alpha, ${betaColumn} AS beta FROM ${
+        sqlIdentifier(formName)
+      } LIMIT 2`,
     ),
+    {
+      id: "narrow_rows",
+      relation: formName,
+      formId: form!.id!,
+      expectedResult: [
+        { name: "alpha", type: "string" },
+        { name: "beta", type: "string" },
+      ],
+    },
   );
+  const twoColumn = await saveComposition(request, spaceId, twoColumnYaml);
 
   return {
     spaceId,
@@ -515,6 +517,9 @@ test.describe("Result surface narrow viewports", () => {
           whiteSpace: style.whiteSpace,
         };
       });
-    expect(cellStyle).toEqual({ textOverflow: "ellipsis", whiteSpace: "nowrap" });
+    expect(cellStyle).toEqual({
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap",
+    });
   });
 });

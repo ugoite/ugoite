@@ -6,7 +6,7 @@ features:
   - id: FEAT-FE-008
     title: Shared SQL Workspace component
     summary: Provide a controlled SQL editing and preview surface for SQL route and Composition adapters to reuse.
-    status: planned
+    status: implemented
     bindings:
       - id: frontend
         role: implementation
@@ -19,7 +19,11 @@ features:
             selector: { kind: symbol, name: SQLWorkspace }
             claims:
               - kind: satisfies
+                criterion: REQ-FE-080#criterion.shared-editor-and-preview
+              - kind: satisfies
                 criterion: REQ-FE-080#criterion.workspace-presentation-api
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.adapter-owned-persistence-and-execution
               - kind: satisfies
                 criterion: REQ-FE-080#criterion.transient-typed-parameters
               - kind: satisfies
@@ -28,18 +32,13 @@ features:
                 criterion: REQ-FE-080#criterion.explicit-preview-count-and-paging
               - kind: satisfies
                 criterion: REQ-FE-080#criterion.editor-accessibility-and-wrapping
-          - id: sql-query-editor
-            adapter: typescript
-            path: frontend/src/components/SqlQueryEditor.tsx
-            selector: { kind: symbol, name: SqlQueryEditor }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-080#criterion.editor-accessibility-and-wrapping
           - id: sql-workspace-layout
             adapter: declared
             path: frontend/src/app.css
             selector: { kind: file }
             claims:
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.mobile-sql-editor-and-results
               - kind: satisfies
                 criterion: REQ-FE-080#criterion.workspace-control-size-rules
           - id: sql-structure-toolbar
@@ -49,13 +48,15 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-080#criterion.safe-structured-operations
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.sql-toolbar-keeps-query-meanings
           - id: sql-structure-context
             adapter: typescript
             path: frontend/src/lib/sql.ts
             selector: { kind: symbol, name: buildSqlStructureContexts }
             claims:
-              - kind: evidences
-                anchor: REQ-FE-080#criterion.safe-structured-operations
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.safe-structured-operations
       - id: rust-structure-capabilities
         role: evidence
         facet: domain
@@ -89,134 +90,3 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-FE-080#criterion.safe-structured-operations
-      - id: verification
-        role: verification
-        facet: verification
-        responsibility: Verify controlled SQL changes, transient variable presentation, explicit capability dispatch, preview freshness/count/page callbacks, editor accessibility, and control sizing through focused frontend tests.
-        targets:
-          - id: sql-workspace-controlled-editor
-            adapter: typescript
-            path: frontend/src/components/SQLWorkspace.test.tsx
-            selector: { kind: test, name: "REQ-FE-080: keeps SQL editing controlled and passes the accessible name" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-080#criterion.workspace-presentation-api
-                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: keeps SQL editing controlled and passes the accessible name" } }
-          - id: sql-workspace-transient-parameters
-            adapter: typescript
-            path: frontend/src/components/SQLWorkspace.test.tsx
-            selector: { kind: test, name: "REQ-FE-080: presents variable defaults and forwards raw transient values" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-080#criterion.transient-typed-parameters
-                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: presents variable defaults and forwards raw transient values" } }
-          - id: sql-workspace-adapter-actions
-            adapter: typescript
-            path: frontend/src/components/SQLWorkspace.test.tsx
-            selector: { kind: test, name: "REQ-FE-080: exposes operation reasons and never rewrites SQL on action" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-080#criterion.adapter-supplied-structured-actions
-                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: exposes operation reasons and never rewrites SQL on action" } }
-          - id: sql-workspace-preview-and-paging
-            adapter: typescript
-            path: frontend/src/components/SQLWorkspace.test.tsx
-            selector: { kind: test, name: "REQ-FE-080: keeps count explicit and delegates result paging" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-080#criterion.explicit-preview-count-and-paging
-                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: keeps count explicit and delegates result paging" } }
-          - id: sql-workspace-preview-states
-            adapter: typescript
-            path: frontend/src/components/SQLWorkspace.test.tsx
-            selector: { kind: test, name: "REQ-FE-080: reports loading and errors without presenting a stale page" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-080#criterion.explicit-preview-count-and-paging
-                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: reports loading and errors without presenting a stale page" } }
-          - id: sql-workspace-stale-preview-hidden
-            adapter: typescript
-            path: frontend/src/components/SQLWorkspace.test.tsx
-            selector: { kind: test, name: "REQ-FE-080: hides a successful result page after its inputs change" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-080#criterion.explicit-preview-count-and-paging
-                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: hides a successful result page after its inputs change" } }
-          - id: sql-workspace-empty-results
-            adapter: typescript
-            path: frontend/src/components/SQLWorkspace.test.tsx
-            selector: { kind: test, name: "REQ-FE-080: presents explicit total count and an empty result state" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-080#criterion.explicit-preview-count-and-paging
-                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: presents explicit total count and an empty result state" } }
-          - id: sql-workspace-layout
-            adapter: typescript
-            path: frontend/src/components/SQLWorkspace.test.tsx
-            selector: { kind: test, name: "REQ-FE-080: uses 16px inputs and 44px action targets" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-080#criterion.workspace-control-size-rules
-                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace, FEAT-FE-008#binding.frontend/target.sql-workspace-layout]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: uses 16px inputs and 44px action targets" } }
-          - id: sql-structure-context-map
-            adapter: typescript
-            path: frontend/src/lib/sql.test.ts
-            selector: { kind: test, name: "uses the written Form relation and intersects typed column capabilities" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-080#criterion.safe-structured-operations
-                covers: [FEAT-FE-008#binding.frontend/target.sql-structure-context]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: "uses the written Form relation and intersects typed column capabilities" } }
-          - id: sql-structure-confirmation
-            adapter: typescript
-            path: frontend/src/components/SqlStructureToolbar.test.tsx
-            selector: { kind: test, name: "intersects Form capabilities and changes SQL only after proposal confirmation" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-080#criterion.safe-structured-operations
-                covers: [FEAT-FE-008#binding.frontend/target.sql-structure-toolbar]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlStructureToolbar.test.tsx, test: "intersects Form capabilities and changes SQL only after proposal confirmation" } }
-          - id: sql-structure-template-variables
-            adapter: typescript
-            path: frontend/src/components/SqlStructureToolbar.test.tsx
-            selector: { kind: test, name: "normalizes template variables only for parser proposals" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-080#criterion.safe-structured-operations
-                covers: [FEAT-FE-008#binding.frontend/target.sql-structure-toolbar]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlStructureToolbar.test.tsx, test: "normalizes template variables only for parser proposals" } }
-          - id: sql-structure-stale-proposal
-            adapter: typescript
-            path: frontend/src/components/SqlStructureToolbar.test.tsx
-            selector: { kind: test, name: "discards a proposal and closes its dialog when SQL context changes" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-080#criterion.safe-structured-operations
-                covers: [FEAT-FE-008#binding.frontend/target.sql-structure-toolbar]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlStructureToolbar.test.tsx, test: "discards a proposal and closes its dialog when SQL context changes" } }
-          - id: sql-structure-null-filter
-            adapter: typescript
-            path: frontend/src/components/SqlStructureToolbar.test.tsx
-            selector: { kind: test, name: "offers null filters without requiring a typed variable" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-080#criterion.safe-structured-operations
-                covers: [FEAT-FE-008#binding.frontend/target.sql-structure-toolbar]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlStructureToolbar.test.tsx, test: "offers null filters without requiring a typed variable" } }
-          - id: sql-editor-accessibility-and-wrapping
-            adapter: typescript
-            path: frontend/src/components/SqlQueryEditor.test.tsx
-            selector: { kind: test, name: "names the SQL editor and enables line wrapping when requested" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-080#criterion.editor-accessibility-and-wrapping
-                covers: [FEAT-FE-008#binding.frontend/target.sql-query-editor, FEAT-FE-008#binding.frontend/target.sql-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlQueryEditor.test.tsx, test: "names the SQL editor and enables line wrapping when requested" } }

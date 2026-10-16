@@ -86,7 +86,7 @@ policies:
           - id: composition-data-source-form-identity
             adapter: typescript
             path: frontend/src/components/CompositionDataWorkspace.test.tsx
-            selector: { kind: test, name: "REQ-FE-070: keeps internal Form IDs out of Composition source details" }
+            selector: { kind: test, name: "edits inline SQL directly and passes the current SQL page to the shared workspace" }
             claims:
               - kind: evidences
                 anchor: POL-UI-005#rule.governance

@@ -4,7 +4,6 @@ import {
   type CompositionInspectorDataJump,
   type InspectorApply,
   InspectorDataJumpButton,
-  InspectorLabelField,
   InspectorShell,
   InspectorSourceField,
 } from "~/components/composition/InspectorFields";
@@ -16,8 +15,8 @@ import {
 import { t } from "~/lib/i18n";
 
 /**
- * Table inspector: label input and a data source picker over the draft's
- * existing sources. No value selector: tables render whole source-native
+ * Table inspector: data source picker over the draft's existing sources.
+ * Tables render whole source-native
  * result pages, and no source is created here.
  */
 export function TableInspector(props: {
@@ -38,11 +37,6 @@ export function TableInspector(props: {
       <Show when={table()}>
         {(entry) => (
           <>
-            <InspectorLabelField
-              display={entry()}
-              draft={props.draft}
-              apply={props.apply}
-            />
             <InspectorSourceField
               draft={props.draft}
               sourceDraftId={entry().sourceDraftId}

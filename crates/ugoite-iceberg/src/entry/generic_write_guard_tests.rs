@@ -12,7 +12,7 @@ use ugoite_domain::entry::{EntryMetadata, EntryOperation, EntryRevision, FieldVa
 use ugoite_domain::id::{EntryId, FieldId, RevisionId};
 
 const COMPOSITION_YAML: &str =
-    include_str!("../../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml");
+    include_str!("../../tests/fixtures/composition-sql-first.ugcomp.yaml");
 
 fn assert_registry_conflict(error: &anyhow::Error) {
     assert!(error.to_string().contains("composition_registry_conflict"));

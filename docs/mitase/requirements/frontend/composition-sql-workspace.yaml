@@ -1,13 +1,13 @@
 schema: mitase/authoring/v2
 kind: requirements
 namespace: frontend
-category: Planned SQL-first Composition Studio interactions
+category: SQL-first Composition Studio interactions
 requirements:
   - id: REQ-FE-079
     title: SQL-first Composition Studio
-    description: The planned SQL-first Composition Studio uses the shared SQL Workspace while expressing Composition-specific structure and accessible controls through meaningful names rather than persisted label fields.
+    description: The SQL-first Composition Studio uses the shared SQL Workspace while expressing Composition-specific structure and accessible controls through meaningful names rather than persisted label fields.
     priority: high
-    status: planned
+    status: implemented
     criteria:
       - id: composition-uses-shared-workspace
         kind: behavior
@@ -99,3 +99,81 @@ requirements:
           disclosure. Exact revision identity stays in the internal route
           target and the selected revision opens exactly.
         governed_by: [POL-UI-005#rule.governance]
+    bindings:
+      - id: sql-first-studio-verification
+        role: verification
+        facet: verification
+        responsibility: Verify source serialization, Form-to-SQL creation, the shared SQL Workspace, structure-first authoring, server-backed Metric results, exact Composition History, and the accessible mobile source drawer through focused frontend tests.
+        targets:
+          - id: composition-document-shape
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: "serializes only SQL source kinds and contains no persisted display labels or tags" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-no-label-or-tag-fields
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-draft]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "serializes only SQL source kinds and contains no persisted display labels or tags" } }
+          - id: structure-first-authoring
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: "opens Text or Data insertion from a blank canvas" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-structure-first-steady-state
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "opens Text or Data insertion from a blank canvas" } }
+          - id: form-selection-source
+            adapter: typescript
+            path: frontend/src/components/CompositionSourcePicker.test.tsx
+            selector: { kind: test, name: "creates editable inline SQL when a Form is selected" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.form-selection-creates-inline-sql
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "creates editable inline SQL when a Form is selected" } }
+          - id: saved-sql-read-only-source
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: "keeps Saved SQL read-only at its exact revision and links to explicit editing" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-uses-shared-workspace
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "keeps Saved SQL read-only at its exact revision and links to explicit editing" } }
+          - id: source-drawer-accessibility
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: "shows an accessible mobile source drawer and restores focus when it closes" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-mobile-workspace-accessibility
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "shows an accessible mobile source drawer and restores focus when it closes" } }
+          - id: metric-result-rendering
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.test.tsx
+            selector: { kind: test, name: "queries an exact integer metric through the bounded server operation" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-result-renderer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: "queries an exact integer metric through the bounded server operation" } }
+          - id: composition-revision-identifiers
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: "owns the tool name once and links a single edit action" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-binding-identifiers-stay-internal
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-revision-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: "owns the tool name once and links a single edit action" } }
+          - id: composition-history-identifiers
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx
+            selector: { kind: test, name: "lists revisions with human labels and opens the exact revision" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-history-hides-revision-identifiers
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-history-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx", test: "lists revisions with human labels and opens the exact revision" } }

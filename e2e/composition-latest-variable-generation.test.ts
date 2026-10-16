@@ -5,6 +5,7 @@ import {
   test,
 } from "@playwright/test";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
+import { completeSavedSqlCompositionYaml } from "./lib/composition.ts";
 
 type SeedState = {
   spaceId: string;
@@ -108,12 +109,11 @@ async function seedRapidVariableComposition(
   expect(savedSql.id).toBeTruthy();
   expect(savedSql.revision_id).toBeTruthy();
 
-  const yaml = [
+  let yaml = [
     "format: ugoite.composition",
     "format_version: 1",
     `name: Latest generation ${suffix}`,
     "kind: dashboard",
-    "tags: []",
     "spec:",
     "  variables:",
     "    - id: minimum",
@@ -125,9 +125,8 @@ async function seedRapidVariableComposition(
     "      kind: saved_sql",
     `      entry_id: "${savedSql.id}"`,
     `      revision_id: "${savedSql.revision_id}"`,
-    "      expected_result:",
-    "        - name: total",
-    "          type: float",
+    "      expected_result: []",
+    "      schema_fingerprint: ''",
     "      variables:",
     "        minimum:",
     "          variable: minimum",
@@ -135,10 +134,8 @@ async function seedRapidVariableComposition(
     "    - id: minimum_input",
     "      kind: input",
     "      variable: minimum",
-    "      label: Minimum",
     "    - id: total",
     "      kind: metric",
-    "      label: Total",
     "      source: totals",
     "      column: total",
     "    - id: totals_table",
@@ -159,6 +156,11 @@ async function seedRapidVariableComposition(
     "            component: totals_table",
     "",
   ].join("\n");
+  yaml = await completeSavedSqlCompositionYaml(request, spaceId, yaml, [{
+    id: "totals",
+    savedSqlId: savedSql.id!,
+    savedSqlRevisionId: savedSql.revision_id!,
+  }]);
   const saveResponse = await request.post(
     getBackendUrl(`/spaces/${spaceId}/compositions`),
     {
@@ -314,7 +316,7 @@ test.describe("Composition latest variable generation", () => {
       { waitUntil: "domcontentloaded" },
     );
 
-    const minimumInput = page.getByLabel("Minimum", { exact: true });
+    const minimumInput = page.getByRole("textbox").first();
     await expect(minimumInput).toHaveValue("0");
     await expect(page.locator("output.compositionMetric")).toHaveText("6");
     await expect(page.getByRole("table")).toContainText("6");

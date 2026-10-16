@@ -5,6 +5,7 @@ import {
   test,
 } from "@playwright/test";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
+import { completeSavedSqlCompositionYaml } from "./lib/composition.ts";
 
 type SeedState = {
   spaceId: string;
@@ -97,27 +98,24 @@ async function seedInvalidInputComposition(
   expect(savedSql.id).toBeTruthy();
   expect(savedSql.revision_id).toBeTruthy();
 
-  const yaml = [
+  let yaml = [
     "format: ugoite.composition",
     "format_version: 1",
     `name: Invalid variable input ${suffix}`,
     "kind: dashboard",
-    "tags: []",
     "spec:",
     "  variables:",
     "    - id: minimum_amount",
     "      type: integer",
     "      required: true",
     "      default: 5",
-    "      label: Minimum amount",
     "  sources:",
     "    - id: matching_rows",
     "      kind: saved_sql",
     `      entry_id: "${savedSql.id}"`,
     `      revision_id: "${savedSql.revision_id}"`,
-    "      expected_result:",
-    "        - name: matching_rows",
-    "          type: integer",
+    "      expected_result: []",
+    "      schema_fingerprint: ''",
     "      variables:",
     "        minimum:",
     "          variable: minimum_amount",
@@ -125,14 +123,11 @@ async function seedInvalidInputComposition(
     "    - id: first_input",
     "      kind: input",
     "      variable: minimum_amount",
-    "      label: First threshold",
     "    - id: second_input",
     "      kind: input",
     "      variable: minimum_amount",
-    "      label: Second threshold",
     "    - id: matching_rows_metric",
     "      kind: metric",
-    "      label: Matching rows",
     "      source: matching_rows",
     "      column: matching_rows",
     "  layout:",
@@ -150,6 +145,11 @@ async function seedInvalidInputComposition(
     "            component: matching_rows_metric",
     "",
   ].join("\n");
+  yaml = await completeSavedSqlCompositionYaml(request, spaceId, yaml, [{
+    id: "matching_rows",
+    savedSqlId: savedSql.id!,
+    savedSqlRevisionId: savedSql.revision_id!,
+  }]);
   const compositionResponse = await request.post(
     getBackendUrl(`/spaces/${spaceId}/compositions`),
     {
@@ -209,10 +209,9 @@ test.describe("Composition invalid variable Input", () => {
       { waitUntil: "domcontentloaded" },
     );
 
-    const firstInput = page.getByRole("textbox", { name: "First threshold" });
-    const secondInput = page.getByRole("textbox", {
-      name: "Second threshold",
-    });
+    const inputs = page.getByRole("textbox");
+    const firstInput = inputs.nth(0);
+    const secondInput = inputs.nth(1);
     const metric = page.locator("output.compositionMetric");
     await expect(firstInput).toHaveValue("5");
     await expect(secondInput).toHaveValue("5");

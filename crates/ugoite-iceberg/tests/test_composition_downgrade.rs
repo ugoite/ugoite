@@ -8,8 +8,7 @@ use ugoite_domain::composition::parse_composition_yaml;
 use ugoite_iceberg::{composition, service::UgoiteService};
 use uuid::Uuid;
 
-const MONTHLY_EXPENSE: &str =
-    include_str!("../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml");
+const SQL_FIRST_COMPOSITION: &str = include_str!("fixtures/composition-sql-first.ugcomp.yaml");
 const OLD_READER_BINARY_ENV: &str = "UGOITE_V021_CLI_PATH";
 const UNRELATED_ENTRY_ID: &str = "unrelated-note";
 const UNRELATED_FORM_NAME: &str = "CompatibilityNote";
@@ -105,9 +104,8 @@ async fn v021_reader_writer_preserves_composition_and_unrelated_knowledge() -> R
         )
         .await?;
 
-    let mut document = parse_composition_yaml(MONTHLY_EXPENSE)
+    let document = parse_composition_yaml(SQL_FIRST_COMPOSITION)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
-    document.tags = vec!["compatibility".to_owned()];
     let saved = service
         .save_composition_authorized_for_principals(
             &space_id,

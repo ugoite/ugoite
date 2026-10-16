@@ -6,12 +6,12 @@ features:
   - id: FEAT-COMP-010
     title: SQL-first Composition source and workspace
     summary: Replace prerelease EntryQuery Composition sources with portable SQL sources resolved by the existing authorized executor, and share one accessible SQL Workspace across Saved SQL and Composition authoring.
-    status: planned
+    status: implemented
     bindings:
       - id: sql-first-composition-contract
         role: contract-source
         facet: domain
-        responsibility: Define the accepted target Composition source grammar, Form binding authority, Saved SQL default boundary, result behavior, and no-compatibility decision without claiming implementation or release evidence.
+        responsibility: Define the accepted Composition source grammar, Form binding authority, Saved SQL default boundary, result behavior, and no-compatibility decision as the normative contract.
         targets:
           - id: sql-first-semantic-contract
             adapter: declared
@@ -119,3 +119,97 @@ features:
             claims:
               - kind: documents
                 anchor: REQ-FE-079#criterion.composition-history-hides-revision-identifiers
+      - id: sql-first-domain-implementation
+        role: implementation
+        facet: domain
+        responsibility: Parse and validate the single SQL-first Composition v1 grammar, reject the replaced fields, and keep result descriptors and scalar Metrics typed.
+        targets:
+          - id: canonical-composition-model
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: CompositionDocument }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-008#criterion.sql-source-grammar
+              - kind: satisfies
+                criterion: REQ-COMP-008#criterion.strict-replacement-envelope
+              - kind: satisfies
+                criterion: REQ-COMP-008#criterion.no-composition-tags-or-label-fields
+              - kind: satisfies
+                criterion: REQ-COMP-008#criterion.no-composition-legacy-reader
+      - id: sql-first-resolution-implementation
+        role: implementation
+        facet: core
+        responsibility: Derive trusted Form identity and exact SQL requests through the existing executor while retaining stateless variables and transient runtime values.
+        targets:
+          - id: composition-resolver
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: resolve_composition_preview_with_unset }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-008#criterion.saved-sql-exact-revision-and-defaults
+              - kind: satisfies
+                criterion: REQ-COMP-008#criterion.scalar-metric-results
+              - kind: satisfies
+                criterion: REQ-COMP-008#criterion.stateless-bounded-execution
+          - id: storage-composition-resolution
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: CompositionResolution }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-008#criterion.trusted-inline-form-bindings
+              - kind: satisfies
+                criterion: REQ-COMP-008#criterion.exact-sql-result-descriptor
+      - id: sql-first-workspace-implementation
+        role: implementation
+        facet: frontend
+        responsibility: Use the shared SQL Workspace for inline SQL and keep Composition source, design, and result interactions structure-first and accessible.
+        targets:
+          - id: composition-draft
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.ts
+            selector: { kind: symbol, name: toStudioDocument }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-no-label-or-tag-fields
+          - id: composition-data-workspace
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.tsx
+            selector: { kind: symbol, name: CompositionDataWorkspace }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-uses-shared-workspace
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.form-selection-creates-inline-sql
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-mobile-workspace-accessibility
+          - id: composition-result-renderer
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.tsx
+            selector: { kind: symbol, name: CompositionRenderer }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results
+          - id: composition-studio
+            adapter: typescript
+            path: frontend/src/components/CompositionStudio.tsx
+            selector: { kind: symbol, name: CompositionStudio }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-structure-first-steady-state
+          - id: composition-revision-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx
+            selector: { kind: symbol, name: CompositionRevisionRoute }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-binding-identifiers-stay-internal
+          - id: composition-history-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.tsx
+            selector: { kind: symbol, name: CompositionHistoryRoute }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-history-hides-revision-identifiers

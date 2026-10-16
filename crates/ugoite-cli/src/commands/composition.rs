@@ -27,7 +27,6 @@ use ugoite_core::composition_metric::{
     CompositionMetricQueryRequest as CoreCompositionMetricQueryRequest,
     CompositionMetricQueryTarget as CoreCompositionMetricQueryTarget,
 };
-use ugoite_core::entry_query::EntryPage;
 use ugoite_core::sql_query::SqlQueryPage;
 use ugoite_domain::composition::{
     canonicalize_composition_yaml, parse_composition_yaml, CanonicalComposition,
@@ -552,7 +551,6 @@ fn local_composition_list_page_to_api(
                 name: item.name,
                 kind: item.kind,
                 format_version: item.format_version,
-                tags: item.tags,
             })
             .collect(),
         offset: page.offset,
@@ -816,6 +814,8 @@ fn composition_metric_query_request(
             composition_id: context.composition_id.to_string(),
             revision_id: context.composition_revision_id.to_string(),
         },
+        base_entry_id: None,
+        base_revision_id: None,
         component_id: component_id.to_string(),
         variables: context.variables.clone(),
         unset_variables: context.unset_variables.to_vec(),
@@ -907,23 +907,70 @@ fn composition_diagnostic_code_for_cli(code: CompositionDiagnosticCode) -> Strin
 }
 
 fn composition_query_plan_from_core(plan: ResolvedCompositionPlan) -> Result<CompositionQueryPlan> {
-    let portable = serde_json::from_value(serde_json::to_value(&plan)?)
-        .context("encode local Composition resolve plan through the portable DTO")?;
+    let portable = portable_plan_from_core_composition_plan(&plan)?;
     Ok(CompositionQueryPlan {
         portable,
         core: plan,
     })
 }
 
+fn portable_plan_from_core_composition_plan(
+    plan: &ResolvedCompositionPlan,
+) -> Result<CompositionResolvePlan> {
+    let mut value = serde_json::to_value(plan)?;
+    let sources = value["sources"]
+        .as_array_mut()
+        .context("Core Composition plan has no source array")?;
+    for source in sources {
+        anyhow::ensure!(
+            source["kind"] == "sql",
+            "Core Composition plan contains an unknown source kind"
+        );
+        if source["request"]["saved_sql"].is_null() {
+            source["kind"] = json!("inline_sql");
+        } else {
+            source["kind"] = json!("saved_sql");
+            source
+                .as_object_mut()
+                .context("Core Saved SQL source is not an object")?
+                .remove("form_bindings");
+        }
+    }
+    serde_json::from_value(value)
+        .context("encode local Composition resolve plan through the portable DTO")
+}
+
 fn composition_query_plan_from_portable(
     plan: CompositionResolvePlan,
 ) -> Result<CompositionQueryPlan> {
-    let core = serde_json::from_value(serde_json::to_value(&plan)?)
-        .context("decode portable Composition resolve plan for shared Core evaluation")?;
+    let core = core_plan_from_portable_composition_plan(&plan)?;
     Ok(CompositionQueryPlan {
         portable: plan,
         core,
     })
+}
+
+fn core_plan_from_portable_composition_plan(
+    plan: &CompositionResolvePlan,
+) -> Result<ResolvedCompositionPlan> {
+    let mut value = serde_json::to_value(plan)?;
+    let sources = value["sources"]
+        .as_array_mut()
+        .context("portable Composition plan has no source array")?;
+    for source in sources {
+        anyhow::ensure!(
+            matches!(source["kind"].as_str(), Some("inline_sql" | "saved_sql")),
+            "portable Composition plan contains an unknown SQL source kind"
+        );
+        if source["kind"] == "saved_sql" {
+            // The portable Saved SQL DTO has no Form bindings; Core's
+            // source-neutral SQL request represents that as an empty list.
+            source["form_bindings"] = json!([]);
+        }
+        source["kind"] = json!("sql");
+    }
+    serde_json::from_value(value)
+        .context("decode portable Composition resolve plan for shared Core evaluation")
 }
 
 fn composition_resolve_body(
@@ -1002,8 +1049,7 @@ async fn execute_composition_source(
     let (source_id, kind, operation, request) = composition_source_dispatch(portable_source);
     let arguments = json!({"space_id": space_id});
     let core_source_id = match core_source {
-        ResolvedSourceRequest::EntryQuery { source_id, .. }
-        | ResolvedSourceRequest::SavedSql { source_id, .. } => source_id,
+        ResolvedSourceRequest::Sql { source_id, .. } => source_id,
     };
     anyhow::ensure!(
         source_id == core_source_id,
@@ -1014,28 +1060,9 @@ async fn execute_composition_source(
     let (page, metrics, diagnostics) = match (target, portable_source, core_source) {
         (
             SpaceTarget::Remote { .. },
-            CompositionResolvedSource::EntryQuery { .. },
-            ResolvedSourceRequest::EntryQuery { source_id, .. },
-        ) => {
-            let page_value = if needs_table_page {
-                let page_value =
-                    http::execute_for_target(target, operation, arguments, Some(request.clone()))
-                        .await?;
-                let _: EntryPage = serde_json::from_value(page_value.clone())
-                    .context("entry.query returned an invalid Composition page")?;
-                Some(page_value)
-            } else {
-                None
-            };
-            let (metrics, diagnostics) =
-                execute_composition_metrics(target, plan, source_id, metric_context, local_service)
-                    .await?;
-            (page_value, metrics, diagnostics)
-        }
-        (
-            SpaceTarget::Remote { .. },
-            CompositionResolvedSource::SavedSql { .. },
-            ResolvedSourceRequest::SavedSql { source_id, .. },
+            CompositionResolvedSource::InlineSql { .. }
+            | CompositionResolvedSource::SavedSql { .. },
+            ResolvedSourceRequest::Sql { source_id, .. },
         ) => {
             let page_value = if needs_table_page {
                 let page_value =
@@ -1054,29 +1081,9 @@ async fn execute_composition_source(
         }
         (
             SpaceTarget::Core { .. },
-            CompositionResolvedSource::EntryQuery { .. },
-            ResolvedSourceRequest::EntryQuery {
-                source_id, request, ..
-            },
-        ) => {
-            let page_value = if needs_table_page {
-                let page = local_service
-                    .context("local Composition query service is unavailable")?
-                    .query_entry_page(space_id, request.clone())
-                    .await?;
-                Some(serde_json::to_value(&page)?)
-            } else {
-                None
-            };
-            let (metrics, diagnostics) =
-                execute_composition_metrics(target, plan, source_id, metric_context, local_service)
-                    .await?;
-            (page_value, metrics, diagnostics)
-        }
-        (
-            SpaceTarget::Core { .. },
-            CompositionResolvedSource::SavedSql { .. },
-            ResolvedSourceRequest::SavedSql {
+            CompositionResolvedSource::InlineSql { .. }
+            | CompositionResolvedSource::SavedSql { .. },
+            ResolvedSourceRequest::Sql {
                 source_id, request, ..
             },
         ) => {
@@ -1094,7 +1101,6 @@ async fn execute_composition_source(
                     .await?;
             (page_value, metrics, diagnostics)
         }
-        _ => anyhow::bail!("portable and Core Composition source kinds diverged"),
     };
 
     Ok((
@@ -1150,6 +1156,7 @@ async fn execute_composition_metrics(
                         composition_id: context.composition_id.to_string(),
                         revision_id: context.composition_revision_id.to_string(),
                     },
+                    draft_base: None,
                     component_id: binding.component_id.clone(),
                     variables: context.variables.clone(),
                     unset_variables: context.unset_variables.to_vec(),
@@ -1199,9 +1206,9 @@ fn composition_source_dispatch(
     source: &CompositionResolvedSource,
 ) -> (&str, &'static str, &'static str, &Value) {
     match source {
-        CompositionResolvedSource::EntryQuery {
+        CompositionResolvedSource::InlineSql {
             source_id, request, ..
-        } => (source_id, "entry_query", "entry.query", request),
+        } => (source_id, "inline_sql", "sql.query", request),
         CompositionResolvedSource::SavedSql {
             source_id, request, ..
         } => (source_id, "saved_sql", "sql.query", request),
@@ -1408,11 +1415,12 @@ mod tests {
         composition_get_arguments, composition_history_arguments, composition_list_arguments,
         composition_metric_query_request, composition_query_plan_from_core,
         composition_query_plan_from_portable, composition_resolve_body,
-        composition_source_dispatch, composition_source_needs_table_page, export_composition,
-        lint_file, lint_yaml_bytes, list_compositions, local_raw_revision_to_api,
-        parse_cli_variables, raw_spec_output, read_composition, read_composition_history,
-        write_raw_spec_to_path, CompositionQueryDiagnostic, CompositionQueryMetricOutput,
-        CompositionVariable, RawSpecOutput,
+        composition_source_dispatch, composition_source_needs_table_page,
+        core_plan_from_portable_composition_plan, export_composition, lint_file, lint_yaml_bytes,
+        list_compositions, local_raw_revision_to_api, parse_cli_variables, raw_spec_output,
+        read_composition, read_composition_history, write_raw_spec_to_path,
+        CompositionQueryDiagnostic, CompositionQueryMetricOutput, CompositionVariable,
+        RawSpecOutput,
     };
     use crate::cli_config::SpaceTarget;
     use anyhow::Result;
@@ -1435,21 +1443,16 @@ mod tests {
     use ugoite_domain::id::{EntryId, FieldId, FormId, RevisionId};
     use uuid::Uuid;
 
-    const MONTHLY_EXPENSE: &str = include_str!(
-        "../../../../crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml"
+    const SQL_FIRST_COMPOSITION: &str = include_str!(
+        "../../../../crates/ugoite-domain/tests/fixtures/composition/sql-first.ugcomp.yaml"
     );
-    const MONTHLY_EXPENSE_CANONICAL: &str = include_str!(
-        "../../../../crates/ugoite-domain/tests/fixtures/composition/monthly-expense.canonical.ugcomp.yaml"
+    const SQL_FIRST_COMPOSITION_CANONICAL: &str = include_str!(
+        "../../../../crates/ugoite-domain/tests/fixtures/composition/sql-first.canonical.ugcomp.yaml"
     );
-    const SAVED_SQL_METRIC_COLUMNS: &str = include_str!(
-        "../../../../crates/ugoite-domain/tests/fixtures/composition/saved-sql-metric-columns.ugcomp.yaml"
+    const SQL_FIRST_COMPOSITION_FINGERPRINT: &str = include_str!(
+        "../../../../crates/ugoite-domain/tests/fixtures/composition/sql-first.fingerprint.txt"
     );
-    const SAVED_SQL_METRIC_COLUMNS_CANONICAL: &str = include_str!(
-        "../../../../crates/ugoite-domain/tests/fixtures/composition/saved-sql-metric-columns.canonical.ugcomp.yaml"
-    );
-    const SAVED_SQL_METRIC_COLUMNS_FINGERPRINT: &str = include_str!(
-        "../../../../crates/ugoite-domain/tests/fixtures/composition/saved-sql-metric-columns.fingerprint.txt"
-    );
+    const METADATA_ONLY_COMPOSITION: &str = "format: ugoite.composition\nformat_version: 1\nname: Metadata only\nkind: dashboard\nspec:\n  variables: []\n  sources: []\n  components:\n    - id: note\n      kind: text\n      content:\n        kind: literal\n        text: metadata\n      style: body\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: component\n            component: note\n";
 
     #[test]
     fn composition_diagnostics_expose_variable_ids() {
@@ -1468,7 +1471,7 @@ mod tests {
     #[test]
     fn lint_file_returns_the_shared_canonical_document_response() {
         let mut file = tempfile::NamedTempFile::new().expect("temporary YAML file");
-        file.write_all(MONTHLY_EXPENSE.as_bytes())
+        file.write_all(SQL_FIRST_COMPOSITION.as_bytes())
             .expect("write YAML fixture");
 
         let response = lint_file(file.path()).expect("lint succeeds");
@@ -1476,41 +1479,32 @@ mod tests {
         assert!(response.ok);
         assert!(response.error.is_none());
         let value = response.value.expect("canonical value");
-        assert_eq!(value.canonical_yaml, MONTHLY_EXPENSE_CANONICAL);
+        assert_eq!(value.canonical_yaml, SQL_FIRST_COMPOSITION_CANONICAL);
         assert_eq!(value.fingerprint.len(), 64);
         assert_eq!(value.document["format_version"], 1);
         assert_eq!(value.document["name"], "Monthly expenses");
     }
 
     #[test]
-    fn lint_file_preserves_saved_sql_metric_columns_and_shared_fingerprint() {
+    fn lint_file_preserves_sql_first_sources_and_shared_fingerprint() {
         let mut file = tempfile::NamedTempFile::new().expect("temporary YAML file");
-        file.write_all(SAVED_SQL_METRIC_COLUMNS.as_bytes())
-            .expect("write Saved SQL metric column fixture");
+        file.write_all(SQL_FIRST_COMPOSITION.as_bytes())
+            .expect("write SQL-first Composition fixture");
 
         let response = lint_file(file.path()).expect("lint succeeds");
 
         assert!(response.ok);
         let value = response.value.expect("canonical value");
-        assert_eq!(value.canonical_yaml, SAVED_SQL_METRIC_COLUMNS_CANONICAL);
-        assert_eq!(
-            value.fingerprint,
-            SAVED_SQL_METRIC_COLUMNS_FINGERPRINT.trim()
-        );
-        assert_eq!(
-            value.document["spec"]["components"][0]["source"],
-            "monthly_summary"
-        );
-        assert_eq!(value.document["spec"]["components"][0]["column"], "count");
-        assert!(value.document["spec"]["components"][0]
-            .get("definition")
-            .is_none());
+        assert_eq!(value.canonical_yaml, SQL_FIRST_COMPOSITION_CANONICAL);
+        assert_eq!(value.fingerprint, SQL_FIRST_COMPOSITION_FINGERPRINT.trim());
+        assert_eq!(value.document["spec"]["sources"][0]["kind"], "inline_sql");
+        assert_eq!(value.document["spec"]["sources"][1]["kind"], "saved_sql");
     }
 
     #[test]
     fn lint_returns_the_domain_diagnostic_code_for_unsupported_versions() {
         let response = lint_yaml_bytes(
-            b"format: ugoite.composition\nformat_version: 22\nkind: dashboard\nname: Future\ntags: []\nspec: {}\n",
+            b"format: ugoite.composition\nformat_version: 22\nkind: dashboard\nname: Future\nspec: {}\n",
         );
 
         assert!(!response.ok);
@@ -1541,7 +1535,6 @@ mod tests {
         let definitions = vec![
             CompositionVariable {
                 id: "enabled".to_string(),
-                label: None,
                 variable_type: DomainCompositionVariableType::Boolean,
                 required: true,
                 default: None,
@@ -1549,7 +1542,6 @@ mod tests {
             },
             CompositionVariable {
                 id: "count".to_string(),
-                label: None,
                 variable_type: DomainCompositionVariableType::Integer,
                 required: true,
                 default: None,
@@ -1557,7 +1549,6 @@ mod tests {
             },
             CompositionVariable {
                 id: "ratio".to_string(),
-                label: None,
                 variable_type: DomainCompositionVariableType::Float,
                 required: true,
                 default: None,
@@ -1565,7 +1556,6 @@ mod tests {
             },
             CompositionVariable {
                 id: "date".to_string(),
-                label: None,
                 variable_type: DomainCompositionVariableType::Date,
                 required: true,
                 default: None,
@@ -1573,7 +1563,6 @@ mod tests {
             },
             CompositionVariable {
                 id: "timestamp".to_string(),
-                label: None,
                 variable_type: DomainCompositionVariableType::Timestamp,
                 required: true,
                 default: None,
@@ -1581,7 +1570,6 @@ mod tests {
             },
             CompositionVariable {
                 id: "title".to_string(),
-                label: None,
                 variable_type: DomainCompositionVariableType::String,
                 required: false,
                 default: None,
@@ -1625,7 +1613,6 @@ mod tests {
         .into_iter()
         .map(|(id, variable_type)| CompositionVariable {
             id: id.to_string(),
-            label: None,
             variable_type,
             required: false,
             default: None,
@@ -1726,32 +1713,37 @@ mod tests {
 
     #[test]
     fn query_dispatches_each_resolved_request_unchanged_to_existing_operations() {
-        let entry_request = json!({
-            "query": {"scope":{"kind":"all"}},
-            "projection": {"kind":"preview"},
-            "limit": 20
+        let inline_request = json!({
+            "sql": "SELECT * FROM \"__form_42\"",
+            "parameters": {"month": "2026-10"},
+            "parameter_types": {"month": "date"},
+            "limit": 100
         });
-        let entry_source = CompositionResolvedSource::EntryQuery {
+        let inline_source = CompositionResolvedSource::InlineSql {
             source_id: "entries".to_string(),
-            request: entry_request.clone(),
-            display_system_fields: Vec::new(),
+            request: inline_request.clone(),
             source_schema_fingerprint: "a".repeat(64),
+            form_bindings: Vec::new(),
+            expected_result: Vec::new(),
         };
-        let (source_id, kind, operation, request) = composition_source_dispatch(&entry_source);
+        let (source_id, kind, operation, request) = composition_source_dispatch(&inline_source);
         assert_eq!(source_id, "entries");
-        assert_eq!(kind, "entry_query");
-        assert_eq!(operation, "entry.query");
-        assert_eq!(request, &entry_request);
+        assert_eq!(kind, "inline_sql");
+        assert_eq!(operation, "sql.query");
+        assert_eq!(request, &inline_request);
 
         let sql_request = json!({
             "sql": "SELECT * FROM entries",
             "limit": 1,
+            "parameters": {},
+            "parameter_types": {},
             "saved_sql": {"id":"sql-1", "revision_id":"revision-2"}
         });
         let sql_source = CompositionResolvedSource::SavedSql {
             source_id: "summary".to_string(),
             request: sql_request.clone(),
             source_schema_fingerprint: "b".repeat(64),
+            expected_result: Vec::new(),
         };
         let (source_id, kind, operation, request) = composition_source_dispatch(&sql_source);
         assert_eq!(source_id, "summary");
@@ -1780,7 +1772,8 @@ mod tests {
                         "revision_id": "sql-revision-7"
                     }
                 },
-                "source_schema_fingerprint": "abc"
+                "source_schema_fingerprint": "abc",
+                "expected_result": []
             }],
             "component_bindings": [{
                 "component_id": "total",
@@ -1792,6 +1785,22 @@ mod tests {
         }))
         .expect("portable resolve plan");
 
+        let core = core_plan_from_portable_composition_plan(&portable)
+            .expect("portable SQL source kinds map to Core's generic SQL request kind");
+        let ugoite_core::composition::ResolvedSourceRequest::Sql {
+            request,
+            form_bindings,
+            ..
+        } = &core.sources[0];
+        assert_eq!(request.sql, "SELECT 42 AS total");
+        assert!(form_bindings.is_empty());
+        let saved_sql = request
+            .saved_sql
+            .as_ref()
+            .expect("exact Saved SQL selector");
+        assert_eq!(saved_sql.id, "sql-entry-1");
+        assert_eq!(saved_sql.revision_id, "sql-revision-7");
+
         let resolved = composition_query_plan_from_portable(portable.clone())
             .expect("portable plan adapts to the shared Core types");
         assert_eq!(resolved.portable, portable);
@@ -1799,17 +1808,7 @@ mod tests {
             resolved.portable.component_bindings[0].expected_result_type,
             Some(ugoite_api_client::CompositionResultFieldType::Integer)
         );
-        let ugoite_core::composition::ResolvedSourceRequest::SavedSql { request, .. } =
-            &resolved.core.sources[0]
-        else {
-            panic!("expected the Saved SQL source")
-        };
-        let saved_sql = request
-            .saved_sql
-            .as_ref()
-            .expect("exact Saved SQL selector");
-        assert_eq!(saved_sql.id, "sql-entry-1");
-        assert_eq!(saved_sql.revision_id, "sql-revision-7");
+        assert_eq!(resolved.core, core);
 
         let local_plan = composition_query_plan_from_core(resolved.core.clone())
             .expect("local plan adapts to the portable DTO");
@@ -2056,9 +2055,10 @@ mod tests {
             .create_space_for_principal("inspect-exact-no-fallback", owner, "Owner")
             .await?
             .to_string();
-        let document = ugoite_domain::composition::canonicalize_composition_yaml(MONTHLY_EXPENSE)
-            .expect("shared Composition fixture parses")
-            .document;
+        let document =
+            ugoite_domain::composition::canonicalize_composition_yaml(METADATA_ONLY_COMPOSITION)
+                .expect("shared Composition fixture parses")
+                .document;
         let saved = service
             .save_composition_authorized_for_principals(
                 &space_id,
@@ -2106,7 +2106,7 @@ mod tests {
             .await?
             .to_string();
         let first_document =
-            ugoite_domain::composition::canonicalize_composition_yaml(MONTHLY_EXPENSE)
+            ugoite_domain::composition::canonicalize_composition_yaml(METADATA_ONLY_COMPOSITION)
                 .expect("shared Composition fixture parses")
                 .document;
         let first = service
@@ -2279,20 +2279,19 @@ mod tests {
             .create_space_for_principal("composition-list-cli", owner, "Owner")
             .await?
             .to_string();
-        let document = ugoite_domain::composition::canonicalize_composition_yaml(MONTHLY_EXPENSE)
-            .expect("shared Composition fixture parses")
-            .document;
+        let document =
+            ugoite_domain::composition::canonicalize_composition_yaml(METADATA_ONLY_COMPOSITION)
+                .expect("shared Composition fixture parses")
+                .document;
 
-        for index in 0..3 {
-            let mut tagged_document = document.clone();
-            tagged_document.tags = vec![format!("item-{index}")];
+        for _ in 0..3 {
             service
                 .save_composition_authorized_for_principals(
                     &space_id,
                     ugoite_iceberg::composition::CompositionSaveRequest {
                         entry_id: None,
                         base_revision_id: None,
-                        document: tagged_document,
+                        document: document.clone(),
                     },
                     "Owner",
                     &[owner],
@@ -2316,13 +2315,13 @@ mod tests {
         assert_eq!(second.limit, 2);
         assert!(!second.has_more);
         assert_ne!(first.items[0].composition_id, first.items[1].composition_id);
-        assert_eq!(first.items[0].name, Some(json!("Monthly expenses")));
+        assert_eq!(first.items[0].name, Some(json!("Metadata only")));
         assert_eq!(first.items[0].kind, Some(json!("dashboard")));
         assert_eq!(first.items[0].format_version, Some(json!(1)));
-        assert!(first.items[0].tags[0].starts_with("item-"));
 
         let serialized = serde_json::to_value(&first)?;
         assert!(serialized["items"][0].get("spec").is_none());
+        assert!(serialized["items"][0].get("tags").is_none());
         assert_eq!(
             serialized["items"][0]["composition_id"],
             first.items[0].composition_id
@@ -2358,8 +2357,7 @@ mod tests {
                 "updated_at": 12.5,
                 "name": "Quarterly report",
                 "kind": "dashboard",
-                "format_version": 1,
-                "tags": ["finance"]
+                "format_version": 1
             }],
             "offset": 50,
             "limit": 25,
@@ -2404,6 +2402,9 @@ mod tests {
         assert!(serde_json::to_value(&page)?["items"][0]
             .get("spec")
             .is_none());
+        assert!(serde_json::to_value(&page)?["items"][0]
+            .get("tags")
+            .is_none());
         Ok(())
     }
 
@@ -2419,12 +2420,12 @@ mod tests {
             .await?
             .to_string();
         let mut document =
-            ugoite_domain::composition::canonicalize_composition_yaml(MONTHLY_EXPENSE)
+            ugoite_domain::composition::canonicalize_composition_yaml(METADATA_ONLY_COMPOSITION)
                 .expect("shared Composition fixture parses")
                 .document;
-        document.tags = vec!["first".to_string()];
+        document.name = "First version".to_string();
         let expected_first_spec = ugoite_domain::composition::canonicalize_composition(&document)
-            .expect("tagged Composition document canonicalizes")
+            .expect("Composition document canonicalizes")
             .yaml;
         let first = service
             .save_composition_authorized_for_principals(
@@ -2438,7 +2439,7 @@ mod tests {
                 &[owner],
             )
             .await?;
-        document.tags = vec!["second".to_string()];
+        document.name = "Second version".to_string();
         let second = service
             .save_composition_authorized_for_principals(
                 &space_id,

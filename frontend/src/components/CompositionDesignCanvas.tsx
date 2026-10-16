@@ -5,10 +5,7 @@ import {
   flowSourceStatusOwner,
 } from "~/components/DashboardFlowRenderer";
 import { displayDefaultName } from "~/lib/composition-display-name";
-import type {
-  CompositionFieldNames,
-  CompositionMetricQueryContext,
-} from "~/components/CompositionRenderer";
+import type { CompositionMetricQueryContext } from "~/components/CompositionRenderer";
 import { IconButton } from "~/components/IconButton";
 import { UiIcon } from "~/components/UiIcon";
 import {
@@ -55,7 +52,6 @@ export interface CompositionDesignCanvasProps {
   onDraftChange: (draft: CompositionDraft) => void;
   /** Display insertion opens the shared kind/source picker at a target. */
   onRequestDisplayPicker: (target: DraftInsertTarget) => void;
-  fieldNames?: CompositionFieldNames;
   metricQueryContext?: CompositionMetricQueryContext;
   onNext: (sourceId: string) => void;
   onPrevious: (sourceId: string) => void;
@@ -87,8 +83,7 @@ const blockName = (
 ): string => {
   const input = draft.inputs.find((entry) => entry.draftId === item.draftId);
   if (input) {
-    return input.label?.trim() ||
-      compositionVariableDisplayName(draft.variables, input.variable);
+    return compositionVariableDisplayName(draft.variables, input.variable);
   }
   const display = draft.displays.find((entry) =>
     entry.draftId === item.draftId
@@ -256,7 +251,6 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
         variable.id,
         {
           id: variable.id,
-          ...(variable.label ? { label: variable.label } : {}),
           type: variable.type,
           required: variable.required,
           ...(variable.default === undefined
@@ -391,17 +385,15 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
         component_id: itemId,
         kind: "input",
         variable_id: input.variable,
-        ...(input.label ? { label: input.label } : {}),
       };
     };
     const inputDisplayName = () => {
       const current = binding();
       if (current?.kind !== "input") return undefined;
-      return current.label?.trim() ||
-        compositionVariableDisplayName(
-          props.draft.variables,
-          current.variable_id,
-        );
+      return compositionVariableDisplayName(
+        props.draft.variables,
+        current.variable_id,
+      );
     };
     const ownsSourceStatus = () => {
       const current = binding();
@@ -481,7 +473,6 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
             sources={props.sources}
             sourceById={sourceById()}
             ownsSourceStatus={ownsSourceStatus()}
-            fieldNames={props.fieldNames}
             metricQueryContext={props.metricQueryContext}
             onNext={props.onNext}
             onPrevious={props.onPrevious}

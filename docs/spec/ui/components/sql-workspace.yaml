@@ -2,7 +2,7 @@
 title: "Shared SQL Workspace"
 ---
 
-**Status: planned.** `/sql/new`, Saved SQL detail/edit, and Composition inline
+**Status: implemented.** `/sql/new`, Saved SQL detail/edit, and Composition inline
 SQL use the same Workspace component. The owning route or Composition source
 supplies SQL state, schema, parameters, preview, count, pagination, save, and
 execution callbacks. The Workspace presents them without becoming another
@@ -29,9 +29,13 @@ parameter comparisons and null checks, and column ordering. It reports stable
 reason codes for unsupported SQL and never makes direct SQL unavailable.
 Sort proposals append adapter-supplied stable keys where needed. A proposal is
 non-mutating: the adapter must show its SQL diff and wait for explicit user
-confirmation before updating the controlled SQL value. Route integration,
-capability gating, and diff confirmation remain unverified until their
-adapters are implemented.
+confirmation before updating the controlled SQL value. `SqlStructureToolbar`
+renders columns, filter, and sort controls when a trusted single-Form context
+exists. It disables operations that the Rust parser cannot safely round-trip
+and includes the capability reason in each disabled action's accessible name.
+Its proposal view shows the existing and proposed SQL and applies the new SQL
+only after explicit confirmation. `/sql/new`, Saved SQL detail/edit, and
+Composition inline SQL supply their context from Form metadata.
 
 ## Preview and results
 

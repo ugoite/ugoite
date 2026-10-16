@@ -1,36 +1,29 @@
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { IconButton } from "~/components/IconButton";
 import { UiIcon } from "~/components/UiIcon";
+import { A } from "@solidjs/router";
 import { SourceNavigator } from "~/components/SourceNavigator";
-import {
-  type EntryQuerySource,
-  EntryQuerySourceEditor,
-} from "~/components/EntryQuerySourceEditor";
-import {
-  type SavedSqlSource,
-  SavedSqlSourceViewer,
-} from "~/components/SavedSqlSourceViewer";
+import { SQLWorkspace } from "~/components/SQLWorkspace";
+import type { SQLWorkspaceAction } from "~/components/SQLWorkspace";
+import { SqlStructureToolbar } from "~/components/SqlStructureToolbar";
 import type {
-  CompositionResolveDiagnostic,
   CompositionResolvedSource,
 } from "~/lib/composition-api";
-import type { CompositionVariableType } from "~/lib/composition-api";
 import type {
   CompositionDraft,
   DraftVariable,
-  SavedSqlRevisionUpdate,
 } from "~/lib/composition-draft";
-import type {
-  EntryQueryCompositionFilter,
-  EntryQueryCompositionProjection,
-  EntryQueryCompositionSort,
-  EntryQueryCompositionSystemField,
-} from "~/lib/entry-query-composition";
 import type { CompositionSourcePageState } from "~/lib/composition-query-handle";
+import type { CompositionSourceCountState } from "~/lib/composition-preview-handle";
+import {
+  buildSqlStructureContexts,
+  normalizeSqlVariables,
+  type SqlSchema,
+} from "~/lib/sql";
 import { t } from "~/lib/i18n";
+import type { Form } from "~/lib/types";
 
 export interface CompositionDataWorkspaceProps {
-  spaceId: string;
   draft: CompositionDraft;
   headingId: string;
   /** Selected source draft ID; the editor area renders its detail. */
@@ -41,41 +34,16 @@ export interface CompositionDataWorkspaceProps {
   onAddSource: () => void;
   onMoveSource: (sourceDraftId: string, direction: "up" | "down") => void;
   onRemoveSource: (sourceDraftId: string) => void;
-  onEntryQueryFilters: (
-    sourceDraftId: string,
-    filters: EntryQueryCompositionFilter[],
-  ) => boolean;
-  onEntryQuerySort: (
-    sourceDraftId: string,
-    sort: EntryQueryCompositionSort[],
-  ) => boolean;
-  onEntryQueryProjection: (
-    sourceDraftId: string,
-    projection: EntryQueryCompositionProjection,
-  ) => boolean;
-  onEntryQueryDisplaySystemFields: (
-    sourceDraftId: string,
-    fields: EntryQueryCompositionSystemField[],
-  ) => boolean;
-  onSavedSqlRevision: (
-    sourceDraftId: string,
-    revision: SavedSqlRevisionUpdate,
-  ) => boolean;
-  onSavedSqlVariableTypes: (
-    sourceDraftId: string,
-    variableTypes: Record<string, CompositionVariableType>,
-  ) => void;
-  onSavedSqlVariableBinding: (
-    sourceDraftId: string,
-    sqlVariable: string,
-    variableId: string | undefined,
-  ) => boolean;
+  onInlineSql: (sourceDraftId: string, sql: string) => boolean;
+  onInlineSqlName: (sourceDraftId: string, name: string) => boolean;
   variables: readonly DraftVariable[];
-  onEditVariables: () => void;
+  variableValues: Readonly<Record<string, unknown>>;
   savedSqlEditHref: (entryId: string) => string;
+  sqlSchema: SqlSchema;
+  forms: readonly Form[];
   planSources: readonly CompositionResolvedSource[];
   sourceStates: Record<string, CompositionSourcePageState>;
-  diagnostics: readonly CompositionResolveDiagnostic[];
+  sourceCounts?: Record<string, CompositionSourceCountState>;
   /** True while the shared debounced preview is in flight. Result spinners
    * render only while active; a settled preview without a page for a source
    * renders nothing (the diagnostics strip already covers failures). */
@@ -83,17 +51,20 @@ export interface CompositionDataWorkspaceProps {
   onNext: (sourceId: string) => void;
   onPrevious: (sourceId: string) => void;
   onRetry: (sourceId: string) => void;
+  onCount?: (sourceId: string) => void;
   registerSourceRow: (sourceDraftId: string, el: HTMLDivElement | null) => void;
 }
 
 /**
  * Data workspace for the Composition Studio: a source navigator beside the
- * per-source editor for the selected source. EntryQuery edits flow through
- * narrow draft updaters into the shared debounced preview; Saved SQL stays
- * read-only with an explicit exact-revision update. Selection and paging
+ * selected SQL Workspace. Inline SQL edits stay in the draft; Saved SQL stays
+ * pinned to one exact revision. Selection and paging
  * stay transient Work; only the selected source renders an editor.
  */
 export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
+  const [structureActions, setStructureActions] = createSignal<
+    readonly SQLWorkspaceAction[]
+  >([]);
   const [navigatorOpen, setNavigatorOpen] = createSignal(true);
   const [narrowViewport, setNarrowViewport] = createSignal(false);
   const navigatorId = `${props.headingId}-source-navigator`;
@@ -116,6 +87,33 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
   const closeNavigator = () => {
     setNavigatorOpen(false);
     queueMicrotask(() => showNavigatorButton?.focus());
+  };
+
+  const handleNavigatorKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "Escape" && narrowViewport()) {
+      event.preventDefault();
+      closeNavigator();
+      return;
+    }
+    if (event.key !== "Tab" || !narrowViewport()) return;
+    const container = event.currentTarget as HTMLElement;
+    const focusable = Array.from(
+      container.querySelectorAll<HTMLElement>("button:not([disabled])"),
+    );
+    if (focusable.length === 0) {
+      event.preventDefault();
+      return;
+    }
+    const currentIndex = focusable.indexOf(
+      document.activeElement as HTMLElement,
+    );
+    const nextIndex = event.shiftKey
+      ? currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1
+      : currentIndex < 0 || currentIndex === focusable.length - 1
+      ? 0
+      : currentIndex + 1;
+    event.preventDefault();
+    focusable[nextIndex].focus();
   };
 
   let previousSelectedSourceId: string | null | undefined;
@@ -147,6 +145,8 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
       // The mobile source drawer starts closed, so focus its visible reopen
       // control instead of a source row inside the hidden drawer.
       queueMicrotask(() => showNavigatorButton?.focus());
+    } else if (media.matches) {
+      queueMicrotask(() => hideNavigatorButton?.focus());
     }
     if (typeof media.addEventListener === "function") {
       media.addEventListener("change", syncViewport);
@@ -168,15 +168,26 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
           navigatorOpen(),
       }}
     >
+      <Show when={narrowViewport() && navigatorOpen()}>
+        <button
+          class="dataWorkspaceDrawerBackdrop"
+          type="button"
+          aria-label={t("composition.studioHideDataSources")}
+          onClick={closeNavigator}
+        />
+      </Show>
       <aside
         id={navigatorId}
         class="dataWorkspaceNavigator"
         aria-labelledby={props.headingId}
+        role={narrowViewport() ? "dialog" : undefined}
+        aria-modal={narrowViewport() ? "true" : undefined}
+        onKeyDown={handleNavigatorKeyDown}
         hidden={!navigatorOpen()}
       >
         <div class="dataWorkspaceNavigatorActions">
           <button
-            class="pill iconpill icononly"
+            class="dataWorkspaceDrawerClose"
             type="button"
             ref={hideNavigatorButton}
             aria-label={t("composition.studioHideDataSources")}
@@ -187,7 +198,7 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
               closeNavigator();
             }}
           >
-            <UiIcon name="chevron-left" />
+            <UiIcon name="close" />
             <span class="ui-sr-only">
               {t("composition.studioHideDataSources")}
             </span>
@@ -261,11 +272,14 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
           />
         </div>
       </aside>
-      <div class="dataWorkspaceMain">
+      <div
+        class="dataWorkspaceMain"
+        inert={narrowViewport() && navigatorOpen()}
+      >
         <Show when={!navigatorOpen()}>
           <div class="dataWorkspaceMainActions">
             <button
-              class="pill iconpill icononly"
+              class="dataWorkspaceSourceMenuButton"
               type="button"
               ref={showNavigatorButton}
               aria-label={t("composition.studioShowDataSources")}
@@ -277,7 +291,8 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
                 queueMicrotask(() => hideNavigatorButton?.focus());
               }}
             >
-              <UiIcon name="chevron-right" />
+              <UiIcon name="menu" />
+              <span>{selectedSource()?.name ?? t("composition.studioData")}</span>
               <span class="ui-sr-only">
                 {t("composition.studioShowDataSources")}
               </span>
@@ -285,86 +300,156 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
           </div>
         </Show>
         <Show when={selectedSource()}>
-          {(source) => (
-            <div
-              class="dataWorkspaceEditor"
-              aria-label={source().name}
-            >
-              <h3>{source().name}</h3>
-              <Show
-                when={source().kind === "entry_query"}
-                fallback={
-                  <Show when={source().kind === "saved_sql"}>
-                    <SavedSqlSourceViewer
-                      spaceId={props.spaceId}
-                      source={source() as SavedSqlSource}
-                      onUpdateRevision={(revision) =>
-                        props.onSavedSqlRevision(
-                          (source() as SavedSqlSource).draftId,
-                          revision,
-                        )}
-                      variables={props.variables}
-                      onVariableTypes={(variableTypes) =>
-                        props.onSavedSqlVariableTypes(
-                          (source() as SavedSqlSource).draftId,
-                          variableTypes,
-                        )}
-                      onVariableBinding={(sqlVariable, variableId) =>
-                        props.onSavedSqlVariableBinding(
-                          (source() as SavedSqlSource).draftId,
-                          sqlVariable,
-                          variableId,
-                        )}
-                      onEditVariables={props.onEditVariables}
-                      editHref={props.savedSqlEditHref(
-                        (source() as SavedSqlSource).entryId,
-                      )}
-                      planSources={props.planSources}
-                      sourceStates={props.sourceStates}
-                      diagnostics={props.diagnostics}
-                      previewActive={props.previewActive}
-                      onNext={props.onNext}
-                      onPrevious={props.onPrevious}
-                      onRetry={props.onRetry}
+          {(source) => {
+            const selected = source;
+            const sourceId = () => selected().draftId;
+            const pageState = () => props.sourceStates[sourceId()];
+            const page = () => {
+              const value = pageState()?.page;
+              return value?.kind === "sql" ? value.page : undefined;
+            };
+            const planSource = () => props.planSources.find((item) =>
+              item.source_id === sourceId()
+            );
+            const sqlVariables = () => {
+              if (selected().kind === "inline_sql") {
+                return normalizeSqlVariables(selected().sql).variables.map((item) => ({
+                  name: item.name,
+                  type: props.variables.find((variable) =>
+                    variable.id === item.name
+                  )?.type ?? item.type,
+                  variableId: item.name,
+                }));
+              }
+              const parameterTypes = planSource()?.request.parameter_types ??
+                selected().variableTypes ?? {};
+              return Object.entries(parameterTypes).flatMap(([name, type]) =>
+                typeof type === "string"
+                  ? [{
+                    name,
+                    type,
+                    variableId: selected().variables[name]?.variable,
+                  }]
+                  : []
+              );
+            };
+            const variables = () => sqlVariables().map((item) => {
+              const definition = props.variables.find((variable) =>
+                variable.id === item.variableId
+              );
+              return {
+                name: item.name,
+                type: item.type,
+                required: definition?.required,
+                default: definition?.default as string | number | boolean | undefined,
+              };
+            });
+            const structureContexts = () => {
+              if (selected().kind !== "inline_sql") return [];
+              const bindings = selected().formBindings ?? [];
+              if (bindings.length !== 1) return [];
+              const [binding] = bindings;
+              const form = props.forms.find((item) => item.id === binding.form_id);
+              return form
+                ? buildSqlStructureContexts(
+                  [{ ...form, name: binding.relation }],
+                  variables(),
+                  `composition:${sourceId()}:${binding.form_id}:${binding.relation}`,
+                )
+                : [];
+            };
+            const parameterValues = () => Object.fromEntries(
+              sqlVariables().flatMap((item) => {
+                const value = props.variableValues[item.variableId ?? item.name];
+                return value === undefined ? [] : [[item.name, value as string | number | boolean]];
+              }),
+            );
+            const state = () => pageState()?.status;
+            const status = () => props.previewActive
+              ? "loading" as const
+              : state() === "ready"
+              ? "success" as const
+              : state() === "error"
+              ? "error" as const
+              : "idle" as const;
+            return (
+              <div class="dataWorkspaceEditor" role="region" aria-label={selected().name}>
+                {selected().kind === "inline_sql"
+                  ? (
+                    <input
+                      class="ui-input dataWorkspaceSqlName"
+                      aria-label={t("sqlPage.queryName")}
+                      value={selected().name}
+                      onInput={(event) =>
+                        props.onInlineSqlName(sourceId(), event.currentTarget.value)}
                     />
-                  </Show>
-                }
-              >
-                <EntryQuerySourceEditor
-                  spaceId={props.spaceId}
-                  source={source() as EntryQuerySource}
-                  variables={props.variables}
-                  onFilters={(filters) =>
-                    props.onEntryQueryFilters(
-                      (source() as EntryQuerySource).draftId,
-                      filters,
-                    )}
-                  onSort={(sort) =>
-                    props.onEntryQuerySort(
-                      (source() as EntryQuerySource).draftId,
-                      sort,
-                    )}
-                  onProjection={(projection) =>
-                    props.onEntryQueryProjection(
-                      (source() as EntryQuerySource).draftId,
-                      projection,
-                    )}
-                  onDisplaySystemFields={(fields) =>
-                    props.onEntryQueryDisplaySystemFields(
-                      (source() as EntryQuerySource).draftId,
-                      fields,
-                    )}
-                  planSources={props.planSources}
-                  sourceStates={props.sourceStates}
-                  diagnostics={props.diagnostics}
-                  previewActive={props.previewActive}
-                  onNext={props.onNext}
-                  onPrevious={props.onPrevious}
-                  onRetry={props.onRetry}
+                  )
+                  : null}
+                {selected().kind === "saved_sql"
+                  ? (
+                    <A
+                      class="pill iconpill icononly dataWorkspaceSavedSqlEdit"
+                      href={props.savedSqlEditHref(selected().entryId)}
+                      aria-label={t("composition.studioEditSavedSql")}
+                      title={t("composition.studioEditSavedSql")}
+                    >
+                      <UiIcon name="edit" />
+                      <span class="ui-sr-only">
+                        {t("composition.studioEditSavedSql")}
+                      </span>
+                    </A>
+                  )
+                  : null}
+                <SQLWorkspace
+                  id={`composition-${sourceId()}`}
+                  sql={selected().sql}
+                  {...(selected().kind === "inline_sql"
+                    ? { onSqlChange: (sql: string) => props.onInlineSql(sourceId(), sql) }
+                    : { readOnly: true })}
+                  schema={props.sqlSchema}
+                  actions={structureActions()}
+                  variables={variables()}
+                  parameterValues={parameterValues()}
+                  parametersReadOnly
+                  preview={{
+                    status: status(),
+                    isCurrent: state() === "ready",
+                    ...(props.sourceCounts?.[sourceId()]
+                      ? { count: props.sourceCounts[sourceId()] }
+                      : {}),
+                    ...(page()
+                      ? {
+                        page: {
+                          columns: page()!.columns,
+                          columnTypes: page()!.result_schema?.map((column) => column.type),
+                          rows: page()!.rows,
+                          exactIntegerRows: page()!.exact_integer_rows,
+                          pageIdentity: `${sourceId()}:${pageState()?.cursor ?? "first"}`,
+                          canNext: Boolean(page()!.has_more && page()!.next),
+                          canPrevious: (pageState()?.cursorStack.length ?? 0) > 1,
+                        },
+                      }
+                      : {}),
+                    ...(status() === "error" ? { error: t("composition.queryFailed") } : {}),
+                  }}
+                  onPreview={() => props.onRetry(sourceId())}
+                  {...(props.onCount
+                    ? { onCount: () => props.onCount?.(sourceId()) }
+                    : {})}
+                  onNext={() => props.onNext(sourceId())}
+                  onPrevious={() => props.onPrevious(sourceId())}
                 />
-              </Show>
-            </div>
-          )}
+                <Show when={selected().kind === "inline_sql"}>
+                  <SqlStructureToolbar
+                    sql={() => selected().sql}
+                    contexts={structureContexts}
+                    onSqlChange={(sql) => props.onInlineSql(sourceId(), sql)}
+                    onActionsChange={setStructureActions}
+                  />
+                </Show>
+              </div>
+            );
+          }}
         </Show>
       </div>
     </div>

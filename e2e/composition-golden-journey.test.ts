@@ -274,14 +274,14 @@ async function openSavedCompositionFromHome(
 
 async function addDateVariable(
   page: Page,
-  label: string,
+  variableId: string,
   defaultValue: string,
 ): Promise<void> {
-  await page.getByLabel("New variable label", { exact: true }).fill(label);
-  await page.getByLabel("Type", { exact: true }).selectOption("date");
+  await page.getByLabel("Variable ID", { exact: true }).fill(variableId);
+  await page.getByLabel("Type", { exact: true }).last().selectOption("date");
   await page.getByRole("button", { name: "Add variable", exact: true })
     .click();
-  const defaultInput = page.getByLabel(`Default for ${label}`, {
+  const defaultInput = page.getByLabel(`Default for ${variableId}`, {
     exact: true,
   });
   await expect(defaultInput).toBeVisible();
@@ -303,11 +303,7 @@ async function bindSavedSqlVariable(
   );
 }
 
-async function addLabeledInput(
-  page: Page,
-  variableName: string,
-  inputLabel: string,
-): Promise<void> {
+async function addInput(page: Page, variableId: string): Promise<void> {
   await page.getByRole("radio", { name: "Design", exact: true }).click();
   await page.getByRole("button", { name: "Add to design", exact: true })
     .first().click();
@@ -316,12 +312,9 @@ async function addLabeledInput(
     exact: true,
   });
   await palette.getByRole("button", {
-    name: `Add Input for ${variableName}`,
+    name: `Add Input for ${variableId}`,
     exact: true,
   }).click();
-  await page.getByLabel(`Input label for ${variableName}`, {
-    exact: true,
-  }).fill(inputLabel);
 }
 
 test.describe("Composition Golden Journey", () => {
@@ -436,8 +429,8 @@ test.describe("Composition Golden Journey", () => {
       ).toBeVisible();
       await nameInput.fill(manifest.composition_name);
 
-      // Declare typed Composition values, bind Saved SQL names explicitly,
-      // and place ordinary user-labeled Inputs before the first publication.
+      // Declare typed variables, bind Saved SQL names explicitly, and place
+      // their Inputs before the first publication.
       await initialPage.getByRole("radio", { name: "Data", exact: true })
         .click();
       const dataTabs = initialPage.getByRole("tablist", { name: "Data" });
@@ -445,12 +438,12 @@ test.describe("Composition Golden Journey", () => {
         .click();
       await addDateVariable(
         initialPage,
-        "Month start",
+        "month_start",
         manifest.parameters.month_start,
       );
       await addDateVariable(
         initialPage,
-        "Month end",
+        "month_end",
         manifest.parameters.month_end,
       );
 
@@ -460,10 +453,10 @@ test.describe("Composition Golden Journey", () => {
         name: seed.savedSqlName,
         exact: true,
       }).click();
-      await bindSavedSqlVariable(initialPage, "month_start", "Month start");
-      await bindSavedSqlVariable(initialPage, "month_end", "Month end");
-      await addLabeledInput(initialPage, "Month start", "Start date");
-      await addLabeledInput(initialPage, "Month end", "End date");
+      await bindSavedSqlVariable(initialPage, "month_start", "month_start");
+      await bindSavedSqlVariable(initialPage, "month_end", "month_end");
+      await addInput(initialPage, "month_start");
+      await addInput(initialPage, "month_end");
 
       await initialPage.getByRole("button", { name: "Save", exact: true })
         .click();
@@ -534,16 +527,14 @@ test.describe("Composition Golden Journey", () => {
       await expect(reopenedPage).toHaveURL(
         new RegExp(`${exactPath.replaceAll("/", "\\/")}$`),
       );
-      await expect(reopenedPage.getByLabel("Start date")).toHaveValue(
+      await expect(reopenedPage.getByLabel("month_start")).toHaveValue(
         manifest.parameters.month_start,
       );
-      await expect(reopenedPage.getByLabel("End date")).toHaveValue(
+      await expect(reopenedPage.getByLabel("month_end")).toHaveValue(
         manifest.parameters.month_end,
       );
-      await expect(reopenedPage.getByLabel("Start date")).toBeEditable();
-      await expect(reopenedPage.getByLabel("End date")).toBeEditable();
-      await expect(reopenedPage.getByLabel("month_start")).toHaveCount(0);
-      await expect(reopenedPage.getByLabel("month_end")).toHaveCount(0);
+      await expect(reopenedPage.getByLabel("month_start")).toBeEditable();
+      await expect(reopenedPage.getByLabel("month_end")).toBeEditable();
 
       const table = reopenedPage.getByRole("table");
       await expect(table.locator("tbody tr")).toHaveCount(
@@ -566,7 +557,7 @@ test.describe("Composition Golden Journey", () => {
       expect(secondPageRow).toBeTruthy();
       await expect(table).toContainText(secondPageRow!.merchant);
 
-      await reopenedPage.getByLabel("Start date").fill(
+      await reopenedPage.getByLabel("month_start").fill(
         manifest.parameters.month_start_after_change,
       );
       await expect(table.locator("tbody tr")).toHaveCount(

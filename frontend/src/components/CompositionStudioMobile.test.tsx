@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CompositionStudio } from "./CompositionStudio";
 import {
-  addEntryQuerySource,
+  addInlineSqlSource,
   addInputComponent,
   addMetricDisplay,
   addSavedSqlSource,
@@ -60,10 +60,14 @@ vi.mock("~/lib/composition-api", () => ({
       (previewMock as (...call: unknown[]) => unknown)(...args),
     querySource: (...args: unknown[]) =>
       (querySourceMock as (...call: unknown[]) => unknown)(...args),
+    countSource: vi.fn().mockResolvedValue(0),
   },
 }));
 
 vi.mock("~/lib/ugoite-client", () => ({
+  formApi: {
+    list: vi.fn().mockResolvedValue([]),
+  },
   entryApi: {
     getRevision: vi.fn().mockResolvedValue({
       fields: { variables: [] },
@@ -137,33 +141,23 @@ const seedDraft = (): CompositionDraft => {
     variables: {},
     variableTypes: {},
   }).draft;
-  draft = addEntryQuerySource(draft, {
-    formId: "11111111-1111-4111-8111-111111111111",
+  draft = addInlineSqlSource(draft, {
     name: "Expenses",
-    fieldSchema: [{ field_id: 1, field_type: "string" }],
-    query: {
-      filters: [],
-      sort: [],
-      projection: { kind: "preview" as const },
-    },
+    sql: 'SELECT * FROM "Expenses"',
+    formBindings: [],
+    expectedResult: [{ name: "amount", type: "float" }],
   }).draft;
   const month = addVariable(draft, {
     id: "month",
-    label: "Month",
     type: "date",
     required: true,
   });
   if (!month.ok) throw new Error("expected month variable");
   draft = month.draft;
-  const metric = addMetricDisplay(
-    draft,
-    "src-1",
-    "total",
-    "Total",
-  );
+  const metric = addMetricDisplay(draft, "src-1", "total");
   if (!metric.ok) throw new Error("expected metric block");
   draft = metric.draft;
-  const table = addTableDisplay(draft, "src-2", "Details");
+  const table = addTableDisplay(draft, "src-2");
   if (!table.ok) throw new Error("expected table block");
   draft = table.draft;
   const text = addTextDisplay(draft, { text: "Summary", style: "heading" });
@@ -180,12 +174,34 @@ const okPreview = (fingerprint: string) => ({
   variable_definitions: [],
   plan: {
     draft_fingerprint: fingerprint,
-    sources: ["src-1", "src-2"].map((id) => ({
-      source_id: id,
-      request: {},
-      source_schema_fingerprint: "fp",
-      kind: "entry_query",
-    })),
+    sources: [
+      {
+        kind: "saved_sql",
+        source_id: "src-1",
+        request: {
+          sql: "SELECT SUM(amount) AS total FROM expenses",
+          parameters: {},
+          parameter_types: {},
+          limit: 1,
+          saved_sql: { id: "sql-1", revision_id: "sql-rev-1" },
+        },
+        source_schema_fingerprint: "fp-1",
+        expected_result: [{ name: "total", type: "float" }],
+      },
+      {
+        kind: "inline_sql",
+        source_id: "src-2",
+        request: {
+          sql: 'SELECT * FROM "Expenses"',
+          parameters: {},
+          parameter_types: {},
+          limit: 20,
+        },
+        source_schema_fingerprint: "fp-2",
+        form_bindings: [],
+        expected_result: [{ name: "amount", type: "float" }],
+      },
+    ],
     component_bindings: [],
   },
 });
@@ -219,19 +235,17 @@ describe("CompositionStudioMobile", () => {
     stubViewportMedia();
     canonicalizeMock.mockImplementation(
       async (document: {
-        spec: { components: { id: string; label?: string }[] };
+        spec: { components: { id: string }[] };
       }) => ({
-        canonical_yaml: `yaml:${
-          document.spec.components.map((component) =>
-            `${component.id}=${component.label ?? ""}`
-          ).join(",")
-        }`,
+        canonical_yaml: `yaml:${document.spec.components.map((component) =>
+          component.id
+        ).join(",")}`,
       }),
     );
     previewMock.mockImplementation(async () => okPreview("fp-1"));
     querySourceMock.mockImplementation(async () => ({
-      kind: "entry_query",
-      page: { rows: [], has_more: false },
+      kind: "sql",
+      page: { columns: ["amount"], rows: [], has_more: false },
     }));
     sqlGetMock.mockResolvedValue({
       id: "sql-1",
@@ -260,16 +274,14 @@ describe("CompositionStudioMobile", () => {
     setViewportWidth(390);
     const { container } = renderStudio();
 
-    fireEvent.click(screen.getByRole("button", { name: "Select Total" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select Monthly totals / total" }));
 
     // The inspector renders once, inside the sheet: the dialog carries the
     // selected block name while the inline canvas slot stays empty.
     const dialog = await screen.findByRole("dialog", { name: "Metric" });
     expect(dialog).toHaveClass("studioInspectorSheet");
     expect(container.querySelector(".studioDesign aside")).toBeNull();
-    expect(
-      within(dialog).getByLabelText("Label"),
-    ).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("Column")).toHaveValue("total");
     // Focus moves into the sheet on open: the Close control leads.
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
@@ -283,7 +295,7 @@ describe("CompositionStudioMobile", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: "Select Total" }),
+        screen.getByRole("button", { name: "Select Monthly totals / total" }),
       ).toHaveFocus();
     });
     expect(
@@ -291,13 +303,13 @@ describe("CompositionStudioMobile", () => {
     ).toBeNull();
 
     // Backdrop dismiss follows the same path.
-    fireEvent.click(screen.getByRole("button", { name: "Select Total" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select Monthly totals / total" }));
     const reopened = await screen.findByRole("dialog", { name: "Metric" });
     fireEvent.click(reopened.parentElement!);
     expect(screen.queryByRole("dialog")).toBeNull();
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: "Select Total" }),
+        screen.getByRole("button", { name: "Select Monthly totals / total" }),
       ).toHaveFocus();
     });
   });
@@ -306,7 +318,7 @@ describe("CompositionStudioMobile", () => {
     setViewportWidth(1280);
     const { container } = renderStudio();
 
-    fireEvent.click(screen.getByRole("button", { name: "Select Total" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select Monthly totals / total" }));
 
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(
@@ -322,7 +334,7 @@ describe("CompositionStudioMobile", () => {
     ).toBeNull();
     expect(
       container.querySelector(".studioDesign aside")?.querySelector(
-        '[aria-label="Remove Total"]',
+        '[aria-label="Remove Monthly totals / total"]',
       ),
     ).not.toBeNull();
   });
@@ -331,18 +343,18 @@ describe("CompositionStudioMobile", () => {
     setViewportWidth(390);
     const { container } = renderStudio();
 
-    fireEvent.click(screen.getByRole("button", { name: "Select Total" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select Monthly totals / total" }));
     const dialog = await screen.findByRole("dialog", { name: "Metric" });
     expect(
-      within(dialog).getByRole("button", { name: "Remove Total" }),
+      within(dialog).getByRole("button", { name: "Remove Monthly totals / total" }),
     ).toBeEnabled();
     fireEvent.click(
-      within(dialog).getByRole("button", { name: "Remove Total" }),
+      within(dialog).getByRole("button", { name: "Remove Monthly totals / total" }),
     );
 
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(
-      screen.queryByRole("button", { name: "Select Total" }),
+      screen.queryByRole("button", { name: "Select Monthly totals / total" }),
     ).toBeNull();
     await waitFor(() => {
       expect(
@@ -352,29 +364,29 @@ describe("CompositionStudioMobile", () => {
 
     // Removing a display leaves its source available in the Data workspace.
     fireEvent.click(modeRadios().data);
-    await screen.findByRole("heading", { name: "Monthly totals" });
+    await screen.findByRole("region", { name: "Monthly totals" });
   });
 
   it("unplaces a variable from the narrow Inspector sheet but keeps its declaration", async () => {
     setViewportWidth(390);
     renderStudio();
 
-    fireEvent.click(screen.getByRole("button", { name: "Select Month" }));
-    const dialog = await screen.findByRole("dialog", { name: "Month" });
+    fireEvent.click(screen.getByRole("button", { name: "Select month" }));
+    const dialog = await screen.findByRole("dialog", { name: "month" });
     fireEvent.click(
       within(dialog).getByRole("button", {
-        name: "Remove Input for Month",
+        name: "Remove Input for month",
       }),
     );
 
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(
-      screen.queryByRole("button", { name: "Select Month" }),
+      screen.queryByRole("button", { name: "Select month" }),
     ).toBeNull();
     fireEvent.click(modeRadios().data);
     fireEvent.click(screen.getByRole("tab", { name: "Variables" }));
     expect(
-      screen.getByRole("button", { name: "Remove Month" }),
+      screen.getByRole("button", { name: "Remove month" }),
     ).toBeInTheDocument();
   });
 
@@ -394,7 +406,7 @@ describe("CompositionStudioMobile", () => {
     expect(container.querySelector(".studioSplit")).toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(
-      screen.getByRole("button", { name: "Select Total" }),
+      screen.getByRole("button", { name: "Select Monthly totals / total" }),
     ).toBeInTheDocument();
   });
 
@@ -402,14 +414,14 @@ describe("CompositionStudioMobile", () => {
     setViewportWidth(390);
     const { container } = renderStudio();
 
-    fireEvent.click(screen.getByRole("button", { name: "Select Total" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select Monthly totals / total" }));
     const dialog = await screen.findByRole("dialog", { name: "Metric" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Data" }));
 
     // The sheet dismisses and the jumped source renders in Data.
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(modeRadios().data).toHaveAttribute("aria-checked", "true");
-    await screen.findByRole("heading", { name: "Monthly totals" });
+    await screen.findByRole("region", { name: "Monthly totals" });
     await waitFor(() => {
       expect(
         screen.getByRole("button", { name: "Show data sources" }),

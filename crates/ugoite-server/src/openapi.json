@@ -12119,7 +12119,7 @@
     "/spaces/{space_id}/compositions/{entry_id}/resolve": {
       "post": {
         "summary": "Resolve an exact Composition revision",
-        "description": "Parses the exact authorized raw Composition revision, reads current source descriptors through current ACL checks, and compiles each source into an existing bounded EntryQuery or exact-revision Saved SQL request. It does not execute source queries or create persistent state. Missing and denied source references share the source_unavailable diagnostic.",
+        "description": "Parses the exact authorized raw Composition revision, reads current source descriptors through current ACL checks, and compiles each source into an existing stateless SQL query request. It does not execute source queries or create persistent state. Missing and denied source references share the source_unavailable diagnostic.",
         "parameters": [
           {
             "$ref": "#/components/parameters/SpaceId"
@@ -12208,7 +12208,7 @@
     "/spaces/{space_id}/compositions/preview": {
       "post": {
         "summary": "Preview an unsaved Composition draft",
-        "description": "Parses a candidate Composition document, reads current source descriptors through current ACL checks, and compiles each source into an existing bounded EntryQuery or exact-revision Saved SQL request. It creates no registry, history, or publication state. Missing and denied source references share the source_unavailable diagnostic.",
+        "description": "Parses a candidate Composition document, reads current source descriptors through current ACL checks, and compiles each source into an existing stateless SQL query request. It creates no registry, history, or publication state. Missing and denied source references share the source_unavailable diagnostic.",
         "parameters": [
           {
             "$ref": "#/components/parameters/SpaceId"
@@ -12788,7 +12788,7 @@
     "/spaces/{space_id}/compositions/metric-query": {
       "post": {
         "summary": "Query one Composition Metric",
-        "description": "Resolves the exact stored Composition revision or unsaved draft through current authorization, then evaluates one already-bound metric. Saved SQL scalar queries use the exact Saved SQL revision and a fixed authorized publication checkpoint, materializing at most two rows. No table page, continuation, caller SQL, or automatic LIMIT 1 is used.",
+        "description": "Resolves the exact stored Composition revision or unsaved draft through current authorization, then evaluates one already-bound SQL metric. Draft edits may supply both base_entry_id and base_revision_id to retain unchanged Form bindings from that exact revision; supplying only one is invalid. Saved SQL uses its exact revision; inline SQL uses server-derived Form ID bindings. The bounded probe materializes at most two rows at an authorized publication checkpoint. No table page, continuation, caller SQL, Browser aggregation, or automatic LIMIT 1 is used.",
         "parameters": [
           {
             "$ref": "#/components/parameters/SpaceId"
@@ -15410,6 +15410,14 @@
       },
       "CompositionPreviewRequest": {
         "type": "object",
+        "dependentRequired": {
+          "base_entry_id": [
+            "base_revision_id"
+          ],
+          "base_revision_id": [
+            "base_entry_id"
+          ]
+        },
         "required": [
           "yaml"
         ],
@@ -15417,6 +15425,16 @@
           "yaml": {
             "type": "string",
             "description": "Candidate Composition YAML; parsed but never stored."
+          },
+          "base_entry_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Exact Composition entry being edited; supply together with base_revision_id to retain stable Form bindings."
+          },
+          "base_revision_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Exact Composition base revision; supply together with base_entry_id to retain stable Form bindings."
           },
           "variables": {
             "type": "object",
@@ -15492,12 +15510,14 @@
               "kind",
               "source_id",
               "request",
-              "source_schema_fingerprint"
+              "source_schema_fingerprint",
+              "form_bindings",
+              "expected_result"
             ],
             "properties": {
               "kind": {
                 "type": "string",
-                "const": "entry_query"
+                "const": "inline_sql"
               },
               "source_id": {
                 "type": "string"
@@ -15505,18 +15525,23 @@
               "request": {
                 "type": "object",
                 "additionalProperties": true,
-                "description": "Existing bounded EntryQuery request, passed unchanged to entry.query."
-              },
-              "display_system_fields": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/CompositionEntryQuerySystemField"
-                },
-                "default": []
+                "description": "Existing stateless SQL query request with server-derived Form ID bindings."
               },
               "source_schema_fingerprint": {
                 "type": "string",
                 "pattern": "^[0-9a-f]{64}$"
+              },
+              "form_bindings": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CompositionResolvedFormBinding"
+                }
+              },
+              "expected_result": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CompositionResolvedResultColumn"
+                }
               }
             },
             "additionalProperties": false
@@ -15527,7 +15552,8 @@
               "kind",
               "source_id",
               "request",
-              "source_schema_fingerprint"
+              "source_schema_fingerprint",
+              "expected_result"
             ],
             "properties": {
               "kind": {
@@ -15545,11 +15571,49 @@
               "source_schema_fingerprint": {
                 "type": "string",
                 "pattern": "^[0-9a-f]{64}$"
+              },
+              "expected_result": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CompositionResolvedResultColumn"
+                }
               }
             },
             "additionalProperties": false
           }
         ]
+      },
+      "CompositionResolvedFormBinding": {
+        "type": "object",
+        "required": [
+          "relation",
+          "form_id"
+        ],
+        "properties": {
+          "relation": {
+            "type": "string"
+          },
+          "form_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompositionResolvedResultColumn": {
+        "type": "object",
+        "required": [
+          "name",
+          "type"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/CompositionResultFieldType"
+          }
+        },
+        "additionalProperties": false
       },
       "CompositionResolvePlan": {
         "type": "object",
@@ -15600,9 +15664,6 @@
               "table",
               "text"
             ]
-          },
-          "label": {
-            "type": "string"
           },
           "variable_id": {
             "type": "string",
@@ -15714,13 +15775,6 @@
             },
             "additionalProperties": false
           }
-        ]
-      },
-      "CompositionEntryQuerySystemField": {
-        "type": "string",
-        "enum": [
-          "created_at",
-          "updated_at"
         ]
       },
       "CompositionResultFieldType": {
@@ -15876,9 +15930,6 @@
         ],
         "properties": {
           "id": {
-            "type": "string"
-          },
-          "label": {
             "type": "string"
           },
           "type": {
@@ -16251,8 +16302,7 @@
           "updated_at",
           "name",
           "kind",
-          "format_version",
-          "tags"
+          "format_version"
         ],
         "properties": {
           "composition_id": {
@@ -16267,13 +16317,7 @@
           },
           "name": {},
           "kind": {},
-          "format_version": {},
-          "tags": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
+          "format_version": {}
         }
       },
       "CompositionListPage": {
@@ -16391,6 +16435,14 @@
       },
       "CompositionMetricQueryRequest": {
         "type": "object",
+        "dependentRequired": {
+          "base_entry_id": [
+            "base_revision_id"
+          ],
+          "base_revision_id": [
+            "base_entry_id"
+          ]
+        },
         "required": [
           "target",
           "component_id"
@@ -16398,6 +16450,16 @@
         "properties": {
           "target": {
             "$ref": "#/components/schemas/CompositionMetricQueryTarget"
+          },
+          "base_entry_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Exact Composition entry being edited by a draft; supply together with base_revision_id."
+          },
+          "base_revision_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Exact Composition base revision for a draft; supply together with base_entry_id."
           },
           "component_id": {
             "type": "string",

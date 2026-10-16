@@ -4,12 +4,12 @@ description: The portable document and semantic boundaries for Composition v1.
 ---
 
 **Status:** The SQL-first Composition v1 contract is accepted in
-[ADR-024](./adr-024-composition-sql-first.md); Domain, Core, adapters, and
-Studio implementation and validation are delivered separately. This document
-describes that target. The prereplacement implementation is not a compatibility
-contract, and its document grammar is not supported by the replacement reader.
-This contract does not authorize or schedule a product release or version
-change.
+[ADR-024](./adr-024-composition-sql-first.md) and implemented in the current
+prerelease candidate. This document describes the implementation contract. The
+prereplacement implementation is not a compatibility contract, and its
+document grammar is not supported by the replacement reader. This status does
+not authorize or schedule a product release or version change; the candidate is
+not released.
 
 ADR-024 is the normative source for the replacement source and presentation
 schema. [ADR-023](./adr-023-composition-reactive-variables.md) remains the source
