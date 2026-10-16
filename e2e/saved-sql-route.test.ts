@@ -35,7 +35,7 @@ test.describe("Saved SQL route", () => {
       .toHaveAttribute("href", `/spaces/${spaceId}/dashboard`);
   });
 
-  test("REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to stateless results", async ({ page, request }) => {
+  test("REQ-FE-062: saved SQL detail loads query text and runs variable-free queries inline", async ({ page, request }) => {
     await ensureDefaultForm(request, spaceId);
     const relation = await getDefaultFormRelation(request, spaceId);
     const sqlCreate = await request.post(
@@ -64,10 +64,21 @@ test.describe("Saved SQL route", () => {
       await expect(page.locator(".ui-sql-editor")).toContainText(
         `SELECT * FROM "${relation}" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 1`,
       );
+      const queryResponsePromise = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return response.request().method() === "POST" &&
+          url.pathname === `/api/spaces/${spaceId}/sql/query`;
+      });
       await page.getByRole("button", { name: "Run Query" }).click();
+      const queryResponse = await queryResponsePromise;
+      expect(queryResponse.ok()).toBe(true);
       await expect(page).toHaveURL(
-        new RegExp(`/spaces/${spaceId}/sql/${savedSql.id}/run`),
+        new RegExp(`/spaces/${spaceId}/sql/${savedSql.id}$`),
       );
+      await expect(
+        page.getByRole("region", { name: /^(SQL results|SQL 結果)$/ }).first(),
+      )
+        .toBeVisible();
     } finally {
       await request.delete(
         getBackendUrl(`/spaces/${spaceId}/sql/${savedSql.id}`),
@@ -111,11 +122,15 @@ test.describe("Saved SQL route", () => {
           url.pathname === `/api/spaces/${spaceId}/sql/query`;
       });
       await page.getByRole("button", { name: "Run Query" }).click();
-      await expect(page).toHaveURL(
-        new RegExp(`/spaces/${spaceId}/sql/${savedSqlId}/run`),
-      );
       const queryResponse = await queryResponsePromise;
       expect(queryResponse.ok()).toBe(true);
+      await expect(page).toHaveURL(
+        new RegExp(`/spaces/${spaceId}/sql/${savedSqlId}$`),
+      );
+      await expect(
+        page.getByRole("region", { name: /^(SQL results|SQL 結果)$/ }).first(),
+      )
+        .toBeVisible();
       await expect(page.locator('section[aria-busy="true"]')).toHaveCount(0);
       await expect(page.locator('p[role="alert"]')).toHaveCount(0);
     } finally {

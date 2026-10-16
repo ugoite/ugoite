@@ -22,6 +22,7 @@
     "mobile-ui": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test ui-mobile-regression.test.ts compact-controls-evidence.test.ts login-responsive.test.ts entry-browser-ux.test.ts search-ui.test.ts result-surface-narrow.test.ts",
     "query-measurement": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test query-surfaces-measurement.test.ts",
     "sql-export-remote-auth": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test sql-export-remote-auth.test.ts",
+    "saved-sql-route": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test saved-sql-route.test.ts",
     "full": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test --grep-invert @screenshot",
     "screenshot": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test ui-pages-screenshots.test.ts"
   },

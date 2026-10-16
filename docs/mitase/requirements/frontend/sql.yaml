@@ -337,7 +337,7 @@ requirements:
 
   - id: REQ-FE-062
     title: Saved SQL Detail Route Actions
-    description: The saved SQL detail route loads and presents the saved query text and metadata, then exposes a stateless variable-free result flow or the variable-input flow.
+    description: The saved SQL detail route loads and presents the saved query text and metadata, then exposes an inline stateless variable-free result flow or the variable-input flow.
     priority: medium
     status: implemented
     criteria:
@@ -351,7 +351,7 @@ requirements:
         governed_by: [POL-UI-005#rule.governance]
       - id: supported-actions
         kind: behavior
-        statement: A variable-free saved query uses the canonical stateless SQL query API and routes to SQL results, while a query with variables links to the existing variable-input flow.
+        statement: A variable-free saved query uses the canonical stateless SQL query API and renders results in the detail route, while a query with variables links to the existing variable-input flow.
         governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
       - id: revision-aware-save
         kind: behavior
@@ -373,7 +373,7 @@ requirements:
       - id: saved-sql-detail-verification
         role: verification
         facet: verification
-        responsibility: Verify saved SQL detail rendering, editable and revision-aware saves, delete confirmation and navigation, variable-input navigation, stateless variable-free execution, and the browser journey through exact frontend tests.
+        responsibility: Verify saved SQL detail rendering, editable and revision-aware saves, delete confirmation and navigation, variable-input navigation, inline stateless variable-free execution, and the browser journey through exact frontend tests.
         targets:
           - id: detail-summary
             adapter: typescript
@@ -458,12 +458,12 @@ requirements:
           - id: browser-detail
             adapter: typescript
             path: e2e/saved-sql-route.test.ts
-            selector: { kind: test, name: "REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to stateless results" }
+            selector: { kind: test, name: "REQ-FE-062: saved SQL detail loads query text and runs variable-free queries inline" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-062#criterion.supported-actions
                 covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to stateless results" } }
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-062: saved SQL detail loads query text and runs variable-free queries inline" } }
 
   - id: REQ-FE-080
     title: Shared SQL Workspace

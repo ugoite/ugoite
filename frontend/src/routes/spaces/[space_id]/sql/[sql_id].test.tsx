@@ -43,22 +43,62 @@ vi.mock("@solidjs/router", () => ({
   useParams: () => ({ space_id: "default", sql_id: "saved-query" }),
 }));
 
-vi.mock("~/components", () => ({
-  SqlQueryEditor: (props: {
+vi.mock("~/components/SQLWorkspace", () => ({
+  SQLWorkspace: (props: {
     id?: string;
-    value: string;
-    disabled?: boolean;
-    onChange: (value: string) => void;
+    sql: string;
+    readOnly?: boolean;
+    previewDisabled?: boolean;
+    variables: Array<{ name: string; type: string; default?: unknown }>;
+    parameterValues: Record<string, string | number | boolean | undefined>;
+    onSqlChange?: (value: string) => void;
+    onParameterChange?: (name: string, value: string) => void;
+    onPreview: () => void;
+    onCount?: () => void;
+    onNext?: () => void;
+    preview: { status: string };
   }) => (
-    <textarea
-      id={props.id}
-      data-testid="sql-editor"
-      data-disabled={String(Boolean(props.disabled))}
-      aria-label="SQL"
-      value={props.value}
-      disabled={props.disabled}
-      onInput={(event) => props.onChange(event.currentTarget.value)}
-    />
+    <div>
+      <textarea
+        id={props.id}
+        data-testid="sql-editor"
+        data-disabled={String(Boolean(props.readOnly))}
+        aria-label="SQL"
+        value={props.sql}
+        readOnly={props.readOnly}
+        onInput={(event) => props.onSqlChange?.(event.currentTarget.value)}
+      />
+      {props.variables.map((variable) => (
+        <label>
+          {variable.name}
+          <input
+            aria-label={variable.name}
+            value={Object.prototype.hasOwnProperty.call(
+                props.parameterValues,
+                variable.name,
+              )
+              ? String(props.parameterValues[variable.name] ?? "")
+              : String(variable.default ?? "")}
+            readOnly={props.readOnly}
+            onInput={(event) =>
+              props.onParameterChange?.(
+                variable.name,
+                event.currentTarget.value,
+              )}
+          />
+        </label>
+      ))}
+      <button
+        type="button"
+        disabled={props.previewDisabled}
+        onClick={props.onPreview}
+      >
+        Run Query
+      </button>
+      <button type="button" onClick={props.onCount}>Count rows</button>
+      <button type="button" onClick={props.onNext}>Next</button>
+      <output>{props.preview.status}</output>
+    </div>
   ),
 }));
 
@@ -217,11 +257,183 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
       revision_id: "rev-1",
     });
     render(() => <SpaceSqlDetailRoute />);
-    fireEvent.click(await screen.findByRole("button", { name: "Run Query" }));
+    fireEvent.click(await screen.findByRole("button", { name: "SQL results" }));
 
     expect(navigateMock).toHaveBeenCalledWith(
       "/spaces/default/sql/saved-query/run",
     );
+  });
+
+  it("previews the pinned Saved SQL revision with typed transient parameters", async () => {
+    seedSqlEntry("default", {
+      id: "saved-query",
+      name: "Runnable Query",
+      kind: "user-query",
+      sql: "SELECT * FROM records WHERE id = $id",
+      variables: [{ type: "integer", name: "id", description: "Entry ID" }],
+      created_at: "2025-03-01T00:00:00Z",
+      updated_at: "2025-03-02T00:00:00Z",
+      revision_id: "rev-1",
+    });
+    const query = vi.spyOn(sqlApi, "query").mockResolvedValue({
+      columns: ["id"],
+      rows: [[42]],
+      has_more: true,
+      next: "next-cursor",
+      result_schema: [{ name: "id", type: "integer" }],
+      exact_integer_rows: [["42"]],
+    });
+    const count = vi.spyOn(sqlApi, "count").mockResolvedValue(25);
+
+    render(() => <SpaceSqlDetailRoute />);
+    const parameter = await screen.findByRole("textbox", { name: "id" });
+    fireEvent.input(parameter, { target: { value: "42" } });
+    fireEvent.click(screen.getByRole("button", { name: "Run Query" }));
+
+    await waitFor(() => {
+      expect(query).toHaveBeenCalledWith("default", {
+        sql: "SELECT * FROM records WHERE id = $id",
+        parameters: { id: 42 },
+        parameter_types: { id: "integer" },
+        include_exact_integer_values: true,
+        limit: 100,
+        saved_sql: { id: "saved-query", revision_id: "rev-1" },
+      }, expect.any(AbortSignal));
+    });
+    expect(await screen.findByText("success")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(query).toHaveBeenCalledTimes(2));
+    expect(query).toHaveBeenNthCalledWith(2, "default", {
+      sql: "SELECT * FROM records WHERE id = $id",
+      parameters: { id: 42 },
+      parameter_types: { id: "integer" },
+      include_exact_integer_values: true,
+      limit: 100,
+      continuation: "next-cursor",
+      saved_sql: { id: "saved-query", revision_id: "rev-1" },
+    }, expect.any(AbortSignal));
+
+    fireEvent.click(screen.getByRole("button", { name: "Count rows" }));
+    await waitFor(() => expect(count).toHaveBeenCalledOnce());
+    expect(count).toHaveBeenCalledWith("default", {
+      sql: "SELECT * FROM records WHERE id = $id",
+      parameters: { id: 42 },
+      parameter_types: { id: "integer" },
+      saved_sql: { id: "saved-query", revision_id: "rev-1" },
+    }, expect.any(AbortSignal));
+    expect(navigateMock).not.toHaveBeenCalled();
+    query.mockRestore();
+    count.mockRestore();
+  });
+
+  it("rejects integer parameters that JavaScript cannot represent exactly", async () => {
+    seedSqlEntry("default", {
+      id: "saved-query",
+      name: "Runnable Query",
+      kind: "user-query",
+      sql: "SELECT * FROM records WHERE id = $id",
+      variables: [{ type: "integer", name: "id", description: "Entry ID" }],
+      created_at: "2025-03-01T00:00:00Z",
+      updated_at: "2025-03-02T00:00:00Z",
+      revision_id: "rev-1",
+    });
+    const query = vi.spyOn(sqlApi, "query");
+
+    render(() => <SpaceSqlDetailRoute />);
+    fireEvent.input(await screen.findByRole("textbox", { name: "id" }), {
+      target: { value: "9007199254740993" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Run Query" }));
+
+    await waitFor(() => expect(screen.getByText("error")).toBeInTheDocument());
+    expect(query).not.toHaveBeenCalled();
+    query.mockRestore();
+  });
+
+  it("previews API-projected typed defaults without adding transient values", async () => {
+    seedSqlEntry("default", {
+      id: "saved-query",
+      name: "Runnable Query",
+      kind: "user-query",
+      sql: "SELECT * FROM records WHERE id = $id",
+      variables: [{
+        type: "integer",
+        name: "id",
+        description: "Entry ID",
+        default: 0,
+      }],
+      created_at: "2025-03-01T00:00:00Z",
+      updated_at: "2025-03-02T00:00:00Z",
+      revision_id: "rev-1",
+    });
+    const query = vi.spyOn(sqlApi, "query").mockResolvedValueOnce({
+      columns: ["id"],
+      rows: [[0]],
+      has_more: false,
+      result_schema: [{ name: "id", type: "integer" }],
+      exact_integer_rows: [["0"]],
+    });
+
+    render(() => <SpaceSqlDetailRoute />);
+    expect(await screen.findByRole("textbox", { name: "id" })).toHaveValue("0");
+    fireEvent.click(screen.getByRole("button", { name: "Run Query" }));
+
+    await waitFor(() => {
+      expect(query).toHaveBeenCalledWith("default", {
+        sql: "SELECT * FROM records WHERE id = $id",
+        parameters: { id: 0 },
+        parameter_types: { id: "integer" },
+        include_exact_integer_values: true,
+        limit: 100,
+        saved_sql: { id: "saved-query", revision_id: "rev-1" },
+      }, expect.any(AbortSignal));
+    });
+    query.mockRestore();
+  });
+
+  it("pins an edited query preview to the revision returned by Save", async () => {
+    seedSqlEntry("default", {
+      id: "saved-query",
+      name: "Planning",
+      kind: "user-query",
+      sql: "SELECT 1",
+      variables: [],
+      created_at: "2025-03-01T00:00:00Z",
+      updated_at: "2025-03-02T00:00:00Z",
+      revision_id: "rev-1",
+    });
+    const update = vi.spyOn(sqlApi, "update").mockResolvedValueOnce({
+      id: "saved-query",
+      revisionId: "rev-2",
+    });
+    const query = vi.spyOn(sqlApi, "query").mockResolvedValueOnce({
+      columns: ["value"],
+      rows: [[2]],
+      has_more: false,
+      result_schema: [{ name: "value", type: "integer" }],
+    });
+
+    render(() => <SpaceSqlDetailRoute />);
+    fireEvent.input(await screen.findByRole("textbox", { name: "SQL" }), {
+      target: { value: "SELECT 2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(update).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole("button", { name: "Run Query" }));
+
+    await waitFor(() => {
+      expect(query).toHaveBeenCalledWith("default", {
+        sql: "SELECT 2",
+        parameters: {},
+        parameter_types: {},
+        include_exact_integer_values: true,
+        limit: 100,
+        saved_sql: { id: "saved-query", revision_id: "rev-2" },
+      }, expect.any(AbortSignal));
+    });
+    update.mockRestore();
+    query.mockRestore();
   });
 
   it("normalizes SQL variables and uses the returned revision for the next save", async () => {
@@ -411,7 +623,7 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
 
     expect(await screen.findByRole("heading", { name: /Advanced search/ }))
       .toBeInTheDocument();
-    expect(screen.getByTestId("sql-editor")).toBeDisabled();
+    expect(screen.getByTestId("sql-editor")).toHaveAttribute("readonly");
     expect(screen.queryByRole("button", { name: "Save" }))
       .not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Delete query" }))
