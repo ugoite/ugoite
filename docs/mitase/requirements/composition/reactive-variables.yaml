@@ -73,6 +73,10 @@ requirements:
         kind: behavior
         statement: Studio can declare typed variables and defaults, place Inputs, bind literal or string-variable Text, and connect exact-type Saved SQL variables without JavaScript, expressions, getters, setters, or event handlers. Saving preserves defaults and never promotes runtime input to Composition Knowledge.
         governed_by: [POL-000#rule.foundation-precedence]
+      - id: authoring-default-parse-lifecycle
+        kind: behavior
+        statement: An asynchronous default parse updates only the variable declaration that initiated it. Removing and re-adding the same ID or changing the declaration type makes the earlier result stale; rejecting removal because the variable remains referenced leaves the declaration and its pending parse current.
+        governed_by: [POL-000#rule.foundation-precedence]
       - id: studio-variable-identity-presentation
         kind: quality
         statement: Studio creates stable variable IDs internally and uses an authored label or localized declaration ordinal for variable-bound Text and Input names; ordinary visible labels, accessible names, and titles never expose variable IDs.

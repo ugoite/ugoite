@@ -746,6 +746,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-COMP-007#criterion.code-free-studio-authoring
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.authoring-default-parse-lifecycle
       - id: studio-typed-variable-defaults-evidence
         role: evidence
         facet: frontend-tests
@@ -760,6 +762,38 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.code-free-studio-authoring
+      - id: studio-default-parse-lifecycle-evidence
+        role: evidence
+        facet: frontend-tests
+        responsibility: Verify asynchronous default parses cannot update removed or replaced declarations or declarations whose type changed, while a removal blocked by an active reference leaves its parse current.
+        targets:
+          - id: same-id-replacement-parse
+            adapter: typescript
+            path: frontend/src/components/CompositionVariableList.test.tsx
+            selector:
+              kind: test
+              name: ignores a pending default parse after removing and re-adding the same ID
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.authoring-default-parse-lifecycle
+          - id: changed-type-parse
+            adapter: typescript
+            path: frontend/src/components/CompositionVariableList.test.tsx
+            selector:
+              kind: test
+              name: ignores a pending default parse after the variable type changes
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.authoring-default-parse-lifecycle
+          - id: blocked-removal-parse
+            adapter: typescript
+            path: frontend/src/components/CompositionVariableList.test.tsx
+            selector:
+              kind: test
+              name: keeps a pending default parse valid when removal is blocked
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.authoring-default-parse-lifecycle
       - id: studio-variable-identity-presentation
         role: implementation
         facet: frontend
