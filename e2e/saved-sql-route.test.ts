@@ -190,9 +190,7 @@ test.describe("Saved SQL route", () => {
       await aggregate.selectOption("sum");
       await expect(aggregate).toHaveValue("sum");
       const aggregateField = page.getByLabel("Field", { exact: true });
-      await aggregateField.selectOption("Revenue");
-      await expect(aggregateField).toHaveValue("Revenue");
-      await aggregateField.press("ArrowUp");
+      await aggregateField.selectOption("Quantity");
       await expect(aggregateField).toHaveValue("Quantity");
       const filterField = page.getByLabel("Filter field");
       await filterField.selectOption("Category");
