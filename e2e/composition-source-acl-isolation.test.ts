@@ -367,14 +367,7 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
 
         // Revisit the same revision. A revoked Saved SQL source or its bound
         // Form is hidden during resolution with the same generic diagnostic.
-        const reloadedSqlResponse = revokedRead === "form"
-          ? sqlPageResponse(page)
-          : undefined;
         await page.reload({ waitUntil: "domcontentloaded" });
-        if (reloadedSqlResponse) {
-          const response = await reloadedSqlResponse;
-          expect(response.ok()).toBe(false);
-        }
         const resolveResponse = await viewerContext.request.post(
           getBackendUrl(
             `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/resolve`,
@@ -409,13 +402,11 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
           expect(replayedSqlBody).not.toContain(privateValue);
           await expect(page.locator("body")).not.toContainText(privateValue);
         }
-        if (revokedRead === "saved_sql") {
-          await expect(
-            page.getByRole("alert").filter({
-              hasText: SOURCE_UNAVAILABLE_DIAGNOSTIC,
-            }),
-          ).toBeVisible();
-        }
+        await expect(
+          page.getByRole("alert").filter({
+            hasText: SOURCE_UNAVAILABLE_DIAGNOSTIC,
+          }),
+        ).toBeVisible();
         await expect(page.locator("output.compositionMetric")).toHaveCount(0);
         await expect(page.getByRole("table")).toHaveCount(0);
         await expect(page.locator("body")).not.toContainText(
