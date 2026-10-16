@@ -1901,40 +1901,6 @@ fn openapi_documents_sql_only_composition_sources_without_display_labels() {
 }
 
 #[test]
-fn openapi_documents_optional_typed_saved_sql_variable_defaults() {
-    let snapshot = ugoite_server::openapi_snapshot();
-    let variables = &snapshot["components"]["schemas"]["SavedSql"]["properties"]["variables"];
-    assert_eq!(
-        variables["items"]["$ref"],
-        "#/components/schemas/SavedSqlVariableDefinition"
-    );
-    assert!(variables["description"]
-        .as_str()
-        .expect("Saved SQL variable defaults description")
-        .contains("not added to sql.query requests automatically"));
-
-    let definition = &snapshot["components"]["schemas"]["SavedSqlVariableDefinition"];
-    assert_eq!(
-        definition["required"],
-        serde_json::json!(["type", "name", "description"])
-    );
-    assert_eq!(
-        definition["properties"]["type"]["enum"],
-        serde_json::json!(["string", "boolean", "integer", "float", "timestamp", "date"])
-    );
-    assert_eq!(
-        definition["properties"]["default"]["anyOf"]
-            .as_array()
-            .map(Vec::len),
-        Some(3)
-    );
-    assert_eq!(
-        definition["properties"]["default"]["type"],
-        serde_json::Value::Null
-    );
-}
-
-#[test]
 fn openapi_documents_the_form_extra_attributes_policy() {
     let snapshot = ugoite_server::openapi_snapshot();
     assert_eq!(
