@@ -488,3 +488,17 @@ features:
                 criterion: REQ-COMP-007#criterion.input-runtime-synchronization
                 covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime/target.composition-query-work-handle]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: "synchronizes repeated placed Inputs for valid and invalid raw values" } }
+      - id: composition-responsive-input-accessibility-verification
+        role: verification
+        facet: verification
+        responsibility: Verify automated keyboard access, human-readable Input names, invalid/loading/waiting/result states, recovery, and no horizontal overflow at 390px. Manual VoiceOver/NVDA reading order and announcement quality remain an explicit evidence gap.
+        targets:
+          - id: runtime-inputs-at-mobile-width
+            adapter: typescript
+            path: e2e/composition-studio-journey.test.ts
+            selector: { kind: test, name: "Composition runtime Inputs expose accessible states at a 390px viewport" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.responsive-accessible-inputs
+                covers: [FEAT-FE-014#binding.frontend/target.composition-use-surface]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Composition runtime Inputs expose accessible states at a 390px viewport" } }

@@ -331,8 +331,11 @@ export default function CompositionRevisionRoute() {
     }
     return placed;
   };
-  const resolvedPlan = () =>
-    current().resolved?.ok ? current().resolved?.plan : undefined;
+  // Keep the last accepted component bindings while an input blocks the next
+  // resolve. The query handle clears changed-source pages and marks each
+  // source invalid or waiting, so retaining the plan restores those states
+  // without presenting stale results.
+  const resolvedPlan = () => current().resolved?.plan;
   // Placed Inputs render in the flow before data resolution. This section
   // keeps only variables without a placed Input.
   const sectionDefinitions = () => {
