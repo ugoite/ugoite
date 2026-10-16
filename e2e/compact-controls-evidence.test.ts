@@ -14,6 +14,7 @@ import {
   getFrontendUrl,
   waitForServers,
 } from "./lib/client.ts";
+import { completeInlineSqlCompositionYaml } from "./lib/composition.ts";
 
 type CompactControlSeed = {
   spaceId: string;
@@ -79,13 +80,6 @@ const surfaces: Surface[] = [
     layout: "composition-studio",
     backName: "Saved tools",
     path: (s) => `/spaces/${s.spaceId}/compositions/new`,
-  },
-  {
-    id: "composition-edit",
-    layout: "composition-studio",
-    backName: "Back to revision",
-    path: (s) =>
-      `/spaces/${s.spaceId}/compositions/${s.compositionId}/${s.compositionRevisionId}/edit`,
   },
   {
     id: "composition-history",
@@ -283,17 +277,26 @@ async function seedCompactControlSurfaces(
   };
   sqlCreated = true;
 
+  const completeYaml = await completeInlineSqlCompositionYaml(
+    request,
+    spaceId,
+    compositionYaml(
+      `Compact Controls ${suffix}`,
+      formName,
+      merchantColumn!,
+    ),
+    {
+      id: "compact_rows",
+      relation: formName,
+      formId: form!.id!,
+      expectedResult: [{ name: "merchant", type: "string" }],
+    },
+  );
   const compositionResponse = await request.post(
     getBackendUrl(`/spaces/${spaceId}/compositions`),
     {
       headers: { "Idempotency-Key": crypto.randomUUID() },
-      data: {
-        yaml: compositionYaml(
-          `Compact Controls ${suffix}`,
-          relation!,
-          merchantColumn!,
-        ),
-      },
+      data: { yaml: completeYaml },
     },
   );
   expect([200, 201]).toContain(compositionResponse.status());

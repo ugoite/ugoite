@@ -6,6 +6,7 @@ import {
   test,
 } from "@playwright/test";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
+import { completeInlineSqlCompositionYaml } from "./lib/composition.ts";
 
 type FormFieldSummary = {
   sql_column?: string;
@@ -202,24 +203,43 @@ async function seedNarrowSurfaces(
   const manyColumn = (await manyColumnSql.json()) as { id?: string };
   expect(manyColumn.id).toBeTruthy();
 
-  const oneColumn = await saveComposition(
+  const oneColumnYaml = await completeInlineSqlCompositionYaml(
     request,
     spaceId,
     buildInlineSqlYaml(
       `Narrow one column ${suffix}`,
       `Narrow one column ${suffix} rows`,
-      `SELECT ${alphaColumn} AS label FROM ${relation} ${totalOrder}`,
+      `SELECT ${alphaColumn} AS label FROM ${sqlIdentifier(formName)}`,
     ),
+    {
+      id: "narrow_rows",
+      relation: formName,
+      formId: form!.id!,
+      expectedResult: [{ name: "label", type: "string" }],
+    },
   );
-  const twoColumn = await saveComposition(
+  const oneColumn = await saveComposition(request, spaceId, oneColumnYaml);
+  const twoColumnYaml = await completeInlineSqlCompositionYaml(
     request,
     spaceId,
     buildInlineSqlYaml(
       `Narrow two column ${suffix}`,
       `Narrow two column ${suffix} rows`,
-      `SELECT ${alphaColumn} AS alpha, ${betaColumn} AS beta FROM ${relation} ${totalOrder} LIMIT 2`,
+      `SELECT ${alphaColumn} AS alpha, ${betaColumn} AS beta FROM ${
+        sqlIdentifier(formName)
+      } LIMIT 2`,
     ),
+    {
+      id: "narrow_rows",
+      relation: formName,
+      formId: form!.id!,
+      expectedResult: [
+        { name: "alpha", type: "string" },
+        { name: "beta", type: "string" },
+      ],
+    },
   );
+  const twoColumn = await saveComposition(request, spaceId, twoColumnYaml);
 
   return {
     spaceId,
