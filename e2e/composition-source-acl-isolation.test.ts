@@ -365,9 +365,8 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
         });
         expect(deniedBody.result).toBeUndefined();
 
-        // Revisit the same revision. A revoked Saved SQL source is hidden
-        // during resolution; a still-readable Saved SQL source can resolve,
-        // but its execution remains blocked by the revoked Form Read policy.
+        // Revisit the same revision. A revoked Saved SQL source or its bound
+        // Form is hidden during resolution with the same generic diagnostic.
         const reloadedSqlResponse = revokedRead === "form"
           ? sqlPageResponse(page)
           : undefined;
@@ -392,14 +391,10 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
           ok: boolean;
           diagnostics?: Array<{ code: string }>;
         };
-        if (revokedRead === "saved_sql") {
-          expect(resolveBody).toMatchObject({
-            ok: false,
-            diagnostics: [{ code: "source_unavailable" }],
-          });
-        } else {
-          expect(resolveBody.ok).toBe(true);
-        }
+        expect(resolveBody).toMatchObject({
+          ok: false,
+          diagnostics: [{ code: "source_unavailable" }],
+        });
         const deniedText = JSON.stringify([deniedBody, resolveBody]);
         const concealedValues = [
           seed.savedSqlText,
