@@ -17,6 +17,8 @@ use uuid::Uuid;
 
 const SQL_FIRST_COMPOSITION: &str = include_str!("fixtures/composition-sql-first.ugcomp.yaml");
 
+static TEST_VALIDATION_GATE_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 fn registry_form_definition(extension_metadata: Value, fields: Value) -> Value {
     json!({
         "id": uuid::Uuid::now_v7().to_string(),
@@ -373,6 +375,7 @@ async fn composition_save_keeps_stable_receipt_when_recovering_pre_head_publicat
 
 #[tokio::test]
 async fn concurrent_composition_save_retries_share_one_publication() -> anyhow::Result<()> {
+    let _gate_test_guard = TEST_VALIDATION_GATE_TEST_LOCK.lock().await;
     // Keep the detached AssetText refresh from contending for the Space's
     // single query permit while this test controls the publication race.
     let service = UgoiteService::new_without_background_refresh(
@@ -1323,6 +1326,7 @@ async fn composition_restore_replays_exact_publication_and_rechecks_authorizatio
 
 #[tokio::test]
 async fn concurrent_composition_restore_retries_share_one_publication() -> anyhow::Result<()> {
+    let _gate_test_guard = TEST_VALIDATION_GATE_TEST_LOCK.lock().await;
     let service = UgoiteService::new_without_background_refresh(format!(
         "memory://composition-restore-idempotency-race-{}",
         Uuid::now_v7()
