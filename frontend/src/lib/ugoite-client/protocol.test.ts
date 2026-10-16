@@ -1,6 +1,7 @@
 import { http, HttpResponse } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  analyzeSqlStructure,
   buildSpreadsheetCsvRequest,
   canonicalizeCompositionDocument,
   encodeSpreadsheetCsv,
@@ -9,6 +10,8 @@ import {
   parseCompositionVariableInputSync,
   prepareApiRequest,
   prepareCompositionVariableInputParser,
+  prepareSqlStructureParser,
+  proposeSqlStructureOperation,
   protocolFetch,
   protocolFetchResponse,
   spreadsheetCsvRequestBytes,
@@ -114,6 +117,47 @@ describe("portable Ugoite API protocol WASM", () => {
       "revision_id: 00000000-0000-7000-8000-000000000021",
     );
     expect(canonical.fingerprint).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("analyzes SQL structure and returns confirmation proposals through Rust/WASM", async () => {
+    await prepareSqlStructureParser();
+
+    const sql =
+      'SELECT * FROM "Task" WHERE "field_101" = $status ORDER BY "_ugoite_id"';
+    const context = {
+      relation: "Task",
+      columns: [
+        { name: "_ugoite_id", type: "string" },
+        { name: "field_101", type: "string" },
+        { name: "field_102", type: "integer" },
+      ],
+      variables: [
+        { name: "status", type: "string" },
+        { name: "priority", type: "integer" },
+      ],
+      stable_key: ["_ugoite_id"],
+    } as const;
+
+    const analysis = await analyzeSqlStructure(sql, context);
+    expect(analysis).toMatchObject({
+      status: "supported",
+      projection: ["*"],
+      referenced_variables: ["status"],
+      stable_pagination: true,
+    });
+
+    const proposal = await proposeSqlStructureOperation(
+      sql,
+      context,
+      { kind: "set_columns", columns: ["field_101", "field_102"] },
+    );
+    expect(proposal).toMatchObject({
+      status: "supported",
+      base_sql: sql,
+      requires_confirmation: true,
+    });
+    expect(proposal.proposed_sql).toContain('"field_101", "field_102"');
+    expect(sql).toContain('SELECT * FROM "Task"');
   });
 
   it("parses Composition Input with the shared Rust Domain contract without coercion", async () => {

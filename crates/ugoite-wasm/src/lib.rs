@@ -221,6 +221,52 @@ fn invoke_domain(request: serde_json::Value) -> String {
             .cloned()
             .ok_or_else(|| "value is required".to_string())?;
         match action {
+            "domain.analyze_sql_structure" => {
+                let sql = payload
+                    .get("sql")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| "sql must be a string".to_string())?;
+                let context: ugoite_domain::sql_structure::SqlStructureContext =
+                    serde_json::from_value(
+                        payload
+                            .get("context")
+                            .cloned()
+                            .ok_or_else(|| "context is required".to_string())?,
+                    )
+                    .map_err(|error| error.to_string())?;
+                serde_json::to_value(ugoite_domain::sql_structure::analyze_sql_structure(
+                    sql, &context,
+                ))
+                .map_err(|error| error.to_string())
+            }
+            "domain.propose_sql_structure_operation" => {
+                let sql = payload
+                    .get("sql")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| "sql must be a string".to_string())?;
+                let context: ugoite_domain::sql_structure::SqlStructureContext =
+                    serde_json::from_value(
+                        payload
+                            .get("context")
+                            .cloned()
+                            .ok_or_else(|| "context is required".to_string())?,
+                    )
+                    .map_err(|error| error.to_string())?;
+                let operation: ugoite_domain::sql_structure::SqlStructureOperation =
+                    serde_json::from_value(
+                        payload
+                            .get("operation")
+                            .cloned()
+                            .ok_or_else(|| "operation is required".to_string())?,
+                    )
+                    .map_err(|error| error.to_string())?;
+                serde_json::to_value(
+                    ugoite_domain::sql_structure::propose_sql_structure_operation(
+                        sql, &context, operation,
+                    ),
+                )
+                .map_err(|error| error.to_string())
+            }
             "domain.parse_composition_variable_input" => {
                 let variable_type =
                     serde_json::from_value::<ugoite_domain::composition::CompositionVariableType>(

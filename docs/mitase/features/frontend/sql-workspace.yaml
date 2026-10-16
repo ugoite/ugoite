@@ -42,6 +42,39 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-080#criterion.workspace-control-size-rules
+      - id: rust-structure-capabilities
+        role: evidence
+        facet: domain
+        responsibility: Parse only the SQL subset that can be safely transformed, expose typed action capabilities and non-mutating proposals through the portable WASM client, and preserve direct SQL as the owning adapter's source.
+        targets:
+          - id: sql-structure-analysis
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_structure.rs
+            selector: { kind: symbol, name: analyze_sql_structure }
+            claims:
+              - kind: evidences
+                anchor: REQ-FE-080#criterion.safe-structured-operations
+          - id: sql-structure-proposal
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_structure.rs
+            selector: { kind: symbol, name: propose_sql_structure_operation }
+            claims:
+              - kind: evidences
+                anchor: REQ-FE-080#criterion.safe-structured-operations
+          - id: sql-structure-wasm-protocol
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: symbol, name: invoke_domain }
+            claims:
+              - kind: evidences
+                anchor: REQ-FE-080#criterion.safe-structured-operations
+          - id: sql-structure-frontend-protocol
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.ts
+            selector: { kind: symbol, name: analyzeSqlStructure }
+            claims:
+              - kind: evidences
+                anchor: REQ-FE-080#criterion.safe-structured-operations
       - id: verification
         role: verification
         facet: verification

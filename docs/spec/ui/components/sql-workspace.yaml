@@ -22,11 +22,15 @@ query or persistence authority.
   callers.
 
 The adapter-supplied action list is the only source of structured operations.
-The integration must enable operations only when the shared parser and
-capability model can safely round-trip them. Directly edited SQL remains
-authoritative, unsupported syntax remains available in the editor, and
-regenerating SQL requires an explicit diff confirmation. Route integration,
-parser capability gating, and diff confirmation remain unverified until their
+`analyzeSqlStructure` and `proposeSqlStructureOperation` in the portable client
+use the Rust domain parser through WASM. The capability contract accepts one
+SELECT over the selected Form relation, simple projected columns, typed
+parameter comparisons and null checks, and column ordering. It reports stable
+reason codes for unsupported SQL and never makes direct SQL unavailable.
+Sort proposals append adapter-supplied stable keys where needed. A proposal is
+non-mutating: the adapter must show its SQL diff and wait for explicit user
+confirmation before updating the controlled SQL value. Route integration,
+capability gating, and diff confirmation remain unverified until their
 adapters are implemented.
 
 ## Preview and results
