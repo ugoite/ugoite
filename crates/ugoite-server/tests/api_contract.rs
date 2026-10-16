@@ -1888,6 +1888,33 @@ fn openapi_documents_sql_only_composition_sources_without_display_labels() {
     assert_eq!(sources.len(), 2);
     assert_eq!(sources[0]["properties"]["kind"]["const"], "inline_sql");
     assert_eq!(sources[1]["properties"]["kind"]["const"], "saved_sql");
+    assert!(sources[0]["required"]
+        .as_array()
+        .expect("inline SQL source fields")
+        .contains(&serde_json::json!("form_bindings")));
+    assert_eq!(
+        sources[0]["properties"]["form_bindings"]["items"]["$ref"],
+        "#/components/schemas/CompositionResolvedFormBinding"
+    );
+    for source in sources {
+        assert!(source["required"]
+            .as_array()
+            .expect("resolved SQL source fields")
+            .contains(&serde_json::json!("expected_result")));
+        assert_eq!(
+            source["properties"]["expected_result"]["items"]["$ref"],
+            "#/components/schemas/CompositionResolvedResultColumn"
+        );
+    }
+    assert_eq!(
+        snapshot["components"]["schemas"]["CompositionResolvedFormBinding"]["additionalProperties"],
+        false
+    );
+    assert_eq!(
+        snapshot["components"]["schemas"]["CompositionResolvedResultColumn"]["properties"]["type"]
+            ["$ref"],
+        "#/components/schemas/CompositionResultFieldType"
+    );
     for source in sources {
         let request_description = source["properties"]["request"]["description"]
             .as_str()

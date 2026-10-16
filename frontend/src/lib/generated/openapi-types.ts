@@ -41,6 +41,8 @@ export const OPENAPI_SCHEMA_NAMES = [
   "CompositionResolveRequest",
   "CompositionResolveResponse",
   "CompositionResolvedComponentBinding",
+  "CompositionResolvedFormBinding",
+  "CompositionResolvedResultColumn",
   "CompositionResolvedSource",
   "CompositionRestoreRequest",
   "CompositionRestoreResponse",

@@ -15510,7 +15510,9 @@
               "kind",
               "source_id",
               "request",
-              "source_schema_fingerprint"
+              "source_schema_fingerprint",
+              "form_bindings",
+              "expected_result"
             ],
             "properties": {
               "kind": {
@@ -15528,6 +15530,18 @@
               "source_schema_fingerprint": {
                 "type": "string",
                 "pattern": "^[0-9a-f]{64}$"
+              },
+              "form_bindings": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CompositionResolvedFormBinding"
+                }
+              },
+              "expected_result": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CompositionResolvedResultColumn"
+                }
               }
             },
             "additionalProperties": false
@@ -15538,7 +15552,8 @@
               "kind",
               "source_id",
               "request",
-              "source_schema_fingerprint"
+              "source_schema_fingerprint",
+              "expected_result"
             ],
             "properties": {
               "kind": {
@@ -15556,11 +15571,49 @@
               "source_schema_fingerprint": {
                 "type": "string",
                 "pattern": "^[0-9a-f]{64}$"
+              },
+              "expected_result": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CompositionResolvedResultColumn"
+                }
               }
             },
             "additionalProperties": false
           }
         ]
+      },
+      "CompositionResolvedFormBinding": {
+        "type": "object",
+        "required": [
+          "relation",
+          "form_id"
+        ],
+        "properties": {
+          "relation": {
+            "type": "string"
+          },
+          "form_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompositionResolvedResultColumn": {
+        "type": "object",
+        "required": [
+          "name",
+          "type"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/CompositionResultFieldType"
+          }
+        },
+        "additionalProperties": false
       },
       "CompositionResolvePlan": {
         "type": "object",
