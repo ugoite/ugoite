@@ -86,6 +86,10 @@ vi.mock("~/components/SQLWorkspace", () => ({
   },
 }));
 
+vi.mock("~/components/SqlStructureToolbar", () => ({
+  SqlStructureToolbar: () => null,
+}));
+
 vi.mock("~/lib/ugoite-client", () => ({
   formApi: { list: formApiListMock },
   sqlApi: {

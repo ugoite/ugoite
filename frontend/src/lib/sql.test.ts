@@ -4,6 +4,7 @@ import {
   buildSqlAggregateQuery,
   buildSqlSchema,
   buildSqlStarterQuery,
+  buildSqlStructureContexts,
   normalizeSqlVariables,
   parseSqlVariableDefault,
   sqlAggregateFieldOptions,
@@ -558,3 +559,71 @@ const aggregateForm: Form = {
     },
   },
 };
+
+describe("SQL structure adapter context", () => {
+  it("uses the written Form relation and intersects typed column capabilities", () => {
+    const [context] = buildSqlStructureContexts(
+      [aggregateForm],
+      [
+        { name: "amount", type: "integer" },
+        { name: "unsafe_long", type: "long" },
+        { name: "at", type: "timestamp" },
+      ],
+      "composition:inline-1",
+    );
+
+    expect(context.parser.relation).toBe("Orders");
+    expect(context.parser.relation).not.toBe(aggregateForm.sql_relation);
+    expect(context.parser.stable_key).toEqual(["_ugoite_id"]);
+    expect(context.columnCapabilities.field_amount.supportedOperators).toEqual([
+      "eq",
+      "gt",
+      "is_null",
+      "is_not_null",
+    ]);
+    expect(context.columnCapabilities.field_unavailable.supportedOperators)
+      .toEqual([]);
+    expect(context.parser.columns).toContainEqual({
+      name: "field_amount",
+      type: "integer",
+    });
+    expect(context.parser.columns).toContainEqual({
+      name: "field_long",
+      type: "other",
+    });
+    expect(context.parser.variables).toEqual([
+      { name: "amount", type: "integer" },
+      { name: "at", type: "timestamp" },
+    ]);
+    expect(context.columnCapabilities.field_amount).toEqual({
+      projectable: true,
+      filterable: true,
+      sortable: true,
+      supportedOperators: ["eq", "gt", "is_null", "is_not_null"],
+    });
+    expect(context.columnCapabilities.field_category.supportedOperators)
+      .toEqual(["eq", "is_null", "is_not_null"]);
+    expect(context.columnCapabilities.field_unavailable).toEqual({
+      projectable: false,
+      filterable: false,
+      sortable: false,
+      supportedOperators: [],
+    });
+    expect(context.identity).toContain("composition:inline-1");
+    expect(context.identity).toContain('"formVersion":1');
+  });
+
+  it("changes its identity when the Form version changes", () => {
+    const [current] = buildSqlStructureContexts([aggregateForm], [], "inline");
+    const [updated] = buildSqlStructureContexts(
+      [{
+        ...aggregateForm,
+        version: aggregateForm.version + 1,
+      }],
+      [],
+      "inline",
+    );
+
+    expect(updated.identity).not.toBe(current.identity);
+  });
+});
