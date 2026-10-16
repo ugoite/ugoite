@@ -34,6 +34,46 @@ vi.mock("~/lib/ugoite-client", () => ({
   sqlApi: { get: sqlGetMock },
 }));
 
+async function prefillSavedSqlDefaultsOnlyAfterExplicitRun() {
+  render(() => <SpaceQueryVariablesRoute />);
+
+  const title = await screen.findByPlaceholderText("Title");
+  expect(title).toHaveValue("");
+  expect(screen.getByPlaceholderText("Enabled")).toHaveValue("false");
+  expect(screen.getByPlaceholderText("Count")).toHaveValue("0");
+  expect(navigateMock).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole("button", { name: "Run" }));
+
+  await waitFor(() => {
+    expect(navigateMock).toHaveBeenCalledWith(
+      "/spaces/default/sql/saved-vars/run",
+      {
+        state: {
+          parameters: {
+            title: "",
+            enabled: false,
+            count: 0,
+            score: 1.5,
+            day: "2026-08-10",
+            happened: "2026-08-10T12:34:56Z",
+            optional: null,
+          },
+          parameterTypes: {
+            title: "string",
+            enabled: "boolean",
+            count: "integer",
+            score: "float",
+            day: "date",
+            happened: "timestamp",
+            optional: "string",
+          },
+        },
+      },
+    );
+  });
+}
+
 describe("/spaces/:space_id/sql/:sql_id/variables", () => {
   beforeEach(() => {
     navigateMock.mockReset();
@@ -44,12 +84,27 @@ describe("/spaces/:space_id/sql/:sql_id/variables", () => {
       sql:
         "SELECT * FROM form_entry WHERE Body = {{title}} AND enabled = $enabled AND count = $count AND score = $score AND day = $day AND happened = $happened AND optional = $optional ORDER BY _ugoite_id",
       variables: [
-        { type: "string", name: "title", description: "Title" },
-        { type: "boolean", name: "enabled", description: "Enabled" },
-        { type: "integer", name: "count", description: "Count" },
-        { type: "float", name: "score", description: "Score" },
-        { type: "date", name: "day", description: "Day" },
-        { type: "timestamp", name: "happened", description: "Happened" },
+        { type: "string", name: "title", description: "Title", default: "" },
+        {
+          type: "boolean",
+          name: "enabled",
+          description: "Enabled",
+          default: false,
+        },
+        { type: "integer", name: "count", description: "Count", default: 0 },
+        { type: "float", name: "score", description: "Score", default: 1.5 },
+        {
+          type: "date",
+          name: "day",
+          description: "Day",
+          default: "2026-08-10",
+        },
+        {
+          type: "timestamp",
+          name: "happened",
+          description: "Happened",
+          default: "2026-08-10T12:34:56Z",
+        },
         { type: "string", name: "optional", description: "Optional" },
       ],
       created_at: "2026-01-01T00:00:00Z",
@@ -103,6 +158,30 @@ describe("/spaces/:space_id/sql/:sql_id/variables", () => {
             },
           },
         },
+      );
+    });
+  });
+
+  it(
+    "pre-fills saved defaults and passes them only after Run is pressed",
+    prefillSavedSqlDefaultsOnlyAfterExplicitRun,
+  );
+
+  it("sends null when a pre-filled default is cleared", async () => {
+    render(() => <SpaceQueryVariablesRoute />);
+
+    const count = await screen.findByPlaceholderText("Count");
+    fireEvent.input(count, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith(
+        "/spaces/default/sql/saved-vars/run",
+        expect.objectContaining({
+          state: expect.objectContaining({
+            parameters: expect.objectContaining({ count: null }),
+          }),
+        }),
       );
     });
   });

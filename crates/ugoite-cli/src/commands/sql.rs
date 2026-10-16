@@ -453,7 +453,7 @@ pub enum SavedSqlSubCmd {
     },
     /// Execute one exact Saved SQL revision as a stateless page
     #[command(
-        long_about = "Use the current revision unless --revision-id is supplied. Each page rechecks current authorization and keeps the Saved SQL Form bindings fixed."
+        long_about = "Use the current revision unless --revision-id is supplied. Each page rechecks current authorization and keeps the Saved SQL Form bindings fixed. Saved SQL variable defaults are not applied automatically; pass values explicitly with --param and --param-type."
     )]
     Run {
         #[arg(value_name = "SQL_ID")]
@@ -478,7 +478,10 @@ pub enum SavedSqlSubCmd {
         name: Option<String>,
         #[arg(long, value_name = "SQL_OR_FILE")]
         sql: String,
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "JSON array of typed variable definitions and optional defaults"
+        )]
         variables: Option<String>,
     },
     /// Update a saved SQL query
@@ -492,7 +495,10 @@ pub enum SavedSqlSubCmd {
         untitled: bool,
         #[arg(long, value_name = "SQL_OR_FILE")]
         sql: Option<String>,
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "JSON array of typed variable definitions and optional defaults"
+        )]
         variables: Option<String>,
         #[arg(long)]
         parent_revision_id: Option<String>,

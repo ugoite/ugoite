@@ -173,6 +173,12 @@ never substitutes a same-name Form when a bound ID is unavailable. Older
 revisions without bindings remain readable; quoted Form-name execution
 requires an explicitly saved revision with bindings.
 
+Saved SQL variable definitions may also persist an optional non-null scalar
+default whose JSON value matches the declared ADR-023 type. Defaults are part
+of the versioned Saved SQL content and its integrity payload. The stateless SQL
+query operation does not read them: callers still supply every parameter
+explicitly.
+
 ## Assets and integrity
 
 Asset bytes have a low-level lifecycle independent of Form definitions. Upload

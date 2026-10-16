@@ -36,6 +36,12 @@ aggregates remain unavailable. The explicit count operation applies its
 trusted row-count expression to the authorized query plan separately from
 user SQL. Parameters use DataFusion's native `$name` syntax and are bound as
 typed scalars before planning; parameter text is never substituted into SQL.
+Saved SQL variable declarations may carry optional scalar defaults validated
+against the declared ADR-023 type. A default is stored with its Saved SQL
+revision and is shown as the initial value in Browser variable inputs; it does
+not become an execution parameter unless the user explicitly runs the query
+with that value. `sql.query` and `sql saved run` continue to use only the
+parameters supplied in the request.
 
 The permitted aggregate functions are `COUNT`, `SUM`, `AVG`, `MIN`, and `MAX`.
 `COUNT(*)` counts rows; `COUNT(expression)` ignores `NULL`; `SUM` and `AVG`

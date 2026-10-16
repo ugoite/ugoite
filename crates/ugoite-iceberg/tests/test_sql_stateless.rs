@@ -541,6 +541,108 @@ async fn composition_scalar_probe_reads_at_most_two_rows_from_exact_saved_revisi
     Ok(())
 }
 
+#[tokio::test]
+async fn saved_sql_variable_defaults_are_not_implicitly_applied_to_queries() -> Result<()> {
+    let space = setup_sql_space("memory://sql-saved-default-explicit", "sqldefault").await?;
+    let saved = space
+        .service
+        .create_saved_sql(
+            &space.space_id,
+            Some("minimum-priority"),
+            &SqlPayload {
+                name: Some("Minimum priority".into()),
+                kind: SqlKind::UserQuery,
+                metadata: None,
+                sql: format!(
+                    "SELECT COUNT(*) AS result FROM \"{}\" WHERE \"{}\" >= $minimum",
+                    space.form_name, space.priority_column
+                ),
+                variables: json!([{
+                    "type": "integer",
+                    "name": "minimum",
+                    "description": "",
+                    "default": 3
+                }]),
+            },
+            "owner",
+        )
+        .await?;
+    let saved_sql = SavedSqlRevisionRef {
+        id: "minimum-priority".into(),
+        revision_id: saved["revision_id"]
+            .as_str()
+            .context("Saved SQL revision id")?
+            .into(),
+    };
+    let omitted = space
+        .service
+        .query_sql(
+            &space.space_id,
+            SqlQueryRequest {
+                sql: String::new(),
+                parameters: Map::new(),
+                parameter_types: BTreeMap::new(),
+                include_exact_integer_values: false,
+                limit: 10,
+                continuation: None,
+                saved_sql: Some(saved_sql.clone()),
+            },
+        )
+        .await;
+    assert!(
+        omitted.is_err(),
+        "stored defaults must not be injected into sql.query"
+    );
+
+    let explicit = space
+        .service
+        .query_sql(
+            &space.space_id,
+            SqlQueryRequest {
+                sql: String::new(),
+                parameters: Map::from_iter([("minimum".into(), json!(3))]),
+                parameter_types: BTreeMap::from([("minimum".into(), "integer".into())]),
+                include_exact_integer_values: false,
+                limit: 10,
+                continuation: None,
+                saved_sql: Some(saved_sql.clone()),
+            },
+        )
+        .await?;
+    assert_eq!(explicit.rows[0]["result"], 3);
+
+    let omitted_count = space
+        .service
+        .count_sql(
+            &space.space_id,
+            SqlQueryCountRequest {
+                sql: String::new(),
+                parameters: Map::new(),
+                parameter_types: BTreeMap::new(),
+                saved_sql: Some(saved_sql.clone()),
+            },
+        )
+        .await;
+    assert!(
+        omitted_count.is_err(),
+        "stored defaults must not be injected into sql.query.count"
+    );
+    let explicit_count = space
+        .service
+        .count_sql(
+            &space.space_id,
+            SqlQueryCountRequest {
+                sql: String::new(),
+                parameters: Map::from_iter([("minimum".into(), json!(3))]),
+                parameter_types: BTreeMap::from([("minimum".into(), "integer".into())]),
+                saved_sql: Some(saved_sql),
+            },
+        )
+        .await?;
+    assert_eq!(explicit_count, 1);
+    Ok(())
+}
+
 fn base_sql(space: &SqlSpace) -> String {
     format!(
         "SELECT \"_ugoite_id\" FROM \"{}\" ORDER BY \"_ugoite_id\"",

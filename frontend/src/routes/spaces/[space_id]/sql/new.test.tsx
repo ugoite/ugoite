@@ -173,13 +173,13 @@ describe("/spaces/:space_id/sql/new", () => {
     sqlCreateMock.mockResolvedValue({ id: "query-1", revisionId: "rev-1" });
   });
 
-  it("REQ-FE-063: uses a runnable Form relation starter with session ordering", async () => {
+  it("REQ-FE-063: starts with a Form relation and keeps paging out of SQL", async () => {
     render(() => <SpaceQueryCreateRoute />);
 
     const editor = await screen.findByRole("textbox", { name: "SQL" });
     await waitFor(() => {
       expect(editor).toHaveValue(
-        'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50',
+        'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
       );
     });
     fireEvent.change(screen.getByLabelText("Form for this query"), {
@@ -190,7 +190,7 @@ describe("/spaces/:space_id/sql/new", () => {
     );
     await waitFor(() => {
       expect(editor).toHaveValue(
-        'SELECT * FROM "Review" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50',
+        'SELECT * FROM "Review" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
       );
     });
     fireEvent.input(screen.getByLabelText("Query name"), {
@@ -204,7 +204,7 @@ describe("/spaces/:space_id/sql/new", () => {
         kind: "user-query",
         metadata: undefined,
         sql:
-          'SELECT * FROM "Review" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50',
+          'SELECT * FROM "Review" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
         variables: [],
       });
     });
@@ -216,7 +216,7 @@ describe("/spaces/:space_id/sql/new", () => {
     const editor = await screen.findByRole("textbox", { name: "SQL" });
     await waitFor(() => {
       expect(editor).toHaveValue(
-        'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50',
+        'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
       );
     });
     fireEvent.input(editor, {
@@ -242,13 +242,61 @@ describe("/spaces/:space_id/sql/new", () => {
     });
   });
 
+  it("saves a typed default for a generated integer filter variable", async () => {
+    render(() => <SpaceQueryCreateRoute />);
+
+    const editor = await screen.findByRole("textbox", { name: "SQL" });
+    await waitFor(() =>
+      expect(editor).toHaveValue(
+        'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
+      )
+    );
+    fireEvent.change(screen.getByLabelText("Form for this query"), {
+      target: { value: "review-form" },
+    });
+    fireEvent.change(screen.getByLabelText("Aggregate"), {
+      target: { value: "sum" },
+    });
+    fireEvent.change(screen.getByLabelText("Filter field"), {
+      target: { value: "Amount" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Generate aggregate SQL" }),
+    );
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Default for filter_value" }),
+    );
+    fireEvent.input(
+      screen.getByRole("textbox", { name: "Default for filter_value" }),
+      {
+        target: { value: "12" },
+      },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(sqlCreateMock).toHaveBeenCalledWith(
+        "default",
+        expect.objectContaining({
+          variables: [{
+            type: "integer",
+            name: "filter_value",
+            description: "Amount",
+            default: 12,
+          }],
+        }),
+      );
+    });
+  });
+
   it("REQ-FE-063: builds a typed aggregate query from human Form fields", async () => {
     render(() => <SpaceQueryCreateRoute />);
 
     const editor = await screen.findByRole("textbox", { name: "SQL" });
     await waitFor(() => {
       expect(editor).toHaveValue(
-        'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50',
+        'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
       );
     });
     fireEvent.change(screen.getByLabelText("Form for this query"), {
@@ -309,7 +357,7 @@ describe("/spaces/:space_id/sql/new", () => {
     const editor = await screen.findByRole("textbox", { name: "SQL" });
     await waitFor(() => {
       expect(editor).toHaveValue(
-        'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50',
+        'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
       );
     });
     fireEvent.input(editor, {

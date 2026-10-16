@@ -83,7 +83,7 @@ fn test_saved_sql_req_api_006_crud() {
             "--sql",
             sql_path.to_str().unwrap(),
             "--variables",
-            r#"[{"name":"status","type":"string","description":"status"}]"#,
+            r#"[{"name":"status","type":"string","description":"status","default":"open"}]"#,
         ],
     );
 
@@ -111,6 +111,7 @@ fn test_saved_sql_req_api_006_crud() {
     assert_eq!(fetched["id"].as_str(), Some(created_id));
     assert!(fetched["name"].is_null());
     assert_eq!(fetched["metadata"]["generatedName"], "untitled");
+    assert_eq!(fetched["variables"][0]["default"], "open");
 
     // List saved queries
     let list_output = run_cli(&config_path, &["sql", "saved", "list"]);
@@ -171,6 +172,7 @@ fn test_saved_sql_req_api_006_crud() {
         Some("SELECT $status WHERE $status IS NOT NULL")
     );
     assert_eq!(fetched_updated["variables"][0]["name"], "status");
+    assert_eq!(fetched_updated["variables"][0]["default"], "open");
 
     let stale_revision_id = created["revision_id"]
         .as_str()
@@ -249,6 +251,91 @@ fn test_saved_sql_req_api_006_crud() {
     assert!(!final_list
         .as_array()
         .is_some_and(|items| items.iter().any(|item| item["id"] == created_id)));
+}
+
+/// REQ-API-020: Saved SQL variable defaults persist through CLI create/update.
+#[test]
+fn saved_sql_variable_defaults_round_trip() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_string_lossy().to_string();
+    let config_path = dir.path().join("cli-config.toml");
+    init_canonical_config(&config_path, &root);
+    assert!(run_cli(&config_path, &["space", "create", "sql-space"])
+        .status
+        .success());
+
+    let sql_path = dir.path().join("query.sql");
+    std::fs::write(&sql_path, "SELECT $status").unwrap();
+    let variables =
+        r#"[{"name":"status","type":"string","description":"status","default":"open"}]"#;
+    let created = run_cli(
+        &config_path,
+        &[
+            "sql",
+            "saved",
+            "create",
+            "--sql",
+            sql_path.to_str().unwrap(),
+            "--variables",
+            variables,
+        ],
+    );
+    assert!(
+        created.status.success(),
+        "create stderr: {}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+    let created: serde_json::Value = serde_json::from_slice(&created.stdout).unwrap();
+    let id = created["id"].as_str().expect("create returns saved SQL id");
+
+    let fetched = run_cli(&config_path, &["sql", "saved", "get", id]);
+    assert!(fetched.status.success());
+    let fetched: serde_json::Value = serde_json::from_slice(&fetched.stdout).unwrap();
+    assert_eq!(fetched["variables"][0]["default"], "open");
+
+    std::fs::write(&sql_path, "SELECT $status WHERE $status <> ''").unwrap();
+    let updated = run_cli(
+        &config_path,
+        &[
+            "sql",
+            "saved",
+            "update",
+            id,
+            "--sql",
+            sql_path.to_str().unwrap(),
+        ],
+    );
+    assert!(
+        updated.status.success(),
+        "update stderr: {}",
+        String::from_utf8_lossy(&updated.stderr)
+    );
+    let fetched = run_cli(&config_path, &["sql", "saved", "get", id]);
+    assert!(fetched.status.success());
+    let fetched: serde_json::Value = serde_json::from_slice(&fetched.stdout).unwrap();
+    assert_eq!(fetched["variables"][0]["default"], "open");
+
+    let variables_without_default = r#"[{"name":"status","type":"string","description":"status"}]"#;
+    let cleared = run_cli(
+        &config_path,
+        &[
+            "sql",
+            "saved",
+            "update",
+            id,
+            "--variables",
+            variables_without_default,
+        ],
+    );
+    assert!(
+        cleared.status.success(),
+        "clear default stderr: {}",
+        String::from_utf8_lossy(&cleared.stderr)
+    );
+    let fetched = run_cli(&config_path, &["sql", "saved", "get", id]);
+    assert!(fetched.status.success());
+    let fetched: serde_json::Value = serde_json::from_slice(&fetched.stdout).unwrap();
+    assert!(fetched["variables"][0].get("default").is_none());
 }
 
 /// REQ-API-007: Saved SQL query validation rejects invalid SQL.

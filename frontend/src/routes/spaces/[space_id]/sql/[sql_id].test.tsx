@@ -274,6 +274,50 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     update.mockRestore();
   });
 
+  it("saves an explicitly configured typed variable default", async () => {
+    seedSqlEntry("default", {
+      id: "saved-query",
+      name: "By count",
+      kind: "user-query",
+      sql: "SELECT $count",
+      variables: [{ type: "integer", name: "count", description: "Count" }],
+      created_at: "2025-03-01T00:00:00Z",
+      updated_at: "2025-03-02T00:00:00Z",
+      revision_id: "rev-1",
+    });
+    const update = vi.spyOn(sqlApi, "update").mockResolvedValue({
+      id: "saved-query",
+      revisionId: "rev-2",
+    });
+
+    render(() => <SpaceSqlDetailRoute />);
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Default for count" }),
+    );
+    fireEvent.input(
+      screen.getByRole("textbox", { name: "Default for count" }),
+      { target: { value: "12" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(update).toHaveBeenCalledWith("default", "saved-query", {
+        name: "By count",
+        kind: "user-query",
+        metadata: undefined,
+        sql: "SELECT $count",
+        variables: [{
+          type: "integer",
+          name: "count",
+          description: "Count",
+          default: 12,
+        }],
+        parent_revision_id: "rev-1",
+      });
+    });
+    update.mockRestore();
+  });
+
   it("saves a blank name with Untitled metadata and surfaces stale conflicts", async () => {
     seedSqlEntry("default", {
       id: "saved-query",

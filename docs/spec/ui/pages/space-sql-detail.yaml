@@ -42,6 +42,7 @@ components:
     - id: sql-detail-variables
       type: list
       title: Variables
+      behavior: user-query variables preserve their typed definitions and expose an optional typed default editor
     - id: sql-detail-primary-action
       type: button
       title: Run Query or Open Variables

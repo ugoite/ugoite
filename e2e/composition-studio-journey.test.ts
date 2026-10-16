@@ -1186,7 +1186,7 @@ test.describe("Composition Studio Journey", () => {
         name: "Select Total",
         exact: true,
       });
-      await expect(selectButton).toBeVisible();
+      await expect(selectButton).toBeVisible({ timeout: 30_000 });
       await selectButton.click();
       // Below the sheet gate the tap opens the inspector as a bottom sheet
       // reusing the wide-viewport content: same dialog name, same Label

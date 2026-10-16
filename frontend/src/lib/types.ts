@@ -329,10 +329,13 @@ export interface QueryRequest {
 }
 
 /** SQL variable definition */
+export type SqlVariableDefault = string | number | boolean;
+
 export interface SqlVariable {
   type: string;
   name: string;
   description: string;
+  default?: SqlVariableDefault;
 }
 
 /** Saved SQL entry */

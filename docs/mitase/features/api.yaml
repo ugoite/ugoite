@@ -22,6 +22,8 @@ features:
                 criterion: REQ-API-006#criterion.saved-sql-lifecycle
               - kind: satisfies
                 criterion: REQ-API-006#criterion.saved-sql-name-field
+              - kind: satisfies
+                criterion: REQ-API-020#criterion.typed-variable-default
           - id: get-sql
             adapter: rust
             path: crates/ugoite-iceberg/src/saved_sql.rs
@@ -31,6 +33,8 @@ features:
                 criterion: REQ-API-006#criterion.saved-sql-lifecycle
               - kind: satisfies
                 criterion: REQ-API-006#criterion.saved-sql-name-field
+              - kind: satisfies
+                criterion: REQ-API-020#criterion.typed-variable-default
           - id: create-sql
             adapter: rust
             path: crates/ugoite-iceberg/src/saved_sql.rs
@@ -44,6 +48,8 @@ features:
                 criterion: REQ-API-007#criterion.declared-template-bindings
               - kind: satisfies
                 criterion: REQ-API-006#criterion.saved-sql-name-field
+              - kind: satisfies
+                criterion: REQ-API-020#criterion.typed-variable-default
           - id: update-sql
             adapter: rust
             path: crates/ugoite-iceberg/src/saved_sql.rs
@@ -55,6 +61,8 @@ features:
                 criterion: REQ-API-006#criterion.saved-sql-lifecycle
               - kind: satisfies
                 criterion: REQ-API-006#criterion.saved-sql-name-field
+              - kind: satisfies
+                criterion: REQ-API-020#criterion.typed-variable-default
           - id: delete-sql
             adapter: rust
             path: crates/ugoite-iceberg/src/saved_sql.rs
@@ -174,6 +182,8 @@ features:
                 criterion: REQ-API-015#criterion.exact-integer-presentation
               - kind: satisfies
                 criterion: REQ-API-015#criterion.function-class-policy
+              - kind: satisfies
+                criterion: REQ-API-020#criterion.typed-variable-default
           - id: result-schema-mapping
             adapter: rust
             path: crates/ugoite-iceberg/src/query_context.rs
@@ -220,6 +230,8 @@ features:
                 criterion: REQ-API-018#criterion.current-form-authorization
               - kind: satisfies
                 criterion: REQ-API-015#criterion.function-class-policy
+              - kind: satisfies
+                criterion: REQ-API-020#criterion.typed-variable-default
       - id: space-service-implementation
         role: implementation
         facet: service
@@ -455,6 +467,8 @@ features:
               - kind: satisfies
                 criterion: REQ-API-006#criterion.saved-sql-name-field
               - kind: satisfies
+                criterion: REQ-API-020#criterion.typed-variable-default
+              - kind: satisfies
                 criterion: REQ-API-015#criterion.canonical-sql-page
               - kind: satisfies
                 criterion: REQ-API-015#criterion.canonical-sql-count
@@ -597,18 +611,30 @@ features:
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: get, path: '/spaces/{space_id}/sql' }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-020#criterion.typed-variable-default
           - id: create-sql
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: post, path: '/spaces/{space_id}/sql' }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-020#criterion.typed-variable-default
           - id: get-sql
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: get, path: '/spaces/{space_id}/sql/{sql_id}' }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-020#criterion.typed-variable-default
           - id: update-sql
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: put, path: '/spaces/{space_id}/sql/{sql_id}' }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-020#criterion.typed-variable-default
           - id: delete-sql
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
@@ -617,10 +643,16 @@ features:
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: post, path: '/spaces/{space_id}/sql/query' }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-020#criterion.typed-variable-default
           - id: count-sql
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: post, path: '/spaces/{space_id}/sql/query/count' }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-020#criterion.typed-variable-default
     contracts:
       - id: query-sql
         kind: http
@@ -650,11 +682,16 @@ features:
           - REQ-API-018#criterion.current-form-authorization
           - REQ-API-018#criterion.legacy-saved-sql-preservation
           - REQ-API-015#criterion.exact-integer-presentation
+          - REQ-API-020#criterion.typed-variable-default
       - id: count-sql
         kind: http
         source: FEAT-API-001#binding.contract/target.count-sql
         participants:
           - target: FEAT-API-001#binding.sql-service-implementation/target.count-sql
+            role: service
+          - target: FEAT-API-001#binding.core/target.create-sql
+            role: service
+          - target: FEAT-API-001#binding.core/target.update-sql
             role: service
           - target: FEAT-API-001#binding.backend-implementation/target.count-sql
             role: backend
@@ -662,7 +699,9 @@ features:
             role: client
           - target: FEAT-API-001#binding.cli-implementation/target.sql-command
             role: operator
-        guarantees: [REQ-API-018#criterion.current-form-authorization]
+        guarantees:
+          - REQ-API-018#criterion.current-form-authorization
+          - REQ-API-020#criterion.typed-variable-default
       - id: list-spaces
         kind: http
         source: FEAT-API-001#binding.contract/target.list-spaces
@@ -821,7 +860,9 @@ features:
             role: client
           - target: FEAT-API-001#binding.cli-implementation/target.sql-command
             role: operator
-        guarantees: [REQ-API-006#criterion.saved-sql-lifecycle]
+        guarantees:
+          - REQ-API-006#criterion.saved-sql-lifecycle
+          - REQ-API-020#criterion.typed-variable-default
       - id: create-saved-sql
         kind: http
         source: FEAT-API-001#binding.contract/target.create-sql
@@ -836,7 +877,10 @@ features:
             role: client
           - target: FEAT-API-001#binding.cli-implementation/target.sql-command
             role: operator
-        guarantees: [REQ-API-006#criterion.saved-sql-lifecycle, REQ-API-006#criterion.saved-sql-variable-validation]
+        guarantees:
+          - REQ-API-006#criterion.saved-sql-lifecycle
+          - REQ-API-006#criterion.saved-sql-variable-validation
+          - REQ-API-020#criterion.typed-variable-default
       - id: get-saved-sql
         kind: http
         source: FEAT-API-001#binding.contract/target.get-sql
@@ -851,7 +895,9 @@ features:
             role: client
           - target: FEAT-API-001#binding.cli-implementation/target.sql-command
             role: operator
-        guarantees: [REQ-API-006#criterion.saved-sql-lifecycle]
+        guarantees:
+          - REQ-API-006#criterion.saved-sql-lifecycle
+          - REQ-API-020#criterion.typed-variable-default
       - id: update-saved-sql
         kind: http
         source: FEAT-API-001#binding.contract/target.update-sql
@@ -866,7 +912,10 @@ features:
             role: client
           - target: FEAT-API-001#binding.cli-implementation/target.sql-command
             role: operator
-        guarantees: [REQ-API-006#criterion.saved-sql-lifecycle, REQ-API-006#criterion.saved-sql-variable-validation]
+        guarantees:
+          - REQ-API-006#criterion.saved-sql-lifecycle
+          - REQ-API-006#criterion.saved-sql-variable-validation
+          - REQ-API-020#criterion.typed-variable-default
       - id: delete-saved-sql
         kind: http
         source: FEAT-API-001#binding.contract/target.delete-sql

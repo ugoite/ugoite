@@ -4,8 +4,10 @@ import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { BackLink } from "~/components/BackLink";
 import { ButtonSpinner } from "~/components/ButtonSpinner";
 import { SqlQueryEditor } from "~/components";
+import { SqlVariableDefaultsEditor } from "~/components/SqlVariableDefaultsEditor";
 import { formApi } from "~/lib/ugoite-client";
 import {
+  applySqlVariableDefaultDrafts,
   buildSqlAggregateQuery,
   buildSqlSchema,
   buildSqlStarterQuery,
@@ -13,7 +15,7 @@ import {
   sqlAggregateFieldOptions,
   sqlFilterFieldOptions,
 } from "~/lib/sql";
-import type { SqlAggregateOperation } from "~/lib/sql";
+import type { SqlAggregateOperation, SqlVariableDefaultDraft } from "~/lib/sql";
 import { sqlApi } from "~/lib/ugoite-client";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import type { Form } from "~/lib/types";
@@ -35,8 +37,9 @@ export default function SpaceQueryCreateRoute() {
   const [error, setError] = createSignal<string | null>(null);
   const [isSaving, setIsSaving] = createSignal(false);
   const [selectedFormId, setSelectedFormId] = createSignal("");
-  const [aggregateOperation, setAggregateOperation] =
-    createSignal<SqlAggregateOperation>("count-rows");
+  const [aggregateOperation, setAggregateOperation] = createSignal<
+    SqlAggregateOperation
+  >("count-rows");
   const [aggregateFieldKey, setAggregateFieldKey] = createSignal("");
   const [filterFieldKey, setFilterFieldKey] = createSignal("");
   const [generatedParameter, setGeneratedParameter] = createSignal<{
@@ -44,6 +47,9 @@ export default function SpaceQueryCreateRoute() {
     type: string;
     description: string;
   }>();
+  const [defaultDrafts, setDefaultDrafts] = createSignal<
+    Record<string, SqlVariableDefaultDraft>
+  >({});
 
   const [forms] = createResource(async () => {
     return await formApi.list(spaceId());
@@ -60,9 +66,7 @@ export default function SpaceQueryCreateRoute() {
   const aggregateFields = createMemo(() =>
     sqlAggregateFieldOptions(selectedForm(), aggregateOperation())
   );
-  const filterFields = createMemo(() =>
-    sqlFilterFieldOptions(selectedForm())
-  );
+  const filterFields = createMemo(() => sqlFilterFieldOptions(selectedForm()));
 
   createEffect(() => {
     const available = selectableForms();
@@ -89,6 +93,16 @@ export default function SpaceQueryCreateRoute() {
 
   const schema = () => buildSqlSchema((forms() || []) as Form[]);
 
+  const variables = createMemo(() => {
+    const normalized = normalizeSqlVariables(sqlInput().trim());
+    const generated = generatedParameter();
+    return normalized.variables.map((variable) =>
+      generated && variable.name === generated.name
+        ? { ...variable, ...generated }
+        : variable
+    );
+  });
+
   // Line/column rendering for editor diagnostics. Offsets come from the
   // CodeMirror lint gutter; the list mirrors them as text so the error
   // position survives without pointer access.
@@ -109,12 +123,15 @@ export default function SpaceQueryCreateRoute() {
       return;
     }
     const normalized = normalizeSqlVariables(sql);
-    const generated = generatedParameter();
-    const variables = normalized.variables.map((variable) =>
-      generated && variable.name === generated.name
-        ? { ...variable, ...generated }
-        : variable
+    const withTypes = variables();
+    const defaults = applySqlVariableDefaultDrafts(
+      withTypes,
+      defaultDrafts(),
     );
+    if (defaults.invalid) {
+      setError(t("sqlPage.defaultInvalid", defaults.invalid));
+      return;
+    }
 
     setIsSaving(true);
     try {
@@ -123,7 +140,7 @@ export default function SpaceQueryCreateRoute() {
         kind: "user-query",
         metadata: name ? undefined : { generatedName: "untitled" },
         sql: normalized.sql,
-        variables,
+        variables: defaults.variables,
       });
       navigate(`/spaces/${encodeURIComponent(spaceId())}/sql`);
     } catch (err) {
@@ -294,6 +311,16 @@ export default function SpaceQueryCreateRoute() {
             disabled={isSaving()}
           />
         </div>
+
+        <Show when={variables().length > 0}>
+          <SqlVariableDefaultsEditor
+            idPrefix="new-sql"
+            variables={variables()}
+            defaults={defaultDrafts()}
+            onDefaultsChange={setDefaultDrafts}
+            disabled={isSaving()}
+          />
+        </Show>
 
         <Show when={diagnostics().length > 0}>
           <ul class="text-sm ui-text-warning ui-stack-sm">

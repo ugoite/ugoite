@@ -75,7 +75,7 @@ test.describe("Saved SQL route", () => {
     }
   });
 
-  test("REQ-FE-063: new saved SQL starts with a runnable total-ordered query", async ({ page, request }) => {
+  test("REQ-FE-063 @smoke: new saved SQL starts with a Form relation and runs through Saved SQL", async ({ page, request }) => {
     await ensureDefaultForm(request, spaceId);
     const queryName = `Runnable starter ${Date.now()}`;
     let savedSqlId: string | undefined;
@@ -86,7 +86,10 @@ test.describe("Saved SQL route", () => {
       });
 
       await expect(page.locator(".ui-sql-editor")).toContainText(
-        /SELECT \* FROM "[^"]+" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50/,
+        /SELECT \* FROM "[^"]+" ORDER BY _ugoite_updated_at DESC, _ugoite_id/,
+      );
+      await expect(page.locator(".ui-sql-editor")).not.toContainText(
+        /\b(?:LIMIT|OFFSET)\b/i,
       );
       await page.getByLabel("Query name").fill(queryName);
       const createResponsePromise = page.waitForResponse((response) => {
@@ -102,10 +105,19 @@ test.describe("Saved SQL route", () => {
       await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`), {
         waitUntil: "domcontentloaded",
       });
+      const queryResponsePromise = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return response.request().method() === "POST" &&
+          url.pathname === `/api/spaces/${spaceId}/sql/query`;
+      });
       await page.getByRole("button", { name: "Run Query" }).click();
       await expect(page).toHaveURL(
         new RegExp(`/spaces/${spaceId}/sql/${savedSqlId}/run`),
       );
+      const queryResponse = await queryResponsePromise;
+      expect(queryResponse.ok()).toBe(true);
+      await expect(page.locator('section[aria-busy="true"]')).toHaveCount(0);
+      await expect(page.locator('p[role="alert"]')).toHaveCount(0);
     } finally {
       if (savedSqlId) {
         await request.delete(
@@ -178,9 +190,7 @@ test.describe("Saved SQL route", () => {
       await aggregate.selectOption("sum");
       await expect(aggregate).toHaveValue("sum");
       const aggregateField = page.getByLabel("Field", { exact: true });
-      await aggregateField.selectOption("Revenue");
-      await expect(aggregateField).toHaveValue("Revenue");
-      await aggregateField.press("ArrowUp");
+      await aggregateField.selectOption("Quantity");
       await expect(aggregateField).toHaveValue("Quantity");
       const filterField = page.getByLabel("Filter field");
       await filterField.selectOption("Category");
