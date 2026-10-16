@@ -3,7 +3,7 @@
 # fallback via `run-e2e-parity.sh`.
 #
 # Usage: ./e2e/scripts/run-e2e.sh [test-type]
-#   test-type: "smoke", "late-query-response", "composition-golden", "composition-stale", "composition-studio", "composition-metric", "composition-input-validation", "composition-source-acl-isolation", "asset-owned", "smoke-and-asset-owned",
+#   test-type: "smoke", "saved-sql-route", "late-query-response", "composition-golden", "composition-stale", "composition-studio", "composition-metric", "composition-input-validation", "composition-source-acl-isolation", "asset-owned", "smoke-and-asset-owned",
 #     "owner-recovery", "mobile-ui", "query-measurement",
 #     "sql-export-remote-auth", "portable-space",
 #     "entries", "navigation", "screenshot", or "full"
@@ -282,6 +282,9 @@ case "$TEST_TYPE" in
   smoke)
     run_e2e_task smoke "$base_report_file" "$ENFORCE_CI_GATES"
     ;;
+  saved-sql-route)
+    run_e2e_task saved-sql-route "$base_report_file" "$ENFORCE_CI_GATES"
+    ;;
   late-query-response)
     run_e2e_task late-query-response "$base_report_file"
     ;;
@@ -349,7 +352,7 @@ case "$TEST_TYPE" in
     ;;
   *)
     echo "Unknown test type: $TEST_TYPE"
-    echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|late-query-response|composition-golden|composition-stale|composition-studio|composition-metric|composition-input-validation|composition-source-acl-isolation|asset-owned|smoke-and-asset-owned|owner-recovery|mobile-ui|query-measurement|sql-export-remote-auth|portable-space|entries|navigation|screenshot|full]"
+    echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|saved-sql-route|late-query-response|composition-golden|composition-stale|composition-studio|composition-metric|composition-input-validation|composition-source-acl-isolation|asset-owned|smoke-and-asset-owned|owner-recovery|mobile-ui|query-measurement|sql-export-remote-auth|portable-space|entries|navigation|screenshot|full]"
     exit 1
     ;;
 esac
