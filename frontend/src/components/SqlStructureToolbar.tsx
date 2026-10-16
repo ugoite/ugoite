@@ -17,15 +17,24 @@ import {
   proposeSqlStructureOperation,
 } from "~/lib/ugoite-client";
 import type {
+  SqlStructureAggregate,
+  SqlStructureAggregateFunction,
   SqlStructureAnalysis,
   SqlStructureFilter,
   SqlStructureFilterOperator,
+  SqlStructureOperation,
   SqlStructureProposal,
   SqlStructureSort,
   SqlStructureVariableType,
 } from "~/lib/ugoite-client";
 
-type StructureAction = "columns" | "filter" | "sort";
+type StructureAction =
+  | "columns"
+  | "filter"
+  | "sort"
+  | "aggregate"
+  | "group_by"
+  | "distinct";
 type FilterDraft = {
   column: string;
   operator: SqlStructureFilterOperator;
@@ -113,6 +122,9 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   const [selectedColumns, setSelectedColumns] = createSignal<string[]>([]);
   const [filters, setFilters] = createSignal<FilterDraft[]>([]);
   const [sorts, setSorts] = createSignal<SortDraft[]>([]);
+  const [aggregates, setAggregates] = createSignal<SqlStructureAggregate[]>([]);
+  const [groupByColumns, setGroupByColumns] = createSignal<string[]>([]);
+  const [selectDistinct, setSelectDistinct] = createSignal(false);
   const [proposal, setProposal] = createSignal<SqlStructureProposal>();
   const [proposalContextIdentity, setProposalContextIdentity] = createSignal<
     string
@@ -138,6 +150,9 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     setSelectedColumns([]);
     setFilters([]);
     setSorts([]);
+    setAggregates([]);
+    setGroupByColumns([]);
+    setSelectDistinct(false);
     setError(null);
 
     if (contexts.length === 0) {
@@ -224,6 +239,107 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   const actionLabel = (action: StructureAction) =>
     t(`sqlPage.structure.${action}`);
 
+  const columnCapability = (columnName: string) =>
+    ready()?.context.columnCapabilities[columnName];
+
+  const aggregateColumnsFor = (
+    fn: SqlStructureAggregateFunction,
+    distinct = false,
+  ) =>
+    (ready()?.context.parser.columns ?? []).filter((column) => {
+      const capability = columnCapability(column.name);
+      return capability?.aggregateFunctions.includes(fn) &&
+        (!distinct || capability.distinctable);
+    });
+
+  const aggregateFunctionsAvailable = (): SqlStructureAggregateFunction[] => {
+    const functions: SqlStructureAggregateFunction[] = [
+      "count",
+      "sum",
+      "avg",
+      "min",
+      "max",
+    ];
+    return functions.filter((fn) =>
+      fn === "count" || aggregateColumnsFor(fn).length > 0
+    );
+  };
+
+  const aggregateIsEditable = (aggregate: SqlStructureAggregate) => {
+    if (!aggregate.column) {
+      return aggregate.function === "count" && !aggregate.distinct;
+    }
+    const capability = columnCapability(aggregate.column);
+    return Boolean(
+      capability?.projectable &&
+        capability.aggregateFunctions.includes(aggregate.function) &&
+        (!aggregate.distinct || capability.distinctable),
+    );
+  };
+
+  const groupableColumns = () =>
+    (ready()?.context.parser.columns ?? []).filter((column) =>
+      columnCapability(column.name)?.groupable
+    );
+
+  const existingGroupByIsEditable = () =>
+    (ready()?.analysis.group_by ?? []).every((column) =>
+      columnCapability(column)?.groupable
+    );
+
+  const existingAggregatesAreEditable = () =>
+    (ready()?.analysis.aggregates ?? []).every(aggregateIsEditable);
+
+  const aggregateRowsValid = () => {
+    if (!aggregates().every(aggregateIsEditable)) return false;
+    const current = ready();
+    if (!current || aggregates().length === 0) return true;
+    const projection = current.analysis.projection;
+    return projection.includes("*") ||
+      projection.every((column) => groupByColumns().includes(column));
+  };
+
+  const aggregateOperationValid = () =>
+    aggregateRowsValid() &&
+    (aggregates().length > 0 ||
+      (ready()?.analysis.aggregates.length ?? 0) > 0);
+
+  const groupByRowsValid = () => {
+    const selected = groupByColumns();
+    const current = ready();
+    if (
+      !current || new Set(selected).size !== selected.length ||
+      !selected.every((column) =>
+        groupableColumns().some((item) => item.name === column)
+      )
+    ) return false;
+    const projection = current.analysis.projection;
+    if (projection.includes("*")) {
+      // Wildcard projection cannot be safely reconciled with selected group
+      // keys. Clearing an existing group is safe when no aggregate remains.
+      return selected.length === 0 &&
+        current.analysis.aggregates.length === 0;
+    }
+    return current.analysis.aggregates.length === 0 &&
+        selected.length === 0 ||
+      projection.every((column) => selected.includes(column));
+  };
+
+  const distinctProjectionIsEditable = () => {
+    const current = ready();
+    if (!current) return false;
+    // Turning DISTINCT off is a safe structural simplification even if the
+    // existing projection has no trusted comparable type metadata.
+    if (current.analysis.distinct) return true;
+    const projected = current.analysis.projection.includes("*")
+      ? current.context.parser.columns.map((column) => column.name)
+      : current.analysis.projection;
+    return projected.every((column) => {
+      const capability = current.context.columnCapabilities[column];
+      return capability?.projectable && capability.distinctable;
+    }) && existingGroupByIsEditable() && existingAggregatesAreEditable();
+  };
+
   const hasEditableCapabilities = (action: StructureAction): boolean => {
     const current = ready();
     if (!current) return false;
@@ -240,11 +356,33 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
         )
       );
     }
-    return current.context.parser.columns.some((column) =>
-      current.context.columnCapabilities[column.name]?.sortable &&
-      ["string", "boolean", "integer", "float", "date", "timestamp", "decimal"]
-        .includes(column.type)
-    );
+    if (action === "sort") {
+      return current.context.parser.columns.some((column) =>
+        current.context.columnCapabilities[column.name]?.sortable &&
+        [
+          "string",
+          "boolean",
+          "integer",
+          "float",
+          "date",
+          "timestamp",
+          "decimal",
+        ].includes(column.type)
+      );
+    }
+    if (action === "aggregate") {
+      return aggregateFunctionsAvailable().length > 0 &&
+        existingAggregatesAreEditable() && existingGroupByIsEditable();
+    }
+    if (action === "group_by") {
+      const projection = current.analysis.projection;
+      const projectionCanBeGrouped = !projection.includes("*") ||
+        (current.analysis.group_by.length > 0 &&
+          current.analysis.aggregates.length === 0);
+      return projectionCanBeGrouped && groupableColumns().length > 0 &&
+        existingGroupByIsEditable() && existingAggregatesAreEditable();
+    }
+    return distinctProjectionIsEditable();
   };
 
   useDialogFocus(() => activeAction() !== null, {
@@ -276,6 +414,12 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
       parameter: filter.parameter ?? "",
     })));
     setSorts(current.analysis.order_by.map((sort) => ({ ...sort })));
+    setAggregates(current.analysis.aggregates.map((aggregate) => ({
+      ...aggregate,
+      ...(aggregate.alias ? { alias: { ...aggregate.alias } } : {}),
+    })));
+    setGroupByColumns([...current.analysis.group_by]);
+    setSelectDistinct(current.analysis.distinct);
     setActiveAction(action);
   };
 
@@ -381,12 +525,95 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     }]);
   };
 
+  const addAggregate = () => {
+    setAggregates((items) => [...items, {
+      function: "count",
+      distinct: false,
+    }]);
+  };
+
+  const updateAggregateFunction = (
+    index: number,
+    fn: SqlStructureAggregateFunction,
+  ) => {
+    setAggregates((items) =>
+      items.map((item, itemIndex) => {
+        if (index !== itemIndex) return item;
+        let column = item.column;
+        let distinct = item.distinct;
+        const validColumns = aggregateColumnsFor(fn, distinct);
+        if (
+          (!column && fn !== "count") ||
+          (column &&
+            !validColumns.some((candidate) => candidate.name === column))
+        ) {
+          const fallback = validColumns[0] ??
+            (distinct ? aggregateColumnsFor(fn)[0] : undefined);
+          column = fallback?.name;
+          if (distinct && !fallback?.distinctable) distinct = false;
+        }
+        if (fn === "count" && !column) distinct = false;
+        const next: SqlStructureAggregate = {
+          ...item,
+          function: fn,
+          distinct,
+        };
+        if (column) next.column = column;
+        else delete next.column;
+        return next;
+      })
+    );
+  };
+
+  const updateAggregateColumn = (index: number, columnName: string) => {
+    const column = columnName || undefined;
+    setAggregates((items) =>
+      items.map((item, itemIndex) => {
+        if (index !== itemIndex) return item;
+        const next: SqlStructureAggregate = {
+          ...item,
+          distinct: item.distinct && Boolean(
+            column && columnCapability(column)?.distinctable,
+          ),
+        };
+        if (column) next.column = column;
+        else delete next.column;
+        return next;
+      })
+    );
+  };
+
+  const updateAggregateDistinct = (index: number, distinct: boolean) => {
+    setAggregates((items) =>
+      items.map((item, itemIndex) => {
+        if (index !== itemIndex) return item;
+        const capability = item.column
+          ? columnCapability(item.column)
+          : undefined;
+        return {
+          ...item,
+          distinct: Boolean(
+            distinct && item.column && capability?.distinctable,
+          ),
+        };
+      })
+    );
+  };
+
+  const toggleGroupByColumn = (column: string, selected: boolean) => {
+    setGroupByColumns((current) =>
+      selected
+        ? current.includes(column) ? current : [...current, column]
+        : current.filter((item) => item !== column)
+    );
+  };
+
   const applyOperation = async () => {
     const current = ready();
     const action = activeAction();
     if (!current || !action || actionDisabled(action) || busy()) return;
-    const operation = action === "columns"
-      ? { kind: "set_columns" as const, columns: selectedColumns() }
+    const operation: SqlStructureOperation = action === "columns"
+      ? { kind: "set_columns", columns: selectedColumns() }
       : action === "filter"
       ? {
         kind: "set_filters" as const,
@@ -398,14 +625,26 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
             : { parameter: filter.parameter }),
         })),
       }
-      : {
-        kind: "set_sort" as const,
+      : action === "sort"
+      ? {
+        kind: "set_sort",
         order_by: sorts().map((sort): SqlStructureSort => ({ ...sort })),
-      };
+      }
+      : action === "aggregate"
+      ? {
+        kind: "set_aggregates",
+        aggregates: aggregates().map((aggregate) => ({ ...aggregate })),
+      }
+      : action === "group_by"
+      ? { kind: "set_group_by", columns: groupByColumns() }
+      : { kind: "set_distinct", distinct: selectDistinct() };
     if (
       action === "columns" && selectedColumns().length === 0 ||
       action === "filter" && !filterRowsValid() ||
-      action === "sort" && !sortRowsValid()
+      action === "sort" && !sortRowsValid() ||
+      action === "aggregate" && !aggregateOperationValid() ||
+      action === "group_by" && !groupByRowsValid() ||
+      action === "distinct" && !distinctProjectionIsEditable()
     ) return;
 
     const baseSql = props.sql();
@@ -480,8 +719,25 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
       : "";
   };
 
+  const operationBlockedReason = () => {
+    if (activeAction() === "aggregate" && !aggregateOperationValid()) {
+      return t("sqlPage.structure.addAggregateFirst");
+    }
+    if (activeAction() === "group_by" && !groupByRowsValid()) {
+      return t("sqlPage.structure.groupProjectedColumns");
+    }
+    return undefined;
+  };
+
   createEffect(() => {
-    const actions = (["columns", "filter", "sort"] as const).map(
+    const actions = ([
+      "columns",
+      "filter",
+      "sort",
+      "aggregate",
+      "group_by",
+      "distinct",
+    ] as const).map(
       (action): SQLWorkspaceAction => {
         const label = actionLabel(action);
         const reason = actionReason(action);
@@ -788,6 +1044,178 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                       </button>
                     </div>
                   </Show>
+
+                  <Show when={activeAction() === "aggregate"}>
+                    <div class="sql-structure-aggregate-list">
+                      <For each={aggregates()}>
+                        {(aggregate, index) => {
+                          const functions = () =>
+                            aggregateFunctionsAvailable().includes(
+                                aggregate.function,
+                              )
+                              ? aggregateFunctionsAvailable()
+                              : [
+                                aggregate.function,
+                                ...aggregateFunctionsAvailable(),
+                              ];
+                          const columns = () => {
+                            const allowed = aggregateColumnsFor(
+                              aggregate.function,
+                              aggregate.distinct,
+                            ).map((column) => column.name);
+                            return aggregate.column &&
+                                !allowed.includes(aggregate.column)
+                              ? [aggregate.column, ...allowed]
+                              : allowed;
+                          };
+                          const distinctable = () =>
+                            Boolean(
+                              aggregate.column &&
+                                columnCapability(aggregate.column)
+                                  ?.distinctable,
+                            );
+                          return (
+                            <div
+                              class={`sql-structure-aggregate-row${
+                                aggregate.column
+                                  ? ""
+                                  : " sql-structure-aggregate-row--count-all"
+                              }`}
+                            >
+                              <label class="ui-field">
+                                <span>{t("sqlPage.structure.function")}</span>
+                                <select
+                                  class="ui-input"
+                                  value={aggregate.function}
+                                  onChange={(event) =>
+                                    updateAggregateFunction(
+                                      index(),
+                                      event.currentTarget
+                                        .value as SqlStructureAggregateFunction,
+                                    )}
+                                >
+                                  <For each={functions()}>
+                                    {(fn) => (
+                                      <option value={fn}>
+                                        {t(`sqlPage.structure.aggregate.${fn}`)}
+                                      </option>
+                                    )}
+                                  </For>
+                                </select>
+                              </label>
+                              <Show
+                                when={aggregate.function !== "count" ||
+                                  aggregate.column}
+                              >
+                                <label class="ui-field">
+                                  <span>{t("sqlPage.structure.column")}</span>
+                                  <select
+                                    class="ui-input"
+                                    value={aggregate.column ?? ""}
+                                    disabled={columns().length === 0}
+                                    onChange={(event) =>
+                                      updateAggregateColumn(
+                                        index(),
+                                        event.currentTarget.value,
+                                      )}
+                                  >
+                                    <Show when={aggregate.function === "count"}>
+                                      <option value="">
+                                        {t("sqlPage.structure.allRows")}
+                                      </option>
+                                    </Show>
+                                    <For each={columns()}>
+                                      {(name) => (
+                                        <option value={name}>{name}</option>
+                                      )}
+                                    </For>
+                                  </select>
+                                </label>
+                              </Show>
+                              <Show when={aggregate.column}>
+                                <label class="sql-structure-option sql-structure-aggregate-distinct">
+                                  <input
+                                    type="checkbox"
+                                    checked={aggregate.distinct}
+                                    disabled={!distinctable()}
+                                    onChange={(event) =>
+                                      updateAggregateDistinct(
+                                        index(),
+                                        event.currentTarget.checked,
+                                      )}
+                                  />
+                                  <span>
+                                    {t("sqlPage.structure.distinctArgument")}
+                                  </span>
+                                </label>
+                              </Show>
+                              <IconButton
+                                icon="trash"
+                                label={t("sqlPage.structure.removeAggregate")}
+                                onClick={() =>
+                                  setAggregates((items) =>
+                                    items.filter((_, i) => i !== index())
+                                  )}
+                              />
+                            </div>
+                          );
+                        }}
+                      </For>
+                      <button
+                        type="button"
+                        class="ui-button ui-button-secondary"
+                        onClick={addAggregate}
+                      >
+                        {t("sqlPage.structure.addAggregate")}
+                      </button>
+                    </div>
+                  </Show>
+
+                  <Show when={activeAction() === "group_by"}>
+                    <fieldset class="sql-structure-column-list">
+                      <legend class="ui-sr-only">
+                        {t("sqlPage.structure.groupBy")}
+                      </legend>
+                      <For
+                        each={[
+                          ...new Set([
+                            ...groupByColumns(),
+                            ...groupableColumns().map((column) => column.name),
+                          ]),
+                        ]}
+                      >
+                        {(name) => (
+                          <label class="sql-structure-option">
+                            <input
+                              type="checkbox"
+                              checked={groupByColumns().includes(name)}
+                              disabled={!groupableColumns().some((column) =>
+                                column.name === name
+                              )}
+                              onChange={(event) =>
+                                toggleGroupByColumn(
+                                  name,
+                                  event.currentTarget.checked,
+                                )}
+                            />
+                            <span>{name}</span>
+                          </label>
+                        )}
+                      </For>
+                    </fieldset>
+                  </Show>
+
+                  <Show when={activeAction() === "distinct"}>
+                    <label class="sql-structure-option">
+                      <input
+                        type="checkbox"
+                        checked={selectDistinct()}
+                        onChange={(event) =>
+                          setSelectDistinct(event.currentTarget.checked)}
+                      />
+                      <span>{t("sqlPage.structure.selectDistinct")}</span>
+                    </label>
+                  </Show>
                 </div>
               }
             >
@@ -838,7 +1266,18 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                       activeAction() === "columns" &&
                       selectedColumns().length === 0
                     ) || (activeAction() === "filter" && !filterRowsValid()) ||
-                      (activeAction() === "sort" && !sortRowsValid())}
+                      (activeAction() === "sort" && !sortRowsValid()) ||
+                      (activeAction() === "aggregate" &&
+                        !aggregateOperationValid()) ||
+                      (activeAction() === "group_by" && !groupByRowsValid()) ||
+                      (activeAction() === "distinct" &&
+                        !distinctProjectionIsEditable())}
+                    aria-label={operationBlockedReason()
+                      ? `${
+                        t("sqlPage.structure.previewChange")
+                      }: ${operationBlockedReason()}`
+                      : undefined}
+                    title={operationBlockedReason()}
                     aria-busy={busy() || undefined}
                   >
                     {busy()

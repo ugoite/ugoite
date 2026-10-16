@@ -35,6 +35,7 @@ const context: SqlStructureAdapterContext = {
     columns: [
       { name: "_ugoite_id", type: "string" },
       { name: "amount", type: "integer" },
+      { name: "category", type: "string" },
       { name: "private_note", type: "string" },
     ],
     variables: [{ name: "threshold", type: "integer" }],
@@ -46,18 +47,36 @@ const context: SqlStructureAdapterContext = {
       filterable: true,
       sortable: true,
       supportedOperators: ["eq"],
+      aggregateFunctions: ["count", "min", "max"],
+      groupable: true,
+      distinctable: true,
     },
     amount: {
       projectable: true,
       filterable: true,
       sortable: true,
       supportedOperators: ["eq", "gt"],
+      aggregateFunctions: ["count", "sum", "avg", "min", "max"],
+      groupable: true,
+      distinctable: true,
+    },
+    category: {
+      projectable: true,
+      filterable: true,
+      sortable: true,
+      supportedOperators: ["eq"],
+      aggregateFunctions: ["count", "min", "max"],
+      groupable: true,
+      distinctable: true,
     },
     private_note: {
       projectable: false,
       filterable: false,
       sortable: false,
       supportedOperators: [],
+      aggregateFunctions: [],
+      groupable: false,
+      distinctable: false,
     },
   },
 };
@@ -67,6 +86,9 @@ const analysis: SqlStructureAnalysis = {
   status: "supported",
   projection: ["*"],
   filters: [],
+  aggregates: [],
+  group_by: [],
+  distinct: false,
   order_by: [{ column: "_ugoite_id", direction: "asc" }],
   referenced_variables: [],
   stable_pagination: true,
@@ -74,6 +96,9 @@ const analysis: SqlStructureAnalysis = {
     columns: { enabled: true },
     filter: { enabled: true },
     sort: { enabled: true },
+    aggregate: { enabled: true },
+    group_by: { enabled: true },
+    distinct: { enabled: true },
     stable_pagination: { enabled: true },
   },
 };
@@ -107,7 +132,7 @@ describe("SqlStructureToolbar adapter", () => {
       />
     ));
 
-    await waitFor(() => expect(actions).toHaveLength(3));
+    await waitFor(() => expect(actions).toHaveLength(6));
     await waitFor(() =>
       expect(actions.find((action) => action.kind === "columns")?.disabled)
         .toBe(false)
@@ -115,6 +140,12 @@ describe("SqlStructureToolbar adapter", () => {
     expect(actions.find((action) => action.kind === "filter")?.disabled).toBe(
       false,
     );
+    expect(actions.find((action) => action.kind === "aggregate")?.disabled)
+      .toBe(false);
+    expect(actions.find((action) => action.kind === "group_by")?.disabled)
+      .toBe(true);
+    expect(actions.find((action) => action.kind === "distinct")?.disabled)
+      .toBe(true);
 
     actions.find((action) => action.kind === "columns")!.onActivate();
     const dialog = screen.getByRole("dialog", { name: "Columns" });
@@ -266,5 +297,154 @@ describe("SqlStructureToolbar adapter", () => {
         filters: [{ column: "amount", operator: "is_null" }],
       },
     );
+  });
+
+  it("proposes a type-gated SUM DISTINCT and applies only after confirmation", async () => {
+    const sql = 'SELECT * FROM "Orders"';
+    const onSqlChange = vi.fn();
+    let actions: readonly SQLWorkspaceAction[] = [];
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [context]}
+        onSqlChange={onSqlChange}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "aggregate")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "aggregate")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Aggregate" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add aggregate" }),
+    );
+    fireEvent.change(within(dialog).getByLabelText("Function"), {
+      target: { value: "sum" },
+    });
+    const distinct = within(dialog).getByLabelText("Distinct values");
+    expect(distinct).toBeEnabled();
+    fireEvent.click(distinct);
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(proposeMock).toHaveBeenCalledWith(
+      sql,
+      context.parser,
+      {
+        kind: "set_aggregates",
+        aggregates: [{
+          function: "sum",
+          column: "amount",
+          distinct: true,
+        }],
+      },
+    );
+    expect(onSqlChange).not.toHaveBeenCalled();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Apply change" }),
+    );
+    expect(onSqlChange).toHaveBeenCalledOnce();
+  });
+
+  it("proposes only capability-approved GROUP BY keys and SELECT DISTINCT", async () => {
+    const sql = 'SELECT "amount" FROM "Orders"';
+    analyzeMock.mockResolvedValue({ ...analysis, projection: ["amount"] });
+    let actions: readonly SQLWorkspaceAction[] = [];
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [context]}
+        onSqlChange={vi.fn()}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "group_by")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "group_by")!.onActivate();
+    const groupDialog = screen.getByRole("dialog", { name: "Group by" });
+    const amountKey = within(groupDialog).getByLabelText("amount");
+    expect(within(groupDialog).queryByLabelText("private_note")).toBeNull();
+    fireEvent.click(amountKey);
+    fireEvent.click(
+      within(groupDialog).getByRole("button", { name: "Review change" }),
+    );
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(proposeMock).toHaveBeenCalledWith(
+      sql,
+      context.parser,
+      { kind: "set_group_by", columns: ["amount"] },
+    );
+
+    fireEvent.click(
+      within(groupDialog).getByRole("button", { name: "Cancel" }),
+    );
+    actions.find((action) => action.kind === "distinct")!.onActivate();
+    const distinctDialog = screen.getByRole("dialog", {
+      name: "Distinct",
+    });
+    fireEvent.click(
+      within(distinctDialog).getByLabelText("Select distinct rows"),
+    );
+    fireEvent.click(
+      within(distinctDialog).getByRole("button", { name: "Review change" }),
+    );
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledTimes(2));
+    expect(proposeMock).toHaveBeenLastCalledWith(
+      sql,
+      context.parser,
+      { kind: "set_distinct", distinct: true },
+    );
+  });
+
+  it("keeps typed actions gated without trusted type metadata", async () => {
+    const untrustedContext: SqlStructureAdapterContext = {
+      ...context,
+      columnCapabilities: Object.fromEntries(
+        Object.entries(context.columnCapabilities).map(([name, value]) => [
+          name,
+          {
+            ...value,
+            aggregateFunctions: [],
+            groupable: false,
+            distinctable: false,
+          },
+        ]),
+      ),
+    };
+    analyzeMock.mockResolvedValue({ ...analysis, projection: ["amount"] });
+    let actions: readonly SQLWorkspaceAction[] = [];
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => 'SELECT "amount" FROM "Orders"'}
+        contexts={() => [untrustedContext]}
+        onSqlChange={vi.fn()}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "aggregate")?.disabled)
+        .toBe(false)
+    );
+    expect(actions).toHaveLength(6);
+    for (const kind of ["group_by", "distinct"] as const) {
+      expect(actions.find((action) => action.kind === kind)?.disabled).toBe(
+        true,
+      );
+    }
+    actions.find((action) => action.kind === "aggregate")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Aggregate" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add aggregate" }),
+    );
+    expect(within(dialog).getByLabelText("Function")).toHaveValue("count");
+    expect(within(dialog).queryByRole("option", { name: "SUM" })).toBeNull();
   });
 });

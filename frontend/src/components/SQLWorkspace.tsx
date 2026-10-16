@@ -23,6 +23,9 @@ export type SQLWorkspaceActionKind =
   | "columns"
   | "filter"
   | "sort"
+  | "aggregate"
+  | "group_by"
+  | "distinct"
   | "structure"
   | "variables";
 
@@ -32,7 +35,15 @@ export type SQLWorkspaceActionKind =
  */
 export interface SQLWorkspaceAction {
   kind: SQLWorkspaceActionKind;
-  icon: "columns" | "filter" | "sort" | "appearance" | "sql";
+  icon:
+    | "columns"
+    | "filter"
+    | "sort"
+    | "aggregate"
+    | "group-by"
+    | "distinct"
+    | "appearance"
+    | "sql";
   label: string;
   disabled?: boolean;
   disabledReason?: string;
