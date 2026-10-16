@@ -1,300 +1,61 @@
 ---
-title: "Composition acceptance plan"
+title: "SQL-first Composition acceptance plan"
 ---
 
-This document defines the Composition acceptance meaning: the selector and
-boundary inventory, the evidence recording method, and the
-recovery/authorization expectations. Mitase records implementation status for
-Composition Requirements and Features
-(`docs/mitase/requirements/composition` and
-`docs/mitase/features/composition/`); this document carries no plan
-status. The portable list, get,
-history, lint, resolve, save, and restore operations are implemented, as are
-the CLI list, history, inspect, lint, query, export, save, import, and restore
-commands. This does not claim complete cross-surface CLI parity or that all
-Browser acceptance selectors pass.
-The Rust domain parser and Core resolver have focused implementation and test
-evidence, documented below and bound in the Mitase feature. The current
-structured locator map is
-[`e2e/fixtures/composition/acceptance-plan.json`](../../../e2e/fixtures/composition/acceptance-plan.json).
+This is the planned acceptance matrix for the SQL-first Composition v1 target.
+It records what implementation slices must prove; it does not claim that any
+target behavior, focused validation, Browser journey, mobile check, or
+assistive-technology check has passed. The prior implementation evidence is
+preserved in the [prereplacement snapshot](history/composition-prereplacement-acceptance.md)
+and is not current acceptance.
 
-## Contract and evidence boundary
+The normative document shape is in the [Composition contract](../contracts/composition.md)
+and [ADR-024](../contracts/adr-024-composition-sql-first.md). The canonical
+Composition and workspace requirements are `REQ-COMP-008`, `REQ-FE-079`, and
+`REQ-FE-080`; their Feature bindings locate the planned documents and later
+implementation evidence.
 
-Mitase records implementation status for Composition Requirements and
-Features; this document does not restate it. Focused domain and
-Core resolver tests
-are bound in `docs/mitase/features/composition/`; they establish those Rust
-contracts only. The reserved selectors in the locator map are not Mitase
-verification bindings until the corresponding integration tests run. The D0
-check validates the map, fixture presence, selector inventory, and recorded
-JUnit artifact integrity. Playwright `--list` separately confirms test
-discovery.
+## Acceptance matrix
 
-The canonical monthly-expense YAML document is shared with the domain fixture
-set. Two small raw-payload candidates now cover an unsupported format version
-and a missing Form reference. They use the merged typed document shape but are
-not resolver or persistence evidence. Domain tests cover the restricted parser,
-measured resource limits, canonicalization, and fingerprint semantics.
-Native/WASM parity is verified by the Domain and WASM test suites; in
-particular, `composition_canonicalization_matches_the_native_domain_contract`
-compares WASM documents, canonical YAML, fingerprints, and diagnostic codes
-with the native Domain contract. See the
-[Composition contract](../contracts/composition.md) and its referenced parser
-fixtures. The E2E seed manifest at
-`e2e/fixtures/composition/space-seed/manifest.json` now supplies the server
-seed, expected result counts, save-retry outcome, and Browser selectors. The
-Playwright journey consumes it as test input. Its existence and selector
-binding alone do not record a runtime pass. Scoped Browser journeys have
-executed; their source and candidate commits, commands, results, and
-artifacts are recorded as historical runs in
-`e2e/fixtures/composition/evidence-archive.json` (see Run evidence below).
+| Boundary | Required evidence | Current evidence state |
+| --- | --- | --- |
+| Canonical document | Native and WASM parsing agree on one strict v1 envelope, canonical YAML, fingerprint, and diagnostics. `inline_sql` and `saved_sql` are the only source variants. Unknown old `entry_query`, root `tags`, and Composition-owned `label` fields are rejected. | Unverified; implementation is pending. |
+| Inline SQL identity | Lint/save derives relation-to-Form-ID bindings on the server, persists the ordered result descriptor and fingerprint, and never trusts client-supplied Form bindings. A Form rename keeps the exact bound ID; deletion or loss of access fails closed. | Unverified; implementation is pending. |
+| Saved SQL identity | A Composition pins one exact Saved SQL Entry and revision, carries typed parameter mappings and the expected result descriptor, and never follows latest or copies the query body. Typed Saved SQL defaults remain Saved SQL authoring data; Composition defaults are copied only by an explicit user action. | Unverified; implementation is pending. |
+| Query and Metric behavior | Tables and Metrics share one resolved SQL source result. Metrics use one declared scalar column and distinguish zero rows, one-row `NULL`, numeric zero, multiple rows, type mismatch, and access denial without browser aggregation or an implicit `LIMIT 1`. Existing SQL paging, count, cancellation, resource bounds, and current authorization remain in force. | Unverified; implementation is pending. |
+| Knowledge and recovery | Save creates an append-only Entry revision with the existing receipt and stale-write behavior. Resolve selects the exact Composition revision. Unsupported or invalid stored bytes remain available through raw inspection, export, and history; those paths do not make a prereplacement document executable. Runtime input, result, paging, and drawer state remain transient Work. | Unverified for the replacement; existing general Entry contracts remain separate. |
+| Shared SQL Workspace | `/sql/new`, Saved SQL detail/edit, and inline Composition SQL use the shared workspace contract. Structured actions round-trip only supported syntax, direct SQL remains authoritative, and destructive structured rewrites require explicit diff confirmation. Preview count and paging are explicit. | Unverified; implementation is pending. |
+| Composition Studio | Form selection creates editable inline SQL such as `SELECT * FROM "G"` without inserting `LIMIT 50`. The desktop source rail and narrow-screen drawer support keyboard operation. Design components use semantic values without editable labels or tags. Steady state relies on structure, names, and accessible icon actions rather than explanatory copy or decorative cards. | Unverified; implementation is pending. |
 
-## Resolver implementation evidence
+## Required journey evidence
 
-The Rust Core resolver binds typed parameters and compiles `entry_query`
-sources into the existing bounded EntryQuery request. It compiles `saved_sql`
-sources against the exact current Entry and Revision descriptor, binds the
-declared variables, and fingerprints the ordered result descriptor, used
-variable schema, exact revision, and selected metric column. A missing or
-mismatched current Saved SQL descriptor does not trigger a latest-revision
-fallback. These behaviors have focused Core tests recorded in the Mitase
-feature bindings.
+After the Domain/Core/API slices land, focused evidence must cover strict
+replacement parsing, binding derivation, ordered descriptor and fingerprint
+drift, exact Saved SQL revision and typed parameters, scalar cardinality,
+authorization changes, and bounded SQL execution. Native and WASM must share
+canonical output and diagnostics. A draft that cannot resolve a trusted
+descriptor must remain invalid and repairable rather than persisting guessed
+schema.
 
-Metric component bindings use the source's typed field or result-column
-descriptor. The Core page adapters validate one already-authorized page as one
-complete row with exactly one selected scalar value, using the shared Domain
-evaluator. They do not execute a query, fetch another page, or aggregate rows.
-This is source-level resolver and page-validation evidence; it does not prove
-that CLI or Browser query orchestration, result rendering, or the Golden Journey
-is complete.
+After the workspace and Studio slices land, browser journeys must cover Form to
+inline SQL, Saved SQL revision pinning, direct SQL edits and structured action
+gating, explicit preview paging/count, save and reopen, stale-write recovery,
+history inspection, responsive drawer behavior, and accessible keyboard
+interaction. Mobile-width and assistive-technology checks remain explicit
+acceptance items; no UI success is inferred from static specifications or
+mocked operations.
 
-## CLI acceptance shape
+The final cross-surface lane must exercise the same Space-owned Composition
+through CLI and Browser, including raw recovery after an invalid or
+prereplacement document is encountered. Existing Saved SQL, Form, Entry,
+general SQL, API, and authorization behavior must retain its established
+meaning. Required CI and each journey result must be recorded against the exact
+candidate commit before the corresponding acceptance claim is promoted.
 
-The current CLI command surface includes:
+## Explicit evidence gaps
 
-- `ugoite composition list`
-- `ugoite composition history <id>`
-- `ugoite composition inspect <id> [--revision] [--raw]`
-- `ugoite composition export <id> --output <path> [--revision <id>]`
-- `ugoite composition restore <id> --revision <source> --base-revision <current> --idempotency-key <key>`
-- `ugoite composition import <file> --idempotency-key <key>`
-- `ugoite composition save <file> --idempotency-key <key>`
-- `ugoite composition save <file> --composition-id <id> --base-revision <revision> --idempotency-key <key>`
-- `ugoite composition lint <file>`
-- `ugoite composition query <id> [--revision] [--var id=value]...`; use `--var id=` to explicitly unset a variable and bypass its default.
-
-`composition list` reads one bounded page in local Core or remote mode. Its
-default page size is 100 with offset 0; `--limit` and `--offset` select a
-different page. It returns the portable summary DTO and does not load the
-stored YAML spec. CLI list and structured inspect output are JSON; inspect
-`--raw` writes the stored spec value. Offline lint returns its canonicalization
-or diagnostic result as JSON.
-
-`composition history` reads the raw append-only revision page in local Core or
-remote mode. Its default page size is 100 with offset 0; `--limit` and
-`--offset` select a different page. It returns the shared
-`CompositionHistoryPage` JSON, including each raw revision carrier without
-parsing its stored spec.
-
-`composition export` reuses `composition.get` to read the latest or requested
-exact raw revision and writes the stored `spec` value to a new local file. It
-does not parse or re-canonicalize the document, so unsupported versions and
-broken source references remain exportable. A missing exact revision does not
-fall back to latest, and an existing output file is left untouched. The command
-returns a JSON receipt with the Composition, revision, output path, and byte
-count. Export is CLI file output over `composition.get`, not a separate
-portable operation or REST route.
-
-`composition import` always creates a new Space-owned Composition. `composition
-save` creates when both revision preconditions are omitted and updates only when
-`--composition-id` and `--base-revision` are supplied together. Both commands
-validate through the shared Domain parser before mutation, publish canonical
-YAML through local Core or the existing `composition.save` operation, and
-return the save response with its publication receipt. Repeating the same
-`--idempotency-key` with the same file and update preconditions recovers an
-uncertain result; an update with a stale base remains a conflict.
-
-Focused CLI tests cover bounded local list and history pages, remote operation
-request and response decoding, summary output shape, exact-revision inspect,
-shared lint diagnostics, exact raw export with missing-revision and no-overwrite
-coverage, and exact Composition restore with receipt, replay, stale-base, and
-local/remote parity assertions. A real CLI-process integration journey also
-compares Core and Remote exact-revision inspect, a parameterized `entry_query`,
-and exact raw export against the same filesystem-backed Space; it verifies
-matching JSON/result meaning, byte-identical exported specs, and unchanged
-Composition history. This is scoped read-path parity evidence: it does not
-cover every CLI command, saved-SQL query execution through the CLI, or a
-release candidate. The journey publishes a distinct later revision and
-exercises the older exact revision throughout, so explicit older-revision
-selection is covered (issue #3681 closed by that journey). Unknown-version
-and broken-reference raw recovery are covered by their own dedicated
-Core/Remote journeys with byte-identity and stable-diagnostic parity. Full
-cross-surface list/get/history acceptance and
-complete CLI parity are outside that scoped evidence. History
-and restore preserve append-only revisions, and save success must wait for the
-Entry receipt. Raw
-inspect, export, and history must remain available for unknown versions,
-malformed documents, and broken references. Query must invoke the existing
-resolved query path and preserve paged results. Core and remote modes must
-agree on output meaning across the complete command set.
-
-## Browser Golden Journey shape
-
-With model connection disabled, the seeded Browser journey creates the Space,
-source entries, and a parameterized Saved SQL query through the existing server
-APIs. The user saves the successful query as a tool through the Browser dialog.
-The E2E delays and interrupts the first save response after the server commits,
-then retries with the same `Idempotency-Key`; the replayed receipt and revision
-must match the first commit and history must contain one publication. A fresh
-Browser context rediscovers that exact revision from Home and applies the
-Composition's declared parameter defaults. It changes its parameters and reads
-bounded result pages through the existing query path. Page, scroll, result,
-continuation, and cache state remain transient Work and are not saved with the
-Composition.
-
-When implementing the surface, follow the existing Mitase UI contract:
-structure comes before explanation, each datum has one visible owner, and
-each action has one operative control. Supplementary text is used only to
-resolve ambiguity about the next action. Composition table components
-delegate presentation to the source-native Entry or SQL result presenter.
-Composition does not implement a third generic table grammar, and source
-query semantics remain unchanged. A metric displays the one scalar returned
-by the query engine without aggregating rows in the Browser.
-
-Save as tool covers Form-scoped EntryQuery views and exact Saved SQL
-revisions through the same dialog, receipt, and retry contract. All-Forms
-Search (`/search`, All scope) carries no `form_id`, so the v1 EntryQuery
-source grammar cannot express it: the action stays disabled fail-closed with
-an accessible reason instead of approximating a Form scope.
-
-## API/server implementation locator
-
-The portable operation inventory is mirrored by
-`crates/ugoite-api-client/src/lib.rs` and
-`frontend/src/lib/ugoite-client/protocol.ts`; operation preparation and decode
-tests must change with both inventories. Server handlers and `/openapi.json`
-remain the HTTP implementation and contract. Composition handlers must delegate
-authorization and behavior through the existing service boundary. The D1
-operation names are listed in the fixture acceptance map. `composition.get`
-currently reads the latest raw revision or an exact revision when `revision_id`
-is supplied, and `composition.history` reads a bounded raw history page.
-Their wire response DTOs are owned by `ugoite-api-client`; the Server converts
-the storage reader result at its adapter boundary. `composition.lint` now
-validates and canonicalizes a submitted document through the shared Rust domain
-parser at `POST /compositions/lint`. It reads and writes no Space state, returns
-the normalized document, canonical YAML, and fingerprint on success, and a
-stable diagnostic code on failure. Its request body is bounded and the parser
-enforces the 64 KiB YAML limit. `composition.list` now returns one bounded,
-ACL-authorized summary page through the portable operation and server route;
-the CLI uses this operation in remote mode and the matching local Core reader
-in local mode. The list DTO omits `spec`. CLI history uses the portable
-`composition.history` operation remotely and the local raw history reader in
-local mode. Resolve is available as a side-effect-free operation, and
-`composition.save` and `composition.restore` are exposed by the Server API
-with publication receipts. CLI save, import, and restore commands are
-implemented with focused Core/Remote journey evidence (see the CLI acceptance
-shape above); full cross-surface restore acceptance is outside that scoped
-evidence. The
-Core resolver returns requests for the existing query path; it does not itself
-execute them. The
-scalar page adapters described above are tested Core functions and are not yet
-evidence of a complete CLI or Browser query journey.
-
-## Recovery and authorization acceptance
-
-The structured plan covers concealed direct Composition reads,
-the shared `source_unavailable` projection, current ACL checks after resolve
-and on every continuation page, exact raw recovery, append-only history and
-restore, generic-write protection, save-receipt reconciliation, and stale
-Browser request state. Storage and resolver selectors are bound now that
-those public contracts have settled. No DTO field names are
-reserved by this plan.
-
-The plan's `recovery_and_authorization.save_enablement` entry scopes
-`cross_surface_recovery_and_receipt_acceptance` and lists the write-guard
-and receipt-reconciliation prerequisites evidenced across storage, API, CLI,
-and Browser. The entry carries no `enabled` or status value and does not
-promote the release gate.
-It does not describe whether the Browser's “Save as tool” action is
-available. Browser availability and the passing save journeys are recorded
-separately from this broader acceptance gate.
-
-Generic Entry create, update, bulk, import, and restore paths cannot bypass
-Composition validation. The Server save operation returns the publication
-receipt that identifies the exact revision. The Browser save flow is
-implemented and covered by the seeded Golden Journey; CLI save and import are
-likewise implemented and covered by the focused Core/Remote import/save
-journeys. The write-guard and receipt-reconciliation evidence tracked by the
-`save_enablement` gate above spans storage unit tests, API idempotency,
-Core/Remote CLI replay, and Browser retry; whether the broader
-cross-surface acceptance is promoted is not decided by this document or gate.
-If a save response is lost, the outcome remains unknown until the exact
-revision is reconciled; retry idempotency is tracked separately.
-Generic restore of the reserved Form is denied while Composition-scoped restore
-validates and appends a new revision.
-
-Raw inspection, export, and history read the exact stored spec and revision
-metadata independently of strict typed parsing. The version probe runs before
-v1 deserialization. Unsupported versions, malformed documents, and broken
-source references remain recoverable even when they cannot execute.
-
-Direct missing and denied Composition reads preserve the same existing
-caller-visible generic error. Once a Composition read is authorized, missing
-and denied source references share `source_unavailable` without exposing source
-IDs or metadata. Resolve grants no query authorization: the existing query path
-rechecks current access during execution and each continuation page.
-
-The acceptance plan also reserves two real Browser/server cases: already
-visible Saved SQL Metric and Table data must disappear after the viewer's Form
-or Saved SQL Read access is revoked, and one live Browser must show the authorized
-Metric and Table results for the currently selected Space when variable, source,
-and component IDs are reused across Spaces. The exact revision is checked under
-owner and viewer principals. Revoking Form Read produces a generic execution
-error; revoking Saved SQL Read produces `source_unavailable`. In both cases,
-Metric and Table data clear before reload, replaying the earlier SQL request
-returns no data, and details the viewer is no longer authorized to read remain
-concealed. Form identity is concealed after Form Read revocation; Saved SQL
-identity and details are concealed after Saved SQL Read revocation. SQL text and
-protected result text remain concealed in both cases. These selectors do not
-count as runtime evidence until their
-Playwright run is recorded in the evidence archive.
-
-## Run evidence
-
-For every executed acceptance selector, record the exact source and candidate
-SHA, artifact digest, command, selector, surface, fixture, environment, result,
-artifact, and evidence gap. Keep each surface result separate. A static
-locator, mocked operation, or D0 plan check is not a Browser or real-server
-journey pass.
-
-Historical scoped runtime evidence is recorded in
-[`evidence-archive.json`](../../../e2e/fixtures/composition/evidence-archive.json).
-Each record describes one past run only; records do not assert current plan
-status and are not release verification. The archive holds the Browser golden
-save/reopen/paged-results journey (save retry after commit, exact-revision
-reopen from Home, parameterized paged results with model connection
-disabled), the Studio reactive-variable journey (Saved SQL variable bindings
-on the exact saved revision, direct variable-backed Text updates without a new
-SQL request, and default restoration without another Composition revision),
-the metric reopen journey (exact-revision metric scalar display
-and the stable multiple-rows diagnostic with no Browser aggregation), the
-stale-response journey (a late parameter-A response changes neither rows,
-metric, error, loading, finalization, nor pagination), the raw recovery and
-caller-visible contract journey, and the save-receipt reconciliation journey.
-The exact-revision navigation journey holds the first revision's authorized
-Metric response while the Browser follows Composition History to a later
-append-only revision, then verifies that releasing the old value cannot alter
-the later revision's result, error, or loading state. Its JUnit artifact
-records the complete required Composition Metric lane run, including the
-revision-navigation selector.
-Each record states its own gap; unexecuted selectors remain unverified. A
-representative performance baseline
-(`e2e/fixtures/composition/evidence/performance-baseline.json`, regression
-reference only, explicit gaps) is recorded separately. The separate scoped CLI
-journeys cover Core/Remote inspect, `entry_query`, and export read parity
-including an older-than-latest exact revision, broken-reference raw recovery
-with `source_unavailable` concealment, unsupported-version raw recovery,
-plus Core/Remote import/save receipts with prevalidation and restore
-receipt, replay, and stale-base paths.
-Exact-byte verification of a release candidate is a later phase; no
-release-candidate promotion is recorded here.
+No replacement Domain/Core/adapter implementation evidence is bound yet. No
+SQL-first Browser/server golden journey, mobile-width result, manual
+assistive-technology result, or cross-surface replacement run is recorded.
+The prereplacement snapshot contains historical observations only and cannot
+close any of these gaps.

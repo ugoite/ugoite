@@ -5,10 +5,11 @@ title: "ADR-023 — Typed reactive Composition variables"
 **Status: Accepted target for pre-release Composition; implementation pending.**
 This decision authorizes a breaking change to the unreleased Composition v1
 grammar. It does not authorize a product release. Its SQL and Metric boundary
-inherits ADR-022 and remains gated on the SQL-only Metric implementation.
-Because this makes previously saved Composition v1 documents non-executable,
-the first product version that may include this grammar is v0.3.0 or later; it
-must not ship in a v0.2.x patch release.
+inherits ADR-022. It does not select a product version or schedule a release.
+ADR-024 is now the normative source for the replacement v1 source and
+presentation grammar. ADR-023 continues to define typed variable parsing and
+reactive value ownership except where ADR-024 explicitly replaces those
+decisions.
 
 This ruling supersedes ADR-019 only where it requires parameters and parameter
 layout items, restricts Components to Text/Metric/Table, and forbids variable-
@@ -31,24 +32,17 @@ transient Work.
 
 ## Decision
 
-### 1. One canonical pre-release document grammar
+### 1. Original pre-release document grammar decision
 
-Keep the envelope at format_version 1, but make this the sole accepted
-Composition grammar before release:
-
-- spec.variables declares unique stable variable IDs, an explicit type,
-  required flag, optional typed default, optional human label, and an optional
-  display format hint.
-- spec.sources declares EntryQuery or an exact Saved SQL revision.
-- spec.components declares Input, Text, Table, and SQL-backed Metric.
-- spec.layout places every Component exactly once. Layout order is presentation
-  only and never defines execution order.
-
-Do not add readers, migrations, aliases, dual-write, or a deprecation window
-for spec.parameters, {parameter: ...} references, kind: parameter layout
-items, fixed-string-only Text, or the previous Metric grammar. Raw inspect,
-history, export, and recovery of an old Entry revision remain available; an
-old Composition is not executable through the new grammar.
+The original typed-variable ruling kept `format_version: 1`, declared unique
+stable variable IDs, required types and optional typed defaults, and put Input,
+Text, Table, Metric, and flow layout in one portable document. ADR-024 replaces
+its source and presentation details with the SQL-first v1 schema: variables do
+not have labels, and the only sources are inline SQL and exact Saved SQL
+revisions. ADR-024 also defines the replacement's strict reader and recovery
+boundary. This section records why typed reactive variables are part of the
+Composition model; its earlier EntryQuery and label wording is not a current
+schema requirement.
 
 This decision is limited to prerelease Composition. Existing Space, Entry,
 Form, Saved SQL, SQL API, authorization, history, and publication contracts
@@ -65,10 +59,10 @@ default; resolving a required unset returns `variable_missing` with the
 variable ID. The Browser keeps dependent Sources invalid, shows no prior page
 as current, and does not query those Sources until the variable is valid.
 
-An Input contains a component ID, a reference to one declared variable, and an
-optional display label. It stores no second value, arbitrary input type,
-setter, or event expression. Multiple Inputs may reference the same variable.
-Variable IDs are stable references, not primary UI labels.
+An Input contains a component ID and a reference to one declared variable. It
+stores no second value, display label, arbitrary input type, setter, or event
+expression. Multiple Inputs may reference the same variable. Variable IDs are
+stable references, not primary UI labels.
 
 #### 2.1 Typed Input values are bounded and locale-independent
 
@@ -214,9 +208,11 @@ Editing runtime input never creates an Entry revision or overwrites a default.
   infer domain or SQL types, parse another Composition grammar, or implement
   a second SQL engine.
 - Studio exposes declarations, Input placement, literal/variable Text choice,
-  and exact-type Saved SQL binding without requiring code. Primary labels use
-  resolved human names; internal IDs stay out of primary UI paths. Controls
-  remain keyboard and screen-reader operable at 390px.
+  and exact-type SQL variable binding without requiring code. Composition
+  source, variable, and component labels are not persisted; semantic names
+  remain available from the SQL object, SQL output, variable ID, and Text
+  content. Internal IDs stay out of primary UI paths. Controls remain keyboard
+  and screen-reader operable at 390px.
 
 ## Acceptance matrix
 

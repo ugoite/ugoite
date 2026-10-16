@@ -226,15 +226,6 @@ requirements:
                 criterion: REQ-API-015#criterion.checked-numeric-aggregates
                 covers: [FEAT-API-001#binding.sql-service-implementation/target.checked-numeric-aggregates]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts } }
-          - id: descriptor-passthrough
-            adapter: typescript
-            path: frontend/src/lib/composition-api.test.ts
-            selector: { kind: test, name: stores the server-owned column types unchanged and never infers from rows }
-            claims:
-              - kind: verifies
-                criterion: REQ-COMP-002#criterion.server-typed-result-descriptor
-                covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-composition-api]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-api.test.ts, test: stores the server-owned column types unchanged and never infers from rows } }
       - id: function-policy-verification
         role: verification
         facet: verification

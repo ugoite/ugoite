@@ -1,10 +1,11 @@
 version: "0.1"
-updated: "2026-10-09"
+updated: "2026-10-16"
 page:
   id: space-composition-edit
   title: Edit tool
   route: /spaces/{space_id}/compositions/{composition_id}/{revision_id}/edit
   implementation: implemented
+  contract_status: planned
 components:
   shared:
     - id: space-shell
@@ -14,118 +15,50 @@ components:
     - id: studio-load
       type: query-results
       title: Exact revision load
-      source: composition.get for the exact revision, then server-side composition.lint normalization of the stored spec
-      rendering:
-        mode: shared-composition-renderer
-        rows: first-page-per-source
-      async_state: explicit-loading-empty-error
-      description: Unknown versions, lint failures, and legacy Metric shapes show a concise error with one back control to the opened revision and never open the studio. Canonical revisions may omit empty optional parameter and Saved SQL variable collections; the editor restores those as empty state. Legacy Metric shapes are not migrated or retained.
-    - id: studio-header
-      type: page-header
-      title: Tool name
-      ownership: tool-name-only
-      description: One icon-only Back control to the opened revision, one tool-name text input owning the name, one visible-text Save action.
-    - id: studio-back
-      type: link
-      position: leading
-      presentation: icon-only
-      accessible_name: Back to revision
-      visible_content: chevron-left
-      single_control: true
+      source: Load the selected Composition Entry revision into the strict SQL-first v1 reader
+      loading: explicit
+      unsupported_or_invalid_document: >-
+        Show a concise diagnostic and a back control. Keep raw inspection,
+        export, and Entry history recovery available through their existing
+        paths; do not open the editor, migrate, or execute an unsupported
+        prereplacement Composition document.
     - id: studio-name
       type: text-input
       title: Tool name
-      ownership: object-identity
-      source: draft name written through setDraftName, prefilled from the lint-normalized document
+      ownership: composition-object-identity
+      source: Composition name from the selected canonical revision
     - id: studio-save
       type: button
       title: Save
       label: Save
       single_control: true
-      source: canonical draft YAML through composition.save with composition_id and base_revision_id plus one Idempotency-Key reused for retry
-      deterministic_rejection: >-
-        Show a localized summary when composition.save returns an allowlisted
-        composition_diagnostic; use the generic save failure when the
-        diagnostic is absent or unknown. Clear the uncertain attempt on
-        rejection and keep retry on the same route with the identical
-        payload and key.
-    - id: studio-data
-      type: list
-      title: Data
-      source: >-
-        draft sources restored from the lint-normalized document with human names
-        only; use a localized source-kind label when current source metadata is
-        unavailable instead of exposing document source identifiers
-      selection: full-row-activate
-      reorder: keyboard-operable-move-up-down
-      remove: blocked-while-displays-reference-with-reason
-      revision_identity: exact-pinned-in-draft-never-rendered
-    - id: studio-data-mode-tabs
-      type: tab-list
-      title: Sources, Parameters, Tags
-      scope: data-mode-only
-      initial_selection: Sources
-      parameter_disclosure: only-after-a-source-exists
-      state: transient-work-never-saved
-    - id: studio-parameters
-      type: list
-      title: Parameters
-      scope: data-mode-parameters-tab-renders-only-with-at-least-one-source
-      source: draft parameters provisioned from Saved SQL variable types and restored from the lint-normalized document
-      selection: rows-with-inline-editors
-      row_label: authored-human-label-else-localized-ordinal-by-declaration-order
-      binding_key: internal-reference-only-never-a-display-fallback
-      row_metadata: parameter-type
-      remove: guarded-remove-with-short-referenced-reason
-      binding: existing-composition-parameter-grammar-by-reference
-    - id: studio-add-data
-      type: button
-      title: Data
-      single_control: true
-      source: Design-canvas insertion palette; opens the Table/Metric data component picker
-    - id: studio-add-data-dialog
-      type: dialog
-      title: Choose a source
-      source: Forms through form.list and Saved SQL through sql.list
-      selection: full-row-activate; table adds immediately; Metric offers Saved SQL only, then column selection and server preview before insertion
-
-      rendering: human-name-only rows with loading, empty, and error states
-      row_name_overflow: ellipsis-with-full-name-native-title
-      internal_identifiers: form-source-draft-entry-revision-ids-never-rendered
-    - id: studio-display
-      type: list
-      title: Display
-      status: removed
-      source: display add, remove, reorder, and label editing are owned by the Design canvas and inspector; the display picker serves only as the canvas insertion delegate
-    - id: studio-display-picker
-      type: dialog
-      title: Add data component
-      kind_selection: Table/Metric tabs inside the picker
-      sequence: kind, Saved SQL source, result column, server preview, insert
-      selection: table adds on source selection; Metric inserts only after successful preview
-      label: omitted during insertion; optional edit in Inspector after selection
-      source_selection: catalog browse preserves selected Table or Metric kind
-      metric_source_catalog: existing-or-catalog-Saved-SQL-only
-      saved_sql_metric_candidates: unique-declared-displayable-non-json-result-columns
-      metric_preview: server-side-exact-value-before-insertion
-      projection_initialization: schema-order-up-to-64-projectable-fields
-      preview_freshness: exact-source-and-column; stale-result-discarded-on-change
-
-      internal_field_ids: never rendered
-      sizing: 720px maximum width and viewport-capped vertical scrolling
-    - id: studio-tags
-      type: form
-      title: Tags
-      scope: data-mode-tags-tab-only
-      semantics: entry-metadata-tags
-      source: comma-or-space-separated text parsed into draft tags, prefilled from the lint-normalized document
-    - id: studio-preview
-      type: query-results
-      title: Preview
-      source: canonical draft YAML through composition.preview with debounced side-effect-free resolution; composition.metric.query uses the draft target for metrics
-      result_presentation: CompositionRenderer
-      rendering:
-        mode: shared-composition-renderer
-        rows: first-page-per-source
-      pagination_owner: studio-edit route
-      description: Renders the preview plan through the shared renderer without creating persistent execution state.
+      source: canonical Composition document through composition.save with the selected base revision
+      persistence: append one Entry revision with existing receipt and stale-write semantics
+      readiness: valid strict document with each component placed exactly once and no dangling references
+    - id: composition-studio
+      type: composition-studio
+      reference: ../components/composition-studio.yaml
+      contract_status: planned
+      steady_state: Design canvas and the selected SQL Workspace, without explanatory paragraphs or decorative cards
+      sources:
+        allowed: [inline_sql, saved_sql]
+        inline_sql: Editable SQL source; Form bindings are server-derived and retained by stable Form ID
+        saved_sql: Read-only exact Entry revision; never follows latest and has no Composition-owned alias
+        workspace: ../components/sql-workspace.yaml
+      design:
+        components: [input, text, table, metric]
+        label_step: absent
+        variable_reference: Input references a Composition variable; Text displays literal content or a direct string-variable value
+        table: Uses the selected SQL source result
+        metric: Selects one declared scalar output column from a SQL source
+      composition_metadata:
+        tags_control: absent
+        editable_component_labels: absent
+        editable_variable_labels: absent
+        source_display_alias: absent
+      execution:
+        preview: explicit, owned by Composition adapter
+        results: shared SQL result presentation; current state only
+        paging_and_count: explicit query operations
+        browser_aggregation: absent
+      work: Draft, typed input, preview results, paging, and drawer state are transient
