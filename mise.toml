@@ -275,6 +275,10 @@ run = [
 description = "Verify Composition canonicalization, diagnostics, and typed Input parsing in the actual WASM runtime"
 run = "deno run -A crates/ugoite-wasm/tests/composition_parity.ts"
 
+[tasks."check:wasm:sql-structure-parity"]
+description = "Verify parser-backed SQL Workspace capabilities and proposals in the actual WASM runtime"
+run = "deno run -A crates/ugoite-wasm/tests/sql_structure_parity.ts"
+
 [tasks."profile:composition:parser"]
 description = "Measure the Composition YAML fixture parser budget and local throughput"
 run = "cargo test -p ugoite-domain --locked profile_monthly_expense_fixture -- --ignored --nocapture"
@@ -311,6 +315,7 @@ description = "Run all repository checks"
 run = [
   { task = "check:rust" },
   { task = "check:wasm:composition-parity" },
+  { task = "check:wasm:sql-structure-parity" },
   { task = "check:deno" },
   { task = "check:repo" },
 ]
@@ -515,6 +520,10 @@ run = "cargo nextest run -p ugoite-api-client -p ugoite-server -E 'test(composit
 [tasks."test:composition:domain"]
 description = "Run the typed Composition domain contract tests"
 run = "cargo nextest run -p ugoite-domain --locked -E 'test(composition::)'"
+
+[tasks."test:sql-structure:domain"]
+description = "Run focused SQL Workspace structure parser and proposal tests"
+run = "cargo nextest run -p ugoite-domain --locked -E 'test(sql_structure::)'"
 
 [tasks."package:docsite"]
 description = "Stage the built docsite under target/artifacts"

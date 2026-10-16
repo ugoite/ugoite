@@ -232,6 +232,117 @@ export type CompositionDocumentCanonicalization = {
   fingerprint: string;
 };
 
+export type SqlStructureColumnType =
+  | "string"
+  | "boolean"
+  | "integer"
+  | "float"
+  | "date"
+  | "timestamp"
+  | "decimal"
+  | "json"
+  | "other";
+
+export type SqlStructureVariableType =
+  | "string"
+  | "boolean"
+  | "integer"
+  | "float"
+  | "date"
+  | "timestamp";
+
+export type SqlStructureContext = {
+  relation: string;
+  columns: { name: string; type: SqlStructureColumnType }[];
+  variables?: { name: string; type: SqlStructureVariableType }[];
+  stable_key?: string[];
+};
+
+export type SqlStructureFilterOperator =
+  | "eq"
+  | "not_eq"
+  | "lt"
+  | "lt_eq"
+  | "gt"
+  | "gt_eq"
+  | "is_null"
+  | "is_not_null";
+
+export type SqlStructureFilter = {
+  column: string;
+  operator: SqlStructureFilterOperator;
+  parameter?: string;
+};
+
+export type SqlStructureSort = {
+  column: string;
+  direction: "asc" | "desc";
+};
+
+export type SqlStructureOperation =
+  | { kind: "set_columns"; columns: string[] }
+  | { kind: "set_filters"; filters: SqlStructureFilter[] }
+  | { kind: "set_sort"; order_by: SqlStructureSort[] };
+
+export type SqlStructureReason =
+  | "invalid_context"
+  | "sql_too_large"
+  | "parse_failed"
+  | "single_statement_required"
+  | "select_required"
+  | "common_table_expression_unsupported"
+  | "set_operation_unsupported"
+  | "query_clause_unsupported"
+  | "relation_unsupported"
+  | "relation_mismatch"
+  | "join_unsupported"
+  | "projection_unsupported"
+  | "filter_unsupported"
+  | "sort_unsupported"
+  | "unknown_column"
+  | "duplicate_column"
+  | "empty_projection"
+  | "invalid_variable_name"
+  | "unknown_variable"
+  | "variable_type_mismatch"
+  | "filter_type_unsupported"
+  | "stable_key_unavailable"
+  | "stable_key_unorderable"
+  | "stable_order_required"
+  | "round_trip_failed";
+
+export type SqlStructureActionCapability = {
+  enabled: boolean;
+  reason?: SqlStructureReason;
+};
+
+export type SqlStructureAnalysis = {
+  contract_version: number;
+  status: "supported" | "invalid_sql" | "unsupported";
+  reason?: SqlStructureReason;
+  projection: string[];
+  filters: SqlStructureFilter[];
+  order_by: SqlStructureSort[];
+  referenced_variables: string[];
+  stable_pagination: boolean;
+  capabilities: {
+    columns: SqlStructureActionCapability;
+    filter: SqlStructureActionCapability;
+    sort: SqlStructureActionCapability;
+    stable_pagination: SqlStructureActionCapability;
+  };
+};
+
+export type SqlStructureProposal = {
+  contract_version: number;
+  status: "supported" | "invalid_sql" | "unsupported";
+  reason?: SqlStructureReason;
+  base_sql: string;
+  proposed_sql?: string;
+  requires_confirmation: boolean;
+  added_stable_tie_breakers: string[];
+};
+
 export type CompositionVariableInputType =
   | "string"
   | "boolean"
@@ -300,6 +411,32 @@ export const parseCompositionVariableInputSync = <
     },
   );
 };
+
+/** Load the Rust SQL parser before offering structure-aware Workspace actions. */
+export const prepareSqlStructureParser = async (): Promise<void> => {
+  await loadExports();
+};
+
+/** Analyze the safe SQL subset through the shared Rust domain parser. */
+export const analyzeSqlStructure = async (
+  sql: string,
+  context: SqlStructureContext,
+): Promise<SqlStructureAnalysis> =>
+  await invokeProtocol<SqlStructureAnalysis>({
+    action: "domain.analyze_sql_structure",
+    value: { sql, context },
+  });
+
+/** Build a non-mutating SQL proposal; the adapter owns diff confirmation. */
+export const proposeSqlStructureOperation = async (
+  sql: string,
+  context: SqlStructureContext,
+  operation: SqlStructureOperation,
+): Promise<SqlStructureProposal> =>
+  await invokeProtocol<SqlStructureProposal>({
+    action: "domain.propose_sql_structure_operation",
+    value: { sql, context, operation },
+  });
 
 /** Exact protocol envelope for one spreadsheet-CSV encode request. */
 export const buildSpreadsheetCsvRequest = (
