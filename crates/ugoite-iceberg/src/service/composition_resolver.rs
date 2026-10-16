@@ -1410,9 +1410,10 @@ mod tests {
                 }),
             )
             .await?;
-        let yaml = format!(
+        let yaml = (
             "format: ugoite.composition\nformat_version: 1\nkind: dashboard\nname: Local query\nspec:\n  sources:\n    - id: rows\n      kind: inline_sql\n      name: Rows\n      sql: |\n        SELECT \"field_100\" FROM \"Composition-Source\" ORDER BY \"_ugoite_updated_at\" DESC, \"_ugoite_id\"\n      form_bindings: []\n      expected_result: []\n      schema_fingerprint: ''\n  components:\n    - id: table\n      kind: table\n      source: rows\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: component\n            component: table\n"
-        );
+        )
+        .to_string();
         let document = parse_composition_yaml(&yaml).expect("Composition fixture parses");
         let saved = service
             .save_composition_authorized_for_principals(

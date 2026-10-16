@@ -763,10 +763,7 @@ mod tests {
         let new_draft = service
             .query_composition_metric_authorized_for_principals(&space_id, &[owner], request(None))
             .await?;
-        assert!(
-            new_draft.ok,
-            "new draft metric should resolve: {new_draft:?}"
-        );
+        assert!(new_draft.ok, "new draft metric should resolve");
         assert_eq!(
             new_draft.result.expect("replacement metric").value,
             json!("15")
@@ -782,10 +779,7 @@ mod tests {
                 })),
             )
             .await?;
-        assert!(
-            edited_draft.ok,
-            "base-edited metric should resolve: {edited_draft:?}"
-        );
+        assert!(edited_draft.ok, "base-edited metric should resolve");
         assert_eq!(
             edited_draft.result.expect("original metric").value,
             json!("5")

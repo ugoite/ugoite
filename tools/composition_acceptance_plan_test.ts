@@ -292,7 +292,7 @@ Deno.test(
     assertEquals(sharedFixtures, [
       {
         path:
-          "crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml",
+          "crates/ugoite-domain/tests/fixtures/composition/sql-first.ugcomp.yaml",
         owner: "ugoite-domain",
       },
     ]);
@@ -349,7 +349,7 @@ Deno.test(
       "ugoite composition restore <id> --revision <revision>",
       "ugoite composition lint <file>",
       "ugoite composition save <file>",
-      "ugoite composition query <id> --param k=v",
+      "ugoite composition query <id> --var k=v",
       "ugoite composition export <id> --output <path>",
       "ugoite composition import <file>",
     ]);

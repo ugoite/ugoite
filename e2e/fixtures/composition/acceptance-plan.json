@@ -6,7 +6,7 @@
     "payload_note": "The E2E seed manifest is created and drives the Browser journey. The raw recovery candidates remain fixture-only; recovery and release evidence selectors are still unverified.",
     "shared_document_fixtures": [
       {
-        "path": "crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml",
+        "path": "crates/ugoite-domain/tests/fixtures/composition/sql-first.ugcomp.yaml",
         "owner": "ugoite-domain"
       }
     ],
@@ -43,7 +43,7 @@
     "ugoite composition restore <id> --revision <revision>",
     "ugoite composition lint <file>",
     "ugoite composition save <file>",
-    "ugoite composition query <id> --param k=v",
+    "ugoite composition query <id> --var k=v",
     "ugoite composition export <id> --output <path>",
     "ugoite composition import <file>"
   ],

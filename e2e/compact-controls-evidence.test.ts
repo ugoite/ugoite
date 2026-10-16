@@ -134,25 +134,25 @@ let sqlCreated = false;
 let entryCreated = false;
 let compositionCreated = false;
 
-function compositionYaml(name: string, formId: string, fieldId: number) {
+function compositionYaml(
+  name: string,
+  relation: string,
+  merchantColumn: string,
+) {
   return [
     "format: ugoite.composition",
     "format_version: 1",
     `name: ${name}`,
     "kind: dashboard",
-    "tags: []",
     "spec:",
     "  sources:",
     "    - id: compact_rows",
-    "      kind: entry_query",
-    `      form_id: \"${formId}\"`,
-    "      field_schema:",
-    `        - field_id: ${fieldId}`,
-    "          field_type: string",
-    "      query:",
-    "        projection:",
-    "          kind: fields",
-    `          fields: [${fieldId}]`,
+    "      kind: inline_sql",
+    "      name: Compact rows",
+    `      sql: SELECT \"${merchantColumn}\" AS merchant FROM \"${relation}\"`,
+    "      form_bindings: []",
+    "      expected_result: []",
+    "      schema_fingerprint: ''",
     "  components:",
     "    - id: rows",
     "      kind: table",
@@ -208,15 +208,12 @@ async function seedCompactControlSurfaces(
     }>;
   }>;
   const form = forms.find((candidate) => candidate.name === formName);
-  const merchantFieldId = form?.fields?.Merchant?.query_capability?.field
-    ?.field_id ?? form?.fields?.Merchant?.id;
   const relation = form?.sql_relation;
   const dateColumn = form?.fields?.Date?.sql_column;
   const merchantColumn = form?.fields?.Merchant?.sql_column;
   const amountColumn = form?.fields?.Amount?.sql_column;
   expect(relation).toBeTruthy();
   expect(form?.id).toBeTruthy();
-  expect(merchantFieldId).toBeTruthy();
   expect(dateColumn).toBeTruthy();
   expect(merchantColumn).toBeTruthy();
   expect(amountColumn).toBeTruthy();
@@ -293,8 +290,8 @@ async function seedCompactControlSurfaces(
       data: {
         yaml: compositionYaml(
           `Compact Controls ${suffix}`,
-          form!.id!,
-          merchantFieldId!,
+          relation!,
+          merchantColumn!,
         ),
       },
     },

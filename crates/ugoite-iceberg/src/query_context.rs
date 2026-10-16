@@ -1861,10 +1861,12 @@ pub(crate) fn collect_quoted_form_relation_names(sql: &str) -> Result<BTreeSet<S
         .map(|(_, _, _, relations)| relations)
 }
 
+type FormNameReferenceResolution = (String, BTreeSet<String>, BTreeSet<String>, BTreeSet<String>);
+
 fn resolve_form_name_references_with_references(
     sql: &str,
     aliases: &BTreeMap<String, String>,
-) -> Result<(String, BTreeSet<String>, BTreeSet<String>, BTreeSet<String>)> {
+) -> Result<FormNameReferenceResolution> {
     use datafusion::sql::parser::DFParser;
     use datafusion::sql::sqlparser::ast::{
         Ident, ObjectName, ObjectNamePart, VisitMut, VisitorMut,

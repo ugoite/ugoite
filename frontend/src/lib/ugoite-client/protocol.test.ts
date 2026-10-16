@@ -37,7 +37,6 @@ const typedCompositionDocument = {
   format_version: 1,
   kind: "dashboard",
   name: "Monthly expenses",
-  tags: [],
   spec: {
     variables: [{
       id: "month_start",
@@ -51,6 +50,8 @@ const typedCompositionDocument = {
       entry_id: "00000000-0000-7000-8000-000000000020",
       revision_id: "00000000-0000-7000-8000-000000000021",
       expected_result: [{ name: "amount", type: "json" }],
+      schema_fingerprint:
+        "ed3bd3fbcd9aa04517ff6d9dbb8a7a6de4eede34a704908debdea72b5c0b1ec5",
       variables: { month_start: { variable: "month_start" } },
     }],
     components: [
