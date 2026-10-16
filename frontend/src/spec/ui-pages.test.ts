@@ -12,6 +12,7 @@ type PageSpec = {
     title?: string;
     route?: string;
     implementation?: string;
+    contract_status?: string;
     visible_heading?: string;
   };
   components?: {
@@ -62,6 +63,8 @@ const allowedComponentTypes = new Set([
   "query-pagination",
   "select",
   "typed-variable-list",
+  "history",
+  "composition-studio",
 ]);
 
 const collectYamlFiles = (dir: string): string[] => {
@@ -520,51 +523,38 @@ describe("UI spec YAML registry", () => {
     }
   });
 
-  it("REQ-UX-PAGINATION-001: connects Composition pagination specs to shared chevrons", () => {
+  it("REQ-UX-PAGINATION-001: keeps Composition paging request-owned and shares chevrons", () => {
     const revision = loadPages().find(({ spec }) =>
       spec.page?.id === "space-composition-revision"
     );
-    const pagePagination = revision?.spec.components?.body?.find(({ id }) =>
-      id === "composition-pagination"
+    const compositionComponents = revision?.spec.components?.body?.find(({ id }) =>
+      id === "composition-components"
     );
-    expect(pagePagination).toMatchObject({
-      type: "query-pagination",
+    expect(compositionComponents).toMatchObject({
+      pagination_owner:
+        "SQL query handle; continuation and explicit count stay in stateless query requests",
+    });
+
+    const sqlResults = loadPages().find(({ spec }) =>
+      spec.page?.id === "space-sql-results"
+    );
+    const sqlPagination = sqlResults?.spec.components?.body?.find(({ id }) =>
+      id === "sql-results-pagination"
+    );
+    expect(sqlPagination).toMatchObject({
       component: "ResultPagination",
       reference: "../components/result-pagination.yaml",
-      presentation: "localized-icon-only-chevron-controls",
-      source: "existing query continuation",
     });
 
-    const studioPath = path.join(componentsDir, "composition-studio.yaml");
-    const studio = parse(readFileSync(studioPath, "utf8")) as {
-      components?: Array<Record<string, unknown>>;
-    };
-    const studioData = studio.components?.find(({ id }) =>
-      id === "studio-data"
-    );
-    expect(studioData?.pagination).toMatchObject({
-      component: "ResultPagination",
-      reference: "result-pagination.yaml",
-      presentation: "localized-icon-only-chevron-controls",
-    });
-    expect(studioData?.result_pages).toBe(
-      "bounded-shared-page-with-controller-owned-paging",
-    );
-
-    const pageContractPath = path.resolve(
-      path.dirname(revision!.filePath),
-      String(pagePagination?.reference),
-    );
-    const studioContractPath = path.resolve(
-      path.dirname(studioPath),
-      String((studioData?.pagination as Record<string, unknown>).reference),
-    );
     const expectedContractPath = path.join(
       componentsDir,
       "result-pagination.yaml",
     );
-    expect(pageContractPath).toBe(expectedContractPath);
-    expect(studioContractPath).toBe(expectedContractPath);
+    const sqlContractPath = path.resolve(
+      path.dirname(sqlResults!.filePath),
+      String(sqlPagination?.reference),
+    );
+    expect(sqlContractPath).toBe(expectedContractPath);
 
     const shared = parse(readFileSync(expectedContractPath, "utf8")) as {
       components?: Array<Record<string, unknown>>;
@@ -588,18 +578,20 @@ describe("UI spec YAML registry", () => {
       });
   });
 
-  it("REQ-COMP-007: documents Studio readiness for required variable Inputs", () => {
-    const studioPath = path.join(componentsDir, "composition-studio.yaml");
-    const studio = parse(readFileSync(studioPath, "utf8")) as {
-      components?: Array<Record<string, unknown>>;
-    };
-    const variables = studio.components?.find(({ id }) =>
-      id === "studio-variables"
+  it("REQ-COMP-008: keeps Composition variable declarations in Knowledge and values in transient Work", () => {
+    const revision = loadPages().find(({ spec }) =>
+      spec.page?.id === "space-composition-revision"
+    );
+    const components = revision?.spec.components?.body?.find(({ id }) =>
+      id === "composition-components"
     );
 
-    expect(variables).toMatchObject({
-      required_variable_without_default: "input-must-be-placed-before-save",
-      blocked_save: "disabled-with-reason-in-accessible-name-and-title",
+    expect(revision?.spec.page?.contract_status).toBe("planned");
+    expect(components).toMatchObject({
+      variables:
+        "typed definitions/defaults are Knowledge; runtime values and raw input are transient Work",
+      input_components:
+        "reference one variable and own no saved value; no display label is persisted",
     });
   });
 

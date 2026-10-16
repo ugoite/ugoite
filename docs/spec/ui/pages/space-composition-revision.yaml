@@ -53,6 +53,9 @@ components:
       input_components: reference one variable and own no saved value; no display label is persisted
       text_components: literal body or direct string-variable reference with fixed typography roles
       table_components: render the current bounded page from one SQL source using SqlResultTable
+      table_presentation:
+        component: SqlResultTable
+        result_presentation_reference: ../components/result-table.yaml
       metric_components: server-evaluated scalar output column from one SQL source; require exactly one row and one selected scalar column
       metric_presentation: distinguish zero rows, one-row NULL, zero, multiple rows, unavailable source, invalid result, and execution error
       metric_numeric_presentation: optional unit and fractional-digit formatting; never changes SQL semantics
