@@ -5,7 +5,7 @@ category: Planned SQL-first Composition Studio interactions
 requirements:
   - id: REQ-FE-079
     title: SQL-first Composition Studio
-    description: The planned SQL-first Composition Studio uses the shared SQL Workspace while expressing Composition-specific structure, names, and accessible controls directly.
+    description: The planned SQL-first Composition Studio uses the shared SQL Workspace while expressing Composition-specific structure and accessible controls through meaningful names rather than persisted label fields.
     priority: high
     status: planned
     criteria:
@@ -35,7 +35,67 @@ requirements:
         statement: >-
           The steady-state Composition data surface has no explanatory
           paragraphs, duplicate current-object heading, or decorative cards.
-          Desktop source selection uses a plain rail with full-row activation;
-          narrow viewports use an accessible overlay drawer with close, Escape,
-          focus restoration, and back-to-source navigation.
+          Desktop source selection uses a plain rail with full-row activation.
         governed_by: [POL-UI-002#rule.governance, POL-UI-003#rule.governance, POL-UI-006#rule.governance]
+      - id: form-selection-creates-inline-sql
+        kind: behavior
+        statement: >-
+          Selecting a Form creates an editable inline SQL source, initially
+          named from the Form and generated as SQL such as SELECT * FROM
+          "G". It does not create an EntryQuery source or silently add a row
+          LIMIT to SQL text.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+      - id: sql-toolbar-keeps-query-meanings
+        kind: behavior
+        statement: >-
+          In the shared Workspace, Columns changes the SQL SELECT projection,
+          Filter changes WHERE, and Sort changes ORDER BY. Structure opens
+          secondary SQL operations for supported aggregates, grouping, joins,
+          and DISTINCT. These controls are enabled only when the shared SQL
+          capability model can safely represent the operation; direct SQL
+          remains available for other read-only SELECT syntax.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+      - id: design-components-use-semantic-values
+        kind: behavior
+        statement: >-
+          Design inserts Input, Text, Table, and Metric components without a
+          separate label step. Input refers to a Composition variable; Text
+          content is its displayed value; Table uses its SQL source; Metric
+          uses one declared SQL output column. A Metric's optional numeric
+          presentation is formatting metadata, not a display label.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+      - id: composition-table-and-metric-use-sql-results
+        kind: behavior
+        statement: >-
+          Table displays a bounded page from its SQL source. Metric selects one
+          declared scalar SQL output column and uses the server-evaluated
+          result; no-row, one-row NULL, zero, multiple rows, type mismatch,
+          unavailable source, and execution failure remain distinct. Browser
+          code does not aggregate fetched rows or add LIMIT to user SQL.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: composition-binding-identifiers-stay-internal
+        kind: quality
+        statement: >-
+          Stable source, component, and variable identifiers used only for
+          binding do not appear as ordinary primary-path names. The Composition
+          name, SQL object name, SQL output aliases, variable identifiers,
+          Form field names, Text content, and accessible names remain visible
+          where they carry their own meaning.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-005#rule.governance]
+      - id: composition-mobile-workspace-accessibility
+        kind: quality
+        statement: >-
+          At 320px, 375px, and 390px viewport widths, the Composition source
+          list uses a keyboard-operable overlay drawer. Its control has an
+          accessible name, Escape closes the drawer, and focus is restored when
+          it closes. Drawer actions have visible focus and at least 44px
+          targets. The primary Save action keeps visible text.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-005#rule.governance, POL-UI-007#rule.governance]
+      - id: composition-history-hides-revision-identifiers
+        kind: behavior
+        statement: >-
+          Composition History shows operation, timestamp, and current-revision
+          state without rendering Revision ID values or a Technical details
+          disclosure. Exact revision identity stays in the internal route
+          target and the selected revision opens exactly.
+        governed_by: [POL-UI-005#rule.governance]

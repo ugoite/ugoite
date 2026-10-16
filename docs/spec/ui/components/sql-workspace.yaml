@@ -50,4 +50,4 @@ do not run implicitly on every page.
 
 The Composition source rail, source naming, pinned-revision lifecycle, and
 Composition-specific drawer behavior are defined in
-[`composition-sql-workspace.yaml`](composition-sql-workspace.yaml).
+[`composition-studio.yaml`](composition-studio.yaml).

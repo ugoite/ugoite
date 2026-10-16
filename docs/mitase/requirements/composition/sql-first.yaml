@@ -5,7 +5,7 @@ category: Portable Composition documents and SQL-backed source resolution
 requirements:
   - id: REQ-COMP-008
     title: SQL-first Composition source contract
-    description: The accepted prerelease Composition replacement has one SQL source model over Space-owned Knowledge and the existing stateless SQL executor.
+    description: The accepted canonical prerelease Composition v1 replacement has one SQL source model over Space-owned Knowledge and the existing stateless SQL executor; its implementation status is tracked separately from this target contract.
     priority: high
     status: planned
     criteria:
@@ -17,6 +17,25 @@ requirements:
           Selecting a Form produces editable inline SQL; no EntryQuery source,
           Comp-specific query language, latest-revision fallback, or silent
           source rebind exists.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: strict-replacement-envelope
+        kind: behavior
+        statement: >-
+          The replacement keeps format_version 1 and has one strict envelope:
+          format, format_version, dashboard kind, Composition name, and spec
+          containing variables, sources, components, and flow layout. The
+          canonical reader rejects unknown fields, including the replaced
+          root tags, EntryQuery payload fields, and persisted display labels.
+          It does not parse and then discard those fields.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: no-composition-tags-or-label-fields
+        kind: behavior
+        statement: >-
+          Composition Knowledge has no root tags and no user-editable label on
+          variables, sources, or components. The root name, inline SQL object
+          name, SQL output aliases, variable IDs, Text content, Form field names,
+          accessibility names, and Metric numeric presentation retain their
+          separate semantic purposes and are not Composition display labels.
         governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
       - id: trusted-inline-form-bindings
         kind: security
