@@ -744,7 +744,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
         const disabled = actionDisabled(action);
         return {
           kind: action,
-          icon: action,
+          icon: action === "group_by" ? "group-by" : action,
           label,
           disabled,
           disabledReason: disabled ? reason : undefined,
@@ -1103,35 +1103,31 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                                   </For>
                                 </select>
                               </label>
-                              <Show
-                                when={aggregate.function !== "count" ||
-                                  aggregate.column}
-                              >
-                                <label class="ui-field">
-                                  <span>{t("sqlPage.structure.column")}</span>
-                                  <select
-                                    class="ui-input"
-                                    value={aggregate.column ?? ""}
-                                    disabled={columns().length === 0}
-                                    onChange={(event) =>
-                                      updateAggregateColumn(
-                                        index(),
-                                        event.currentTarget.value,
-                                      )}
-                                  >
-                                    <Show when={aggregate.function === "count"}>
-                                      <option value="">
-                                        {t("sqlPage.structure.allRows")}
-                                      </option>
-                                    </Show>
-                                    <For each={columns()}>
-                                      {(name) => (
-                                        <option value={name}>{name}</option>
-                                      )}
-                                    </For>
-                                  </select>
-                                </label>
-                              </Show>
+                              <label class="ui-field">
+                                <span>{t("sqlPage.structure.column")}</span>
+                                <select
+                                  class="ui-input"
+                                  value={aggregate.column ?? ""}
+                                  disabled={aggregate.function !== "count" &&
+                                    columns().length === 0}
+                                  onChange={(event) =>
+                                    updateAggregateColumn(
+                                      index(),
+                                      event.currentTarget.value,
+                                    )}
+                                >
+                                  <Show when={aggregate.function === "count"}>
+                                    <option value="">
+                                      {t("sqlPage.structure.allRows")}
+                                    </option>
+                                  </Show>
+                                  <For each={columns()}>
+                                    {(name) => (
+                                      <option value={name}>{name}</option>
+                                    )}
+                                  </For>
+                                </select>
+                              </label>
                               <Show when={aggregate.column}>
                                 <label class="sql-structure-option sql-structure-aggregate-distinct">
                                   <input

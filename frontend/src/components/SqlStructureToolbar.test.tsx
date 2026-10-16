@@ -351,6 +351,58 @@ describe("SqlStructureToolbar adapter", () => {
     expect(onSqlChange).toHaveBeenCalledOnce();
   });
 
+  it("keeps COUNT(*) available while allowing COUNT(DISTINCT column)", async () => {
+    const sql = 'SELECT * FROM "Orders"';
+    let actions: readonly SQLWorkspaceAction[] = [];
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [context]}
+        onSqlChange={vi.fn()}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "aggregate")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "aggregate")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Aggregate" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add aggregate" }),
+    );
+
+    const column = () => within(dialog).getByLabelText("Column");
+    expect(column()).toHaveValue("");
+    expect(
+      within(column()).getByRole("option", { name: "All rows (*)" }),
+    ).toBeInTheDocument();
+    fireEvent.change(column(), { target: { value: "amount" } });
+    await waitFor(() => expect(column()).toHaveValue("amount"));
+    expect(
+      within(column()).getByRole("option", { name: "All rows (*)" }),
+    ).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByLabelText("Distinct values"));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(proposeMock).toHaveBeenCalledWith(
+      sql,
+      context.parser,
+      {
+        kind: "set_aggregates",
+        aggregates: [{
+          function: "count",
+          column: "amount",
+          distinct: true,
+        }],
+      },
+    );
+  });
+
   it("proposes only capability-approved GROUP BY keys and SELECT DISTINCT", async () => {
     const sql = 'SELECT "amount" FROM "Orders"';
     analyzeMock.mockResolvedValue({ ...analysis, projection: ["amount"] });
@@ -367,6 +419,9 @@ describe("SqlStructureToolbar adapter", () => {
     await waitFor(() =>
       expect(actions.find((action) => action.kind === "group_by")?.disabled)
         .toBe(false)
+    );
+    expect(actions.find((action) => action.kind === "group_by")?.icon).toBe(
+      "group-by",
     );
     actions.find((action) => action.kind === "group_by")!.onActivate();
     const groupDialog = screen.getByRole("dialog", { name: "Group by" });
