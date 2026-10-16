@@ -20,6 +20,11 @@ Count accepts the same optional selector. A page response contains `columns`,
 `rows`, `has_more`, and an opaque `next` continuation. Count is an explicit
 operation and is never performed as part of page retrieval.
 
+For a Saved SQL request, the caller supplies an explicit value for each
+variable. The selected revision provides the declared parameter types; any
+`parameter_types` supplied by the caller must match them. Saved SQL defaults
+initialize authoring and preview state only and are not execution values.
+
 The CLI's bounded `sql export` command repeats the page operation and streams
 the complete result as NDJSON under a required row limit. It adds no REST
 operation, query session, or saved result; file output is committed only after

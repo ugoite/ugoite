@@ -453,16 +453,24 @@ pub enum SavedSqlSubCmd {
     },
     /// Execute one exact Saved SQL revision as a stateless page
     #[command(
-        long_about = "Use the current revision unless --revision-id is supplied. Each page rechecks current authorization and keeps the Saved SQL Form bindings fixed. Saved SQL variable defaults are not applied automatically; pass values explicitly with --param and --param-type."
+        long_about = "Supply each Saved SQL variable value explicitly with --param NAME=VALUE. The selected revision provides each variable's declared type; optional --param-type NAME=TYPE values must match those declarations. Saved SQL defaults are not applied to executions. Use the current revision unless --revision-id is supplied. Each page rechecks current authorization and keeps the Saved SQL Form bindings fixed."
     )]
     Run {
         #[arg(value_name = "SQL_ID")]
         sql_id: String,
         #[arg(long)]
         revision_id: Option<String>,
-        #[arg(long = "param", value_name = "NAME=VALUE")]
+        #[arg(
+            long = "param",
+            value_name = "NAME=VALUE",
+            help = "Explicit value for a Saved SQL variable (repeat for each variable)"
+        )]
         parameters: Vec<String>,
-        #[arg(long = "param-type", value_name = "NAME=TYPE")]
+        #[arg(
+            long = "param-type",
+            value_name = "NAME=TYPE",
+            help = "Optional type assertion; it must match the saved variable declaration"
+        )]
         parameter_types: Vec<String>,
         #[arg(long, default_value_t = 100)]
         limit: usize,
@@ -529,6 +537,27 @@ fn parse_sql_bindings(
     serde_json::Map<String, serde_json::Value>,
     std::collections::BTreeMap<String, String>,
 )> {
+    parse_sql_bindings_with_type_resolution(raw_parameters, raw_types, true)
+}
+
+fn parse_saved_sql_bindings(
+    raw_parameters: &[String],
+    raw_types: &[String],
+) -> Result<(
+    serde_json::Map<String, serde_json::Value>,
+    std::collections::BTreeMap<String, String>,
+)> {
+    parse_sql_bindings_with_type_resolution(raw_parameters, raw_types, false)
+}
+
+fn parse_sql_bindings_with_type_resolution(
+    raw_parameters: &[String],
+    raw_types: &[String],
+    infer_missing_types: bool,
+) -> Result<(
+    serde_json::Map<String, serde_json::Value>,
+    std::collections::BTreeMap<String, String>,
+)> {
     let mut parameters = serde_json::Map::new();
     for raw in raw_parameters {
         let (name, value) = raw
@@ -568,6 +597,18 @@ fn parse_sql_bindings(
         if parameter_types.contains_key(name) {
             continue;
         }
+        if matches!(
+            value,
+            serde_json::Value::Array(_) | serde_json::Value::Object(_)
+        ) {
+            return Err(UsageError(format!(
+                "SQL parameter {name:?} must be a scalar JSON value"
+            ))
+            .into());
+        }
+        if !infer_missing_types {
+            continue;
+        }
         let kind = match value {
             serde_json::Value::String(_) => "string",
             serde_json::Value::Bool(_) => "boolean",
@@ -580,10 +621,7 @@ fn parse_sql_bindings(
                 .into());
             }
             serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
-                return Err(UsageError(format!(
-                    "SQL parameter {name:?} must be a scalar JSON value"
-                ))
-                .into());
+                unreachable!("non-scalar SQL parameters were rejected above")
             }
         };
         parameter_types.insert(name.clone(), kind.to_string());
@@ -896,7 +934,8 @@ pub async fn run(
                         anyhow::anyhow!("Saved SQL response has no current revision ID")
                     })?,
             };
-            let (parameters, parameter_types) = parse_sql_bindings(&parameters, &parameter_types)?;
+            let (parameters, parameter_types) =
+                parse_saved_sql_bindings(&parameters, &parameter_types)?;
             let page = query_sql_page(
                 &target,
                 SqlQueryRequest {

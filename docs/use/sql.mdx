@@ -190,10 +190,12 @@ the exit code before treating the stream as complete. Export does not call
 
 ## Parameters
 
-Repeat `--param NAME=VALUE` for each named parameter. Scalar JSON values are
-accepted; unquoted values that are not valid JSON are treated as strings.
-Use `--param-type NAME=TYPE` when a null value needs an explicit type or when
-the inferred scalar type is not the intended SQL type.
+For `sql query`, `sql count`, and `sql export`, repeat `--param NAME=VALUE` for
+each named parameter. Scalar JSON values are accepted; unquoted values that are
+not valid JSON are treated as strings. Use `--param-type NAME=TYPE` when a null
+value needs an explicit type or when the inferred scalar type is not the
+intended SQL type. For `sql saved run`, parameter types come from the selected
+Saved SQL revision instead.
 
 ## Read-only and authorization contract
 
@@ -234,10 +236,13 @@ ugoite sql saved run <SQL_ID> --limit 100
 ```
 
 Use `--revision-id <REVISION_ID>` to run a specific earlier revision. Repeat
-`--param NAME=VALUE` and `--param-type NAME=TYPE` for SQL variables. The command
-returns one stateless page in the selected format, including its continuation
-when more rows are available. Each request checks current authorization and
-uses the Form IDs bound to that revision.
+`--param NAME=VALUE` to supply each variable's execution value. Its type comes
+from the selected revision's Saved SQL definition. `--param-type NAME=TYPE` is
+optional and, when supplied, must match the saved declaration. Defaults are
+for authoring and preview; Saved SQL execution still requires explicit values.
+The command returns one stateless page in the selected format, including its
+continuation when more rows are available. Each request checks current
+authorization and uses the Form IDs bound to that revision.
 
 ## If it fails
 

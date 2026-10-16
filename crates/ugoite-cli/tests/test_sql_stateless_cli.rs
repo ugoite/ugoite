@@ -1,8 +1,9 @@
 //! PR5 (Follow-up H, issue #2985) CLI stateless SQL coverage.
 //!
 //! The CLI is a thin projection of the stateless `SqlQuery` contract: table,
-//! JSON, and NDJSON render the same page; typed nulls require an explicit
-//! `--param-type`; invalid scalars fail closed; and the opaque continuation
+//! JSON, and NDJSON render the same page; raw-query typed nulls require an
+//! explicit `--param-type`; Saved SQL variable declarations supply types;
+//! invalid scalars fail closed; and the opaque continuation
 //! never leaks into human renderings (table/NDJSON keep it hidden — JSON is
 //! the machine carrier that returns it for the next request).
 
@@ -206,6 +207,62 @@ fn cli_saved_sql_run_executes_current_or_selected_bound_revision() {
         "run selected Saved SQL revision",
     );
     assert_eq!(historical["rows"].as_array().unwrap().len(), 3);
+}
+
+#[test]
+fn cli_saved_sql_run_resolves_types_from_the_selected_revision() {
+    let space = setup_cli_sql_space();
+    let variables = serde_json::json!([{
+        "name": "threshold",
+        "type": "integer",
+        "description": ""
+    }])
+    .to_string();
+    let created = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &[
+                "sql",
+                "saved",
+                "create",
+                "--name",
+                "Typed CLI parameter",
+                "--sql",
+                "SELECT $threshold AS value",
+                "--variables",
+                &variables,
+            ],
+        ),
+        "create Saved SQL with a typed variable",
+    );
+    let sql_id = created["id"].as_str().expect("Saved SQL ID");
+
+    // `threshold=7` would normally infer `long`; the selected Saved SQL
+    // revision is authoritative and declares `integer`.
+    let typed = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &["sql", "saved", "run", sql_id, "--param", "threshold=7"],
+        ),
+        "run Saved SQL with its declared parameter type",
+    );
+    assert_eq!(typed["rows"][0]["value"], 7);
+
+    // A null value also gets its type from the saved declaration.
+    let null = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &["sql", "saved", "run", sql_id, "--param", "threshold=null"],
+        ),
+        "run Saved SQL with a declared typed null",
+    );
+    assert!(null["rows"][0]["value"].is_null());
+
+    let help = run_cli(&space.config_path, &["sql", "saved", "run", "--help"]);
+    assert!(help.status.success());
+    let help = String::from_utf8_lossy(&help.stdout);
+    assert!(help.contains("Explicit value for a Saved SQL variable"));
+    assert!(help.contains("Optional type assertion"));
 }
 
 fn base_sql(space: &CliSqlSpace) -> String {
