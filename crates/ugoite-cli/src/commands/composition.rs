@@ -926,11 +926,15 @@ fn portable_plan_from_core_composition_plan(
             source["kind"] == "sql",
             "Core Composition plan contains an unknown source kind"
         );
-        source["kind"] = if source["request"]["saved_sql"].is_null() {
-            json!("inline_sql")
+        if source["request"]["saved_sql"].is_null() {
+            source["kind"] = json!("inline_sql");
         } else {
-            json!("saved_sql")
-        };
+            source["kind"] = json!("saved_sql");
+            source
+                .as_object_mut()
+                .context("Core Saved SQL source is not an object")?
+                .remove("form_bindings");
+        }
     }
     serde_json::from_value(value)
         .context("encode local Composition resolve plan through the portable DTO")
@@ -958,6 +962,11 @@ fn core_plan_from_portable_composition_plan(
             matches!(source["kind"].as_str(), Some("inline_sql" | "saved_sql")),
             "portable Composition plan contains an unknown SQL source kind"
         );
+        if source["kind"] == "saved_sql" {
+            // The portable Saved SQL DTO has no Form bindings; Core's
+            // source-neutral SQL request represents that as an empty list.
+            source["form_bindings"] = json!([]);
+        }
         source["kind"] = json!("sql");
     }
     serde_json::from_value(value)
@@ -1714,6 +1723,8 @@ mod tests {
             source_id: "entries".to_string(),
             request: inline_request.clone(),
             source_schema_fingerprint: "a".repeat(64),
+            form_bindings: Vec::new(),
+            expected_result: Vec::new(),
         };
         let (source_id, kind, operation, request) = composition_source_dispatch(&inline_source);
         assert_eq!(source_id, "entries");
@@ -1732,6 +1743,7 @@ mod tests {
             source_id: "summary".to_string(),
             request: sql_request.clone(),
             source_schema_fingerprint: "b".repeat(64),
+            expected_result: Vec::new(),
         };
         let (source_id, kind, operation, request) = composition_source_dispatch(&sql_source);
         assert_eq!(source_id, "summary");
@@ -1760,7 +1772,8 @@ mod tests {
                         "revision_id": "sql-revision-7"
                     }
                 },
-                "source_schema_fingerprint": "abc"
+                "source_schema_fingerprint": "abc",
+                "expected_result": []
             }],
             "component_bindings": [{
                 "component_id": "total",
@@ -1774,8 +1787,13 @@ mod tests {
 
         let core = core_plan_from_portable_composition_plan(&portable)
             .expect("portable SQL source kinds map to Core's generic SQL request kind");
-        let ugoite_core::composition::ResolvedSourceRequest::Sql { request, .. } = &core.sources[0];
+        let ugoite_core::composition::ResolvedSourceRequest::Sql {
+            request,
+            form_bindings,
+            ..
+        } = &core.sources[0];
         assert_eq!(request.sql, "SELECT 42 AS total");
+        assert!(form_bindings.is_empty());
         let saved_sql = request
             .saved_sql
             .as_ref()
