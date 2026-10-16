@@ -13,7 +13,7 @@ import { BackLink } from "~/components/BackLink";
 import { ConfirmDestructiveAction } from "~/components/ConfirmDestructiveAction";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { SqlVariableDefaultsEditor } from "~/components/SqlVariableDefaultsEditor";
-import { SqlQueryEditor } from "~/components";
+import { SQLWorkspace } from "~/components/SQLWorkspace";
 import { formatDateLabel } from "~/lib/date-format";
 import {
   applySqlVariableDefaultDrafts,
@@ -21,6 +21,7 @@ import {
   normalizeSqlVariables,
   type SqlVariableDefaultDraft,
 } from "~/lib/sql";
+import { createSqlWorkspaceController } from "~/lib/sql-workspace";
 import { formApi, sqlApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
@@ -72,6 +73,10 @@ export default function SpaceSqlDetailRoute() {
   const variablesWithDefaults = createMemo(() =>
     applySqlVariableDefaultDrafts(normalized().variables, defaultDrafts())
   );
+  const workspaceVariables = createMemo(() => {
+    const values = variablesWithDefaults();
+    return values.invalid ? normalized().variables : values.variables;
+  });
   const variableCount = createMemo(() => normalized().variables.length);
   const bindingDiagnostics = createMemo(() => {
     if (forms.state !== "ready") return [];
@@ -94,6 +99,20 @@ export default function SpaceSqlDetailRoute() {
     `/spaces/${encodeURIComponent(spaceId())}/sql/${
       encodeURIComponent(sqlId())
     }/variables`;
+
+  const workspace = createSqlWorkspaceController({
+    spaceId,
+    sql: sqlInput,
+    variables: workspaceVariables,
+    savedSql: () => {
+      const current = entry();
+      if (!current || sqlInput() !== savedSql()) return undefined;
+      return {
+        id: current.id,
+        revisionId: revisionId() ?? current.revision_id,
+      };
+    },
+  });
 
   const handleRun = () => {
     if (!entry() || isDirty() || variableCount() > 0) return;
@@ -324,40 +343,37 @@ export default function SpaceSqlDetailRoute() {
                   </section>
                 </Show>
 
-                <div class="ui-stack-sm">
-                  <label class="ui-label" for="saved-query-sql">
-                    {t("sqlPage.sql")}
-                  </label>
-                  <SqlQueryEditor
-                    id="saved-query-sql"
-                    value={sqlInput()}
-                    onChange={setSqlInput}
-                    schema={buildSqlSchema((forms() || []) as Form[])}
-                    disabled={data().kind !== "user-query" || busy() !== null}
-                  />
-                </div>
+                <SQLWorkspace
+                  id="saved-sql-workspace"
+                  sql={sqlInput()}
+                  onSqlChange={data().kind === "user-query"
+                    ? setSqlInput
+                    : undefined}
+                  schema={buildSqlSchema((forms() || []) as Form[])}
+                  readOnly={data().kind !== "user-query" || busy() !== null}
+                  variables={workspaceVariables()}
+                  parameterValues={workspace.parameterValues()}
+                  onParameterChange={workspace.onParameterChange}
+                  parametersReadOnly={data().kind !== "user-query" ||
+                    busy() !== null}
+                  previewDisabled={data().kind !== "user-query" ||
+                    busy() !== null}
+                  onPreview={workspace.run}
+                  onCount={workspace.count}
+                  onPrevious={workspace.previous}
+                  onNext={workspace.next}
+                  preview={workspace.preview()}
+                />
 
-                <div class="ui-stack-sm">
-                  <h2 class="text-lg font-semibold">
-                    {t("sqlPage.variables")}
-                  </h2>
-                  <Show
-                    when={variableCount() > 0}
-                    fallback={
-                      <p class="text-sm ui-muted">
-                        {t("sqlPage.noTemplateVariables")}
-                      </p>
-                    }
-                  >
-                    <SqlVariableDefaultsEditor
-                      idPrefix="saved-sql-variable"
-                      variables={normalized().variables}
-                      defaults={defaultDrafts()}
-                      disabled={busy() !== null || data().kind !== "user-query"}
-                      onDefaultsChange={setDefaultDrafts}
-                    />
-                  </Show>
-                </div>
+                <Show when={variableCount() > 0}>
+                  <SqlVariableDefaultsEditor
+                    idPrefix="saved-sql-variable"
+                    variables={normalized().variables}
+                    defaults={defaultDrafts()}
+                    disabled={busy() !== null || data().kind !== "user-query"}
+                    onDefaultsChange={setDefaultDrafts}
+                  />
+                </Show>
               </>
             )}
           </Match>
@@ -398,7 +414,7 @@ export default function SpaceSqlDetailRoute() {
               class="btn"
               onClick={handleRun}
             >
-              {t("sqlPage.runQuery")}
+              {t("sqlPage.results")}
             </button>
           </Show>
           <Show when={entry() && variableCount() > 0 && !isDirty()}>

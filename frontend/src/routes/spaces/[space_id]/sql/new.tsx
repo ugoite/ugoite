@@ -3,7 +3,7 @@ import type { Diagnostic } from "@codemirror/lint";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { BackLink } from "~/components/BackLink";
 import { ButtonSpinner } from "~/components/ButtonSpinner";
-import { SqlQueryEditor } from "~/components";
+import { SQLWorkspace } from "~/components/SQLWorkspace";
 import { SqlVariableDefaultsEditor } from "~/components/SqlVariableDefaultsEditor";
 import { formApi } from "~/lib/ugoite-client";
 import {
@@ -23,6 +23,7 @@ import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
+import { createSqlWorkspaceController } from "~/lib/sql-workspace";
 
 export const route = spaceRoute({ navigation: "search" });
 
@@ -92,7 +93,6 @@ export default function SpaceQueryCreateRoute() {
   });
 
   const schema = () => buildSqlSchema((forms() || []) as Form[]);
-
   const variables = createMemo(() => {
     const normalized = normalizeSqlVariables(sqlInput().trim());
     const generated = generatedParameter();
@@ -101,6 +101,18 @@ export default function SpaceQueryCreateRoute() {
         ? { ...variable, ...generated }
         : variable
     );
+  });
+  const workspaceVariables = createMemo(() => {
+    const defaults = applySqlVariableDefaultDrafts(
+      variables(),
+      defaultDrafts(),
+    );
+    return defaults.invalid ? variables() : defaults.variables;
+  });
+  const workspace = createSqlWorkspaceController({
+    spaceId,
+    sql: sqlInput,
+    variables: workspaceVariables,
   });
 
   // Line/column rendering for editor diagnostics. Offsets come from the
@@ -295,22 +307,26 @@ export default function SpaceQueryCreateRoute() {
           </button>
         </div>
 
-        <div>
-          <label class="ui-label mb-2" for="query-sql">
-            {t("sqlPage.sql")}
-          </label>
-          <SqlQueryEditor
-            id="query-sql"
-            value={sqlInput()}
-            onChange={(value) => {
-              setHasUserEditedSql(true);
-              setSqlInput(value);
-            }}
-            schema={schema()}
-            onDiagnostics={setDiagnostics}
-            disabled={isSaving()}
-          />
-        </div>
+        <SQLWorkspace
+          id="new-sql-workspace"
+          sql={sqlInput()}
+          onSqlChange={(value) => {
+            setHasUserEditedSql(true);
+            setSqlInput(value);
+          }}
+          schema={schema()}
+          variables={workspaceVariables()}
+          parameterValues={workspace.parameterValues()}
+          onParameterChange={workspace.onParameterChange}
+          readOnly={isSaving()}
+          onDiagnostics={setDiagnostics}
+          previewDisabled={isSaving()}
+          onPreview={workspace.run}
+          onCount={workspace.count}
+          onPrevious={workspace.previous}
+          onNext={workspace.next}
+          preview={workspace.preview()}
+        />
 
         <Show when={variables().length > 0}>
           <SqlVariableDefaultsEditor

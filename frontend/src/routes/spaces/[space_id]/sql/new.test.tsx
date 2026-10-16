@@ -4,10 +4,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import SpaceQueryCreateRoute from "./new";
 import { expectBackLinkAtHeaderStart } from "~/test/back-link-placement";
 
-const { navigateMock, formApiListMock, sqlCreateMock } = vi.hoisted(() => ({
+const {
+  navigateMock,
+  formApiListMock,
+  sqlCreateMock,
+  sqlQueryMock,
+  sqlCountMock,
+} = vi.hoisted(() => ({
   navigateMock: vi.fn(),
   formApiListMock: vi.fn(),
   sqlCreateMock: vi.fn(),
+  sqlQueryMock: vi.fn(),
+  sqlCountMock: vi.fn(),
 }));
 
 vi.mock("@solidjs/router", () => ({
@@ -31,11 +39,12 @@ vi.mock("@solidjs/router", () => ({
   useParams: () => ({ space_id: "default" }),
 }));
 
-vi.mock("~/components", () => ({
-  SqlQueryEditor: (props: {
+vi.mock("~/components/SQLWorkspace", () => ({
+  SQLWorkspace: (props: {
     id?: string;
-    value: string;
-    onChange: (value: string) => void;
+    sql: string;
+    onSqlChange?: (value: string) => void;
+    onPreview: () => void;
     onDiagnostics?: (
       diagnostics: Array<{
         from: number;
@@ -44,6 +53,7 @@ vi.mock("~/components", () => ({
         message: string;
       }>,
     ) => void;
+    preview: { status: string };
   }) => {
     const emitBackendDiagnostic = (value: string) => {
       props.onDiagnostics?.(
@@ -58,23 +68,31 @@ vi.mock("~/components", () => ({
       );
     };
     return (
-      <textarea
-        id={props.id}
-        aria-label="SQL"
-        value={props.value}
-        onInput={(event) => {
-          const value = event.currentTarget.value;
-          props.onChange(value);
-          emitBackendDiagnostic(value);
-        }}
-      />
+      <div>
+        <textarea
+          id={props.id}
+          aria-label="SQL"
+          value={props.sql}
+          onInput={(event) => {
+            const value = event.currentTarget.value;
+            props.onSqlChange?.(value);
+            emitBackendDiagnostic(value);
+          }}
+        />
+        <button type="button" onClick={props.onPreview}>Run Query</button>
+        <output>{props.preview.status}</output>
+      </div>
     );
   },
 }));
 
 vi.mock("~/lib/ugoite-client", () => ({
   formApi: { list: formApiListMock },
-  sqlApi: { create: sqlCreateMock },
+  sqlApi: {
+    create: sqlCreateMock,
+    query: sqlQueryMock,
+    count: sqlCountMock,
+  },
 }));
 
 describe("/spaces/:space_id/sql/new", () => {
@@ -171,6 +189,37 @@ describe("/spaces/:space_id/sql/new", () => {
       },
     ]);
     sqlCreateMock.mockResolvedValue({ id: "query-1", revisionId: "rev-1" });
+    sqlQueryMock.mockReset().mockResolvedValue({
+      columns: ["value"],
+      rows: [[1]],
+      has_more: false,
+      result_schema: [{ name: "value", type: "integer" }],
+    });
+    sqlCountMock.mockReset().mockResolvedValue(1);
+  });
+
+  it("previews the current draft through stateless SQL without creating Saved SQL", async () => {
+    render(() => <SpaceQueryCreateRoute />);
+    const editor = await screen.findByRole("textbox", { name: "SQL" });
+    await waitFor(() => {
+      expect(editor).toHaveValue(
+        'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
+      );
+    });
+    fireEvent.input(editor, { target: { value: "SELECT 1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Run Query" }));
+
+    await waitFor(() => {
+      expect(sqlQueryMock).toHaveBeenCalledWith("default", {
+        sql: "SELECT 1",
+        parameters: {},
+        parameter_types: {},
+        include_exact_integer_values: true,
+        limit: 100,
+      }, expect.any(AbortSignal));
+    });
+    expect(sqlCreateMock).not.toHaveBeenCalled();
+    expect(await screen.findByText("success")).toBeInTheDocument();
   });
 
   it("REQ-FE-063: starts with a Form relation and keeps paging out of SQL", async () => {

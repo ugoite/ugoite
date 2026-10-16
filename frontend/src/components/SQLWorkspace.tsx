@@ -82,6 +82,7 @@ export interface SQLWorkspaceProps {
   parametersReadOnly?: boolean;
   actions?: readonly SQLWorkspaceAction[];
   onDiagnostics?: (diagnostics: Diagnostic[]) => void;
+  previewDisabled?: boolean;
   onPreview: () => void;
   preview: SQLWorkspacePreview;
   onCount?: () => void;
@@ -213,7 +214,8 @@ export function SQLWorkspace(props: SQLWorkspaceProps) {
           type="button"
           class="btn primary"
           onClick={() => props.onPreview()}
-          disabled={props.preview.status === "loading"}
+          disabled={props.preview.status === "loading" ||
+            props.previewDisabled}
           aria-busy={props.preview.status === "loading" || undefined}
         >
           <Show when={props.preview.status === "loading"}>

@@ -73,6 +73,11 @@ describe("SQLWorkspace", () => {
     expect(onPreview).toHaveBeenCalledOnce();
   });
 
+  it("REQ-FE-080: lets the route disable preview while its source is read-only", () => {
+    renderWorkspace({ previewDisabled: true });
+    expect(screen.getByRole("button", { name: "Run Query" })).toBeDisabled();
+  });
+
   it("REQ-FE-080: presents variable defaults and forwards raw transient values", () => {
     const onParameterChange = vi.fn();
     renderWorkspace({
