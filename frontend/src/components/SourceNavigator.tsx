@@ -4,13 +4,12 @@ import { UiIcon } from "~/components/UiIcon";
 import type { DraftSource } from "~/lib/composition-draft";
 import { t } from "~/lib/i18n";
 
-export const sourceKindIcon = (source: DraftSource): "sql" | "forms" =>
-  source.kind === "saved_sql" ? "sql" : "forms";
+export const sourceKindIcon = (_source: DraftSource): "sql" => "sql";
 
 export const sourceKindLabel = (source: DraftSource): string =>
   source.kind === "saved_sql"
     ? t("spaceShell.title.savedSql")
-    : t("common.form");
+    : t("sqlPage.sql");
 
 interface SourceNavigatorProps {
   sources: readonly DraftSource[];
@@ -24,8 +23,7 @@ interface SourceNavigatorProps {
 
 /**
  * Data source navigator for the Composition Studio Data workspace.
- * Human names only in rows; revision identity lives in the per-source
- * editor's advanced disclosure, never in the primary path.
+ * Human names only in rows; revision identity stays out of the primary path.
  */
 export function SourceNavigator(props: SourceNavigatorProps) {
   return (

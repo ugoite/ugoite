@@ -79,7 +79,6 @@ describe("Composition history route", () => {
         revision_id: "revision-2",
         updated_at: 1767312000,
         name: "Monthly expenses",
-        tags: [],
       }],
       offset: 0,
       limit: 100,

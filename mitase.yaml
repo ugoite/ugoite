@@ -263,9 +263,6 @@ inventory:
         - frontend/src/lib/composition-query-handle.test.ts
         - frontend/src/lib/composition-preview-handle.ts
         - frontend/src/lib/composition-preview-handle.test.ts
-        - frontend/src/lib/entry-query-composition.test.ts
-        - frontend/src/lib/entry-query-studio-capabilities.ts
-        - frontend/src/lib/entry-query-studio-capabilities.test.ts
         - frontend/src/components/CompositionRenderer.tsx
         - frontend/src/components/CompositionRenderer.test.tsx
         - frontend/src/components/DashboardFlowRenderer.tsx
@@ -276,9 +273,11 @@ inventory:
         - frontend/src/components/CompositionInspector.test.tsx
         - frontend/src/components/CompositionDataWorkspace.tsx
         - frontend/src/components/CompositionDataWorkspace.test.tsx
+        - frontend/src/components/SQLWorkspace.tsx
+        - frontend/src/components/SQLWorkspace.test.tsx
+        - frontend/src/components/SqlStructureToolbar.tsx
+        - frontend/src/components/SqlStructureToolbar.test.tsx
         - frontend/src/components/SourceNavigator.tsx
-        - frontend/src/components/EntryQuerySourceEditor.tsx
-        - frontend/src/components/SavedSqlSourceViewer.tsx
         - frontend/src/components/composition/InspectorFields.tsx
         - frontend/src/components/composition/MetricInspector.tsx
         - frontend/src/components/composition/TableInspector.tsx
@@ -287,10 +286,6 @@ inventory:
         - frontend/src/components/composition/TextComponent.tsx
         - frontend/src/components/composition/InputControl.tsx
         - frontend/src/components/composition/InputControl.test.tsx
-        - frontend/src/components/CompositionEntryQueryTable.tsx
-        - frontend/src/components/CompositionEntryQueryTable.test.tsx
-        - frontend/src/components/CompositionSourcePicker.tsx
-        - frontend/src/components/CompositionSourcePicker.test.tsx
         - frontend/src/components/CompositionSourcePicker.tsx
         - frontend/src/components/CompositionSourcePicker.test.tsx
         - frontend/src/components/CompositionDisplayList.tsx
@@ -324,6 +319,7 @@ inventory:
     declared:
       roots:
         - AGENTS.md
+        - frontend/src/app.css
         - docs/spec/index.md
         - docs/mitase/philosophies/foundation.yaml
         - docs/mitase/policies
@@ -342,6 +338,9 @@ inventory:
         - docs/mitase/requirements/composition
         - docs/mitase/requirements/frontend
         - docs/mitase/features/frontend
+        - docs/spec/ui/components/composition-sql-workspace.yaml
+        - docs/spec/ui/components/composition-studio.yaml
+        - docs/spec/ui/components/sql-workspace.yaml
         - docs/spec/ui/components/entry-browser.yaml
         - docs/spec/ui/components/form-table.yaml
         - docs/spec/ui/components/searchable-select.yaml
@@ -500,6 +499,7 @@ inventory:
         - crates/ugoite-iceberg/tests/fixtures/v0.1-knowledge.json
         - fixtures/spaces/0.1/spaces/019c1234-5678-7abc-8def-0123456789ab/meta.json
         - docs/architecture/contracts/composition.md
+        - docs/architecture/contracts/adr-024-composition-sql-first.md
         - crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml
         - crates/ugoite-domain/tests/fixtures/composition/monthly-expense-labeled.ugcomp.yaml
         - crates/ugoite-domain/tests/fixtures/composition/saved-sql-metric-columns.ugcomp.yaml

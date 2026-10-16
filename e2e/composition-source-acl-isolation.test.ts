@@ -6,6 +6,7 @@ import {
   test,
 } from "@playwright/test";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
+import { completeSavedSqlCompositionYaml } from "./lib/composition.ts";
 import { openIsolatedPasskeyPage } from "./lib/security-context.ts";
 
 const SOURCE_UNAVAILABLE_DIAGNOSTIC = "A data source is unavailable.";
@@ -148,12 +149,11 @@ async function seedSavedSqlMetric(
   expect(savedSql.id).toBeTruthy();
   expect(savedSql.revision_id).toBeTruthy();
 
-  const yaml = [
+  let yaml = [
     "format: ugoite.composition",
     "format_version: 1",
     `name: ${options.compositionName}`,
     "kind: dashboard",
-    "tags: []",
     "spec:",
     "  variables:",
     `    - id: ${VARIABLE_ID}`,
@@ -165,20 +165,17 @@ async function seedSavedSqlMetric(
     "      kind: saved_sql",
     `      entry_id: "${savedSql.id}"`,
     `      revision_id: "${savedSql.revision_id}"`,
-    "      expected_result:",
-    "        - name: value",
-    "          type: string",
+    "      expected_result: []",
+    "      schema_fingerprint: ''",
     "      variables:",
     `        ${SQL_VARIABLE_NAME}:`,
     `          variable: ${VARIABLE_ID}`,
     "  components:",
     `    - id: ${INPUT_COMPONENT_ID}`,
     "      kind: input",
-    "      label: Lookup key",
     `      variable: ${VARIABLE_ID}`,
     `    - id: ${METRIC_COMPONENT_ID}`,
     "      kind: metric",
-    "      label: Protected result",
     `      source: ${COMPOSITION_SOURCE_ID}`,
     "      column: value",
     `    - id: ${TABLE_COMPONENT_ID}`,
@@ -197,6 +194,16 @@ async function seedSavedSqlMetric(
     `            component: ${TABLE_COMPONENT_ID}`,
     "",
   ].join("\n");
+  yaml = await completeSavedSqlCompositionYaml(
+    request,
+    options.spaceId,
+    yaml,
+    [{
+      id: COMPOSITION_SOURCE_ID,
+      savedSqlId: savedSql.id!,
+      savedSqlRevisionId: savedSql.revision_id!,
+    }],
+  );
   const compositionResponse = await request.post(
     getBackendUrl(`/spaces/${options.spaceId}/compositions`),
     {
@@ -343,8 +350,7 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
         expect(compositionReadAfterRevocation.ok()).toBe(true);
 
         const revokedMetricResponse = metricResponse(page);
-        await page.getByRole("textbox", { name: "Lookup key", exact: true })
-          .fill(inputValue);
+        await page.getByRole("textbox").first().fill(inputValue);
         await expect(page.locator("output.compositionMetric")).toHaveCount(0);
         const deniedBody = await revokedMetricResponse;
         await expect(page.getByRole("table")).toHaveCount(0);
@@ -538,7 +544,7 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
       );
       await expect(page.getByRole("table")).toContainText(seedA.protectedValue);
       await expect(
-        page.getByRole("textbox", { name: "Lookup key", exact: true }),
+        page.getByRole("textbox").first(),
       ).toHaveValue("match");
       expect((await firstMetricResponse).result?.value).toBe(
         seedA.protectedValue,
@@ -561,7 +567,7 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
       );
       await expect(page.getByRole("table")).toContainText(seedB.protectedValue);
       await expect(
-        page.getByRole("textbox", { name: "Lookup key", exact: true }),
+        page.getByRole("textbox").first(),
       ).toHaveValue("match");
       expect((await secondMetricResponse).result?.value).toBe(
         seedB.protectedValue,

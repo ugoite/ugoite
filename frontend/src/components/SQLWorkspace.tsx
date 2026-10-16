@@ -157,7 +157,6 @@ export function SQLWorkspace(props: SQLWorkspaceProps) {
           </For>
         </div>
       </Show>
-
       <Show when={variables().length > 0}>
         <section
           class="sql-workspace__variables"

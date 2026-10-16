@@ -20,13 +20,12 @@ const sourceName = (
 ): string =>
   sources.find((source) => source.draftId === sourceDraftId)?.name ?? "";
 
-/** Default block name: the label, else the source name (plus value for metrics). */
+/** Default block name comes from the source or SQL result column. */
 export const displayDefaultName = (
   display: DraftDisplay,
   sources: readonly DraftSource[],
   variables: readonly DraftVariable[],
 ): string => {
-  if (display.label) return display.label;
   if (display.kind === "text") {
     return display.content.kind === "literal"
       ? display.content.text || t("composition.studioText")

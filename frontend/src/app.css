@@ -4159,6 +4159,39 @@ a.tool {
   justify-content: flex-end;
   min-height: 44px;
 }
+.dataWorkspaceDrawerClose,
+.dataWorkspaceSourceMenuButton {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--ui-spacing-sm);
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 var(--ui-spacing-sm);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.dataWorkspaceSourceMenuButton {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dataWorkspaceDrawerClose:hover,
+.dataWorkspaceSourceMenuButton:hover {
+  background: var(--soft2);
+}
+.dataWorkspaceDrawerClose:focus-visible,
+.dataWorkspaceSourceMenuButton:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+.dataWorkspaceDrawerBackdrop {
+  display: none;
+}
 .dataWorkspace--collapsible .dataWorkspaceNavigatorActions,
 .dataWorkspace--collapsible .dataWorkspaceMainActions {
   display: flex;
@@ -4195,17 +4228,33 @@ a.tool {
   .dataWorkspace--mobile .dataWorkspaceMainActions {
     display: flex;
   }
+  .dataWorkspace--mobile .dataWorkspaceMainActions {
+    justify-content: flex-start;
+  }
+  .dataWorkspace--mobile-navigator-open .dataWorkspaceDrawerBackdrop {
+    display: block;
+    position: fixed;
+    z-index: 109;
+    inset: 0;
+    width: 100vw;
+    height: 100dvh;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: rgb(0 0 0 / 48%);
+  }
   .dataWorkspace--mobile-navigator-open .dataWorkspaceNavigator:not([hidden]) {
-    position: absolute;
-    z-index: 2;
-    inset: 0 auto auto 0;
+    position: fixed;
+    z-index: 110;
+    inset: 0 auto 0 0;
     width: min(21rem, calc(100vw - var(--ui-spacing-xl)));
-    height: min(72dvh, 36rem);
-    max-height: calc(100dvh - var(--ui-spacing-xl));
+    height: 100dvh;
+    max-height: 100dvh;
     padding: var(--ui-spacing-md);
     overflow: auto;
-    border: 1px solid var(--ui-border);
-    border-radius: var(--ui-radius-lg);
+    border: 0;
+    border-right: 1px solid var(--ui-border);
+    border-radius: 0 var(--ui-radius-md) var(--ui-radius-md) 0;
     background: var(--ui-surface-2);
     box-shadow: var(--ui-shadow-lg);
   }

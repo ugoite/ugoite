@@ -11,37 +11,29 @@ import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { RowList, RowListButton, RowListItem } from "~/components/RowList";
 import { FormRowLabel, SavedSqlRowLabel } from "~/components/SourceRowLabels";
 import {
-  buildEntryQueryComposition,
-  buildEntryQueryCompositionFieldSchema,
-  type EntryQueryCompositionFieldSchemaEntry,
-  MAX_COMPOSITION_FIELD_SCHEMA_ITEMS,
-} from "~/lib/entry-query-composition";
-import {
   canCreateSavedSqlComposition,
   compositionResultTypeFromSql,
   type CompositionVariableType,
 } from "~/lib/composition-api";
 import {
-  type DraftEntryQuerySeed,
+  compositionResultSchemaFingerprint,
+  type DraftInlineSqlSeed,
   type DraftSavedSqlSeed,
   type DraftSource,
-  MAX_ENTRY_PROJECTION_FIELDS,
 } from "~/lib/composition-draft";
 import { t } from "~/lib/i18n";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { normalizeSqlVariables } from "~/lib/sql";
-import { studioCapabilitiesFromForm } from "~/lib/entry-query-studio-capabilities";
 import { displaySqlName } from "~/lib/sql-metadata";
 import { formApi, sqlApi } from "~/lib/ugoite-client";
 import type { Form, SqlEntry } from "~/lib/types";
 
 export type CompositionSourceSeed =
   | { kind: "saved_sql"; seed: DraftSavedSqlSeed }
-  | { kind: "entry_query"; seed: DraftEntryQuerySeed };
+  | { kind: "inline_sql"; seed: DraftInlineSqlSeed };
 
 interface CompositionSourcePickerProps {
   spaceId: string;
-  sourcePurpose?: "data" | "table" | "metric";
   /** Sources already referenced by the current draft; shown first for reuse. */
   existingSources?: readonly DraftSource[];
   onSelectExisting?: (sourceDraftId: string) => void;
@@ -58,17 +50,30 @@ const isAbort = (error: unknown): boolean =>
   !!error && typeof error === "object" &&
   (error as { name?: unknown }).name === "AbortError";
 
+const sqlProbeDefault = (type: string): string | number | boolean => {
+  switch (type) {
+    case "boolean":
+      return false;
+    case "integer":
+    case "float":
+      return 0;
+    case "date":
+      return "1970-01-01";
+    case "timestamp":
+      return "1970-01-01T00:00:00Z";
+    default:
+      return "";
+  }
+};
+
 /**
  * Data-source picker for the Composition Studio. Forms and Saved SQL share
  * one dialog behind Forms | Saved SQL tabs (the settings tablist pattern)
  * reusing the list pages' shared row labels with full-row selection and
  * human names only. Internal registry forms stay hidden through the shared
- * `filterCreatableEntryForms` single source. Seeds reuse the existing
- * builders: EntryQuery seeds go through `buildEntryQueryComposition` with
- * projectable Form fields (Preview only when none are projectable), Saved SQL
- * seeds pin the exact revision
- * with server-owned column types from a bounded probe page (json fallback,
- * unique columns required).
+ * `filterCreatableEntryForms` single source. A Form row creates editable
+ * inline SQL that names the Form relation; a Saved SQL row pins one exact
+ * revision with the server-owned result descriptor.
  */
 export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
   const titleId = "composition-source-picker-title";
@@ -76,10 +81,7 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
   const formsPanelId = "composition-source-panel-forms";
   const sqlTabId = "composition-source-tab-saved-sql";
   const sqlPanelId = "composition-source-panel-saved-sql";
-  const metricOnly = () => props.sourcePurpose === "metric";
-  const [tab, setTab] = createSignal<"forms" | "savedSql">(
-    metricOnly() ? "savedSql" : "forms",
-  );
+  const [tab, setTab] = createSignal<"forms" | "savedSql">("forms");
   const [load, setLoad] = createSignal<PickerLoad>({ status: "loading" });
   const [adding, setAdding] = createSignal(false);
   const [addError, setAddError] = createSignal<string | null>(null);
@@ -90,20 +92,14 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
   let forms: Form[] = [];
 
   const spaceId = () => props.spaceId;
-
-  const reload = (
-    currentSpaceId = spaceId(),
-    currentMetricOnly = metricOnly(),
-  ) => {
+  const reload = (currentSpaceId = spaceId()) => {
     const requestGeneration = ++generation;
     controller?.abort();
     const current = new AbortController();
     controller = current;
     setLoad({ status: "loading" });
     void Promise.all([
-      currentMetricOnly
-        ? Promise.resolve([] as Form[])
-        : formApi.list(currentSpaceId),
+      formApi.list(currentSpaceId),
       sqlApi.list(currentSpaceId),
     ]).then(
       ([listedForms, listedSql]) => {
@@ -131,9 +127,7 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
   };
 
   createEffect(() => {
-    const currentMetricOnly = metricOnly();
-    if (currentMetricOnly) setTab("savedSql");
-    reload(spaceId(), currentMetricOnly);
+    reload(spaceId());
   });
   onCleanup(() => {
     generation += 1;
@@ -192,80 +186,17 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
     }
   };
 
-  const addEntryQuery = (form: Form) => {
-    if (adding() || metricOnly() || !form.id) return;
+  const addInlineSql = (form: Form) => {
+    if (adding() || !form.id) return;
     setAdding(true);
     setAddError(null);
     try {
-      const projectionFields = [];
-      const selectedFields = new Set<number>();
-      for (
-        const capability of studioCapabilitiesFromForm(
-          form,
-          t("composition.studioFieldNameUnavailable"),
-        )
-      ) {
-        if (
-          !capability.projectable || capability.field.kind !== "property" ||
-          selectedFields.has(capability.field.field_id)
-        ) continue;
-        selectedFields.add(capability.field.field_id);
-        projectionFields.push(capability.field);
-        if (projectionFields.length >= MAX_ENTRY_PROJECTION_FIELDS) break;
-      }
-      const projection = projectionFields.length > 0
-        ? { kind: "fields" as const, fields: projectionFields }
-        : { kind: "preview" as const };
-      const result = buildEntryQueryComposition({
-        query: {
-          scope: { kind: "form", form_id: form.id },
-          filters: [],
-          sort: [],
-        },
-        projection,
-        form,
-        knownForms: forms,
-      });
-      if (result.status !== "ok") {
-        setAddError(t(result.reason));
-        return;
-      }
-      const schemaEntries = buildEntryQueryCompositionFieldSchema(
-        form,
-        forms,
-      );
-      if (
-        projection.kind === "preview" &&
-        schemaEntries.length > MAX_COMPOSITION_FIELD_SCHEMA_ITEMS
-      ) {
-        setAddError("entryQueryToolSave.unsupportedQuery");
-        return;
-      }
-      const schemaById = new Map(
-        schemaEntries.map((entry) => [entry.field_id, entry]),
-      );
-      const selectedSchema = projectionFields.flatMap((field) => {
-        const entry = schemaById.get(field.field_id);
-        return entry ? [entry] : [];
-      });
-      const initialFieldIds = new Set(
-        selectedSchema.map((entry) => entry.field_id),
-      );
-      const fieldSchema: EntryQueryCompositionFieldSchemaEntry[] = [
-        ...selectedSchema,
-        ...schemaEntries.filter((entry) =>
-          !initialFieldIds.has(entry.field_id)
-        ),
-      ].slice(0, MAX_COMPOSITION_FIELD_SCHEMA_ITEMS).sort((left, right) =>
-        left.field_id - right.field_id
-      );
+      const relation = `"${form.name.replaceAll('"', '""')}"`;
       props.onSelect({
-        kind: "entry_query",
+        kind: "inline_sql",
         seed: {
-          formId: form.id,
           name: form.name,
-          fieldSchema,
-          query: result.source.query,
+          sql: `SELECT * FROM ${relation}`,
         },
       });
     } finally {
@@ -286,10 +217,17 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
       // Bounded probe for the server-owned column descriptor. The Browser
       // never infers types from row values; columns absent from the schema
       // keep the json fallback, mirroring buildSavedSqlCompositionDocument.
+      const normalized = normalizeSqlVariables(current.sql, current.variables);
       const page = await sqlApi.query(spaceId(), {
-        sql: normalizeSqlVariables(current.sql).sql,
-        parameters: {},
-        parameter_types: {},
+        sql: normalized.sql,
+        parameters: Object.fromEntries(normalized.variables.map((variable) => [
+          variable.name,
+          variable.default ?? sqlProbeDefault(variable.type),
+        ])),
+        parameter_types: Object.fromEntries(normalized.variables.map((variable) => [
+          variable.name,
+          variable.type,
+        ])),
         limit: 1,
         saved_sql: { id: current.id, revision_id: current.revision_id },
       });
@@ -307,19 +245,31 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
         name,
         type: compositionResultTypeFromSql(schemaByName.get(name)),
       }));
+      const schemaFingerprint = await compositionResultSchemaFingerprint(
+        expectedResult,
+      );
       props.onSelect({
         kind: "saved_sql",
         seed: {
           entryId: current.id,
           revisionId: current.revision_id,
           name: displaySqlName(current),
+          sql: current.sql,
           expectedResult,
+          schemaFingerprint,
           variables: {},
           variableTypes: Object.fromEntries(
             current.variables.map((variable) => [
               variable.name,
               variable.type as CompositionVariableType,
             ]),
+          ),
+          variableDefaults: Object.fromEntries(
+            current.variables.flatMap((variable) =>
+              variable.default === undefined
+                ? []
+                : [[variable.name, variable.default]]
+            ),
           ),
         },
       });
@@ -328,6 +278,13 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
     } finally {
       setAdding(false);
     }
+  };
+
+  const addBlankSql = () => {
+    props.onSelect({
+      kind: "inline_sql",
+      seed: { name: t("sqlPage.sql"), sql: "SELECT 1" },
+    });
   };
 
   const ready = () => {
@@ -375,20 +332,14 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
           <Show when={ready()}>
             {(sources) => (
               <div>
-                <Show
-                  when={(props.existingSources?.filter((source) =>
-                    !metricOnly() || source.kind === "saved_sql"
-                  ).length ?? 0) > 0}
-                >
+                <Show when={(props.existingSources?.length ?? 0) > 0}>
                   <section class="ui-stack-sm">
                     <h3 class="ui-label">
                       {t("composition.studioCurrentSources")}
                     </h3>
                     <RowList label={t("composition.studioCurrentSources")}>
                       <For
-                        each={(props.existingSources ?? []).filter((source) =>
-                          !metricOnly() || source.kind === "saved_sql"
-                        )}
+                        each={props.existingSources ?? []}
                       >
                         {(source) => (
                           <RowListItem
@@ -397,7 +348,7 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
                                 ariaLabel={`${source.name}, ${
                                   source.kind === "saved_sql"
                                     ? t("spaceShell.title.savedSql")
-                                    : t("composition.studioForms")
+                                    : t("sqlPage.sql")
                                 }`}
                                 title={source.name}
                                 primary={
@@ -405,7 +356,7 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
                                 }
                                 secondary={source.kind === "saved_sql"
                                   ? t("spaceShell.title.savedSql")
-                                  : t("composition.studioForms")}
+                                  : t("sqlPage.sql")}
                                 onActivate={() =>
                                   props.onSelectExisting?.(source.draftId)}
                               />
@@ -416,12 +367,11 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
                     </RowList>
                   </section>
                 </Show>
-                <Show when={!metricOnly()}>
-                  <div
-                    class="tabs"
-                    role="tablist"
-                    aria-labelledby={titleId}
-                  >
+                <div
+                  class="tabs"
+                  role="tablist"
+                  aria-labelledby={titleId}
+                >
                     <button
                       type="button"
                       role="tab"
@@ -446,9 +396,15 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
                     >
                       {t("spaceShell.title.savedSql")}
                     </button>
-                  </div>
-                </Show>
-                <Show when={!metricOnly() && tab() === "forms"}>
+                </div>
+                <button
+                  class="btn secondary"
+                  type="button"
+                  onClick={addBlankSql}
+                >
+                  {t("sqlPage.sql")}
+                </button>
+                <Show when={tab() === "forms"}>
                   <section
                     id={formsPanelId}
                     role="tabpanel"
@@ -474,7 +430,7 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
                                 <RowListButton
                                   title={form.name}
                                   primary={<FormRowLabel name={form.name} />}
-                                  onActivate={() => addEntryQuery(form)}
+                                  onActivate={() => addInlineSql(form)}
                                 />
                               }
                             />
@@ -484,14 +440,11 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
                     </Show>
                   </section>
                 </Show>
-                <Show when={metricOnly() || tab() === "savedSql"}>
+                <Show when={tab() === "savedSql"}>
                   <section
                     id={sqlPanelId}
                     role="tabpanel"
-                    aria-labelledby={metricOnly() ? undefined : sqlTabId}
-                    aria-label={metricOnly()
-                      ? t("spaceShell.title.savedSql")
-                      : undefined}
+                    aria-labelledby={sqlTabId}
                     class="ui-stack-sm"
                   >
                     <Show
@@ -504,7 +457,7 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
                     >
                       <RowList
                         label={t("spaceShell.title.savedSql")}
-                        labelledBy={metricOnly() ? undefined : sqlTabId}
+                        labelledBy={sqlTabId}
                       >
                         <For each={sources().queries}>
                           {(entry) => (

@@ -44,7 +44,6 @@ const seedDraft = (): CompositionDraft => {
   draft = addSavedSqlSource(draft, sqlSeed()).draft;
   const month = addVariable(draft, {
     id: "month",
-    label: "Month",
     type: "date",
     required: true,
   });
@@ -57,7 +56,7 @@ const seedDraft = (): CompositionDraft => {
   );
   if (!heading.ok) throw new Error("expected text block");
   draft = heading.draft;
-  const table = addTableDisplay(draft, "src-1", "Details", {
+  const table = addTableDisplay(draft, "src-1", {
     rowId: null,
     rowIndex: 1,
     itemIndex: 0,
@@ -162,7 +161,7 @@ describe("CompositionDesignCanvas", () => {
     expect(harnessCalls.draft).toHaveLength(0);
 
     // The select toggle exposes pressed state with a visible focus path.
-    const toggle = screen.getByRole("button", { name: "Select Month" });
+    const toggle = screen.getByRole("button", { name: "Select month" });
     expect(toggle).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(toggle);
     expect(harnessCalls.selected).toEqual([
@@ -185,18 +184,11 @@ describe("CompositionDesignCanvas", () => {
     const initial = seedDraft();
     const added = addInputComponent(initial, "month");
     if (!added.ok) throw new Error("expected repeated Input");
-    const withSecondInput = {
-      ...added.draft,
-      inputs: added.draft.inputs.map((input) =>
-        input.draftId === added.draftId
-          ? { ...input, label: "Secondary month" }
-          : input
-      ),
-    };
+    const withSecondInput = added.draft;
     renderHarness(withSecondInput);
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Select Secondary month" }),
+      screen.getAllByRole("button", { name: "Select month" })[1],
     );
 
     expect(harnessCalls.selected).toEqual([
@@ -242,7 +234,7 @@ describe("CompositionDesignCanvas", () => {
     // Repeated Inputs are ordinary components, so an existing variable stays
     // available for another placement.
     expect(
-      screen.getByRole("button", { name: "Add Input for Month" }),
+      screen.getByRole("button", { name: "Add Input for month" }),
     ).toBeInTheDocument();
   });
 
@@ -401,10 +393,10 @@ describe("CompositionDesignCanvas", () => {
     const dialog = screen.getByRole("dialog", { name: "Add to design" });
     fireEvent.click(
       Array.from(dialog.querySelectorAll(".designPaletteItem")).find((entry) =>
-        entry.textContent === "Variable 1"
+        entry.textContent === "region"
       ) as HTMLElement,
     );
-    expect(screen.queryByText("region")).not.toBeInTheDocument();
+    expect(screen.getByText("region")).toBeInTheDocument();
 
     expect(harnessCalls.draft).toHaveLength(1);
     const next = harnessCalls.draft[0];
@@ -424,7 +416,7 @@ describe("CompositionDesignCanvas", () => {
     ]);
   });
 
-  it("uses localized ordinals for unlabeled variable palette entries", () => {
+  it("uses stable variable IDs for palette entries in every locale", () => {
     let draft = createEmptyDraft("Studio");
     for (const id of ["month_key", "region_key"]) {
       const variable = addVariable(draft, {
@@ -440,21 +432,21 @@ describe("CompositionDesignCanvas", () => {
     fireEvent.click(
       screen.getAllByRole("button", { name: "Add to design" })[0],
     );
-    expect(screen.getByRole("button", { name: "Add Input for Variable 1" }))
+    expect(screen.getByRole("button", { name: "Add Input for month_key" }))
       .toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Add Input for Variable 2" }))
+    expect(screen.getByRole("button", { name: "Add Input for region_key" }))
       .toBeInTheDocument();
-    expect(screen.queryByText("month_key")).not.toBeInTheDocument();
-    expect(screen.queryByText("region_key")).not.toBeInTheDocument();
+    expect(screen.getByText("month_key")).toBeInTheDocument();
+    expect(screen.getByText("region_key")).toBeInTheDocument();
 
     setLocale("ja");
-    expect(screen.getByRole("button", { name: "変数1の入力を追加" }))
+    expect(screen.getByRole("button", { name: "month_keyの入力を追加" }))
       .toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "変数2の入力を追加" }))
+    expect(screen.getByRole("button", { name: "region_keyの入力を追加" }))
       .toBeInTheDocument();
   });
 
-  it("uses localized ordinals for unlabeled placed Input canvas names", () => {
+  it("uses the stable variable ID for placed Input canvas names", () => {
     const bindingId = "private_input_key_22";
     const variable = addVariable(createEmptyDraft("Studio"), {
       id: bindingId,
@@ -466,42 +458,27 @@ describe("CompositionDesignCanvas", () => {
     if (!placed.ok) throw new Error("expected placed Input");
     renderHarness(placed.draft);
 
-    const select = screen.getByRole("button", { name: "Select Variable 1" });
-    expect(select).toHaveAttribute("aria-label", "Select Variable 1");
+    const select = screen.getByRole("button", { name: `Select ${bindingId}` });
+    expect(select).toHaveAttribute("aria-label", `Select ${bindingId}`);
     fireEvent.click(select);
-
-    const expectInternalIdHidden = () => {
-      expect(document.body).not.toHaveTextContent(bindingId);
-      for (
-        const element of document.querySelectorAll("[aria-label], [title]")
-      ) {
-        expect(element.getAttribute("aria-label") ?? "").not.toContain(
-          bindingId,
-        );
-        expect(element.getAttribute("title") ?? "").not.toContain(bindingId);
-      }
-    };
 
     const selectedBlock = document.querySelector('[data-selected="true"]');
     expect(selectedBlock?.querySelectorAll("[title]")).toHaveLength(2);
-    expectInternalIdHidden();
+    expect(document.body).toHaveTextContent(bindingId);
 
     setLocale("ja");
-    expect(screen.getByRole("button", { name: "変数1を選択" }))
-      .toHaveAttribute("aria-label", "変数1を選択");
-    expectInternalIdHidden();
+    expect(screen.getByRole("button", { name: `${bindingId}を選択` }))
+      .toHaveAttribute("aria-label", `${bindingId}を選択`);
   });
 
-  it("uses a localized variable name for variable-bound Text blocks", () => {
+  it("uses the variable ID for variable-bound Text blocks", () => {
     const initial = seedDraft();
     const bindingId = "private_binding_01";
     const variableBound: CompositionDraft = {
       ...initial,
-      variables: initial.variables.map((variable) => {
-        if (variable.id !== "month") return variable;
-        const { label: _label, ...unlabeled } = variable;
-        return { ...unlabeled, id: bindingId };
-      }),
+      variables: initial.variables.map((variable) =>
+        variable.id === "month" ? { ...variable, id: bindingId } : variable
+      ),
       displays: initial.displays.map((display) =>
         display.kind === "text"
           ? {
@@ -513,12 +490,12 @@ describe("CompositionDesignCanvas", () => {
     };
     renderHarness(variableBound);
 
-    const select = screen.getByRole("button", { name: "Select Variable 1" });
+    const select = screen.getByRole("button", { name: `Select ${bindingId}` });
     expect(select).toBeInTheDocument();
-    expect(document.body).not.toHaveTextContent(bindingId);
+    expect(document.body).toHaveTextContent(bindingId);
 
     setLocale("ja");
-    expect(screen.getByRole("button", { name: "変数1を選択" }))
+    expect(screen.getByRole("button", { name: `${bindingId}を選択` }))
       .toBeInTheDocument();
   });
 
@@ -537,10 +514,10 @@ describe("CompositionDesignCanvas", () => {
 
     // Item moves appear on the selected block only, keeping one owner.
     expect(
-      screen.queryByRole("button", { name: "Move Month up" }),
+      screen.queryByRole("button", { name: "Move month up" }),
     ).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Select Month" }));
-    const itemDown = screen.getByRole("button", { name: "Move Month down" });
+    fireEvent.click(screen.getByRole("button", { name: "Select month" }));
+    const itemDown = screen.getByRole("button", { name: "Move month down" });
     fireEvent.click(itemDown);
     expect(harnessCalls.draft).toHaveLength(2);
     rows = toStudioDocument(harnessCalls.draft[1]).spec.layout.rows;
@@ -561,7 +538,7 @@ describe("CompositionDesignCanvas", () => {
       ),
     ).map((button) => button.getAttribute("aria-label"));
     expect(names).toContain("Move row 1 down");
-    expect(names).toContain("Move Month up");
+    expect(names).toContain("Move month up");
     expect(container.querySelectorAll("button[aria-label]")).not.toHaveLength(
       0,
     );
@@ -569,7 +546,7 @@ describe("CompositionDesignCanvas", () => {
 
   it("keeps deletion in the selected block Inspector", () => {
     const { container } = renderHarness();
-    fireEvent.click(screen.getByRole("button", { name: "Select Details" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select Monthly" }));
 
     const blockActions = container.querySelector(
       '[data-block-id="disp-2"] .designBlockActions',

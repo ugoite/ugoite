@@ -472,7 +472,7 @@ requirements:
       route adapters own persistence and query execution while SQL remains the
       authoritative source.
     priority: high
-    status: planned
+    status: implemented
     criteria:
       - id: shared-editor-and-preview
         kind: behavior
@@ -551,3 +551,101 @@ requirements:
           Shared Workspace SQL and variable inputs use at least 16px text, and
           primary, paging, and icon-only actions use at least 44px targets.
         governed_by: [POL-UI-004#rule.governance, POL-UI-005#rule.governance]
+    bindings:
+      - id: verification
+        role: verification
+        facet: verification
+        responsibility: Verify shared SQL presentation, adapter ownership, structured capabilities, transient parameters, paging, accessibility, and control sizes with focused frontend tests.
+        targets:
+          - id: workspace-presentation-contract
+            adapter: typescript
+            path: frontend/src/components/SQLWorkspace.test.tsx
+            selector: { kind: test, name: "REQ-FE-080: keeps SQL editing controlled and passes the accessible name" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.shared-editor-and-preview
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: keeps SQL editing controlled and passes the accessible name" } }
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.workspace-presentation-api
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: keeps SQL editing controlled and passes the accessible name" } }
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.editor-accessibility-and-wrapping
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: keeps SQL editing controlled and passes the accessible name" } }
+          - id: adapter-owned-query
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: edits inline SQL directly and passes the current SQL page to the shared workspace }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.adapter-owned-persistence-and-execution
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: edits inline SQL directly and passes the current SQL page to the shared workspace } }
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-uses-shared-workspace
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: edits inline SQL directly and passes the current SQL page to the shared workspace } }
+          - id: transient-parameters
+            adapter: typescript
+            path: frontend/src/components/SQLWorkspace.test.tsx
+            selector: { kind: test, name: "REQ-FE-080: presents variable defaults and forwards raw transient values" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.transient-typed-parameters
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: presents variable defaults and forwards raw transient values" } }
+          - id: adapter-actions
+            adapter: typescript
+            path: frontend/src/components/SQLWorkspace.test.tsx
+            selector: { kind: test, name: "REQ-FE-080: exposes operation reasons and never rewrites SQL on action" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.adapter-supplied-structured-actions
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: exposes operation reasons and never rewrites SQL on action" } }
+          - id: explicit-preview-and-paging
+            adapter: typescript
+            path: frontend/src/components/SQLWorkspace.test.tsx
+            selector: { kind: test, name: "REQ-FE-080: keeps count explicit and delegates result paging" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.explicit-preview-count-and-paging
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: keeps count explicit and delegates result paging" } }
+          - id: mobile-control-sizes
+            adapter: typescript
+            path: frontend/src/components/SQLWorkspace.test.tsx
+            selector: { kind: test, name: "REQ-FE-080: uses 16px inputs and 44px action targets" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.mobile-sql-editor-and-results
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace-layout]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: uses 16px inputs and 44px action targets" } }
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.workspace-control-size-rules
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace-layout]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: uses 16px inputs and 44px action targets" } }
+          - id: sql-structure-context
+            adapter: typescript
+            path: frontend/src/lib/sql.test.ts
+            selector: { kind: test, name: uses the written Form relation and intersects typed column capabilities }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.safe-structured-operations
+                covers: [FEAT-FE-008#binding.frontend/target.sql-structure-context]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: uses the written Form relation and intersects typed column capabilities } }
+          - id: sql-structure-proposal
+            adapter: typescript
+            path: frontend/src/components/SqlStructureToolbar.test.tsx
+            selector: { kind: test, name: intersects Form capabilities and changes SQL only after proposal confirmation }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.safe-structured-operations
+                covers: [FEAT-FE-008#binding.frontend/target.sql-structure-toolbar]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlStructureToolbar.test.tsx, test: intersects Form capabilities and changes SQL only after proposal confirmation } }
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.sql-toolbar-keeps-query-meanings
+                covers: [FEAT-FE-008#binding.frontend/target.sql-structure-toolbar]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlStructureToolbar.test.tsx, test: intersects Form capabilities and changes SQL only after proposal confirmation } }

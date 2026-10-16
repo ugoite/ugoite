@@ -8,12 +8,11 @@ import { metricColumnReady } from "~/lib/composition-draft";
 import { t } from "~/lib/i18n";
 
 export type CompositionDisplaySeed =
-  | { kind: "table"; sourceDraftId: string; label?: string }
+  | { kind: "table"; sourceDraftId: string }
   | {
     kind: "metric";
     sourceDraftId: string;
     column: string;
-    label?: string;
   };
 
 export interface MetricPickerPreview {
@@ -37,7 +36,7 @@ export interface DisplayScalarCandidate {
   name: string;
 }
 
-/** Saved SQL result columns that can be selected as a Metric scalar. */
+/** Unique typed SQL result columns that can be selected as a Metric scalar. */
 export const savedSqlScalarCandidates = (
   expectedResult: readonly { name: string; type: CompositionResultType }[],
 ): DisplayScalarCandidate[] => {
@@ -55,7 +54,7 @@ export const savedSqlScalarCandidates = (
 const sourceKindLabel = (source: DraftSource): string =>
   source.kind === "saved_sql"
     ? t("spaceShell.title.savedSql")
-    : t("common.form");
+    : t("sqlPage.sql");
 
 /** Add a Table or a SQL-backed Metric to the Composition canvas. */
 export function CompositionDisplayPicker(
@@ -107,11 +106,11 @@ export function CompositionDisplayPicker(
   const selectedSource = (): DraftSource | undefined =>
     props.draft.sources.find((source) => source.draftId === sourceDraftId());
   const metricSources = () =>
-    props.draft.sources.filter((source) => source.kind === "saved_sql");
+    props.draft.sources;
   const sqlCandidates = () => {
     const source = selectedSource();
-    return source?.kind === "saved_sql"
-      ? savedSqlScalarCandidates(source.expectedResult)
+    return source
+      ? savedSqlScalarCandidates(source.expectedResult ?? [])
       : [];
   };
   const metricReady = () =>
@@ -126,7 +125,6 @@ export function CompositionDisplayPicker(
       addTable(source);
       return;
     }
-    if (source.kind !== "saved_sql") return;
     invalidatePreview();
     setSourceDraftId(source.draftId);
     setColumn(undefined);
@@ -171,7 +169,7 @@ export function CompositionDisplayPicker(
     const source = selectedSource();
     const selectedColumn = column();
     if (
-      source?.kind !== "saved_sql" || !selectedColumn || !metricReady() ||
+      !source || !selectedColumn || !metricReady() ||
       !props.onPreview
     ) return;
     const request = ++previewRequest;
@@ -196,7 +194,7 @@ export function CompositionDisplayPicker(
     const source = selectedSource();
     const selectedColumn = column();
     if (
-      source?.kind !== "saved_sql" || !selectedColumn || !metricReady() ||
+      !source || !selectedColumn || !metricReady() ||
       !preview()?.ok
     ) return;
     props.onAdd({
@@ -304,8 +302,8 @@ export function CompositionDisplayPicker(
                 <For each={kind() === "metric" ? metricSources() : props.draft.sources}>
                   {(source) => {
                     const unavailable = () =>
-                      kind() === "metric" && source.kind === "saved_sql" &&
-                      savedSqlScalarCandidates(source.expectedResult).length ===
+                      kind() === "metric" &&
+                      savedSqlScalarCandidates(source.expectedResult ?? []).length ===
                         0;
                     return (
                       <RowListItem
@@ -327,7 +325,7 @@ export function CompositionDisplayPicker(
                   }}
                 </For>
               </RowList>
-              <Show when={kind() === "metric" && selectedSource()?.kind === "saved_sql"}>
+              <Show when={kind() === "metric" && selectedSource()}>
                 <div class="ui-stack-sm compositionMetricSetup">
                   <div class="ui-field">
                     <label class="ui-label" for="composition-metric-column">

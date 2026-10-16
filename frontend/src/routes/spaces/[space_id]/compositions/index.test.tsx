@@ -55,7 +55,6 @@ describe("Composition list route", () => {
           name: "Monthly expenses",
           kind: "dashboard",
           format_version: 1,
-          tags: [],
         }],
         offset: 0,
         limit: 50,

@@ -201,10 +201,7 @@ describe("Composition studio shell", () => {
     if (wasDataMode) showDataMode();
   };
 
-  const addMetricViaCanvas = async (
-    sourceName: string,
-    label?: string,
-  ) => {
+  const addMetricViaCanvas = async (sourceName: string) => {
     fireEvent.click(
       screen.getAllByRole("button", { name: "Add to design" })[0],
     );
@@ -225,11 +222,6 @@ describe("Composition studio shell", () => {
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
-    if (label) {
-      fireEvent.input(screen.getByLabelText("Label"), {
-        target: { value: label },
-      });
-    }
   };
 
   beforeEach(() => {
@@ -280,7 +272,7 @@ describe("Composition studio shell", () => {
     );
 
     // True modes: a blank Design shows the finished shape only — header,
-    // mode switch, Design canvas area, inspector slot. Variables, Tags,
+    // mode switch, Design canvas area, inspector slot. Variables,
     // the Data workspace, and the Preview section never render here. The
     // legacy Display section is gone; the canvas owns display editing.
     const modes = screen.getByRole("radiogroup", { name: "Studio mode" });
@@ -294,8 +286,6 @@ describe("Composition studio shell", () => {
     expect(
       screen.queryByRole("heading", { name: "Variables" }),
     ).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Tags" })).not
-      .toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Preview" })).not
       .toBeInTheDocument();
 
@@ -345,8 +335,7 @@ describe("Composition studio shell", () => {
     });
 
     // Data mode lists existing sources without a competing source action.
-    // Variables are available before a source exists; Tags remain on their
-    // own tab.
+    // Variables are available before a source exists.
     fireEvent.click(within(modes).getByRole("radio", { name: "Data" }));
     expect(
       screen.getAllByRole("heading", { level: 2 }).map((heading) =>
@@ -355,7 +344,8 @@ describe("Composition studio shell", () => {
     ).toEqual(["Data"]);
     expect(screen.getByRole("tab", { name: "Sources" }))
       .toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tab", { name: "Tags" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Tags" })).not
+      .toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { name: "Variables" }),
     ).not.toBeInTheDocument();
@@ -377,9 +367,7 @@ describe("Composition studio shell", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Variables" }));
     expect(screen.getByRole("heading", { name: "Variables" }))
       .toBeInTheDocument();
-    expect(screen.getByLabelText("New variable label"))
-      .toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Tags" })).not
+    expect(screen.getByLabelText("Variable ID"))
       .toBeInTheDocument();
     // Data mode never renders the canvas or the removed Preview section.
     expect(screen.queryByRole("heading", { name: "Preview" })).not
@@ -404,7 +392,7 @@ describe("Composition studio shell", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
     );
 
-    expect(await screen.findByRole("heading", { name: "Tasks" }))
+    expect(await screen.findByRole("button", { name: "Tasks" }))
       .toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Select Tasks" }))
       .not.toBeInTheDocument();
@@ -437,7 +425,7 @@ describe("Composition studio shell", () => {
 
     // The selected source keeps its human-readable heading without exposing
     // its internal Form ID in a nested disclosure.
-    expect(screen.getByRole("heading", { name: "Tasks" }))
+    expect(screen.getByRole("button", { name: "Tasks" }))
       .toBeInTheDocument();
     expect(container.querySelector("details")).toBeNull();
     expect(container.textContent).not.toContain(FORM_ID);
@@ -478,7 +466,7 @@ describe("Composition studio shell", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("adds canvas blocks with label, reorder, and remove through the Inspector", async () => {
+  it("adds canvas blocks with source-derived names, reorder, and remove", async () => {
     const { container } = render(() => <CompositionNewRoute />);
     fireEvent.input(screen.getByLabelText("Name"), {
       target: { value: "Weekly review" },
@@ -487,24 +475,19 @@ describe("Composition studio shell", () => {
     await addSourceViaPicker("Tasks");
     showDesignMode();
 
-    // A newly chosen source immediately provides its first table; the canvas
-    // selects it, and the inspector owns its optional label.
+    // A newly chosen source immediately provides its first table. Its name
+    // follows the source identity instead of being independently editable.
     expect(
       screen.getByRole("button", { name: "Select Tasks" }),
     ).toBeInTheDocument();
-    fireEvent.input(screen.getByLabelText("Label"), {
-      target: { value: "Details" },
-    });
-    expect(
-      screen.getByRole("button", { name: "Select Details" }),
-    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Label")).not.toBeInTheDocument();
 
     showDataMode();
     await addSourceViaPicker("Monthly", "Saved SQL");
     showDesignMode();
-    await addMetricViaCanvas("Monthly", "Total");
+    await addMetricViaCanvas("Monthly");
     expect(
-      screen.getByRole("button", { name: "Select Total" }),
+      screen.getByRole("button", { name: "Select Monthly / total" }),
     ).toBeInTheDocument();
 
     // Row reorder through the canvas; adding the metric opens its own row.
@@ -523,14 +506,16 @@ describe("Composition studio shell", () => {
 
     // The selected-block Inspector owns removal; each removal clears the
     // selection before the next block can be selected.
-    fireEvent.click(screen.getByRole("button", { name: "Remove Total" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove Monthly / total" }),
+    );
     expect(
-      screen.queryByRole("button", { name: "Select Total" }),
+      screen.queryByRole("button", { name: "Select Monthly / total" }),
     ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Select Details" }));
-    fireEvent.click(screen.getByRole("button", { name: "Remove Details" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select Tasks" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove Tasks" }));
     expect(
-      screen.queryByRole("button", { name: "Select Details" }),
+      screen.queryByRole("button", { name: "Select Tasks" }),
     ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Select Monthly" }));
     fireEvent.click(screen.getByRole("button", { name: "Remove Monthly" }));
@@ -684,7 +669,12 @@ describe("Composition studio shell", () => {
     const sourcePicker = await screen.findByRole("dialog", {
       name: "Choose a source",
     });
-    fireEvent.click(await screen.findByRole("button", { name: "Monthly" }));
+    fireEvent.click(
+      await within(sourcePicker).findByRole("tab", { name: "Saved SQL" }),
+    );
+    fireEvent.click(
+      await within(sourcePicker).findByRole("button", { name: "Monthly" }),
+    );
 
     const metricPicker = await screen.findByRole("dialog", {
       name: "Add data component",
@@ -751,7 +741,7 @@ describe("Composition studio shell", () => {
     expect(saveMock).not.toHaveBeenCalled();
   });
 
-  it("seeds the studio from Saved SQL without inventing variables or Inputs", () => {
+  it("seeds a Saved SQL source with its variable Input and default table", () => {
     locationControls.state = {
       seed: {
         kind: "saved_sql",
@@ -772,15 +762,14 @@ describe("Composition studio shell", () => {
     expect(screen.getByRole("button", { name: "Monthly" }))
       .toBeInTheDocument();
     expect(screen.getByLabelText("Name")).toHaveValue("Monthly");
-    // The seed carries a default Table but no Composition variable or Input;
-    // SQL variable mappings are authored explicitly in the Data workspace.
+    // Saved SQL variables become Composition-owned inputs when the source is
+    // added; the table is placed on the source by default.
     showDesignMode();
-    expect(screen.queryByLabelText("Variable 1")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("month")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("month")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Select Monthly" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Save,/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
     // The seed is consumed once: the location state is cleared on mount so
     // back/forward never double-adds the source.
     expect(replaceState).toHaveBeenCalledWith(
@@ -791,37 +780,7 @@ describe("Composition studio shell", () => {
     replaceState.mockRestore();
   });
 
-  it("seeds the studio from an entry query seed with a default table", () => {
-    locationControls.state = {
-      seed: {
-        kind: "entry_query",
-        seed: {
-          formId: FORM_ID,
-          name: "Tasks",
-          fieldSchema: [],
-          query: {
-            filters: [],
-            sort: [],
-            projection: { kind: "preview" },
-          },
-        },
-      },
-    };
-    render(() => <CompositionNewRoute />);
-    showDataMode();
-
-    expect(screen.getByRole("button", { name: "Tasks" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Name")).toHaveValue("Tasks");
-    // The seed carries a default Table, so the Studio opens save-ready
-    // with a visible block instead of a zero-display draft.
-    showDesignMode();
-    expect(
-      screen.getByRole("button", { name: "Select Tasks" }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
-  });
-
-  it("does not create Composition variables from Saved SQL variables", async () => {
+  it("binds Saved SQL parameters to Composition variables", async () => {
     sqlGetMock.mockResolvedValue({
       ...monthlyEntry,
       variables: [{ name: "month", type: "date", description: "" }],
@@ -838,14 +797,9 @@ describe("Composition studio shell", () => {
     const variables = screen
       .getByRole("heading", { name: "Variables" })
       .closest("section")!;
-    expect(await within(variables).findByText("Add a variable to begin."))
-      .toBeInTheDocument();
-    expect(within(variables).queryByText("month")).not.toBeInTheDocument();
-    expect(entryRevisionMock).toHaveBeenCalledWith(
-      "space-1",
-      "sql-1",
-      "sql-rev-1",
-    );
+    expect(await within(variables).findByText("month")).toBeInTheDocument();
+    expect(within(variables).queryByText("Add a variable to begin."))
+      .not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Save, Enter a name to save." }),
     ).toBeDisabled();

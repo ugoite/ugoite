@@ -7,6 +7,7 @@ import {
   test,
 } from "@playwright/test";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
+import { completeSavedSqlCompositionYaml } from "./lib/composition.ts";
 
 type SavedSqlRevision = {
   entryId: string;
@@ -20,15 +21,12 @@ type SeedState = {
   compositionName: string;
 };
 
-type ResultColumn = { name: string; type: "float" | "integer" };
 type SourceDefinition = {
   id: string;
   savedSql: SavedSqlRevision;
-  columns: ResultColumn[];
 };
 type MetricDefinition = {
   id: string;
-  label: string;
   source: string;
   column: string;
 };
@@ -81,7 +79,6 @@ function compositionYaml(
     "format_version: 1",
     `name: ${name}`,
     "kind: dashboard",
-    "tags: []",
     "spec:",
     "  sources:",
   ];
@@ -91,21 +88,15 @@ function compositionYaml(
       "      kind: saved_sql",
       `      entry_id: \"${source.savedSql.entryId}\"`,
       `      revision_id: \"${source.savedSql.revisionId}\"`,
-      "      expected_result:",
+      "      expected_result: []",
+      "      schema_fingerprint: ''",
     );
-    for (const column of source.columns) {
-      lines.push(
-        `        - name: ${column.name}`,
-        `          type: ${column.type}`,
-      );
-    }
   }
   lines.push("  components:");
   for (const metric of metrics) {
     lines.push(
       `    - id: ${metric.id}`,
       "      kind: metric",
-      `      label: ${metric.label}`,
       `      source: ${metric.source}`,
       `      column: ${metric.column}`,
     );
@@ -210,78 +201,72 @@ async function seedScalarStateComposition(
     {
       id: "aggregate_source",
       savedSql: aggregateSql,
-      columns: [
-        { name: "row_count", type: "integer" },
-        { name: "amount_count", type: "integer" },
-        { name: "amount_sum", type: "float" },
-        { name: "amount_average", type: "float" },
-      ],
     },
     {
       id: "zero_rows_source",
       savedSql: zeroRowsSql,
-      columns: [{ name: "value", type: "float" }],
     },
     {
       id: "null_source",
       savedSql: nullSql,
-      columns: [{ name: "value", type: "float" }],
     },
     {
       id: "zero_source",
       savedSql: zeroSql,
-      columns: [{ name: "value", type: "integer" }],
     },
   ];
   const metrics: MetricDefinition[] = [
     {
       id: "all_rows",
-      label: "All rows",
       source: "aggregate_source",
       column: "row_count",
     },
     {
       id: "rows_with_amount",
-      label: "Rows with amount",
       source: "aggregate_source",
       column: "amount_count",
     },
     {
       id: "amount_total",
-      label: "Amount total",
       source: "aggregate_source",
       column: "amount_sum",
     },
     {
       id: "amount_average",
-      label: "Amount average",
       source: "aggregate_source",
       column: "amount_average",
     },
     {
       id: "zero_rows",
-      label: "No matching rows",
       source: "zero_rows_source",
       column: "value",
     },
     {
       id: "null_result",
-      label: "Empty sum",
       source: "null_source",
       column: "value",
     },
     {
       id: "zero_result",
-      label: "Empty count",
       source: "zero_source",
       column: "value",
     },
   ];
+  const yaml = await completeSavedSqlCompositionYaml(
+    request,
+    spaceId,
+    compositionYaml(compositionName, sources, metrics),
+    sources.map(({ id, savedSql }) => ({
+      id,
+      savedSqlId: savedSql.entryId,
+      savedSqlRevisionId: savedSql.revisionId,
+    })),
+  );
   const compositionResponse = await request.post(
     getBackendUrl(`/spaces/${spaceId}/compositions`),
     {
       headers: { "Idempotency-Key": crypto.randomUUID() },
-      data: { yaml: compositionYaml(compositionName, sources, metrics) },
+      data: { yaml },
     },
   );
   expect([200, 201]).toContain(compositionResponse.status());
@@ -319,14 +304,14 @@ async function openSavedComposition(
   ).toBeVisible();
 }
 
-function metricSection(page: Page, label: string) {
-  return page.locator("section.section").filter({
-    has: page.getByRole("heading", { name: label, exact: true }),
-  });
+function metricSection(page: Page, componentIndex: number) {
+  return page.locator("section.section").nth(componentIndex);
 }
 
-function metricOutput(page: Page, label: string) {
-  return metricSection(page, label).locator("output.compositionMetric");
+function metricOutput(page: Page, componentIndex: number) {
+  return metricSection(page, componentIndex).locator(
+    "output.compositionMetric",
+  );
 }
 
 const scalarResultTimeoutMs = 30_000;
@@ -357,16 +342,16 @@ test.describe("Composition scalar state journey", () => {
     test.setTimeout(120_000);
     const { freshContext, page } = await openOwnerPage(browser, context, seed);
     try {
-      await expect(metricOutput(page, "All rows")).toHaveText("3", {
+      await expect(metricOutput(page, 0)).toHaveText("3", {
         timeout: scalarResultTimeoutMs,
       });
-      await expect(metricOutput(page, "Rows with amount")).toHaveText("2", {
+      await expect(metricOutput(page, 1)).toHaveText("2", {
         timeout: scalarResultTimeoutMs,
       });
-      await expect(metricOutput(page, "Amount total")).toHaveText("30", {
+      await expect(metricOutput(page, 2)).toHaveText("30", {
         timeout: scalarResultTimeoutMs,
       });
-      await expect(metricOutput(page, "Amount average")).toHaveText("15", {
+      await expect(metricOutput(page, 3)).toHaveText("15", {
         timeout: scalarResultTimeoutMs,
       });
     } finally {
@@ -378,7 +363,7 @@ test.describe("Composition scalar state journey", () => {
     test.setTimeout(120_000);
     const { freshContext, page } = await openOwnerPage(browser, context, seed);
     try {
-      const zeroRowsSection = metricSection(page, "No matching rows");
+      const zeroRowsSection = metricSection(page, 4);
       await expect(zeroRowsSection.getByRole("alert")).toContainText(
         await page.locator("html").getAttribute("lang").then((locale) =>
           locale === "ja"
@@ -390,14 +375,14 @@ test.describe("Composition scalar state journey", () => {
       await expect(zeroRowsSection.locator("output.compositionMetric"))
         .toHaveCount(0, { timeout: scalarResultTimeoutMs });
 
-      const nullOutput = metricOutput(page, "Empty sum");
+      const nullOutput = metricOutput(page, 5);
       await expect(nullOutput).toHaveText(
         await page.locator("html").getAttribute("lang").then((locale) =>
           locale === "ja" ? "データなし" : "No data"
         ),
         { timeout: scalarResultTimeoutMs },
       );
-      await expect(metricOutput(page, "Empty count")).toHaveText("0", {
+      await expect(metricOutput(page, 6)).toHaveText("0", {
         timeout: scalarResultTimeoutMs,
       });
       await expect(nullOutput).not.toHaveText("0", {

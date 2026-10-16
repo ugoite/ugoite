@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { entryApi } from "./entry-api";
 import {
   buildSavedSqlCompositionDocument,
   canCreateSavedSqlComposition,
@@ -11,8 +10,9 @@ import { sqlApi } from "./sql-api";
 import { canonicalizeCompositionDocument } from "./ugoite-client";
 import { protocolFetch } from "./ugoite-client/protocol";
 
-vi.mock("./entry-api", () => ({ entryApi: { query: vi.fn() } }));
-vi.mock("./sql-api", () => ({ sqlApi: { query: vi.fn() } }));
+vi.mock("./sql-api", () => ({
+  sqlApi: { query: vi.fn(), count: vi.fn() },
+}));
 vi.mock("./ugoite-client/protocol", () => ({
   protocolFetch: vi.fn(),
   canonicalizeCompositionDocument: vi.fn(),
@@ -20,25 +20,25 @@ vi.mock("./ugoite-client/protocol", () => ({
 
 const signal = new AbortController().signal;
 
-const entrySource = {
-  kind: "entry_query" as const,
-  source_id: "entries",
+const inlineSource = {
+  kind: "inline_sql" as const,
+  source_id: "expenses",
   source_schema_fingerprint: "fingerprint",
+  form_bindings: [{ relation: "expenses", form_id: "form-1" }],
+  expected_result: [{ name: "amount", type: "decimal" as const }],
   request: {
-    query: {
-      scope: { kind: "form", form_id: "form-1" },
-      filters: [],
-      sort: [],
-    },
-    projection: { kind: "fields", fields: [{ kind: "property", field_id: 7 }] },
+    sql: 'SELECT "amount" FROM "expenses"',
+    parameters: {},
+    parameter_types: {},
     limit: 100,
   },
-} as const satisfies CompositionResolvedSource;
+} satisfies CompositionResolvedSource;
 
 const sqlSource = {
   kind: "saved_sql" as const,
   source_id: "total",
   source_schema_fingerprint: "sql-fingerprint",
+  expected_result: [{ name: "total", type: "float" as const }],
   request: {
     sql: "SELECT total",
     parameters: { month: "2026-03-01" },
@@ -188,7 +188,6 @@ describe("compositionApi", () => {
       format_version: 1 as const,
       kind: "dashboard" as const,
       name: "Tool",
-      tags: [],
       spec: {
         variables: [],
         sources: [],
@@ -483,8 +482,7 @@ describe("compositionApi", () => {
       { signal },
     );
   });
-  it("forwards EntryQuery and Saved SQL pages through their existing query adapters", async () => {
-    vi.mocked(entryApi.query).mockResolvedValue({ rows: [], has_more: false });
+  it("forwards both SQL source kinds through the existing stateless query operation", async () => {
     vi.mocked(sqlApi.query).mockResolvedValue({
       columns: ["total"],
       rows: [],
@@ -493,8 +491,8 @@ describe("compositionApi", () => {
 
     await compositionApi.querySource(
       "space-1",
-      entrySource,
-      "entry-cursor",
+      inlineSource,
+      "inline-cursor",
       signal,
     );
     await compositionApi.querySource(
@@ -504,17 +502,63 @@ describe("compositionApi", () => {
       signal,
     );
 
-    expect(entryApi.query).toHaveBeenCalledWith(
+    expect(sqlApi.query).toHaveBeenNthCalledWith(
+      1,
       "space-1",
-      { ...entrySource.request, after: "entry-cursor" },
+      {
+        ...inlineSource.request,
+        include_exact_integer_values: true,
+        continuation: "inline-cursor",
+      },
       signal,
     );
-    expect(sqlApi.query).toHaveBeenCalledWith(
+    expect(sqlApi.query).toHaveBeenNthCalledWith(
+      2,
       "space-1",
       {
         ...sqlSource.request,
         include_exact_integer_values: true,
         continuation: "sql-cursor",
+      },
+      signal,
+    );
+    expect(sqlApi.query).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the exact edit base on a draft preview request", async () => {
+    vi.mocked(protocolFetch).mockResolvedValue({ ok: false, diagnostics: [] });
+    await compositionApi.preview(
+      "space-1",
+      "candidate yaml",
+      {},
+      signal,
+      { entryId: "composition-1", revisionId: "revision-4" },
+    );
+    expect(protocolFetch).toHaveBeenCalledWith(
+      "composition.preview",
+      { space_id: "space-1" },
+      {
+        yaml: "candidate yaml",
+        base_entry_id: "composition-1",
+        base_revision_id: "revision-4",
+        variables: {},
+      },
+      { signal },
+    );
+  });
+
+  it("counts the resolved SQL source through the existing count operation", async () => {
+    vi.mocked(sqlApi.count).mockResolvedValue(12);
+    await expect(
+      compositionApi.countSource("space-1", sqlSource, signal),
+    ).resolves.toBe(12);
+    expect(sqlApi.count).toHaveBeenCalledWith(
+      "space-1",
+      {
+        sql: sqlSource.request.sql,
+        parameters: sqlSource.request.parameters,
+        parameter_types: sqlSource.request.parameter_types,
+        saved_sql: sqlSource.request.saved_sql,
       },
       signal,
     );

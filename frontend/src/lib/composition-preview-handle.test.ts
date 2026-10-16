@@ -7,10 +7,12 @@ import {
 import type { CompositionSourcePage } from "./composition-api";
 
 const source = (id: string) => ({
+  kind: "inline_sql" as const,
   source_id: id,
-  request: {},
+  request: { sql: "SELECT 1", parameters: {}, parameter_types: {}, limit: 20 },
   source_schema_fingerprint: "fp",
-  kind: "entry_query",
+  form_bindings: [],
+  expected_result: [{ name: "value", type: "integer" as const }],
 });
 
 const plan = (fingerprint: string, sources: string[] = ["s1"]) => ({
@@ -45,9 +47,10 @@ const mockApi = (
       return await next(values);
     },
     querySource: async () => ({
-      kind: "entry_query" as const,
-      page: { rows: [], has_more: false },
+      kind: "sql" as const,
+      page: { columns: ["value"], rows: [[1]], has_more: false },
     }),
+    countSource: async () => 1,
   };
 };
 
@@ -62,6 +65,18 @@ describe("composition preview handle", () => {
     });
     expect(handle.state().previewing).toBe(false);
     expect(handle.state().sources["s1"]?.status).toBe("ready");
+    handle.dispose();
+  });
+
+  it("counts a resolved source only for the current draft identity", async () => {
+    const api = mockApi([async () => okResponse("fp-1")]);
+    const handle = createCompositionPreviewHandle(api);
+    await handle.preview("space-1", "yaml-1", {});
+    await handle.count("s1");
+    expect(handle.state().counts["s1"]).toEqual({
+      status: "success",
+      value: 1,
+    });
     handle.dispose();
   });
 
@@ -133,10 +148,11 @@ describe("composition preview handle", () => {
       querySource: async (_spaceId, source) => {
         requested.push(source.source_id);
         return {
-          kind: "entry_query" as const,
-          page: { rows: [], has_more: false },
+          kind: "sql" as const,
+          page: { columns: ["value"], rows: [], has_more: false },
         };
       },
+      countSource: async () => 0,
     };
     const handle = createCompositionPreviewHandle(api);
     await handle.preview("space-1", "yaml-1", {});
@@ -158,10 +174,11 @@ describe("composition preview handle", () => {
       querySource: async (_spaceId, source) => {
         requested.push(source.source_id);
         return {
-          kind: "entry_query" as const,
-          page: { rows: [], has_more: false },
+          kind: "sql" as const,
+          page: { columns: ["value"], rows: [], has_more: false },
         };
       },
+      countSource: async () => 0,
     };
     const handle = createCompositionPreviewHandle(api);
     await handle.preview("space-1", "yaml-1", {}, {
@@ -189,14 +206,8 @@ describe("composition preview handle", () => {
   });
 
   it("discards stale source pages from the previous draft", async () => {
-    const staleRow = {
-      id: "stale",
-      form_id: "form-1",
-      revision_id: "rev-1",
-      created_at_micros: 0,
-      updated_at_micros: 0,
-    };
-    const latestRow = { ...staleRow, id: "latest" };
+    const staleRow = ["stale"];
+    const latestRow = ["latest"];
     let releaseStale!: (page: CompositionSourcePage) => void;
     const stalePage = new Promise<CompositionSourcePage>((resolve) => {
       releaseStale = resolve;
@@ -208,10 +219,11 @@ describe("composition preview handle", () => {
         requested.push(source.source_id);
         if (requested.length === 1) return await stalePage;
         return {
-          kind: "entry_query" as const,
-          page: { rows: [latestRow], has_more: false },
+          kind: "sql" as const,
+          page: { columns: ["value"], rows: [latestRow], has_more: false },
         };
       },
+      countSource: async () => 0,
     };
     const handle = createCompositionPreviewHandle(api);
     const slow = handle.preview("space-1", "yaml-1", {});
@@ -222,17 +234,17 @@ describe("composition preview handle", () => {
     });
     await handle.preview("space-1", "yaml-2", {});
     releaseStale({
-      kind: "entry_query",
-      page: { rows: [staleRow], has_more: false },
+      kind: "sql",
+      page: { columns: ["value"], rows: [staleRow], has_more: false },
     });
     await slow;
     // The stale first-draft page never overwrites the current preview.
     expect(handle.state().identity?.fingerprint).toBe("fp-yaml-2");
     expect(handle.state().sources["s1"]).toMatchObject({ status: "ready" });
     const page = handle.state().sources["s1"]?.page;
-    expect(page?.kind).toBe("entry_query");
-    if (page?.kind === "entry_query") {
-      expect(page.page.rows.map((row) => row.id)).toEqual(["latest"]);
+    expect(page?.kind).toBe("sql");
+    if (page?.kind === "sql") {
+      expect(page.page.rows).toEqual([["latest"]]);
     }
     handle.dispose();
   });

@@ -3,17 +3,10 @@ import type {
   CompositionTextStyle,
   CompositionVariableType,
 } from "./composition-api";
-import type {
-  EntryQueryCompositionFieldSchemaEntry,
-  EntryQueryCompositionFilter,
-  EntryQueryCompositionProjection,
-  EntryQueryCompositionSort,
-  EntryQueryCompositionSystemField,
-  EntryQueryCompositionValue,
-} from "./entry-query-composition";
 import { compositionApi } from "./composition-api";
 import type { CompositionDocumentCanonicalization } from "./ugoite-client";
 import { t } from "./i18n";
+import { normalizeSqlVariables } from "./sql";
 
 /**
  * Browser Work state for Composition authoring.
@@ -30,38 +23,37 @@ export interface DraftSavedSqlSeed {
   entryId: string;
   revisionId: string;
   name: string;
+  sql: string;
   expectedResult: Array<{ name: string; type: CompositionResultType }>;
+  /** SHA-256 of the exact revision's expected result schema, when available. */
+  schemaFingerprint?: string;
   variables: Record<string, { variable: string }>;
   /** Declared variable types from this exact Saved SQL revision. */
   variableTypes?: Record<string, CompositionVariableType>;
+  /** Optional defaults copied from the selected immutable SQL revision. */
+  variableDefaults?: Record<string, unknown>;
 }
 
-export interface DraftEntryQuerySeed {
-  formId: string;
+export interface DraftInlineSqlSeed {
   name: string;
-  fieldSchema: EntryQueryCompositionFieldSchemaEntry[];
-  query: {
-    text?: EntryQueryCompositionValue;
-    filters: EntryQueryCompositionFilter[];
-    sort: EntryQueryCompositionSort[];
-    projection: EntryQueryCompositionProjection;
-    display_system_fields?: EntryQueryCompositionSystemField[];
-    pageLimit?: number;
-  };
+  sql: string;
+  formBindings?: Array<{ relation: string; form_id: string }>;
+  expectedResult?: Array<{ name: string; type: CompositionResultType }>;
+  schemaFingerprint?: string;
 }
 
 export type DraftSource =
   | (DraftSavedSqlSeed & { kind: "saved_sql"; draftId: string })
-  | (DraftEntryQuerySeed & { kind: "entry_query"; draftId: string });
+  | (DraftInlineSqlSeed & { kind: "inline_sql"; draftId: string });
 
 /**
  * Studio seed carried through router location state from an entry point
- * (Saved SQL run, EntryQuery browser) to the Studio new route. Reuses the
+ * (Saved SQL run or Form picker) to the Studio new route. Reuses the
  * draft seed shapes only; no new source semantics.
  */
 export type CompositionStudioSeed =
   | { kind: "saved_sql"; seed: DraftSavedSqlSeed }
-  | { kind: "entry_query"; seed: DraftEntryQuerySeed };
+  | { kind: "inline_sql"; seed: DraftInlineSqlSeed };
 
 export interface StudioSeedState {
   seed: CompositionStudioSeed;
@@ -75,7 +67,7 @@ export const studioSeedState = (
   const seed = (value as { seed?: unknown }).seed;
   if (!seed || typeof seed !== "object") return undefined;
   const tagged = seed as { kind?: unknown; seed?: unknown };
-  if (tagged.kind !== "saved_sql" && tagged.kind !== "entry_query") {
+  if (tagged.kind !== "saved_sql" && tagged.kind !== "inline_sql") {
     return undefined;
   }
   if (!tagged.seed || typeof tagged.seed !== "object") return undefined;
@@ -95,14 +87,12 @@ export const applyStudioSeed = (
 ): { draft: CompositionDraft; draftId: string } => {
   const added = seed.kind === "saved_sql"
     ? addSavedSqlSource(draft, seed.seed)
-    : addEntryQuerySource(draft, seed.seed);
+    : addInlineSqlSource(draft, seed.seed);
   let next = added.draft;
   // Fail-closed table placement keeps the seed one-shot and total: the
   // seeded source always exists, so this succeeds and the draft is never
   // zero-display. A rejection would keep the unplaced source only. The
-  // default table carries the source name as its label so the seeded block
-  // reads as a titled block; clearing it falls back to the default name.
-  const tabled = addTableDisplay(next, added.draftId, seed.seed.name);
+  const tabled = addTableDisplay(next, added.draftId);
   if (tabled.ok) next = tabled.draft;
   const named = next.name.trim() || !seed.seed.name
     ? next
@@ -125,13 +115,11 @@ export type DraftDisplay =
     kind: "table";
     draftId: string;
     sourceDraftId: string;
-    label?: string;
   }
   | {
     kind: "metric";
     draftId: string;
     sourceDraftId: string;
-    label?: string;
     column?: string;
     presentation?: DraftMetricPresentation;
   }
@@ -140,7 +128,6 @@ export type DraftDisplay =
     draftId: string;
     content: DraftTextContent;
     style: CompositionTextStyle;
-    label?: string;
   };
 
 /**
@@ -169,7 +156,6 @@ export interface DraftInsertTarget {
 export interface DraftVariable {
   id: string;
   type: CompositionVariableType;
-  label?: string;
   required: boolean;
   default?: unknown;
   format?: "year-month";
@@ -178,7 +164,6 @@ export interface DraftVariable {
 export interface DraftInput {
   draftId: string;
   variable: string;
-  label?: string;
 }
 
 const savedSqlVariableTypeSet = new Set<CompositionVariableType>([
@@ -222,7 +207,6 @@ export const savedSqlVariableTypesFromFields = (
 
 export interface CompositionDraft {
   name: string;
-  tags: string[];
   sources: DraftSource[];
   displays: DraftDisplay[];
   variables: DraftVariable[];
@@ -247,9 +231,6 @@ export type DraftErrorCode =
   | "variable-referenced"
   | "source-referenced";
 
-/** Mirrors the canonical EntryQuery projection limit. */
-export const MAX_ENTRY_PROJECTION_FIELDS = 64;
-
 export type DraftResult =
   | { ok: true; draft: CompositionDraft }
   | { ok: false; error: DraftErrorCode };
@@ -260,11 +241,9 @@ export interface CompositionStudioDocument {
   format_version: 1;
   kind: "dashboard";
   name: string;
-  tags: string[];
   spec: {
     variables: Array<{
       id: string;
-      label?: string;
       type: CompositionVariableType;
       required: boolean;
       default?: unknown;
@@ -277,32 +256,25 @@ export interface CompositionStudioDocument {
         entry_id: string;
         revision_id: string;
         expected_result: Array<{ name: string; type: CompositionResultType }>;
+        schema_fingerprint?: string;
         variables: Record<string, { variable: string }>;
       }
       | {
-        kind: "entry_query";
+        kind: "inline_sql";
         id: string;
-        form_id: string;
-        field_schema: EntryQueryCompositionFieldSchemaEntry[];
-        query: {
-          text?: unknown;
-          // Canonical documents omit empty filters/sort; readers default
-          // them like the domain does.
-          filters?: EntryQueryCompositionFilter[];
-          sort?: EntryQueryCompositionSort[];
-          page_limit?: number;
-          projection: EntryQueryCompositionProjection;
-          display_system_fields?: EntryQueryCompositionSystemField[];
-        };
+        name: string;
+        sql: string;
+        form_bindings: Array<{ relation: string; form_id: string }>;
+        expected_result: Array<{ name: string; type: CompositionResultType }>;
+        schema_fingerprint: string;
       }
     >;
     components: Array<
-      | { kind: "input"; id: string; label?: string; variable: string }
-      | { kind: "table"; id: string; label?: string; source: string }
+      | { kind: "input"; id: string; variable: string }
+      | { kind: "table"; id: string; source: string }
       | {
         kind: "metric";
         id: string;
-        label?: string;
         source: string;
         column: string;
         presentation?: {
@@ -314,7 +286,6 @@ export interface CompositionStudioDocument {
       | {
         kind: "text";
         id: string;
-        label?: string;
         content:
           | { kind: "literal"; text: string }
           | { kind: "variable"; variable: string };
@@ -336,16 +307,16 @@ type CompositionStudioSavedSqlDocument = Extract<
   { kind: "saved_sql" }
 >;
 
-type CompositionStudioEntryQueryDocument = Extract<
+type CompositionStudioInlineSqlDocument = Extract<
   CompositionStudioDocument["spec"]["sources"][number],
-  { kind: "entry_query" }
+  { kind: "inline_sql" }
 >;
 
 type CompositionStudioRevisionSourceDocument =
   | Omit<CompositionStudioSavedSqlDocument, "variables"> & {
     variables?: CompositionStudioSavedSqlDocument["variables"];
   }
-  | CompositionStudioEntryQueryDocument;
+  | CompositionStudioInlineSqlDocument;
 
 /**
  * Composition read back from the canonical revision. The domain omits empty
@@ -363,7 +334,6 @@ export type CompositionStudioRevisionDocument =
 
 export const createEmptyDraft = (name = ""): CompositionDraft => ({
   name,
-  tags: [],
   sources: [],
   displays: [],
   variables: [],
@@ -374,6 +344,51 @@ export const createEmptyDraft = (name = ""): CompositionDraft => ({
   nextRowSeq: 1,
 });
 
+/**
+ * Build the isolated source/input portion used to preview one Saved SQL
+ * Metric. Only variables bound by this source are relevant to canonicalizing
+ * its query; retaining their placed Input components keeps required variable
+ * validation intact without allowing unrelated draft edits to block preview.
+ */
+export const createMetricPreviewDraft = (
+  snapshot: CompositionDraft,
+  sourceDraftId: string,
+): CompositionDraft | null => {
+  const source = snapshot.sources.find((entry) =>
+    entry.draftId === sourceDraftId
+  );
+  if (!source) return null;
+
+  const variableIds = new Set(source.kind === "saved_sql"
+    ? Object.values(source.variables).map((binding) => binding.variable)
+    : normalizeSqlVariables(source.sql).variables.map((variable) =>
+      variable.name
+    ));
+  const inputs = snapshot.inputs.filter((input) =>
+    variableIds.has(input.variable)
+  ).map((input) => ({ ...input }));
+  const inputIds = new Set(inputs.map((input) => input.draftId));
+  const layoutRows = snapshot.layoutRows.flatMap((row) => {
+    const items = row.items.filter((item) => inputIds.has(item.draftId)).map(
+      (item) => ({ ...item }),
+    );
+    return items.length > 0 ? [{ id: row.id, items }] : [];
+  });
+
+  return {
+    ...createEmptyDraft("Metric preview"),
+    sources: [{ ...source, variables: { ...source.variables } }],
+    variables: snapshot.variables.filter((variable) =>
+      variableIds.has(variable.id)
+    ).map((variable) => ({ ...variable })),
+    inputs,
+    layoutRows: layoutRows.length > 0
+      ? layoutRows
+      : [{ id: "main", items: [] }],
+    nextSourceSeq: snapshot.nextSourceSeq,
+  };
+};
+
 export const setDraftName = (
   draft: CompositionDraft,
   name: string,
@@ -382,33 +397,71 @@ export const setDraftName = (
   name,
 });
 
-export const setDraftTags = (
-  draft: CompositionDraft,
-  tags: readonly string[],
-): CompositionDraft => ({
-  ...draft,
-  tags: [...tags],
-});
-
 export const addSavedSqlSource = (
   draft: CompositionDraft,
   seed: DraftSavedSqlSeed,
 ): { ok: true; draft: CompositionDraft; draftId: string } => {
   const draftId = `src-${draft.nextSourceSeq}`;
-  return {
-    ok: true,
-    draftId,
-    draft: {
-      ...draft,
-      nextSourceSeq: draft.nextSourceSeq + 1,
-      sources: [...draft.sources, { ...seed, kind: "saved_sql", draftId }],
-    },
+  const sourceVariables: Record<string, { variable: string }> = {
+    ...seed.variables,
   };
+  let nextDraft: CompositionDraft = {
+    ...draft,
+    nextSourceSeq: draft.nextSourceSeq + 1,
+    sources: [...draft.sources, {
+      ...seed,
+      kind: "saved_sql",
+      draftId,
+      variables: sourceVariables,
+      variableTypes: { ...(seed.variableTypes ?? {}) },
+      variableDefaults: { ...(seed.variableDefaults ?? {}) },
+    }],
+  };
+  for (const [sqlName, type] of Object.entries(seed.variableTypes ?? {})) {
+    if (sourceVariables[sqlName]) continue;
+    let variableId = sqlName;
+    let suffix = 2;
+    while (nextDraft.variables.some((variable) => variable.id === variableId)) {
+      const existing = nextDraft.variables.find((variable) =>
+        variable.id === variableId
+      );
+      if (existing?.type === type) break;
+      variableId = `${sqlName}_${suffix++}`;
+    }
+    let variable = nextDraft.variables.find((entry) =>
+      entry.id === variableId
+    );
+    if (!variable) {
+      const defaultValue = seed.variableDefaults?.[sqlName];
+      variable = {
+        id: variableId,
+        type,
+        required: defaultValue === undefined,
+        ...(defaultValue === undefined ? {} : { default: defaultValue }),
+      };
+      nextDraft = {
+        ...nextDraft,
+        variables: [...nextDraft.variables, variable],
+      };
+      if (defaultValue === undefined) {
+        const input = addInputComponent(nextDraft, variableId);
+        if (input.ok) nextDraft = input.draft;
+      }
+    }
+    sourceVariables[sqlName] = { variable: variableId };
+  }
+  const sources = [...nextDraft.sources];
+  const inserted = sources.findIndex((source) => source.draftId === draftId);
+  const added = sources[inserted];
+  if (added?.kind === "saved_sql") {
+    sources[inserted] = { ...added, variables: sourceVariables };
+  }
+  return { ok: true, draftId, draft: { ...nextDraft, sources } };
 };
 
-export const addEntryQuerySource = (
+export const addInlineSqlSource = (
   draft: CompositionDraft,
-  seed: DraftEntryQuerySeed,
+  seed: DraftInlineSqlSeed,
 ): { ok: true; draft: CompositionDraft; draftId: string } => {
   const draftId = `src-${draft.nextSourceSeq}`;
   return {
@@ -417,7 +470,14 @@ export const addEntryQuerySource = (
     draft: {
       ...draft,
       nextSourceSeq: draft.nextSourceSeq + 1,
-      sources: [...draft.sources, { ...seed, kind: "entry_query", draftId }],
+      sources: [...draft.sources, {
+        ...seed,
+        formBindings: seed.formBindings ?? [],
+        expectedResult: seed.expectedResult ?? [],
+        schemaFingerprint: seed.schemaFingerprint ?? "",
+        kind: "inline_sql",
+        draftId,
+      }],
     },
   };
 };
@@ -567,194 +627,81 @@ export const moveSource = (
   };
 };
 
-/**
- * Existing EntryQuery vocabulary for draft edits. Operators and directions
- * mirror `EntryFilterOperator` / `EntrySortDirection`; the Browser never
- * invents query grammar and the shared contract validates on preview/save.
- */
-export const entryQueryFilterOperators: ReadonlySet<string> = new Set([
-  "equals",
-  "contains",
-  "lt",
-  "lte",
-  "gt",
-  "gte",
-]);
-
-export const entryQuerySortDirections: ReadonlySet<string> = new Set([
-  "asc",
-  "desc",
-]);
-
-const isIntegerFieldId = (value: unknown): value is number =>
-  typeof value === "number" && Number.isInteger(value);
-
-/**
- * Scalar filter values plus same-shape variable bindings. Anything else
- * (nested objects, arrays, non-finite numbers) fails closed so the draft
- * can never smuggle query semantics past the shared contract.
- */
-const isEntryQueryFilterValue = (value: unknown): boolean => {
-  if (value === null) return true;
-  if (
-    typeof value === "string" || typeof value === "boolean"
-  ) return true;
-  if (typeof value === "number") return Number.isFinite(value);
-  if (typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    return Object.keys(record).length === 1 &&
-      typeof record.variable === "string" && record.variable.length > 0;
-  }
-  return false;
-};
-
-const findEntryQuerySource = (
+/** Update editable SQL text without rewriting it from structured controls. */
+export const setInlineSql = (
   draft: CompositionDraft,
   sourceDraftId: string,
-): number => {
+  sql: string,
+): DraftResult => {
   const index = draft.sources.findIndex((source) =>
     source.draftId === sourceDraftId
   );
-  if (index < 0) return -1;
-  return draft.sources[index].kind === "entry_query" ? index : -1;
-};
-
-/** Replace an EntryQuery source's filters; unknown operators fail closed. */
-export const setEntryQueryFilters = (
-  draft: CompositionDraft,
-  sourceDraftId: string,
-  filters: EntryQueryCompositionFilter[],
-): DraftResult => {
-  const index = findEntryQuerySource(draft, sourceDraftId);
   if (index < 0) return { ok: false, error: "unknown-source" };
-  for (const filter of filters) {
-    if (!isIntegerFieldId(filter.field_id)) {
-      return { ok: false, error: "invalid-query" };
-    }
-    if (!entryQueryFilterOperators.has(filter.operator)) {
-      return { ok: false, error: "invalid-query" };
-    }
-    if (!isEntryQueryFilterValue(filter.value)) {
-      return { ok: false, error: "invalid-query" };
-    }
-  }
   const current = draft.sources[index];
-  if (current.kind !== "entry_query") {
-    return { ok: false, error: "unknown-source" };
-  }
+  if (current.kind !== "inline_sql") return { ok: false, error: "unknown-source" };
+  if (!sql.trim()) return { ok: false, error: "invalid-query" };
   const sources = [...draft.sources];
   sources[index] = {
     ...current,
-    query: {
-      ...current.query,
-      filters: filters.map((filter) => ({ ...filter })),
-    },
+    sql,
+    formBindings: [],
+    expectedResult: [],
+    schemaFingerprint: "",
   };
   return { ok: true, draft: { ...draft, sources } };
 };
 
-/** Replace an EntryQuery source's sort; unknown directions fail closed. */
-export const setEntryQuerySort = (
+export const setInlineSqlName = (
   draft: CompositionDraft,
   sourceDraftId: string,
-  sort: EntryQueryCompositionSort[],
+  name: string,
 ): DraftResult => {
-  const index = findEntryQuerySource(draft, sourceDraftId);
+  const index = draft.sources.findIndex((source) =>
+    source.draftId === sourceDraftId
+  );
   if (index < 0) return { ok: false, error: "unknown-source" };
-  for (const clause of sort) {
-    if (!isIntegerFieldId(clause.field_id)) {
-      return { ok: false, error: "invalid-query" };
-    }
-    if (!entryQuerySortDirections.has(clause.direction)) {
-      return { ok: false, error: "invalid-query" };
-    }
-  }
   const current = draft.sources[index];
-  if (current.kind !== "entry_query") {
+  if (current.kind !== "inline_sql") {
     return { ok: false, error: "unknown-source" };
   }
   const sources = [...draft.sources];
-  sources[index] = {
-    ...current,
-    query: { ...current.query, sort: sort.map((clause) => ({ ...clause })) },
-  };
+  sources[index] = { ...current, name };
   return { ok: true, draft: { ...draft, sources } };
 };
 
-/** Replace an EntryQuery source's projection (fields or preview). */
-export const setEntryQueryProjection = (
+export interface InlineSqlDescriptorUpdate {
+  formBindings: Array<{ relation: string; form_id: string }>;
+  expectedResult: Array<{ name: string; type: CompositionResultType }>;
+  schemaFingerprint: string;
+}
+
+/** Pin only the descriptor returned by the current authorized SQL preview. */
+export const setInlineSqlDescriptor = (
   draft: CompositionDraft,
   sourceDraftId: string,
-  projection: EntryQueryCompositionProjection,
+  descriptor: InlineSqlDescriptorUpdate,
 ): DraftResult => {
-  const index = findEntryQuerySource(draft, sourceDraftId);
+  const index = draft.sources.findIndex((source) =>
+    source.draftId === sourceDraftId
+  );
   if (index < 0) return { ok: false, error: "unknown-source" };
-  if (projection.kind === "fields") {
-    if (
-      !Array.isArray(projection.fields) ||
-      !projection.fields.every(isIntegerFieldId) ||
-      projection.fields.length > MAX_ENTRY_PROJECTION_FIELDS
-    ) {
-      return { ok: false, error: "invalid-query" };
-    }
-  } else if (projection.kind !== "preview") {
-    return { ok: false, error: "invalid-query" };
-  }
   const current = draft.sources[index];
-  if (current.kind !== "entry_query") {
+  if (current.kind !== "inline_sql") {
     return { ok: false, error: "unknown-source" };
   }
-  const fields = projection.kind === "fields"
-    ? [...new Set(projection.fields)]
-    : [];
-  const sources = [...draft.sources];
-  sources[index] = {
-    ...current,
-    query: {
-      ...current.query,
-      projection: fields.length === 0
-        ? { kind: "preview" }
-        : { kind: "fields", fields },
-    },
-  };
-  return { ok: true, draft: { ...draft, sources } };
-};
-
-const entryQuerySystemFields: readonly EntryQueryCompositionSystemField[] = [
-  "created_at",
-  "updated_at",
-];
-
-/** Replace the optional identity timestamp columns rendered by EntryQuery tables. */
-export const setEntryQueryDisplaySystemFields = (
-  draft: CompositionDraft,
-  sourceDraftId: string,
-  displaySystemFields: EntryQueryCompositionSystemField[],
-): DraftResult => {
-  const index = findEntryQuerySource(draft, sourceDraftId);
-  if (index < 0) return { ok: false, error: "unknown-source" };
   if (
-    !Array.isArray(displaySystemFields) ||
-    !displaySystemFields.every((field) =>
-      entryQuerySystemFields.includes(field)
-    )
-  ) {
-    return { ok: false, error: "invalid-query" };
-  }
-  const current = draft.sources[index];
-  if (current.kind !== "entry_query") {
-    return { ok: false, error: "unknown-source" };
-  }
-  const selected = new Set(displaySystemFields);
+    JSON.stringify(current.formBindings ?? []) ===
+      JSON.stringify(descriptor.formBindings) &&
+    JSON.stringify(current.expectedResult ?? []) ===
+      JSON.stringify(descriptor.expectedResult) &&
+    current.schemaFingerprint === descriptor.schemaFingerprint
+  ) return { ok: true, draft };
   const sources = [...draft.sources];
   sources[index] = {
     ...current,
-    query: {
-      ...current.query,
-      display_system_fields: entryQuerySystemFields.filter((field) =>
-        selected.has(field)
-      ),
-    },
+    formBindings: descriptor.formBindings.map((binding) => ({ ...binding })),
+    expectedResult: descriptor.expectedResult.map((column) => ({ ...column })),
+    schemaFingerprint: descriptor.schemaFingerprint,
   };
   return { ok: true, draft: { ...draft, sources } };
 };
@@ -762,6 +709,7 @@ export const setEntryQueryDisplaySystemFields = (
 export interface SavedSqlRevisionUpdate {
   revisionId: string;
   expectedResult: Array<{ name: string; type: CompositionResultType }>;
+  schemaFingerprint?: string;
   /** Variable types declared by this exact revision. */
   variableTypes: Record<string, CompositionVariableType>;
 }
@@ -813,6 +761,9 @@ export const setSavedSqlRevision = (
     ...current,
     revisionId: revision.revisionId,
     expectedResult: revision.expectedResult.map((column) => ({ ...column })),
+    // A missing value intentionally clears the prior revision's fingerprint;
+    // canonicalizeDraft derives the hash from this revision's exact schema.
+    schemaFingerprint: revision.schemaFingerprint,
     variables,
     variableTypes: { ...revision.variableTypes },
   };
@@ -898,7 +849,6 @@ export const setSavedSqlVariableBinding = (
 export const addTableDisplay = (
   draft: CompositionDraft,
   sourceDraftId: string,
-  label?: string,
   target?: DraftInsertTarget,
 ): DraftResult & { draftId?: string } => {
   if (!draft.sources.some((source) => source.draftId === sourceDraftId)) {
@@ -910,7 +860,6 @@ export const addTableDisplay = (
     kind: "table",
     draftId,
     sourceDraftId,
-    ...(label ? { label } : {}),
   };
   const placed = insertLayoutItem(
     {
@@ -930,9 +879,8 @@ const metricColumnFitsSource = (
   columnName: string | undefined,
   requireReady: boolean,
 ): boolean => {
-  if (source.kind !== "saved_sql") return false;
   if (!columnName?.trim()) return !requireReady;
-  return source.expectedResult.filter((column) =>
+  return (source.expectedResult ?? []).filter((column) =>
     column.name === columnName && column.type !== "json"
   ).length === 1;
 };
@@ -964,8 +912,8 @@ export const metricColumnIsNumeric = (
   source: DraftSource,
   columnName: string | undefined,
 ): boolean => {
-  if (source.kind !== "saved_sql" || !columnName) return false;
-  const columns = source.expectedResult.filter((column) =>
+  if (!columnName) return false;
+  const columns = (source.expectedResult ?? []).filter((column) =>
     column.name === columnName && column.type !== "json"
   );
   return columns.length === 1 && numericMetricResultTypes.has(columns[0].type);
@@ -975,7 +923,6 @@ export const addMetricDisplay = (
   draft: CompositionDraft,
   sourceDraftId: string,
   column: string,
-  label?: string,
   target?: DraftInsertTarget,
 ): DraftResult & { draftId?: string } => {
   const source = draft.sources.find((entry) => entry.draftId === sourceDraftId);
@@ -990,7 +937,6 @@ export const addMetricDisplay = (
     draftId,
     sourceDraftId,
     column,
-    ...(label ? { label } : {}),
   };
   const placed = insertLayoutItem(
     {
@@ -1008,7 +954,7 @@ export const addMetricDisplay = (
 /** Declare a fixed-style text block and place it exactly once in layout. */
 export const addTextDisplay = (
   draft: CompositionDraft,
-  init: { text?: string; style?: CompositionTextStyle; label?: string } = {},
+  init: { text?: string; style?: CompositionTextStyle } = {},
   target?: DraftInsertTarget,
 ): DraftResult & { draftId?: string } => {
   const displayIdentity = nextDisplayDraftIdentity(draft);
@@ -1018,7 +964,6 @@ export const addTextDisplay = (
     draftId,
     content: { kind: "literal", text: init.text ?? "" },
     style: init.style ?? "body",
-    ...(init.label ? { label: init.label } : {}),
   };
   const placed = insertLayoutItem(
     {
@@ -1092,24 +1037,6 @@ export const setInputVariable = (
   if (index < 0) return { ok: false, error: "unknown-input" };
   const inputs = [...draft.inputs];
   inputs[index] = { ...inputs[index], variable: variableId };
-  return { ok: true, draft: { ...draft, inputs } };
-};
-
-/** Set or clear an Input's optional display label. */
-export const setInputLabel = (
-  draft: CompositionDraft,
-  inputDraftId: string,
-  label: string,
-): DraftResult => {
-  const index = draft.inputs.findIndex((input) =>
-    input.draftId === inputDraftId
-  );
-  if (index < 0) return { ok: false, error: "unknown-input" };
-  const next = { ...draft.inputs[index] };
-  if (label.trim()) next.label = label.trim();
-  else delete next.label;
-  const inputs = [...draft.inputs];
-  inputs[index] = next;
   return { ok: true, draft: { ...draft, inputs } };
 };
 
@@ -1261,29 +1188,6 @@ export const moveDisplay = (
   };
 };
 
-/** Rename a display label. A blank label clears back to the default name. */
-export const setDisplayLabel = (
-  draft: CompositionDraft,
-  displayDraftId: string,
-  label: string,
-): DraftResult => {
-  const index = draft.displays.findIndex((display) =>
-    display.draftId === displayDraftId
-  );
-  if (index < 0) return { ok: false, error: "unknown-display" };
-  const trimmed = label.trim();
-  const current = draft.displays[index];
-  const next = { ...current };
-  if (trimmed) {
-    next.label = trimmed;
-  } else {
-    delete next.label;
-  }
-  const displays = [...draft.displays];
-  displays[index] = next;
-  return { ok: true, draft: { ...draft, displays } };
-};
-
 /** Retarget a Metric to a Saved SQL source; a column must be selected again. */
 export const setMetricSource = (
   draft: CompositionDraft,
@@ -1298,7 +1202,6 @@ export const setMetricSource = (
   if (current.kind !== "metric") return { ok: false, error: "unknown-display" };
   const source = draft.sources.find((entry) => entry.draftId === sourceDraftId);
   if (!source) return { ok: false, error: "unknown-source" };
-  if (source.kind !== "saved_sql") return { ok: false, error: "invalid-query" };
   const next = { ...current, sourceDraftId };
   delete next.column;
   delete next.presentation;
@@ -1525,15 +1428,12 @@ export const removeVariable = (
         binding.variable === variableId
       );
     }
-    const mentions = (value: unknown): boolean => {
-      if (typeof value !== "object" || value === null) return false;
-      if ("variable" in value) {
-        return (value as { variable: unknown }).variable === variableId;
-      }
-      return false;
-    };
-    if (mentions(source.query.text)) return true;
-    return source.query.filters.some((filter) => mentions(filter.value));
+    if (source.kind === "inline_sql") {
+      return normalizeSqlVariables(source.sql).variables.some((variable) =>
+        variable.name === variableId
+      );
+    }
+    return false;
   });
   if (referenced) return { ok: false, error: "variable-referenced" };
   return {
@@ -1558,11 +1458,9 @@ export const toStudioDocument = (
   format_version: 1,
   kind: "dashboard",
   name: draft.name.trim(),
-  tags: [...draft.tags],
   spec: {
     variables: draft.variables.map((variable) => ({
       id: variable.id,
-      ...(variable.label ? { label: variable.label } : {}),
       type: variable.type,
       required: variable.required,
       ...(variable.default === undefined ? {} : { default: variable.default }),
@@ -1578,6 +1476,9 @@ export const toStudioDocument = (
           expected_result: source.expectedResult.map((column) => ({
             ...column,
           })),
+          ...(source.schemaFingerprint
+            ? { schema_fingerprint: source.schemaFingerprint }
+            : {}),
           variables: Object.fromEntries(
             Object.entries(source.variables).map(([name, binding]) => [
               name,
@@ -1587,26 +1488,13 @@ export const toStudioDocument = (
         };
       }
       return {
-        kind: "entry_query" as const,
+        kind: "inline_sql" as const,
         id: source.draftId,
-        form_id: source.formId,
-        field_schema: source.fieldSchema.map((entry) => ({ ...entry })),
-        query: {
-          ...(source.query.text === undefined
-            ? {}
-            : { text: source.query.text }),
-          filters: (source.query.filters ?? []).map((filter) => ({
-            ...filter,
-          })),
-          sort: (source.query.sort ?? []).map((clause) => ({ ...clause })),
-          ...(source.query.pageLimit === undefined
-            ? {}
-            : { page_limit: source.query.pageLimit }),
-          projection: source.query.projection,
-          ...(source.query.display_system_fields?.length
-            ? { display_system_fields: [...source.query.display_system_fields] }
-            : {}),
-        },
+        name: source.name,
+        sql: source.sql,
+        form_bindings: source.formBindings ?? [],
+        expected_result: source.expectedResult ?? [],
+        schema_fingerprint: source.schemaFingerprint ?? "",
       };
     }),
     components: [
@@ -1615,7 +1503,6 @@ export const toStudioDocument = (
           return {
             kind: "table" as const,
             id: display.draftId,
-            ...(display.label ? { label: display.label } : {}),
             source: display.sourceDraftId,
           };
         }
@@ -1623,7 +1510,6 @@ export const toStudioDocument = (
           return {
             kind: "text" as const,
             id: display.draftId,
-            ...(display.label ? { label: display.label } : {}),
             content: { ...display.content },
             style: display.style,
           };
@@ -1631,7 +1517,6 @@ export const toStudioDocument = (
         return {
           kind: "metric" as const,
           id: display.draftId,
-          ...(display.label ? { label: display.label } : {}),
           source: display.sourceDraftId,
           column: display.column ?? "",
           ...(display.presentation
@@ -1652,7 +1537,6 @@ export const toStudioDocument = (
       ...draft.inputs.map((input) => ({
         kind: "input" as const,
         id: input.draftId,
-        ...(input.label === undefined ? {} : { label: input.label }),
         variable: input.variable,
       })),
     ],
@@ -1714,6 +1598,9 @@ export const draftFromDocument = (
         revisionId: source.revision_id,
         name,
         expectedResult: source.expected_result.map((column) => ({ ...column })),
+        ...(source.schema_fingerprint
+          ? { schemaFingerprint: source.schema_fingerprint }
+          : {}),
         variables: Object.fromEntries(
           Object.entries(
             source.variables === undefined ? {} : source.variables,
@@ -1721,31 +1608,15 @@ export const draftFromDocument = (
         ),
       };
     }
-    if (source.kind === "entry_query") {
+    if (source.kind === "inline_sql") {
       return {
-        kind: "entry_query",
+        kind: "inline_sql",
         draftId,
-        formId: source.form_id,
-        name,
-        fieldSchema: source.field_schema.map((entry) => ({ ...entry })),
-        query: {
-          ...(source.query.text === undefined
-            ? {}
-            : { text: source.query.text }),
-          // Canonical documents omit empty filters/sort; readers must accept
-          // their absence exactly like the domain default does.
-          filters: (source.query.filters ?? []).map((filter) => ({
-            ...filter,
-          })),
-          sort: (source.query.sort ?? []).map((clause) => ({ ...clause })),
-          ...(source.query.page_limit === undefined
-            ? {}
-            : { pageLimit: source.query.page_limit }),
-          projection: source.query.projection,
-          ...(source.query.display_system_fields?.length
-            ? { display_system_fields: [...source.query.display_system_fields] }
-            : {}),
-        },
+        name: source.name,
+        sql: source.sql,
+        formBindings: source.form_bindings.map((binding) => ({ ...binding })),
+        expectedResult: source.expected_result.map((column) => ({ ...column })),
+        schemaFingerprint: source.schema_fingerprint,
       };
     }
     return fail(`source kind: ${String((source as { kind: unknown }).kind)}`);
@@ -1769,7 +1640,6 @@ export const draftFromDocument = (
   const inputs = [...inputByComponentId.values()].map((input) => ({
     draftId: input.id,
     variable: input.variable,
-    ...(input.label === undefined ? {} : { label: input.label }),
   }));
   const displayComponents = document.spec.components.filter((component) =>
     component.kind !== "input"
@@ -1819,7 +1689,6 @@ export const draftFromDocument = (
           draftId,
           content,
           style: component.style,
-          ...(component.label ? { label: component.label } : {}),
         };
       }
       const componentSourceId = component.source;
@@ -1832,7 +1701,6 @@ export const draftFromDocument = (
           kind: "table",
           draftId,
           sourceDraftId,
-          ...(component.label ? { label: component.label } : {}),
         };
       }
       if (component.kind === "metric") {
@@ -1847,7 +1715,6 @@ export const draftFromDocument = (
           kind: "metric",
           draftId,
           sourceDraftId,
-          ...(component.label ? { label: component.label } : {}),
           column: component.column,
           ...(component.presentation
             ? {
@@ -1889,12 +1756,10 @@ export const draftFromDocument = (
   }));
   return {
     name: document.name,
-    tags: [...document.tags],
     sources,
     displays,
     variables: variables.map((variable) => ({
       id: variable.id,
-      ...(variable.label ? { label: variable.label } : {}),
       type: variable.type,
       required: variable.required,
       ...(variable.default === undefined ? {} : { default: variable.default }),
@@ -2015,8 +1880,35 @@ export const draftSaveReadiness = (
   return { ready: true };
 };
 
+export const compositionResultSchemaFingerprint = async (
+  columns: Array<{ name: string; type: CompositionResultType }>,
+): Promise<string> => {
+  const canonical = new TextEncoder().encode(JSON.stringify(columns));
+  const digest = await crypto.subtle.digest("SHA-256", canonical);
+  return Array.from(
+    new Uint8Array(digest),
+    (byte) => byte.toString(16).padStart(2, "0"),
+  ).join("");
+};
+
 /** Canonicalize the draft through the shared Rust/WASM contract. */
 export const canonicalizeDraft = async (
   draft: CompositionDraft,
-): Promise<CompositionDocumentCanonicalization> =>
-  await compositionApi.canonicalizeDocument(toStudioDocument(draft));
+): Promise<CompositionDocumentCanonicalization> => {
+  const document = toStudioDocument(draft);
+  const sources = await Promise.all(
+    document.spec.sources.map(async (source) =>
+      source.kind === "saved_sql"
+        ? {
+          ...source,
+          schema_fingerprint: source.schema_fingerprint ||
+            await compositionResultSchemaFingerprint(source.expected_result),
+        }
+        : source
+    ),
+  );
+  return await compositionApi.canonicalizeDocument({
+    ...document,
+    spec: { ...document.spec, sources },
+  });
+};

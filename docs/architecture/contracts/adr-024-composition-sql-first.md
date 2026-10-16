@@ -2,9 +2,10 @@
 title: "ADR-024 — SQL-first Composition sources and workspace"
 ---
 
-**Status: Accepted target for prerelease Composition; implementation pending.**
+**Status: Accepted and implemented in the prerelease candidate.**
 This decision replaces the unreleased Composition authoring and source grammar.
-It does not authorize or schedule a product release or version change.
+It does not authorize or schedule a product release or version change; the
+candidate is not released.
 
 ADR-023 remains the record of its original typed-variable decision. ADR-024
 retains typed variables and direct Input/Text bindings while removing source

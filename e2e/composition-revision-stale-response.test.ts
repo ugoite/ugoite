@@ -5,6 +5,7 @@ import {
   test,
 } from "@playwright/test";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
+import { completeSavedSqlCompositionYaml } from "./lib/composition.ts";
 
 const FIRST_CUTOFF = "2026-03-10";
 const SECOND_CUTOFF = "2026-03-11";
@@ -57,7 +58,6 @@ function compositionYaml(
     "format_version: 1",
     `name: ${name}`,
     "kind: dashboard",
-    "tags: []",
     "spec:",
     "  variables:",
     "    - id: cutoff_date",
@@ -69,9 +69,8 @@ function compositionYaml(
     "      kind: saved_sql",
     `      entry_id: "${savedSqlId}"`,
     `      revision_id: "${savedSqlRevisionId}"`,
-    "      expected_result:",
-    "        - name: total",
-    "          type: float",
+    "      expected_result: []",
+    "      schema_fingerprint: ''",
     "      variables:",
     "        start_date:",
     "          variable: cutoff_date",
@@ -170,18 +169,42 @@ async function seedRevisionPair(
   expect(savedSql.id).toBeTruthy();
   expect(savedSql.revision_id).toBeTruthy();
 
+  const firstYaml = await completeSavedSqlCompositionYaml(
+    request,
+    spaceId,
+    compositionYaml(
+      compositionName,
+      savedSql.id!,
+      savedSql.revision_id!,
+      FIRST_CUTOFF,
+    ),
+    [{
+      id: "total_rows",
+      savedSqlId: savedSql.id!,
+      savedSqlRevisionId: savedSql.revision_id!,
+    }],
+  );
+  const secondYaml = await completeSavedSqlCompositionYaml(
+    request,
+    spaceId,
+    compositionYaml(
+      compositionName,
+      savedSql.id!,
+      savedSql.revision_id!,
+      SECOND_CUTOFF,
+    ),
+    [{
+      id: "total_rows",
+      savedSqlId: savedSql.id!,
+      savedSqlRevisionId: savedSql.revision_id!,
+    }],
+  );
+
   const firstSaveResponse = await request.post(
     getBackendUrl(`/spaces/${spaceId}/compositions`),
     {
       headers: { "Idempotency-Key": crypto.randomUUID() },
-      data: {
-        yaml: compositionYaml(
-          compositionName,
-          savedSql.id!,
-          savedSql.revision_id!,
-          FIRST_CUTOFF,
-        ),
-      },
+      data: { yaml: firstYaml },
     },
   );
   expect([200, 201]).toContain(firstSaveResponse.status());
@@ -199,12 +222,7 @@ async function seedRevisionPair(
       data: {
         composition_id: firstSave.composition_id,
         base_revision_id: firstSave.revision_id,
-        yaml: compositionYaml(
-          compositionName,
-          savedSql.id!,
-          savedSql.revision_id!,
-          SECOND_CUTOFF,
-        ),
+        yaml: secondYaml,
       },
     },
   );

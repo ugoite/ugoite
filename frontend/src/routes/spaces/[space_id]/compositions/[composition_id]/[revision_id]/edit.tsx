@@ -15,28 +15,19 @@ import {
 import { t } from "~/lib/i18n";
 import { spaceCompositionRevisionPath } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
-import { formApi, sqlApi } from "~/lib/ugoite-client";
+import { sqlApi } from "~/lib/ugoite-client";
 
 export const route = spaceRoute({ navigation: "compositions" });
 
 /**
- * Display-only source-name lookup for restoring a draft from the exact
- * revision. Matches the stable Saved SQL entry id or Form id only; names
- * never participate in semantics and missing metadata falls back to an
- * ordered human label instead of exposing the document source id.
+ * Display-only lookup for the referenced Saved SQL name. Inline SQL names
+ * are already stored on their Composition source.
  */
 const resolveSourceNames = async (
   spaceId: string,
   document: CompositionLintDocument,
 ): Promise<Record<string, string>> => {
   const names: Record<string, string> = {};
-  let formNames = new Map<string, string>();
-  try {
-    const forms = await formApi.list(spaceId);
-    formNames = new Map(forms.map((form) => [form.id, form.name]));
-  } catch {
-    formNames = new Map();
-  }
   for (const [index, source] of document.spec.sources.entries()) {
     names[source.id] = `${t("composition.studioSource")} ${index + 1}`;
     if (source.kind === "saved_sql" && source.entry_id) {
@@ -46,9 +37,8 @@ const resolveSourceNames = async (
       } catch {
         // Keep the ordered human label when current source metadata is unavailable.
       }
-    } else if (source.kind === "entry_query" && source.form_id) {
-      const name = formNames.get(source.form_id);
-      if (name) names[source.id] = name;
+    } else if (source.kind === "inline_sql" && source.name) {
+      names[source.id] = source.name;
     }
   }
   return names;

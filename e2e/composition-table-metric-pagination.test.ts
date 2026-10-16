@@ -1,5 +1,9 @@
 import { type APIRequestContext, expect, test } from "@playwright/test";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
+import {
+  completeInlineSqlCompositionYaml,
+  completeSavedSqlCompositionYaml,
+} from "./lib/composition.ts";
 
 type SavedSqlRevision = { entryId: string; revisionId: string };
 
@@ -92,39 +96,39 @@ async function seedComposition(
     name?: string;
     sql_relation?: string;
     fields?: Record<string, {
-      id?: number;
       sql_column?: string;
-      query_capability?: { field?: { field_id?: number } };
     }>;
   }>;
   const form = forms.find((candidate) => candidate.name === formName);
   const relation = form?.sql_relation;
   const amountColumn = form?.fields?.Amount?.sql_column;
-  const amountFieldId = form?.fields?.Amount?.query_capability?.field
-    ?.field_id ?? form?.fields?.Amount?.id;
-  const merchantFieldId = form?.fields?.Merchant?.query_capability?.field
-    ?.field_id ?? form?.fields?.Merchant?.id;
-  expect(form?.id).toBeTruthy();
   expect(relation).toBeTruthy();
+  expect(form?.id).toBeTruthy();
   expect(amountColumn).toBeTruthy();
-  expect(amountFieldId).toBeTruthy();
-  expect(merchantFieldId).toBeTruthy();
+  const merchantColumn = form?.fields?.Merchant?.sql_column;
+  expect(merchantColumn).toBeTruthy();
 
-  // EntryQuery's small page limit creates multiple pages without a large seed.
-  for (const amount of [0, 1, 2]) {
-    const entryResponse = await request.post(
-      getBackendUrl(`/spaces/${spaceId}/entries`),
-      {
-        data: {
-          form: formName,
-          fields: {
-            Amount: amount,
-            Merchant: `Pager-${String(amount).padStart(3, "0")}`,
+  // Composition SQL uses the shared 100-row page size. Keep one row beyond
+  // the first page so Table pagination remains observable.
+  const amounts = Array.from({ length: 102 }, (_, amount) => amount);
+  for (let offset = 0; offset < amounts.length; offset += 8) {
+    await Promise.all(
+      amounts.slice(offset, offset + 8).map(async (amount) => {
+        const entryResponse = await request.post(
+          getBackendUrl(`/spaces/${spaceId}/entries`),
+          {
+            data: {
+              form: formName,
+              fields: {
+                Amount: amount,
+                Merchant: `Pager-${String(amount).padStart(3, "0")}`,
+              },
+            },
           },
-        },
-      },
+        );
+        expect(entryResponse.status()).toBe(201);
+      }),
     );
-    expect(entryResponse.status()).toBe(201);
   }
 
   const metricSql = await createSavedSql(
@@ -136,12 +140,11 @@ async function seedComposition(
     } >= $minimum`,
   );
 
-  const yaml = [
+  let yaml = [
     "format: ugoite.composition",
     "format_version: 1",
     `name: ${compositionName}`,
     "kind: dashboard",
-    "tags: []",
     "spec:",
     "  variables:",
     "    - id: minimum_amount",
@@ -150,33 +153,22 @@ async function seedComposition(
     "      default: 1",
     "  sources:",
     "    - id: paged_rows",
-    "      kind: entry_query",
-    `      form_id: "${form!.id}"`,
-    "      field_schema:",
-    `        - field_id: ${amountFieldId}`,
-    "          field_type: double",
-    `        - field_id: ${merchantFieldId}`,
-    "          field_type: string",
-    "      query:",
-    "        filters:",
-    `          - field_id: ${amountFieldId}`,
-    "            operator: gte",
-    "            value:",
-    "              variable: minimum_amount",
-    "        sort:",
-    `          - field_id: ${amountFieldId}`,
-    "            direction: asc",
-    "        page_limit: 1",
-    "        projection:",
-    "          kind: fields",
-    `          fields: [${amountFieldId}, ${merchantFieldId}]`,
+    "      kind: inline_sql",
+    "      name: Paged rows",
+    `      sql: SELECT ${sqlIdentifier(amountColumn!)} AS amount, ${
+      sqlIdentifier(merchantColumn!)
+    } AS merchant FROM ${sqlIdentifier(relation!)} WHERE ${
+      sqlIdentifier(amountColumn!)
+    } >= $minimum_amount ORDER BY ${sqlIdentifier(amountColumn!)} ASC`,
+    "      form_bindings: []",
+    "      expected_result: []",
+    "      schema_fingerprint: ''",
     "    - id: matching_count_source",
     "      kind: saved_sql",
     `      entry_id: "${metricSql.entryId}"`,
     `      revision_id: "${metricSql.revisionId}"`,
-    "      expected_result:",
-    "        - name: matching_count",
-    "          type: integer",
+    "      expected_result: []",
+    "      schema_fingerprint: ''",
     "      variables:",
     "        minimum:",
     "          variable: minimum_amount",
@@ -184,12 +176,10 @@ async function seedComposition(
     "    - id: minimum_input",
     "      kind: input",
     "      variable: minimum_amount",
-    "      label: Minimum amount",
     "    - id: matching_count",
     "      kind: metric",
     "      source: matching_count_source",
     "      column: matching_count",
-    "      label: Matching entries",
     "    - id: rows",
     "      kind: table",
     "      source: paged_rows",
@@ -208,6 +198,20 @@ async function seedComposition(
     "            component: rows",
     "",
   ].join("\n");
+  yaml = await completeInlineSqlCompositionYaml(request, spaceId, yaml, {
+    id: "paged_rows",
+    relation: relation!,
+    formId: form!.id!,
+    expectedResult: [
+      { name: "amount", type: "float" },
+      { name: "merchant", type: "string" },
+    ],
+  });
+  yaml = await completeSavedSqlCompositionYaml(request, spaceId, yaml, [{
+    id: "matching_count_source",
+    savedSqlId: metricSql.entryId,
+    savedSqlRevisionId: metricSql.revisionId,
+  }]);
   const compositionResponse = await request.post(
     getBackendUrl(`/spaces/${spaceId}/compositions`),
     {
@@ -235,7 +239,9 @@ test.describe("Composition Table and Metric pagination", () => {
   let seed: SeedState;
 
   test.beforeAll(async ({ request }) => {
-    test.setTimeout(120_000);
+    // The fixture publishes 102 Entry revisions over the direct API before
+    // it can exercise the 100-row SQL page boundary.
+    test.setTimeout(300_000);
     await waitForServers(request);
     seed = await seedComposition(request);
   });
@@ -267,12 +273,12 @@ test.describe("Composition Table and Metric pagination", () => {
     await link.click();
     await expect(page).toHaveURL(new RegExp(`${path}$`));
 
-    const input = page.getByLabel("Minimum amount", { exact: true });
+    const input = page.getByLabel("minimum_amount", { exact: true });
     const metric = page.locator("output.compositionMetric");
     const table = page.getByRole("table");
     await expect(input).toHaveValue("1");
-    await expect(metric).toHaveText("2");
-    await expect(table.locator("tbody tr")).toHaveCount(1);
+    await expect(metric).toHaveText("101");
+    await expect(table.locator("tbody tr")).toHaveCount(100);
     await expect(table).toContainText("Pager-001");
     await expect(page.getByRole("button", { name: "Next", exact: true }))
       .toBeEnabled();
@@ -280,8 +286,8 @@ test.describe("Composition Table and Metric pagination", () => {
     expect(initialMetricQueries).toBeGreaterThan(0);
 
     await input.fill("0");
-    await expect(metric).toHaveText("3");
-    await expect(table.locator("tbody tr")).toHaveCount(1);
+    await expect(metric).toHaveText("102");
+    await expect(table.locator("tbody tr")).toHaveCount(100);
     await expect(table).toContainText("Pager-000");
     const metricQueriesAfterInputChange = metricQueryCount;
     expect(metricQueriesAfterInputChange).toBeGreaterThan(
@@ -289,17 +295,17 @@ test.describe("Composition Table and Metric pagination", () => {
     );
 
     await page.getByRole("button", { name: "Next", exact: true }).click();
-    await expect(table.locator("tbody tr")).toHaveCount(1);
-    await expect(table).toContainText("Pager-001");
+    await expect(table.locator("tbody tr")).toHaveCount(2);
+    await expect(table).toContainText("Pager-100");
     await expect(input).toHaveValue("0");
-    await expect(metric).toHaveText("3");
+    await expect(metric).toHaveText("102");
     expect(metricQueryCount).toBe(metricQueriesAfterInputChange);
 
     await page.getByRole("button", { name: "Previous", exact: true }).click();
-    await expect(table.locator("tbody tr")).toHaveCount(1);
+    await expect(table.locator("tbody tr")).toHaveCount(100);
     await expect(table).toContainText("Pager-000");
     await expect(input).toHaveValue("0");
-    await expect(metric).toHaveText("3");
+    await expect(metric).toHaveText("102");
     expect(metricQueryCount).toBe(metricQueriesAfterInputChange);
   });
 });

@@ -503,6 +503,28 @@ describe("UI spec YAML registry", () => {
     }
   });
 
+  it("REQ-FE-040: registers the SQL-first Composition and shared SQL Workspace contracts", () => {
+    const studioPath = path.join(componentsDir, "composition-studio.yaml");
+    const studioContract = readFileSync(studioPath, "utf8");
+    const sharedWorkspaceContract = readFileSync(
+      path.join(componentsDir, "sql-workspace.yaml"),
+      "utf8",
+    );
+    const dataWorkspaceSource = readFileSync(
+      path.join(repoRoot, "frontend/src/components/CompositionDataWorkspace.tsx"),
+      "utf8",
+    );
+
+    expect(studioContract).toContain("**Status: implemented.**");
+    expect(studioContract.replaceAll(/\s+/g, " ")).toContain(
+      "no EntryQuery is created",
+    );
+    expect(dataWorkspaceSource).toContain("<SQLWorkspace");
+    expect(sharedWorkspaceContract.replaceAll(/\s+/g, " ")).toContain(
+      "Composition inline SQL use the same Workspace component",
+    );
+  });
+
   it("REQ-FE-040: validates page links", () => {
     const pages = loadPages();
     const pageIds = new Set(

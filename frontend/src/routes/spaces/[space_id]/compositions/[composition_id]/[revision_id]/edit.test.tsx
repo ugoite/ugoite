@@ -112,7 +112,6 @@ const lintDocument = {
   format_version: 1,
   kind: "dashboard",
   name: "Monthly review",
-  tags: ["finance"],
   spec: {
     variables: [],
     sources: [{
@@ -231,7 +230,7 @@ describe("Composition edit route", () => {
 
     // One Back to the opened revision, one Save, Design-first true-mode
     // structure with the single mode control: the finished shape only, no
-    // Variables, Tags, Data workspace, or Preview section.
+    // Variables, Data workspace, or Preview section.
     expect(screen.getAllByRole("link")).toHaveLength(1);
     const back = screen.getByRole("link", { name: "Back to revision" });
     expect(back).toHaveAttribute(
@@ -500,7 +499,6 @@ describe("Composition edit route", () => {
           format_version: 1,
           kind: "dashboard",
           name: "Monthly expenses",
-          tags: [],
           spec: {
             variables: [
               {

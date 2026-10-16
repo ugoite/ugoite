@@ -1,6 +1,7 @@
 import { createSignal } from "solid-js";
 import type {
   CompositionPreviewResponse,
+  CompositionRevisionBase,
   CompositionResolvedSource,
   CompositionSourcePage,
 } from "./composition-api";
@@ -20,6 +21,11 @@ export interface CompositionResolvedSourcePageState {
   error?: unknown;
 }
 
+export interface CompositionSourceCountState {
+  status: "loading" | "success" | "error";
+  value?: number;
+}
+
 export interface CompositionPreviewHandleState {
   /** Last requested candidate YAML; kept as Work for variable re-preview. */
   yaml?: string;
@@ -29,6 +35,7 @@ export interface CompositionPreviewHandleState {
   preview?: CompositionPreviewResponse;
   previewError?: unknown;
   sources: Record<string, CompositionResolvedSourcePageState>;
+  counts: Record<string, CompositionSourceCountState>;
 }
 
 /**
@@ -49,6 +56,7 @@ export interface CompositionPreviewQueryApi {
     yaml: string,
     variables: Record<string, unknown>,
     signal?: AbortSignal,
+    base?: CompositionRevisionBase,
   ) => Promise<CompositionPreviewResponse>;
   querySource: (
     spaceId: string,
@@ -56,6 +64,11 @@ export interface CompositionPreviewQueryApi {
     cursor: string | undefined,
     signal: AbortSignal,
   ) => Promise<CompositionSourcePage>;
+  countSource: (
+    spaceId: string,
+    source: CompositionResolvedSource,
+    signal?: AbortSignal,
+  ) => Promise<number>;
 }
 
 const abortError = (error: unknown): boolean =>
@@ -90,6 +103,7 @@ export function createCompositionPreviewHandle(
   const [state, setState] = createSignal<CompositionPreviewHandleState>({
     previewing: false,
     sources: {},
+    counts: {},
   });
   const [variables, setVariables] = createSignal<Record<string, unknown>>({});
 
@@ -98,8 +112,11 @@ export function createCompositionPreviewHandle(
   let previewController: AbortController | undefined;
   const sourceControllers = new Map<string, AbortController>();
   const sourceGenerations = new Map<string, number>();
+  const countControllers = new Map<string, AbortController>();
+  const countGenerations = new Map<string, number>();
   const resolvedSources = new Map<string, CompositionResolvedSource>();
   let lastScope: CompositionPreviewScope | undefined;
+  let activeBase: CompositionRevisionBase | undefined;
 
   const isCurrent = (requestGeneration: number) =>
     !disposed && requestGeneration === generation;
@@ -111,16 +128,25 @@ export function createCompositionPreviewHandle(
     resolvedSources.clear();
   };
 
+  const abortCounts = () => {
+    for (const controller of countControllers.values()) controller.abort();
+    countControllers.clear();
+    countGenerations.clear();
+  };
+
   const preview = async (
     spaceId: string,
     yaml: string,
     values: Record<string, unknown>,
     scope?: CompositionPreviewScope,
+    base?: CompositionRevisionBase,
   ) => {
     const requestGeneration = ++generation;
     previewController?.abort();
     abortSources();
+    abortCounts();
     lastScope = scope === undefined ? undefined : { ...scope };
+    activeBase = base;
     setVariables({ ...values });
     setState({
       yaml,
@@ -130,6 +156,7 @@ export function createCompositionPreviewHandle(
       preview: undefined,
       previewError: undefined,
       sources: {},
+      counts: {},
     });
     const controller = new AbortController();
     previewController = controller;
@@ -139,6 +166,7 @@ export function createCompositionPreviewHandle(
         yaml,
         values,
         controller.signal,
+        base,
       );
       if (!isCurrent(requestGeneration) || controller.signal.aborted) return;
       // Every plan source stays registered for controller-owned paging, but
@@ -169,6 +197,7 @@ export function createCompositionPreviewHandle(
               { status: "loading", cursorStack: [undefined] },
             ]),
         ),
+        counts: {},
       });
       if (response.ok && response.plan) {
         await Promise.all(
@@ -266,7 +295,7 @@ export function createCompositionPreviewHandle(
     const nextValues = { ...variables() };
     if (value === undefined) delete nextValues[variableId];
     else nextValues[variableId] = value;
-    void preview(current.spaceId, current.yaml, nextValues, lastScope);
+    void preview(current.spaceId, current.yaml, nextValues, lastScope, activeBase);
   };
 
   /**
@@ -338,12 +367,68 @@ export function createCompositionPreviewHandle(
     );
   };
 
+  const count = async (sourceId: string) => {
+    const current = state();
+    const identity = current.identity;
+    const source = resolvedSources.get(sourceId);
+    if (!identity || !source) return;
+    countControllers.get(sourceId)?.abort();
+    const controller = new AbortController();
+    countControllers.set(sourceId, controller);
+    const countGeneration = (countGenerations.get(sourceId) ?? 0) + 1;
+    countGenerations.set(sourceId, countGeneration);
+    const requestGeneration = generation;
+    setState((value) => ({
+      ...value,
+      counts: {
+        ...value.counts,
+        [sourceId]: { status: "loading" },
+      },
+    }));
+    try {
+      const value = await api.countSource(
+        identity.spaceId,
+        source,
+        controller.signal,
+      );
+      if (
+        !isCurrent(requestGeneration) || controller.signal.aborted ||
+        countGenerations.get(sourceId) !== countGeneration
+      ) return;
+      setState((currentState) => ({
+        ...currentState,
+        counts: {
+          ...currentState.counts,
+          [sourceId]: { status: "success", value },
+        },
+      }));
+    } catch (error) {
+      if (
+        !isCurrent(requestGeneration) || controller.signal.aborted ||
+        abortError(error) ||
+        countGenerations.get(sourceId) !== countGeneration
+      ) return;
+      setState((currentState) => ({
+        ...currentState,
+        counts: {
+          ...currentState.counts,
+          [sourceId]: { status: "error" },
+        },
+      }));
+    } finally {
+      if (countControllers.get(sourceId) === controller) {
+        countControllers.delete(sourceId);
+      }
+    }
+  };
+
   const dispose = () => {
     disposed = true;
     generation += 1;
     previewController?.abort();
     previewController = undefined;
     abortSources();
+    abortCounts();
   };
 
   const invalidate = () => {
@@ -351,7 +436,8 @@ export function createCompositionPreviewHandle(
     previewController?.abort();
     previewController = undefined;
     abortSources();
-    setState({ previewing: false, sources: {} });
+    abortCounts();
+    setState({ previewing: false, sources: {}, counts: {} });
   };
 
   return {
@@ -361,6 +447,7 @@ export function createCompositionPreviewHandle(
     invalidate,
     setVariable,
     ensureSource,
+    count,
     next,
     previous,
     retry,

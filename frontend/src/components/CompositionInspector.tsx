@@ -46,12 +46,10 @@ const resolveSelection = (
 };
 
 /**
- * Inspector for the selected canvas block only. Metric edits bind label,
- * Saved SQL source, and result column; table edits bind label and source; text edits
- * bind content and fixed style; Input components bind one variable and an
- * optional label. Every edit flows
- * through draft updaters into the shared debounced preview; text, label,
- * and style edits never reshape sources, so they never refetch. Without a
+ * Inspector for the selected canvas block only. Metrics bind SQL source and
+ * result column; tables bind source; text binds content and fixed style;
+ * Inputs bind one variable. Every edit flows through draft updaters into the
+ * shared debounced preview. Without a
  * resolvable selection the inspector renders nothing: no panel, no prose.
  * Every selected Component can be removed without deleting its variable.
  */
@@ -86,11 +84,10 @@ export function CompositionInspector(props: CompositionInspectorProps) {
               const input = props.draft.inputs.find((item) =>
                 item.draftId === inputId
               );
-              const name = input?.label?.trim() ||
-                compositionVariableDisplayName(
-                  props.draft.variables,
-                  input?.variable ?? "",
-                );
+              const name = compositionVariableDisplayName(
+                props.draft.variables,
+                input?.variable ?? "",
+              );
               const label = t("composition.studioRemoveInput", { name });
               return (
                 <IconButton

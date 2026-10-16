@@ -2,12 +2,13 @@
 title: "SQL-first Composition Studio"
 ---
 
-**Status: planned.** This is the current Composition Studio interaction
+**Status: implemented.** This is the current Composition Studio interaction
 target from [ADR-024](../../../architecture/contracts/adr-024-composition-sql-first.md).
-Runtime and browser acceptance remain unverified until the replacement is
-implemented. The shared SQL editor, typed parameter controls, preview, and
-result contract are defined in [`sql-workspace.yaml`](sql-workspace.yaml),
-with Composition-specific acceptance in REQ-FE-079.
+Composition-specific behavior is verified by the SQL-first golden journey,
+mobile Studio tests, and SQL-backed renderer tests. The shared SQL editor,
+typed parameter controls, preview, and result contract are defined in
+[`sql-workspace.yaml`](sql-workspace.yaml), with Composition-specific
+acceptance in REQ-FE-079.
 
 ## Composition Data surface
 
