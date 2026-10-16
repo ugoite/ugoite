@@ -1,0 +1,426 @@
+version: "0.1"
+updated: "2026-10-13"
+component_group:
+  id: composition-studio
+  title: Composition Studio
+  status: planned
+  routes:
+    - /spaces/{space_id}/compositions/new
+    - /spaces/{space_id}/compositions/{composition_id}/{revision_id}/edit
+    - /spaces/{space_id}/compositions/{composition_id}/history
+  notes: The current Studio contract remains described below. The accepted SQL-first target is planned separately in composition-sql-workspace.yaml under ADR-024; keep current implementation evidence distinct until that replacement ships.
+components:
+  - id: studio-header
+    type: page-header
+    ownership: tool-name-only
+    actions:
+      - id: studio-back
+        type: link
+        position: leading
+        presentation: icon-only
+        visible_content: chevron-left
+        accessible_name: destination-specific localized parent name
+        single_control: true
+      - id: studio-save
+        type: button
+        title: Save
+        single_control: true
+        rationale: visible-text-label-so-beginners-find-the-primary-mutation-keeps-disabled-reason-and-steady-busy-label
+        async_state: explicit-busy-without-layout-shift
+        save_readiness: name-non-empty-plus-valid-refs-plus-exactly-once-placement-plus-no-dangling-plus-one-layout-item
+        blocked_save: disabled-with-reason-in-accessible-name-and-title-no-prose
+        source_only: cannot-save-canonical-parse-gated-at-save-with-allowlisted-summary
+  - id: studio-data
+    type: list
+    title: Data
+    status: implemented
+    ownership: persistent-desktop-source-sidebar-with-single-selected-source-editor
+    source_authoring: design-picker-and-sidebar-footer-source-picker
+    empty_source_list: add-source-icon-action-without-prose
+    label_kind: compact-section-label
+    rows:
+      selection: full-row-activate
+      reorder: selected-source-keyboard-operable-move-up-down-in-sidebar-footer
+      remove: selected-source-in-sidebar-footer-disabled-while-displays-reference
+      source_kinds: [saved-sql-exact-revision, entry-query]
+      identity_display: human-name-only
+      revision_identity: exact-pinned-in-draft-never-rendered
+    source_picker:
+      row_name: human-source-name-only
+      row_name_overflow: ellipsis-with-full-name-native-title
+      row_accessible_name: full-human-source-name
+      row_identifiers: source-draft-entry-revision-ids-never-rendered
+    entry_query_editor:
+      sections: [fields, filter, sort, result]
+      semantics: existing-entry-query-vocabulary-only
+      filter_operators: [equals, contains, lt, lte, gt, gte]
+      sort_directions: [asc, desc]
+      projection: [fields, preview]
+      projection_choices: projectable-snapshot-fields-only; already-selected-nonprojectable-fields-remain-available-for-removal
+      preview_availability: switch-to-preview-enabled-only-when-field-schema-covers-every-current-form-field
+      projection_initialization: first-64-projectable-form-fields
+      projection_capacity: unchecked-fields-disabled-with-localized-limit-title-at-64
+      projection_removal: selected-fields-remain-removable
+
+      edits: draft-source-query-through-narrow-updaters
+      unknown_operators: rejected-fail-closed
+      filter_sort_editing: shared-entry-browser-display-dialog-only
+      field_identity:
+        display_name: transient-human-form-label-or-field-key
+        fallback:
+          generated_query_capability_ordinal: ignored-in-favor-of-human-field-key; includes-localized-generated-ordinals
+          unresolved_field: localized-unavailable-name-without-ID-or-generated-ordinal
+        raw_field_id: query-data-only-never-rendered-in-field-filter-sort-projection-or-dialog-labels
+      capability_gating: dialog-offers-only-capable-snapshot-backed-fields-with-disabled-add-and-reason-at-zero
+      projection_placement: inline-unchanged-dialog-columns-contract-not-identical
+      form_definition: transient-formApi-load-cached-per-source-never-stored
+      source_identity: selected-human-source-name-owned-by-workspace-heading
+      raw_form_id: draft-data-only-never-rendered
+    source_navigator:
+      disclosure: mobile-drawer-control-or-split-pane-toggle-icon-only-44px-with-localized-accessible-name
+      initial_state: desktop-persistent;mobile-open-without-selection-and-closed-with-selection;split-pane-open-with-toggle
+      collapsed: editor-uses-full-available-width
+      selection: retained-while-collapsed
+      state: transient-work-only-never-saved
+      footer_actions: [add-source, move-selected-up, move-selected-down, remove-selected]
+      row_actions: selection-only-no-chevron
+      mobile: overlay-drawer-selection-closes-drawer
+      row_name: human-source-name-only
+      row_name_overflow: ellipsis-with-full-name-native-title
+      row_accessible_name: full-human-source-name
+      row_identifiers: source-draft-entry-revision-ids-never-rendered
+    saved_sql_viewer:
+      sql: read-only-with-edit-saved-sql-action-to-existing-editor-route
+      sections: [sql, variables, result-schema, result]
+      reads: user-gated-sqlApi-get-plus-bounded-limit-1-probe-denied-concealed
+      revision_update: explicit-exact-revision-only-no-latest-fallback
+      composition_save: separate-explicit-action-never-conflated
+    concealment: denied-or-missing-renders-source-unavailable-no-identifiers
+    preview_discipline: existing-debounced-handle-only-no-second-path
+    result_pages: bounded-shared-page-with-controller-owned-paging
+    pagination:
+      component: ResultPagination
+      reference: result-pagination.yaml
+      presentation: localized-icon-only-chevron-controls
+    responsive:
+      desktop: persistent-sticky-left-sidebar-beside-detail
+      narrow: closable-overlay-drawer-with-detail-full-width-when-closed
+      split: single-column-data-pane-with-closable-source-list
+      narrow_width: 390px
+    surface_tokens: fixed-only-no-raw-color
+    async_state: explicit-loading-empty-error
+  - id: studio-source-picker
+    type: dialog
+    title: Choose a source
+    status: implemented
+    ownership: design-canvas-display-source-or-data-sidebar-source-authoring
+    source_only_selection: adds-source-and-selects-detail-without-creating-display
+    catalog_sources: Forms through form.list and user-query Saved SQL through sql.list
+    available_sources: Forms through form.list and user-query Saved SQL through sql.list
+    new_table_source_selection: add-source-and-unlabelled-table-to-the-draft-together-without-label-step
+    new_metric_source_selection: add-Saved-SQL-source-then-return-to-metric-picker; select-result-column; require-preview-before-insert
+
+    initial_form_projection: first-64-projectable-form-fields-no-created-or-updated-system-fields-preview-only-when-no-form-field-is-projectable
+    initial_form_schema: every-composition-expressible-field-up-to-document-collection-limit-with-initially-projected-fields-prioritized
+    preview_snapshot: preview-is-selectable-only-when-the-source-snapshot-covers-every-current-form-field
+    tabs: [Forms, Saved SQL]
+    selection: full-row-activate
+    row_identity: human-name-only
+    row_name_overflow: ellipsis-with-full-name-native-title
+    row_accessible_name: full-human-name-from-row-content
+    internal_identifiers: form-source-draft-entry-revision-ids-never-rendered
+  - id: studio-data-mode-tabs
+    type: tab-list
+    title: Sources, Variables, Tags
+    status: implemented
+    scope: data-mode-only
+    labels: localized-sources-variables-tags
+    tab_pattern: settings-tablist-with-tab-and-tabpanel-roles-no-arrow-key-nav
+    initial_selection: sources
+    variable_editor: available-before-any-source-exists
+    state: transient-work-never-saved
+  - id: studio-display
+    type: list
+    title: Display
+    status: removed
+    ownership: design-canvas-plus-inspector
+    removal: legacy-display-list-removed-in-RA8-canvas-owns-add-remove-reorder-inspector-owns-label
+    insertion_delegate: display-picker-at-canvas-target-only
+    display_kinds: [table, metric]
+    table_presentation:
+      entry_query: EntryResultTable
+      saved_sql: SqlResultTable
+    metric_semantics: selected-Saved-SQL-result-column-through-server-metric-query
+
+  - id: studio-display-picker
+    type: dialog
+    title: Add data component
+    status: implemented
+    ownership: canvas-insertion-delegate
+    kind_selection: Table/Metric-tabs-inside-picker
+    sequence: kind, Saved-SQL-source, result-column, preview, insert
+    table_selection: selecting-an-existing-source-adds-it-immediately
+    metric_selection: Saved-SQL-column-requires-server-preview-before-insert
+
+    source_catalog: browse-Saved-SQL-only-with-kind-preserved
+    label: omitted-at-insertion-and-optional-in-Inspector-after-selection
+    source_name: human-name-only
+    source_name_overflow: ellipsis-with-full-name-native-title-on-selectable-and-disabled-rows
+    source_accessible_name: full-human-source-name
+    row_identifiers: source-draft-entry-revision-ids-never-rendered
+    saved_sql_metric_candidates: uniquely-named-declared-non-json-columns-only
+    metric_preview: composition.metric.query-with-exact-value-before-draft-insertion
+    metric_preview_freshness: result-bound-to-exact-source-and-column; discard-pending-results-on-change-or-picker-close
+
+    internal_identifiers: field-source-entry-revision-ids-never-rendered
+    form_metadata: authorized-form-list-transient-never-stored
+    sizing:
+      width: min(720px, calc(100vw - 32px))
+      height: max-viewport-minus-32px-with-vertical-scroll
+    semantics: exact-Saved-SQL-source-and-selected-result-column
+  - id: studio-metric-inspector
+    type: form
+    title: Metric
+    status: implemented
+    fields: [label, Saved-SQL-source, result-column]
+    number_presentation:
+      available_when: selected-metric-result-is-numeric
+      controls: [unit, minimum-decimal-places]
+      storage: optional-display-metadata
+      query_semantics: unchanged
+      unit_rendering: trimmed-suffix-separated-by-one-space
+      decimal_rendering: minimum-zero-padded-scale-preserve-longer-source-scale-never-round
+      transition_to_non_numeric: clears-number-presentation
+
+  - id: studio-variables
+    type: form
+    title: Variables
+    status: implemented
+    scope: data-mode-variables-tab-only
+    disclosure: available-with-or-without-sources-and-when-tab-is-selected
+    label_kind: compact-section-label
+    row_label: authored-human-label-else-localized-ordinal-by-declaration-order
+    identifier: stable-internal-reference-never-a-display-fallback
+    identifier_visibility: excluded-from-ordinary-visible-labels-accessible-names-and-titles
+    binding: typed-composition-variable-declaration-with-exact-type-default-and-required-state
+    default_parsing: shared-rust-domain-parser-ignores-results-after-removal-or-type-change
+    input_components: ordinary-layout-components-reference-one-declared-variable-and-own-no-value
+    required_variable_without_default: input-must-be-placed-before-save
+    blocked_save: disabled-with-reason-in-accessible-name-and-title
+    type_compatibility: rust-owned-diagnostics
+  - id: studio-tags
+    type: form
+    title: Tags
+    status: implemented
+    scope: data-mode-tags-tab-only
+    label_kind: compact-section-label
+    semantics: entry-metadata-tags
+  - id: studio-preview
+    type: query-results
+    title: Preview
+    status: removed
+    ownership: design-canvas-plus-data-workspace
+    removal: legacy-preview-section-removed-in-UXB-canvas-previews-blocks-inline-per-source-results-page-in-workspace-resolve-diagnostics-in-strip
+    execution: table-uses-entry.query-and-sql.query; metric-uses-composition.metric.query
+    rendering:
+      mode: shared-composition-renderer
+      stale_responses: generation-guarded
+    async_state: explicit-loading-empty-error
+  - id: studio-diagnostics
+    type: query-results
+    title: Diagnostics
+    status: implemented
+    ownership: shared-resolve-and-preview-diagnostics-in-every-mode
+    variable_names: authored-label-or-localized-declaration-ordinal
+    unknown_variable_names: generic-localized-variable
+    variable_ids: never-render-in-diagnostics
+    source: debounced-shared-preview-handle-only-no-second-path
+    rendering:
+      mode: shared-composition-diagnostics-with-structural-alert-roles
+      placement: above-mode-content-in-design-data-and-split
+    async_state: explicit-loading-empty-error
+  - id: studio-layout
+    type: two-column-workspace
+    desktop: editor-and-preview-split
+    narrow: one-column-stacked
+    narrow_width: 390px
+    surface_tokens: fixed-only-no-raw-color
+  - id: use-flow-renderer
+    type: flow-layout
+    title: Saved tool flow
+    status: implemented
+    ownership: renderer-only-no-authoring-affordances
+    source: saved-tool-layout-rows-and-component-declarations
+    rows:
+      order: layout-row-array-then-item-order
+      items: [input, text, metric, table]
+    text:
+      styles: [title, heading, body, caption]
+      semantics: fixed-typography-no-markdown-no-source-fetch
+      style_selector:
+        option_values: [title, heading, body, caption]
+        labels:
+          en: [Title, Heading, Body, Caption]
+          ja: [タイトル, 見出し, 本文, キャプション]
+    inputs:
+      order: layout-placement-first
+      labels: declared-human-label-else-localized-ordinal-by-declaration-order
+      binding: one-declared-variable-per-Input-component
+      state: shared-transient-variable-value-never-stored
+    variable_bound_text:
+      binding: direct-reference-to-declared-string-variable-only
+      evaluation: synchronous-from-current-Work-value-without-SQL
+    metric_semantics: selected-Saved-SQL-result-column-through-server-metric-query
+    metric_rendering_status: implemented
+    metric_result_states: loading, zero-rows, multiple-rows, null, numeric-zero, stale, source-unavailable, invalid-result, execution-error
+    saved_sql_metric_rows: exactly-one; zero-rows-and-multiple-rows-have-distinct-diagnostics-and-one-direct-Edit-action
+    metric_numeric_presentation: exact-integer-and-decimal; no-inferred-unit-or-fraction-digits
+    metric_recovery: one-relevant-action
+
+    table_presentation:
+      entry_query: EntryResultTable
+      saved_sql: SqlResultTable
+      overflow: own-viewport-only-no-document-scroll
+    responsive:
+      desktop: row-items-inline
+      narrow: wrap-stack
+      narrow_width: 390px
+    surface_tokens: fixed-only-no-raw-color
+    async_state: explicit-loading-empty-error
+  - id: design-canvas
+    type: flow-layout
+    title: Design canvas
+    status: implemented
+    ownership: shared-flow-item-presenter-with-edit-only-affordances
+    source: draft-components-and-layout-rows-with-debounced-shared-preview
+    blank_state: normal-canvas-with-text-and-data-insertion-controls-no-prose
+    add_data_action: Data-opens-data-component-picker-in-design-and-design-side-of-split
+    blank_scope: text-and-data-remain-available-with-zero-sources
+    rows:
+      order: layout-row-array-then-item-order
+      reorder: keyboard-operable-move-up-down-buttons
+      cross_row_item_moves: unsupported-insertion-targets-instead
+      items: [input, text, metric, table]
+    selection:
+      scope: transient-work-component-identity-only
+      affordance: outline-with-pressed-toggle-and-visible-focus
+      inspector_handoff: selected-block-identity-only
+      inspector_handoff_narrow: block-tap-opens-bottom-sheet-below-560px
+    insertion:
+      control: one-add-control-per-layout-gap-including-one-above-and-one-below-a-single-item
+      palette: modal-dialog-with-backdrop-escape-focus-trap-and-focus-return
+      palette_sizing:
+        width: min(560px, calc(100vw - 32px))
+        height: max-viewport-minus-32px-with-vertical-scroll
+      palette_entries: [text-always, data-always, inputs-only-with-variables]
+      data: opens-data-component-picker-with-Table-and-Metric-tabs
+      input: place-existing-variable-binding-without-creating-a-variable
+      input_label: authored-human-label-else-localized-variable-ordinal-never-variable-id
+      variable_bound_text_label: authored-human-label-else-localized-variable-ordinal-never-variable-id
+    removal:
+      owner: selected-block-inspector
+      action: localized-icon-button-in-inspector-title-bar
+      accessible_name_and_title: localized-action-with-human-display-name-never-variable-id
+      component: remove-declaration-and-unplace
+      input: unplace-component-only-keeps-variable-declaration
+      after_remove: clear-selection-prune-empty-layout-rows-and-focus-first-remaining-block-or-add-gap
+      guards: blocked-while-referenced-preserved
+    preview_discipline: existing-debounced-handle-only-no-second-path
+    responsive:
+      narrow: wrap-stack
+      narrow_width: 390px
+    surface_tokens: fixed-only-no-raw-color
+    async_state: explicit-loading-empty-error
+  - id: studio-inspector
+    type: inspector
+    title: Inspector
+    status: implemented
+    metric_settings_editor_status: implemented
+    ownership: selected-block-only-no-creation
+    source: canvas-selection-identity-only
+    actions: [remove-display, unplace-input-component]
+    removal: available-inline-and-in-narrow-bottom-sheet
+    empty_state: no-panel-no-prose
+    metric_fields:
+      label: optional-display-label
+      data: existing-source-picker-only
+      source: existing-or-catalog-Saved-SQL-source-only
+      value: uniquely-named-displayable-SQL-output-column
+      display_format: optional-unit-and-fraction-digits-without-value-inference
+    table_fields:
+      label: optional-display-label
+      data: existing-source-picker-only
+    text_fields:
+      text: inline-content
+      style: fixed-enum-only
+    input:
+      variable: retarget-selected-Input-to-an-existing-variable
+      label: authored-variable-label-or-localized-ordinal-read-only
+      value: shared-transient-work-only-never-saved
+    data_jump: expand-and-focus-existing-source-row
+    data_jump_narrow: dismiss-sheet-show-data-workspace-focus-jumped-row
+    preview_discipline: existing-debounced-handle-only-no-second-path
+    responsive:
+      narrow: bottom-sheet-dialog-on-block-tap
+      narrow_width: 390px
+      narrow_gate: 560px
+    sheet: dialog-with-visible-focus-trap-escape-backdrop-close-focus-returns-to-block
+    sheet_state: transient-work-selected-id-plus-open-flag-only
+    sheet_reuse: existing-inspector-content-no-duplicated-editors
+    surface_tokens: fixed-only-no-raw-color
+  - id: studio-mode
+    type: segmented-control
+    title: Studio mode
+    status: implemented
+    ownership: single-operative-control-for-workspace-arrangement-only
+    options: [design, data, split]
+    labels: icon-with-short-label
+    accessible_names: radiogroup-with-checked-option-and-native-focus
+    arrangement_only: draft-preview-selection-shared-continuous-no-refetch
+    true_modes:
+      design: finished-shape-only-canvas-plus-inspector-no-data-no-variables-no-tags-no-preview-section
+      data: fetch-definition-only-with-localized-sources-variables-tags-tabs-no-canvas-no-preview-section
+      split: design-canvas-plus-scoped-data-pane-no-variables-no-tags-no-preview-section
+    blank_design: Text-and-Data-insertion-controls-open-without-prose
+    source_creation: design-display-picker-or-data-sidebar-footer
+    split_availability: desktop-only-below-760px-design-data-only
+    narrow_resize: crossing-below-760px-gate-returns-to-design-no-stuck-split
+    persistence: transient-work-never-stored
+    responsive:
+      narrow: design-data-toggle-split-unavailable
+      narrow_width: 390px
+    surface_tokens: fixed-only-no-raw-color
+  - id: studio-sync
+    type: workspace-synchronization
+    title: Design Data synchronization
+    status: implemented
+    ownership: selection-identity-only-no-pixels
+    block_to_source: metric-table-auto-select-component-source-text-input-keep-selection
+    source_to_blocks: soft-highlight-using-blocks-selection-unchanged
+    highlight: visual-token-colors-only-distinct-from-selection-outline
+    split: left-design-canvas-right-data-pane-for-selected-block-source
+    split_state: transient-work-never-persisted
+    stale_responses: generation-guarded-latest-draft-only
+    preview_discipline: scoped-visible-component-plus-selected-source-existing-path-only
+    responsive:
+      narrow: forced-design-below-gate-with-stacked-fallback
+      narrow_width: 390px
+    surface_tokens: fixed-only-no-raw-color
+    async_state: explicit-loading-empty-error
+  - id: source-picker
+    type: dialog
+    title: Choose a source
+    status: implemented
+    ownership: single-add-data-dialog-with-forms-and-saved-sql-tabs
+    tabs: [forms, saved-sql]
+    tab_pattern: settings-tablist-with-tab-and-tabpanel-roles-no-arrow-key-nav
+    tab_labels: existing-composition-studioForms-and-spaceShell-savedSql-only
+    rows: shared-form-and-saved-sql-row-labels-with-full-row-button-activation
+    internal_forms: hidden-through-shared-filterCreatableEntryForms
+    dialog: fixed-width-min-560px-viewport-capped-backdrop-escape-trap-focus-return
+    empty_states: existing-studioNoForms-and-studioNoSavedSql-per-tab
+    async_state: explicit-loading-empty-error
+    responsive:
+      narrow: tabs-and-rows-fit-390px-through-viewport-cap
+      narrow_width: 390px
+    surface_tokens: fixed-only-no-raw-color

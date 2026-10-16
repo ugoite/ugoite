@@ -4,6 +4,8 @@ import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { BackLink } from "~/components/BackLink";
 import { ButtonSpinner } from "~/components/ButtonSpinner";
 import { SQLWorkspace } from "~/components/SQLWorkspace";
+import type { SQLWorkspaceAction } from "~/components/SQLWorkspace";
+import { SqlStructureToolbar } from "~/components/SqlStructureToolbar";
 import { SqlVariableDefaultsEditor } from "~/components/SqlVariableDefaultsEditor";
 import { formApi } from "~/lib/ugoite-client";
 import {
@@ -11,6 +13,7 @@ import {
   buildSqlAggregateQuery,
   buildSqlSchema,
   buildSqlStarterQuery,
+  buildSqlStructureContexts,
   normalizeSqlVariables,
   sqlAggregateFieldOptions,
   sqlFilterFieldOptions,
@@ -51,6 +54,9 @@ export default function SpaceQueryCreateRoute() {
   const [defaultDrafts, setDefaultDrafts] = createSignal<
     Record<string, SqlVariableDefaultDraft>
   >({});
+  const [structureActions, setStructureActions] = createSignal<
+    readonly SQLWorkspaceAction[]
+  >([]);
 
   const [forms] = createResource(async () => {
     return await formApi.list(spaceId());
@@ -314,6 +320,7 @@ export default function SpaceQueryCreateRoute() {
             setHasUserEditedSql(true);
             setSqlInput(value);
           }}
+          actions={structureActions()}
           schema={schema()}
           variables={workspaceVariables()}
           parameterValues={workspace.parameterValues()}
@@ -326,6 +333,21 @@ export default function SpaceQueryCreateRoute() {
           onPrevious={workspace.previous}
           onNext={workspace.next}
           preview={workspace.preview()}
+        />
+        <SqlStructureToolbar
+          sql={sqlInput}
+          contexts={() =>
+            buildSqlStructureContexts(
+              (forms() || []) as Form[],
+              workspaceVariables(),
+              `new-sql:${spaceId()}:${selectedFormId()}`,
+            )}
+          onSqlChange={(value) => {
+            setHasUserEditedSql(true);
+            setSqlInput(value);
+          }}
+          onActionsChange={setStructureActions}
+          disabled={isSaving}
         />
 
         <Show when={variables().length > 0}>

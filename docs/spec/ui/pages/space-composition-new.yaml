@@ -1,161 +1,65 @@
 version: "0.1"
-updated: "2026-10-09"
+updated: "2026-10-16"
 page:
   id: space-composition-new
   title: New tool
   route: /spaces/{space_id}/compositions/new
   implementation: implemented
+  contract_status: planned
 components:
   shared:
     - id: space-shell
       type: persistent-workspace-navigation
       reference: ../components/space-shell.yaml
   body:
-    - id: studio-header
-      type: page-header
-      title: Tool name
-      ownership: tool-name-only
-      description: One Back control to the saved-tools list, one tool-name text input owning the name, one Save text button.
-    - id: studio-back
-      type: link
-      title: Back to saved tools
-      single_control: true
     - id: studio-name
       type: text-input
       title: Tool name
-      ownership: object-identity
-      source: draft name written through setDraftName
+      ownership: composition-object-identity
+      source: Composition name in the canonical document
     - id: studio-save
       type: button
       title: Save
+      label: Save
       single_control: true
-      rationale: visible-text-label-so-beginners-find-the-primary-mutation-keeps-disabled-reason-and-steady-busy-label
-      source: canonical draft YAML through composition.save with one Idempotency-Key reused for retry
-      save_readiness: >-
-        Save stays disabled until the tool name is non-empty, all refs are
-        valid with every component placed exactly once and no dangling refs,
-        and the layout holds at least one item. A source-only draft cannot
-        save. A disabled Save carries its reason in the accessible name and
-        title with no prose paragraph. Canonical parsing gates the save
-        itself: rejections surface the allowlisted diagnostic summary, and
-        anything else uses the generic save failure.
-      seed: >-
-        One-shot router location state consumed on mount with the state
-        cleared so back and forward never double-add the source. A form seed
-        carries the current EntryQuery source plus a default Table plus a
-        single-row layout with the tool name prefilled. A Saved SQL seed
-        carries the exact revision source plus a default Table plus a single
-        row plus mapped variables with parameter controls placed only when
-        variables exist. Every seed emits at least one layout item and opens
-        save-ready with a visible block; never a zero-display draft.
-      deterministic_rejection: >-
-        Show a localized summary when composition.save returns an allowlisted
-        composition_diagnostic; use the generic save failure when the
-        diagnostic is absent or unknown. Clear the uncertain attempt on
-        rejection and keep retry on the same route with the identical
-        payload and key.
-    - id: studio-mode
-      type: segmented-control
-      title: Studio mode
-      ownership: single-operative-control-for-workspace-arrangement-only
-      description: True modes switch the arrangement only with shared draft, preview, and selection state. Design shows the finished shape only (canvas plus inspector, diagnostics strip); Data shows one localized Sources, Parameters, or Tags tab at a time (Parameters appears once a source exists); Split pairs the canvas with the scoped data pane. A blank canvas offers Text and Data insertion without prose.
-    - id: studio-diagnostics
-      type: query-results
-      title: Diagnostics
-      source: shared CompositionDiagnostics over the debounced preview with structural alert roles, above the mode content in every mode
-      rendering:
-        mode: shared-composition-diagnostics
-      description: Replaces the removed Preview section for resolve and preview diagnostics; blocks preview inline on the canvas.
-    - id: studio-data
-      type: list
-      title: Data
-      scope: data-mode-and-split-pane-only
-      source: draft sources with human names only
-      entry_query_field_labels:
-        form_field_resolved: transient-form-label-query-capability-name-or-field-key
-        generated_query_capability_ordinal: ignored-in-favor-of-human-field-key
-        unresolved_field: localized-unavailable-name-without-ID-or-generated-ordinal
-      field_identity:
-        raw_field_id: query-data-only-never-rendered-in-field-filter-sort-projection-or-dialog-labels
-      projection_initialization: first-64-projectable-form-fields
-      projection_capacity: unchecked-fields-disabled-at-64-and-selected-fields-remain-removable
-
-      selection: full-row-activate
-      reorder: keyboard-operable-move-up-down
-      remove: blocked-while-displays-reference-with-reason
-      revision_identity: exact-pinned-in-draft-never-rendered
-    - id: studio-data-mode-tabs
-      type: tab-list
-      title: Sources, Parameters, Tags
-      scope: data-mode-only
-      initial_selection: Sources
-      parameter_disclosure: only-after-a-source-exists
-      state: transient-work-never-saved
-    - id: studio-add-data
-      type: button
-      title: Data
-      single_control: true
-      source: Design-canvas insertion palette; opens the Table/Metric data component picker
-    - id: studio-add-data-dialog
-      type: dialog
-      title: Choose a source
-      source: Forms through form.list and Saved SQL through sql.list
-      selection: full-row-activate; table adds immediately; Metric offers Saved SQL only, then column selection and server preview before insertion
-
-      rendering: human-name-only rows with loading, empty, and error states
-      row_name_overflow: ellipsis-with-full-name-native-title
-      internal_identifiers: form-source-draft-entry-revision-ids-never-rendered
-    - id: studio-display
-      type: list
-      title: Display
-      status: removed
-      source: display add, remove, reorder, and label editing are owned by the Design canvas and inspector; the display picker serves only as the canvas insertion delegate
-    - id: studio-display-picker
-      type: dialog
-      title: Add data component
-      kind_selection: Table/Metric tabs inside the picker
-      sequence: kind, Saved SQL source, result column, server preview, insert
-      selection: table adds on source selection; Metric inserts only after successful preview
-      label: omitted during insertion; optional edit in Inspector after selection
-      source_selection: catalog browse preserves selected Table or Metric kind
-      metric_source_catalog: existing-or-catalog-Saved-SQL-only
-      saved_sql_metric_candidates: unique-declared-displayable-non-json-result-columns
-      metric_preview: server-side-exact-value-before-insertion
-      preview_freshness: exact-source-and-column; stale-result-discarded-on-change
-
-      internal_field_ids: never rendered
-      sizing: 720px maximum width and viewport-capped vertical scrolling
-    - id: studio-parameters
-      type: list
-      title: Parameters
-      scope: data-mode-parameters-tab-renders-only-with-at-least-one-source
-      source: draft parameters provisioned from Saved SQL variable types
-      selection: rows-with-inline-editors
-      row_label: authored-human-label-else-localized-ordinal-by-declaration-order
-      binding_key: internal-reference-only-never-a-display-fallback
-      row_metadata: parameter-type
-      remove: guarded remove with a short referenced reason
-      binding: existing-composition-parameter-grammar-by-reference
-      type_compatibility: rust-owned-diagnostics
-    - id: studio-add-parameter
-      type: button
-      title: Add parameter
-      single_control: true
-      source: parameter name and type inputs over the draft
-    - id: studio-tags
-      type: form
-      title: Tags
-      scope: data-mode-tags-tab-only
-      semantics: entry-metadata-tags
-      source: comma-or-space-separated text parsed into draft tags
-    - id: studio-preview
-      type: query-results
-      title: Preview
-      status: removed
-      source: blocks preview inline on the Design canvas through the shared debounced handle, per-source results page inside the Data workspace, composition.metric.query with the draft target for metrics, and resolve diagnostics in the every-mode strip
-      result_presentation: CompositionRenderer
-      rendering:
-        mode: shared-composition-renderer
-        rows: first-page-per-source
-      pagination_owner: studio-new route
-      description: The standalone Preview section is removed; preview state lives in the canvas, the workspace, and the diagnostics strip without a second preview path.
+      source: canonical Composition document through composition.save
+      persistence: one Space-owned Entry revision with existing receipt and stale-write semantics
+      readiness: valid strict document with each component placed exactly once and no dangling references
+    - id: composition-studio
+      type: composition-studio
+      reference: ../components/composition-studio.yaml
+      contract_status: planned
+      steady_state: Design canvas and the selected SQL Workspace, without explanatory paragraphs or decorative cards
+      sources:
+        allowed: [inline_sql, saved_sql]
+        form_selection: >-
+          Selecting a Form creates an editable inline SQL source named from the
+          Form and starts with SQL such as SELECT * FROM "G". Core derives
+          immutable Form ID bindings; the editor does not insert LIMIT 50.
+        saved_sql_selection: >-
+          Select one exact Saved SQL Entry revision. Show its referenced name
+          or the existing localized untitled representation and keep its SQL
+          read-only in Composition.
+        inline_sql_name: Editable semantic SQL object name independent of stable source id
+        saved_sql_alias: absent
+      workspace:
+        inline_sql: shared SQL Workspace with direct SQL editing and capability-approved structured actions
+        saved_sql: read-only exact revision in Composition
+        contract: ../components/sql-workspace.yaml
+      design:
+        components: [input, text, table, metric]
+        label_step: absent
+        variable_reference: Input references a Composition variable; Text displays literal content or a direct string-variable value
+        table: Uses the selected SQL source result
+        metric: Selects one declared scalar output column from a SQL source
+      composition_metadata:
+        tags_control: absent
+        editable_component_labels: absent
+        editable_variable_labels: absent
+        source_display_alias: absent
+      execution:
+        preview: explicit, owned by Composition adapter
+        results: shared SQL result presentation; current state only
+        paging_and_count: explicit query operations
+        browser_aggregation: absent
+      work: Draft, typed input, preview results, paging, and drawer state are transient

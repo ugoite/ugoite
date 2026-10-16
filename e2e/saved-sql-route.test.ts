@@ -201,7 +201,7 @@ test.describe("Saved SQL route", () => {
         waitUntil: "domcontentloaded",
       });
       await page.getByLabel("Form for this query").selectOption(form!.id!);
-      const aggregate = page.getByLabel("Aggregate");
+      const aggregate = page.getByRole("combobox", { name: "Aggregate" });
       await aggregate.selectOption("sum");
       await expect(aggregate).toHaveValue("sum");
       const aggregateField = page.getByLabel("Field", { exact: true });

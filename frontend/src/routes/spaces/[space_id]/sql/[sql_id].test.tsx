@@ -102,6 +102,10 @@ vi.mock("~/components/SQLWorkspace", () => ({
   ),
 }));
 
+vi.mock("~/components/SqlStructureToolbar", () => ({
+  SqlStructureToolbar: () => null,
+}));
+
 describe("/spaces/:space_id/sql/:sql_id", () => {
   const testSpace: Space = {
     space_uid: "default",

@@ -14,10 +14,13 @@ import { ConfirmDestructiveAction } from "~/components/ConfirmDestructiveAction"
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { SqlVariableDefaultsEditor } from "~/components/SqlVariableDefaultsEditor";
 import { SQLWorkspace } from "~/components/SQLWorkspace";
+import type { SQLWorkspaceAction } from "~/components/SQLWorkspace";
+import { SqlStructureToolbar } from "~/components/SqlStructureToolbar";
 import { formatDateLabel } from "~/lib/date-format";
 import {
   applySqlVariableDefaultDrafts,
   buildSqlSchema,
+  buildSqlStructureContexts,
   normalizeSqlVariables,
   type SqlVariableDefaultDraft,
 } from "~/lib/sql";
@@ -54,6 +57,9 @@ export default function SpaceSqlDetailRoute() {
   const [busy, setBusy] = createSignal<"save" | "delete" | null>(null);
   const [actionError, setActionError] = createSignal<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = createSignal(false);
+  const [structureActions, setStructureActions] = createSignal<
+    readonly SQLWorkspaceAction[]
+  >([]);
 
   createEffect(() => {
     const current = entry();
@@ -349,6 +355,9 @@ export default function SpaceSqlDetailRoute() {
                   onSqlChange={data().kind === "user-query"
                     ? setSqlInput
                     : undefined}
+                  actions={data().kind === "user-query"
+                    ? structureActions()
+                    : []}
                   schema={buildSqlSchema((forms() || []) as Form[])}
                   readOnly={data().kind !== "user-query" || busy() !== null}
                   variables={workspaceVariables()}
@@ -364,6 +373,20 @@ export default function SpaceSqlDetailRoute() {
                   onNext={workspace.next}
                   preview={workspace.preview()}
                 />
+                <Show when={data().kind === "user-query"}>
+                  <SqlStructureToolbar
+                    sql={sqlInput}
+                    contexts={() =>
+                      buildSqlStructureContexts(
+                        (forms() || []) as Form[],
+                        workspaceVariables(),
+                        `saved-sql:${sqlId()}:${revisionId() ?? ""}`,
+                      )}
+                    onSqlChange={setSqlInput}
+                    onActionsChange={setStructureActions}
+                    disabled={() => busy() !== null}
+                  />
+                </Show>
 
                 <Show when={variableCount() > 0}>
                   <SqlVariableDefaultsEditor

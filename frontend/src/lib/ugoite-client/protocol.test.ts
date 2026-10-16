@@ -159,6 +159,50 @@ describe("portable Ugoite API protocol WASM", () => {
     });
     expect(proposal.proposed_sql).toContain('"field_101", "field_102"');
     expect(sql).toContain('SELECT * FROM "Task"');
+
+    const aggregateSql =
+      'SELECT DISTINCT "field_101", COUNT(DISTINCT "field_102") AS unique_count FROM "Task" GROUP BY "field_101"';
+    const aggregateAnalysis = await analyzeSqlStructure(aggregateSql, context);
+    expect(aggregateAnalysis).toMatchObject({
+      status: "supported",
+      projection: ["field_101"],
+      aggregates: [{
+        function: "count",
+        column: "field_102",
+        distinct: true,
+        alias: { name: "unique_count", quoted: false },
+      }],
+      group_by: ["field_101"],
+      distinct: true,
+    });
+
+    const aggregateProposal = await proposeSqlStructureOperation(
+      'SELECT "field_101" FROM "Task" GROUP BY "field_101"',
+      context,
+      {
+        kind: "set_aggregates",
+        aggregates: [{
+          function: "sum",
+          column: "field_102",
+          distinct: true,
+          alias: { name: "total", quoted: true },
+        }],
+      },
+    );
+    expect(aggregateProposal).toMatchObject({
+      status: "supported",
+      requires_confirmation: true,
+    });
+    expect(aggregateProposal.proposed_sql).toContain(
+      'SUM(DISTINCT "field_102") AS "total"',
+    );
+
+    const distinctProposal = await proposeSqlStructureOperation(
+      'SELECT "field_101" FROM "Task"',
+      context,
+      { kind: "set_distinct", distinct: true },
+    );
+    expect(distinctProposal.proposed_sql).toContain("SELECT DISTINCT");
   });
 
   it("parses Composition Input with the shared Rust Domain contract without coercion", async () => {

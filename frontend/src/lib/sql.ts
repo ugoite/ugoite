@@ -3,6 +3,13 @@ import type { SQLConfig } from "@codemirror/lang-sql";
 import type { Diagnostic } from "@codemirror/lint";
 import sqlRules from "../../../shared/sql/ugoite-sql-rules.json";
 import type { Form, FormField, SqlVariable, SqlVariableDefault } from "./types";
+import type {
+  SqlStructureAggregateFunction,
+  SqlStructureColumnType,
+  SqlStructureContext,
+  SqlStructureFilterOperator,
+  SqlStructureVariableType,
+} from "./ugoite-client";
 
 export type SqlSchema = NonNullable<SQLConfig["schema"]>;
 
@@ -11,6 +18,239 @@ const SQL_SYSTEM_COLUMNS = [
   "_ugoite_created_at",
   "_ugoite_updated_at",
 ];
+
+const sqlStructureColumnType = (value: string): SqlStructureColumnType => {
+  switch (value) {
+    case "string":
+    case "markdown":
+    case "sql":
+    case "uuid":
+      return "string";
+    case "boolean":
+      return "boolean";
+    case "integer":
+      return "integer";
+    case "float":
+    case "double":
+      return "float";
+    case "date":
+      return "date";
+    case "timestamp":
+      return "timestamp";
+    case "decimal":
+      return "decimal";
+    case "json":
+    case "list":
+    case "object_list":
+    case "row_reference":
+    case "asset_reference":
+      return "json";
+    default:
+      return "other";
+  }
+};
+
+const sqlStructureVariableType = (
+  value: string,
+): SqlStructureVariableType | undefined => {
+  switch (value) {
+    case "string":
+    case "boolean":
+    case "integer":
+    case "float":
+    case "date":
+    case "timestamp":
+      return value;
+    default:
+      return undefined;
+  }
+};
+
+const aggregateFunctionsForType = (
+  type: SqlStructureColumnType,
+): SqlStructureAggregateFunction[] => {
+  switch (type) {
+    case "integer":
+    case "float":
+    case "decimal":
+      return ["count", "sum", "avg", "min", "max"];
+    case "string":
+    case "boolean":
+    case "date":
+    case "timestamp":
+      return ["count", "min", "max"];
+    case "json":
+      return ["count"];
+    case "other":
+      return [];
+  }
+};
+
+const sqlStructureTypeSupportsGrouping = (
+  type: SqlStructureColumnType,
+): boolean => type !== "json" && type !== "other";
+
+const sqlStructureTypeSupportsDistinct = (
+  type: SqlStructureColumnType,
+): boolean => type !== "json" && type !== "other";
+
+export interface SqlStructureColumnCapabilities {
+  projectable: boolean;
+  filterable: boolean;
+  sortable: boolean;
+  supportedOperators: readonly SqlStructureFilterOperator[];
+  aggregateFunctions: readonly SqlStructureAggregateFunction[];
+  groupable: boolean;
+  distinctable: boolean;
+}
+
+/** Typed parser input plus the server-derived per-column action contract. */
+export interface SqlStructureAdapterContext {
+  /** Identity of the source/Form pair that produced this adapter context. */
+  identity: string;
+  parser: SqlStructureContext;
+  columnCapabilities: Readonly<Record<string, SqlStructureColumnCapabilities>>;
+}
+
+const queryOperators = (
+  supported: readonly string[] | undefined,
+  filterable: boolean,
+): SqlStructureFilterOperator[] => {
+  const mapping: Record<string, SqlStructureFilterOperator> = {
+    equals: "eq",
+    lt: "lt",
+    lte: "lt_eq",
+    gt: "gt",
+    gte: "gt_eq",
+  };
+  return [
+    ...(supported ?? []).flatMap((operator) =>
+      mapping[operator] ? [mapping[operator]] : []
+    ),
+    ...(filterable ? ["is_null", "is_not_null"] as const : []),
+  ];
+};
+
+/** Build parser inputs and action limits from adapter-owned Form metadata. */
+export const buildSqlStructureContexts = (
+  forms: readonly Form[],
+  variables: readonly { name: string; type: string }[] = [],
+  sourceIdentity = "sql",
+): SqlStructureAdapterContext[] => {
+  const structureVariables = variables.flatMap((variable) => {
+    const type = sqlStructureVariableType(variable.type);
+    return type ? [{ name: variable.name, type }] : [];
+  });
+
+  return forms.flatMap((form) => {
+    const relation = form.name.trim();
+    if (!relation) return [];
+    const columns = [
+      { name: "_ugoite_id", type: "string" as const },
+      { name: "_ugoite_created_at", type: "timestamp" as const },
+      { name: "_ugoite_updated_at", type: "timestamp" as const },
+      ...Object.values(form.fields ?? {}).flatMap((field) => {
+        const name = field.sql_column?.trim();
+        if (!name) return [];
+        const type = sqlStructureColumnType(
+          field.query_capability?.field_type ?? field.type,
+        );
+        return [{ name, type }];
+      }),
+    ];
+    const columnCapabilities: Record<string, SqlStructureColumnCapabilities> = {
+      _ugoite_id: {
+        projectable: true,
+        filterable: true,
+        sortable: true,
+        supportedOperators: ["eq", "not_eq", "is_null", "is_not_null"],
+        aggregateFunctions: aggregateFunctionsForType("string"),
+        groupable: true,
+        distinctable: true,
+      },
+      _ugoite_created_at: {
+        projectable: true,
+        filterable: true,
+        sortable: true,
+        supportedOperators: [
+          "eq",
+          "not_eq",
+          "lt",
+          "lt_eq",
+          "gt",
+          "gt_eq",
+          "is_null",
+          "is_not_null",
+        ],
+        aggregateFunctions: aggregateFunctionsForType("timestamp"),
+        groupable: true,
+        distinctable: true,
+      },
+      _ugoite_updated_at: {
+        projectable: true,
+        filterable: true,
+        sortable: true,
+        supportedOperators: [
+          "eq",
+          "not_eq",
+          "lt",
+          "lt_eq",
+          "gt",
+          "gt_eq",
+          "is_null",
+          "is_not_null",
+        ],
+        aggregateFunctions: aggregateFunctionsForType("timestamp"),
+        groupable: true,
+        distinctable: true,
+      },
+    };
+    for (const field of Object.values(form.fields ?? {})) {
+      const name = field.sql_column?.trim();
+      if (!name) continue;
+      const capability = field.query_capability;
+      const queryType = capability
+        ? sqlStructureColumnType(capability.field_type)
+        : undefined;
+      const projectable = capability?.projectable === true;
+      columnCapabilities[name] = {
+        projectable,
+        filterable: capability?.filterable === true,
+        sortable: capability?.sortable === true,
+        supportedOperators: queryOperators(
+          capability?.supported_operators,
+          capability?.filterable === true,
+        ),
+        aggregateFunctions: projectable && queryType
+          ? aggregateFunctionsForType(queryType)
+          : [],
+        groupable: projectable && queryType !== undefined &&
+          sqlStructureTypeSupportsGrouping(queryType),
+        distinctable: projectable && queryType !== undefined &&
+          sqlStructureTypeSupportsDistinct(queryType),
+      };
+    }
+    const parser: SqlStructureContext = {
+      relation,
+      columns,
+      variables: structureVariables,
+      stable_key: ["_ugoite_id"],
+    };
+    return [{
+      identity: JSON.stringify({
+        sourceIdentity,
+        formId: form.id ?? null,
+        formVersion: form.version,
+        relation,
+        parser,
+        columnCapabilities,
+      }),
+      parser,
+      columnCapabilities,
+    }];
+  });
+};
+
 export function buildSqlSchema(forms: Form[]): SqlSchema {
   // Null-prototype storage: valid Form names include `__proto__`, which a
   // plain object literal would swallow as a prototype assignment instead of

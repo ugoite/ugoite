@@ -5262,6 +5262,131 @@ a.tool {
   max-width: 100%;
 }
 
+.sql-structure-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+}
+
+.sql-structure-dialog-content,
+.sql-structure-column-list,
+.sql-structure-filter-list,
+.sql-structure-sort-list,
+.sql-structure-aggregate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.sql-structure-column-list {
+  max-height: min(55dvh, 480px);
+  overflow: auto;
+  padding: 8px 12px;
+}
+
+.sql-structure-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  overflow-wrap: anywhere;
+}
+
+.sql-structure-option input {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+.sql-structure-filter-row,
+.sql-structure-sort-row,
+.sql-structure-aggregate-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1.2fr) 44px;
+  align-items: end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sql-structure-sort-row {
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) 44px;
+}
+
+.sql-structure-aggregate-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto 44px;
+}
+
+.sql-structure-aggregate-row--count-all {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) 44px;
+}
+
+.sql-structure-filter-row .ui-input,
+.sql-structure-sort-row .ui-input,
+.sql-structure-aggregate-row .ui-input,
+.sql-structure-dialog .ui-button,
+.sql-structure-dialog .icononly {
+  box-sizing: border-box;
+  min-height: 44px;
+  font-size: 16px;
+}
+
+.sql-structure-dialog .ui-button {
+  align-self: flex-start;
+}
+
+.sql-structure-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.sql-structure-diff section {
+  min-width: 0;
+}
+
+.sql-structure-diff h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.sql-structure-diff pre {
+  max-height: 180px;
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--ui-surface-1);
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 600px) {
+  .sql-structure-filter-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .sql-structure-sort-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .sql-structure-aggregate-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .sql-structure-filter-row .icononly,
+  .sql-structure-sort-row .icononly,
+  .sql-structure-aggregate-row .icononly {
+    grid-column: 2;
+    justify-self: end;
+  }
+}
+
 .sql-workspace__variables,
 .sql-workspace__editor,
 .sql-workspace__results {

@@ -22,6 +22,10 @@ features:
               - kind: documents
                 anchor: REQ-COMP-008#criterion.sql-source-grammar
               - kind: documents
+                anchor: REQ-COMP-008#criterion.strict-replacement-envelope
+              - kind: documents
+                anchor: REQ-COMP-008#criterion.no-composition-tags-or-label-fields
+              - kind: documents
                 anchor: REQ-COMP-008#criterion.trusted-inline-form-bindings
               - kind: documents
                 anchor: REQ-COMP-008#criterion.exact-sql-result-descriptor
@@ -63,7 +67,7 @@ features:
                 anchor: REQ-FE-080#criterion.mobile-sql-editor-and-results
           - id: sql-first-composition-ui-contract
             adapter: declared
-            path: docs/spec/ui/components/composition-sql-workspace.yaml
+            path: docs/spec/ui/components/composition-studio.yaml
             selector:
               kind: file
             claims:
@@ -73,3 +77,45 @@ features:
                 anchor: REQ-FE-079#criterion.composition-no-label-or-tag-fields
               - kind: documents
                 anchor: REQ-FE-079#criterion.composition-structure-first-steady-state
+              - kind: documents
+                anchor: REQ-FE-079#criterion.form-selection-creates-inline-sql
+              - kind: documents
+                anchor: REQ-FE-079#criterion.sql-toolbar-keeps-query-meanings
+              - kind: documents
+                anchor: REQ-FE-079#criterion.design-components-use-semantic-values
+              - kind: documents
+                anchor: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results
+              - kind: documents
+                anchor: REQ-FE-079#criterion.composition-binding-identifiers-stay-internal
+              - kind: documents
+                anchor: REQ-FE-079#criterion.composition-mobile-workspace-accessibility
+          - id: sql-first-composition-architecture-contract
+            adapter: declared
+            path: docs/architecture/contracts/composition.md
+            selector:
+              kind: file
+            claims:
+              - kind: documents
+                anchor: REQ-COMP-008#criterion.strict-replacement-envelope
+              - kind: documents
+                anchor: REQ-COMP-008#criterion.no-composition-tags-or-label-fields
+              - kind: documents
+                anchor: REQ-COMP-008#criterion.space-knowledge-and-transient-work
+          - id: sql-first-composition-revision-page-contract
+            adapter: declared
+            path: docs/spec/ui/pages/space-composition-revision.yaml
+            selector:
+              kind: file
+            claims:
+              - kind: documents
+                anchor: REQ-COMP-008#criterion.stateless-bounded-execution
+              - kind: documents
+                anchor: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results
+          - id: sql-first-composition-history-page-contract
+            adapter: declared
+            path: docs/spec/ui/pages/space-composition-history.yaml
+            selector:
+              kind: file
+            claims:
+              - kind: documents
+                anchor: REQ-FE-079#criterion.composition-history-hides-revision-identifiers
