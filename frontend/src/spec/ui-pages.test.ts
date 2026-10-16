@@ -39,6 +39,7 @@ const allowedComponentTypes = new Set([
   "grid-list",
   "text-input",
   "sql-editor",
+  "conditional-sql-preview",
   "button",
   "link",
   "form",
