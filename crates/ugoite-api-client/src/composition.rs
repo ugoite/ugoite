@@ -550,12 +550,30 @@ pub enum CompositionResolvedSource {
         source_id: String,
         request: Value,
         source_schema_fingerprint: String,
+        form_bindings: Vec<CompositionResolvedFormBinding>,
+        expected_result: Vec<CompositionResolvedResultColumn>,
     },
     SavedSql {
         source_id: String,
         request: Value,
         source_schema_fingerprint: String,
+        expected_result: Vec<CompositionResolvedResultColumn>,
     },
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionResolvedFormBinding {
+    pub relation: String,
+    pub form_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionResolvedResultColumn {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub result_type: CompositionResultFieldType,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

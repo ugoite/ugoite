@@ -22,11 +22,11 @@ pub use composition::{
     CompositionPublicationReceipt, CompositionRawRevision, CompositionResolveDiagnostic,
     CompositionResolvePlan, CompositionResolveRequest, CompositionResolveResponse,
     CompositionResolvedComponentBinding, CompositionResolvedComponentKind,
-    CompositionResolvedSource, CompositionRestoreRequest, CompositionRestoreResponse,
-    CompositionResultFieldType, CompositionRevisionMetadata, CompositionRevisionReference,
-    CompositionSaveRequest, CompositionSaveResponse, CompositionSourceConsumers,
-    CompositionVariableConsumers, CompositionVariableDefinition, CompositionVariableFormat,
-    CompositionVariableType,
+    CompositionResolvedFormBinding, CompositionResolvedResultColumn, CompositionResolvedSource,
+    CompositionRestoreRequest, CompositionRestoreResponse, CompositionResultFieldType,
+    CompositionRevisionMetadata, CompositionRevisionReference, CompositionSaveRequest,
+    CompositionSaveResponse, CompositionSourceConsumers, CompositionVariableConsumers,
+    CompositionVariableDefinition, CompositionVariableFormat, CompositionVariableType,
 };
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -2843,7 +2843,9 @@ mod tests {
                 "parameter_types": {"month_start": "date"},
                 "limit": 100
             },
-            "source_schema_fingerprint": "a".repeat(64)
+            "source_schema_fingerprint": "a".repeat(64),
+            "form_bindings": [{"relation": "expenses", "form_id": "form-1"}],
+            "expected_result": [{"name": "amount", "type": "decimal"}]
         });
         let source: CompositionResolvedSource =
             serde_json::from_value(inline_sql.clone()).expect("inline SQL source DTO");
@@ -3214,7 +3216,9 @@ mod tests {
                         "parameter_types": {"month_start": "date"},
                         "limit": 100
                     },
-                    "source_schema_fingerprint": "a".repeat(64)
+                    "source_schema_fingerprint": "a".repeat(64),
+                    "form_bindings": [],
+                    "expected_result": [{"name": "amount", "type": "decimal"}]
                 }, {
                     "kind": "saved_sql",
                     "source_id": "monthly-total",
@@ -3225,7 +3229,8 @@ mod tests {
                             "revision_id": "01900000-0000-7000-8000-000000000005"
                         }
                     },
-                    "source_schema_fingerprint": "b".repeat(64)
+                    "source_schema_fingerprint": "b".repeat(64),
+                    "expected_result": [{"name": "total_amount", "type": "integer"}]
                 }],
                 "component_bindings": [{
                     "component_id": "rows",

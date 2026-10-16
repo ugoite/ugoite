@@ -57,7 +57,8 @@ use ugoite_api_client::{
     CompositionPreviewRequest, CompositionPreviewResponse, CompositionPublicationReceipt,
     CompositionRawRevision, CompositionResolveDiagnostic, CompositionResolvePlan,
     CompositionResolveRequest, CompositionResolveResponse, CompositionResolvedComponentBinding,
-    CompositionResolvedComponentKind, CompositionResolvedSource,
+    CompositionResolvedComponentKind, CompositionResolvedFormBinding,
+    CompositionResolvedResultColumn, CompositionResolvedSource,
     CompositionRestoreRequest as ApiCompositionRestoreRequest, CompositionRestoreResponse,
     CompositionResultFieldType as ApiCompositionResultFieldType, CompositionRevisionMetadata,
     CompositionRevisionReference, CompositionSaveRequest as ApiCompositionSaveRequest,
@@ -11900,13 +11901,55 @@ fn api_composition_sources_and_bindings(
                 source_id,
                 request,
                 source_schema_fingerprint,
+                form_bindings,
+                expected_result,
             } => {
+                let expected_result = expected_result
+                    .into_iter()
+                    .map(|column| CompositionResolvedResultColumn {
+                        name: column.name,
+                        result_type: match column.result_type {
+                            ugoite_domain::composition::CompositionResultFieldType::String => {
+                                ApiCompositionResultFieldType::String
+                            }
+                            ugoite_domain::composition::CompositionResultFieldType::Boolean => {
+                                ApiCompositionResultFieldType::Boolean
+                            }
+                            ugoite_domain::composition::CompositionResultFieldType::Integer => {
+                                ApiCompositionResultFieldType::Integer
+                            }
+                            ugoite_domain::composition::CompositionResultFieldType::Float => {
+                                ApiCompositionResultFieldType::Float
+                            }
+                            ugoite_domain::composition::CompositionResultFieldType::Decimal => {
+                                ApiCompositionResultFieldType::Decimal
+                            }
+                            ugoite_domain::composition::CompositionResultFieldType::Date => {
+                                ApiCompositionResultFieldType::Date
+                            }
+                            ugoite_domain::composition::CompositionResultFieldType::Timestamp => {
+                                ApiCompositionResultFieldType::Timestamp
+                            }
+                            ugoite_domain::composition::CompositionResultFieldType::Json => {
+                                ApiCompositionResultFieldType::Json
+                            }
+                        },
+                    })
+                    .collect::<Vec<_>>();
+                let form_bindings = form_bindings
+                    .into_iter()
+                    .map(|binding| CompositionResolvedFormBinding {
+                        relation: binding.relation,
+                        form_id: binding.form_id.to_string(),
+                    })
+                    .collect::<Vec<_>>();
                 let resolved_source = if request.saved_sql.is_some() {
                     CompositionResolvedSource::SavedSql {
                         source_id,
                         request: serde_json::to_value(request)
                             .map_err(|error| ApiError::from_core(anyhow!(error)))?,
                         source_schema_fingerprint,
+                        expected_result,
                     }
                 } else {
                     CompositionResolvedSource::InlineSql {
@@ -11914,6 +11957,8 @@ fn api_composition_sources_and_bindings(
                         request: serde_json::to_value(request)
                             .map_err(|error| ApiError::from_core(anyhow!(error)))?,
                         source_schema_fingerprint,
+                        form_bindings,
+                        expected_result,
                     }
                 };
                 Ok(resolved_source)

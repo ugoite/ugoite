@@ -990,6 +990,7 @@ mod tests {
         parse_composition_yaml, CompositionComponent, CompositionDiagnosticCode, CompositionFormat,
         CompositionSource, CompositionTextContent, CompositionVariable,
         CompositionVariableInputValue, CompositionVariableType, FlowItem, FlowRow, TextStyle,
+        MAX_COMPOSITION_COLLECTION_ITEMS,
     };
     use serde_json::json;
 
@@ -1273,6 +1274,106 @@ mod tests {
             spec.components_in_render_order(),
             Err(CompositionDiagnosticCode::InvalidComposition)
         );
+    }
+
+    #[test]
+    fn canonicalization_rejects_empty_or_unreferenced_layouts() {
+        let mut empty = parse_composition_yaml(SQL_FIRST).unwrap();
+        empty.spec.layout.rows.clear();
+        assert!(super::canonicalize_composition(&empty).is_err());
+
+        let mut empty_row = parse_composition_yaml(SQL_FIRST).unwrap();
+        empty_row.spec.layout.rows[0].items.clear();
+        assert!(super::canonicalize_composition(&empty_row).is_err());
+
+        let mut duplicate_row = parse_composition_yaml(SQL_FIRST).unwrap();
+        duplicate_row
+            .spec
+            .layout
+            .rows
+            .push(duplicate_row.spec.layout.rows[0].clone());
+        assert!(super::canonicalize_composition(&duplicate_row).is_err());
+
+        let mut unreferenced = parse_composition_yaml(SQL_FIRST).unwrap();
+        unreferenced.spec.components.pop();
+        assert!(super::canonicalize_composition(&unreferenced).is_err());
+    }
+
+    #[test]
+    fn metrics_accept_either_sql_source_when_the_selected_column_is_scalar() {
+        let mut document = parse_composition_yaml(SQL_FIRST).unwrap();
+        {
+            let CompositionComponent::Metric { source, column, .. } =
+                &mut document.spec.components[2]
+            else {
+                panic!("fixture component should be a Metric");
+            };
+            *source = "expense_rows".to_owned();
+            *column = "amount".to_owned();
+        }
+        assert!(super::canonicalize_composition(&document).is_ok());
+
+        {
+            let CompositionComponent::Metric { source, column, .. } =
+                &mut document.spec.components[2]
+            else {
+                panic!("fixture component should be a Metric");
+            };
+            *source = "month_total".to_owned();
+            *column = "total".to_owned();
+        }
+        assert!(super::canonicalize_composition(&document).is_ok());
+    }
+
+    #[test]
+    fn enforces_per_collection_item_limit_without_legacy_collections() {
+        fn document_with_variables(count: usize) -> String {
+            let mut input = String::from(
+                "format: ugoite.composition\nformat_version: 1\nkind: dashboard\nname: Example\nspec:\n  variables:\n",
+            );
+            for index in 0..count {
+                input.push_str(&format!(
+                    "    - id: variable_{index}\n      type: string\n      required: false\n"
+                ));
+            }
+            input.push_str(
+                "  sources: []\n  components:\n    - id: marker\n      kind: text\n      content: {kind: literal, text: marker}\n      style: body\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: component\n            component: marker\n",
+            );
+            input
+        }
+
+        assert!(
+            parse_composition_yaml(&document_with_variables(MAX_COMPOSITION_COLLECTION_ITEMS))
+                .is_ok()
+        );
+        assert_eq!(
+            parse_composition_yaml(&document_with_variables(
+                MAX_COMPOSITION_COLLECTION_ITEMS + 1
+            )),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
+
+    #[test]
+    fn unknown_text_styles_and_layout_kinds_are_rejected() {
+        let with_text = SQL_FIRST
+            .replace(
+                "  layout:\n",
+                "    - id: title\n      kind: text\n      content:\n        kind: literal\n        text: Summary\n      style: heading\n  layout:\n",
+            )
+            .replace(
+                "          - kind: component\n            component: month_start_input",
+                "          - kind: component\n            component: title\n          - kind: component\n            component: month_start_input",
+            );
+        for invalid in [
+            with_text.replace("style: heading", "style: marquee"),
+            with_text.replace("kind: flow", "kind: grid"),
+        ] {
+            assert_eq!(
+                parse_composition_yaml(&invalid),
+                Err(CompositionDiagnosticCode::InvalidComposition)
+            );
+        }
     }
 
     #[test]

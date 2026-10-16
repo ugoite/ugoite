@@ -260,6 +260,8 @@ pub struct SavedSqlRevisionMetadata {
 #[derive(Clone, Debug, PartialEq)]
 pub struct CompiledInlineSqlSource {
     pub request: SqlQueryRequest,
+    pub form_bindings: Vec<CompositionFormBinding>,
+    pub expected_result: Vec<CompositionResultColumn>,
     /// Composition variable IDs used by this source, sorted and deduplicated.
     pub variable_dependencies: Vec<String>,
     /// The schema fingerprint persisted with this source.
@@ -382,6 +384,8 @@ pub fn compile_inline_sql_source(
     }
     Ok(CompiledInlineSqlSource {
         request,
+        form_bindings: current_schema.form_bindings.clone(),
+        expected_result: current_schema.expected_result.clone(),
         variable_dependencies: variable_dependencies.into_iter().collect(),
         source_schema_fingerprint: if draft_placeholder && allow_incomplete_source_descriptors {
             current_schema.schema_fingerprint.clone()
@@ -395,6 +399,7 @@ pub fn compile_inline_sql_source(
 #[derive(Clone, Debug, PartialEq)]
 pub struct CompiledSavedSqlSource {
     pub request: SqlQueryRequest,
+    pub expected_result: Vec<CompositionResultColumn>,
     /// Composition variable IDs bound into this source, sorted and deduplicated.
     pub variable_dependencies: Vec<String>,
     /// The schema fingerprint pinned by this exact revision.
@@ -531,6 +536,7 @@ pub fn compile_saved_sql_source(
 
     Ok(CompiledSavedSqlSource {
         request,
+        expected_result: current_revision.expected_result.clone(),
         variable_dependencies: variable_dependencies.into_iter().collect(),
         source_schema_fingerprint: schema_fingerprint.clone(),
     })
@@ -640,6 +646,8 @@ pub enum ResolvedSourceRequest {
         source_id: String,
         request: SqlQueryRequest,
         source_schema_fingerprint: String,
+        form_bindings: Vec<CompositionFormBinding>,
+        expected_result: Vec<CompositionResultColumn>,
     },
 }
 
@@ -902,6 +910,8 @@ fn resolve_composition_parts(
                         source_id: source_id.to_owned(),
                         request: compiled.request,
                         source_schema_fingerprint: compiled.source_schema_fingerprint,
+                        form_bindings: compiled.form_bindings,
+                        expected_result: compiled.expected_result,
                     });
                 }
                 Err(source_diagnostics) => diagnostics.extend(source_diagnostics),
@@ -923,6 +933,8 @@ fn resolve_composition_parts(
                         source_id: source_id.to_owned(),
                         request: compiled.request,
                         source_schema_fingerprint: compiled.source_schema_fingerprint,
+                        form_bindings: Vec::new(),
+                        expected_result: compiled.expected_result,
                     });
                 }
                 Err(source_diagnostics) => diagnostics.extend(source_diagnostics),

@@ -135,6 +135,10 @@ impl UgoiteService {
                                 "Composition SQL source cannot be resolved",
                             )
                         })?;
+                    super::composition_save_validation::validate_inline_parameters(
+                        &metadata.parameter_names,
+                        &variables,
+                    )?;
                     *form_bindings = metadata.form_bindings;
                     *expected_result = metadata.expected_result;
                     *schema_fingerprint = metadata.schema_fingerprint;
@@ -142,6 +146,7 @@ impl UgoiteService {
                 ugoite_domain::composition::CompositionSource::SavedSql {
                     entry_id,
                     revision_id,
+                    variables: source_variables,
                     expected_result,
                     schema_fingerprint,
                     ..
@@ -156,6 +161,11 @@ impl UgoiteService {
                         .ok_or_else(|| {
                             AppError::not_found(ErrorCode::EntryNotFound, "Saved SQL not found")
                         })?;
+                    super::composition_save_validation::validate_saved_sql_bindings(
+                        source_variables,
+                        &metadata.variable_types,
+                        &variables,
+                    )?;
                     *expected_result = metadata.expected_result;
                     *schema_fingerprint = metadata.schema_fingerprint;
                 }

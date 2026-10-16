@@ -24,6 +24,7 @@ type HmacSha256 = Hmac<sha2::Sha256>;
 
 mod composition_local_save;
 mod composition_restore;
+mod composition_save_validation;
 
 const CHANGE_PAGE_DEFAULT_LIMIT: usize = 50;
 const CHANGE_PAGE_MAX_LIMIT: usize = 100;
@@ -5385,6 +5386,10 @@ impl UgoiteService {
                                 "Composition source not found",
                             )
                         })?;
+                    composition_save_validation::validate_inline_parameters(
+                        &metadata.parameter_names,
+                        &variables,
+                    )?;
                     *form_bindings = metadata.form_bindings;
                     *expected_result = metadata.expected_result;
                     *schema_fingerprint = metadata.schema_fingerprint;
@@ -5392,18 +5397,19 @@ impl UgoiteService {
                 ugoite_domain::composition::CompositionSource::SavedSql {
                     entry_id,
                     revision_id,
+                    variables: source_variables,
                     expected_result,
                     schema_fingerprint,
                     ..
                 } => {
-                    let source = ugoite_core::sql_query::SavedSqlRevisionRef {
+                    let saved_sql = ugoite_core::sql_query::SavedSqlRevisionRef {
                         id: entry_id.to_string(),
                         revision_id: revision_id.to_string(),
                     };
                     let metadata = self
                         .derive_saved_sql_source_metadata(
                             space_id,
-                            &source,
+                            &saved_sql,
                             Some(principal_ids),
                             Some(&state),
                         )
@@ -5411,6 +5417,11 @@ impl UgoiteService {
                         .ok_or_else(|| {
                             AppError::not_found(ErrorCode::EntryNotFound, "Saved SQL not found")
                         })?;
+                    composition_save_validation::validate_saved_sql_bindings(
+                        source_variables,
+                        &metadata.variable_types,
+                        &variables,
+                    )?;
                     *expected_result = metadata.expected_result;
                     *schema_fingerprint = metadata.schema_fingerprint;
                 }
