@@ -15,9 +15,9 @@ ownership and Studio behavior are defined by REQ-FE-079.
 
 Composition sources are inline SQL or an exact Saved SQL revision. Selecting a
 Form creates an inline SQL object whose initial editable name is copied from
-the Form, and SQL such as `SELECT * FROM "G"`; it does not create an
-EntryQuery. The SQL object's semantic name can be edited independently from its
-opaque stable source ID. A Saved SQL source displays the referenced Saved SQL
+the Form, and whose editor generates SQL such as `SELECT * FROM "G"`; no
+EntryQuery is created. The SQL object's semantic name can be edited
+independently from its opaque stable source ID. A Saved SQL source displays the referenced Saved SQL
 name, or the existing localized untitled representation when that name is
 absent, and stores no second name or alias. The selected SQL name has one
 visible owner and is not repeated as a second large editor heading.
