@@ -546,7 +546,7 @@ function isValidSqlVariableDate(value: string): boolean {
 }
 
 function isValidSqlVariableTimestamp(value: string): boolean {
-  if (value.length < 20 || value.length > 35 || !/^[\x00-\x7f]+$/.test(value)) {
+  if (value.length < 20 || value.length > 35) {
     return false;
   }
   const match =

@@ -430,6 +430,8 @@ describe("sql helpers", () => {
     });
     expect(parseSqlVariableDefault("timestamp", "2026-10-15T09:00:00-07:00"))
       .toEqual({ valid: true, value: "2026-10-15T09:00:00-07:00" });
+    expect(parseSqlVariableDefault("timestamp", "２０２６-10-15T09:00:00Z"))
+      .toEqual({ valid: false });
     expect(parseSqlVariableDefault("timestamp", "2026-10-15T09:00:00-00:00"))
       .toEqual({ valid: false });
   });
