@@ -375,6 +375,9 @@ describe("SqlStructureToolbar adapter", () => {
 
     const column = () => within(dialog).getByLabelText("Column");
     expect(column()).toHaveValue("");
+    expect(column().closest(".sql-structure-aggregate-row")).toHaveClass(
+      "sql-structure-aggregate-row--count-all",
+    );
     expect(
       within(column()).getByRole("option", { name: "All rows (*)" }),
     ).toBeInTheDocument();

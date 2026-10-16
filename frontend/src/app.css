@@ -5321,7 +5321,7 @@ a.tool {
 }
 
 .sql-structure-aggregate-row--count-all {
-  grid-template-columns: minmax(0, 1fr) 44px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) 44px;
 }
 
 .sql-structure-filter-row .ui-input,
@@ -5377,10 +5377,6 @@ a.tool {
 
   .sql-structure-aggregate-row {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  }
-
-  .sql-structure-aggregate-row--count-all {
-    grid-template-columns: minmax(0, 1fr) 44px;
   }
 
   .sql-structure-filter-row .icononly,
