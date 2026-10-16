@@ -50,7 +50,7 @@
       "requirement": "SQL functions: read-only SQL supports COUNT, SUM, AVG, MIN, MAX and existing join/group/distinct parsing; the UI does not unconditionally generate disallowed scalar or window functions.",
       "selectors": [
         { "path": "crates/ugoite-domain/src/sql_structure.rs", "kind": "file" },
-        { "path": "frontend/src/components/SQLStructureActions.test.tsx", "kind": "file" },
+        { "path": "frontend/src/components/SqlStructureToolbar.test.tsx", "kind": "file" },
         { "path": "crates/ugoite-iceberg/src/service/composition_metric_query.rs", "kind": "file" }
       ]
     },
@@ -58,7 +58,7 @@
       "id": "A07",
       "requirement": "SQL editing: GUI actions never overwrite hand-edited SQL without consent; unsupported complex SQL remains editable, saveable, and validatable in the code editor.",
       "selectors": [
-        { "path": "frontend/src/components/SQLStructureActions.test.tsx", "kind": "file" },
+        { "path": "frontend/src/components/SqlStructureToolbar.test.tsx", "kind": "file" },
         { "path": "frontend/src/components/SQLWorkspace.test.tsx", "kind": "file" }
       ]
     },
@@ -103,7 +103,7 @@
       "id": "A12",
       "requirement": "Accessibility: every icon-only control has aria-label/title and visible focus, targets are at least 44px, drawers trap and restore focus, and dialogs support keyboard and Escape. Verify VoiceOver/NVDA separately.",
       "selectors": [
-        { "path": "frontend/src/components/SQLStructureActions.test.tsx", "kind": "file" },
+        { "path": "frontend/src/components/SqlStructureToolbar.test.tsx", "kind": "file" },
         { "path": "frontend/src/components/CompositionStudioMobile.test.tsx", "kind": "file" },
         { "path": "frontend/src/app.css", "kind": "file" }
       ],

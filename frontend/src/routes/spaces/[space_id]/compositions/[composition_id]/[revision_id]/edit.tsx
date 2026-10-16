@@ -15,7 +15,7 @@ import {
 import { t } from "~/lib/i18n";
 import { spaceCompositionRevisionPath } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
-import { sqlApi } from "~/lib/ugoite-client";
+import { entryApi, sqlApi } from "~/lib/ugoite-client";
 
 export const route = spaceRoute({ navigation: "compositions" });
 
@@ -42,6 +42,29 @@ const resolveSourceNames = async (
     }
   }
   return names;
+};
+
+/** Read SQL text only from the immutable Saved SQL revision pinned in spec. */
+const resolveSavedSqlBodies = async (
+  spaceId: string,
+  document: CompositionLintDocument,
+): Promise<Record<string, string>> => {
+  const savedSources = document.spec.sources.filter((source) =>
+    source.kind === "saved_sql"
+  );
+  const bodies = await Promise.all(savedSources.map(async (source) => {
+    const revision = await entryApi.getRevision(
+      spaceId,
+      source.entry_id,
+      source.revision_id,
+    );
+    const sql = revision.fields?.sql;
+    if (typeof sql !== "string") {
+      throw new Error("Saved SQL revision does not contain SQL text");
+    }
+    return [source.id, sql] as const;
+  }));
+  return Object.fromEntries(bodies);
 };
 
 export default function CompositionEditRoute() {
@@ -100,11 +123,19 @@ export default function CompositionEditRoute() {
       return;
     }
     const sourceNames = await resolveSourceNames(spaceId(), document);
+    let savedSqlBodies: Record<string, string>;
+    try {
+      savedSqlBodies = await resolveSavedSqlBodies(spaceId(), document);
+    } catch {
+      setLoadError(t("composition.studioLoadFailed"));
+      return;
+    }
     try {
       setDraft(
         draftFromDocument(
           document as unknown as CompositionStudioRevisionDocument,
           sourceNames,
+          savedSqlBodies,
         ),
       );
     } catch {

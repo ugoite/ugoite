@@ -1573,6 +1573,7 @@ export const toStudioDocument = (
 export const draftFromDocument = (
   document: CompositionStudioRevisionDocument,
   sourceNames: Record<string, string>,
+  savedSqlBodies: Record<string, string>,
 ): CompositionDraft => {
   const fail = (what: string): never => {
     throw new Error(`Unsupported Composition document ${what}`);
@@ -1591,12 +1592,19 @@ export const draftFromDocument = (
         ? t("spaceShell.title.savedSql")
         : t("common.form"));
     if (source.kind === "saved_sql") {
+      const sql = savedSqlBodies[source.id];
+      if (typeof sql !== "string") {
+        return fail(`saved SQL revision body: ${source.id}`);
+      }
       return {
         kind: "saved_sql",
         draftId,
         entryId: source.entry_id,
         revisionId: source.revision_id,
         name,
+        // Hydrated transiently from this pinned revision, never serialized
+        // into the Composition document.
+        sql,
         expectedResult: source.expected_result.map((column) => ({ ...column })),
         ...(source.schema_fingerprint
           ? { schemaFingerprint: source.schema_fingerprint }

@@ -204,7 +204,9 @@ describe("SQL-first Composition draft", () => {
     if (!metric.ok) throw new Error("expected metric component");
 
     const document = toStudioDocument(metric.draft);
-    const restored = draftFromDocument(document, { "src-2": "Monthly totals" });
+    const restored = draftFromDocument(document, { "src-2": "Monthly totals" }, {
+      "src-2": "SELECT SUM(amount) AS total FROM expenses",
+    });
     expect(restored.sources).toMatchObject([
       {
         kind: "inline_sql",
@@ -218,6 +220,7 @@ describe("SQL-first Composition draft", () => {
         entryId: "sql-entry",
         revisionId: "sql-rev-7",
         name: "Monthly totals",
+        sql: "SELECT SUM(amount) AS total FROM expenses",
       },
     ]);
     expect(toStudioDocument(restored).spec.sources).toEqual(document.spec.sources);
@@ -242,7 +245,7 @@ describe("SQL-first Composition draft", () => {
       },
     } as never;
 
-    expect(() => draftFromDocument(oldDocument, {})).toThrow(
+    expect(() => draftFromDocument(oldDocument, {}, {})).toThrow(
       "Unsupported Composition document source kind: entry_query",
     );
   });
