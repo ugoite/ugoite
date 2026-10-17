@@ -4219,6 +4219,17 @@ a.tool {
   align-content: start;
   min-width: 0;
 }
+.dataWorkspaceSqlNameControl {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+  min-height: 44px;
+}
+.dataWorkspaceSqlNameControl .dataWorkspaceSqlName {
+  flex: 0 1 28rem;
+  min-width: 0;
+}
 @media (max-width: 560px) {
   .dataWorkspace {
     grid-template-columns: minmax(0, 1fr);

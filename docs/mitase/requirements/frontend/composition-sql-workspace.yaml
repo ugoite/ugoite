@@ -121,7 +121,9 @@ requirements:
         statement: >-
           A Composition source row presents its semantic source name once,
           uses full-row selection, and has no common SQL icon or SQL-kind
-          subtitle. Activating the currently selected row preserves selection.
+          subtitle. The selected inline SQL name is absent from its editor
+          until the user activates an accessible rename action. Activating the
+          currently selected row preserves selection.
         governed_by: [POL-UI-002#rule.governance, POL-UI-006#rule.governance, POL-UI-007#rule.governance]
       - id: composition-mobile-overlays-are-exclusive
         kind: behavior
@@ -250,12 +252,12 @@ requirements:
           - id: composition-source-row-name
             adapter: typescript
             path: frontend/src/components/CompositionDataWorkspace.test.tsx
-            selector: { kind: test, name: "shows each SQL source name once in the navigator" }
+            selector: { kind: test, name: "shows each SQL source name once and keeps rename behind an explicit action" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-079#criterion.composition-source-rows-show-name-once
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "shows each SQL source name once in the navigator" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "shows each SQL source name once and keeps rename behind an explicit action" } }
           - id: composition-source-row-idempotent
             adapter: typescript
             path: frontend/src/components/CompositionStudioMobile.test.tsx

@@ -71,9 +71,13 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
   const [desktopNavigatorOpen, setDesktopNavigatorOpen] = createSignal(true);
   const [localMobileDrawerOpen, setLocalMobileDrawerOpen] = createSignal(false);
   const [narrowViewport, setNarrowViewport] = createSignal(false);
+  const [editingInlineSqlNameSourceId, setEditingInlineSqlNameSourceId] =
+    createSignal<string | null>(null);
   const navigatorId = `${props.headingId}-source-navigator`;
   let hideNavigatorButton: HTMLButtonElement | undefined;
   let showNavigatorButton: HTMLButtonElement | undefined;
+  let inlineSqlNameInput: HTMLInputElement | undefined;
+  let inlineSqlNameEditButton: HTMLButtonElement | undefined;
   const mobileDrawerOpen = () =>
     props.mobileDrawerOpen ?? localMobileDrawerOpen();
   const setMobileDrawerOpen = (open: boolean) => {
@@ -139,6 +143,12 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
     const narrow = narrowViewport();
     const previous = previousSelectedSourceId;
     previousSelectedSourceId = sourceId;
+    if (
+      previous !== undefined && sourceId !== previous &&
+      editingInlineSqlNameSourceId() !== null
+    ) {
+      setEditingInlineSqlNameSourceId(null);
+    }
     if (narrow && sourceId && previous !== undefined && sourceId !== previous) {
       closeNavigator();
     }
@@ -410,13 +420,45 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
               <div class="dataWorkspaceEditor" role="region" aria-label={selected().name}>
                 {selected().kind === "inline_sql"
                   ? (
-                    <input
-                      class="ui-input dataWorkspaceSqlName"
-                      aria-label={t("sqlPage.queryName")}
-                      value={selected().name}
-                      onInput={(event) =>
-                        props.onInlineSqlName(sourceId(), event.currentTarget.value)}
-                    />
+                    <div class="dataWorkspaceSqlNameControl">
+                      <Show
+                        when={editingInlineSqlNameSourceId() === sourceId()}
+                        fallback={
+                          <IconButton
+                            ref={(element) => inlineSqlNameEditButton = element}
+                            icon="edit"
+                            label={t("composition.studioRenameSqlSource", {
+                              name: selected().name,
+                            })}
+                            onClick={() => {
+                              setEditingInlineSqlNameSourceId(sourceId());
+                              queueMicrotask(() => inlineSqlNameInput?.focus());
+                            }}
+                          />
+                        }
+                      >
+                        <input
+                          ref={(element) => inlineSqlNameInput = element}
+                          class="ui-input dataWorkspaceSqlName"
+                          aria-label={t("sqlPage.queryName")}
+                          value={selected().name}
+                          onInput={(event) =>
+                            props.onInlineSqlName(sourceId(), event.currentTarget.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              setEditingInlineSqlNameSourceId(null);
+                              queueMicrotask(() => inlineSqlNameEditButton?.focus());
+                            }
+                          }}
+                          onBlur={() => {
+                            if (editingInlineSqlNameSourceId() === sourceId()) {
+                              setEditingInlineSqlNameSourceId(null);
+                            }
+                          }}
+                        />
+                      </Show>
+                    </div>
                   )
                   : null}
                 {selected().kind === "saved_sql"

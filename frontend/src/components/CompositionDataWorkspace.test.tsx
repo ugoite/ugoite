@@ -156,15 +156,25 @@ describe("CompositionDataWorkspace", () => {
     const editor = screen.getByRole("region", { name: "Expenses" });
     expect(editor).toBeInTheDocument();
     expect(editor).not.toHaveTextContent("form-1");
-    expect(screen.getByRole("textbox", { name: "Query name" })).toHaveValue("Expenses");
+    expect(screen.queryByRole("textbox", { name: "Query name" })).toBeNull();
+    const renameButton = screen.getByRole("button", { name: "Rename Expenses" });
+    fireEvent.click(renameButton);
+    const nameInput = screen.getByRole("textbox", { name: "Query name" });
+    await waitFor(() => expect(nameInput).toHaveFocus());
+    expect(nameInput).toHaveValue("Expenses");
     const sql = screen.getByRole("textbox", { name: "SQL" });
     expect(sql).toHaveValue('SELECT "Amount" AS total FROM "Expenses"');
     fireEvent.input(sql, { target: { value: "SELECT 1" } });
     expect(props.onInlineSql).toHaveBeenCalledWith("src-1", "SELECT 1");
-    fireEvent.input(screen.getByRole("textbox", { name: "Query name" }), {
+    fireEvent.input(nameInput, {
       target: { value: "Costs" },
     });
     expect(props.onInlineSqlName).toHaveBeenCalledWith("src-1", "Costs");
+    fireEvent.keyDown(nameInput, { key: "Enter" });
+    await waitFor(() => {
+      expect(screen.queryByRole("textbox", { name: "Query name" })).toBeNull();
+      expect(screen.getByRole("button", { name: "Rename Expenses" })).toHaveFocus();
+    });
     expect(screen.getByTestId("sql-workspace")).toHaveAttribute(
       "data-readonly",
       "false",
@@ -177,7 +187,7 @@ describe("CompositionDataWorkspace", () => {
     expect(props.onRetry).toHaveBeenCalledWith("src-1");
   });
 
-  it("shows each SQL source name once in the navigator", () => {
+  it("shows each SQL source name once and keeps rename behind an explicit action", () => {
     render(() => (
       <>
         <h2 id="data-heading">Data</h2>
@@ -189,6 +199,10 @@ describe("CompositionDataWorkspace", () => {
     expect(row).toHaveTextContent(/^Expenses$/);
     expect(row.querySelector(".rowListSecondary")).toBeNull();
     expect(row.querySelector("svg")).toBeNull();
+    expect(screen.getAllByText("Expenses")).toHaveLength(1);
+    expect(screen.queryByRole("textbox", { name: "Query name" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Rename Expenses" }))
+      .toBeInTheDocument();
   });
 
   it("keeps Saved SQL read-only at its exact revision and links to explicit editing", () => {
