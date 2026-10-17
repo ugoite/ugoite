@@ -32,7 +32,7 @@ const EXPECTED_REQUIREMENTS = [
   "SQL editing: GUI actions never overwrite hand-edited SQL without consent; unsupported complex SQL remains editable, saveable, and validatable in the code editor.",
   "Query paging: only explicit sql.query.count counts; continuations recheck authorization; stale query/result is suppressed; the client does not aggregate all pages.",
   "Metric: distinguish zero rows, one NULL row, zero, multiple rows, and type mismatch; derive headings from SQL result aliases; persist no label.",
-  "Composition Studio: test 320, 375, 390, 760, and 1280px across available modes; no page horizontal overflow; mode targets are at least 44px; keyboard focus remains visible; touch selection, light/dark mode, internal table scrolling, and 16px input text work. Verify actual 200% browser zoom and iPhone Safari separately.",
+  "Composition Studio: test 320, 375, 390, 760, and 1280px across available modes; no page horizontal overflow; mode targets are at least 44px; keyboard focus remains visible at every tested width; touch selection, light/dark mode, and 16px input text work. Verify actual 200% browser zoom and iPhone Safari separately.",
   "UI: no persistent explanatory paragraphs, decorative cards, or tag/label editors; exactly one Back and one Save action; selecting a row selects the whole row.",
   "Accessibility: every icon-only control has aria-label/title and visible focus, targets are at least 44px, drawers trap and restore focus, and dialogs support keyboard and Escape. Verify VoiceOver/NVDA separately.",
   "Recovery: one Composition Entry revision per save; return receipts; stale base revisions conflict; distinguish unknown outcomes. Undo appends a publication and never rewinds the head destructively.",

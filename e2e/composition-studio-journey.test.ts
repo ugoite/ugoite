@@ -1153,12 +1153,8 @@ test.describe("Composition Studio Journey", () => {
       const showSources = page.getByRole("button", {
         name: /Show data sources/,
       });
-      const sourceMenuHeight = await showSources.evaluate((element) =>
-        element.getBoundingClientRect().height
-      );
-      expect(sourceMenuHeight).toBeGreaterThanOrEqual(44);
-      if (await showSources.isVisible()) await showSources.tap();
       const sourceDrawer = page.getByRole("dialog", { name: "Sources" });
+      await expect(sourceDrawer).toBeVisible();
       const sourceItems = sourceDrawer.getByRole("listitem");
       await expect(sourceItems).toHaveCount(1);
       const sourceRow = sourceItems.first().getByRole("button", {
@@ -1173,6 +1169,10 @@ test.describe("Composition Studio Journey", () => {
       expect(sourceRowHeight).toBeGreaterThanOrEqual(44);
       await sourceRow.tap();
       await expect(sourceDrawer).toHaveCount(0);
+      const sourceMenuHeight = await showSources.evaluate((element) =>
+        element.getBoundingClientRect().height
+      );
+      expect(sourceMenuHeight).toBeGreaterThanOrEqual(44);
       await showSources.tap();
       await expect(sourceDrawer).toBeVisible();
 
@@ -1218,6 +1218,20 @@ test.describe("Composition Studio Journey", () => {
         for (const mode of modes) {
           const option = page.getByRole("radio", { name: mode, exact: true });
           await option.click();
+          await option.focus();
+          await page.keyboard.press("Tab");
+          await page.keyboard.press("Shift+Tab");
+          const focusStyle = await option.evaluate((element) => {
+            const style = getComputedStyle(element);
+            return {
+              visible: element.matches(":focus-visible"),
+              outlineStyle: style.outlineStyle,
+              outlineWidth: Number.parseFloat(style.outlineWidth),
+            };
+          });
+          expect(focusStyle.visible).toBe(true);
+          expect(focusStyle.outlineStyle).toBe("solid");
+          expect(focusStyle.outlineWidth).toBeGreaterThanOrEqual(2);
           const pageWidth = await page.evaluate(() => ({
             client: document.documentElement.clientWidth,
             content: document.documentElement.scrollWidth,
@@ -1245,24 +1259,6 @@ test.describe("Composition Studio Journey", () => {
         await expect.poll(async () =>
           page.locator("html").getAttribute("data-color-mode")
         ).toBe(colorScheme);
-        const modeOption = page.getByRole("radio", {
-          name: "Design",
-          exact: true,
-        });
-        await modeOption.focus();
-        await page.keyboard.press("Tab");
-        await page.keyboard.press("Shift+Tab");
-        const focusStyle = await modeOption.evaluate((element) => {
-          const style = getComputedStyle(element);
-          return {
-            visible: element.matches(":focus-visible"),
-            outlineStyle: style.outlineStyle,
-            outlineWidth: Number.parseFloat(style.outlineWidth),
-          };
-        });
-        expect(focusStyle.visible).toBe(true);
-        expect(focusStyle.outlineStyle).toBe("solid");
-        expect(focusStyle.outlineWidth).toBeGreaterThanOrEqual(2);
         surfaceColors.set(
           colorScheme,
           await page.locator(".studioMode").evaluate((element) =>
