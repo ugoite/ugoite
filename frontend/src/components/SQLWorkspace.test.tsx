@@ -13,14 +13,14 @@ vi.mock("./SqlQueryEditor", () => ({
     value: string;
     ariaLabel?: string;
     disabled?: boolean;
-    onChange: (value: string) => void;
+    onChange: (value: string, userInitiated: boolean) => void;
   }) => (
     <textarea
       id={props.id}
       aria-label={props.ariaLabel}
       value={props.value}
       readOnly={props.disabled}
-      onInput={(event) => props.onChange(event.currentTarget.value)}
+      onInput={(event) => props.onChange(event.currentTarget.value, true)}
     />
   ),
 }));
@@ -55,7 +55,7 @@ describe("SQLWorkspace", () => {
     const editor = screen.getByRole("textbox", { name: "SQL" });
     expect(editor).toHaveValue("SELECT 1");
     fireEvent.input(editor, { target: { value: "SELECT 2" } });
-    expect(onSqlChange).toHaveBeenCalledWith("SELECT 2");
+    expect(onSqlChange).toHaveBeenCalledWith("SELECT 2", true);
   });
 
   it("REQ-FE-080: keeps exact Saved SQL read-only while preview remains available", () => {

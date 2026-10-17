@@ -21,14 +21,24 @@ import {
 import type { SqlAggregateOperation, SqlVariableDefaultDraft } from "~/lib/sql";
 import { sqlApi } from "~/lib/ugoite-client";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
-import type { Form } from "~/lib/types";
+import type { Form, SqlVariable } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
 import { createSqlWorkspaceController } from "~/lib/sql-workspace";
+import { buildSqlLineDiff } from "~/lib/sql-diff";
+import type { SqlLineDiffEntry } from "~/lib/sql-diff";
 
 export const route = spaceRoute({ navigation: "search" });
+
+type SqlVariableMetadata = Pick<SqlVariable, "name" | "type" | "description">;
+
+type SqlVariableMetadataChange = {
+  name: string;
+  current?: Omit<SqlVariableMetadata, "name">;
+  generated?: Omit<SqlVariableMetadata, "name">;
+};
 
 export default function SpaceQueryCreateRoute() {
   const params = useParams<{ space_id: string }>();
@@ -57,6 +67,20 @@ export default function SpaceQueryCreateRoute() {
   const [structureActions, setStructureActions] = createSignal<
     readonly SQLWorkspaceAction[]
   >([]);
+  const [replacementProposal, setReplacementProposal] = createSignal<
+    {
+      kind: "form" | "aggregate";
+      baseSql: string;
+      sql: string;
+      sqlDiff: SqlLineDiffEntry[];
+      variableMetadataChanges: SqlVariableMetadataChange[];
+      parameter?: {
+        name: "filter_value";
+        type: string;
+        description: string;
+      };
+    } | null
+  >(null);
 
   const [forms] = createResource(async () => {
     return await formApi.list(spaceId());
@@ -120,6 +144,101 @@ export default function SpaceQueryCreateRoute() {
     sql: sqlInput,
     variables: workspaceVariables,
   });
+
+  const applySqlReplacement = (
+    kind: "form" | "aggregate",
+    sql: string,
+    parameter?: {
+      name: "filter_value";
+      type: string;
+      description: string;
+    },
+  ) => {
+    const currentVariables = variables().map(({ name, type, description }) => ({
+      name,
+      type,
+      description,
+    }));
+    const generatedVariables = normalizeSqlVariables(sql).variables.map((
+      variable,
+    ) => ({
+      name: variable.name,
+      type: variable.type,
+      description: variable.description,
+    }));
+    if (parameter) {
+      const generatedVariable = generatedVariables.find((variable) =>
+        variable.name === parameter.name
+      );
+      if (generatedVariable) {
+        generatedVariable.type = parameter.type;
+        generatedVariable.description = parameter.description;
+      }
+    }
+    const currentByName = new Map(
+      currentVariables.map((variable) => [variable.name, variable]),
+    );
+    const generatedByName = new Map(
+      generatedVariables.map((variable) => [variable.name, variable]),
+    );
+    const variableMetadataChanges = Array.from(
+      new Set([...currentByName.keys(), ...generatedByName.keys()]),
+    ).sort().flatMap((name) => {
+      const current = currentByName.get(name);
+      const generated = generatedByName.get(name);
+      if (
+        current && generated && current.type === generated.type &&
+        current.description === generated.description
+      ) return [];
+      return [{
+        name,
+        ...(current
+          ? {
+            current: { type: current.type, description: current.description },
+          }
+          : {}),
+        ...(generated
+          ? {
+            generated: {
+              type: generated.type,
+              description: generated.description,
+            },
+          }
+          : {}),
+      }];
+    });
+    if (
+      hasUserEditedSql() &&
+      (sqlInput() !== sql || variableMetadataChanges.length > 0)
+    ) {
+      setReplacementProposal({
+        kind,
+        baseSql: sqlInput(),
+        sql,
+        sqlDiff: buildSqlLineDiff(sqlInput(), sql),
+        variableMetadataChanges,
+        parameter,
+      });
+      return;
+    }
+    setReplacementProposal(null);
+    setSqlInput(sql);
+    setGeneratedParameter(parameter);
+    setHasUserEditedSql(hasUserEditedSql() || kind === "aggregate");
+  };
+
+  const acceptSqlReplacement = () => {
+    if (isSaving()) return;
+    const proposal = replacementProposal();
+    if (!proposal || sqlInput() !== proposal.baseSql) {
+      setReplacementProposal(null);
+      return;
+    }
+    setSqlInput(proposal.sql);
+    setGeneratedParameter(proposal.parameter);
+    setHasUserEditedSql(true);
+    setReplacementProposal(null);
+  };
 
   // Line/column rendering for editor diagnostics. Offsets come from the
   // CodeMirror lint gutter; the list mirrors them as text so the error
@@ -202,7 +321,10 @@ export default function SpaceQueryCreateRoute() {
               id="query-form"
               class="ui-input"
               value={selectedFormId()}
-              onChange={(event) => setSelectedFormId(event.currentTarget.value)}
+              onChange={(event) => {
+                setReplacementProposal(null);
+                setSelectedFormId(event.currentTarget.value);
+              }}
               disabled={isSaving() || selectableForms().length === 0}
             >
               <For each={selectableForms()}>
@@ -217,8 +339,10 @@ export default function SpaceQueryCreateRoute() {
                   form.id === selectedFormId()
                 );
                 if (selected) {
-                  setSqlInput(buildSqlStarterQuery(selected.name));
-                  setHasUserEditedSql(false);
+                  applySqlReplacement(
+                    "form",
+                    buildSqlStarterQuery(selected.name),
+                  );
                 }
               }}
               disabled={isSaving() || !selectedFormId()}
@@ -236,10 +360,12 @@ export default function SpaceQueryCreateRoute() {
             id="query-aggregate"
             class="ui-input"
             value={aggregateOperation()}
-            onChange={(event) =>
+            onChange={(event) => {
+              setReplacementProposal(null);
               setAggregateOperation(
                 event.currentTarget.value as SqlAggregateOperation,
-              )}
+              );
+            }}
             disabled={isSaving() || !selectedForm()}
           >
             <option value="count-rows">{t("sqlPage.countRows")}</option>
@@ -258,8 +384,10 @@ export default function SpaceQueryCreateRoute() {
               id="query-aggregate-field"
               class="ui-input"
               value={aggregateFieldKey()}
-              onChange={(event) =>
-                setAggregateFieldKey(event.currentTarget.value)}
+              onChange={(event) => {
+                setReplacementProposal(null);
+                setAggregateFieldKey(event.currentTarget.value);
+              }}
               disabled={isSaving() || aggregateFields().length === 0}
             >
               <For each={aggregateFields()}>
@@ -275,7 +403,10 @@ export default function SpaceQueryCreateRoute() {
             id="query-filter-field"
             class="ui-input"
             value={filterFieldKey()}
-            onChange={(event) => setFilterFieldKey(event.currentTarget.value)}
+            onChange={(event) => {
+              setReplacementProposal(null);
+              setFilterFieldKey(event.currentTarget.value);
+            }}
             disabled={isSaving() || !selectedForm()}
           >
             <option value="">{t("sqlPage.noFilter")}</option>
@@ -297,9 +428,11 @@ export default function SpaceQueryCreateRoute() {
                   aggregateFieldKey(),
                   filterFieldKey(),
                 );
-                setSqlInput(query.sql);
-                setGeneratedParameter(query.parameter);
-                setHasUserEditedSql(true);
+                applySqlReplacement(
+                  "aggregate",
+                  query.sql,
+                  query.parameter,
+                );
               } catch {
                 setError(t("sqlPage.aggregateFieldUnavailable"));
               }
@@ -313,11 +446,162 @@ export default function SpaceQueryCreateRoute() {
           </button>
         </div>
 
+        <Show when={replacementProposal()}>
+          {(proposal) => (
+            <section
+              class="ui-stack-sm"
+              role="region"
+              aria-label={t("sqlPage.generatedSqlPreview")}
+            >
+              <h2 aria-live="polite">
+                {proposal().kind === "form"
+                  ? t("sqlPage.generatedFormSql")
+                  : t("sqlPage.generatedAggregateSql")}
+              </h2>
+              <pre
+                class="max-w-full overflow-x-auto"
+                tabIndex={0}
+                aria-label={t("sqlPage.generatedSqlDiff")}
+              >
+                <For each={proposal().sqlDiff}>
+                  {(line) => (
+                    <span class="block whitespace-pre">
+                      <span class="ui-sr-only">
+                        {line.kind === "removed"
+                          ? t("sqlPage.sqlDiffRemovedLine", { line: line.line })
+                          : line.kind === "added"
+                          ? t("sqlPage.sqlDiffAddedLine", { line: line.line })
+                          : line.kind === "omitted-changes"
+                          ? t("sqlPage.sqlDiffOmittedChanges", {
+                            removed: line.removedCount ?? 0,
+                            added: line.addedCount ?? 0,
+                          })
+                          : line.kind === "preview-limit"
+                          ? t("sqlPage.sqlDiffPreviewLimit")
+                          : line.kind === "omitted-range"
+                          ? t("sqlPage.sqlDiffOmittedRange")
+                          : line.kind === "omitted"
+                          ? t("sqlPage.sqlDiffOmittedLines", {
+                            count: line.omittedCount ?? 0,
+                          })
+                          : line.kind === "unchanged"
+                          ? t("sqlPage.sqlUnchanged")
+                          : t("sqlPage.sqlDiffContextLine", { line: line.line })}
+                      </span>
+                      <span
+                        aria-hidden="true"
+                        class={line.kind === "removed"
+                          ? "ui-text-danger"
+                          : line.kind === "added"
+                          ? "ui-text-success"
+                          : ""}
+                      >
+                        {line.kind === "removed"
+                          ? "− "
+                          : line.kind === "added"
+                          ? "+ "
+                          : line.kind === "omitted" ||
+                              line.kind === "omitted-changes" ||
+                              line.kind === "omitted-range" ||
+                              line.kind === "preview-limit"
+                          ? "⋯ "
+                          : line.kind === "unchanged"
+                          ? ""
+                          : "  "}
+                        {line.kind === "omitted-changes"
+                          ? t("sqlPage.sqlDiffOmittedChanges", {
+                            removed: line.removedCount ?? 0,
+                            added: line.addedCount ?? 0,
+                          })
+                          : line.kind === "preview-limit"
+                          ? t("sqlPage.sqlDiffPreviewLimit")
+                          : line.kind === "omitted-range"
+                          ? t("sqlPage.sqlDiffOmittedRange")
+                          : line.kind === "omitted"
+                          ? t("sqlPage.sqlDiffOmittedLines", {
+                            count: line.omittedCount ?? 0,
+                          })
+                          : line.kind === "unchanged"
+                          ? t("sqlPage.sqlUnchanged")
+                          : line.line || " "}
+                      </span>
+                    </span>
+                  )}
+                </For>
+              </pre>
+              <Show
+                when={proposal().sqlDiff.some((line) =>
+                  line.kind === "omitted-changes" ||
+                  line.kind === "omitted-range" ||
+                  line.kind === "preview-limit"
+                )}
+              >
+                <details>
+                  <summary class="flex min-h-11 cursor-pointer items-center">
+                    {t("sqlPage.fullGeneratedSql")}
+                  </summary>
+                  <pre class="max-w-full overflow-x-auto" tabIndex={0}>
+                    {proposal().sql}
+                  </pre>
+                </details>
+              </Show>
+              <For each={proposal().variableMetadataChanges}>
+                {(change) => (
+                  <p class="text-sm">
+                    {change.current && change.generated
+                      ? t("sqlPage.parameterMetadataChange", {
+                        name: change.name,
+                        currentType: change.current.type,
+                        nextType: change.generated.type,
+                        currentDescription: change.current.description ||
+                          t("sqlPage.noFilter"),
+                        nextDescription: change.generated.description ||
+                          t("sqlPage.noFilter"),
+                      })
+                      : change.current
+                      ? t("sqlPage.parameterMetadataRemoved", {
+                        name: change.name,
+                        type: change.current.type,
+                        description: change.current.description ||
+                          t("sqlPage.noFilter"),
+                      })
+                      : t("sqlPage.parameterMetadataAdded", {
+                        name: change.name,
+                        type: change.generated?.type ?? "",
+                        description: change.generated?.description ||
+                          t("sqlPage.noFilter"),
+                      })}
+                  </p>
+                )}
+              </For>
+              <div class="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  class="btn primary"
+                  disabled={isSaving()}
+                  onClick={acceptSqlReplacement}
+                >
+                  {t("sqlPage.applyGeneratedSql")}
+                </button>
+                <button
+                  type="button"
+                  class="btn secondary"
+                  disabled={isSaving()}
+                  onClick={() => setReplacementProposal(null)}
+                >
+                  {t("sqlPage.keepCurrentSql")}
+                </button>
+              </div>
+            </section>
+          )}
+        </Show>
+
         <SQLWorkspace
           id="new-sql-workspace"
           sql={sqlInput()}
-          onSqlChange={(value) => {
-            setHasUserEditedSql(true);
+          onSqlChange={(value, userInitiated = false) => {
+            setReplacementProposal(null);
+            if (userInitiated) setHasUserEditedSql(true);
             setSqlInput(value);
           }}
           actions={structureActions()}
@@ -343,6 +627,7 @@ export default function SpaceQueryCreateRoute() {
               `new-sql:${spaceId()}:${selectedFormId()}`,
             )}
           onSqlChange={(value) => {
+            setReplacementProposal(null);
             setHasUserEditedSql(true);
             setSqlInput(value);
           }}

@@ -11,7 +11,7 @@ import { sqlEditorAutocompletion } from "~/lib/sql-completion";
 export interface SqlQueryEditorProps {
   id?: string;
   value: string;
-  onChange: (value: string) => void;
+  onChange: (value: string, userInitiated: boolean) => void;
   schema: SqlSchema;
   onDiagnostics?: (diagnostics: Diagnostic[]) => void;
   ariaLabel?: string;
@@ -62,7 +62,14 @@ export function SqlQueryEditor(props: SqlQueryEditorProps) {
         EditorView.updateListener.of((update) => {
           /* v8 ignore start */
           if (update.docChanged) {
-            props.onChange(update.state.doc.toString());
+            const userInitiated = update.transactions.some((transaction) =>
+              transaction.isUserEvent("input") ||
+              transaction.isUserEvent("delete") ||
+              transaction.isUserEvent("move") ||
+              transaction.isUserEvent("undo") ||
+              transaction.isUserEvent("redo")
+            );
+            props.onChange(update.state.doc.toString(), userInitiated);
           }
           /* v8 ignore stop */
         }),

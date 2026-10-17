@@ -80,7 +80,7 @@ export interface SQLWorkspacePreview {
 export interface SQLWorkspaceProps {
   id?: string;
   sql: string;
-  onSqlChange?: (sql: string) => void;
+  onSqlChange?: (sql: string, userInitiated?: boolean) => void;
   schema: SqlSchema;
   readOnly?: boolean;
   variables?: readonly SQLWorkspaceVariable[];
@@ -212,7 +212,8 @@ export function SQLWorkspace(props: SQLWorkspaceProps) {
           ariaLabel={t("sqlPage.sql")}
           wrapLines
           value={props.sql}
-          onChange={(value) => props.onSqlChange?.(value)}
+          onChange={(value, userInitiated) =>
+            props.onSqlChange?.(value, userInitiated)}
           schema={props.schema}
           onDiagnostics={props.onDiagnostics}
           disabled={editorReadOnly()}
