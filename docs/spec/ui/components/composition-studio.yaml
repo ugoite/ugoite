@@ -20,7 +20,9 @@ object's semantic name can be edited independently from its opaque stable
 source ID. A Saved SQL source displays the referenced Saved SQL name, or the
 existing localized untitled representation when that name is absent, and
 stores no second name or alias. The selected SQL name has one visible owner
-and is not repeated as a second large editor heading.
+and is not repeated in the SQL editor. An inline SQL name is editable only
+after the user activates its accessible rename action; Saved SQL keeps its
+name derived from the referenced Entry.
 
 ## Shared SQL Workspace
 
