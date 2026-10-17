@@ -263,4 +263,36 @@ describe("CompositionDataWorkspace", () => {
     fireEvent.click(reopen);
     expect(screen.getByRole("dialog", { name: "Data" })).toBeInTheDocument();
   });
+
+  it("returns source picker focus to the visible source menu after drawer Add", async () => {
+    window.matchMedia = ((query: string) => ({
+      matches: query === "(max-width: 560px)",
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    })) as typeof window.matchMedia;
+    const props = propsFor(inlineDraft(), { selectedSourceId: null });
+    render(() => (
+      <>
+        <h2 id="data-heading">Data</h2>
+        <CompositionDataWorkspace {...props} />
+      </>
+    ));
+
+    const drawer = screen.getByRole("dialog", { name: "Data" });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Add source" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Data" })).toBeNull();
+    });
+
+    const trigger = screen.getByRole("button", { name: "Show data sources" });
+    const returnFocus = vi.mocked(props.onAddSource).mock.calls[0]?.[0];
+    expect(returnFocus?.()).toBe(trigger);
+    returnFocus?.()?.focus();
+    expect(trigger).toHaveFocus();
+  });
 });

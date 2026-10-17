@@ -237,7 +237,12 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
             label={t("composition.studioAddSource")}
             onClick={() => {
               const returnFocus = narrowViewport()
-                ? () => showNavigatorButton ?? null
+                ? () => {
+                  const trigger = document.getElementById(
+                    `${props.headingId}-source-menu-button`,
+                  );
+                  return trigger instanceof HTMLElement ? trigger : null;
+                }
                 : () => document.activeElement instanceof HTMLElement
                 ? document.activeElement
                 : null;
@@ -309,6 +314,7 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
             <button
               class="dataWorkspaceSourceMenuButton"
               type="button"
+              id={`${props.headingId}-source-menu-button`}
               ref={showNavigatorButton}
               aria-label={t("composition.studioShowDataSources")}
               aria-expanded={navigatorOpen()}
