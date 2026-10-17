@@ -1169,12 +1169,19 @@ test.describe("Composition Studio Journey", () => {
       expect(sourceRowHeight).toBeGreaterThanOrEqual(44);
       await sourceRow.tap();
       await expect(sourceDrawer).toHaveCount(0);
+      await expect(showSources).toContainText(seed.savedSqlName);
       const sourceMenuHeight = await showSources.evaluate((element) =>
         element.getBoundingClientRect().height
       );
       expect(sourceMenuHeight).toBeGreaterThanOrEqual(44);
       await showSources.tap();
       await expect(sourceDrawer).toBeVisible();
+      await expect(
+        sourceDrawer.getByRole("button", {
+          name: seed.savedSqlName,
+          exact: true,
+        }),
+      ).toHaveAttribute("aria-pressed", "true");
 
       const addSource = sourceDrawer.getByRole("button", {
         name: "Add source",
