@@ -583,14 +583,24 @@ contracts. The ruling does not authorize release.
 
 ## ADR-024 — SQL-first Composition sources and workspace
 
-**Status: Accepted replacement v1 target; implementation pending.**
-The replacement grammar, stable Form-ID binding policy, Saved SQL default
-ownership, scalar Metric boundary, transient Work boundary, and shared SQL
-Workspace are defined in
-[ADR-024](adr-024-composition-sql-first.md). It retains ADR-023's typed
-variables and direct Input/Text bindings while removing EntryQuery sources,
-Composition tags, and Composition-owned display labels. Existing published SQL,
-Form, Entry, authorization, and history contracts remain in force. ADR-024
-supersedes the prerelease Composition grammar as the sole v1 target now; the
-replacement implementation remains pending. It does not authorize or schedule
-a product release or version change.
+**Status: Implemented current prerelease model; superseded as the accepted next target by ADR-025.**
+ADR-024 documents the grammar implemented by the current prerelease candidate,
+including stable Form-ID binding, Saved SQL defaults, the scalar Metric
+boundary, transient Work, and the shared SQL Workspace. It retains ADR-023's
+typed variables and direct Input/Text bindings while removing EntryQuery
+sources, Composition tags, and Composition-owned display labels. ADR-024 is no
+longer the accepted next target; ADR-025 defines that target. Existing
+published SQL, Form, Entry, authorization, and history contracts remain in
+force. Neither ADR authorizes or schedules a product release or version
+change.
+
+## ADR-025 — Composition query variable graph and complete SQL Workspace
+
+**Status: Accepted target; implementation in progress.** ADR-025 replaces the
+unreleased split between Composition variables and SQL sources with one typed
+query-variable graph and requires GUI coverage for every SQL construct admitted
+by the Rust read-only executor. The current code remains on ADR-024 until the
+new schema and editor gates are complete. It preserves the published Space,
+Form, Entry, Saved SQL, SQL API, ACL, Publication, and append-only history
+contracts and does not authorize release preparation or publication. See
+[ADR-025](adr-025-composition-query-variable-graph.md).

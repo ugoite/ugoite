@@ -1,0 +1,105 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: composition
+category: Typed query variable graph and complete SQL Workspace
+requirements:
+  - id: REQ-COMP-009
+    title: Composition typed query variable graph
+    description: Replace the unreleased Composition source and scalar-variable split with a strict typed graph whose SQL query nodes are the only calculation source for display components.
+    priority: high
+    status: planned
+    criteria:
+      - id: single-typed-variable-graph
+        kind: behavior
+        statement: >-
+          Composition has one `spec.variables` node list. Each node is exactly
+          a typed constant, input, or query. A query returns one typed table or
+          scalar value and records explicit SQL-parameter-to-variable bindings.
+          SQL parameter names do not bind implicitly to Composition variable
+          names, and initial SQL parameters cannot reference table values.
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
+      - id: display-components-reference-variables
+        kind: behavior
+        statement: >-
+          Table, Metric, Text, and Input components refer only to compatible
+          variable nodes or literal Text content. Domain validation rejects
+          incompatible types, missing references, dependency cycles, duplicate
+          names, unused or unplaced inputs, and invalid query arguments.
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
+      - id: exact-query-identities
+        kind: security
+        statement: >-
+          Form-assisted inline SQL uses server-derived Form bindings, while a
+          Saved SQL query node pins one exact Entry and revision. Resolution
+          rechecks current ACL, Publication, schema, and query revision; an
+          unavailable identity fails closed without creating a partial query
+          variable or display component.
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
+      - id: scalar-cardinality-is-explicit
+        kind: behavior
+        statement: >-
+          A scalar query succeeds only for exactly one row and one column. The
+          runtime distinguishes zero rows, one NULL row, multiple rows,
+          multiple columns, type drift, and access denial. It never silently
+          chooses a first row or first column.
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
+      - id: snapshot-reactive-execution
+        kind: security
+        statement: >-
+          Query evaluation is stateless and bound to one immutable Composition,
+          Publication, authorization, input, SQL revision, and parameter
+          fingerprint snapshot. Only affected dependencies are recomputed;
+          stale responses are discarded; preview values and results remain
+          transient Work and are not materialized as Knowledge.
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
+      - id: full-executor-to-gui-sql-coverage
+        kind: behavior
+        statement: >-
+          Every SQL construct admitted by the Rust read-only SQL executor has
+          an equivalent typed GUI document operation, diagnostic, and
+          round-trip fixture. Parser success alone does not admit a construct;
+          unsupported functions and types remain unavailable in both execution
+          and the GUI until the complete contract is extended.
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
+      - id: replaced-composition-grammar-fails-closed
+        kind: behavior
+        statement: >-
+          The canonical reader accepts only the new variable-graph grammar and
+          does not execute the replaced unreleased Composition grammar through
+          an alias, fallback, dual reader, hidden retained field, or migration.
+          Raw history, inspection, and export continue under their existing
+          general Entry contracts.
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
+      - id: design-picker-normalizes-to-variable
+        kind: behavior
+        statement: >-
+          Design Table and Metric insertion offer Variables, Forms, and Saved
+          SQL in one picker. Form and exact-revision Saved SQL choices create
+          or exactly reuse a compatible query variable and insert a component
+          atomically. The persisted component stores only its variable
+          reference; insertion closes the picker without opening an Inspector.
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
