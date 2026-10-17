@@ -415,6 +415,7 @@ async function addStudioText(page: Page, variableId: string): Promise<void> {
     exact: true,
   });
   await palette.getByRole("button", { name: "Text", exact: true }).click();
+  await page.getByRole("button", { name: "Select Text", exact: true }).click();
   await page.getByLabel("Content", { exact: true }).selectOption({
     label: variableId,
   });
@@ -996,8 +997,9 @@ test.describe("Composition Studio Journey", () => {
           values.sort((left, right) => Number(left) - Number(right))
         );
 
-      await expect(page.getByLabel("minimum", { exact: true }))
-        .toHaveValue("0");
+      const minimumInput = page.getByLabel("minimum", { exact: true });
+      await expect(minimumInput).toBeVisible({ timeout: 30_000 });
+      await expect(minimumInput).toHaveValue("0");
       await expect.poll(metricValues, { timeout: 30_000 }).toEqual([
         "3",
         "60",
