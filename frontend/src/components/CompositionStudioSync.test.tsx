@@ -559,7 +559,7 @@ describe("CompositionStudioSync", () => {
 
     // A persisted text edit schedules exactly one follow-up preview.
     const inspector = screen.getByRole("complementary");
-    fireEvent.input(within(inspector).getByLabelText("Text"), {
+    fireEvent.input(within(inspector).getByLabelText("Text body"), {
       target: { value: "Summary v2" },
     });
     await waitFor(() => {
