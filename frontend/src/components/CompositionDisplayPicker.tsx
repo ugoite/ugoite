@@ -3,7 +3,7 @@ import { Portal } from "solid-js/web";
 import { RowList, RowListButton, RowListItem } from "~/components/RowList";
 import { UiIcon } from "~/components/UiIcon";
 import type { CompositionResultType } from "~/lib/composition-api";
-import type { CompositionDraft, DraftSource } from "~/lib/composition-draft";
+import type { CompositionDraft } from "~/lib/composition-draft";
 import { metricColumnReady } from "~/lib/composition-draft";
 import { t } from "~/lib/i18n";
 
@@ -25,6 +25,7 @@ interface CompositionDisplayPickerProps {
   draft: CompositionDraft;
   initialKind?: "table" | "metric";
   initialSourceDraftId?: string | null;
+  returnFocus?: () => HTMLElement | null;
   onAdd: (seed: CompositionDisplaySeed) => void;
   onPreview?: (seed: { sourceDraftId: string; column: string }) => Promise<MetricPickerPreview>;
   onChooseSource?: (kind: "table" | "metric") => void;
@@ -50,11 +51,6 @@ export const savedSqlScalarCandidates = (
     )
     .map((column) => ({ id: column.name, name: column.name }));
 };
-
-const sourceKindLabel = (source: DraftSource): string =>
-  source.kind === "saved_sql"
-    ? t("spaceShell.title.savedSql")
-    : t("sqlPage.sql");
 
 /** Add a Table or a SQL-backed Metric to the Composition canvas. */
 export function CompositionDisplayPicker(
@@ -85,9 +81,9 @@ export function CompositionDisplayPicker(
   });
 
   onMount(() => {
-    opener = document.activeElement instanceof HTMLElement
+    opener = props.returnFocus?.() ?? (document.activeElement instanceof HTMLElement
       ? document.activeElement
-      : null;
+      : null);
     const appRoot = document.getElementById("app");
     appRoot?.setAttribute("inert", "");
     queueMicrotask(() =>
@@ -316,7 +312,6 @@ export function CompositionDisplayPicker(
                             primary={
                               <span class="rowListName">{source.name}</span>
                             }
-                            secondary={sourceKindLabel(source)}
                             onActivate={() => selectSource(source)}
                           />
                         }

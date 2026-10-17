@@ -109,6 +109,29 @@ export interface CompositionStudioProps {
 
 const PREVIEW_DEBOUNCE_MS = 400;
 
+type StudioOverlay =
+  | { kind: "none" }
+  | { kind: "source-drawer" }
+  | { kind: "source-picker"; intent: "data" }
+  | {
+    kind: "source-picker";
+    intent: "insert";
+    componentKind: "table" | "metric";
+    target?: DraftInsertTarget;
+  }
+  | {
+    kind: "source-picker";
+    intent: "change-table-source";
+    componentId: string;
+  }
+  | {
+    kind: "display-picker";
+    componentKind: "table" | "metric";
+    sourceDraftId: string | null;
+    target?: DraftInsertTarget;
+  }
+  | { kind: "block-inspector"; componentId: string };
+
 export function CompositionStudio(props: CompositionStudioProps) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -117,18 +140,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const [draft, setDraft] = createSignal<CompositionDraft>(
     props.initialDraft ?? createEmptyDraft(),
   );
-  const [pickerOpen, setPickerOpen] = createSignal(false);
-  const [dataSourcePickerOpen, setDataSourcePickerOpen] = createSignal(false);
-  const [displayPickerOpen, setDisplayPickerOpen] = createSignal(false);
-  const [displayPickerKind, setDisplayPickerKind] = createSignal<
-    "table" | "metric"
-  >("table");
-  const [displayPickerSourceId, setDisplayPickerSourceId] = createSignal<
-    string | null
-  >(null);
-  const [sourcePickerKind, setSourcePickerKind] = createSignal<
-    "table" | "metric" | null
-  >(null);
+  const [overlay, setOverlay] = createSignal<StudioOverlay>({ kind: "none" });
+  const [sourcePickerReturnFocus, setSourcePickerReturnFocus] = createSignal<
+    (() => HTMLElement | null) | undefined
+  >();
   const [dataPanel, setDataPanel] = createSignal<"sources" | "variables">(
     "sources",
   );
@@ -142,11 +157,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const [mode, setMode] = createSignal<StudioMode>("design");
   // Transient viewport Work: narrow flags mirror the Studio CSS gates so no
   // JS path can leave a narrow viewport stuck in Split or rendering the
-  // wrong inspector container. `sheetOpen` tracks the bottom-sheet dismissal
-  // only; the selection owner stays `selectedId`.
+  // wrong inspector container. The overlay union owns sheet visibility while
+  // `selectedId` remains the canvas selection owner.
   const [belowSplitGate, setBelowSplitGate] = createSignal(false);
   const [sheetViewport, setSheetViewport] = createSignal(false);
-  const [sheetOpen, setSheetOpen] = createSignal(false);
 
   // RA9 mobile: the Split option hides below the Split gate in CSS, and the
   // same gate is enforced here so resizing into a narrow viewport while in
@@ -188,6 +202,14 @@ export function CompositionStudio(props: CompositionStudioProps) {
   createEffect(() => {
     if (belowSplitGate() && mode() === "split") setMode("design");
   });
+  createEffect(() => {
+    if (
+      overlay().kind === "source-drawer" &&
+      (mode() !== "data" || dataPanel() !== "sources")
+    ) {
+      setOverlay({ kind: "none" });
+    }
+  });
 
   // A dismissed or viewport-orphaned sheet returns focus to the invoking
   // block's select control. Block identities are compared literally so
@@ -207,9 +229,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
   };
 
   const closeSheetKeepSelection = () => {
-    if (!sheetOpen()) return;
-    const invoking = selectedId();
-    setSheetOpen(false);
+    const current = overlay();
+    if (current.kind !== "block-inspector") return;
+    const invoking = current.componentId;
+    setOverlay({ kind: "none" });
     // Focus after disposal: the sheet lifts `inert` in its own cleanup, so
     // returning focus in a microtask never races the inert removal.
     queueMicrotask(() => focusBlockSelect(invoking));
@@ -219,9 +242,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
   // too, so reopening the inspector for the same block stays a single tap.
   // The Data selection is kept: only the canvas selection clears.
   const dismissSheet = () => {
-    if (!sheetOpen()) return;
-    const invoking = selectedId();
-    setSheetOpen(false);
+    const current = overlay();
+    if (current.kind !== "block-inspector") return;
+    const invoking = current.componentId;
+    setOverlay({ kind: "none" });
     setSelectedId(null);
     queueMicrotask(() => focusBlockSelect(invoking));
   };
@@ -236,7 +260,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
 
     setDraft(result.draft);
     setSelectedId(null);
-    setSheetOpen(false);
+    setOverlay({ kind: "none" });
     queueMicrotask(() => {
       const canvas = document.querySelector(".designCanvas");
       const firstBlock = canvas?.querySelector<HTMLElement>(
@@ -253,12 +277,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
   // Leaving the sheet viewport unmounts the sheet; an orphaned open sheet
   // returns focus to its invoking block, which stays selected inline.
   createEffect(() => {
-    if (!sheetViewport() && sheetOpen()) closeSheetKeepSelection();
+    if (!sheetViewport() && overlay().kind === "block-inspector") {
+      closeSheetKeepSelection();
+    }
   });
   const [paletteTarget, setPaletteTarget] = createSignal<
-    DraftInsertTarget | null
-  >(null);
-  const [pendingInsert, setPendingInsert] = createSignal<
     DraftInsertTarget | null
   >(null);
   const [saving, setSaving] = createSignal(false);
@@ -473,15 +496,17 @@ export function CompositionStudio(props: CompositionStudioProps) {
     if (!table.ok || !table.draftId) return;
     setDraft(table.draft);
     setExpandedId(draftId);
-    setSelectedId(designBlockIdForComponent(table.draftId));
-    if (sheetViewport()) setSheetOpen(true);
-    setPickerOpen(false);
+    const blockId = designBlockIdForComponent(table.draftId);
+    setSelectedId(blockId);
+    setOverlay(sheetViewport()
+      ? { kind: "block-inspector", componentId: blockId }
+      : { kind: "none" });
   };
 
-  const openDataSourcePicker = () => {
-    setSourcePickerKind(null);
-    setDataSourcePickerOpen(true);
-    setPickerOpen(true);
+  const openDataSourcePicker = (returnFocus?: () => HTMLElement | null) => {
+    setSelectedId(null);
+    setSourcePickerReturnFocus(() => returnFocus);
+    setOverlay({ kind: "source-picker", intent: "data" });
   };
 
   const addDataSource = (seed: CompositionSourceSeed) => {
@@ -489,16 +514,12 @@ export function CompositionStudio(props: CompositionStudioProps) {
     setDraft(sourceDraft);
     setExpandedId(draftId);
     previewHandle.ensureSource(draftId);
-    setDataSourcePickerOpen(false);
-    setPickerOpen(false);
+    setOverlay({ kind: "none" });
   };
 
-  const toggleExpanded = (sourceDraftId: string) => {
-    const selecting = expandedId() !== sourceDraftId;
-    setExpandedId(selecting ? sourceDraftId : null);
-    // Selecting a source outside the scoped fetch set pages it on demand
-    // through the existing path; deselecting never refetches.
-    if (selecting) previewHandle.ensureSource(sourceDraftId);
+  const selectSource = (sourceDraftId: string) => {
+    setExpandedId(sourceDraftId);
+    previewHandle.ensureSource(sourceDraftId);
   };
 
   const moveDraftSource = (sourceDraftId: string, direction: "up" | "down") => {
@@ -517,7 +538,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const addDisplaySeed = (seed: CompositionDisplaySeed) => {
     // The display picker survives only as the canvas insertion delegate and
     // lands at the recorded canvas target.
-    const target = pendingInsert() ?? undefined;
+    const activeOverlay = overlay();
+    if (activeOverlay.kind !== "display-picker") return;
+    const target = activeOverlay.target;
     const added = seed.kind === "table"
       ? addTableDisplay(draft(), seed.sourceDraftId, target)
       : addMetricDisplay(
@@ -529,15 +552,16 @@ export function CompositionStudio(props: CompositionStudioProps) {
     if (added.ok) {
       setDraft(added.draft);
       if (added.draftId) {
-        setSelectedId(designBlockIdForComponent(added.draftId));
-        // The fresh block owns the inspector, matching canvas insertion:
-        // on narrow viewports that means opening the bottom sheet.
-        if (sheetViewport()) setSheetOpen(true);
+        setExpandedId(seed.sourceDraftId);
+        previewHandle.ensureSource(seed.sourceDraftId);
+        const blockId = designBlockIdForComponent(added.draftId);
+        setSelectedId(blockId);
+        setOverlay(sheetViewport()
+          ? { kind: "block-inspector", componentId: blockId }
+          : { kind: "none" });
       }
     }
-    setPendingInsert(null);
-    setDisplayPickerOpen(false);
-    setDisplayPickerSourceId(null);
+    if (!added.ok || !added.draftId) setOverlay({ kind: "none" });
   };
 
   const previewMetric = async (seed: {
@@ -597,80 +621,89 @@ export function CompositionStudio(props: CompositionStudioProps) {
   };
 
   const chooseSourceForDisplay = (kind: "table" | "metric") => {
-    setDataSourcePickerOpen(false);
-    setSourcePickerKind(kind);
-    setDisplayPickerKind(kind);
-    setDisplayPickerOpen(false);
-    setPickerOpen(true);
+    const activeOverlay = overlay();
+    if (activeOverlay.kind !== "display-picker") return;
+    setSourcePickerReturnFocus(() => designInsertReturnFocus);
+    setOverlay({
+      kind: "source-picker",
+      intent: "insert",
+      componentKind: kind,
+      target: activeOverlay.target,
+    });
   };
 
   const addSourceForDisplay = (seed: CompositionSourceSeed) => {
-    const kind = sourcePickerKind();
-    if (!kind) {
+    const activeOverlay = overlay();
+    if (activeOverlay.kind !== "source-picker") return;
+    if (activeOverlay.intent === "data") {
+      addDataSource(seed);
+      return;
+    }
+    if (activeOverlay.intent !== "insert") {
       addSeed(seed);
       return;
     }
     const { draft: sourceDraft, draftId } = addSourceSeed(seed);
-    if (kind === "table") {
+    if (activeOverlay.componentKind === "table") {
       const table = addTableDisplay(
         sourceDraft,
         draftId,
-        pendingInsert() ?? undefined,
+        activeOverlay.target,
       );
       if (!table.ok || !table.draftId) return;
       setDraft(table.draft);
       setExpandedId(draftId);
-      setSelectedId(designBlockIdForComponent(table.draftId));
-      if (sheetViewport()) setSheetOpen(true);
-      setPendingInsert(null);
-      setPickerOpen(false);
-      setSourcePickerKind(null);
+      const blockId = designBlockIdForComponent(table.draftId);
+      setSelectedId(blockId);
+      setOverlay(sheetViewport()
+        ? { kind: "block-inspector", componentId: blockId }
+        : { kind: "none" });
       return;
     }
     // Add the SQL source, then choose and preview a result column before it
     // enters the canvas layout.
     setDraft(sourceDraft);
-    setDisplayPickerSourceId(draftId);
-    setPickerOpen(false);
-    setSourcePickerKind(null);
-    setDisplayPickerKind("metric");
-    setDisplayPickerOpen(true);
+    setOverlay({
+      kind: "display-picker",
+      componentKind: "metric",
+      sourceDraftId: draftId,
+      target: activeOverlay.target,
+    });
   };
 
   const selectExistingSource = (sourceDraftId: string) => {
-    setPickerOpen(false);
-    if (dataSourcePickerOpen()) {
+    const activeOverlay = overlay();
+    if (activeOverlay.kind !== "source-picker") return;
+    if (activeOverlay.intent === "data") {
       setExpandedId(sourceDraftId);
       previewHandle.ensureSource(sourceDraftId);
-      setDataSourcePickerOpen(false);
+      setOverlay({ kind: "none" });
       return;
     }
-    const kind = sourcePickerKind();
-    if (!kind) {
-      setExpandedId(sourceDraftId);
-      previewHandle.ensureSource(sourceDraftId);
-      return;
-    }
-    if (kind === "metric") {
-      setDisplayPickerSourceId(sourceDraftId);
-      setDisplayPickerKind("metric");
-      setDisplayPickerOpen(true);
-      setSourcePickerKind(null);
+    if (activeOverlay.intent === "insert" && activeOverlay.componentKind === "metric") {
+      setOverlay({
+        kind: "display-picker",
+        componentKind: "metric",
+        sourceDraftId,
+        target: activeOverlay.target,
+      });
       return;
     }
     const table = addTableDisplay(
       draft(),
       sourceDraftId,
-      pendingInsert() ?? undefined,
+      activeOverlay.intent === "insert" ? activeOverlay.target : undefined,
     );
     if (table.ok && table.draftId) {
       setDraft(table.draft);
       setExpandedId(sourceDraftId);
-      setSelectedId(designBlockIdForComponent(table.draftId));
-      if (sheetViewport()) setSheetOpen(true);
+      const blockId = designBlockIdForComponent(table.draftId);
+      setSelectedId(blockId);
+      setOverlay(sheetViewport()
+        ? { kind: "block-inspector", componentId: blockId }
+        : { kind: "none" });
+      return;
     }
-    setSourcePickerKind(null);
-    setPendingInsert(null);
   };
 
   // Data workspace edits flow through narrow draft updaters into the shared
@@ -724,8 +757,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
     // From the narrow bottom sheet dismiss the sheet and show the Data
     // workspace. Its mobile navigator closes around the selected detail and
     // moves focus to the control that can reopen the source list.
-    if (sheetViewport() && sheetOpen()) {
-      setSheetOpen(false);
+    if (sheetViewport() && overlay().kind === "block-inspector") {
+      setOverlay({ kind: "none" });
       setSelectedId(null);
       setMode("data");
       return;
@@ -744,9 +777,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const handleSelectBlock = (blockId: string | null) => {
     setSelectedId(blockId);
     if (!blockId) {
-      setSheetOpen(false);
+      setOverlay({ kind: "none" });
     } else if (sheetViewport()) {
-      setSheetOpen(true);
+      setOverlay({ kind: "block-inspector", componentId: blockId });
+    } else if (overlay().kind === "block-inspector") {
+      setOverlay({ kind: "none" });
     }
     const sourceDraftId = sourceDraftIdForBlock(draft(), blockId);
     if (!sourceDraftId) return;
@@ -998,9 +1033,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
     previewState().previewError !== undefined &&
     previewState().preview === undefined;
 
-  const dataHeadingId = "studio-data-heading";
-  const designHeadingId = "studio-design-heading";
-  const variablesHeadingId = "studio-variables-heading";
+  const designHeadingId = "studio-mode-design";
+  const variablesHeadingId = "studio-data-variables-tab";
+  const sourceTabId = "studio-data-sources-tab";
   const nameInputId = "studio-name";
 
   const modeIcon = (entry: StudioMode): "canvas-table" | "sql" | "columns" =>
@@ -1018,9 +1053,22 @@ export function CompositionStudio(props: CompositionStudioProps) {
   // The bottom sheet owns the selected block identity on narrow viewports;
   // clearing the selection (or leaving the sheet viewport) dismisses it.
   const sheetSelection = (): string | null =>
-    sheetViewport() && sheetOpen() ? selectedId() : null;
+    sheetViewport() && overlay().kind === "block-inspector"
+      ? overlay().componentId
+      : null;
+  const sourcePickerOverlay = () =>
+    overlay().kind === "source-picker" ? overlay() : undefined;
+  const displayPickerOverlay = () =>
+    overlay().kind === "display-picker" ? overlay() : undefined;
+  const designInsertReturnFocus = () =>
+    document.querySelector<HTMLElement>(".designCanvas .designAdd");
+  const mobileDrawerOpen = () => overlay().kind === "source-drawer";
+  const onMobileDrawerOpenChange = (open: boolean) => {
+    if (open) setOverlay({ kind: "source-drawer" });
+    else if (overlay().kind === "source-drawer") setOverlay({ kind: "none" });
+  };
   const renderDataWorkspace = (
-    headingId = dataHeadingId,
+    headingId = "studio-mode-data",
     collapsible = false,
   ) => (
     <CompositionDataWorkspace
@@ -1028,7 +1076,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
       headingId={headingId}
       selectedSourceId={expandedId()}
       collapsible={collapsible}
-      onSelectSource={toggleExpanded}
+      mobileDrawerOpen={mobileDrawerOpen()}
+      onMobileDrawerOpenChange={onMobileDrawerOpenChange}
+      onSelectSource={selectSource}
       onAddSource={openDataSourcePicker}
       onMoveSource={moveDraftSource}
       onRemoveSource={removeDraftSource}
@@ -1110,10 +1160,13 @@ export function CompositionStudio(props: CompositionStudioProps) {
           onSelect={handleSelectBlock}
           onDraftChange={setDraft}
           onRequestDisplayPicker={(target) => {
-            setPendingInsert(target);
-            setDisplayPickerKind("table");
-            setDisplayPickerSourceId(null);
-            setDisplayPickerOpen(true);
+            setSelectedId(null);
+            setOverlay({
+              kind: "display-picker",
+              componentKind: "table",
+              sourceDraftId: null,
+              target,
+            });
           }}
           onNext={(sourceId) => previewHandle.next(sourceId)}
           onPrevious={(sourceId) => previewHandle.previous(sourceId)}
@@ -1155,7 +1208,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
       <h1 class="ui-sr-only">
         {draft().name.trim() || t("composition.name")}
       </h1>
-      <header class="flex items-center gap-2">
+      <header class="flex items-center gap-2" inert={mobileDrawerOpen()}>
         <BackLink
           href={props.backHref}
           label={props.backLabel}
@@ -1184,6 +1237,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
         class="studioMode"
         role="radiogroup"
         aria-label={t("composition.studioMode")}
+        inert={mobileDrawerOpen()}
       >
         <For each={STUDIO_MODES}>
           {(entry) => (
@@ -1191,6 +1245,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
               type="button"
               role="radio"
               aria-checked={mode() === entry}
+              id={entry === "design"
+                ? designHeadingId
+                : entry === "data"
+                ? "studio-mode-data"
+                : "studio-mode-split"}
               class="studioModeOption"
               classList={{
                 "studioModeOption--active": mode() === entry,
@@ -1204,38 +1263,45 @@ export function CompositionStudio(props: CompositionStudioProps) {
           )}
         </For>
       </div>
-      <Show when={saveError()}>
-        <p class="ui-text-danger" role="alert">{saveError()}</p>
-      </Show>
-      <Show when={saveRetryAvailable() && !saving()}>
-        <button
-          class="ui-button ui-button-secondary"
-          type="button"
-          onClick={() => void handleRetrySave()}
-        >
-          {t("composition.retry")}
-        </button>
-      </Show>
+      <div inert={mobileDrawerOpen()}>
+        <Show when={saveError()}>
+          <p class="ui-text-danger" role="alert">{saveError()}</p>
+        </Show>
+        <Show when={saveRetryAvailable() && !saving()}>
+          <button
+            class="ui-button ui-button-secondary"
+            type="button"
+            onClick={() => void handleRetrySave()}
+          >
+            {t("composition.retry")}
+          </button>
+        </Show>
+      </div>
 
-      {renderDiagnosticsStrip()}
+      <div inert={mobileDrawerOpen()}>{renderDiagnosticsStrip()}</div>
 
       <Show when={mode() === "data"}>
-        <section class="section" aria-labelledby={dataHeadingId}>
-          <h2 id={dataHeadingId}>{t("composition.studioData")}</h2>
+        <section class="section" aria-labelledby="studio-mode-data">
           <div
             class="tabs studioDataTabs"
             role="tablist"
-            aria-labelledby={dataHeadingId}
+            aria-label={t("composition.studioData")}
+            inert={mobileDrawerOpen()}
           >
             <button
               type="button"
-              id="studio-data-sources-tab"
+              id={sourceTabId}
               role="tab"
               aria-selected={dataPanel() === "sources"}
               aria-controls="studio-data-sources-panel"
               class="tab"
               classList={{ active: dataPanel() === "sources" }}
-              onClick={() => setDataPanel("sources")}
+              onClick={() => {
+                setDataPanel("sources");
+                if (overlay().kind === "source-drawer") {
+                  setOverlay({ kind: "none" });
+                }
+              }}
             >
               {t("composition.studioSources")}
             </button>
@@ -1247,7 +1313,12 @@ export function CompositionStudio(props: CompositionStudioProps) {
               aria-controls="studio-data-variables-panel"
               class="tab"
               classList={{ active: dataPanel() === "variables" }}
-              onClick={() => setDataPanel("variables")}
+              onClick={() => {
+                setDataPanel("variables");
+                if (overlay().kind === "source-drawer") {
+                  setOverlay({ kind: "none" });
+                }
+              }}
             >
               {t("composition.studioVariables")}
             </button>
@@ -1255,10 +1326,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
           <div
             id="studio-data-sources-panel"
             role="tabpanel"
-            aria-labelledby="studio-data-sources-tab"
+            aria-labelledby={sourceTabId}
             hidden={dataPanel() !== "sources"}
           >
-            {renderDataWorkspace("studio-data-sources-tab")}
+            {renderDataWorkspace(sourceTabId)}
           </div>
           <section
             id="studio-data-variables-panel"
@@ -1266,10 +1337,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
             aria-labelledby="studio-data-variables-tab"
             hidden={dataPanel() !== "variables"}
             class="section"
+            inert={mobileDrawerOpen()}
           >
-            <h2 id={variablesHeadingId}>
-              {t("composition.studioVariables")}
-            </h2>
             <CompositionVariableList
               variables={draft().variables}
               headingId={variablesHeadingId}
@@ -1283,7 +1352,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
 
       <Show when={mode() === "design"}>
         <section class="section" aria-labelledby={designHeadingId}>
-          <h2 id={designHeadingId}>{t("composition.studioDesign")}</h2>
           {renderDesignWorkspace()}
         </section>
       </Show>
@@ -1291,13 +1359,15 @@ export function CompositionStudio(props: CompositionStudioProps) {
       <Show when={mode() === "split"}>
         <section class="section" aria-label={t("composition.studioMode")}>
           <div class="studioSplit">
-            <div aria-labelledby={designHeadingId}>
-              <h2 id={designHeadingId}>{t("composition.studioDesign")}</h2>
+            <div role="region" aria-label={t("composition.studioDesign")}>
               {renderDesignWorkspace()}
             </div>
-            <div class="studioSplitPane" aria-labelledby={dataHeadingId}>
-              <h2 id={dataHeadingId}>{t("composition.studioData")}</h2>
-              {renderDataWorkspace(dataHeadingId, true)}
+            <div
+              class="studioSplitPane"
+              role="region"
+              aria-label={t("composition.studioData")}
+            >
+              {renderDataWorkspace("studio-mode-data", true)}
             </div>
           </div>
         </section>
@@ -1313,37 +1383,32 @@ export function CompositionStudio(props: CompositionStudioProps) {
           strip above. Variables edit in Data mode only. */
       }
 
-      <Show when={pickerOpen()}>
+      <Show when={sourcePickerOverlay()}>
         <CompositionSourcePicker
           spaceId={spaceId()}
+          returnFocus={sourcePickerReturnFocus()}
           existingSources={draft().sources}
           onSelectExisting={selectExistingSource}
-          onSelect={(seed) =>
-            dataSourcePickerOpen()
-              ? addDataSource(seed)
-              : addSourceForDisplay(seed)}
+          onSelect={addSourceForDisplay}
           onClose={() => {
-            setPickerOpen(false);
-            setDataSourcePickerOpen(false);
-            setSourcePickerKind(null);
+            setOverlay({ kind: "none" });
           }}
         />
       </Show>
 
-      <Show when={displayPickerOpen()}>
-        <CompositionDisplayPicker
-          draft={draft()}
-          initialKind={displayPickerKind()}
-          initialSourceDraftId={displayPickerSourceId()}
-          onAdd={addDisplaySeed}
-          onPreview={previewMetric}
-          onChooseSource={chooseSourceForDisplay}
-          onClose={() => {
-            setPendingInsert(null);
-            setDisplayPickerSourceId(null);
-            setDisplayPickerOpen(false);
-          }}
-        />
+      <Show when={displayPickerOverlay()}>
+        {(activePicker) => (
+          <CompositionDisplayPicker
+            draft={draft()}
+            initialKind={activePicker().componentKind}
+            initialSourceDraftId={activePicker().sourceDraftId}
+            returnFocus={designInsertReturnFocus}
+            onAdd={addDisplaySeed}
+            onPreview={previewMetric}
+            onChooseSource={chooseSourceForDisplay}
+            onClose={() => setOverlay({ kind: "none" })}
+          />
+        )}
       </Show>
     </div>
   );

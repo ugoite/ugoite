@@ -34,6 +34,7 @@ export type CompositionSourceSeed =
 
 interface CompositionSourcePickerProps {
   spaceId: string;
+  returnFocus?: () => HTMLElement | null;
   /** Sources already referenced by the current draft; shown first for reuse. */
   existingSources?: readonly DraftSource[];
   onSelectExisting?: (sourceDraftId: string) => void;
@@ -135,9 +136,9 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
   });
 
   onMount(() => {
-    opener = document.activeElement instanceof HTMLElement
+    opener = props.returnFocus?.() ?? (document.activeElement instanceof HTMLElement
       ? document.activeElement
-      : null;
+      : null);
     const appRoot = document.getElementById("app");
     appRoot?.setAttribute("inert", "");
     queueMicrotask(() => dialog?.querySelector("button")?.focus());
@@ -345,18 +346,11 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
                           <RowListItem
                             main={
                               <RowListButton
-                                ariaLabel={`${source.name}, ${
-                                  source.kind === "saved_sql"
-                                    ? t("spaceShell.title.savedSql")
-                                    : t("sqlPage.sql")
-                                }`}
+                                ariaLabel={source.name}
                                 title={source.name}
                                 primary={
                                   <span class="rowListName">{source.name}</span>
                                 }
-                                secondary={source.kind === "saved_sql"
-                                  ? t("spaceShell.title.savedSql")
-                                  : t("sqlPage.sql")}
                                 onActivate={() =>
                                   props.onSelectExisting?.(source.draftId)}
                               />

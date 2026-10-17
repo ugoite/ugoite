@@ -177,6 +177,20 @@ describe("CompositionDataWorkspace", () => {
     expect(props.onRetry).toHaveBeenCalledWith("src-1");
   });
 
+  it("shows each SQL source name once in the navigator", () => {
+    render(() => (
+      <>
+        <h2 id="data-heading">Data</h2>
+        <CompositionDataWorkspace {...propsFor(inlineDraft())} />
+      </>
+    ));
+
+    const row = screen.getByRole("button", { name: "Expenses" });
+    expect(row).toHaveTextContent(/^Expenses$/);
+    expect(row.querySelector(".rowListSecondary")).toBeNull();
+    expect(row.querySelector("svg")).toBeNull();
+  });
+
   it("keeps Saved SQL read-only at its exact revision and links to explicit editing", () => {
     const draft = savedSqlDraft();
     const planSource: CompositionResolvedSource = {

@@ -169,8 +169,9 @@ describe("CompositionDisplayPicker", () => {
     ));
 
     const dialog = screen.getByRole("dialog", { name: "Add data component" });
-    expect(within(dialog).getByRole("button", { name: "Expenses" }))
-      .toBeInTheDocument();
+    const sourceRow = within(dialog).getByRole("button", { name: "Expenses" });
+    expect(sourceRow).toHaveTextContent(/^Expenses$/);
+    expect(sourceRow.querySelector(".rowListSecondary")).toBeNull();
     expect(within(dialog).getByRole("button", { name: "Blobs" }))
       .toBeDisabled();
     fireEvent.click(within(dialog).getByRole("button", { name: "Monthly" }));

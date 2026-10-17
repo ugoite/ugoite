@@ -1,15 +1,7 @@
 import { For, Show } from "solid-js";
 import { RowList, RowListButton, RowListItem } from "~/components/RowList";
-import { UiIcon } from "~/components/UiIcon";
 import type { DraftSource } from "~/lib/composition-draft";
 import { t } from "~/lib/i18n";
-
-export const sourceKindIcon = (_source: DraftSource): "sql" => "sql";
-
-export const sourceKindLabel = (source: DraftSource): string =>
-  source.kind === "saved_sql"
-    ? t("spaceShell.title.savedSql")
-    : t("sqlPage.sql");
 
 interface SourceNavigatorProps {
   sources: readonly DraftSource[];
@@ -45,12 +37,8 @@ export function SourceNavigator(props: SourceNavigatorProps) {
                     ariaLabel={source.name}
                     title={source.name}
                     primary={
-                      <span class="rowListName">
-                        <UiIcon name={sourceKindIcon(source)} />
-                        <span>{source.name}</span>
-                      </span>
+                      <span class="rowListName">{source.name}</span>
                     }
-                    secondary={sourceKindLabel(source)}
                     selected={props.selectedId === source.draftId}
                     onActivate={() => props.onSelect(source.draftId)}
                   />

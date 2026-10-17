@@ -83,3 +83,23 @@ Workspace controls in [`sql-workspace.yaml`](sql-workspace.yaml). Dialog options
 use concise text names. At 320px, 375px, and 390px viewport widths, the
 Composition source drawer supports keyboard navigation, Escape close, and
 focus restoration.
+
+## Studio context and overlays
+
+The visible Design or Data mode control owns the selected mode name. The
+selected mode's content does not repeat that name as a visible heading. The
+Data Sources and Variables tabs own their respective panel names through
+`aria-labelledby`; their content does not repeat the selected tab as a visible
+heading. Split gives the Design and Data panes accessible names without adding
+a visible heading to either pane.
+
+Each source row presents its semantic source name once and uses the full row
+for selection. Rows do not repeat a common SQL icon or a SQL-kind subtitle;
+the Forms and Saved SQL tabs distinguish source creation in the picker.
+Selecting an already selected source keeps it selected.
+
+The mobile source drawer, source picker, display picker, and inspector sheet
+share one Studio overlay state. Opening the source picker from the drawer
+closes the drawer in the same transition. Escape and Cancel close the picker
+without reopening the drawer, remove modal `inert` state, and restore focus to
+a visible control. Selecting a source from the drawer always closes it.
