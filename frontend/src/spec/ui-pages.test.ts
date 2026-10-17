@@ -515,7 +515,10 @@ describe("UI spec YAML registry", () => {
       "utf8",
     );
 
-    expect(studioContract).toContain("**Status: implemented.**");
+    expect(studioContract).toContain(
+      "**Status: implemented for the current prerelease model.**",
+    );
+    expect(studioContract).toContain("The next unreleased target is [ADR-025]");
     expect(studioContract.replaceAll(/\s+/g, " ")).toContain(
       "no EntryQuery is created",
     );
