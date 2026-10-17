@@ -30,8 +30,11 @@ export interface CompositionDataWorkspaceProps {
   selectedSourceId: string | null;
   /** Split mode's narrow side pane can collapse its source list on desktop. */
   collapsible?: boolean;
+  /** The mobile source drawer is coordinated by the Studio overlay owner. */
+  mobileDrawerOpen?: boolean;
+  onMobileDrawerOpenChange?: (open: boolean) => void;
   onSelectSource: (sourceDraftId: string) => void;
-  onAddSource: () => void;
+  onAddSource: (returnFocus?: () => HTMLElement | null) => void;
   onMoveSource: (sourceDraftId: string, direction: "up" | "down") => void;
   onRemoveSource: (sourceDraftId: string) => void;
   onInlineSql: (sourceDraftId: string, sql: string) => boolean;
@@ -65,11 +68,24 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
   const [structureActions, setStructureActions] = createSignal<
     readonly SQLWorkspaceAction[]
   >([]);
-  const [navigatorOpen, setNavigatorOpen] = createSignal(true);
+  const [desktopNavigatorOpen, setDesktopNavigatorOpen] = createSignal(true);
+  const [localMobileDrawerOpen, setLocalMobileDrawerOpen] = createSignal(false);
   const [narrowViewport, setNarrowViewport] = createSignal(false);
   const navigatorId = `${props.headingId}-source-navigator`;
   let hideNavigatorButton: HTMLButtonElement | undefined;
   let showNavigatorButton: HTMLButtonElement | undefined;
+  const mobileDrawerOpen = () =>
+    props.mobileDrawerOpen ?? localMobileDrawerOpen();
+  const setMobileDrawerOpen = (open: boolean) => {
+    props.onMobileDrawerOpenChange?.(open);
+    if (props.mobileDrawerOpen === undefined) setLocalMobileDrawerOpen(open);
+  };
+  const navigatorOpen = () =>
+    narrowViewport() ? mobileDrawerOpen() : desktopNavigatorOpen();
+  const setNavigatorOpen = (open: boolean) => {
+    if (narrowViewport()) setMobileDrawerOpen(open);
+    else setDesktopNavigatorOpen(open);
+  };
   const selectedSource = () =>
     props.draft.sources.find((source) =>
       source.draftId === props.selectedSourceId
@@ -137,7 +153,8 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
     const media = window.matchMedia("(max-width: 560px)");
     const syncViewport = () => {
       setNarrowViewport(media.matches);
-      setNavigatorOpen(!media.matches || props.selectedSourceId === null);
+      setDesktopNavigatorOpen(true);
+      setMobileDrawerOpen(media.matches && props.selectedSourceId === null);
     };
     syncViewport();
     if (media.matches && props.selectedSourceId !== null) {
@@ -208,14 +225,30 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
           sources={props.draft.sources}
           headingId={props.headingId}
           selectedId={props.selectedSourceId}
-          onSelect={props.onSelectSource}
+          onSelect={(sourceDraftId) => {
+            props.onSelectSource(sourceDraftId);
+            if (narrowViewport()) closeNavigator();
+          }}
           registerRow={props.registerSourceRow}
         />
         <div class="dataWorkspaceNavigatorFooter">
           <IconButton
             icon="plus"
             label={t("composition.studioAddSource")}
-            onClick={props.onAddSource}
+            onClick={() => {
+              const returnFocus = narrowViewport()
+                ? () => {
+                  const trigger = document.getElementById(
+                    `${props.headingId}-source-menu-button`,
+                  );
+                  return trigger instanceof HTMLElement ? trigger : null;
+                }
+                : () => document.activeElement instanceof HTMLElement
+                ? document.activeElement
+                : null;
+              if (narrowViewport()) setMobileDrawerOpen(false);
+              props.onAddSource(returnFocus);
+            }}
           />
           <button
             type="button"
@@ -281,6 +314,7 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
             <button
               class="dataWorkspaceSourceMenuButton"
               type="button"
+              id={`${props.headingId}-source-menu-button`}
               ref={showNavigatorButton}
               aria-label={t("composition.studioShowDataSources")}
               aria-expanded={navigatorOpen()}

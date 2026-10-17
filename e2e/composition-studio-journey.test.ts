@@ -1154,24 +1154,43 @@ test.describe("Composition Studio Journey", () => {
 
       // Data mode shows the seeded source in the Data workspace.
       await page.getByRole("radio", { name: "Data", exact: true }).click();
+      await expect(page.getByRole("radio", { name: "Data", exact: true }))
+        .toHaveAttribute("aria-checked", "true");
       await expect(
         page.getByRole("heading", { name: "Data", exact: true }),
-      ).toBeVisible();
+      ).toHaveCount(0);
       const dataTabs = page.getByRole("tablist", { name: "Data" });
       const showSources = page.getByRole("button", {
         name: /Show data sources/,
       });
       if (await showSources.isVisible()) await showSources.click();
-      const sourceItems = page.getByRole("dialog", { name: "Sources" })
-        .getByRole("listitem");
+      const sourceDrawer = page.getByRole("dialog", { name: "Sources" });
+      const sourceItems = sourceDrawer.getByRole("listitem");
       await expect(sourceItems).toHaveCount(1);
-      await expect(sourceItems.first()).toContainText("Saved SQL");
-      await page.getByRole("dialog", { name: "Sources" }).getByRole(
-        "button",
-        { name: "Hide data sources", exact: true },
-      ).click();
+      const sourceRow = sourceItems.first().getByRole("button", {
+        name: seed.savedSqlName,
+        exact: true,
+      });
+      await expect(sourceRow).toHaveText(seed.savedSqlName);
+      await expect(sourceRow.locator("svg")).toHaveCount(0);
+
+      await sourceDrawer.getByRole("button", {
+        name: "Add source",
+        exact: true,
+      }).click();
+      const sourcePicker = page.getByRole("dialog", {
+        name: "Choose a source",
+      });
+      await expect(sourcePicker).toBeVisible();
+      await expect(page.getByRole("dialog")).toHaveCount(1);
       await expect(page.getByRole("dialog", { name: "Sources" }))
         .toHaveCount(0);
+      await expect(page.locator("#app")).toHaveAttribute("inert", "");
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await expect(page.locator("#app")).not.toHaveAttribute("inert", "");
+      await expect(page.getByRole("button", { name: /Show data sources/ }))
+        .toBeFocused();
       await dataTabs.getByRole("tab", { name: "Variables", exact: true })
         .click();
       const defaultInput = page.getByLabel("Default for month_start");

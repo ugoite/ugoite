@@ -74,6 +74,7 @@ vi.mock("~/lib/ugoite-client", () => ({
     }),
   },
   sqlApi: {
+    list: vi.fn().mockResolvedValue([]),
     get: (...args: unknown[]) =>
       (sqlGetMock as (...call: unknown[]) => unknown)(...args),
     query: (...args: unknown[]) =>
@@ -429,6 +430,98 @@ describe("CompositionStudioMobile", () => {
     });
     expect(container.querySelector(".dataWorkspaceNavigator"))
       .toHaveAttribute("hidden");
+  });
+
+  it("closes the mobile source drawer before opening the source picker", async () => {
+    setViewportWidth(390);
+    const appRoot = document.createElement("div");
+    appRoot.id = "app";
+    document.body.append(appRoot);
+    renderStudio();
+    fireEvent.click(modeRadios().data);
+
+    const drawer = await screen.findByRole("dialog", { name: "Sources" });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Add source" }));
+
+    const picker = await screen.findByRole("dialog", { name: "Choose a source" });
+    expect(screen.getAllByRole("dialog")).toEqual([picker]);
+    expect(picker).toHaveAttribute("aria-modal", "true");
+    expect(appRoot).toHaveAttribute("inert");
+
+    fireEvent.keyDown(picker, { key: "Escape" });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(appRoot).not.toHaveAttribute("inert");
+    });
+    expect(screen.queryByRole("dialog", { name: "Sources" })).toBeNull();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Show data sources" }))
+        .toHaveFocus();
+    });
+    appRoot.remove();
+  });
+
+  it("keeps the selected source selected when its drawer row is activated again", async () => {
+    setViewportWidth(390);
+    renderStudio();
+    fireEvent.click(modeRadios().data);
+
+    const drawer = await screen.findByRole("dialog", { name: "Sources" });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Monthly totals" }));
+    expect(screen.queryByRole("dialog", { name: "Sources" })).toBeNull();
+    await screen.findByRole("region", { name: "Monthly totals" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Show data sources" }));
+    const selectedRow = within(
+      await screen.findByRole("dialog", { name: "Sources" }),
+    ).getByRole("button", { name: "Monthly totals" });
+    expect(selectedRow).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(selectedRow);
+
+    expect(screen.queryByRole("dialog", { name: "Sources" })).toBeNull();
+    await screen.findByRole("region", { name: "Monthly totals" });
+  });
+
+  it("returns focus to the canvas after choosing an existing Metric source", async () => {
+    setViewportWidth(390);
+    renderStudio();
+    fireEvent.click(
+      screen.getAllByRole("button", {
+        name: "Add to design",
+        exact: true,
+      })[0],
+    );
+
+    const palette = await screen.findByRole("dialog", {
+      name: "Add to design",
+      exact: true,
+    });
+    fireEvent.click(within(palette).getByRole("button", { name: "Data" }));
+    const displayPicker = await screen.findByRole("dialog", {
+      name: "Add data component",
+    });
+    fireEvent.click(within(displayPicker).getByRole("tab", { name: "Metric" }));
+    fireEvent.click(displayPicker.querySelector(".composition-source-browse")!);
+
+    const sourcePicker = await screen.findByRole("dialog", {
+      name: "Choose a source",
+    });
+    expect(screen.getAllByRole("dialog")).toEqual([sourcePicker]);
+    fireEvent.click(
+      await within(sourcePicker).findByRole("button", {
+        name: "Monthly totals",
+      }),
+    );
+
+    const returnedDisplayPicker = await screen.findByRole("dialog", {
+      name: "Add data component",
+    });
+    fireEvent.keyDown(returnedDisplayPicker, { key: "Escape" });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(document.querySelector(".designCanvas .designAdd"))
+        .toHaveFocus();
+    });
   });
 
   it("opens the sheet for a freshly inserted block on narrow viewports", async () => {

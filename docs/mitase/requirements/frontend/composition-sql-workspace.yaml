@@ -91,6 +91,33 @@ requirements:
           it closes. Drawer actions have visible focus and at least 44px
           targets. The primary Save action keeps visible text.
         governed_by: [POL-UI-002#rule.governance, POL-UI-005#rule.governance, POL-UI-007#rule.governance]
+      - id: composition-mode-context-singular
+        kind: quality
+        statement: >-
+          The selected Design or Data mode control is the only visible owner
+          of that mode name. Its content does not repeat the mode as a visible
+          heading. Data tabs remain associated with their panels through
+          accessible names, and Split gives both panes accessible names
+          without a visible pane heading.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
+      - id: composition-source-rows-show-name-once
+        kind: quality
+        statement: >-
+          A Composition source row presents its semantic source name once,
+          uses full-row selection, and has no common SQL icon or SQL-kind
+          subtitle. Activating the currently selected row preserves selection.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-006#rule.governance, POL-UI-007#rule.governance]
+      - id: composition-mobile-overlays-are-exclusive
+        kind: behavior
+        statement: >-
+          The mobile source drawer, source picker, display picker, and
+          Inspector sheet are mutually exclusive Studio overlays. Opening the
+          source picker from the drawer closes the drawer in the same
+          transition. Escape or Cancel closes the picker without reopening
+          the drawer, clears modal inert state, and restores focus to a
+          visible control. Selecting a source from the drawer always closes
+          it.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
       - id: composition-history-hides-revision-identifiers
         kind: behavior
         statement: >-
@@ -150,6 +177,51 @@ requirements:
                 criterion: REQ-FE-079#criterion.composition-mobile-workspace-accessibility
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "shows an accessible mobile source drawer and restores focus when it closes" } }
+          - id: composition-mode-context
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: "separates Data sources and Variables into tabs in Data mode" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-mode-context-singular
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "separates Data sources and Variables into tabs in Data mode" } }
+          - id: composition-source-row-name
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: "shows each SQL source name once in the navigator" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-source-rows-show-name-once
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "shows each SQL source name once in the navigator" } }
+          - id: composition-source-row-idempotent
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: "keeps the selected source selected when its drawer row is activated again" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-source-rows-show-name-once
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "keeps the selected source selected when its drawer row is activated again" } }
+          - id: composition-mobile-overlay-transition
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: "closes the mobile source drawer before opening the source picker" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-mobile-overlays-are-exclusive
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "closes the mobile source drawer before opening the source picker" } }
+          - id: composition-display-picker-focus-return
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: "returns focus to the canvas after choosing an existing Metric source" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-mobile-overlays-are-exclusive
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "returns focus to the canvas after choosing an existing Metric source" } }
           - id: metric-result-rendering
             adapter: typescript
             path: frontend/src/components/CompositionRenderer.test.tsx

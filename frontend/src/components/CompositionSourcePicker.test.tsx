@@ -153,7 +153,10 @@ describe("CompositionSourcePicker", () => {
     const dialog = await screen.findByRole("dialog", { name: "Choose a source" });
     expect(await within(dialog).findByRole("heading", { name: "In this composition" }))
       .toBeInTheDocument();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Expenses, SQL" }));
+    const sourceRow = within(dialog).getByRole("button", { name: "Expenses" });
+    expect(sourceRow).toHaveTextContent(/^Expenses$/);
+    expect(sourceRow.querySelector(".rowListSecondary")).toBeNull();
+    fireEvent.click(sourceRow);
     expect(onSelectExisting).toHaveBeenCalledWith("draft-source-1");
     expect(dialog).not.toHaveTextContent("draft-source-1");
   });

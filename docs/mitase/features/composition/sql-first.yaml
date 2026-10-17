@@ -185,6 +185,8 @@ features:
                 criterion: REQ-FE-079#criterion.form-selection-creates-inline-sql
               - kind: satisfies
                 criterion: REQ-FE-079#criterion.composition-mobile-workspace-accessibility
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-source-rows-show-name-once
           - id: composition-result-renderer
             adapter: typescript
             path: frontend/src/components/CompositionRenderer.tsx
@@ -199,6 +201,12 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-079#criterion.composition-structure-first-steady-state
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-mode-context-singular
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-source-rows-show-name-once
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-mobile-overlays-are-exclusive
           - id: composition-revision-route
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx

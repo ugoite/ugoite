@@ -586,7 +586,9 @@ describe("CompositionStudioSync", () => {
 
     // Design renders the finished shape only: canvas plus inspector, no
     // Data workspace, no Variables, no Preview section.
-    expect(screen.getByRole("heading", { name: "Design" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Design" }))
+      .toHaveAttribute("aria-checked", "true");
+    expect(screen.queryByRole("heading", { name: "Design" })).toBeNull();
     expect(topSectionCount()).toBe(1);
     expect(
       requireBlockButton("disp-1"),
@@ -602,7 +604,8 @@ describe("CompositionStudioSync", () => {
     // Data renders only the active fetch-definition panel. Variables and
     // Sources are separate tabs so the source editor stays the initial focus.
     fireEvent.click(modes.data);
-    expect(screen.getByRole("heading", { name: "Data" })).toBeInTheDocument();
+    expect(modes.data).toHaveAttribute("aria-checked", "true");
+    expect(screen.queryByRole("heading", { name: "Data" })).toBeNull();
     const dataTabs = screen.getByRole("tablist", { name: "Data" });
     expect(within(dataTabs).getAllByRole("tab").map((tab) => tab.textContent))
       .toEqual(["Sources", "Variables"]);
@@ -622,7 +625,8 @@ describe("CompositionStudioSync", () => {
       screen.queryByRole("heading", { name: "Variables" }),
     ).toBeNull();
     fireEvent.click(within(dataTabs).getByRole("tab", { name: "Variables" }));
-    expect(screen.getByRole("heading", { name: "Variables" }))
+    expect(screen.queryByRole("heading", { name: "Variables" })).toBeNull();
+    expect(screen.getByRole("tabpanel", { name: "Variables" }))
       .toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Monthly totals" }),
@@ -639,8 +643,12 @@ describe("CompositionStudioSync", () => {
     // Split pairs the canvas with the Data pane and nothing else:
     // Variables edit in Data mode.
     fireEvent.click(modes.split);
-    expect(screen.getByRole("heading", { name: "Design" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Data" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Split" }))
+      .toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("region", { name: "Design" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Data" }))
+      .toBeInTheDocument();
     expect(topSectionCount()).toBe(1);
     expect(
       requireBlockButton("disp-1"),
@@ -658,11 +666,9 @@ describe("CompositionStudioSync", () => {
     const { container } = renderStudio(createEmptyDraft("Blank"));
 
     // One structural add control, no prose paragraphs.
-    expect(
-      screen.getAllByRole("heading", { level: 2 }).map((heading) =>
-        heading.textContent
-      ),
-    ).toEqual(["Design"]);
+    expect(screen.queryAllByRole("heading", { level: 2 })).toHaveLength(0);
+    expect(screen.getByRole("region", { name: "Design" }))
+      .toBeInTheDocument();
     expect(container.querySelectorAll("p")).toHaveLength(0);
     expect(
       screen.getAllByRole("button", { name: "Add to design" }),

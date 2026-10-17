@@ -177,6 +177,20 @@ describe("CompositionDataWorkspace", () => {
     expect(props.onRetry).toHaveBeenCalledWith("src-1");
   });
 
+  it("shows each SQL source name once in the navigator", () => {
+    render(() => (
+      <>
+        <h2 id="data-heading">Data</h2>
+        <CompositionDataWorkspace {...propsFor(inlineDraft())} />
+      </>
+    ));
+
+    const row = screen.getByRole("button", { name: "Expenses" });
+    expect(row).toHaveTextContent(/^Expenses$/);
+    expect(row.querySelector(".rowListSecondary")).toBeNull();
+    expect(row.querySelector("svg")).toBeNull();
+  });
+
   it("keeps Saved SQL read-only at its exact revision and links to explicit editing", () => {
     const draft = savedSqlDraft();
     const planSource: CompositionResolvedSource = {
@@ -248,5 +262,37 @@ describe("CompositionDataWorkspace", () => {
     await waitFor(() => expect(reopen).toHaveFocus());
     fireEvent.click(reopen);
     expect(screen.getByRole("dialog", { name: "Data" })).toBeInTheDocument();
+  });
+
+  it("returns source picker focus to the visible source menu after drawer Add", async () => {
+    window.matchMedia = ((query: string) => ({
+      matches: query === "(max-width: 560px)",
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    })) as typeof window.matchMedia;
+    const props = propsFor(inlineDraft(), { selectedSourceId: null });
+    render(() => (
+      <>
+        <h2 id="data-heading">Data</h2>
+        <CompositionDataWorkspace {...props} />
+      </>
+    ));
+
+    const drawer = screen.getByRole("dialog", { name: "Data" });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Add source" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Data" })).toBeNull();
+    });
+
+    const trigger = screen.getByRole("button", { name: "Show data sources" });
+    const returnFocus = vi.mocked(props.onAddSource).mock.calls[0]?.[0];
+    expect(returnFocus?.()).toBe(trigger);
+    returnFocus?.()?.focus();
+    expect(trigger).toHaveFocus();
   });
 });
