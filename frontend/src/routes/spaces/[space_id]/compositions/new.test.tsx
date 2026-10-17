@@ -276,10 +276,10 @@ describe("Composition studio shell", () => {
     // the Data workspace, and the Preview section never render here. The
     // legacy Display section is gone; the canvas owns display editing.
     const modes = screen.getByRole("radiogroup", { name: "Studio mode" });
-    const headings = screen.getAllByRole("heading", { level: 2 }).map(
-      (heading) => heading.textContent,
-    );
-    expect(headings).toEqual(["Design"]);
+    expect(screen.getByRole("region", { name: "Design" }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 2 }))
+      .not.toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { name: "Display" }),
     ).not.toBeInTheDocument();
@@ -337,11 +337,10 @@ describe("Composition studio shell", () => {
     // Data mode lists existing sources without a competing source action.
     // Variables are available before a source exists.
     fireEvent.click(within(modes).getByRole("radio", { name: "Data" }));
-    expect(
-      screen.getAllByRole("heading", { level: 2 }).map((heading) =>
-        heading.textContent
-      ),
-    ).toEqual(["Data"]);
+    expect(screen.getByRole("region", { name: "Data" }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 2 }))
+      .not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Sources" }))
       .toHaveAttribute("aria-selected", "true");
     expect(screen.queryByRole("tab", { name: "Tags" })).not
@@ -365,8 +364,12 @@ describe("Composition studio shell", () => {
     expect(screen.getByRole("tab", { name: "Variables" }))
       .toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "Variables" }));
-    expect(screen.getByRole("heading", { name: "Variables" }))
-      .toBeInTheDocument();
+    const variablesPanel = screen.getByRole("tabpanel", {
+      name: "Variables",
+    });
+    expect(within(variablesPanel).queryByRole("heading", {
+      name: "Variables",
+    })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Variable ID"))
       .toBeInTheDocument();
     // Data mode never renders the canvas or the removed Preview section.
@@ -430,7 +433,7 @@ describe("Composition studio shell", () => {
     expect(container.querySelector("details")).toBeNull();
     expect(container.textContent).not.toContain(FORM_ID);
     fireEvent.click(screen.getByRole("button", { name: "Tasks" }));
-    expect(container.querySelector(".dataWorkspaceEditor")).toBeNull();
+    expect(container.querySelector(".dataWorkspaceEditor")).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Tasks" }));
     expect(container.querySelector(".dataWorkspaceEditor")).not.toBeNull();
     expect(container.textContent).not.toContain(FORM_ID);
@@ -794,9 +797,7 @@ describe("Composition studio shell", () => {
     await addSourceViaPicker("Monthly", "Saved SQL");
 
     fireEvent.click(screen.getByRole("tab", { name: "Variables" }));
-    const variables = screen
-      .getByRole("heading", { name: "Variables" })
-      .closest("section")!;
+    const variables = screen.getByRole("tabpanel", { name: "Variables" });
     expect(await within(variables).findByText("month")).toBeInTheDocument();
     expect(within(variables).queryByText("Add a variable to begin."))
       .not.toBeInTheDocument();

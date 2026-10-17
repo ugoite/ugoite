@@ -240,11 +240,10 @@ describe("Composition edit route", () => {
     );
     expect(back.parentElement?.firstElementChild).toBe(back);
     expect(screen.getAllByRole("button", { name: "Save" })).toHaveLength(1);
-    expect(
-      screen.getAllByRole("heading", { level: 2 }).map((heading) =>
-        heading.textContent
-      ),
-    ).toEqual(["Design"]);
+    expect(screen.getByRole("region", { name: "Design" }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 2 }))
+      .not.toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { name: "Display" }),
     ).not.toBeInTheDocument();
