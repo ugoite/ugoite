@@ -416,9 +416,13 @@ async function addStudioText(page: Page, variableId: string): Promise<void> {
   });
   await palette.getByRole("button", { name: "Text", exact: true }).click();
   await page.getByRole("button", { name: "Select Text", exact: true }).click();
-  await page.getByLabel("Content", { exact: true }).selectOption({
+  await page.getByRole("button", { name: "Use variable", exact: true }).click();
+  await page.getByLabel("Variable", { exact: true }).selectOption({
     label: variableId,
   });
+  await expect(
+    page.getByRole("button", { name: "Edit text", exact: true }),
+  ).toBeVisible();
 }
 
 async function openToolFromHome(
@@ -1198,7 +1202,9 @@ test.describe("Composition Studio Journey", () => {
       const defaultInput = page.getByLabel("Default for month_start");
       await expect(defaultInput).toHaveValue(seed.monthStart);
       const inputFontSize = Number.parseFloat(
-        await defaultInput.evaluate((element) => getComputedStyle(element).fontSize),
+        await defaultInput.evaluate((element) =>
+          getComputedStyle(element).fontSize
+        ),
       );
       expect(inputFontSize).toBeGreaterThanOrEqual(16);
     } finally {
