@@ -221,6 +221,7 @@ describe("UI spec YAML registry", () => {
         activation: "full-row-link",
         primary_label: "name-then-slug-then-localized-untitled",
         secondary_action: "settings-icon-only-with-localized-accessible-name",
+        secondary_action_destination: "/spaces/{space_uid}/settings",
       },
       identity: {
         displays_space_uid: false,
