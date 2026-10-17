@@ -82,9 +82,9 @@
     },
     {
       "id": "A10",
-      "requirement": "Mobile: test 320, 375, and 390px plus effective 320px at 200% zoom; no page horizontal overflow; only tables scroll internally; input text is at least 16px. Verify iPhone Safari separately.",
+      "requirement": "Composition Studio: test 320, 375, 390, 760, and 1280px across available modes; no page horizontal overflow; mode targets are at least 44px; keyboard focus remains visible; touch selection, light/dark mode, internal table scrolling, and 16px input text work. Verify actual 200% browser zoom and iPhone Safari separately.",
       "selectors": [
-        { "path": "e2e/composition-studio-journey.test.ts", "kind": "test", "name": "Composition Studio inspector stays usable at a 390px viewport" },
+        { "path": "e2e/composition-studio-journey.test.ts", "kind": "test", "name": "Composition Studio responsive modes fit target viewports and support keyboard and touch" },
         { "path": "frontend/src/components/CompositionStudioMobile.test.tsx", "kind": "file" },
         { "path": "frontend/src/app.css", "kind": "file" }
       ],

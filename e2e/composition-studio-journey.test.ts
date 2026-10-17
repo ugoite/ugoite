@@ -1031,11 +1031,10 @@ test.describe("Composition Studio Journey", () => {
     }
   });
 
-  test("Composition Studio inspector stays usable at a 390px viewport", async ({ browser, context, request }) => {
-    // Story 5 (mobile Inspector), assertion-only: the seeded studio opens at
-    // 390px, a block tap renders the existing inspector content in the
-    // bottom sheet, Escape dismisses it, and Data mode shows the source.
-    // Seeded through the API so this leg never depends on the build test.
+  test("Composition Studio responsive modes fit target viewports and support keyboard and touch", async ({ browser, context, request }) => {
+    // Assertion-only: a seeded block opens in the 390px inspector sheet,
+    // Escape dismisses it, source selection works by touch, and Design/Data/
+    // Split fit their supported widths with keyboard focus in both color modes.
     test.setTimeout(120_000);
     const storageState = await context.storageState();
     const suffix = crypto.randomUUID().slice(0, 8);
@@ -1075,6 +1074,7 @@ test.describe("Composition Studio Journey", () => {
     const mobileContext = await browser.newContext({
       storageState,
       viewport: { width: 390, height: 844 },
+      hasTouch: true,
     });
     try {
       const page = await mobileContext.newPage();
@@ -1102,18 +1102,6 @@ test.describe("Composition Studio Journey", () => {
       // Escape dismisses the sheet and clears the transient selection.
       await page.keyboard.press("Escape");
       await expect(page.getByRole("dialog")).toHaveCount(0);
-
-      // A 320 CSS-pixel viewport represents the effective content width at
-      // 200% browser zoom. Browser zoom itself remains a manual device check.
-      for (const width of [320, 375, 390]) {
-        await page.setViewportSize({ width, height: 844 });
-        const pageWidth = await page.evaluate(() => ({
-          client: document.documentElement.clientWidth,
-          content: document.documentElement.scrollWidth,
-        }));
-        expect(pageWidth.content).toBeLessThanOrEqual(pageWidth.client);
-      }
-      await page.setViewportSize({ width: 390, height: 844 });
 
       // The unified picker stays viewport-capped at 390px and keeps a
       // compatible source selected as the type changes.
@@ -1165,7 +1153,11 @@ test.describe("Composition Studio Journey", () => {
       const showSources = page.getByRole("button", {
         name: /Show data sources/,
       });
-      if (await showSources.isVisible()) await showSources.click();
+      const sourceMenuHeight = await showSources.evaluate((element) =>
+        element.getBoundingClientRect().height
+      );
+      expect(sourceMenuHeight).toBeGreaterThanOrEqual(44);
+      if (await showSources.isVisible()) await showSources.tap();
       const sourceDrawer = page.getByRole("dialog", { name: "Sources" });
       const sourceItems = sourceDrawer.getByRole("listitem");
       await expect(sourceItems).toHaveCount(1);
@@ -1175,11 +1167,24 @@ test.describe("Composition Studio Journey", () => {
       });
       await expect(sourceRow).toHaveText(seed.savedSqlName);
       await expect(sourceRow.locator("svg")).toHaveCount(0);
+      const sourceRowHeight = await sourceRow.evaluate((element) =>
+        element.getBoundingClientRect().height
+      );
+      expect(sourceRowHeight).toBeGreaterThanOrEqual(44);
+      await sourceRow.tap();
+      await expect(sourceDrawer).toHaveCount(0);
+      await showSources.tap();
+      await expect(sourceDrawer).toBeVisible();
 
-      await sourceDrawer.getByRole("button", {
+      const addSource = sourceDrawer.getByRole("button", {
         name: "Add source",
         exact: true,
-      }).click();
+      });
+      const addSourceHeight = await addSource.evaluate((element) =>
+        element.getBoundingClientRect().height
+      );
+      expect(addSourceHeight).toBeGreaterThanOrEqual(44);
+      await addSource.tap();
       const sourcePicker = page.getByRole("dialog", {
         name: "Choose a source",
       });
@@ -1201,6 +1206,71 @@ test.describe("Composition Studio Journey", () => {
         await defaultInput.evaluate((element) => getComputedStyle(element).fontSize),
       );
       expect(inputFontSize).toBeGreaterThanOrEqual(16);
+
+      // 320px represents the effective content width at 200% browser zoom;
+      // actual browser zoom and iPhone Safari remain manual device evidence.
+      // Exercise every Studio arrangement at each responsive breakpoint.
+      for (const width of [320, 375, 390, 760, 1280]) {
+        await page.setViewportSize({ width, height: 844 });
+        const modes = width > 760
+          ? ["Design", "Data", "Split"]
+          : ["Design", "Data"];
+        for (const mode of modes) {
+          const option = page.getByRole("radio", { name: mode, exact: true });
+          await option.click();
+          const pageWidth = await page.evaluate(() => ({
+            client: document.documentElement.clientWidth,
+            content: document.documentElement.scrollWidth,
+          }));
+          expect(pageWidth.content).toBeLessThanOrEqual(pageWidth.client);
+          const modeOptions = page.getByRole("radiogroup", {
+            name: "Studio mode",
+          })
+            .getByRole("radio");
+          for (const modeOption of await modeOptions.all()) {
+            if (!(await modeOption.isVisible())) continue;
+            const height = await modeOption.evaluate((element) =>
+              element.getBoundingClientRect().height
+            );
+            expect(height).toBeGreaterThanOrEqual(44);
+          }
+          await expect(page.getByRole("dialog")).toHaveCount(0);
+          await expect(page.locator("#app")).not.toHaveAttribute("inert", "");
+        }
+      }
+
+      const surfaceColors = new Map<string, string>();
+      for (const colorScheme of ["light", "dark"] as const) {
+        await page.emulateMedia({ colorScheme });
+        await expect.poll(async () =>
+          page.locator("html").getAttribute("data-color-mode")
+        ).toBe(colorScheme);
+        const modeOption = page.getByRole("radio", {
+          name: "Design",
+          exact: true,
+        });
+        await modeOption.focus();
+        await page.keyboard.press("Tab");
+        await page.keyboard.press("Shift+Tab");
+        const focusStyle = await modeOption.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return {
+            visible: element.matches(":focus-visible"),
+            outlineStyle: style.outlineStyle,
+            outlineWidth: Number.parseFloat(style.outlineWidth),
+          };
+        });
+        expect(focusStyle.visible).toBe(true);
+        expect(focusStyle.outlineStyle).toBe("solid");
+        expect(focusStyle.outlineWidth).toBeGreaterThanOrEqual(2);
+        surfaceColors.set(
+          colorScheme,
+          await page.locator(".studioMode").evaluate((element) =>
+            getComputedStyle(element).backgroundColor
+          ),
+        );
+      }
+      expect(surfaceColors.get("light")).not.toBe(surfaceColors.get("dark"));
     } finally {
       await mobileContext.close();
     }
