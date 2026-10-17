@@ -535,7 +535,7 @@ describe("Composition studio shell", () => {
     const palette = screen.getByRole("dialog", { name: "Add to design" });
     fireEvent.click(within(palette).getByRole("button", { name: "Text" }));
     fireEvent.click(screen.getByRole("button", { name: "Select Text" }));
-    fireEvent.input(screen.getByRole("textbox", { name: "Text" }), {
+    fireEvent.input(screen.getByRole("textbox", { name: "Text body" }), {
       target: { value: "Summary" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Remove Summary" }));

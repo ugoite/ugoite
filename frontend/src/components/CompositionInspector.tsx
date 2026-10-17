@@ -20,6 +20,8 @@ export type { CompositionInspectorDataJump };
 
 export interface CompositionInspectorProps {
   draft: CompositionDraft;
+  /** Session-scoped literal cache shared across responsive inspector mounts. */
+  textLiteralCache?: Map<string, string>;
   /** Transient canvas selection; the inspector renders one block only. */
   selectedId: string | null;
   /** Single draft mutation channel shared with the canvas. */
@@ -56,6 +58,7 @@ const resolveSelection = (
  */
 export function CompositionInspector(props: CompositionInspectorProps) {
   const selection = () => resolveSelection(props.draft, props.selectedId);
+  const textLiteralCache = props.textLiteralCache ?? new Map<string, string>();
 
   const apply: InspectorApply = (result) => {
     if (result.ok) props.onDraftChange(result.draft);
@@ -74,6 +77,7 @@ export function CompositionInspector(props: CompositionInspectorProps) {
               onRemove={props.onRemove}
               onDataJump={props.onDataJump}
               onChangeTableSource={props.onChangeTableSource}
+              textLiteralCache={textLiteralCache}
             />
           }
         >
@@ -114,6 +118,7 @@ function ComponentInspector(props: {
   onRemove: () => void;
   onDataJump: (jump: CompositionInspectorDataJump) => void;
   onChangeTableSource: (displayId: string) => void;
+  textLiteralCache: Map<string, string>;
 }) {
   const display = () => props.display;
   const apply: InspectorApply = (result) => {
@@ -167,6 +172,7 @@ function ComponentInspector(props: {
         display={display()}
         apply={apply}
         actions={removeAction()}
+        textLiteralCache={props.textLiteralCache}
       />
     </Show>
   );
