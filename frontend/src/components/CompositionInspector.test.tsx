@@ -114,6 +114,15 @@ function SelectableTextHarness(props: { initial: CompositionDraft }) {
       </button>
       <button
         type="button"
+        onClick={() => setSelectedId(props.initial.inputs[0].draftId)}
+      >
+        Select Input
+      </button>
+      <button type="button" onClick={() => setSelectedId("disp-3")}>
+        Select first Text
+      </button>
+      <button
+        type="button"
         onClick={() => {
           const result = setTextContent(draft(), "disp-3", "Updated summary");
           if (result.ok) setDraft(result.draft);
@@ -236,6 +245,21 @@ describe("CompositionInspector SQL-first fields", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit text" }));
 
     expect(screen.getByLabelText("Text body")).toHaveValue("Revenue");
+  });
+
+  it("restores the literal after switching to another inspector type", () => {
+    render(() => <SelectableTextHarness initial={seedDraft(true)} />);
+    fireEvent.click(screen.getByRole("button", { name: "Use variable" }));
+    fireEvent.change(screen.getByLabelText("Variable"), {
+      target: { value: "report_title" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Select Input" }));
+    expect(screen.getByRole("heading", { name: "month" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Select first Text" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit text" }));
+
+    expect(screen.getByLabelText("Text body")).toHaveValue("Summary");
   });
 
   it("restores a literal updated outside the Text Inspector", () => {

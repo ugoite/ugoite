@@ -10,6 +10,7 @@ import { t } from "~/lib/i18n";
 
 export interface CompositionInspectorSheetProps {
   draft: CompositionDraft;
+  textLiteralCache?: Map<string, string>;
   /** Transient canvas selection; the sheet renders the block only. */
   selectedId: string | null;
   /** Single draft mutation channel shared with the canvas. */
@@ -100,6 +101,7 @@ export function CompositionInspectorSheet(
           <Show when={props.selectedId}>
             <CompositionInspector
               draft={props.draft}
+              textLiteralCache={props.textLiteralCache}
               selectedId={props.selectedId}
               onDraftChange={props.onDraftChange}
               onRemove={props.onRemove}

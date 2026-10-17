@@ -137,6 +137,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const spaceId = () => props.spaceId;
+  const textLiteralCache = new Map<string, string>();
 
   const [draft, setDraft] = createSignal<CompositionDraft>(
     props.initialDraft ?? createEmptyDraft(),
@@ -1225,6 +1226,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
         <Show when={!sheetViewport()}>
           <CompositionInspector
             draft={draft()}
+            textLiteralCache={textLiteralCache}
             selectedId={selectedId()}
             onDraftChange={setDraft}
             onRemove={removeSelectedBlock}
@@ -1237,6 +1239,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
         {(activeId) => (
           <CompositionInspectorSheet
             draft={draft()}
+            textLiteralCache={textLiteralCache}
             selectedId={activeId()}
             onDraftChange={setDraft}
             onRemove={removeSelectedBlock}

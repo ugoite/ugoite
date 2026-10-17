@@ -43,12 +43,12 @@ export function TextInspector(props: {
   draft: CompositionDraft;
   display: DraftDisplay;
   apply: InspectorApply;
+  textLiteralCache: Map<string, string>;
   actions?: JSX.Element;
 }) {
   const text = () => props.display.kind === "text" ? props.display : undefined;
   const stringVariables = () =>
     props.draft.variables.filter((item) => item.type === "string");
-  const lastLiterals = new Map<string, string>();
   const [choosingVariable, setChoosingVariable] = createSignal(false);
   const [focusTarget, setFocusTarget] = createSignal<
     "variable" | "action" | "body" | undefined
@@ -89,7 +89,7 @@ export function TextInspector(props: {
           createEffect(() => {
             const current = entry();
             if (current.content.kind === "literal") {
-              lastLiterals.set(current.draftId, current.content.text);
+              props.textLiteralCache.set(current.draftId, current.content.text);
             }
             bodyText();
             queueMicrotask(resizeBody);
@@ -123,7 +123,7 @@ export function TextInspector(props: {
                     rows="1"
                     value={bodyText()}
                     onInput={(event) => {
-                      lastLiterals.set(
+                      props.textLiteralCache.set(
                         entry().draftId,
                         event.currentTarget.value,
                       );
@@ -204,7 +204,7 @@ export function TextInspector(props: {
                             setTextContent(
                               props.draft,
                               entry().draftId,
-                              lastLiterals.get(entry().draftId) ?? "",
+                              props.textLiteralCache.get(entry().draftId) ?? "",
                             ),
                           );
                           setChoosingVariable(false);
