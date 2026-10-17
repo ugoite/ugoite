@@ -14,6 +14,7 @@ import {
   addTableDisplay,
   addTextDisplay,
   addVariable,
+  setTextContent,
   type CompositionDraft,
   createEmptyDraft,
 } from "~/lib/composition-draft";
@@ -26,7 +27,10 @@ const harnessCalls = {
   remove: 0,
 };
 
-const seedDraft = (withStringVariable = false): CompositionDraft => {
+const seedDraft = (
+  withStringVariable = false,
+  withSecondText = false,
+): CompositionDraft => {
   let draft = createEmptyDraft("Studio");
   draft = addSavedSqlSource(draft, {
     entryId: "sql-1",
@@ -69,6 +73,14 @@ const seedDraft = (withStringVariable = false): CompositionDraft => {
   const text = addTextDisplay(draft, { text: "Summary", style: "heading" });
   if (!text.ok) throw new Error("expected text block");
   draft = text.draft;
+  if (withSecondText) {
+    const secondText = addTextDisplay(draft, {
+      text: "Revenue",
+      style: "body",
+    });
+    if (!secondText.ok) throw new Error("expected second text block");
+    draft = secondText.draft;
+  }
   const input = addInputComponent(draft, "month");
   if (!input.ok) throw new Error("expected variable placement");
   return input.draft;
@@ -89,6 +101,39 @@ function Harness(props: { initial: CompositionDraft; selectedId: string }) {
       onChangeTableSource={(displayId) =>
         harnessCalls.changeSource.push(displayId)}
     />
+  );
+}
+
+function SelectableTextHarness(props: { initial: CompositionDraft }) {
+  const [draft, setDraft] = createSignal(props.initial);
+  const [selectedId, setSelectedId] = createSignal("disp-3");
+  return (
+    <>
+      <button type="button" onClick={() => setSelectedId("disp-4")}>
+        Select second Text
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          const result = setTextContent(draft(), "disp-3", "Updated summary");
+          if (result.ok) setDraft(result.draft);
+        }}
+      >
+        Update text externally
+      </button>
+      <CompositionInspector
+        draft={draft()}
+        selectedId={selectedId()}
+        onDraftChange={(next) => {
+          harnessCalls.draft.push(next);
+          setDraft(next);
+        }}
+        onRemove={() => harnessCalls.remove++}
+        onDataJump={(jump) => harnessCalls.jump.push(jump)}
+        onChangeTableSource={(displayId) =>
+          harnessCalls.changeSource.push(displayId)}
+      />
+    </>
   );
 }
 
@@ -177,6 +222,35 @@ describe("CompositionInspector SQL-first fields", () => {
       kind: "text",
       content: { kind: "literal", text: "Summary" },
     });
+  });
+
+  it("restores the selected Text block's own literal after switching blocks", () => {
+    render(() => <SelectableTextHarness initial={seedDraft(true, true)} />);
+    fireEvent.click(screen.getByRole("button", { name: "Select second Text" }));
+    expect(screen.getByLabelText("Text body")).toHaveValue("Revenue");
+
+    fireEvent.click(screen.getByRole("button", { name: "Use variable" }));
+    fireEvent.change(screen.getByLabelText("Variable"), {
+      target: { value: "report_title" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Edit text" }));
+
+    expect(screen.getByLabelText("Text body")).toHaveValue("Revenue");
+  });
+
+  it("restores a literal updated outside the Text Inspector", () => {
+    render(() => <SelectableTextHarness initial={seedDraft(true)} />);
+    fireEvent.click(screen.getByRole("button", { name: "Update text externally" }));
+    expect(screen.getByLabelText("Text body"))
+      .toHaveValue("Updated summary");
+
+    fireEvent.click(screen.getByRole("button", { name: "Use variable" }));
+    fireEvent.change(screen.getByLabelText("Variable"), {
+      target: { value: "report_title" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Edit text" }));
+
+    expect(screen.getByLabelText("Text body")).toHaveValue("Updated summary");
   });
 
   it("presents the variable ID for an Input and does not persist an Input label", () => {

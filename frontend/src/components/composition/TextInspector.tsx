@@ -48,6 +48,7 @@ export function TextInspector(props: {
   const text = () => props.display.kind === "text" ? props.display : undefined;
   const stringVariables = () =>
     props.draft.variables.filter((item) => item.type === "string");
+  const lastLiterals = new Map<string, string>();
   const [choosingVariable, setChoosingVariable] = createSignal(false);
   const [focusTarget, setFocusTarget] = createSignal<
     "variable" | "action" | "body" | undefined
@@ -84,9 +85,12 @@ export function TextInspector(props: {
           const styleId = `studio-inspector-style-${entry().draftId}`;
           const bodyText = () =>
             entry().content.kind === "literal" ? entry().content.text : "";
-          let lastLiteral = bodyText();
 
           createEffect(() => {
+            const current = entry();
+            if (current.content.kind === "literal") {
+              lastLiterals.set(current.draftId, current.content.text);
+            }
             bodyText();
             queueMicrotask(resizeBody);
           });
@@ -119,7 +123,10 @@ export function TextInspector(props: {
                     rows="1"
                     value={bodyText()}
                     onInput={(event) => {
-                      lastLiteral = event.currentTarget.value;
+                      lastLiterals.set(
+                        entry().draftId,
+                        event.currentTarget.value,
+                      );
                       resizeBody();
                       props.apply(
                         setTextContent(
@@ -197,7 +204,7 @@ export function TextInspector(props: {
                             setTextContent(
                               props.draft,
                               entry().draftId,
-                              lastLiteral,
+                              lastLiterals.get(entry().draftId) ?? "",
                             ),
                           );
                           setChoosingVariable(false);
