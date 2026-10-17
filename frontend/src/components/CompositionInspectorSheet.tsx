@@ -16,6 +16,7 @@ export interface CompositionInspectorSheetProps {
   onDraftChange: (draft: CompositionDraft) => void;
   onRemove: () => void;
   onDataJump: (jump: CompositionInspectorDataJump) => void;
+  onChangeTableSource: (displayId: string) => void;
   onClose: () => void;
 }
 
@@ -103,6 +104,7 @@ export function CompositionInspectorSheet(
               onDraftChange={props.onDraftChange}
               onRemove={props.onRemove}
               onDataJump={props.onDataJump}
+              onChangeTableSource={props.onChangeTableSource}
             />
           </Show>
         </div>

@@ -27,6 +27,7 @@ export interface CompositionInspectorProps {
   /** Remove the selected display or Input component. */
   onRemove: () => void;
   onDataJump: (jump: CompositionInspectorDataJump) => void;
+  onChangeTableSource: (displayId: string) => void;
 }
 
 type InspectorSelection =
@@ -72,6 +73,7 @@ export function CompositionInspector(props: CompositionInspectorProps) {
               onDraftChange={props.onDraftChange}
               onRemove={props.onRemove}
               onDataJump={props.onDataJump}
+              onChangeTableSource={props.onChangeTableSource}
             />
           }
         >
@@ -111,6 +113,7 @@ function ComponentInspector(props: {
   onDraftChange: (draft: CompositionDraft) => void;
   onRemove: () => void;
   onDataJump: (jump: CompositionInspectorDataJump) => void;
+  onChangeTableSource: (displayId: string) => void;
 }) {
   const display = () => props.display;
   const apply: InspectorApply = (result) => {
@@ -143,9 +146,9 @@ function ComponentInspector(props: {
             <TableInspector
               draft={props.draft}
               display={display()}
-              apply={apply}
               actions={removeAction()}
               onDataJump={props.onDataJump}
+              onChangeSource={props.onChangeTableSource}
             />
           }
         >

@@ -207,6 +207,16 @@ features:
                 criterion: REQ-FE-079#criterion.composition-source-rows-show-name-once
               - kind: satisfies
                 criterion: REQ-FE-079#criterion.composition-mobile-overlays-are-exclusive
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-insertion-completes-before-edit
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-table-source-change-is-explicit
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-mode-context-singular
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-source-rows-show-name-once
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-mobile-overlays-are-exclusive
           - id: composition-revision-route
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx

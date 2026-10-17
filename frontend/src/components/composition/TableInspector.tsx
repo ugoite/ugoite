@@ -2,15 +2,13 @@ import { Show } from "solid-js";
 import type { JSX } from "solid-js";
 import {
   type CompositionInspectorDataJump,
-  type InspectorApply,
   InspectorDataJumpButton,
   InspectorShell,
-  InspectorSourceField,
 } from "~/components/composition/InspectorFields";
+import { UiIcon } from "~/components/UiIcon";
 import {
   type CompositionDraft,
   type DraftDisplay,
-  setTableSource,
 } from "~/lib/composition-draft";
 import { t } from "~/lib/i18n";
 
@@ -22,8 +20,8 @@ import { t } from "~/lib/i18n";
 export function TableInspector(props: {
   draft: CompositionDraft;
   display: DraftDisplay;
-  apply: InspectorApply;
   onDataJump: (jump: CompositionInspectorDataJump) => void;
+  onChangeSource: (displayId: string) => void;
   actions?: JSX.Element;
 }) {
   const table = () =>
@@ -37,17 +35,14 @@ export function TableInspector(props: {
       <Show when={table()}>
         {(entry) => (
           <>
-            <InspectorSourceField
-              draft={props.draft}
-              sourceDraftId={entry().sourceDraftId}
-              fieldId={`studio-inspector-source-${entry().draftId}`}
-              onPick={(nextSourceId) => {
-                if (nextSourceId === entry().sourceDraftId) return;
-                props.apply(
-                  setTableSource(props.draft, entry().draftId, nextSourceId),
-                );
-              }}
-            />
+            <button
+              class="pill"
+              type="button"
+              onClick={() => props.onChangeSource(entry().draftId)}
+            >
+              <UiIcon name="sql" />
+              <span>{t("composition.studioChangeTableSource")}</span>
+            </button>
             <InspectorDataJumpButton
               sourceDraftId={entry().sourceDraftId}
               onDataJump={props.onDataJump}

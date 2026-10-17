@@ -64,6 +64,22 @@ requirements:
           uses one declared SQL output column. A Metric's optional numeric
           presentation is formatting metadata, not a display label.
         governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+      - id: composition-insertion-completes-before-edit
+        kind: behavior
+        statement: >-
+          Inserting Text, Input, Table, or Metric places one component and
+          returns to the canvas with the new component unselected and its
+          Inspector closed. Selecting a placed component later opens its
+          Inspector. The insertion flow returns focus to the placed block or
+          its insertion position.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-005#rule.governance]
+      - id: composition-table-source-change-is-explicit
+        kind: behavior
+        statement: >-
+          A Table Inspector offers an explicit Change source action and does
+          not render a persistent source selector. Choosing a source updates
+          the existing Table component; it does not insert another Table.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
       - id: composition-table-and-metric-use-sql-results
         kind: behavior
         statement: >-
@@ -150,6 +166,51 @@ requirements:
                 criterion: REQ-FE-079#criterion.composition-structure-first-steady-state
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "opens Text or Data insertion from a blank canvas" } }
+          - id: canvas-insertion-completes-before-edit
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: "returns to the canvas after inserting a table and opens its sheet only on selection" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-insertion-completes-before-edit
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "returns to the canvas after inserting a table and opens its sheet only on selection" } }
+          - id: text-input-insertion-completes-before-edit
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: "returns to the canvas after text and input insertion until a block is selected" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-insertion-completes-before-edit
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "returns to the canvas after text and input insertion until a block is selected" } }
+          - id: table-source-change-is-explicit
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: "changes a Table source only from its explicit action and keeps one block" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-table-source-change-is-explicit
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "changes a Table source only from its explicit action and keeps one block" } }
+          - id: form-source-insertion-completes-on-canvas
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: "creates one source and one Table from a Form without opening an inspector" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-insertion-completes-before-edit
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "creates one source and one Table from a Form without opening an inspector" } }
+          - id: metric-insertion-completes-after-preview
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: "previews a Metric before insertion and returns to the canvas" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-insertion-completes-before-edit
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "previews a Metric before insertion and returns to the canvas" } }
           - id: form-selection-source
             adapter: typescript
             path: frontend/src/components/CompositionSourcePicker.test.tsx
