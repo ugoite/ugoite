@@ -1911,6 +1911,11 @@ fn openapi_documents_sql_only_composition_sources_without_display_labels() {
         false
     );
     assert_eq!(
+        snapshot["components"]["schemas"]["CompositionResolvedFormBinding"]["properties"]
+            ["form_id"]["format"],
+        "uuid"
+    );
+    assert_eq!(
         snapshot["components"]["schemas"]["CompositionResolvedResultColumn"]["properties"]["type"]
             ["$ref"],
         "#/components/schemas/CompositionResultFieldType"
