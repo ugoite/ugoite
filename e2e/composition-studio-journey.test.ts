@@ -1154,6 +1154,7 @@ test.describe("Composition Studio Journey", () => {
         name: /Show data sources/,
       });
       const sourceDrawer = page.getByRole("dialog", { name: "Sources" });
+      if (!(await sourceDrawer.isVisible())) await showSources.tap();
       await expect(sourceDrawer).toBeVisible();
       const sourceItems = sourceDrawer.getByRole("listitem");
       await expect(sourceItems).toHaveCount(1);
