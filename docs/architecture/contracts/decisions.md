@@ -583,17 +583,16 @@ contracts. The ruling does not authorize release.
 
 ## ADR-024 — SQL-first Composition sources and workspace
 
-**Status: Implemented current prerelease target; superseded as the next target by ADR-025.**
-The replacement grammar, stable Form-ID binding policy, Saved SQL default
-ownership, scalar Metric boundary, transient Work boundary, and shared SQL
-Workspace are defined in
-[ADR-024](adr-024-composition-sql-first.md). It retains ADR-023's typed
-variables and direct Input/Text bindings while removing EntryQuery sources,
-Composition tags, and Composition-owned display labels. Existing published SQL,
-Form, Entry, authorization, and history contracts remain in force. ADR-024
-supersedes the prerelease Composition grammar as the sole v1 target now; the
-The current code implements this target. It does not authorize or schedule a
-product release or version change.
+**Status: Implemented current prerelease model; superseded as the accepted next target by ADR-025.**
+ADR-024 documents the grammar implemented by the current prerelease candidate,
+including stable Form-ID binding, Saved SQL defaults, the scalar Metric
+boundary, transient Work, and the shared SQL Workspace. It retains ADR-023's
+typed variables and direct Input/Text bindings while removing EntryQuery
+sources, Composition tags, and Composition-owned display labels. ADR-024 is no
+longer the accepted next target; ADR-025 defines that target. Existing
+published SQL, Form, Entry, authorization, and history contracts remain in
+force. Neither ADR authorizes or schedules a product release or version
+change.
 
 ## ADR-025 — Composition query variable graph and complete SQL Workspace
 

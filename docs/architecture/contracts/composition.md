@@ -13,14 +13,14 @@ prereplacement implementation is not a compatibility contract, and its
 document grammar is not supported by the replacement reader. This status does
 not authorize release preparation or publication.
 
-ADR-024 is the normative source for the replacement source and presentation
-schema. [ADR-023](./adr-023-composition-reactive-variables.md) remains the source
-for typed variable ownership and lexical rules except where ADR-024 explicitly
-replaces its original grammar. [ADR-019](./decisions.md) continues to govern
-the flow `layout` AST, exactly-once component placement, and presentation
-order. General REST behavior remains implemented by `ugoite-server` and
-specified by `/openapi.json`; this document does not create a second API
-contract.
+ADR-024 documents the source and presentation schema implemented by the
+current prerelease candidate. ADR-025 is the normative target for the next
+schema; its graph and editor are not implemented yet. [ADR-023](./adr-023-composition-reactive-variables.md)
+records the preceding prerelease grammar, not a compatibility contract.
+[ADR-019](./decisions.md) continues to govern the flow `layout` AST,
+exactly-once component placement, and presentation order. General REST
+behavior remains implemented by `ugoite-server` and specified by
+`/openapi.json`; this document does not create a second API contract.
 
 ## Canonical document
 

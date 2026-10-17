@@ -9,10 +9,15 @@ replaces that unreleased authoring and source grammar; its target is not yet
 implemented. Neither decision authorizes or schedules a product release or
 version change.
 
+ADR-024 describes the current prerelease implementation only; it is no longer
+the accepted next grammar or schema. References below to the "replacement"
+describe the earlier prerelease replacement of ADR-023's grammar. ADR-025 is
+the normative target for the next Composition model.
+
 ADR-023 remains the record of its original typed-variable decision. ADR-024
 retains typed variables and direct Input/Text bindings while removing source
 and display-label semantics that conflict with SQL-first authoring. This ADR is
-the normative source for the replacement v1 grammar. The prereplacement
+the record of the current v1 grammar. The prereplacement
 implementation snapshot is preserved in
 [the historical contract](../testing/history/composition-prereplacement-contract.md)
 and is not a compatibility promise for the replacement.

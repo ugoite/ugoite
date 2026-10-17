@@ -7,7 +7,9 @@ title: "Historical prereplacement Composition acceptance snapshot"
 > Its EntryQuery, tags, labels, and runtime claims are not acceptance for the
 > replacement v1. Use [the SQL-first acceptance plan](../composition-acceptance.md)
 > and [ADR-024](../../contracts/adr-024-composition-sql-first.md) for the
-> current target. This snapshot creates no old-format reader or migration.
+> current prerelease implementation; [ADR-025](../../contracts/adr-025-composition-query-variable-graph.md)
+> is the accepted next target. This snapshot creates no old-format reader or
+> migration.
 
 This document defines the Composition acceptance meaning: the selector and
 boundary inventory, the evidence recording method, and the
