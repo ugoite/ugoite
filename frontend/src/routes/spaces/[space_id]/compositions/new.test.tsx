@@ -493,7 +493,7 @@ describe("Composition studio shell", () => {
       screen.getByRole("button", { name: "Select Monthly / total" }),
     ).toBeInTheDocument();
 
-    // Row reorder through the canvas; adding the metric opens its own row.
+    // Row reorder through the canvas; adding the metric returns to the canvas.
     const rowOrder = () =>
       Array.from(container.querySelectorAll(".designRow")).map((row) =>
         row.getAttribute("data-row-id")
@@ -507,8 +507,11 @@ describe("Composition studio shell", () => {
       beforeReorder[2],
     ]);
 
-    // The selected-block Inspector owns removal; each removal clears the
-    // selection before the next block can be selected.
+    // The selected-block Inspector owns removal; explicitly select the new
+    // Metric before editing, then select each later block in turn.
+    fireEvent.click(
+      screen.getByRole("button", { name: "Select Monthly / total" }),
+    );
     fireEvent.click(
       screen.getByRole("button", { name: "Remove Monthly / total" }),
     );
@@ -531,6 +534,7 @@ describe("Composition studio shell", () => {
     );
     const palette = screen.getByRole("dialog", { name: "Add to design" });
     fireEvent.click(within(palette).getByRole("button", { name: "Text" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select Text" }));
     fireEvent.input(screen.getByRole("textbox", { name: "Text" }), {
       target: { value: "Summary" },
     });

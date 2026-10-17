@@ -22,6 +22,7 @@ import { setLocale } from "~/lib/i18n";
 const harnessCalls = {
   draft: [] as CompositionDraft[],
   jump: [] as CompositionInspectorDataJump[],
+  changeSource: [] as string[],
   remove: 0,
 };
 
@@ -76,6 +77,8 @@ function Harness(props: { initial: CompositionDraft; selectedId: string }) {
       }}
       onRemove={() => harnessCalls.remove++}
       onDataJump={(jump) => harnessCalls.jump.push(jump)}
+      onChangeTableSource={(displayId) =>
+        harnessCalls.changeSource.push(displayId)}
     />
   );
 }
@@ -88,6 +91,7 @@ describe("CompositionInspector SQL-first fields", () => {
     setLocale("en");
     harnessCalls.draft = [];
     harnessCalls.jump = [];
+    harnessCalls.changeSource = [];
     harnessCalls.remove = 0;
   });
 
@@ -111,8 +115,10 @@ describe("CompositionInspector SQL-first fields", () => {
 
   it("keeps Table source identity and data navigation without a label editor", () => {
     renderInspector("disp-2");
-    expect(screen.getByLabelText("Source")).toHaveValue("src-2");
+    expect(screen.queryByLabelText("Source")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Label")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Change source" }));
+    expect(harnessCalls.changeSource).toEqual(["disp-2"]);
     fireEvent.click(screen.getByRole("button", { name: "Data" }));
     expect(harnessCalls.jump).toEqual([{ sourceDraftId: "src-2" }]);
   });

@@ -61,6 +61,7 @@ import {
   setInlineSqlDescriptor,
   setInlineSqlName,
   setSavedSqlVariableTypes,
+  setTableSource,
   upsertVariable,
 } from "~/lib/composition-draft";
 import {
@@ -214,18 +215,38 @@ export function CompositionStudio(props: CompositionStudioProps) {
   // A dismissed or viewport-orphaned sheet returns focus to the invoking
   // block's select control. Block identities are compared literally so
   // Component ids are compared literally, never parsed as selectors.
-  const focusBlockSelect = (blockId: string | null): boolean => {
-    if (!blockId || typeof document === "undefined") return false;
+  const blockSelectControl = (blockId: string | null): HTMLElement | null => {
+    if (!blockId || typeof document === "undefined") return null;
     const blocks = document.querySelectorAll("[data-block-id]");
     for (const block of blocks) {
       if (block.getAttribute("data-block-id") !== blockId) continue;
       const control = block.querySelector("button");
-      if (control instanceof HTMLElement) {
-        control.focus();
-        return true;
-      }
+      if (control instanceof HTMLElement) return control;
     }
-    return false;
+    return null;
+  };
+
+  const focusBlockSelect = (blockId: string | null): boolean => {
+    const control = blockSelectControl(blockId);
+    if (!control) return false;
+    control.focus();
+    return true;
+  };
+
+  const insertPositionControl = (
+    target: DraftInsertTarget | undefined,
+  ): HTMLElement | null => {
+    if (!target || typeof document === "undefined") return null;
+    for (const control of document.querySelectorAll<HTMLElement>(
+      ".designAdd[data-insert-row-id]",
+    )) {
+      if (
+        control.dataset.insertRowId === (target.rowId ?? "") &&
+        control.dataset.insertRowIndex === String(target.rowIndex) &&
+        control.dataset.insertItemIndex === String(target.itemIndex)
+      ) return control;
+    }
+    return null;
   };
 
   const closeSheetKeepSelection = () => {
@@ -298,6 +319,20 @@ export function CompositionStudio(props: CompositionStudioProps) {
   );
   const previewHandle = createCompositionPreviewHandle();
   onCleanup(previewHandle.dispose);
+
+  const completeDisplayInsert = (
+    nextDraft: CompositionDraft,
+    componentId: string,
+    sourceDraftId: string,
+  ) => {
+    setDraft(nextDraft);
+    setExpandedId(sourceDraftId);
+    previewHandle.ensureSource(sourceDraftId);
+    setSelectedId(null);
+    setOverlay({ kind: "none" });
+    setSourcePickerReturnFocus(undefined);
+    queueMicrotask(() => focusBlockSelect(componentId));
+  };
   const previewBase = () => props.saveMode.kind === "update"
     ? {
       entryId: props.saveMode.compositionId,
@@ -490,23 +525,18 @@ export function CompositionStudio(props: CompositionStudioProps) {
     return { draft: added.draft, draftId: added.draftId };
   };
 
-  const addSeed = (seed: CompositionSourceSeed) => {
-    const { draft: provisioned, draftId } = addSourceSeed(seed);
-    const table = addTableDisplay(provisioned, draftId);
-    if (!table.ok || !table.draftId) return;
-    setDraft(table.draft);
-    setExpandedId(draftId);
-    const blockId = designBlockIdForComponent(table.draftId);
-    setSelectedId(blockId);
-    setOverlay(sheetViewport()
-      ? { kind: "block-inspector", componentId: blockId }
-      : { kind: "none" });
-  };
-
   const openDataSourcePicker = (returnFocus?: () => HTMLElement | null) => {
     setSelectedId(null);
-    setSourcePickerReturnFocus(() => returnFocus);
+    setSourcePickerReturnFocus(() =>
+      typeof returnFocus === "function" ? returnFocus : undefined
+    );
     setOverlay({ kind: "source-picker", intent: "data" });
+  };
+
+  const openTableSourcePicker = (componentId: string) => {
+    setSourcePickerReturnFocus(() => () => blockSelectControl(componentId));
+    setSelectedId(null);
+    setOverlay({ kind: "source-picker", intent: "change-table-source", componentId });
   };
 
   const addDataSource = (seed: CompositionSourceSeed) => {
@@ -549,19 +579,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
         seed.column,
         target,
       );
-    if (added.ok) {
-      setDraft(added.draft);
-      if (added.draftId) {
-        setExpandedId(seed.sourceDraftId);
-        previewHandle.ensureSource(seed.sourceDraftId);
-        const blockId = designBlockIdForComponent(added.draftId);
-        setSelectedId(blockId);
-        setOverlay(sheetViewport()
-          ? { kind: "block-inspector", componentId: blockId }
-          : { kind: "none" });
-      }
+    if (added.ok && added.draftId) {
+      completeDisplayInsert(added.draft, added.draftId, seed.sourceDraftId);
+    } else {
+      setOverlay({ kind: "none" });
     }
-    if (!added.ok || !added.draftId) setOverlay({ kind: "none" });
   };
 
   const previewMetric = async (seed: {
@@ -623,7 +645,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const chooseSourceForDisplay = (kind: "table" | "metric") => {
     const activeOverlay = overlay();
     if (activeOverlay.kind !== "display-picker") return;
-    setSourcePickerReturnFocus(() => designInsertReturnFocus);
+    setSourcePickerReturnFocus(() => () => insertPositionControl(activeOverlay.target));
     setOverlay({
       kind: "source-picker",
       intent: "insert",
@@ -639,8 +661,21 @@ export function CompositionStudio(props: CompositionStudioProps) {
       addDataSource(seed);
       return;
     }
-    if (activeOverlay.intent !== "insert") {
-      addSeed(seed);
+    if (activeOverlay.intent === "change-table-source") {
+      const { draft: sourceDraft, draftId } = addSourceSeed(seed);
+      const changed = setTableSource(
+        sourceDraft,
+        activeOverlay.componentId,
+        draftId,
+      );
+      if (!changed.ok) return;
+      setDraft(changed.draft);
+      setExpandedId(draftId);
+      previewHandle.ensureSource(draftId);
+      setSelectedId(null);
+      setSourcePickerReturnFocus(undefined);
+      setOverlay({ kind: "none" });
+      queueMicrotask(() => focusBlockSelect(activeOverlay.componentId));
       return;
     }
     const { draft: sourceDraft, draftId } = addSourceSeed(seed);
@@ -651,13 +686,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
         activeOverlay.target,
       );
       if (!table.ok || !table.draftId) return;
-      setDraft(table.draft);
-      setExpandedId(draftId);
-      const blockId = designBlockIdForComponent(table.draftId);
-      setSelectedId(blockId);
-      setOverlay(sheetViewport()
-        ? { kind: "block-inspector", componentId: blockId }
-        : { kind: "none" });
+      completeDisplayInsert(table.draft, table.draftId, draftId);
       return;
     }
     // Add the SQL source, then choose and preview a result column before it
@@ -680,6 +709,22 @@ export function CompositionStudio(props: CompositionStudioProps) {
       setOverlay({ kind: "none" });
       return;
     }
+    if (activeOverlay.intent === "change-table-source") {
+      const changed = setTableSource(
+        draft(),
+        activeOverlay.componentId,
+        sourceDraftId,
+      );
+      if (!changed.ok) return;
+      setDraft(changed.draft);
+      setExpandedId(sourceDraftId);
+      previewHandle.ensureSource(sourceDraftId);
+      setSelectedId(null);
+      setSourcePickerReturnFocus(undefined);
+      setOverlay({ kind: "none" });
+      queueMicrotask(() => focusBlockSelect(activeOverlay.componentId));
+      return;
+    }
     if (activeOverlay.intent === "insert" && activeOverlay.componentKind === "metric") {
       setOverlay({
         kind: "display-picker",
@@ -692,16 +737,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
     const table = addTableDisplay(
       draft(),
       sourceDraftId,
-      activeOverlay.intent === "insert" ? activeOverlay.target : undefined,
+      activeOverlay.target,
     );
     if (table.ok && table.draftId) {
-      setDraft(table.draft);
-      setExpandedId(sourceDraftId);
-      const blockId = designBlockIdForComponent(table.draftId);
-      setSelectedId(blockId);
-      setOverlay(sheetViewport()
-        ? { kind: "block-inspector", componentId: blockId }
-        : { kind: "none" });
+      completeDisplayInsert(table.draft, table.draftId, sourceDraftId);
       return;
     }
   };
@@ -788,6 +827,12 @@ export function CompositionStudio(props: CompositionStudioProps) {
     setExpandedId(sourceDraftId);
     previewHandle.ensureSource(sourceDraftId);
     focusSourceRow(sourceDraftId);
+  };
+
+  const handleInsertBlock = (blockId: string) => {
+    setSelectedId(null);
+    if (overlay().kind === "block-inspector") setOverlay({ kind: "none" });
+    queueMicrotask(() => focusBlockSelect(blockId));
   };
 
   // Data source selection soft-highlights the Design blocks that use it.
@@ -1060,8 +1105,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
     overlay().kind === "source-picker" ? overlay() : undefined;
   const displayPickerOverlay = () =>
     overlay().kind === "display-picker" ? overlay() : undefined;
-  const designInsertReturnFocus = () =>
-    document.querySelector<HTMLElement>(".designCanvas .designAdd");
   const mobileDrawerOpen = () => overlay().kind === "source-drawer";
   const onMobileDrawerOpenChange = (open: boolean) => {
     if (open) setOverlay({ kind: "source-drawer" });
@@ -1158,6 +1201,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
           selectedId={selectedId()}
           highlightedIds={highlightedBlockIds()}
           onSelect={handleSelectBlock}
+          onInsert={handleInsertBlock}
           onDraftChange={setDraft}
           onRequestDisplayPicker={(target) => {
             setSelectedId(null);
@@ -1185,6 +1229,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
             onDraftChange={setDraft}
             onRemove={removeSelectedBlock}
             onDataJump={jumpToSource}
+            onChangeTableSource={openTableSourcePicker}
           />
         </Show>
       </div>
@@ -1196,6 +1241,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
             onDraftChange={setDraft}
             onRemove={removeSelectedBlock}
             onDataJump={jumpToSource}
+            onChangeTableSource={openTableSourcePicker}
             onClose={dismissSheet}
           />
         )}
@@ -1392,6 +1438,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
           onSelect={addSourceForDisplay}
           onClose={() => {
             setOverlay({ kind: "none" });
+            setSourcePickerReturnFocus(undefined);
           }}
         />
       </Show>
@@ -1402,7 +1449,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
             draft={draft()}
             initialKind={activePicker().componentKind}
             initialSourceDraftId={activePicker().sourceDraftId}
-            returnFocus={designInsertReturnFocus}
+            returnFocus={() => insertPositionControl(activePicker().target)}
             onAdd={addDisplaySeed}
             onPreview={previewMetric}
             onChooseSource={chooseSourceForDisplay}

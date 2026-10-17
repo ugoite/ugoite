@@ -58,6 +58,15 @@ declared scalar output column; the column alias supplies its name. A Metric
 may retain numeric unit and fractional-digit formatting, which does not name
 the component.
 
+Insertion completes when the component is placed: the picker closes, the
+canvas remains visible, and the new block is not selected for editing. This
+applies to Text and Input as well as Table and Metric. Selecting a placed block
+later opens its Inspector (inline on wide screens, in a sheet on narrow
+screens). A Table Inspector offers an explicit Change source action that opens
+the source picker; it does not keep a source selector in the ordinary view.
+Changing a source updates the selected Table component instead of inserting a
+second Table.
+
 Composition names, SQL names, variable identifiers, Form field names, and
 Text content are shown where each value carries meaning. Source, variable, and
 component IDs used only for binding remain out of ordinary primary paths.

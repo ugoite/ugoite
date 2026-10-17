@@ -81,6 +81,7 @@ const seedDraft = (): CompositionDraft => {
 const harnessCalls = vi.hoisted(() => ({
   draft: [] as CompositionDraft[],
   selected: [] as (string | null)[],
+  inserted: [] as string[],
   picker: [] as { target: DraftInsertTarget }[],
 }));
 
@@ -114,6 +115,7 @@ function Harness(
         harnessCalls.selected.push(id);
         setSelectedId(id);
       }}
+      onInsert={(id) => harnessCalls.inserted.push(id)}
       onDraftChange={(next) => {
         harnessCalls.draft.push(next);
         setDraft(next);
@@ -142,6 +144,7 @@ describe("CompositionDesignCanvas", () => {
     vi.clearAllMocks();
     harnessCalls.draft.length = 0;
     harnessCalls.selected.length = 0;
+    harnessCalls.inserted.length = 0;
     harnessCalls.picker.length = 0;
   });
 
@@ -354,10 +357,10 @@ describe("CompositionDesignCanvas", () => {
       (item) => item.kind === "component" && item.component === "disp-4",
     );
     expect(placed).toHaveLength(1);
-    // Selection follows the inserted block for the inspector.
-    expect(harnessCalls.selected).toEqual([
+    expect(harnessCalls.inserted).toEqual([
       designBlockIdForComponent("disp-4"),
     ]);
+    expect(harnessCalls.selected).toEqual([]);
   });
 
   it("shows one add control above and below a single component", () => {
@@ -411,9 +414,10 @@ describe("CompositionDesignCanvas", () => {
       kind: "component",
       component: "input-1",
     });
-    expect(harnessCalls.selected).toEqual([
+    expect(harnessCalls.inserted).toEqual([
       designBlockIdForComponent("input-1"),
     ]);
+    expect(harnessCalls.selected).toEqual([]);
   });
 
   it("uses stable variable IDs for palette entries in every locale", () => {

@@ -42,6 +42,8 @@ export interface CompositionDesignCanvasProps {
   sources: Record<string, CompositionSourcePageState>;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  /** Placement is complete without selecting the new block for editing. */
+  onInsert: (id: string) => void;
   /**
    * Soft highlight from Data source selection: block identities using the
    * selected source. Visual only, on token colors; selection stays the
@@ -317,7 +319,7 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
     const added = addTextDisplay(props.draft, {}, target);
     if (added.ok && added.draftId) {
       props.onDraftChange(added.draft);
-      props.onSelect(designBlockIdForComponent(added.draftId));
+      props.onInsert(designBlockIdForComponent(added.draftId));
       props.onPaletteTarget(null);
     }
   };
@@ -326,7 +328,7 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
     const placed = addInputComponent(props.draft, variableId, target);
     if (placed.ok && placed.draftId) {
       props.onDraftChange(placed.draft);
-      props.onSelect(designBlockIdForComponent(placed.draftId));
+      props.onInsert(designBlockIdForComponent(placed.draftId));
       props.onPaletteTarget(null);
     }
   };
@@ -350,6 +352,9 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
       <button
         type="button"
         class="designAdd"
+        data-insert-row-id={target.rowId ?? ""}
+        data-insert-row-index={target.rowIndex}
+        data-insert-item-index={target.itemIndex}
         aria-label={t("composition.studioAddToDesign")}
         title={t("composition.studioAddToDesign")}
         aria-expanded={paletteKey() === gapKey(target)}
