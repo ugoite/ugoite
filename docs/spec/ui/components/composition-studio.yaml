@@ -2,8 +2,11 @@
 title: "SQL-first Composition Studio"
 ---
 
-**Status: implemented.** This is the current Composition Studio interaction
-target from [ADR-024](../../../architecture/contracts/adr-024-composition-sql-first.md).
+**Status: implemented for the current prerelease model.** This is the current
+Composition Studio interaction target from [ADR-024](../../../architecture/contracts/adr-024-composition-sql-first.md).
+The next unreleased target is [ADR-025](../../../architecture/contracts/adr-025-composition-query-variable-graph.md);
+its unified query-variable grammar and Design binding picker are not yet
+implemented.
 Composition-specific behavior is verified by the SQL-first golden journey,
 mobile Studio tests, and SQL-backed renderer tests. The shared SQL editor,
 typed parameter controls, preview, and result contract are defined in
