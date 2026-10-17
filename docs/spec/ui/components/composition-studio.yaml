@@ -107,6 +107,17 @@ for selection. Rows do not repeat a common SQL icon or a SQL-kind subtitle;
 the Forms and Saved SQL tabs distinguish source creation in the picker.
 Selecting an already selected source keeps it selected.
 
+## Text Inspector
+
+The Text Inspector presents the literal body as a multiline editor and keeps
+the text style control available. It does not show a Content selector. The
+body has an accessible name without repeating the visible Inspector title.
+When one or more string variables exist, a concise explicit action opens the
+variable chooser; without string variables, the action and chooser are absent.
+A bound variable name is shown once, and an explicit action returns the Text
+component to literal editing. The canonical TextContent literal-or-variable
+union is unchanged.
+
 The mobile source drawer, source picker, display picker, and inspector sheet
 share one Studio overlay state. Opening the source picker from the drawer
 closes the drawer in the same transition. Escape and Cancel close the picker

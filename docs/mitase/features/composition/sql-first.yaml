@@ -89,6 +89,10 @@ features:
                 anchor: REQ-FE-079#criterion.composition-binding-identifiers-stay-internal
               - kind: documents
                 anchor: REQ-FE-079#criterion.composition-mobile-workspace-accessibility
+              - kind: documents
+                anchor: REQ-FE-079#criterion.composition-text-inspector-literal-editing
+              - kind: documents
+                anchor: REQ-FE-079#criterion.composition-text-inspector-variable-binding
           - id: sql-first-composition-architecture-contract
             adapter: declared
             path: docs/architecture/contracts/composition.md
@@ -225,3 +229,12 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-079#criterion.composition-history-hides-revision-identifiers
+          - id: composition-text-inspector
+            adapter: typescript
+            path: frontend/src/components/composition/TextInspector.tsx
+            selector: { kind: symbol, name: TextInspector }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-text-inspector-literal-editing
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-text-inspector-variable-binding

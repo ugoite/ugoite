@@ -26,7 +26,7 @@ const harnessCalls = {
   remove: 0,
 };
 
-const seedDraft = (): CompositionDraft => {
+const seedDraft = (withStringVariable = false): CompositionDraft => {
   let draft = createEmptyDraft("Studio");
   draft = addSavedSqlSource(draft, {
     entryId: "sql-1",
@@ -51,6 +51,15 @@ const seedDraft = (): CompositionDraft => {
   });
   if (!month.ok) throw new Error("expected month variable");
   draft = month.draft;
+  if (withStringVariable) {
+    const title = addVariable(draft, {
+      id: "report_title",
+      type: "string",
+      required: false,
+    });
+    if (!title.ok) throw new Error("expected string variable");
+    draft = title.draft;
+  }
   const metric = addMetricDisplay(draft, "src-1", "total");
   if (!metric.ok) throw new Error("expected metric block");
   draft = metric.draft;
@@ -123,13 +132,51 @@ describe("CompositionInspector SQL-first fields", () => {
     expect(harnessCalls.jump).toEqual([{ sourceDraftId: "src-2" }]);
   });
 
-  it("uses Text content and style as its only editable presentation", () => {
+  it("shows a multiline Text body and Style without a content selector when no string variables exist", () => {
     renderInspector("disp-3");
-    expect(screen.getByLabelText("Content")).toHaveValue("literal");
-    expect(screen.getByLabelText("Text", { selector: "input" }))
+    expect(screen.queryByLabelText("Content")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Text body", { selector: "textarea" }))
       .toHaveValue("Summary");
     expect(screen.getByLabelText("Style")).toHaveValue("heading");
+    expect(screen.queryByRole("button", { name: "Use variable" }))
+      .not.toBeInTheDocument();
     expect(screen.queryByLabelText("Label")).not.toBeInTheDocument();
+
+    fireEvent.input(screen.getByLabelText("Text body"), {
+      target: { value: "Quarterly summary" },
+    });
+    expect(harnessCalls.draft.at(-1)?.displays[2]).toMatchObject({
+      kind: "text",
+      content: { kind: "literal", text: "Quarterly summary" },
+    });
+  });
+
+  it("binds Text to a string variable only after explicit choice and returns to literal editing", () => {
+    render(() => <Harness initial={seedDraft(true)} selectedId="disp-3" />);
+    expect(screen.queryByLabelText("Content")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Text body")).toHaveValue("Summary");
+    expect(screen.queryByLabelText("Variable")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Use variable" }));
+    expect(screen.getByLabelText("Variable")).toHaveFocus();
+    fireEvent.change(screen.getByLabelText("Variable"), {
+      target: { value: "report_title" },
+    });
+
+    expect(harnessCalls.draft.at(-1)?.displays[2]).toMatchObject({
+      kind: "text",
+      content: { kind: "variable", variable: "report_title" },
+    });
+    expect(screen.getAllByText("report_title")).toHaveLength(1);
+    expect(screen.queryByLabelText("Text body")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit text" })).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "Edit text" }));
+
+    expect(screen.getByLabelText("Text body")).toHaveValue("Summary");
+    expect(screen.getByLabelText("Text body")).toHaveFocus();
+    expect(harnessCalls.draft.at(-1)?.displays[2]).toMatchObject({
+      kind: "text",
+      content: { kind: "literal", text: "Summary" },
+    });
   });
 
   it("presents the variable ID for an Input and does not persist an Input label", () => {

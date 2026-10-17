@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js";
+import { createEffect, createSignal, For, Show } from "solid-js";
 import type { JSX } from "solid-js";
 import {
   type InspectorApply,
@@ -36,8 +36,8 @@ const textStyleLabel = (style: CompositionTextStyle): string => {
 };
 
 /**
- * Text inspector: content input and a fixed style selector. Text carries no
- * source binding, so edits never touch sources and never refetch.
+ * Text inspector: edit the literal body directly, or explicitly bind it to a
+ * string variable. Text edits never touch sources and never refetch.
  */
 export function TextInspector(props: {
   draft: CompositionDraft;
@@ -46,6 +46,30 @@ export function TextInspector(props: {
   actions?: JSX.Element;
 }) {
   const text = () => props.display.kind === "text" ? props.display : undefined;
+  const stringVariables = () =>
+    props.draft.variables.filter((item) => item.type === "string");
+  const [choosingVariable, setChoosingVariable] = createSignal(false);
+  const [focusTarget, setFocusTarget] = createSignal<
+    "variable" | "action" | "body" | undefined
+  >();
+  let textarea: HTMLTextAreaElement | undefined;
+  let variableSelect: HTMLSelectElement | undefined;
+  let variableAction: HTMLButtonElement | undefined;
+
+  createEffect(() => {
+    const target = focusTarget();
+    if (target === "variable") variableSelect?.focus();
+    if (target === "action") variableAction?.focus();
+    if (target === "body") textarea?.focus();
+    if (target) setFocusTarget(undefined);
+  });
+
+  const resizeBody = () => {
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  };
+
   return (
     <InspectorShell
       icon="canvas-text"
@@ -53,113 +77,172 @@ export function TextInspector(props: {
       actions={props.actions}
     >
       <Show when={text()}>
-        {(entry) => (
-          <>
-            <div class="ui-field">
-              <label
-                class="ui-label"
-                for={`studio-inspector-text-content-${entry().draftId}`}
+        {(entry) => {
+          const bodyId = `studio-inspector-text-body-${entry().draftId}`;
+          const variableId =
+            `studio-inspector-text-variable-${entry().draftId}`;
+          const styleId = `studio-inspector-style-${entry().draftId}`;
+          const bodyText = () =>
+            entry().content.kind === "literal" ? entry().content.text : "";
+          let lastLiteral = bodyText();
+
+          createEffect(() => {
+            bodyText();
+            queueMicrotask(resizeBody);
+          });
+
+          return (
+            <>
+              <Show
+                when={entry().content.kind === "literal"}
+                fallback={
+                  <div class="ui-field">
+                    <div class="ui-field-value-text">
+                      {entry().content.kind === "variable"
+                        ? compositionVariableDisplayName(
+                          props.draft.variables,
+                          entry().content.variable,
+                        )
+                        : ""}
+                    </div>
+                  </div>
+                }
               >
-                {t("composition.studioTextContent")}
-              </label>
-              <select
-                id={`studio-inspector-text-content-${entry().draftId}`}
-                class="ui-input"
-                value={entry().content.kind === "literal"
-                  ? "literal"
-                  : `variable:${entry().content.variable}`}
-                onChange={(event) => {
-                  const selected = event.currentTarget.value;
-                  if (selected === "literal") {
-                    props.apply(
-                      setTextContent(props.draft, entry().draftId, ""),
-                    );
-                    return;
-                  }
-                  if (selected.startsWith("variable:")) {
-                    props.apply(
-                      setTextVariable(
-                        props.draft,
-                        entry().draftId,
-                        selected.slice("variable:".length),
-                      ),
-                    );
-                  }
-                }}
-              >
-                <option value="literal">
-                  {t("composition.studioTextLiteral")}
-                </option>
-                <For
-                  each={props.draft.variables.filter((item) =>
-                    item.type === "string"
-                  )}
-                >
-                  {(variable) => (
-                    <option value={`variable:${variable.id}`}>
-                      {compositionVariableDisplayName(
-                        props.draft.variables,
-                        variable.id,
-                      )}
-                    </option>
-                  )}
-                </For>
-              </select>
-            </div>
-            <div class="ui-field">
-              <label
-                class="ui-label"
-                for={`studio-inspector-text-${entry().draftId}`}
-              >
-                {t("composition.studioText")}
-              </label>
-              <Show when={entry().content.kind === "literal"}>
-                <input
-                  id={`studio-inspector-text-${entry().draftId}`}
+                <div class="ui-field">
+                  <label class="ui-sr-only" for={bodyId}>
+                    {t("composition.studioTextBody")}
+                  </label>
+                  <textarea
+                    ref={textarea}
+                    id={bodyId}
+                    class="ui-input ui-textarea-auto"
+                    rows="1"
+                    value={bodyText()}
+                    onInput={(event) => {
+                      lastLiteral = event.currentTarget.value;
+                      resizeBody();
+                      props.apply(
+                        setTextContent(
+                          props.draft,
+                          entry().draftId,
+                          event.currentTarget.value,
+                        ),
+                      );
+                    }}
+                  />
+                </div>
+              </Show>
+
+              <Show when={stringVariables().length > 0}>
+                <div class="ui-field">
+                  <Show
+                    when={choosingVariable() &&
+                      entry().content.kind === "literal"}
+                    fallback={null}
+                  >
+                    <label class="ui-sr-only" for={variableId}>
+                      {t("composition.studioTextVariable")}
+                    </label>
+                    <select
+                      ref={variableSelect}
+                      id={variableId}
+                      class="ui-input"
+                      value=""
+                      onChange={(event) => {
+                        const selected = event.currentTarget.value;
+                        if (!selected) return;
+                        props.apply(
+                          setTextVariable(
+                            props.draft,
+                            entry().draftId,
+                            selected,
+                          ),
+                        );
+                        setChoosingVariable(false);
+                        setFocusTarget("action");
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setChoosingVariable(false);
+                          setFocusTarget("action");
+                        }
+                      }}
+                    >
+                      <option value="" disabled>
+                        {t("composition.studioChooseVariable")}
+                      </option>
+                      <For each={stringVariables()}>
+                        {(variable) => (
+                          <option value={variable.id}>
+                            {compositionVariableDisplayName(
+                              props.draft.variables,
+                              variable.id,
+                            )}
+                          </option>
+                        )}
+                      </For>
+                    </select>
+                  </Show>
+                  <Show when={!choosingVariable() ||
+                    entry().content.kind === "variable"}>
+                    <button
+                      ref={variableAction}
+                      type="button"
+                      class="pill"
+                      onClick={() => {
+                        if (entry().content.kind === "variable") {
+                          props.apply(
+                            setTextContent(
+                              props.draft,
+                              entry().draftId,
+                              lastLiteral,
+                            ),
+                          );
+                          setChoosingVariable(false);
+                          setFocusTarget("body");
+                        } else {
+                          setChoosingVariable(true);
+                          setFocusTarget("variable");
+                        }
+                      }}
+                    >
+                      {entry().content.kind === "variable"
+                        ? t("composition.studioTextUseLiteral")
+                        : t("composition.studioTextUseVariable")}
+                    </button>
+                  </Show>
+                </div>
+              </Show>
+
+              <div class="ui-field">
+                <label class="ui-label" for={styleId}>
+                  {t("composition.studioStyle")}
+                </label>
+                <select
+                  id={styleId}
                   class="ui-input"
-                  value={entry().content.kind === "literal"
-                    ? entry().content.text
-                    : ""}
-                  onInput={(event) =>
+                  value={entry().style}
+                  onChange={(event) =>
                     props.apply(
-                      setTextContent(
+                      setTextStyle(
                         props.draft,
                         entry().draftId,
-                        event.currentTarget.value,
+                        event.currentTarget.value as CompositionTextStyle,
                       ),
                     )}
-                />
-              </Show>
-            </div>
-            <div class="ui-field">
-              <label
-                class="ui-label"
-                for={`studio-inspector-style-${entry().draftId}`}
-              >
-                {t("composition.studioStyle")}
-              </label>
-              <select
-                id={`studio-inspector-style-${entry().draftId}`}
-                class="ui-input"
-                value={entry().style}
-                onChange={(event) =>
-                  props.apply(
-                    setTextStyle(
-                      props.draft,
-                      entry().draftId,
-                      event.currentTarget.value as CompositionTextStyle,
-                    ),
-                  )}
-              >
-                <For each={textStyles}>
-                  {(style) => (
-                    <option value={style}>{textStyleLabel(style)}</option>
-                  )}
-                </For>
-              </select>
-            </div>
-          </>
-        )}
+                >
+                  <For each={textStyles}>
+                    {(style) => (
+                      <option value={style}>{textStyleLabel(style)}</option>
+                    )}
+                  </For>
+                </select>
+              </div>
+            </>
+          );
+        }}
       </Show>
     </InspectorShell>
   );

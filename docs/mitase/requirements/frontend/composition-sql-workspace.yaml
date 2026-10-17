@@ -142,6 +142,23 @@ requirements:
           disclosure. Exact revision identity stays in the internal route
           target and the selected revision opens exactly.
         governed_by: [POL-UI-005#rule.governance]
+      - id: composition-text-inspector-literal-editing
+        kind: behavior
+        statement: >-
+          The Text Inspector edits literal content in a multiline body field
+          and keeps the style control available without a Content selector.
+          The body has an accessible name without repeating the Inspector's
+          visible title. A variable-binding action and chooser appear only
+          when at least one string Composition variable exists.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
+      - id: composition-text-inspector-variable-binding
+        kind: behavior
+        statement: >-
+          Text variable binding starts only after an explicit action, accepts
+          only string Composition variables, shows the selected variable name
+          once, and provides an explicit return to literal editing. The
+          canonical TextContent literal-or-variable union is preserved.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
     bindings:
       - id: sql-first-studio-verification
         role: verification
@@ -310,3 +327,21 @@ requirements:
                 criterion: REQ-FE-079#criterion.composition-history-hides-revision-identifiers
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-history-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx", test: "lists revisions with human labels and opens the exact revision" } }
+          - id: composition-text-inspector-literal
+            adapter: typescript
+            path: frontend/src/components/CompositionInspector.test.tsx
+            selector: { kind: test, name: "shows a multiline Text body and Style without a content selector when no string variables exist" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-text-inspector-literal-editing
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-text-inspector]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionInspector.test.tsx, test: "shows a multiline Text body and Style without a content selector when no string variables exist" } }
+          - id: composition-text-inspector-variable
+            adapter: typescript
+            path: frontend/src/components/CompositionInspector.test.tsx
+            selector: { kind: test, name: "binds Text to a string variable only after explicit choice and returns to literal editing" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-text-inspector-variable-binding
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-text-inspector]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionInspector.test.tsx, test: "binds Text to a string variable only after explicit choice and returns to literal editing" } }
