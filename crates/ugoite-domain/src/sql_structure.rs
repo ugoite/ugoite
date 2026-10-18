@@ -1844,13 +1844,17 @@ mod tests {
             variables: Vec::new(),
             stable_key: Vec::new(),
         };
-        let relation_free_literal = analyze_sql_structure("SELECT 1", &relation_free_context);
-        assert_eq!(
-            relation_free_literal.status,
-            SqlStructureStatus::Supported,
-            "SELECT 1"
-        );
-        assert_eq!(relation_free_literal.reason, None, "SELECT 1");
+        for (sql, projection) in [
+            ("SELECT 1", "1"),
+            ("SELECT 'value'", "'value'"),
+            ("SELECT TRUE", "true"),
+            ("SELECT NULL", "NULL"),
+        ] {
+            let analysis = analyze_sql_structure(sql, &relation_free_context);
+            assert_eq!(analysis.status, SqlStructureStatus::Supported, "{sql}");
+            assert_eq!(analysis.reason, None, "{sql}");
+            assert_eq!(analysis.projection, vec![projection], "{sql}");
+        }
         rejects(
             "SELECT CAST(\"field_102\" AS BIGINT) FROM \"Task\"",
             SqlStructureReason::ProjectionUnsupported,
