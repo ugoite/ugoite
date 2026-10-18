@@ -128,3 +128,36 @@ features:
                   arguments:
                     package: ugoite-domain
                     test: sql_document::tests::parameter_rename_reparses_invalid_drafts_and_keeps_diagnostics
+      - id: sql-document-wasm-protocol
+        role: implementation
+        facet: protocol
+        responsibility: Expose the bounded Rust SQL Document parser through the portable WASM domain protocol without planning or executing the SQL.
+        targets:
+          - id: parser-action
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: symbol, name: invoke_sql_document }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+      - id: sql-document-wasm-verification
+        role: verification
+        facet: verification
+        responsibility: Verify that the portable protocol action returns the native SQL Document value for valid and invalid drafts, including exact source and diagnostics.
+        targets:
+          - id: protocol-matches-native-parser
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector:
+              kind: symbol
+              name: tests::sql_document_protocol_matches_native_parser_for_draft_states_and_ranges
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parser-action
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-wasm
+                    test: tests::sql_document_protocol_matches_native_parser_for_draft_states_and_ranges

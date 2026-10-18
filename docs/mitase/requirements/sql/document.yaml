@@ -29,3 +29,11 @@ requirements:
           drafts are reparsed so syntax diagnostics remain current; this edit
           does not authorize parameter binding or query execution.
         governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: portable-protocol
+        kind: behavior
+        statement: >-
+          The portable WASM domain protocol exposes the bounded SQL Document
+          parser and returns the same document value and diagnostics as the
+          native Rust parser. The protocol action does not grant executor
+          admission or execute the SQL.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
