@@ -1,6 +1,7 @@
 import { http, HttpResponse } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  applySqlDocumentEditTransaction,
   analyzeSqlStructure,
   buildSpreadsheetCsvRequest,
   canonicalizeCompositionDocument,
@@ -303,6 +304,78 @@ describe("portable Ugoite API protocol WASM", () => {
       status: "invalid_sql",
       diagnostics: [{ code: "parse_failed" }],
     });
+  });
+
+  it("applies typed SQL Document edits atomically and returns a usable undo", async () => {
+    const source = "-- 日本語\nSELECT 1 FROM \"G\"";
+    const start = new TextEncoder().encode(source.slice(0, source.indexOf("1")))
+      .length;
+    const transaction = {
+      expected_source: source,
+      edits: [{
+        range: { start, end: start + 1 },
+        expected_text: "1",
+        replacement: "2",
+      }],
+    };
+
+    const edited = await applySqlDocumentEditTransaction(source, transaction);
+    expect(edited.document.source).toBe('-- 日本語\nSELECT 2 FROM "G"');
+    expect(edited.document.status).toBe("parsed");
+
+    const restored = await applySqlDocumentEditTransaction(
+      edited.document.source,
+      edited.undo,
+    );
+    expect(restored.document.source).toBe(source);
+  });
+
+  it("keeps incomplete SQL Document edit drafts and reports stable stale/range failures", async () => {
+    const source = "SELECT 1";
+    const draft = await applySqlDocumentEditTransaction(source, {
+      expected_source: source,
+      edits: [{
+        range: { start: 7, end: 8 },
+        expected_text: "1",
+        replacement: "(",
+      }],
+    });
+    expect(draft.document).toMatchObject({
+      source: "SELECT (",
+      status: "invalid_sql",
+      diagnostics: [{ code: "parse_failed" }],
+    });
+
+    await expect(
+      applySqlDocumentEditTransaction("SELECT 2", {
+        expected_source: source,
+        edits: [],
+      }),
+    ).rejects.toMatchObject({ kind: "sql_document_edit", code: "stale_source" });
+
+    await expect(
+      applySqlDocumentEditTransaction(source, {
+        expected_source: source,
+        edits: [{
+          range: { start: 8, end: 9 },
+          expected_text: "1",
+          replacement: "2",
+        }],
+      }),
+    ).rejects.toMatchObject({
+      kind: "sql_document_edit",
+      code: "range_out_of_bounds",
+    });
+  });
+
+  it("bounds SQL Document edit result serialization", async () => {
+    const source = `SELECT ${Array(20_000).fill("1").join(",")}`;
+    await expect(
+      applySqlDocumentEditTransaction(source, {
+        expected_source: source,
+        edits: [],
+      }),
+    ).rejects.toMatchObject({ kind: "domain_output_too_large" });
   });
 
   it("parses Composition Input with the shared Rust Domain contract without coercion", async () => {

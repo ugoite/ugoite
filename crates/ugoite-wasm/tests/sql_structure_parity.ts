@@ -207,6 +207,109 @@ async function main(): Promise<void> {
     throw new Error("Oversized SQL Document output was not bounded");
   }
 
+  const editSource = '-- 日本語\nSELECT 1 FROM "G" WHERE n = 2';
+  const editStart = (needle: string): number =>
+    new TextEncoder().encode(editSource.slice(0, editSource.indexOf(needle))).length;
+  const editTransaction = {
+    expected_source: editSource,
+    edits: [
+      {
+        range: { start: editStart("2"), end: editStart("2") + 1 },
+        expected_text: "2",
+        replacement: "3",
+      },
+      {
+        range: { start: editStart("1"), end: editStart("1") + 1 },
+        expected_text: "1",
+        replacement: "10",
+      },
+    ],
+  };
+  const editResponse = await invokeWasm(instance.exports, {
+    action: "domain.apply_sql_document_edit_transaction",
+    value: { current_source: editSource, transaction: editTransaction },
+  });
+  assertEqual(editResponse.ok, true, "edit transaction envelope");
+  const editResult = editResponse.value as Record<string, unknown>;
+  const editedDocument = editResult.document as Record<string, unknown>;
+  assertEqual(
+    editedDocument.source,
+    '-- 日本語\nSELECT 10 FROM "G" WHERE n = 3',
+    "transaction preserves and updates exact source",
+  );
+  assertEqual(editedDocument.status, "parsed", "edited document parse state");
+
+  const undoResponse = await invokeWasm(instance.exports, {
+    action: "domain.apply_sql_document_edit_transaction",
+    value: {
+      current_source: editedDocument.source,
+      transaction: editResult.undo,
+    },
+  });
+  assertEqual(undoResponse.ok, true, "undo transaction envelope");
+  assertEqual(
+    (undoResponse.value as Record<string, unknown>).document &&
+      ((undoResponse.value as Record<string, unknown>).document as Record<string, unknown>).source,
+    editSource,
+    "undo restores exact source",
+  );
+
+  const staleEditResponse = await invokeWasm(instance.exports, {
+    action: "domain.apply_sql_document_edit_transaction",
+    value: {
+      current_source: "SELECT 2",
+      transaction: { expected_source: "SELECT 1", edits: [] },
+    },
+  });
+  assertEqual(staleEditResponse.ok, false, "stale edit rejection");
+  assertEqual(
+    (staleEditResponse.error as Record<string, unknown>).code,
+    "stale_source",
+    "stable stale source error",
+  );
+
+  const invalidRangeResponse = await invokeWasm(instance.exports, {
+    action: "domain.apply_sql_document_edit_transaction",
+    value: {
+      current_source: "SELECT 1",
+      transaction: {
+        expected_source: "SELECT 1",
+        edits: [{
+          range: { start: 8, end: 9 },
+          expected_text: "1",
+          replacement: "2",
+        }],
+      },
+    },
+  });
+  assertEqual(invalidRangeResponse.ok, false, "invalid range rejection");
+  assertEqual(
+    (invalidRangeResponse.error as Record<string, unknown>).code,
+    "range_out_of_bounds",
+    "stable range error",
+  );
+
+  const amplifiedEditSource = `SELECT ${Array(20_000).fill("1").join(",")}`;
+  const amplifiedEditResponse = await invokeWasm(instance.exports, {
+    action: "domain.apply_sql_document_edit_transaction",
+    value: {
+      current_source: amplifiedEditSource,
+      transaction: { expected_source: amplifiedEditSource, edits: [] },
+    },
+  });
+  assertEqual(amplifiedEditResponse.ok, false, "amplified edit result bound");
+  assertEqual(
+    (amplifiedEditResponse.error as Record<string, unknown>).kind,
+    "domain_output_too_large",
+    "amplified edit output error",
+  );
+  if (
+    new TextEncoder().encode(JSON.stringify(amplifiedEditResponse)).length >
+      1024 * 1024
+  ) {
+    throw new Error("Oversized SQL Document edit output was not bounded");
+  }
+
   const { instance: memoryGuardInstance } = await WebAssembly.instantiate(
     wasmBytes,
     {},
