@@ -52,6 +52,7 @@ export {
   protocolFetch,
   type ProtocolFetchOptions,
   protocolFetchResponse,
+  renameSqlDocumentParameter,
   spreadsheetCsvRequestBytes,
   type SqlDocument,
   type SqlDocumentDiagnostic,

@@ -16,6 +16,7 @@ import {
   proposeSqlStructureOperation,
   protocolFetch,
   protocolFetchResponse,
+  renameSqlDocumentParameter,
   spreadsheetCsvRequestBytes,
   UGOITE_API_OPERATIONS,
   UGOITE_WASM_PROTOCOL_VERSION,
@@ -331,6 +332,31 @@ describe("portable Ugoite API protocol WASM", () => {
         expected,
       );
     }
+  });
+
+  it("renames SQL Document parameters through the typed Rust/WASM client", async () => {
+    const sql = `-- $day
+SELECT $day + $day AS total, '$day' AS literal, $day2 AS other FROM "G"`;
+    const document = await renameSqlDocumentParameter(
+      sql,
+      "day",
+      "billing_day",
+    );
+    const expectedSql = sql.replace(
+      "SELECT $day + $day",
+      "SELECT $billing_day + $billing_day",
+    );
+    const sourceBytes = new TextEncoder().encode(expectedSql);
+
+    expect(document).toMatchObject({ source: expectedSql, status: "parsed" });
+    expect(
+      document.tokens.filter((token) => token.kind === "placeholder")
+        .map((token) =>
+          new TextDecoder().decode(
+            sourceBytes.subarray(token.range.start, token.range.end),
+          )
+        ),
+    ).toEqual(["$billing_day", "$billing_day", "$day2"]);
   });
 
   it("parses Composition Input synchronously after preparing the shared WASM parser", async () => {

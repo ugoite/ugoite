@@ -441,6 +441,17 @@ export const parseSqlDocument = async (sql: string): Promise<SqlDocument> =>
     value: { sql },
   });
 
+/** Rename a SQL parameter through the shared Rust/WASM document contract. */
+export const renameSqlDocumentParameter = async (
+  sql: string,
+  oldName: string,
+  newName: string,
+): Promise<SqlDocument> =>
+  await invokeProtocol<SqlDocument>({
+    action: "domain.rename_sql_document_parameter",
+    value: { sql, old_name: oldName, new_name: newName },
+  });
+
 export type SqlStructureColumnType =
   | "string"
   | "boolean"
