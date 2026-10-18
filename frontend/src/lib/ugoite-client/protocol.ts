@@ -258,6 +258,7 @@ export type SqlDocumentNodeKind =
   | "other_statement"
   | "query"
   | "select"
+  | "select_item"
   | "relation"
   | "table_factor"
   | "identifier_expression"
