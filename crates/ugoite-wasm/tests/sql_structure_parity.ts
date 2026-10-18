@@ -1,5 +1,6 @@
 const workspaceRoot = new URL("../../..", import.meta.url).pathname;
 const MAX_SQL_DOCUMENT_BYTES = 256 * 1024;
+const MAX_SQL_DOCUMENT_RESPONSE_BYTES = MAX_SQL_DOCUMENT_BYTES * 4;
 
 async function runCommand(command: string, args: string[]): Promise<string> {
   const result = await new Deno.Command(command, {
@@ -187,6 +188,56 @@ async function main(): Promise<void> {
   const placeholderRange = placeholder.range as { start: number; end: number };
   assertEqual(placeholderRange.start, 27, "placeholder UTF-8 byte start");
   assertEqual(placeholderRange.end, 31, "placeholder UTF-8 byte end");
+
+  const renamePrefix =
+    "-- $day\nSELECT $day + $day AS total, '$day' AS literal, $day2 AS other FROM \"G\" /*";
+  const renameSuffix = "*/";
+  const renamedPrefix = renamePrefix.replace(
+    "SELECT $day + $day",
+    "SELECT $billing_day + $billing_day",
+  );
+  const renameSql = `${renamePrefix}${
+    "x".repeat(
+      MAX_SQL_DOCUMENT_BYTES - renamedPrefix.length - renameSuffix.length,
+    )
+  }${renameSuffix}`;
+  const renamedResponse = await invokeWasm(instance.exports, {
+    action: "domain.rename_sql_document_parameter",
+    value: { sql: renameSql, old_name: "day", new_name: "billing_day" },
+  });
+  assertEqual(renamedResponse.ok, true, "parameter rename ABI envelope");
+  const renamedDocument = renamedResponse.value as Record<string, unknown>;
+  const expectedRenamedSql = renameSql.replace(
+    "SELECT $day + $day",
+    "SELECT $billing_day + $billing_day",
+  );
+  assertDocumentRanges(
+    renamedDocument,
+    expectedRenamedSql,
+    "parameter rename ABI document",
+  );
+  const renamedTokens = renamedDocument.tokens as Record<string, unknown>[];
+  const renamedPlaceholders = renamedTokens
+    .map((token) =>
+      sourceSliceByByteRange(
+        expectedRenamedSql,
+        token.range as { start: number; end: number },
+      )
+    )
+    .filter((text) => text.startsWith("$"));
+  assertEqual(
+    JSON.stringify(renamedPlaceholders),
+    JSON.stringify(["$billing_day", "$billing_day", "$day2"]),
+    "parameter rename ABI token-aware placeholders",
+  );
+  const renamedResponseBytes = new TextEncoder().encode(
+    JSON.stringify(renamedResponse),
+  ).length;
+  if (renamedResponseBytes > MAX_SQL_DOCUMENT_RESPONSE_BYTES) {
+    throw new Error(
+      `Parameter rename response exceeded its bound: ${renamedResponseBytes} bytes`,
+    );
+  }
 
   const amplifiedSql = `SELECT ${Array(20_000).fill("1").join(",")}`;
   const amplifiedResponse = await invokeWasm(instance.exports, {
