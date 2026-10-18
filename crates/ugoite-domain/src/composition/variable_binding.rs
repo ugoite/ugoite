@@ -305,6 +305,7 @@ fn component_accepts_variable(
                 matches!(
                     scalar_type.scalar_type,
                     VariableGraphScalarType::String
+                        | VariableGraphScalarType::Boolean
                         | VariableGraphScalarType::Integer
                         | VariableGraphScalarType::Float
                         | VariableGraphScalarType::Decimal
@@ -368,8 +369,9 @@ mod tests {
     fn constant(id: &str, scalar_type: VariableGraphScalarType) -> VariableGraphNode {
         let value = match scalar_type {
             VariableGraphScalarType::String => VariableGraphLiteral::String("ready".to_owned()),
+            VariableGraphScalarType::Boolean => VariableGraphLiteral::Boolean(true),
             VariableGraphScalarType::Integer => VariableGraphLiteral::Integer(1),
-            _ => panic!("test helper only supports String and Integer"),
+            _ => panic!("test helper only supports String, Boolean, and Integer"),
         };
         VariableGraphNode {
             id: id.to_owned(),
@@ -405,6 +407,7 @@ mod tests {
             input("day", VariableGraphScalarType::String),
             constant("title", VariableGraphScalarType::String),
             constant("count", VariableGraphScalarType::Integer),
+            constant("enabled", VariableGraphScalarType::Boolean),
             table_query("rows"),
         ]);
         let bindings = vec![
@@ -419,6 +422,10 @@ mod tests {
             VariableGraphComponentBinding::Metric {
                 id: "count_metric".to_owned(),
                 variable: "count".to_owned(),
+            },
+            VariableGraphComponentBinding::Metric {
+                id: "enabled_metric".to_owned(),
+                variable: "enabled".to_owned(),
             },
             VariableGraphComponentBinding::Table {
                 id: "rows_table".to_owned(),
@@ -437,6 +444,7 @@ mod tests {
                 "day_input".to_owned(),
                 "title_text".to_owned(),
                 "count_metric".to_owned(),
+                "enabled_metric".to_owned(),
                 "rows_table".to_owned(),
                 "literal_text".to_owned(),
             ],
@@ -444,6 +452,7 @@ mod tests {
         .unwrap();
         assert_eq!(compiled.component_variables["rows_table"], "rows");
         assert_eq!(compiled.component_variables["count_metric"], "count");
+        assert_eq!(compiled.component_variables["enabled_metric"], "enabled");
         assert_eq!(compiled.input_components["day"], ["day_input"]);
         assert!(!compiled.component_variables.contains_key("literal_text"));
     }
