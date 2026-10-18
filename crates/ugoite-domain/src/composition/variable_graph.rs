@@ -587,8 +587,11 @@ pub(crate) fn literal_matches(
         (VariableGraphScalarType::String, VariableGraphLiteral::String(value)) => {
             super::valid_variable_string(value)
         }
-        (VariableGraphScalarType::Boolean, VariableGraphLiteral::Boolean(_))
-        | (VariableGraphScalarType::Integer, VariableGraphLiteral::Integer(_)) => true,
+        (VariableGraphScalarType::Boolean, VariableGraphLiteral::Boolean(_)) => true,
+        (VariableGraphScalarType::Integer, VariableGraphLiteral::Integer(value)) => {
+            (-super::MAX_COMPOSITION_VARIABLE_INTEGER..=super::MAX_COMPOSITION_VARIABLE_INTEGER)
+                .contains(value)
+        }
         (VariableGraphScalarType::Float, VariableGraphLiteral::Float(value)) => value.is_finite(),
         (VariableGraphScalarType::Decimal, VariableGraphLiteral::Decimal(value)) => {
             decimal_text_is_valid(value)
@@ -1978,6 +1981,61 @@ mod tests {
                 VariableGraphDiagnosticCode::InvalidConstantValue
             );
     }
+    }
+
+    #[test]
+    fn integer_constants_and_defaults_obey_the_portable_safe_range() {
+        let maximum = super::super::MAX_COMPOSITION_VARIABLE_INTEGER;
+        for value in [maximum, -maximum] {
+            let constant = VariableGraphNode {
+                id: "value".to_owned(),
+                kind: VariableGraphNodeKind::Constant {
+                    value_type: scalar(VariableGraphScalarType::Integer, false),
+                    value: VariableGraphLiteral::Integer(value),
+                },
+            };
+            assert!(compile_variable_graph(&graph(vec![constant])).is_ok());
+
+            let input = VariableGraphNode {
+                id: "value".to_owned(),
+                kind: VariableGraphNodeKind::Input {
+                    value_type: scalar(VariableGraphScalarType::Integer, false),
+                    required: false,
+                    default: Some(VariableGraphLiteral::Integer(value)),
+                },
+            };
+            assert!(compile_variable_graph(&graph(vec![input])).is_ok());
+        }
+
+        for value in [maximum + 1, -maximum - 1] {
+            let constant = VariableGraphNode {
+                id: "value".to_owned(),
+                kind: VariableGraphNodeKind::Constant {
+                    value_type: scalar(VariableGraphScalarType::Integer, false),
+                    value: VariableGraphLiteral::Integer(value),
+                },
+            };
+            assert_eq!(
+                compile_variable_graph(&graph(vec![constant]))
+                    .expect_err("unsafe integer constant")[0]
+                    .code,
+                VariableGraphDiagnosticCode::InvalidConstantValue
+            );
+
+            let input = VariableGraphNode {
+                id: "value".to_owned(),
+                kind: VariableGraphNodeKind::Input {
+                    value_type: scalar(VariableGraphScalarType::Integer, false),
+                    required: false,
+                    default: Some(VariableGraphLiteral::Integer(value)),
+                },
+            };
+            assert_eq!(
+                compile_variable_graph(&graph(vec![input])).expect_err("unsafe integer default")[0]
+                    .code,
+                VariableGraphDiagnosticCode::InvalidInputDefault
+            );
+        }
     }
 
     #[test]

@@ -301,6 +301,37 @@ mod tests {
     }
 
     #[test]
+    fn supplied_integers_obey_the_portable_safe_range() {
+        let maximum = super::super::MAX_COMPOSITION_VARIABLE_INTEGER;
+        for value in [maximum, -maximum] {
+            let resolved = resolve_variable_graph_inputs(
+                &graph(vec![input("amount", false, None)]),
+                &BTreeMap::from([("amount".to_owned(), VariableGraphLiteral::Integer(value))]),
+            )
+            .expect("safe integer input");
+            assert_eq!(
+                resolved.values["amount"],
+                VariableGraphLiteral::Integer(value)
+            );
+        }
+
+        for value in [maximum + 1, -maximum - 1] {
+            let error = resolve_variable_graph_inputs(
+                &graph(vec![input("amount", false, None)]),
+                &BTreeMap::from([("amount".to_owned(), VariableGraphLiteral::Integer(value))]),
+            )
+            .expect_err("unsafe integer input");
+            assert_eq!(
+                error.inputs,
+                [diagnostic(
+                    VariableGraphInputDiagnosticCode::InputTypeMismatch,
+                    "amount"
+                )]
+            );
+        }
+    }
+
+    #[test]
     fn query_nodes_are_not_caller_inputs() {
         let query = VariableGraphNode {
             id: "computed".to_owned(),
