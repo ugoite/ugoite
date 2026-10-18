@@ -26,5 +26,177 @@
     "require_from": true,
     "single_statement_only": true,
     "limit_requires_number": true
+  },
+  "feature_matrix": {
+    "version": 1,
+    "backend": {
+      "statement_gate": "exactly_one_query_ast_statement",
+      "query_body_form_restricted": false,
+      "clause_admission": "datafusion_parser_and_planner",
+      "closed_clause_allowlist": false,
+      "function_policy": "ReadOnlyAggregateV1",
+      "functions": {
+        "scalar": [],
+        "aggregate": ["count", "sum", "avg", "min", "max"],
+        "window": []
+      },
+      "function_aliases": {
+        "aggregate": { "mean": "avg" }
+      }
+    },
+    "direct_sql_lint": {
+      "require_from": true,
+      "fromless_select_diagnostic": "error"
+    },
+    "editor": {
+      "aggregate_contract": {
+        "checked": "name_catalog_only",
+        "known_editor_rejections": ["COUNT(DISTINCT *)", "MEAN"],
+        "verification_gaps": [
+          "runtime_structure_frontend_signature_and_type_parity",
+          "supported_aggregate_modifier_parity",
+          "count_distinct_wildcard_execution_semantics",
+          "aggregate_alias_parity"
+        ]
+      },
+      "operations": [
+        {
+          "action": "columns",
+          "protocol": "set_columns",
+          "sql": ["SELECT projection"],
+          "coverage": "bounded"
+        },
+        {
+          "action": "filter",
+          "protocol": "set_filters",
+          "sql": ["WHERE"],
+          "coverage": "bounded"
+        },
+        {
+          "action": "sort",
+          "protocol": "set_sort",
+          "sql": ["ORDER BY"],
+          "coverage": "bounded"
+        },
+        {
+          "action": "aggregate",
+          "protocol": "set_aggregates",
+          "sql": ["SELECT aggregate projection"],
+          "coverage": "bounded",
+          "functions": ["count", "sum", "avg", "min", "max"]
+        },
+        {
+          "action": "group_by",
+          "protocol": "set_group_by",
+          "sql": ["GROUP BY"],
+          "coverage": "bounded"
+        },
+        {
+          "action": "distinct",
+          "protocol": "set_distinct",
+          "sql": ["SELECT DISTINCT"],
+          "coverage": "bounded"
+        }
+      ],
+      "constructs": [
+        {
+          "id": "from_relation",
+          "sql": "FROM",
+          "backend_admission": "planner_decides",
+          "editor_coverage": "context_only",
+          "limits": [
+            "one relation",
+            "matching context relation",
+            "no alias",
+            "no joins"
+          ]
+        },
+        {
+          "id": "projection",
+          "sql": "SELECT",
+          "backend_admission": "planner_decides",
+          "editor_coverage": "bounded",
+          "limits": [
+            "wildcard or simple columns",
+            "allowlisted aggregates over supported arguments"
+          ]
+        },
+        {
+          "id": "where_predicate",
+          "sql": "WHERE",
+          "backend_admission": "planner_decides",
+          "editor_coverage": "bounded",
+          "limits": [
+            "AND of column-to-parameter comparisons",
+            "IS NULL and IS NOT NULL",
+            "no OR or NOT"
+          ]
+        },
+        {
+          "id": "grouping",
+          "sql": "GROUP BY",
+          "backend_admission": "planner_decides",
+          "editor_coverage": "bounded",
+          "limits": ["simple columns only", "projected columns must be grouped"]
+        },
+        {
+          "id": "having",
+          "sql": "HAVING",
+          "backend_admission": "planner_decides",
+          "editor_coverage": "none"
+        },
+        {
+          "id": "ordering",
+          "sql": "ORDER BY",
+          "backend_admission": "planner_decides",
+          "editor_coverage": "bounded",
+          "limits": [
+            "simple columns only",
+            "ASC or DESC",
+            "no NULLS FIRST/LAST"
+          ]
+        },
+        {
+          "id": "row_limit",
+          "sql": "LIMIT/OFFSET",
+          "backend_admission": "planner_decides",
+          "editor_coverage": "preserved_only",
+          "limits": [
+            "the structure parser recognizes non-negative integer literals",
+            "there is no edit operation"
+          ]
+        },
+        {
+          "id": "joins",
+          "sql": "JOIN",
+          "backend_admission": "planner_decides",
+          "editor_coverage": "none"
+        },
+        {
+          "id": "common_table_expressions",
+          "sql": "WITH",
+          "backend_admission": "planner_decides",
+          "editor_coverage": "none"
+        },
+        {
+          "id": "set_operations",
+          "sql": "UNION/INTERSECT/EXCEPT",
+          "backend_admission": "planner_decides",
+          "editor_coverage": "none"
+        },
+        {
+          "id": "values_query",
+          "sql": "VALUES",
+          "backend_admission": "statement_gate_passes_but_authorized_physical_plan_rejects",
+          "editor_coverage": "none"
+        },
+        {
+          "id": "general_expressions",
+          "sql": "CASE/CAST/arithmetic/scalar functions",
+          "backend_admission": "planner_decides",
+          "editor_coverage": "none"
+        }
+      ]
+    }
   }
 }

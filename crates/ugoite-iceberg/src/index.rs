@@ -4771,6 +4771,8 @@ mod tests {
             );
         }
         assert!(validate_read_only_sql("SELECT * FROM t").is_ok());
+        assert!(validate_read_only_sql("SELECT 1").is_ok());
+        assert!(validate_read_only_sql("VALUES (1)").is_ok());
     }
 
     #[test]
