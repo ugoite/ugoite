@@ -19,8 +19,8 @@ mod yaml;
 pub use variable_graph::{
     compile_variable_graph, CompiledVariableGraph, VariableGraph, VariableGraphArgumentBinding,
     VariableGraphColumn, VariableGraphDiagnostic, VariableGraphDiagnosticCode,
-    VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind, VariableGraphResultType,
-    VariableGraphScalarDescriptor, VariableGraphScalarType,
+    VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind, VariableGraphQueryDefinition,
+    VariableGraphResultType, VariableGraphScalarDescriptor, VariableGraphScalarType,
 };
 
 pub use canonical::{
