@@ -6,13 +6,8 @@ import { SourceNavigator } from "~/components/SourceNavigator";
 import { SQLWorkspace } from "~/components/SQLWorkspace";
 import type { SQLWorkspaceAction } from "~/components/SQLWorkspace";
 import { SqlStructureToolbar } from "~/components/SqlStructureToolbar";
-import type {
-  CompositionResolvedSource,
-} from "~/lib/composition-api";
-import type {
-  CompositionDraft,
-  DraftVariable,
-} from "~/lib/composition-draft";
+import type { CompositionResolvedSource } from "~/lib/composition-api";
+import type { CompositionDraft, DraftVariable } from "~/lib/composition-draft";
 import type { CompositionSourcePageState } from "~/lib/composition-query-handle";
 import type { CompositionSourceCountState } from "~/lib/composition-preview-handle";
 import {
@@ -253,9 +248,10 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
                   );
                   return trigger instanceof HTMLElement ? trigger : null;
                 }
-                : () => document.activeElement instanceof HTMLElement
-                ? document.activeElement
-                : null;
+                : () =>
+                  document.activeElement instanceof HTMLElement
+                    ? document.activeElement
+                    : null;
               if (narrowViewport()) setMobileDrawerOpen(false);
               props.onAddSource(returnFocus);
             }}
@@ -336,7 +332,9 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
               }}
             >
               <UiIcon name="menu" />
-              <span>{selectedSource()?.name ?? t("composition.studioData")}</span>
+              <span>
+                {selectedSource()?.name ?? t("composition.studioData")}
+              </span>
               <span class="ui-sr-only">
                 {t("composition.studioShowDataSources")}
               </span>
@@ -352,16 +350,18 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
               const value = pageState()?.page;
               return value?.kind === "sql" ? value.page : undefined;
             };
-            const planSource = () => props.planSources.find((item) =>
-              item.source_id === sourceId()
-            );
+            const planSource = () =>
+              props.planSources.find((item) => item.source_id === sourceId());
             const sqlVariables = () => {
               if (selected().kind === "inline_sql") {
-                return normalizeSqlVariables(selected().sql).variables.map((item) => ({
+                return normalizeSqlVariables(selected().sql).variables.map((
+                  item,
+                ) => ({
                   name: item.name,
-                  type: props.variables.find((variable) =>
-                    variable.id === item.name
-                  )?.type ?? item.type,
+                  type:
+                    props.variables.find((variable) =>
+                      variable.id === item.name
+                    )?.type ?? item.type,
                   variableId: item.name,
                 }));
               }
@@ -377,47 +377,66 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
                   : []
               );
             };
-            const variables = () => sqlVariables().map((item) => {
-              const definition = props.variables.find((variable) =>
-                variable.id === item.variableId
-              );
-              return {
-                name: item.name,
-                type: item.type,
-                required: definition?.required,
-                default: definition?.default as string | number | boolean | undefined,
-              };
-            });
+            const variables = () =>
+              sqlVariables().map((item) => {
+                const definition = props.variables.find((variable) =>
+                  variable.id === item.variableId
+                );
+                return {
+                  name: item.name,
+                  type: item.type,
+                  required: definition?.required,
+                  default: definition?.default as
+                    | string
+                    | number
+                    | boolean
+                    | undefined,
+                };
+              });
             const structureContexts = () => {
               if (selected().kind !== "inline_sql") return [];
               const bindings = selected().formBindings ?? [];
-              if (bindings.length !== 1) return [];
-              const [binding] = bindings;
-              const form = props.forms.find((item) => item.id === binding.form_id);
-              return form
-                ? buildSqlStructureContexts(
-                  [{ ...form, name: binding.relation }],
-                  variables(),
-                  `composition:${sourceId()}:${binding.form_id}:${binding.relation}`,
-                )
-                : [];
+              if (bindings.length === 0) return [];
+              const boundForms = bindings.map((binding) =>
+                props.forms.find((item) => item.id === binding.form_id)
+              );
+              // Do not give the editor a partial schema: an unresolved
+              // relation must keep the whole query out of structure editing.
+              if (boundForms.some((form) => !form)) return [];
+              return buildSqlStructureContexts(
+                boundForms.map((form, index) => ({
+                  ...form!,
+                  name: bindings[index].relation,
+                })),
+                variables(),
+                `composition:${sourceId()}:${JSON.stringify(bindings)}`,
+              );
             };
-            const parameterValues = () => Object.fromEntries(
-              sqlVariables().flatMap((item) => {
-                const value = props.variableValues[item.variableId ?? item.name];
-                return value === undefined ? [] : [[item.name, value as string | number | boolean]];
-              }),
-            );
+            const parameterValues = () =>
+              Object.fromEntries(
+                sqlVariables().flatMap((item) => {
+                  const value =
+                    props.variableValues[item.variableId ?? item.name];
+                  return value === undefined
+                    ? []
+                    : [[item.name, value as string | number | boolean]];
+                }),
+              );
             const state = () => pageState()?.status;
-            const status = () => props.previewActive
-              ? "loading" as const
-              : state() === "ready"
-              ? "success" as const
-              : state() === "error"
-              ? "error" as const
-              : "idle" as const;
+            const status = () =>
+              props.previewActive
+                ? "loading" as const
+                : state() === "ready"
+                ? "success" as const
+                : state() === "error"
+                ? "error" as const
+                : "idle" as const;
             return (
-              <div class="dataWorkspaceEditor" role="region" aria-label={selected().name}>
+              <div
+                class="dataWorkspaceEditor"
+                role="region"
+                aria-label={selected().name}
+              >
                 {selected().kind === "inline_sql"
                   ? (
                     <div class="dataWorkspaceSqlNameControl">
@@ -443,12 +462,17 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
                           aria-label={t("sqlPage.queryName")}
                           value={selected().name}
                           onInput={(event) =>
-                            props.onInlineSqlName(sourceId(), event.currentTarget.value)}
+                            props.onInlineSqlName(
+                              sourceId(),
+                              event.currentTarget.value,
+                            )}
                           onKeyDown={(event) => {
                             if (event.key === "Enter") {
                               event.preventDefault();
                               setEditingInlineSqlNameSourceId(null);
-                              queueMicrotask(() => inlineSqlNameEditButton?.focus());
+                              queueMicrotask(() =>
+                                inlineSqlNameEditButton?.focus()
+                              );
                             }
                           }}
                           onBlur={() => {
@@ -480,7 +504,10 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
                   id={`composition-${sourceId()}`}
                   sql={selected().sql}
                   {...(selected().kind === "inline_sql"
-                    ? { onSqlChange: (sql: string) => props.onInlineSql(sourceId(), sql) }
+                    ? {
+                      onSqlChange: (sql: string) =>
+                        props.onInlineSql(sourceId(), sql),
+                    }
                     : { readOnly: true })}
                   schema={props.sqlSchema}
                   actions={structureActions()}
@@ -497,16 +524,23 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
                       ? {
                         page: {
                           columns: page()!.columns,
-                          columnTypes: page()!.result_schema?.map((column) => column.type),
+                          columnTypes: page()!.result_schema?.map((column) =>
+                            column.type
+                          ),
                           rows: page()!.rows,
                           exactIntegerRows: page()!.exact_integer_rows,
-                          pageIdentity: `${sourceId()}:${pageState()?.cursor ?? "first"}`,
+                          pageIdentity: `${sourceId()}:${
+                            pageState()?.cursor ?? "first"
+                          }`,
                           canNext: Boolean(page()!.has_more && page()!.next),
-                          canPrevious: (pageState()?.cursorStack.length ?? 0) > 1,
+                          canPrevious:
+                            (pageState()?.cursorStack.length ?? 0) > 1,
                         },
                       }
                       : {}),
-                    ...(status() === "error" ? { error: t("composition.queryFailed") } : {}),
+                    ...(status() === "error"
+                      ? { error: t("composition.queryFailed") }
+                      : {}),
                   }}
                   onPreview={() => props.onRetry(sourceId())}
                   {...(props.onCount
