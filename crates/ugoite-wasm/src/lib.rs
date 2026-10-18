@@ -5,13 +5,54 @@
 //! prepares requests and decodes responses using the same Rust implementation
 //! used by the native CLI.
 
+use std::io::{self, Write};
+
 pub use ugoite_api_client as api_client;
 pub use ugoite_core as core;
 pub use ugoite_domain as domain;
 pub use ugoite_konase as konase;
 
 const MAX_PROTOCOL_REQUEST_BYTES: usize = 256 * 1024;
+// JSON can expand each control byte in a SQL source to a six-byte `\u00xx`
+// escape. Bound the action-specific envelope at that worst case so every
+// source within the domain limit reaches the parser and receives its normal
+// diagnostic, while unrelated protocol actions keep the 256 KiB limit.
+const MAX_SQL_DOCUMENT_REQUEST_BYTES: usize =
+    ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES * 6 + 1024;
+const MAX_SQL_DOCUMENT_RESPONSE_BYTES: usize =
+    ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES * 4;
 const ENTRY_OPERATIONS: &[&str] = &["entry.validate_draft"];
+
+struct BoundedJsonWriter {
+    bytes: Vec<u8>,
+    max_bytes: usize,
+}
+
+impl BoundedJsonWriter {
+    fn new(max_bytes: usize) -> Self {
+        Self {
+            bytes: Vec::new(),
+            max_bytes,
+        }
+    }
+}
+
+impl Write for BoundedJsonWriter {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if bytes.len() > self.max_bytes.saturating_sub(self.bytes.len()) {
+            return Err(io::Error::new(
+                io::ErrorKind::WriteZero,
+                "bounded JSON output limit exceeded",
+            ));
+        }
+        self.bytes.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
 
 fn is_entry_operation(action: &str) -> bool {
     ENTRY_OPERATIONS.contains(&action)
@@ -19,6 +60,15 @@ fn is_entry_operation(action: &str) -> bool {
 
 pub fn invoke_json(input: &str) -> String {
     if input.len() > MAX_PROTOCOL_REQUEST_BYTES {
+        if input.len() <= MAX_SQL_DOCUMENT_REQUEST_BYTES {
+            if let Ok(request) = serde_json::from_str::<serde_json::Value>(input) {
+                if request.get("action").and_then(serde_json::Value::as_str)
+                    == Some("domain.parse_sql_document")
+                {
+                    return invoke_domain(request);
+                }
+            }
+        }
         return protocol_input_too_large_error();
     }
     if let Ok(request) = serde_json::from_str::<serde_json::Value>(input) {
@@ -158,6 +208,11 @@ fn invoke_domain(request: serde_json::Value) -> String {
         == Some("domain.compile_variable_graph.v1")
     {
         return compile_variable_graph_v1(request);
+    }
+    if request.get("action").and_then(serde_json::Value::as_str)
+        == Some("domain.parse_sql_document")
+    {
+        return invoke_sql_document(request);
     }
 
     if request.get("action").and_then(serde_json::Value::as_str)
@@ -477,6 +532,46 @@ fn variable_graph_result_too_large() -> String {
         },
     })
     .to_string()
+}
+
+fn invoke_sql_document(request: serde_json::Value) -> String {
+    let result = (|| -> Result<ugoite_domain::sql_document::SqlDocument, String> {
+        let payload = request
+            .get("value")
+            .cloned()
+            .ok_or_else(|| "value is required".to_string())?;
+        let sql = payload
+            .get("sql")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| "sql must be a string".to_string())?;
+        Ok(ugoite_domain::sql_document::parse_sql_document(sql))
+    })();
+
+    match result {
+        Ok(document) => serialize_sql_document_response(&document)
+            .unwrap_or_else(|()| sql_document_response_too_large()),
+        Err(message) => serde_json::json!({
+            "ok": false,
+            "error": {"kind": "domain_validation", "message": message},
+        })
+        .to_string(),
+    }
+}
+
+fn serialize_sql_document_response(
+    document: &ugoite_domain::sql_document::SqlDocument,
+) -> Result<String, ()> {
+    let mut writer = BoundedJsonWriter::new(MAX_SQL_DOCUMENT_RESPONSE_BYTES);
+    writer
+        .write_all(b"{\"ok\":true,\"value\":")
+        .map_err(|_| ())?;
+    serde_json::to_writer(&mut writer, document).map_err(|_| ())?;
+    writer.write_all(b"}").map_err(|_| ())?;
+    String::from_utf8(writer.bytes).map_err(|_| ())
+}
+
+fn sql_document_response_too_large() -> String {
+    r#"{"ok":false,"error":{"kind":"domain_output_too_large","message":"SQL Document response exceeds the 1 MiB limit"}}"#.to_owned()
 }
 
 fn composition_canonicalization_error(
@@ -873,6 +968,46 @@ mod tests {
     }
 
     #[test]
+    fn sql_document_protocol_matches_native_parser_for_draft_states_and_ranges() {
+        let oversized_sql = "x".repeat(ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES + 1);
+        let too_complex_sql =
+            "(".repeat(ugoite_domain::sql_document::MAX_SQL_DOCUMENT_COMPLEXITY_TOKENS + 1);
+        let cases = [
+            (
+                "parsed",
+                "-- 日付\nSELECT \"日付\", $day FROM \"G\" WHERE note = '$day'",
+                "parsed",
+            ),
+            ("invalid", "SELECT (", "invalid_sql"),
+            ("multiple", "SELECT 1; SELECT 2", "multiple_statements"),
+            ("too complex", too_complex_sql.as_str(), "too_complex"),
+            ("oversized", oversized_sql.as_str(), "too_large"),
+        ];
+
+        for (name, sql, status) in cases {
+            let request = serde_json::json!({
+                "action": "domain.parse_sql_document",
+                "value": {"sql": sql},
+            })
+            .to_string();
+            if name == "oversized" {
+                assert!(request.len() > super::MAX_PROTOCOL_REQUEST_BYTES);
+                assert!(request.len() <= super::MAX_SQL_DOCUMENT_REQUEST_BYTES);
+            }
+
+            let response: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
+            assert_eq!(response["ok"], true, "{name}: {response}");
+            assert_eq!(response["value"]["source"], sql, "{name}: source");
+            assert_eq!(response["value"]["status"], status, "{name}: status");
+
+            // The portable adapter returns the exact domain document, including
+            // UTF-8 byte ranges and diagnostics; it does not plan or execute SQL.
+            let native = ugoite_domain::sql_document::parse_sql_document(sql);
+            assert_eq!(response["value"], serde_json::to_value(native).unwrap());
+        }
+    }
+
+    #[test]
     fn variable_graph_protocol_reports_cycles_and_rejects_unknown_fields() {
         let integer = serde_json::json!({
             "scalar_type": "integer",
@@ -951,6 +1086,46 @@ mod tests {
             nested_unknown_response["error"]["code"],
             "invalid_variable_graph_payload"
         );
+    }
+
+    #[test]
+    fn sql_document_protocol_accepts_maximum_source_with_json_escaped_trivia() {
+        let sql = format!(
+            "SELECT 1 /*{}*/",
+            "\n".repeat(ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES - 13)
+        );
+        assert_eq!(
+            sql.len(),
+            ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES
+        );
+        let request = serde_json::json!({
+            "action": "domain.parse_sql_document",
+            "value": {"sql": sql},
+        })
+        .to_string();
+        assert!(request.len() > super::MAX_PROTOCOL_REQUEST_BYTES);
+        assert!(request.len() <= super::MAX_SQL_DOCUMENT_REQUEST_BYTES);
+
+        let response: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"]["status"], "parsed");
+        assert_eq!(response["value"]["source"], sql);
+    }
+
+    #[test]
+    fn sql_document_protocol_bounds_amplified_parser_output() {
+        let sql = format!("SELECT {}", vec!["1"; 20_000].join(","));
+        let request = serde_json::json!({
+            "action": "domain.parse_sql_document",
+            "value": {"sql": sql},
+        })
+        .to_string();
+        let response_text = super::invoke_json(&request);
+        assert!(response_text.len() <= super::MAX_SQL_DOCUMENT_RESPONSE_BYTES);
+
+        let response: Value = serde_json::from_str(&response_text).unwrap();
+        assert_eq!(response["ok"], false, "{response}");
+        assert_eq!(response["error"]["kind"], "domain_output_too_large");
     }
 
     #[test]

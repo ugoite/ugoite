@@ -19,13 +19,15 @@ import type { CompositionSourcePageState } from "~/lib/composition-query-handle"
 import { setLocale } from "~/lib/i18n";
 
 vi.mock("~/components/SQLWorkspace", () => ({
-  SQLWorkspace: (props: Record<string, unknown> & {
-    sql: string;
-    onSqlChange?: (sql: string) => void;
-    onPreview: () => void;
-    onNext?: () => void;
-    preview: { page?: { rows: unknown[][] } };
-  }) => (
+  SQLWorkspace: (
+    props: Record<string, unknown> & {
+      sql: string;
+      onSqlChange?: (sql: string) => void;
+      onPreview: () => void;
+      onNext?: () => void;
+      preview: { page?: { rows: unknown[][] } };
+    },
+  ) => (
     <div
       data-testid="sql-workspace"
       data-readonly={String(Boolean(props.readOnly))}
@@ -45,7 +47,21 @@ vi.mock("~/components/SQLWorkspace", () => ({
 }));
 
 vi.mock("~/components/SqlStructureToolbar", () => ({
-  SqlStructureToolbar: () => null,
+  SqlStructureToolbar: (props: {
+    contexts: () => Array<{
+      identity: string;
+      parser: { relation: string; columns: Array<{ name: string }> };
+    }>;
+  }) => (
+    <output data-testid="structure-contexts">
+      {JSON.stringify(
+        props.contexts().map((context) => ({
+          relation: context.parser.relation,
+          columns: context.parser.columns.map((column) => column.name),
+        })),
+      )}
+    </output>
+  ),
 }));
 
 vi.mock("@solidjs/router", () => ({
@@ -54,11 +70,14 @@ vi.mock("@solidjs/router", () => ({
   ),
 }));
 
-const inlineDraft = () => {
+const inlineDraft = (
+  sql = 'SELECT "Amount" AS total FROM "Expenses"',
+  formBindings = [{ relation: "Expenses", form_id: "form-1" }],
+) => {
   const added = addInlineSqlSource(createEmptyDraft("Dashboard"), {
     name: "Expenses",
-    sql: 'SELECT "Amount" AS total FROM "Expenses"',
-    formBindings: [{ relation: "Expenses", form_id: "form-1" }],
+    sql,
+    formBindings,
     expectedResult: [{ name: "total", type: "decimal" }],
     schemaFingerprint: "a".repeat(64),
   });
@@ -157,7 +176,9 @@ describe("CompositionDataWorkspace", () => {
     expect(editor).toBeInTheDocument();
     expect(editor).not.toHaveTextContent("form-1");
     expect(screen.queryByRole("textbox", { name: "Query name" })).toBeNull();
-    const renameButton = screen.getByRole("button", { name: "Rename Expenses" });
+    const renameButton = screen.getByRole("button", {
+      name: "Rename Expenses",
+    });
     fireEvent.click(renameButton);
     const nameInput = screen.getByRole("textbox", { name: "Query name" });
     await waitFor(() => expect(nameInput).toHaveFocus());
@@ -173,7 +194,8 @@ describe("CompositionDataWorkspace", () => {
     fireEvent.keyDown(nameInput, { key: "Enter" });
     await waitFor(() => {
       expect(screen.queryByRole("textbox", { name: "Query name" })).toBeNull();
-      expect(screen.getByRole("button", { name: "Rename Expenses" })).toHaveFocus();
+      expect(screen.getByRole("button", { name: "Rename Expenses" }))
+        .toHaveFocus();
     });
     expect(screen.getByTestId("sql-workspace")).toHaveAttribute(
       "data-readonly",
@@ -185,6 +207,134 @@ describe("CompositionDataWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Run query" }));
     expect(props.onNext).toHaveBeenCalledWith("src-1");
     expect(props.onRetry).toHaveBeenCalledWith("src-1");
+  });
+
+  it("keeps relation-free SQL on the empty Form-binding path", () => {
+    render(() => (
+      <>
+        <h2 id="data-heading">Data</h2>
+        <CompositionDataWorkspace {...propsFor(inlineDraft("SELECT 1", []))} />
+      </>
+    ));
+
+    expect(screen.getByTestId("structure-contexts")).toHaveTextContent("[]");
+  });
+
+  it("does not infer a relation context from relation-bearing SQL", () => {
+    render(() => (
+      <>
+        <h2 id="data-heading">Data</h2>
+        <CompositionDataWorkspace
+          {...propsFor(inlineDraft('SELECT "Amount" FROM "Expenses"', []))}
+        />
+      </>
+    ));
+
+    expect(screen.getByTestId("structure-contexts")).toHaveTextContent("[]");
+  });
+
+  it("resolves a single Form binding using its SQL relation", () => {
+    const draft = inlineDraft();
+    render(() => (
+      <>
+        <h2 id="data-heading">Data</h2>
+        <CompositionDataWorkspace
+          {...propsFor(draft, {
+            forms: [{
+              id: "form-1",
+              name: "Renamed Expenses",
+              version: 1,
+              template: "",
+              fields: {
+                Amount: {
+                  type: "decimal",
+                  required: false,
+                  sql_column: "Amount",
+                },
+              },
+            }],
+          })}
+        />
+      </>
+    ));
+
+    const contexts = JSON.parse(
+      screen.getByTestId("structure-contexts").textContent ?? "[]",
+    ) as Array<{ relation: string; columns: string[] }>;
+    expect(contexts).toHaveLength(1);
+    expect(contexts[0].relation).toBe("Expenses");
+    expect(contexts[0].columns).toContain("Amount");
+  });
+
+  it("preserves every resolved Form context for multi-relation SQL", () => {
+    const draft = inlineDraft(
+      'SELECT "Amount" FROM "Expenses" JOIN "Budgets" ON "Expenses"."Budget" = "Budgets"."_ugoite_id"',
+      [
+        { relation: "Expenses", form_id: "form-1" },
+        { relation: "Budgets", form_id: "form-2" },
+      ],
+    );
+    render(() => (
+      <>
+        <h2 id="data-heading">Data</h2>
+        <CompositionDataWorkspace
+          {...propsFor(draft, {
+            forms: [
+              {
+                id: "form-1",
+                name: "Expense records",
+                version: 1,
+                template: "",
+                fields: {},
+              },
+              {
+                id: "form-2",
+                name: "Budget records",
+                version: 3,
+                template: "",
+                fields: {},
+              },
+            ],
+          })}
+        />
+      </>
+    ));
+
+    const contexts = JSON.parse(
+      screen.getByTestId("structure-contexts").textContent ?? "[]",
+    ) as Array<{ relation: string }>;
+    expect(contexts.map((context) => context.relation)).toEqual([
+      "Expenses",
+      "Budgets",
+    ]);
+  });
+
+  it("does not create a partial context when any Form binding is unresolved", () => {
+    const draft = inlineDraft(
+      'SELECT "Amount" FROM "Expenses" JOIN "Budgets" ON true',
+      [
+        { relation: "Expenses", form_id: "form-1" },
+        { relation: "Budgets", form_id: "missing-form" },
+      ],
+    );
+    render(() => (
+      <>
+        <h2 id="data-heading">Data</h2>
+        <CompositionDataWorkspace
+          {...propsFor(draft, {
+            forms: [{
+              id: "form-1",
+              name: "Expenses",
+              version: 1,
+              template: "",
+              fields: {},
+            }],
+          })}
+        />
+      </>
+    ));
+
+    expect(screen.getByTestId("structure-contexts")).toHaveTextContent("[]");
   });
 
   it("shows each SQL source name once and keeps rename behind an explicit action", () => {
@@ -240,10 +390,11 @@ describe("CompositionDataWorkspace", () => {
     expect(screen.getByRole("textbox", { name: "SQL" })).toHaveAttribute(
       "readonly",
     );
-    expect(screen.getByRole("link", { name: "Edit Saved SQL" })).toHaveAttribute(
-      "href",
-      "/spaces/space-1/sql/sql-1",
-    );
+    expect(screen.getByRole("link", { name: "Edit Saved SQL" }))
+      .toHaveAttribute(
+        "href",
+        "/spaces/space-1/sql/sql-1",
+      );
   });
 
   it("shows an accessible mobile source drawer and restores focus when it closes", async () => {
