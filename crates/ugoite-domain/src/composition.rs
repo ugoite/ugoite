@@ -12,6 +12,7 @@ use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 mod canonical;
+pub mod variable_binding;
 pub mod variable_graph;
 mod yaml;
 
