@@ -27,9 +27,12 @@ query or persistence authority.
 The adapter-supplied action list is the only source of structured operations.
 `analyzeSqlStructure` and `proposeSqlStructureOperation` in the portable client
 use the Rust domain parser through WASM. The capability contract accepts one
-SELECT over the selected Form relation, simple projected columns, typed
-parameter comparisons and null checks, and column ordering. It reports stable
-reason codes for unsupported SQL and never makes direct SQL unavailable.
+SELECT over the selected Form relation and literal-only scalar SELECT
+statements without a relation, such as `SELECT 1`. For a relation-free
+statement, the adapter provides an empty relation context and the parser exposes
+only operations that do not need Form columns. Typed parameter comparisons,
+null checks, and column ordering remain bound to Form metadata. It reports
+stable reason codes for unsupported SQL and never makes direct SQL unavailable.
 The checked backend-admission and current structure-editor coverage inventory
 is recorded in the [SQL feature matrix contract](../../../architecture/contracts/sql-gui-feature-matrix.md).
 Sort proposals append adapter-supplied stable keys where needed. A proposal is
@@ -40,7 +43,8 @@ exists. It disables operations that the Rust parser cannot safely round-trip
 and includes the capability reason in each disabled action's accessible name.
 Its proposal view shows the existing and proposed SQL and applies the new SQL
 only after explicit confirmation. `/sql/new`, Saved SQL detail/edit, and
-Composition inline SQL supply their context from Form metadata.
+Composition inline SQL supply their context from Form metadata together with a
+relation-free scalar context.
 
 ## Preview and results
 

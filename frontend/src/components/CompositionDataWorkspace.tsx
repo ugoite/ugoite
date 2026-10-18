@@ -391,16 +391,18 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
             const structureContexts = () => {
               if (selected().kind !== "inline_sql") return [];
               const bindings = selected().formBindings ?? [];
-              if (bindings.length !== 1) return [];
+              const identity = "composition:" + sourceId() + ":" +
+                bindings.map((binding) => binding.form_id).join(",");
+              if (bindings.length !== 1) {
+                return buildSqlStructureContexts([], variables(), identity);
+              }
               const [binding] = bindings;
               const form = props.forms.find((item) => item.id === binding.form_id);
-              return form
-                ? buildSqlStructureContexts(
-                  [{ ...form, name: binding.relation }],
-                  variables(),
-                  `composition:${sourceId()}:${binding.form_id}:${binding.relation}`,
-                )
-                : [];
+              return buildSqlStructureContexts(
+                form ? [{ ...form, name: binding.relation }] : [],
+                variables(),
+                identity + ":" + binding.relation,
+              );
             };
             const parameterValues = () => Object.fromEntries(
               sqlVariables().flatMap((item) => {
