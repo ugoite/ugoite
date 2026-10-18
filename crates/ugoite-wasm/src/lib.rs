@@ -5,6 +5,8 @@
 //! prepares requests and decodes responses using the same Rust implementation
 //! used by the native CLI.
 
+use std::io::{self, Write};
+
 pub use ugoite_api_client as api_client;
 pub use ugoite_core as core;
 pub use ugoite_domain as domain;
@@ -20,6 +22,37 @@ const MAX_SQL_DOCUMENT_REQUEST_BYTES: usize =
 const MAX_SQL_DOCUMENT_RESPONSE_BYTES: usize =
     ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES * 4;
 const ENTRY_OPERATIONS: &[&str] = &["entry.validate_draft"];
+
+struct BoundedJsonWriter {
+    bytes: Vec<u8>,
+    max_bytes: usize,
+}
+
+impl BoundedJsonWriter {
+    fn new(max_bytes: usize) -> Self {
+        Self {
+            bytes: Vec::new(),
+            max_bytes,
+        }
+    }
+}
+
+impl Write for BoundedJsonWriter {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if bytes.len() > self.max_bytes.saturating_sub(self.bytes.len()) {
+            return Err(io::Error::new(
+                io::ErrorKind::WriteZero,
+                "bounded JSON output limit exceeded",
+            ));
+        }
+        self.bytes.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
 
 fn is_entry_operation(action: &str) -> bool {
     ENTRY_OPERATIONS.contains(&action)
@@ -420,7 +453,7 @@ fn invoke_domain(request: serde_json::Value) -> String {
 }
 
 fn invoke_sql_document(request: serde_json::Value) -> String {
-    let result = (|| -> Result<serde_json::Value, String> {
+    let result = (|| -> Result<ugoite_domain::sql_document::SqlDocument, String> {
         let payload = request
             .get("value")
             .cloned()
@@ -429,28 +462,34 @@ fn invoke_sql_document(request: serde_json::Value) -> String {
             .get("sql")
             .and_then(serde_json::Value::as_str)
             .ok_or_else(|| "sql must be a string".to_string())?;
-        serde_json::to_value(ugoite_domain::sql_document::parse_sql_document(sql))
-            .map_err(|error| error.to_string())
+        Ok(ugoite_domain::sql_document::parse_sql_document(sql))
     })();
 
-    let envelope = match result {
-        Ok(value) => serde_json::json!({"ok": true, "value": value}),
+    match result {
+        Ok(document) => serialize_sql_document_response(&document)
+            .unwrap_or_else(|()| sql_document_response_too_large()),
         Err(message) => serde_json::json!({
             "ok": false,
             "error": {"kind": "domain_validation", "message": message},
-        }),
-    };
-    if ensure_json_size(&envelope, MAX_SQL_DOCUMENT_RESPONSE_BYTES).is_err() {
-        return serde_json::json!({
-            "ok": false,
-            "error": {
-                "kind": "domain_output_too_large",
-                "message": "SQL Document response exceeds the 1 MiB limit",
-            },
         })
-        .to_string();
+        .to_string(),
     }
-    envelope.to_string()
+}
+
+fn serialize_sql_document_response(
+    document: &ugoite_domain::sql_document::SqlDocument,
+) -> Result<String, ()> {
+    let mut writer = BoundedJsonWriter::new(MAX_SQL_DOCUMENT_RESPONSE_BYTES);
+    writer
+        .write_all(b"{\"ok\":true,\"value\":")
+        .map_err(|_| ())?;
+    serde_json::to_writer(&mut writer, document).map_err(|_| ())?;
+    writer.write_all(b"}").map_err(|_| ())?;
+    String::from_utf8(writer.bytes).map_err(|_| ())
+}
+
+fn sql_document_response_too_large() -> String {
+    r#"{"ok":false,"error":{"kind":"domain_output_too_large","message":"SQL Document response exceeds the 1 MiB limit"}}"#.to_owned()
 }
 
 fn composition_canonicalization_error(
@@ -717,6 +756,8 @@ mod tests {
     #[test]
     fn sql_document_protocol_matches_native_parser_for_draft_states_and_ranges() {
         let oversized_sql = "x".repeat(ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES + 1);
+        let too_complex_sql =
+            "(".repeat(ugoite_domain::sql_document::MAX_SQL_DOCUMENT_COMPLEXITY_TOKENS + 1);
         let cases = [
             (
                 "parsed",
@@ -725,6 +766,7 @@ mod tests {
             ),
             ("invalid", "SELECT (", "invalid_sql"),
             ("multiple", "SELECT 1; SELECT 2", "multiple_statements"),
+            ("too complex", too_complex_sql.as_str(), "too_complex"),
             ("oversized", oversized_sql.as_str(), "too_large"),
         ];
 

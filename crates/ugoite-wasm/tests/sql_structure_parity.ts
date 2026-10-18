@@ -207,6 +207,41 @@ async function main(): Promise<void> {
     throw new Error("Oversized SQL Document output was not bounded");
   }
 
+  const { instance: memoryGuardInstance } = await WebAssembly.instantiate(
+    wasmBytes,
+    {},
+  );
+  const memoryGuard = memoryGuardInstance.exports.memory as WebAssembly.Memory;
+  const initialMemoryBytes = memoryGuard.buffer.byteLength;
+  const nearLimitMalformedSql = "(".repeat(MAX_SQL_DOCUMENT_BYTES);
+  const nearLimitMalformedResponse = await invokeWasm(
+    memoryGuardInstance.exports,
+    {
+      action: "domain.parse_sql_document",
+      value: { sql: nearLimitMalformedSql },
+    },
+  );
+  assertEqual(
+    nearLimitMalformedResponse.ok,
+    true,
+    "near-limit malformed SQL response envelope",
+  );
+  const nearLimitMalformedDocument = nearLimitMalformedResponse.value as Record<
+    string,
+    unknown
+  >;
+  assertEqual(
+    nearLimitMalformedDocument.status,
+    "too_complex",
+    "near-limit malformed SQL complexity limit",
+  );
+  const memoryGrowthBytes = memoryGuard.buffer.byteLength - initialMemoryBytes;
+  if (memoryGrowthBytes > 64 * 1024 * 1024) {
+    throw new Error(
+      `Near-limit malformed SQL grew WASM memory by ${memoryGrowthBytes} bytes`,
+    );
+  }
+
   const context = {
     relation: "Task",
     columns: [

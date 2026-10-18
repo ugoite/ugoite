@@ -15,9 +15,11 @@ requirements:
           The bounded Rust SQL Document parser retains the exact SQL source and
           source ranges for tokenized trivia, comments, identifiers, and
           literals, plus parser-provided source ranges where usable spans are
-          available for syntax nodes. It preserves invalid drafts for correction
-          and distinguishes syntax or statement-shape diagnostics. A parsed
-          syntax tree alone never means that the SQL executor admits the query.
+          available for syntax nodes. It preserves invalid drafts for correction,
+          rejects inputs above the source-byte or syntax-token limits before
+          AST construction, and distinguishes syntax or statement-shape
+          diagnostics. A parsed syntax tree alone never means that the SQL
+          executor admits the query.
         governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
       - id: source-aware-parameter-rename
         kind: behavior
@@ -36,6 +38,7 @@ requirements:
           parser and returns the same document value and diagnostics as the
           native Rust parser when the serialized response fits the protocol
           response limit. If the response would exceed that limit, the action
-          returns a bounded domain_output_too_large error. The protocol action
-          does not grant executor admission or execute the SQL.
+          returns a bounded domain_output_too_large error without first
+          materializing an unbounded JSON value. The protocol action does not
+          grant executor admission or execute the SQL.
         governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]

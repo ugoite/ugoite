@@ -287,10 +287,12 @@ export type SqlDocumentStatus =
   | "invalid_sql"
   | "multiple_statements"
   | "select_required"
+  | "too_complex"
   | "too_large";
 
 export type SqlDocumentDiagnosticCode =
   | "sql_too_large"
+  | "sql_too_complex"
   | "parse_failed"
   | "empty_document"
   | "single_statement_required"

@@ -155,7 +155,7 @@ features:
       - id: sql-document-wasm-verification
         role: verification
         facet: verification
-        responsibility: Verify native parity for representable protocol responses and fail-closed bounded handling when a document response exceeds the protocol limit.
+        responsibility: Verify native parity for representable protocol responses, bounded serialization, and bounded memory growth for near-limit malformed SQL.
         targets:
           - id: protocol-matches-native-parser
             adapter: rust
