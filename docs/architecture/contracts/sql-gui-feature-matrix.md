@@ -2,8 +2,6 @@
 title: SQL admission and structure editor coverage
 ---
 
-# SQL admission and structure editor coverage
-
 The current read-only SQL gate requires one DataFusion `Query` statement AST,
 but does not restrict the query body's form to `SELECT`. Both `SELECT 1` and
 `VALUES (1)` pass this gate. The production stateless query path accepts
