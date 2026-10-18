@@ -155,6 +155,12 @@ fn invoke_konase(request: serde_json::Value) -> String {
 
 fn invoke_domain(request: serde_json::Value) -> String {
     if request.get("action").and_then(serde_json::Value::as_str)
+        == Some("domain.compile_variable_graph.v1")
+    {
+        return compile_variable_graph_v1(request);
+    }
+
+    if request.get("action").and_then(serde_json::Value::as_str)
         == Some("domain.canonicalize_composition_document")
     {
         let Some(document) = request
@@ -393,6 +399,74 @@ fn invoke_domain(request: serde_json::Value) -> String {
     match result {
         Ok(value) => serde_json::json!({"ok": true, "value": value}).to_string(),
         Err(message) => serde_json::json!({"ok": false, "error": {"kind": "domain_validation", "message": message}}).to_string(),
+    }
+}
+
+/// Compile the strict typed Composition variable graph protocol payload.
+///
+/// The action is pure: it validates the graph and returns its deterministic
+/// dependency plan without executing queries or accessing host state.
+fn compile_variable_graph_v1(request: serde_json::Value) -> String {
+    let Some(value) = request.get("value").cloned() else {
+        return serde_json::json!({
+            "ok": false,
+            "error": {
+                "kind": "domain_validation",
+                "code": "invalid_variable_graph_payload",
+                "message": "value must be a strict VariableGraph object",
+            },
+        })
+        .to_string();
+    };
+
+    let graph = match serde_json::from_value::<ugoite_domain::composition::VariableGraph>(value) {
+        Ok(graph) => graph,
+        Err(_) => {
+            return serde_json::json!({
+                "ok": false,
+                "error": {
+                    "kind": "domain_validation",
+                    "code": "invalid_variable_graph_payload",
+                    "message": "value must be a strict VariableGraph object",
+                },
+            })
+            .to_string();
+        }
+    };
+
+    match ugoite_domain::composition::compile_variable_graph(&graph) {
+        Ok(compiled) => {
+            let envelope = serde_json::json!({
+                "ok": true,
+                "value": {
+                    "contract_version": 1,
+                    "topological_order": compiled.topological_order,
+                    "dependencies": compiled.dependencies,
+                },
+            });
+            if ensure_json_size(&envelope, MAX_PROTOCOL_REQUEST_BYTES).is_err() {
+                return serde_json::json!({
+                    "ok": false,
+                    "error": {
+                        "kind": "domain_validation",
+                        "code": "variable_graph_result_too_large",
+                        "message": "variable graph compilation result exceeds the protocol size limit",
+                    },
+                })
+                .to_string();
+            }
+            envelope.to_string()
+        }
+        Err(diagnostics) => serde_json::json!({
+            "ok": false,
+            "error": {
+                "kind": "variable_graph_diagnostics",
+                "message": "variable graph validation failed",
+                "contract_version": 1,
+                "diagnostics": diagnostics,
+            },
+        })
+        .to_string(),
     }
 }
 
@@ -655,6 +729,219 @@ mod tests {
         let response: Value = serde_json::from_str(&response).unwrap();
         assert_eq!(response["ok"], true, "{response}");
         assert_eq!(response["value"]["protocol_version"], 1);
+    }
+
+    #[test]
+    fn variable_graph_protocol_returns_deterministic_native_compilation() {
+        let integer = serde_json::json!({
+            "scalar_type": "integer",
+            "nullable": false,
+        });
+        let query = |id: &str, sql: &str, arguments: Value| {
+            serde_json::json!({
+                "id": id,
+                "kind": {
+                    "kind": "query",
+                    "returns": {"kind": "scalar", "value_type": integer},
+                    "query": {"kind": "inline_sql", "sql": sql},
+                    "arguments": arguments,
+                },
+            })
+        };
+        let input = serde_json::json!({
+            "id": "input",
+            "kind": {
+                "kind": "input",
+                "value_type": integer,
+                "required": true,
+            },
+        });
+        let binding = serde_json::json!([{
+            "name": "value",
+            "value_type": integer,
+            "variable": "input",
+        }]);
+        let graph_value = serde_json::json!({
+            "variables": [
+                query("z_query", "SELECT $value", binding),
+                input,
+                query("b_query", "SELECT 1", serde_json::json!([])),
+            ],
+        });
+
+        let graph = serde_json::from_value::<ugoite_domain::composition::VariableGraph>(
+            graph_value.clone(),
+        )
+        .expect("strict graph fixture");
+        let native =
+            ugoite_domain::composition::compile_variable_graph(&graph).expect("graph compiles");
+        assert_eq!(native.topological_order, ["b_query", "input", "z_query"]);
+
+        let compile = |value| {
+            let request = serde_json::json!({
+                "action": "domain.compile_variable_graph.v1",
+                "value": value,
+            });
+            let response: Value =
+                serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+            assert_eq!(response["ok"], true, "{response}");
+            response["value"].clone()
+        };
+        let first = compile(graph_value.clone());
+        let mut reversed = graph_value;
+        reversed["variables"].as_array_mut().unwrap().reverse();
+        let second = compile(reversed);
+
+        assert_eq!(first, second);
+        assert_eq!(first["contract_version"], 1);
+        assert_eq!(
+            first,
+            serde_json::json!({
+                "contract_version": 1,
+                "topological_order": native.topological_order,
+                "dependencies": native.dependencies,
+            })
+        );
+    }
+
+    #[test]
+    fn variable_graph_protocol_returns_stable_reference_and_type_diagnostics() {
+        let query_graph = |reference: &str, input_type: &str| {
+            serde_json::json!({
+                "variables": [
+                    {
+                        "id": "input",
+                        "kind": {
+                            "kind": "input",
+                            "value_type": {"scalar_type": input_type, "nullable": false},
+                            "required": true,
+                        },
+                    },
+                    {
+                        "id": "result",
+                        "kind": {
+                            "kind": "query",
+                            "returns": {
+                                "kind": "scalar",
+                                "value_type": {"scalar_type": "integer", "nullable": false},
+                            },
+                            "query": {"kind": "inline_sql", "sql": "SELECT $value"},
+                            "arguments": [{
+                                "name": "value",
+                                "value_type": {"scalar_type": "integer", "nullable": false},
+                                "variable": reference,
+                            }],
+                        },
+                    },
+                ],
+            })
+        };
+
+        for graph_value in [
+            query_graph("missing", "integer"),
+            query_graph("input", "string"),
+        ] {
+            let graph = serde_json::from_value::<ugoite_domain::composition::VariableGraph>(
+                graph_value.clone(),
+            )
+            .expect("strict graph fixture");
+            let native = ugoite_domain::composition::compile_variable_graph(&graph)
+                .expect_err("graph reference or type is invalid");
+            let request = serde_json::json!({
+                "action": "domain.compile_variable_graph.v1",
+                "value": graph_value,
+            });
+            let response: Value =
+                serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+            assert_eq!(response["ok"], false, "{response}");
+            assert_eq!(response["error"]["kind"], "variable_graph_diagnostics");
+            assert_eq!(response["error"]["contract_version"], 1);
+            assert_eq!(
+                response["error"]["diagnostics"],
+                serde_json::to_value(native).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn variable_graph_protocol_reports_cycles_and_rejects_unknown_fields() {
+        let integer = serde_json::json!({
+            "scalar_type": "integer",
+            "nullable": false,
+        });
+        let cycle_graph = serde_json::json!({
+            "variables": [
+                {
+                    "id": "alpha",
+                    "kind": {
+                        "kind": "query",
+                        "returns": {"kind": "scalar", "value_type": integer},
+                        "query": {"kind": "inline_sql", "sql": "SELECT $value"},
+                        "arguments": [{"name": "value", "value_type": integer, "variable": "beta"}],
+                    },
+                },
+                {
+                    "id": "beta",
+                    "kind": {
+                        "kind": "query",
+                        "returns": {"kind": "scalar", "value_type": integer},
+                        "query": {"kind": "inline_sql", "sql": "SELECT $value"},
+                        "arguments": [{"name": "value", "value_type": integer, "variable": "alpha"}],
+                    },
+                },
+            ],
+        });
+        let graph = serde_json::from_value::<ugoite_domain::composition::VariableGraph>(
+            cycle_graph.clone(),
+        )
+        .unwrap();
+        let native = ugoite_domain::composition::compile_variable_graph(&graph)
+            .expect_err("cycle must fail");
+        let request = serde_json::json!({
+            "action": "domain.compile_variable_graph.v1",
+            "value": cycle_graph,
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+        assert_eq!(response["ok"], false, "{response}");
+        assert_eq!(
+            response["error"]["diagnostics"],
+            serde_json::to_value(native).unwrap()
+        );
+        assert_eq!(
+            response["error"]["diagnostics"][0]["code"],
+            "dependency_cycle"
+        );
+
+        let mut unknown_graph = serde_json::json!({"variables": []});
+        unknown_graph["future_field"] = serde_json::json!(true);
+        let unknown_request = serde_json::json!({
+            "action": "domain.compile_variable_graph.v1",
+            "value": unknown_graph,
+        });
+        let unknown_response: Value =
+            serde_json::from_str(&super::invoke_json(&unknown_request.to_string())).unwrap();
+        assert_eq!(unknown_response["ok"], false, "{unknown_response}");
+        assert_eq!(
+            unknown_response["error"]["code"],
+            "invalid_variable_graph_payload"
+        );
+        assert_eq!(
+            unknown_response["error"]["message"],
+            "value must be a strict VariableGraph object"
+        );
+
+        let nested_unknown_request = serde_json::json!({
+            "action": "domain.compile_variable_graph.v1",
+            "value": {"variables": [{"id": "x", "kind": {"kind": "input", "value_type": integer, "required": true, "future_field": 1}}]},
+        });
+        let nested_unknown_response: Value =
+            serde_json::from_str(&super::invoke_json(&nested_unknown_request.to_string())).unwrap();
+        assert_eq!(nested_unknown_response["ok"], false);
+        assert_eq!(
+            nested_unknown_response["error"]["code"],
+            "invalid_variable_graph_payload"
+        );
     }
 
     #[test]
