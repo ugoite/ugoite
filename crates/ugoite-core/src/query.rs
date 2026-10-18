@@ -116,8 +116,14 @@ pub struct QueryLimits {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SqlFunctionPolicy {
     scalar_functions: &'static [&'static str],
-    aggregate_functions: &'static [&'static str],
+    aggregate_functions: AggregateFunctions,
     window_functions: &'static [&'static str],
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AggregateFunctions {
+    Explicit(&'static [&'static str]),
+    UserSqlV1,
 }
 
 impl SqlFunctionPolicy {
@@ -125,7 +131,7 @@ impl SqlFunctionPolicy {
     #[allow(non_upper_case_globals)]
     pub const DenyAll: Self = Self {
         scalar_functions: &[],
-        aggregate_functions: &[],
+        aggregate_functions: AggregateFunctions::Explicit(&[]),
         window_functions: &[],
     };
 
@@ -135,7 +141,7 @@ impl SqlFunctionPolicy {
     #[allow(non_upper_case_globals)]
     pub const ReadOnlyAggregateV1: Self = Self {
         scalar_functions: &[],
-        aggregate_functions: &["count", "sum", "avg", "min", "max"],
+        aggregate_functions: AggregateFunctions::UserSqlV1,
         window_functions: &[],
     };
 
@@ -148,7 +154,7 @@ impl SqlFunctionPolicy {
     ) -> Self {
         Self {
             scalar_functions,
-            aggregate_functions,
+            aggregate_functions: AggregateFunctions::Explicit(aggregate_functions),
             window_functions,
         }
     }
@@ -160,9 +166,14 @@ impl SqlFunctionPolicy {
     }
 
     pub fn allows_aggregate(self, name: &str) -> bool {
-        self.aggregate_functions
-            .iter()
-            .any(|allowed| allowed.eq_ignore_ascii_case(name))
+        match self.aggregate_functions {
+            AggregateFunctions::Explicit(functions) => functions
+                .iter()
+                .any(|allowed| allowed.eq_ignore_ascii_case(name)),
+            AggregateFunctions::UserSqlV1 => {
+                ugoite_domain::sql_functions::user_sql_aggregate(name).is_some()
+            }
+        }
     }
 
     pub fn allows_window(self, name: &str) -> bool {
@@ -216,17 +227,30 @@ mod tests {
     #[test]
     fn read_only_aggregate_policy_filters_function_classes() {
         let policy = SqlFunctionPolicy::ReadOnlyAggregateV1;
-        for function in ["COUNT", "SUM", "AVG", "MIN", "MAX"] {
-            assert!(policy.allows_aggregate(function));
-            assert!(!policy.allows_scalar(function));
-            assert!(!policy.allows_window(function));
+        for descriptor in ugoite_domain::sql_functions::USER_SQL_AGGREGATES {
+            assert!(policy.allows_aggregate(descriptor.name));
+            assert!(!policy.allows_scalar(descriptor.name));
+            assert!(!policy.allows_window(descriptor.name));
+            for alias in descriptor.aliases {
+                assert!(policy.allows_aggregate(alias));
+                assert!(!policy.allows_scalar(alias));
+                assert!(!policy.allows_window(alias));
+            }
         }
-        for function in ["lower", "row_number", "approx_count_distinct"] {
+        for function in ["lower", "row_number", "approx_count_distinct", "median"] {
             assert!(!policy.allows_scalar(function));
             assert!(!policy.allows_aggregate(function));
             assert!(!policy.allows_window(function));
         }
         assert!(!SqlFunctionPolicy::DenyAll.allows_aggregate("count"));
+    }
+
+    #[test]
+    fn explicit_aggregate_policies_keep_name_matching_separate_from_user_sql_registry() {
+        let policy = SqlFunctionPolicy::new(&[], &["count"], &[]);
+        assert!(policy.allows_aggregate("COUNT"));
+        assert!(!policy.allows_aggregate("mean"));
+        assert!(!policy.allows_aggregate("sum"));
     }
 
     #[test]
