@@ -2410,8 +2410,10 @@ mod function_policy_tests {
 
         for sql in [
             "SELECT COUNT(*)",
+            "SELECT COUNT(DISTINCT *)",
             "SELECT SUM(1)",
             "SELECT AVG(1)",
+            "SELECT MEAN(1)",
             "SELECT MIN(1)",
             "SELECT MAX(1)",
         ] {
