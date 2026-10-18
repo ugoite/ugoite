@@ -602,6 +602,350 @@ fn literal_matches(
     }
 }
 
+/// Stable diagnostics for a query result that violates its declared contract.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VariableGraphResultDiagnosticCode {
+    InvalidExpectedDescriptor,
+    ScalarColumnCountMismatch,
+    ScalarNoRows,
+    ScalarMultipleRows,
+    TableColumnCountMismatch,
+    ColumnNameMismatch,
+    ColumnTypeMismatch,
+    RowWidthMismatch,
+    NullNotAllowed,
+    ValueTypeMismatch,
+}
+
+impl VariableGraphResultDiagnosticCode {
+    /// Return the stable wire spelling for this result diagnostic.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::InvalidExpectedDescriptor => "invalid_expected_descriptor",
+            Self::ScalarColumnCountMismatch => "scalar_column_count_mismatch",
+            Self::ScalarNoRows => "scalar_no_rows",
+            Self::ScalarMultipleRows => "scalar_multiple_rows",
+            Self::TableColumnCountMismatch => "table_column_count_mismatch",
+            Self::ColumnNameMismatch => "column_name_mismatch",
+            Self::ColumnTypeMismatch => "column_type_mismatch",
+            Self::RowWidthMismatch => "row_width_mismatch",
+            Self::NullNotAllowed => "null_not_allowed",
+            Self::ValueTypeMismatch => "value_type_mismatch",
+        }
+    }
+}
+
+/// A result-contract failure with optional row and column location.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VariableGraphResultDiagnostic {
+    pub code: VariableGraphResultDiagnosticCode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observed_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub row_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_column_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_value_type: Option<VariableGraphScalarDescriptor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observed_value_type: Option<VariableGraphScalarDescriptor>,
+}
+
+impl VariableGraphResultDiagnostic {
+    fn new(code: VariableGraphResultDiagnosticCode) -> Self {
+        Self {
+            code,
+            expected_count: None,
+            observed_count: None,
+            row_index: None,
+            column_index: None,
+            column_name: None,
+            expected_column_name: None,
+            expected_value_type: None,
+            observed_value_type: None,
+        }
+    }
+
+    fn for_count(
+        code: VariableGraphResultDiagnosticCode,
+        expected_count: usize,
+        observed_count: usize,
+    ) -> Self {
+        Self {
+            code,
+            expected_count: Some(expected_count),
+            observed_count: Some(observed_count),
+            row_index: None,
+            column_index: None,
+            column_name: None,
+            expected_column_name: None,
+            expected_value_type: None,
+            observed_value_type: None,
+        }
+    }
+
+    fn for_column(
+        code: VariableGraphResultDiagnosticCode,
+        column_index: usize,
+        expected_column_name: Option<&str>,
+        expected_value_type: Option<VariableGraphScalarDescriptor>,
+        observed_column: &VariableGraphColumn,
+    ) -> Self {
+        Self {
+            code,
+            expected_count: None,
+            observed_count: None,
+            row_index: None,
+            column_index: Some(column_index),
+            column_name: Some(observed_column.name.clone()),
+            expected_column_name: expected_column_name.map(str::to_owned),
+            expected_value_type,
+            observed_value_type: Some(observed_column.value_type),
+        }
+    }
+
+    fn for_row(
+        code: VariableGraphResultDiagnosticCode,
+        row_index: usize,
+        column_index: Option<usize>,
+        column_name: Option<&str>,
+    ) -> Self {
+        Self {
+            code,
+            expected_count: None,
+            observed_count: None,
+            row_index: Some(row_index),
+            column_index,
+            column_name: column_name.map(str::to_owned),
+            expected_column_name: None,
+            expected_value_type: None,
+            observed_value_type: None,
+        }
+    }
+
+    fn for_row_count(
+        code: VariableGraphResultDiagnosticCode,
+        row_index: usize,
+        expected_count: usize,
+        observed_count: usize,
+    ) -> Self {
+        let mut diagnostic = Self::for_row(code, row_index, None, None);
+        diagnostic.expected_count = Some(expected_count);
+        diagnostic.observed_count = Some(observed_count);
+        diagnostic
+    }
+}
+
+/// The checked value returned by a query variable.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum VariableGraphValidatedResult {
+    /// A query declared scalar returned one row with one typed cell.
+    Scalar { value: VariableGraphLiteral },
+    /// A query declared table returned a matching schema and typed rows.
+    Table {
+        columns: Vec<VariableGraphColumn>,
+        rows: Vec<Vec<VariableGraphLiteral>>,
+    },
+}
+
+/// Validate an executed query result against its declared scalar or table type.
+///
+/// This function does not execute SQL. Callers provide the planner's observed
+/// schema and the result values; a scalar query only succeeds with one column
+/// and exactly one row. SQL NULL stays represented as `VariableGraphLiteral::Null`
+/// and can only satisfy a nullable scalar descriptor.
+pub fn validate_variable_graph_result(
+    expected: &VariableGraphResultType,
+    observed_columns: &[VariableGraphColumn],
+    rows: &[Vec<VariableGraphLiteral>],
+) -> Result<VariableGraphValidatedResult, Vec<VariableGraphResultDiagnostic>> {
+    if !result_descriptor_is_valid(expected) {
+        return Err(vec![VariableGraphResultDiagnostic::new(
+            VariableGraphResultDiagnosticCode::InvalidExpectedDescriptor,
+        )]);
+    }
+
+    let mut diagnostics = Vec::new();
+    match expected {
+        VariableGraphResultType::Scalar { value_type } => {
+            if observed_columns.len() != 1 {
+                diagnostics.push(VariableGraphResultDiagnostic::for_count(
+                    VariableGraphResultDiagnosticCode::ScalarColumnCountMismatch,
+                    1,
+                    observed_columns.len(),
+                ));
+            }
+            match rows.len() {
+                0 => diagnostics.push(VariableGraphResultDiagnostic::for_count(
+                    VariableGraphResultDiagnosticCode::ScalarNoRows,
+                    1,
+                    0,
+                )),
+                1 => {}
+                _ => diagnostics.push(VariableGraphResultDiagnostic::for_count(
+                    VariableGraphResultDiagnosticCode::ScalarMultipleRows,
+                    1,
+                    rows.len(),
+                )),
+            }
+
+            if let Some(observed_column) = observed_columns.first() {
+                if !scalar_type_assignable(*value_type, observed_column.value_type) {
+                    diagnostics.push(VariableGraphResultDiagnostic::for_column(
+                        VariableGraphResultDiagnosticCode::ColumnTypeMismatch,
+                        0,
+                        None,
+                        Some(*value_type),
+                        observed_column,
+                    ));
+                }
+            }
+
+            if rows.len() == 1 {
+                let row = &rows[0];
+                if row.len() != 1 {
+                    diagnostics.push(VariableGraphResultDiagnostic::for_row_count(
+                        VariableGraphResultDiagnosticCode::RowWidthMismatch,
+                        0,
+                        1,
+                        row.len(),
+                    ));
+                } else if observed_columns
+                    .first()
+                    .is_some_and(|column| column.value_type.scalar_type == value_type.scalar_type)
+                    && (!literal_matches(&observed_columns[0].value_type, &row[0])
+                        || !literal_matches(value_type, &row[0]))
+                {
+                    diagnostics.push(value_diagnostic(
+                        &row[0],
+                        0,
+                        0,
+                        Some(observed_columns[0].name.as_str()),
+                    ));
+                }
+            }
+
+            if diagnostics.is_empty() {
+                Ok(VariableGraphValidatedResult::Scalar {
+                    value: rows[0][0].clone(),
+                })
+            } else {
+                diagnostics.sort();
+                diagnostics.dedup();
+                Err(diagnostics)
+            }
+        }
+        VariableGraphResultType::Table {
+            columns: expected_columns,
+        } => {
+            if observed_columns.len() != expected_columns.len() {
+                diagnostics.push(VariableGraphResultDiagnostic::for_count(
+                    VariableGraphResultDiagnosticCode::TableColumnCountMismatch,
+                    expected_columns.len(),
+                    observed_columns.len(),
+                ));
+            }
+
+            for (index, expected_column) in expected_columns.iter().enumerate() {
+                let Some(observed_column) = observed_columns.get(index) else {
+                    continue;
+                };
+                if expected_column.name != observed_column.name {
+                    diagnostics.push(VariableGraphResultDiagnostic::for_column(
+                        VariableGraphResultDiagnosticCode::ColumnNameMismatch,
+                        index,
+                        Some(&expected_column.name),
+                        Some(expected_column.value_type),
+                        observed_column,
+                    ));
+                }
+                if !scalar_type_assignable(expected_column.value_type, observed_column.value_type) {
+                    diagnostics.push(VariableGraphResultDiagnostic::for_column(
+                        VariableGraphResultDiagnosticCode::ColumnTypeMismatch,
+                        index,
+                        Some(&expected_column.name),
+                        Some(expected_column.value_type),
+                        observed_column,
+                    ));
+                }
+            }
+
+            for (row_index, row) in rows.iter().enumerate() {
+                if row.len() != observed_columns.len() {
+                    diagnostics.push(VariableGraphResultDiagnostic::for_row_count(
+                        VariableGraphResultDiagnosticCode::RowWidthMismatch,
+                        row_index,
+                        observed_columns.len(),
+                        row.len(),
+                    ));
+                }
+                for (column_index, value) in row.iter().enumerate() {
+                    let Some(expected_column) = expected_columns.get(column_index) else {
+                        continue;
+                    };
+                    let Some(observed_column) = observed_columns.get(column_index) else {
+                        continue;
+                    };
+                    if expected_column.name != observed_column.name
+                        || expected_column.value_type.scalar_type
+                            != observed_column.value_type.scalar_type
+                    {
+                        continue;
+                    }
+                    if !literal_matches(&observed_column.value_type, value)
+                        || !literal_matches(&expected_column.value_type, value)
+                    {
+                        diagnostics.push(value_diagnostic(
+                            value,
+                            row_index,
+                            column_index,
+                            Some(expected_column.name.as_str()),
+                        ));
+                    }
+                }
+            }
+
+            if diagnostics.is_empty() {
+                Ok(VariableGraphValidatedResult::Table {
+                    columns: expected_columns.clone(),
+                    rows: rows.to_vec(),
+                })
+            } else {
+                diagnostics.sort();
+                diagnostics.dedup();
+                Err(diagnostics)
+            }
+        }
+    }
+}
+
+fn value_diagnostic(
+    value: &VariableGraphLiteral,
+    row_index: usize,
+    column_index: usize,
+    column_name: Option<&str>,
+) -> VariableGraphResultDiagnostic {
+    VariableGraphResultDiagnostic::for_row(
+        if matches!(value, VariableGraphLiteral::Null) {
+            VariableGraphResultDiagnosticCode::NullNotAllowed
+        } else {
+            VariableGraphResultDiagnosticCode::ValueTypeMismatch
+        },
+        row_index,
+        Some(column_index),
+        column_name,
+    )
+}
+
 fn decimal_text_is_valid(value: &str) -> bool {
     let unsigned = value.strip_prefix('-').unwrap_or(value);
     let mut parts = unsigned.split('.');
@@ -1354,6 +1698,260 @@ mod tests {
                 .expect_err("duplicate table column")[0]
                 .code,
             VariableGraphDiagnosticCode::InvalidResultDescriptor
+        );
+    }
+
+    #[test]
+    fn scalar_results_distinguish_cardinality_null_and_valid_values() {
+        let expected = VariableGraphResultType::Scalar {
+            value_type: scalar(VariableGraphScalarType::Integer, false),
+        };
+        let columns = [VariableGraphColumn {
+            name: "count".to_owned(),
+            value_type: scalar(VariableGraphScalarType::Integer, false),
+        }];
+
+        let no_rows = validate_variable_graph_result(&expected, &columns, &[])
+            .expect_err("scalar queries require one row");
+        assert_eq!(
+            no_rows[0].code,
+            VariableGraphResultDiagnosticCode::ScalarNoRows
+        );
+        assert_eq!(no_rows[0].expected_count, Some(1));
+        assert_eq!(no_rows[0].observed_count, Some(0));
+
+        let null = validate_variable_graph_result(
+            &expected,
+            &columns,
+            &[vec![VariableGraphLiteral::Null]],
+        )
+        .expect_err("a non-null scalar cannot return SQL NULL");
+        assert_eq!(
+            null[0].code,
+            VariableGraphResultDiagnosticCode::NullNotAllowed
+        );
+        assert_eq!(null[0].row_index, Some(0));
+        assert_eq!(null[0].column_index, Some(0));
+
+        let multiple_rows = validate_variable_graph_result(
+            &expected,
+            &columns,
+            &[
+                vec![VariableGraphLiteral::Integer(1)],
+                vec![VariableGraphLiteral::Integer(2)],
+            ],
+        )
+        .expect_err("scalar queries cannot choose the first row");
+        assert_eq!(
+            multiple_rows[0].code,
+            VariableGraphResultDiagnosticCode::ScalarMultipleRows
+        );
+        assert_eq!(multiple_rows[0].observed_count, Some(2));
+
+        let valid = validate_variable_graph_result(
+            &expected,
+            &columns,
+            &[vec![VariableGraphLiteral::Integer(7)]],
+        )
+        .expect("one typed row and column");
+        assert_eq!(
+            valid,
+            VariableGraphValidatedResult::Scalar {
+                value: VariableGraphLiteral::Integer(7),
+            }
+        );
+
+        let drifted_schema = [VariableGraphColumn {
+            name: "count".to_owned(),
+            value_type: scalar(VariableGraphScalarType::String, false),
+        }];
+        let drift = validate_variable_graph_result(
+            &expected,
+            &drifted_schema,
+            &[vec![VariableGraphLiteral::String("seven".to_owned())]],
+        )
+        .expect_err("observed scalar type drift");
+        assert_eq!(
+            drift[0].code,
+            VariableGraphResultDiagnosticCode::ColumnTypeMismatch
+        );
+    }
+
+    #[test]
+    fn scalar_result_requires_one_column_and_preserves_nullable_null() {
+        let expected = VariableGraphResultType::Scalar {
+            value_type: scalar(VariableGraphScalarType::Integer, true),
+        };
+        let columns = [
+            VariableGraphColumn {
+                name: "count".to_owned(),
+                value_type: scalar(VariableGraphScalarType::Integer, true),
+            },
+            VariableGraphColumn {
+                name: "extra".to_owned(),
+                value_type: scalar(VariableGraphScalarType::String, true),
+            },
+        ];
+        let extra_column = validate_variable_graph_result(
+            &expected,
+            &columns,
+            &[vec![
+                VariableGraphLiteral::Integer(1),
+                VariableGraphLiteral::String("unexpected".to_owned()),
+            ]],
+        )
+        .expect_err("scalar results require one column");
+        assert!(extra_column.iter().any(|diagnostic| {
+            diagnostic.code == VariableGraphResultDiagnosticCode::ScalarColumnCountMismatch
+                && diagnostic.expected_count == Some(1)
+                && diagnostic.observed_count == Some(2)
+        }));
+
+        let nullable_column = [VariableGraphColumn {
+            name: "count".to_owned(),
+            value_type: scalar(VariableGraphScalarType::Integer, true),
+        }];
+        let null = validate_variable_graph_result(
+            &expected,
+            &nullable_column,
+            &[vec![VariableGraphLiteral::Null]],
+        )
+        .expect("nullable scalar may return SQL NULL");
+        assert_eq!(
+            null,
+            VariableGraphValidatedResult::Scalar {
+                value: VariableGraphLiteral::Null,
+            }
+        );
+
+        let non_nullable_observed = [VariableGraphColumn {
+            name: "count".to_owned(),
+            value_type: scalar(VariableGraphScalarType::Integer, false),
+        }];
+        let null_value_drift = validate_variable_graph_result(
+            &expected,
+            &non_nullable_observed,
+            &[vec![VariableGraphLiteral::Null]],
+        )
+        .expect_err("observed non-null schema cannot contain NULL");
+        assert_eq!(
+            null_value_drift[0].code,
+            VariableGraphResultDiagnosticCode::NullNotAllowed
+        );
+    }
+
+    #[test]
+    fn table_results_allow_empty_rows_and_validate_schema_and_cells() {
+        let expected = VariableGraphResultType::Table {
+            columns: vec![
+                VariableGraphColumn {
+                    name: "day".to_owned(),
+                    value_type: scalar(VariableGraphScalarType::Date, false),
+                },
+                VariableGraphColumn {
+                    name: "amount".to_owned(),
+                    value_type: scalar(VariableGraphScalarType::Decimal, true),
+                },
+            ],
+        };
+        let columns = [
+            VariableGraphColumn {
+                name: "day".to_owned(),
+                value_type: scalar(VariableGraphScalarType::Date, false),
+            },
+            VariableGraphColumn {
+                name: "amount".to_owned(),
+                value_type: scalar(VariableGraphScalarType::Decimal, true),
+            },
+        ];
+
+        assert_eq!(
+            validate_variable_graph_result(&expected, &columns, &[]).expect("a table may be empty"),
+            VariableGraphValidatedResult::Table {
+                columns: columns.to_vec(),
+                rows: Vec::new(),
+            }
+        );
+
+        let invalid = validate_variable_graph_result(
+            &expected,
+            &[
+                VariableGraphColumn {
+                    name: "other_day".to_owned(),
+                    value_type: scalar(VariableGraphScalarType::Date, false),
+                },
+                VariableGraphColumn {
+                    name: "amount".to_owned(),
+                    value_type: scalar(VariableGraphScalarType::String, true),
+                },
+            ],
+            &[
+                vec![
+                    VariableGraphLiteral::Date("2026-10-18".to_owned()),
+                    VariableGraphLiteral::String("100.00".to_owned()),
+                ],
+                vec![VariableGraphLiteral::Date("2026-10-19".to_owned())],
+            ],
+        )
+        .expect_err("schema drift and row width mismatch");
+        assert!(invalid.iter().any(|diagnostic| {
+            diagnostic.code == VariableGraphResultDiagnosticCode::ColumnNameMismatch
+                && diagnostic.column_index == Some(0)
+        }));
+        assert!(invalid.iter().any(|diagnostic| {
+            diagnostic.code == VariableGraphResultDiagnosticCode::ColumnTypeMismatch
+                && diagnostic.column_index == Some(1)
+        }));
+        assert!(invalid.iter().any(|diagnostic| {
+            diagnostic.code == VariableGraphResultDiagnosticCode::RowWidthMismatch
+                && diagnostic.row_index == Some(1)
+        }));
+
+        let invalid_cell = validate_variable_graph_result(
+            &expected,
+            &columns,
+            &[vec![
+                VariableGraphLiteral::Date("2026-10-18".to_owned()),
+                VariableGraphLiteral::String("100.00".to_owned()),
+            ]],
+        )
+        .expect_err("cell values must match their typed schema");
+        assert_eq!(
+            invalid_cell[0].code,
+            VariableGraphResultDiagnosticCode::ValueTypeMismatch
+        );
+        assert_eq!(invalid_cell[0].row_index, Some(0));
+        assert_eq!(invalid_cell[0].column_index, Some(1));
+    }
+
+    #[test]
+    fn result_diagnostics_have_stable_codes_and_context() {
+        let observed_column = VariableGraphColumn {
+            name: "amount".to_owned(),
+            value_type: scalar(VariableGraphScalarType::Decimal, true),
+        };
+        let diagnostic = VariableGraphResultDiagnostic::for_column(
+            VariableGraphResultDiagnosticCode::ColumnTypeMismatch,
+            2,
+            Some("total"),
+            Some(scalar(VariableGraphScalarType::Decimal, false)),
+            &observed_column,
+        );
+        let encoded = serde_json::to_value(&diagnostic).expect("serializes diagnostics");
+        assert_eq!(
+            encoded,
+            serde_json::json!({
+                "code": "column_type_mismatch",
+                "column_index": 2,
+                "column_name": "amount",
+                "expected_column_name": "total",
+                "expected_value_type": {"scalar_type": "decimal", "nullable": false},
+                "observed_value_type": {"scalar_type": "decimal", "nullable": true}
+            })
+        );
+        assert_eq!(
+            VariableGraphResultDiagnosticCode::ScalarMultipleRows.as_str(),
+            "scalar_multiple_rows"
         );
     }
 
