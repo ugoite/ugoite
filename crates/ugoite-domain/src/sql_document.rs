@@ -374,11 +374,41 @@ pub fn rename_sql_document_parameter(
         return Ok(document);
     }
 
+    let old_token_bytes = old_name
+        .len()
+        .checked_add(1)
+        .ok_or(SqlDocumentEditError::OutputTooLarge)?;
+    let replacement_bytes = new_name
+        .len()
+        .checked_add(1)
+        .ok_or(SqlDocumentEditError::OutputTooLarge)?;
+    let output_len = source
+        .len()
+        .checked_sub(
+            replacements
+                .len()
+                .checked_mul(old_token_bytes)
+                .ok_or(SqlDocumentEditError::OutputTooLarge)?,
+        )
+        .and_then(|length| {
+            replacements
+                .len()
+                .checked_mul(replacement_bytes)
+                .and_then(|added| length.checked_add(added))
+        })
+        .filter(|length| *length <= MAX_SQL_DOCUMENT_BYTES)
+        .ok_or(SqlDocumentEditError::OutputTooLarge)?;
+
     let replacement = format!("${new_name}");
-    let mut rewritten_source = source.to_owned();
-    for range in replacements.into_iter().rev() {
-        rewritten_source.replace_range(range.start..range.end, &replacement);
+    let mut rewritten_source = String::with_capacity(output_len);
+    let mut source_cursor = 0;
+    for range in replacements {
+        rewritten_source.push_str(&source[source_cursor..range.start]);
+        rewritten_source.push_str(&replacement);
+        source_cursor = range.end;
     }
+    rewritten_source.push_str(&source[source_cursor..]);
+    debug_assert_eq!(rewritten_source.len(), output_len);
 
     Ok(parse_sql_document(&rewritten_source))
 }
@@ -911,6 +941,33 @@ mod tests {
 
         assert_eq!(document.source, source);
         assert_eq!(document, parse_sql_document(source));
+    }
+
+    #[test]
+    fn parameter_rename_bounds_output_before_allocating() {
+        let source = format!("SELECT {}", "$x,".repeat(20_000));
+        let new_name = "renamed_".repeat(20_000);
+
+        assert_eq!(
+            rename_sql_document_parameter(&source, "x", &new_name),
+            Err(SqlDocumentEditError::OutputTooLarge)
+        );
+    }
+
+    #[test]
+    fn parameter_rename_rewrites_many_tokens_in_one_bounded_pass() {
+        let source = format!("SELECT {}", "$x,".repeat(20_000));
+        let document = rename_sql_document_parameter(&source, "x", "long_name")
+            .expect("replacement remains within the source limit");
+
+        assert_eq!(
+            document.source,
+            format!("SELECT {}", "$long_name,".repeat(20_000))
+        );
+        assert_eq!(
+            document.source.len(),
+            format!("SELECT {}", "$long_name,".repeat(20_000)).len()
+        );
     }
 
     #[test]
