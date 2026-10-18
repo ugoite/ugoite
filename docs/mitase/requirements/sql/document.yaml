@@ -34,6 +34,8 @@ requirements:
         statement: >-
           The portable WASM domain protocol exposes the bounded SQL Document
           parser and returns the same document value and diagnostics as the
-          native Rust parser. The protocol action does not grant executor
-          admission or execute the SQL.
+          native Rust parser when the serialized response fits the protocol
+          response limit. If the response would exceed that limit, the action
+          returns a bounded domain_output_too_large error. The protocol action
+          does not grant executor admission or execute the SQL.
         governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
