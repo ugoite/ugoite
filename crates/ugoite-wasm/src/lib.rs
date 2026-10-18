@@ -1024,8 +1024,7 @@ mod tests {
             assert_eq!(response["ok"], false, "{action}: {response}");
             assert_eq!(response["error"]["kind"], "input_too_large", "{action}");
             assert_eq!(
-                response["error"]["message"],
-                "JSON protocol input exceeds its size limit",
+                response["error"]["message"], "JSON protocol input exceeds its size limit",
                 "{action}"
             );
         }
