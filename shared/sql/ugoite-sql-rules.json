@@ -39,6 +39,9 @@
         "scalar": [],
         "aggregate": ["count", "sum", "avg", "min", "max"],
         "window": []
+      },
+      "function_aliases": {
+        "aggregate": {"mean": "avg"}
       }
     },
     "direct_sql_lint": {
@@ -48,11 +51,12 @@
     "editor": {
       "aggregate_contract": {
         "checked": "name_catalog_only",
-        "known_editor_rejections": ["COUNT(DISTINCT *)"],
+        "known_editor_rejections": ["COUNT(DISTINCT *)", "MEAN"],
         "verification_gaps": [
           "runtime_structure_frontend_signature_and_type_parity",
           "supported_aggregate_modifier_parity",
-          "count_distinct_wildcard_execution_semantics"
+          "count_distinct_wildcard_execution_semantics",
+          "aggregate_alias_parity"
         ]
       },
       "operations": [

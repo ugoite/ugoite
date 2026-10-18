@@ -156,18 +156,21 @@ Deno.test("SQL feature matrix aggregate catalog remains present in the typed UI 
     frontendSql.indexOf("const sqlStructureTypeSupportsGrouping"),
   );
   const backendFunctions = matrix.backend.functions.aggregate as string[];
+  const backendAggregateAliases = matrix.backend.function_aliases
+    .aggregate as Record<string, string>;
   const editorFunctions = matrix.editor.operations.find(
     (operation: { action: string }) => operation.action === "aggregate",
   )?.functions as string[] | undefined;
 
   assertEquals(editorFunctions, backendFunctions);
+  assertEquals(backendAggregateAliases, { mean: "avg" });
   assertEquals(
     matrix.editor.aggregate_contract.checked,
     "name_catalog_only",
   );
   assertEquals(
     matrix.editor.aggregate_contract.known_editor_rejections,
-    ["COUNT(DISTINCT *)"],
+    ["COUNT(DISTINCT *)", "MEAN"],
   );
   assertEquals(
     matrix.editor.aggregate_contract.verification_gaps,
@@ -175,6 +178,7 @@ Deno.test("SQL feature matrix aggregate catalog remains present in the typed UI 
       "runtime_structure_frontend_signature_and_type_parity",
       "supported_aggregate_modifier_parity",
       "count_distinct_wildcard_execution_semantics",
+      "aggregate_alias_parity",
     ],
   );
   const aggregateParser = domainSql.slice(

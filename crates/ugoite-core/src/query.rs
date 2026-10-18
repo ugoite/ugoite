@@ -281,6 +281,31 @@ mod tests {
                 .collect::<Vec<_>>()
         );
         assert_eq!(declared("window"), policy.window_functions);
+
+        let declared_aliases = matrix["feature_matrix"]["backend"]["function_aliases"]["aggregate"]
+            .as_object()
+            .expect("aggregate aliases must be a map")
+            .iter()
+            .map(|(alias, canonical)| {
+                (
+                    alias.clone(),
+                    canonical
+                        .as_str()
+                        .expect("aggregate alias target must be a string")
+                        .to_owned(),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        let registry_aliases = ugoite_domain::sql_functions::USER_SQL_AGGREGATES
+            .iter()
+            .flat_map(|function| {
+                function
+                    .aliases
+                    .iter()
+                    .map(move |alias| ((*alias).to_owned(), function.name.to_owned()))
+            })
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(declared_aliases, registry_aliases);
     }
 
     #[test]

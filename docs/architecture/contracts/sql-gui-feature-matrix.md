@@ -11,7 +11,10 @@ source. A focused `AuthorizedQueryContext::execute_stateless_page` test checks
 this rejection, and a `UgoiteService::query_sql` integration test checks the
 public error. The admission gate remains unchanged. The stateless
 `ReadOnlyAggregateV1` policy currently admits `COUNT`, `SUM`, `AVG`, `MIN`, and
-`MAX` as aggregates, with no user SQL scalar or window functions.
+`MAX` as canonical aggregate names, with the `MEAN` alias resolving to `AVG`,
+and no user SQL scalar or window functions. The current structure editor does
+not recognize `MEAN`; the shared matrix records that alias gap until the editor
+implements the same registry.
 
 The structure editor is a separate, narrower contract. Its parser accepts a
 bounded subset that it can safely analyze and rewrite; direct SQL editing
@@ -34,7 +37,8 @@ rejected downstream by physical-plan authorization. This inventory does not
 change lint or SQL admission behavior; the SQL Workspace follow-up should
 reconcile these differences.
 
-Aggregate parity is checked here only at the function-name level. Signatures,
+Aggregate parity is checked here only at the canonical function-name level and
+the runtime alias map is checked separately. Signatures,
 type restrictions, modifier round-trips, and runtime behavior for
 `COUNT(DISTINCT *)` remain unverified; the structure parser explicitly rejects
 that form. These gaps are tracked by
