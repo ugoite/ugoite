@@ -760,22 +760,24 @@ describe("CompositionStudioSync", () => {
     );
     renderStudio(sqlMetricDraft());
 
-    // The preview debounce is 400ms and the Metric request debounce is 120ms.
-    await vi.advanceTimersByTimeAsync(521);
+    // Wait for the rendered result instead of assuming when Solid effects
+    // schedule the debounced preview and Metric request.
+    await vi.waitFor(() => {
+      expect(screen.getByText("128400", { selector: "output" }))
+        .toBeInTheDocument();
+    }, { timeout: 5_000 });
     expect(canonicalizeMock).toHaveBeenCalledTimes(1);
     expect(previewMock).toHaveBeenCalledTimes(1);
     expect(queryMetricMock).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("128400", { selector: "output" }))
-      .toBeInTheDocument();
 
     fireEvent.click(requireBlockButton("disp-1"));
     fireEvent.change(screen.getByRole("combobox", { name: "Source" }), {
       target: { value: "src-2" },
     });
 
-    // Include the post-effect scheduling margin used by the resolved-preview
-    // case above, then leave canonicalization pending while the Metric changes.
-    await vi.advanceTimersByTimeAsync(521);
+    // Flush work scheduled by the change before asserting that an incomplete
+    // Metric does not start another canonicalization or query.
+    await vi.runAllTimersAsync();
     expect(canonicalizeMock).toHaveBeenCalledTimes(1);
     expect(previewMock).toHaveBeenCalledTimes(1);
     expect(queryMetricMock).toHaveBeenCalledTimes(1);
@@ -879,7 +881,9 @@ describe("CompositionStudioSync", () => {
         name: "Choose a Form or Saved SQL",
       }),
     );
-    const sourcePicker = screen.getByRole("dialog", { name: "Choose a source" });
+    const sourcePicker = screen.getByRole("dialog", {
+      name: "Choose a source",
+    });
     const currentSources = await within(sourcePicker).findByRole("list", {
       name: "In this composition",
     });
