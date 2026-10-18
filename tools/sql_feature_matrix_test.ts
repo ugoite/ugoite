@@ -73,6 +73,7 @@ Deno.test("SQL feature matrix binds the read-only gate and current UI actions", 
     id: string;
     backend_admission: string;
     editor_coverage: string;
+    limits: string[];
   }>;
   assertEquals(
     new Set(constructs.map((construct) => construct.id)).size,
@@ -94,6 +95,13 @@ Deno.test("SQL feature matrix binds the read-only gate and current UI actions", 
       "where_predicate",
       "values_query",
     ].sort(),
+  );
+  assertEquals(
+    constructs.find((construct) => construct.id === "projection")?.limits
+      .includes(
+        "relation-free integer/string/boolean/NULL literal projections",
+      ),
+    true,
   );
   const valuesQuery = constructs.find((construct) =>
     construct.id === "values_query"
