@@ -802,9 +802,7 @@ describe("CompositionStudioSync", () => {
     );
     renderStudio(sqlMetricDraft());
 
-    await flushStudioEffects();
-    await vi.advanceTimersByTimeAsync(401);
-    expect(canonicalizeMock).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(canonicalizeMock).toHaveBeenCalledTimes(1));
     expect(previewMock).not.toHaveBeenCalled();
 
     fireEvent.click(requireBlockButton("disp-1"));
