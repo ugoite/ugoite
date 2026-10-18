@@ -45,6 +45,41 @@ impl SqlSourceRange {
     }
 }
 
+pub(crate) fn source_range_from_span(source: &str, span: Span) -> Option<SqlSourceRange> {
+    SqlSourceRange::from_span(source, &SqlSourceMap::new(source), span)
+}
+
+pub(crate) fn has_comment_token_in_range(source: &str, range: SqlSourceRange) -> Option<bool> {
+    if range.start >= range.end || source.get(range.start..range.end).is_none() {
+        return None;
+    }
+
+    let document = parse_sql_document(source);
+    if document.status != SqlDocumentStatus::Parsed {
+        return None;
+    }
+
+    let mut next_offset = 0;
+    for token in &document.tokens {
+        if token.range.start != next_offset
+            || token.range.start >= token.range.end
+            || document.source_slice(token.range).is_none()
+        {
+            return None;
+        }
+        next_offset = token.range.end;
+    }
+    if next_offset != source.len() {
+        return None;
+    }
+
+    Some(document.tokens.iter().any(|token| {
+        token.kind == SqlDocumentTokenKind::Comment
+            && token.range.start < range.end
+            && range.start < token.range.end
+    }))
+}
+
 /// Maps parser line/character locations to UTF-8 byte offsets in linear time.
 struct SqlSourceMap {
     line_boundary_indices: Vec<usize>,
