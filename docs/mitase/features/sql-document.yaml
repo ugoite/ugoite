@@ -1,0 +1,59 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: sql
+category: SQL Document parsing foundation
+features:
+  - id: FEAT-SQL-001
+    title: Lossless SQL Document source view
+    summary: Preserve bounded SQL drafts as exact Rust-owned source with token ranges and parser-provided syntax ranges while keeping syntax parsing separate from executor admission.
+    status: implemented
+    bindings:
+      - id: sql-document-core
+        role: implementation
+        facet: core
+        responsibility: Parse bounded SQL drafts into an exact-source document with lossless token ranges, usable parser-provided syntax-node ranges, and distinct syntax or statement-shape diagnostics without granting runtime admission.
+        targets:
+          - id: parser
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: parse_sql_document }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.lossless-document-draft
+      - id: sql-document-verification
+        role: verification
+        facet: verification
+        responsibility: Verify exact source retention, token and syntax ranges, and the parser-versus-executor boundary with a focused Rust unit test.
+        targets:
+          - id: lossless-document-source-and-ranges
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector:
+              kind: symbol
+              name: tests::lossless_document_retains_source_tokens_and_syntax_ranges_without_execution_admission
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.lossless-document-draft
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-core/target.parser
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-domain
+                    test: sql_document::tests::lossless_document_retains_source_tokens_and_syntax_ranges_without_execution_admission
+          - id: invalid-draft-diagnostics
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector:
+              kind: symbol
+              name: tests::invalid_and_unsupported_drafts_keep_the_original_source
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.lossless-document-draft
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-core/target.parser
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-domain
+                    test: sql_document::tests::invalid_and_unsupported_drafts_keep_the_original_source

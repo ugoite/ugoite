@@ -1,0 +1,21 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: sql
+category: Bounded SQL Document source preservation
+requirements:
+  - id: REQ-SQL-001
+    title: SQL Document source and syntax view
+    description: Keep one bounded Rust-owned source document for SQL editor syntax inspection without conflating parser success with executor admission.
+    priority: high
+    status: implemented
+    criteria:
+      - id: lossless-document-draft
+        kind: behavior
+        statement: >-
+          The bounded Rust SQL Document parser retains the exact SQL source and
+          source ranges for tokenized trivia, comments, identifiers, and
+          literals, plus parser-provided source ranges where usable spans are
+          available for syntax nodes. It preserves invalid drafts for correction
+          and distinguishes syntax or statement-shape diagnostics. A parsed
+          syntax tree alone never means that the SQL executor admits the query.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
