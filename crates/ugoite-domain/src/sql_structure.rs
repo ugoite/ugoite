@@ -10,11 +10,14 @@ use sqlparser::ast::{
     BinaryOperator, Distinct, DuplicateTreatment, Expr, Function, FunctionArg, FunctionArgExpr,
     FunctionArgumentList, FunctionArguments, GroupByExpr, Ident, LimitClause, ObjectName,
     ObjectNamePart, OrderBy, OrderByExpr, OrderByKind, OrderByOptions, Query, Select, SelectFlavor,
-    SelectItem, SetExpr, Statement, TableFactor, Value,
+    SelectItem, SetExpr, Spanned, Statement, TableFactor, Value,
 };
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
+use sqlparser::tokenizer::Span;
 use std::collections::BTreeSet;
+
+use crate::sql_document::{has_comment_token_in_range, source_range_from_span, SqlSourceRange};
 
 /// The parser/capability contract version exposed through the WASM adapter.
 pub const SQL_STRUCTURE_CONTRACT_VERSION: u32 = 1;
@@ -333,34 +336,43 @@ pub fn propose_sql_structure_operation(
     };
 
     let mut added_stable_tie_breakers = Vec::new();
-    let mutation = match operation {
+    let proposed_sql = match operation {
         SqlStructureOperation::SetColumns { columns } => {
-            set_projection(&mut parsed.query, context, columns)
+            match rewrite_projection(&base_sql, &parsed.query, context, columns) {
+                Ok(sql) => sql,
+                Err(reason) => return rejected_proposal(base_sql, reason),
+            }
         }
-        SqlStructureOperation::SetFilters { filters } => {
-            set_filters(&mut parsed.query, context, filters)
-        }
-        SqlStructureOperation::SetSort { order_by } => set_sort(
-            &mut parsed.query,
-            context,
-            order_by,
-            &mut added_stable_tie_breakers,
-        ),
-        SqlStructureOperation::SetAggregates { aggregates } => {
-            set_aggregates(&mut parsed.query, context, aggregates)
-        }
-        SqlStructureOperation::SetGroupBy { columns } => {
-            set_group_by(&mut parsed.query, context, columns)
-        }
-        SqlStructureOperation::SetDistinct { distinct } => {
-            set_distinct(&mut parsed.query, distinct)
+        operation => {
+            let mutation = match operation {
+                SqlStructureOperation::SetFilters { filters } => {
+                    set_filters(&mut parsed.query, context, filters)
+                }
+                SqlStructureOperation::SetSort { order_by } => set_sort(
+                    &mut parsed.query,
+                    context,
+                    order_by,
+                    &mut added_stable_tie_breakers,
+                ),
+                SqlStructureOperation::SetAggregates { aggregates } => {
+                    set_aggregates(&mut parsed.query, context, aggregates)
+                }
+                SqlStructureOperation::SetGroupBy { columns } => {
+                    set_group_by(&mut parsed.query, context, columns)
+                }
+                SqlStructureOperation::SetDistinct { distinct } => {
+                    set_distinct(&mut parsed.query, distinct)
+                }
+                SqlStructureOperation::SetColumns { .. } => unreachable!(
+                    "SetColumns is handled by the source-preserving projection rewrite"
+                ),
+            };
+            if let Err(reason) = mutation {
+                return rejected_proposal(base_sql, reason);
+            }
+            parsed.query.to_string()
         }
     };
-    if let Err(reason) = mutation {
-        return rejected_proposal(base_sql, reason);
-    }
-
-    let proposed_sql = parsed.query.to_string();
     if let Err(reason) = parse_supported_sql(&proposed_sql, context) {
         return rejected_proposal(base_sql, reason);
     }
@@ -1112,21 +1124,73 @@ fn validate_schema_columns_allow_empty(
     Ok(selected)
 }
 
-fn set_projection(
-    query: &mut Query,
+fn rewrite_projection(
+    sql: &str,
+    query: &Query,
     context: &SqlStructureContext,
     columns: Vec<String>,
-) -> Result<(), SqlStructureReason> {
+) -> Result<String, SqlStructureReason> {
     let columns = validate_schema_columns(context, &columns)?;
-    let select = select_mut(query)?;
+    let SetExpr::Select(select) = query.body.as_ref() else {
+        return Err(SqlStructureReason::SetOperationUnsupported);
+    };
     if select.projection.iter().any(select_item_is_aggregate) {
         return Err(SqlStructureReason::ProjectionUnsupported);
     }
-    select.projection = columns
+    let source_range =
+        projection_source_range(sql, query).ok_or(SqlStructureReason::ProjectionUnsupported)?;
+    let replacement = columns
         .into_iter()
-        .map(|column| SelectItem::UnnamedExpr(Expr::Identifier(Ident::with_quote('"', column))))
-        .collect();
-    Ok(())
+        .map(|column| Ident::with_quote('"', column).to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    replace_sql_source_range(sql, source_range, &replacement)
+        .ok_or(SqlStructureReason::ProjectionUnsupported)
+}
+
+fn projection_source_range(sql: &str, query: &Query) -> Option<SqlSourceRange> {
+    let SetExpr::Select(select) = query.body.as_ref() else {
+        return None;
+    };
+    let first_span = select.projection.first()?.span();
+    let last_span = select.projection.last()?.span();
+    if first_span == Span::empty() || last_span == Span::empty() {
+        return None;
+    }
+
+    let range = source_range_from_span(sql, Span::new(first_span.start, last_span.end))?;
+    if range.start >= range.end {
+        return None;
+    }
+    if has_comment_token_in_range(sql, range)? {
+        return None;
+    }
+
+    let mut previous_end = range.start;
+    for item in &select.projection {
+        let item_span = item.span();
+        if item_span == Span::empty() {
+            return None;
+        }
+        let item_range = source_range_from_span(sql, item_span)?;
+        if item_range.start < previous_end
+            || item_range.start >= item_range.end
+            || item_range.end > range.end
+        {
+            return None;
+        }
+        previous_end = item_range.end;
+    }
+    Some(range)
+}
+
+fn replace_sql_source_range(sql: &str, range: SqlSourceRange, replacement: &str) -> Option<String> {
+    if range.start >= range.end {
+        return None;
+    }
+    let before = sql.get(..range.start)?;
+    let after = sql.get(range.end..)?;
+    Some(format!("{before}{replacement}{after}"))
 }
 
 fn set_filters(
@@ -1726,6 +1790,81 @@ mod tests {
         assert!(sorted_sql.contains("\"_ugoite_id\" ASC"));
         assert_eq!(set_sort.added_stable_tie_breakers, vec!["_ugoite_id"]);
         assert!(set_sort.requires_confirmation);
+    }
+
+    #[test]
+    fn set_columns_replaces_only_the_projection_source_span() {
+        let columns = vec!["field_101".to_owned(), "field_102".to_owned()];
+        let simple_sql = "SELECT * FROM \"G\"";
+        let mut simple_context = context();
+        simple_context.relation = "G".to_owned();
+        let commented_sql = "-- 東京\nSELECT /* 列 */ * FROM \"Task\" /* relation */ WHERE \"field_101\" = $status ORDER BY \"_ugoite_id\" DESC LIMIT 50 /* 終了 */";
+
+        for (sql, context) in [(simple_sql, &simple_context), (commented_sql, &context())] {
+            let projection_start = sql.find("* FROM").expect("wildcard projection");
+            let projection_end = projection_start + '*'.len_utf8();
+            let expected = format!(
+                "{}\"field_101\", \"field_102\"{}",
+                &sql[..projection_start],
+                &sql[projection_end..]
+            );
+            let proposal = propose_sql_structure_operation(
+                sql,
+                context,
+                SqlStructureOperation::SetColumns {
+                    columns: columns.clone(),
+                },
+            );
+
+            assert_eq!(proposal.status, SqlStructureStatus::Supported, "{sql}");
+            let proposed_sql = proposal.proposed_sql.expect("column proposal");
+            assert_eq!(proposed_sql, expected, "{sql}");
+            let analysis = analyze_sql_structure(&proposed_sql, context);
+            assert_eq!(analysis.status, SqlStructureStatus::Supported, "{sql}");
+            assert_eq!(analysis.projection, columns, "{sql}");
+        }
+    }
+
+    #[test]
+    fn set_columns_rejects_projection_spans_that_contain_comments() {
+        let sql = "SELECT \"field_101\" /* keep */ , \"field_102\" FROM \"Task\"";
+        let document = crate::sql_document::parse_sql_document(sql);
+        assert_eq!(
+            document.status,
+            crate::sql_document::SqlDocumentStatus::Parsed
+        );
+        assert!(document.tokens.iter().any(|token| {
+            token.kind == crate::sql_document::SqlDocumentTokenKind::Comment
+                && document.source_slice(token.range) == Some("/* keep */")
+        }));
+
+        let proposal = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetColumns {
+                columns: vec!["field_102".to_owned()],
+            },
+        );
+
+        assert_eq!(proposal.status, SqlStructureStatus::Unsupported);
+        assert_eq!(
+            proposal.reason,
+            Some(SqlStructureReason::ProjectionUnsupported)
+        );
+        assert_eq!(proposal.base_sql, sql);
+        assert!(proposal.proposed_sql.is_none());
+    }
+
+    #[test]
+    fn source_range_replacement_fails_closed_for_invalid_utf8_boundaries() {
+        assert_eq!(
+            replace_sql_source_range("東京", SqlSourceRange { start: 1, end: 2 }, "replacement"),
+            None
+        );
+        assert_eq!(
+            replace_sql_source_range("東京", SqlSourceRange { start: 0, end: 99 }, "replacement"),
+            None
+        );
     }
 
     #[test]
