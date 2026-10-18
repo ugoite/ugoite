@@ -12,7 +12,15 @@ use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 mod canonical;
+pub mod variable_graph;
 mod yaml;
+
+pub use variable_graph::{
+    compile_variable_graph, CompiledVariableGraph, VariableGraph, VariableGraphArgumentBinding,
+    VariableGraphColumn, VariableGraphDiagnostic, VariableGraphDiagnosticCode,
+    VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind, VariableGraphResultType,
+    VariableGraphScalarDescriptor, VariableGraphScalarType,
+};
 
 pub use canonical::{
     canonicalize_composition, canonicalize_composition_document_value,
