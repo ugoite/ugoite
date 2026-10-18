@@ -4,6 +4,7 @@
 pub mod change;
 pub mod composition;
 pub mod composition_metric;
+pub mod composition_query;
 pub mod entry;
 pub mod entry_query;
 pub mod error;
