@@ -1,12 +1,14 @@
 //! Typed variable graph definitions and deterministic dependency compilation.
 //!
 //! This module is a pure-domain foundation for a future Composition graph.
-//! It deliberately has no adapter to the current Composition document, no SQL
-//! parser or executor, and no persistence behavior.
+//! It deliberately has no adapter to the current Composition document, SQL
+//! executor, or persistence behavior. Inline SQL syntax is checked with the
+//! shared domain SQL-document parser before a graph can compile.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
+use uuid::Uuid;
 
 /// A graph of shared Composition values.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -46,8 +48,30 @@ pub enum VariableGraphNodeKind {
     /// A computed value with explicitly bound SQL arguments.
     Query {
         returns: VariableGraphResultType,
+        query: VariableGraphQueryDefinition,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         arguments: Vec<VariableGraphArgumentBinding>,
+    },
+}
+
+/// The durable definition that produces a query variable's value.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum VariableGraphQueryDefinition {
+    /// SQL text stored with the Composition query variable.
+    InlineSql { sql: String },
+    /// A Saved SQL Entry pinned to one exact revision.
+    SavedSql {
+        /// UUID of the Saved SQL Entry. Missing and invalid IDs are rejected
+        /// by graph compilation with a stable diagnostic.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        entry_id: Option<String>,
+        /// UUID of the exact Saved SQL revision. This never follows latest.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        revision_id: Option<String>,
+        /// Optional output column selected for scalar query results.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        column: Option<String>,
     },
 }
 
@@ -142,6 +166,9 @@ pub enum VariableGraphDiagnosticCode {
     InvalidConstantValue,
     InvalidInputDefault,
     InvalidResultDescriptor,
+    InvalidInlineSql,
+    InvalidSavedSqlIdentity,
+    InvalidSavedSqlColumn,
     MissingVariableReference,
     VariableTypeMismatch,
     DependencyCycle,
@@ -158,6 +185,9 @@ impl VariableGraphDiagnosticCode {
             Self::InvalidConstantValue => "invalid_constant_value",
             Self::InvalidInputDefault => "invalid_input_default",
             Self::InvalidResultDescriptor => "invalid_result_descriptor",
+            Self::InvalidInlineSql => "invalid_inline_sql",
+            Self::InvalidSavedSqlIdentity => "invalid_saved_sql_identity",
+            Self::InvalidSavedSqlColumn => "invalid_saved_sql_column",
             Self::MissingVariableReference => "missing_variable_reference",
             Self::VariableTypeMismatch => "variable_type_mismatch",
             Self::DependencyCycle => "dependency_cycle",
@@ -283,12 +313,51 @@ pub fn compile_variable_graph(
                     ));
                 }
             }
-            VariableGraphNodeKind::Query { returns, arguments } => {
+            VariableGraphNodeKind::Query {
+                returns,
+                query,
+                arguments,
+            } => {
                 if !result_descriptor_is_valid(returns) {
                     diagnostics.push(VariableGraphDiagnostic::for_variable(
                         VariableGraphDiagnosticCode::InvalidResultDescriptor,
                         &node.id,
                     ));
+                }
+                match query {
+                    VariableGraphQueryDefinition::InlineSql { sql }
+                        if crate::sql_document::parse_sql_document(sql).status
+                            != crate::sql_document::SqlDocumentStatus::Parsed =>
+                    {
+                        diagnostics.push(VariableGraphDiagnostic::for_variable(
+                            VariableGraphDiagnosticCode::InvalidInlineSql,
+                            &node.id,
+                        ));
+                    }
+                    VariableGraphQueryDefinition::InlineSql { .. } => {}
+                    VariableGraphQueryDefinition::SavedSql {
+                        entry_id,
+                        revision_id,
+                        column,
+                    } => {
+                        if !entry_id.as_deref().is_some_and(valid_saved_sql_identity)
+                            || !revision_id.as_deref().is_some_and(valid_saved_sql_identity)
+                        {
+                            diagnostics.push(VariableGraphDiagnostic::for_variable(
+                                VariableGraphDiagnosticCode::InvalidSavedSqlIdentity,
+                                &node.id,
+                            ));
+                        }
+                        if column.as_deref().is_some_and(|name| name.trim().is_empty())
+                            || (column.is_some()
+                                && !matches!(returns, VariableGraphResultType::Scalar { .. }))
+                        {
+                            diagnostics.push(VariableGraphDiagnostic::for_variable(
+                                VariableGraphDiagnosticCode::InvalidSavedSqlColumn,
+                                &node.id,
+                            ));
+                        }
+                    }
                 }
                 let mut argument_counts = BTreeMap::<&str, usize>::new();
                 for argument in arguments {
@@ -405,6 +474,10 @@ fn valid_argument_name(name: &str) -> bool {
         && rest
             .iter()
             .all(|byte| matches!(*byte, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_'))
+}
+
+fn valid_saved_sql_identity(value: &str) -> bool {
+    Uuid::parse_str(value).is_ok()
 }
 
 fn scalar_type_of(kind: &VariableGraphNodeKind) -> Option<VariableGraphScalarDescriptor> {
@@ -596,6 +669,9 @@ mod tests {
                 returns: VariableGraphResultType::Scalar {
                     value_type: scalar(VariableGraphScalarType::Integer, false),
                 },
+                query: VariableGraphQueryDefinition::InlineSql {
+                    sql: "SELECT 1".to_owned(),
+                },
                 arguments: dependencies,
             },
         }
@@ -615,6 +691,198 @@ mod tests {
 
     fn graph(variables: Vec<VariableGraphNode>) -> VariableGraph {
         VariableGraph { variables }
+    }
+
+    fn query_definition(definition: VariableGraphQueryDefinition) -> VariableGraphNode {
+        VariableGraphNode {
+            id: "result".to_owned(),
+            kind: VariableGraphNodeKind::Query {
+                returns: VariableGraphResultType::Scalar {
+                    value_type: scalar(VariableGraphScalarType::Integer, false),
+                },
+                query: definition,
+                arguments: Vec::new(),
+            },
+        }
+    }
+
+    #[test]
+    fn accepts_inline_query_and_exact_saved_sql_query_definitions() {
+        let inline = query_definition(VariableGraphQueryDefinition::InlineSql {
+            sql: "SELECT 1".to_owned(),
+        });
+        assert!(compile_variable_graph(&graph(vec![inline])).is_ok());
+
+        let saved_sql = query_definition(VariableGraphQueryDefinition::SavedSql {
+            entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
+            revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
+            column: Some("total".to_owned()),
+        });
+        assert!(compile_variable_graph(&graph(vec![saved_sql])).is_ok());
+    }
+
+    #[test]
+    fn rejects_malformed_non_query_and_multi_statement_inline_sql_stably() {
+        for sql in ["", "SELECT (", "DELETE FROM entries", "SELECT 1; SELECT 2"] {
+            let invalid = query_definition(VariableGraphQueryDefinition::InlineSql {
+                sql: sql.to_owned(),
+            });
+            let diagnostics = compile_variable_graph(&graph(vec![invalid]))
+                .expect_err("inline SQL must be one syntactically valid query");
+            assert_eq!(
+                diagnostics,
+                [VariableGraphDiagnostic::for_variable(
+                    VariableGraphDiagnosticCode::InvalidInlineSql,
+                    "result"
+                )],
+                "SQL: {sql:?}"
+            );
+        }
+        assert_eq!(
+            VariableGraphDiagnosticCode::InvalidInlineSql.as_str(),
+            "invalid_inline_sql"
+        );
+    }
+
+    #[test]
+    fn rejects_missing_or_invalid_saved_sql_identity_stably() {
+        let cases = [
+            (
+                None,
+                Some("00000000-0000-0000-0000-000000000002".to_owned()),
+            ),
+            (
+                Some("00000000-0000-0000-0000-000000000001".to_owned()),
+                None,
+            ),
+            (
+                Some("not-a-uuid".to_owned()),
+                Some("00000000-0000-0000-0000-000000000002".to_owned()),
+            ),
+            (
+                Some("00000000-0000-0000-0000-000000000001".to_owned()),
+                Some("bad".to_owned()),
+            ),
+        ];
+        for (entry_id, revision_id) in cases {
+            let invalid = query_definition(VariableGraphQueryDefinition::SavedSql {
+                entry_id,
+                revision_id,
+                column: None,
+            });
+            assert_eq!(
+                compile_variable_graph(&graph(vec![invalid])).expect_err("bad identity"),
+                [VariableGraphDiagnostic::for_variable(
+                    VariableGraphDiagnosticCode::InvalidSavedSqlIdentity,
+                    "result"
+                )]
+            );
+        }
+        assert_eq!(
+            VariableGraphDiagnosticCode::InvalidSavedSqlIdentity.as_str(),
+            "invalid_saved_sql_identity"
+        );
+    }
+
+    #[test]
+    fn rejects_blank_saved_sql_output_column() {
+        let invalid = query_definition(VariableGraphQueryDefinition::SavedSql {
+            entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
+            revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
+            column: Some("  ".to_owned()),
+        });
+        assert_eq!(
+            compile_variable_graph(&graph(vec![invalid])).expect_err("blank output column"),
+            [VariableGraphDiagnostic::for_variable(
+                VariableGraphDiagnosticCode::InvalidSavedSqlColumn,
+                "result"
+            )]
+        );
+
+        let mut table = query_definition(VariableGraphQueryDefinition::SavedSql {
+            entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
+            revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
+            column: Some("total".to_owned()),
+        });
+        let VariableGraphNodeKind::Query { returns, .. } = &mut table.kind else {
+            unreachable!("helper constructs a query node")
+        };
+        *returns = VariableGraphResultType::Table {
+            columns: vec![VariableGraphColumn {
+                name: "total".to_owned(),
+                value_type: scalar(VariableGraphScalarType::Integer, false),
+            }],
+        };
+        assert_eq!(
+            compile_variable_graph(&graph(vec![table]))
+                .expect_err("table has no scalar column selector"),
+            [VariableGraphDiagnostic::for_variable(
+                VariableGraphDiagnosticCode::InvalidSavedSqlColumn,
+                "result"
+            )]
+        );
+    }
+
+    #[test]
+    fn query_definition_decoding_is_strict_and_missing_saved_ids_are_diagnosed() {
+        let inline = serde_json::json!({
+            "kind": "inline_sql",
+            "sql": "SELECT 1"
+        });
+        assert_eq!(
+            serde_json::from_value::<VariableGraphQueryDefinition>(inline)
+                .expect("valid inline query DTO"),
+            VariableGraphQueryDefinition::InlineSql {
+                sql: "SELECT 1".to_owned()
+            }
+        );
+        assert!(
+            serde_json::from_value::<VariableGraphQueryDefinition>(serde_json::json!({
+                "kind": "inline_sql"
+            }))
+            .is_err()
+        );
+
+        for unknown in [
+            serde_json::json!({
+                "kind": "inline_sql",
+                "sql": "SELECT 1",
+                "source": "legacy"
+            }),
+            serde_json::json!({
+                "kind": "saved_sql",
+                "entry_id": "00000000-0000-0000-0000-000000000001",
+                "revision_id": "00000000-0000-0000-0000-000000000002",
+                "latest": true
+            }),
+        ] {
+            assert!(serde_json::from_value::<VariableGraphQueryDefinition>(unknown).is_err());
+        }
+
+        let missing_ids = serde_json::from_value::<VariableGraphQueryDefinition>(
+            serde_json::json!({ "kind": "saved_sql" }),
+        )
+        .expect("draft Saved SQL payload is decoded for stable domain diagnostics");
+        assert_eq!(
+            compile_variable_graph(&graph(vec![query_definition(missing_ids)]))
+                .expect_err("both exact identities are mandatory"),
+            [VariableGraphDiagnostic::for_variable(
+                VariableGraphDiagnosticCode::InvalidSavedSqlIdentity,
+                "result"
+            )]
+        );
+
+        let missing_query = serde_json::json!({
+            "id": "result",
+            "kind": {
+                "kind": "query",
+                "returns": { "kind": "scalar", "value_type": {
+                    "scalar_type": "integer", "nullable": false
+                }},
+                "arguments": []
+            }
+        });
+        assert!(serde_json::from_value::<VariableGraphNode>(missing_query).is_err());
     }
 
     #[test]
@@ -752,6 +1020,9 @@ mod tests {
                         name: "id".to_owned(),
                         value_type: scalar(VariableGraphScalarType::Integer, false),
                     }],
+                },
+                query: VariableGraphQueryDefinition::InlineSql {
+                    sql: "SELECT id FROM \"G\"".to_owned(),
                 },
                 arguments: Vec::new(),
             },
@@ -922,6 +1193,9 @@ mod tests {
                             value_type: scalar(VariableGraphScalarType::String, false),
                         },
                     ],
+                },
+                query: VariableGraphQueryDefinition::InlineSql {
+                    sql: "SELECT id FROM \"G\"".to_owned(),
                 },
                 arguments: Vec::new(),
             },
