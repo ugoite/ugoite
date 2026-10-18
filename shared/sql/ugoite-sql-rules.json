@@ -41,7 +41,7 @@
         "window": []
       },
       "function_aliases": {
-        "aggregate": {"mean": "avg"}
+        "aggregate": { "mean": "avg" }
       }
     },
     "direct_sql_lint": {
