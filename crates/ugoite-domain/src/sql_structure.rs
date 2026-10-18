@@ -1725,6 +1725,89 @@ mod tests {
     }
 
     #[test]
+    fn shared_sql_feature_matrix_matches_structure_protocol_and_aggregate_types() {
+        let matrix: serde_json::Value =
+            serde_json::from_str(include_str!("../../../shared/sql/ugoite-sql-rules.json"))
+                .expect("shared SQL rules must remain valid JSON");
+        let editor = &matrix["feature_matrix"]["editor"];
+        let declared_operations = editor["operations"]
+            .as_array()
+            .expect("feature matrix operations must be an array")
+            .iter()
+            .map(|operation| {
+                operation["protocol"]
+                    .as_str()
+                    .expect("each operation must name its protocol kind")
+                    .to_owned()
+            })
+            .collect::<BTreeSet<_>>();
+        let protocol_operations = [
+            SqlStructureOperation::SetColumns { columns: vec![] },
+            SqlStructureOperation::SetFilters { filters: vec![] },
+            SqlStructureOperation::SetSort { order_by: vec![] },
+            SqlStructureOperation::SetAggregates { aggregates: vec![] },
+            SqlStructureOperation::SetGroupBy { columns: vec![] },
+            SqlStructureOperation::SetDistinct { distinct: false },
+        ]
+        .into_iter()
+        .map(|operation| {
+            serde_json::to_value(operation).expect("structure operation must serialize")["kind"]
+                .as_str()
+                .expect("structure operation must have a kind")
+                .to_owned()
+        })
+        .collect::<BTreeSet<_>>();
+        assert_eq!(declared_operations, protocol_operations);
+
+        let aggregate_function_names = [
+            SqlStructureAggregateFunction::Count,
+            SqlStructureAggregateFunction::Sum,
+            SqlStructureAggregateFunction::Avg,
+            SqlStructureAggregateFunction::Min,
+            SqlStructureAggregateFunction::Max,
+        ]
+        .into_iter()
+        .map(|function| {
+            serde_json::to_value(function)
+                .expect("aggregate function must serialize")
+                .as_str()
+                .expect("aggregate function must serialize as a name")
+                .to_owned()
+        })
+        .collect::<BTreeSet<_>>();
+        let backend_aggregates = matrix["feature_matrix"]["backend"]["functions"]["aggregate"]
+            .as_array()
+            .expect("backend aggregate function list must be an array")
+            .iter()
+            .map(|function| {
+                function
+                    .as_str()
+                    .expect("function name must be a string")
+                    .to_owned()
+            })
+            .collect::<BTreeSet<_>>();
+        let aggregate_operation = editor["operations"]
+            .as_array()
+            .expect("feature matrix operations must be an array")
+            .iter()
+            .find(|operation| operation["action"] == "aggregate")
+            .expect("aggregate operation must be present");
+        let editor_aggregates = aggregate_operation["functions"]
+            .as_array()
+            .expect("aggregate operation must list its functions")
+            .iter()
+            .map(|function| {
+                function
+                    .as_str()
+                    .expect("function name must be a string")
+                    .to_owned()
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(backend_aggregates, aggregate_function_names);
+        assert_eq!(editor_aggregates, aggregate_function_names);
+    }
+
+    #[test]
     fn analyzes_simple_select_filters_and_stable_order() {
         let result = analyze_sql_structure(
             "SELECT * FROM \"Task\" WHERE \"field_101\" = $status ORDER BY \"_ugoite_id\"",

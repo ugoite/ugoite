@@ -30,6 +30,8 @@ use the Rust domain parser through WASM. The capability contract accepts one
 SELECT over the selected Form relation, simple projected columns, typed
 parameter comparisons and null checks, and column ordering. It reports stable
 reason codes for unsupported SQL and never makes direct SQL unavailable.
+The checked backend-admission and current structure-editor coverage inventory
+is recorded in the [SQL feature matrix contract](../../../architecture/contracts/sql-gui-feature-matrix.md).
 Sort proposals append adapter-supplied stable keys where needed. A proposal is
 non-mutating: the adapter must show its SQL diff and wait for explicit user
 confirmation before updating the controlled SQL value. `SqlStructureToolbar`

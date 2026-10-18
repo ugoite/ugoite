@@ -103,6 +103,25 @@ async fn setup_sql_space_with_form_name(
 }
 
 #[tokio::test]
+async fn values_query_passes_statement_gate_but_is_rejected_by_production_execution() -> Result<()>
+{
+    let space = setup_sql_space("memory://sql-stateless-values-probe", "sqlvaluesprobe").await?;
+    let error = space
+        .service
+        .query_sql(&space.space_id, query_request("VALUES (1)".to_string(), 10))
+        .await
+        .expect_err("VALUES passes the statement gate but is rejected during authorized execution");
+    let app_error = error
+        .downcast_ref::<ugoite_core::error::AppError>()
+        .expect("the execution rejection maps to the public query error");
+    assert_eq!(
+        app_error.message(),
+        "SQL uses an unsupported or non-read-only relation, statement, or function"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn quoted_form_name_resolves_for_page_and_count() -> Result<()> {
     let space = setup_sql_space("memory://sql-stateless-form-name", "sqlformname").await?;
     let named_sql = format!(
