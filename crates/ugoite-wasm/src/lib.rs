@@ -772,9 +772,26 @@ mod tests {
         .to_string();
         assert!(sql_document_request.len() > super::MAX_SQL_DOCUMENT_REQUEST_BYTES);
 
+        let sql_document_parameter_rename_request = serde_json::json!({
+            "action": "domain.rename_sql_document_parameter",
+            "value": {
+                "sql": "x".repeat(8 * 1024 * 1024),
+                "old_name": "old",
+                "new_name": "new",
+            },
+        })
+        .to_string();
+        assert!(
+            sql_document_parameter_rename_request.len() > super::MAX_SQL_DOCUMENT_REQUEST_BYTES
+        );
+
         for (action, request) in [
             ("generic", generic_request),
             ("SQL Document", sql_document_request),
+            (
+                "SQL Document parameter rename",
+                sql_document_parameter_rename_request,
+            ),
         ] {
             let response: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
             assert_eq!(response["ok"], false, "{action}: {response}");
