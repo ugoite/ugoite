@@ -273,7 +273,13 @@ mod tests {
         };
         let policy = SqlFunctionPolicy::ReadOnlyAggregateV1;
         assert_eq!(declared("scalar"), policy.scalar_functions);
-        assert_eq!(declared("aggregate"), policy.aggregate_functions);
+        assert_eq!(
+            declared("aggregate"),
+            ugoite_domain::sql_functions::USER_SQL_AGGREGATES
+                .iter()
+                .map(|function| function.name.to_owned())
+                .collect::<Vec<_>>()
+        );
         assert_eq!(declared("window"), policy.window_functions);
     }
 
