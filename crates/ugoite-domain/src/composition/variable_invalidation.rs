@@ -129,8 +129,8 @@ fn plan_compiled_variable_graph_invalidation(
 mod tests {
     use super::*;
     use crate::composition::variable_graph::{
-        VariableGraphArgumentBinding, VariableGraphNode, VariableGraphResultType,
-        VariableGraphScalarDescriptor, VariableGraphScalarType,
+        VariableGraphArgumentBinding, VariableGraphNode, VariableGraphQueryDefinition,
+        VariableGraphResultType, VariableGraphScalarDescriptor, VariableGraphScalarType,
     };
 
     fn scalar(scalar_type: VariableGraphScalarType) -> VariableGraphScalarDescriptor {
@@ -152,12 +152,25 @@ mod tests {
     }
 
     fn query(id: &str, dependencies: &[(&str, &str)]) -> VariableGraphNode {
+        let sql = if dependencies.is_empty() {
+            "SELECT 1".to_owned()
+        } else {
+            format!(
+                "SELECT {}",
+                dependencies
+                    .iter()
+                    .map(|(name, _)| format!("${name}"))
+                    .collect::<Vec<_>>()
+                    .join(" + ")
+            )
+        };
         VariableGraphNode {
             id: id.to_owned(),
             kind: VariableGraphNodeKind::Query {
                 returns: VariableGraphResultType::Scalar {
                     value_type: scalar(VariableGraphScalarType::Integer),
                 },
+                query: VariableGraphQueryDefinition::InlineSql { sql },
                 arguments: dependencies
                     .iter()
                     .map(|(name, variable)| VariableGraphArgumentBinding {
