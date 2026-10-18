@@ -569,6 +569,9 @@ fn contains_identifier(source: &str, identifier: &str) -> bool {
 fn contains_physical_table_type(source: &str) -> bool {
     source
         .replace("CompositionComponent::Table", "")
+        // This is also a portable Domain result-contract variant, not a
+        // storage/query adapter table type.
+        .replace("VariableGraphResultType::Table", "")
         .contains("Table")
 }
 
@@ -2154,9 +2157,12 @@ mod gate_contract_tests {
     }
 
     #[test]
-    fn physical_table_guard_allows_domain_component_variant_only() {
+    fn physical_table_guard_allows_domain_result_variants_only() {
         assert!(!contains_physical_table_type(
             "matches!(component, CompositionComponent::Table { .. })"
+        ));
+        assert!(!contains_physical_table_type(
+            "matches!(returns, VariableGraphResultType::Table { .. })"
         ));
         assert!(contains_physical_table_type("use iceberg::table::Table;"));
         assert!(contains_physical_table_type("let _: Table = value;"));
