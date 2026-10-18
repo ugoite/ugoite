@@ -169,6 +169,8 @@ pub enum VariableGraphDiagnosticCode {
     InvalidInlineSql,
     InvalidSavedSqlIdentity,
     InvalidSavedSqlColumn,
+    MissingArgumentBinding,
+    UnusedArgumentBinding,
     MissingVariableReference,
     VariableTypeMismatch,
     DependencyCycle,
@@ -188,6 +190,8 @@ impl VariableGraphDiagnosticCode {
             Self::InvalidInlineSql => "invalid_inline_sql",
             Self::InvalidSavedSqlIdentity => "invalid_saved_sql_identity",
             Self::InvalidSavedSqlColumn => "invalid_saved_sql_column",
+            Self::MissingArgumentBinding => "missing_argument_binding",
+            Self::UnusedArgumentBinding => "unused_argument_binding",
             Self::MissingVariableReference => "missing_variable_reference",
             Self::VariableTypeMismatch => "variable_type_mismatch",
             Self::DependencyCycle => "dependency_cycle",
@@ -324,17 +328,28 @@ pub fn compile_variable_graph(
                         &node.id,
                     ));
                 }
-                match query {
-                    VariableGraphQueryDefinition::InlineSql { sql }
-                        if crate::sql_document::parse_sql_document(sql).status
-                            != crate::sql_document::SqlDocumentStatus::Parsed =>
-                    {
-                        diagnostics.push(VariableGraphDiagnostic::for_variable(
-                            VariableGraphDiagnosticCode::InvalidInlineSql,
-                            &node.id,
-                        ));
+                let inline_parameters = match query {
+                    VariableGraphQueryDefinition::InlineSql { sql } => {
+                        let document = crate::sql_document::parse_sql_document(sql);
+                        if document.status != crate::sql_document::SqlDocumentStatus::Parsed {
+                            diagnostics.push(VariableGraphDiagnostic::for_variable(
+                                VariableGraphDiagnosticCode::InvalidInlineSql,
+                                &node.id,
+                            ));
+                            None
+                        } else {
+                            match inline_sql_parameter_names(&document) {
+                                Some(parameters) => Some(parameters),
+                                None => {
+                                    diagnostics.push(VariableGraphDiagnostic::for_variable(
+                                        VariableGraphDiagnosticCode::InvalidInlineSql,
+                                        &node.id,
+                                    ));
+                                    None
+                                }
+                            }
+                        }
                     }
-                    VariableGraphQueryDefinition::InlineSql { .. } => {}
                     VariableGraphQueryDefinition::SavedSql {
                         entry_id,
                         revision_id,
@@ -357,8 +372,9 @@ pub fn compile_variable_graph(
                                 &node.id,
                             ));
                         }
+                        None
                     }
-                }
+                };
                 let mut argument_counts = BTreeMap::<&str, usize>::new();
                 for argument in arguments {
                     if !valid_argument_name(&argument.name) {
@@ -382,6 +398,30 @@ pub fn compile_variable_graph(
                         )
                     },
                 ));
+                if let Some(parameters) = inline_parameters {
+                    for name in parameters
+                        .iter()
+                        .filter(|name| !argument_counts.contains_key(name.as_str()))
+                    {
+                        diagnostics.push(VariableGraphDiagnostic::for_argument(
+                            VariableGraphDiagnosticCode::MissingArgumentBinding,
+                            &node.id,
+                            name,
+                            None,
+                        ));
+                    }
+                    for name in argument_counts
+                        .keys()
+                        .filter(|name| !parameters.contains(**name))
+                    {
+                        diagnostics.push(VariableGraphDiagnostic::for_argument(
+                            VariableGraphDiagnosticCode::UnusedArgumentBinding,
+                            &node.id,
+                            name,
+                            None,
+                        ));
+                    }
+                }
             }
         }
     }
@@ -478,6 +518,37 @@ fn valid_argument_name(name: &str) -> bool {
 
 fn valid_saved_sql_identity(value: &str) -> bool {
     Uuid::parse_str(value).is_ok()
+}
+
+fn inline_sql_parameter_names(
+    document: &crate::sql_document::SqlDocument,
+) -> Option<BTreeSet<String>> {
+    use crate::sql_document::{SqlDocumentStatus, SqlDocumentTokenKind};
+
+    if document.status != SqlDocumentStatus::Parsed {
+        return None;
+    }
+
+    let mut source_cursor = 0;
+    let mut parameters = BTreeSet::new();
+    for token in &document.tokens {
+        if token.range.start != source_cursor
+            || token.range.start >= token.range.end
+            || document.source_slice(token.range).is_none()
+        {
+            return None;
+        }
+        source_cursor = token.range.end;
+        if token.kind != SqlDocumentTokenKind::Placeholder {
+            continue;
+        }
+        let name = document.source_slice(token.range)?.strip_prefix('$')?;
+        if !valid_argument_name(name) {
+            return None;
+        }
+        parameters.insert(name.to_owned());
+    }
+    (source_cursor == document.source.len()).then_some(parameters)
 }
 
 fn scalar_type_of(kind: &VariableGraphNodeKind) -> Option<VariableGraphScalarDescriptor> {
@@ -663,15 +734,25 @@ mod tests {
     }
 
     fn query(id: &str, dependencies: Vec<VariableGraphArgumentBinding>) -> VariableGraphNode {
+        let sql = if dependencies.is_empty() {
+            "SELECT 1".to_owned()
+        } else {
+            format!(
+                "SELECT {}",
+                dependencies
+                    .iter()
+                    .map(|argument| format!("${}", argument.name))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
         VariableGraphNode {
             id: id.to_owned(),
             kind: VariableGraphNodeKind::Query {
                 returns: VariableGraphResultType::Scalar {
                     value_type: scalar(VariableGraphScalarType::Integer, false),
                 },
-                query: VariableGraphQueryDefinition::InlineSql {
-                    sql: "SELECT 1".to_owned(),
-                },
+                query: VariableGraphQueryDefinition::InlineSql { sql },
                 arguments: dependencies,
             },
         }
@@ -821,6 +902,74 @@ mod tests {
                 "result"
             )]
         );
+    }
+
+    #[test]
+    fn inline_sql_parameters_require_exact_explicit_bindings() {
+        let missing = query_definition(VariableGraphQueryDefinition::InlineSql {
+            sql: "SELECT $day".to_owned(),
+        });
+        assert_eq!(
+            compile_variable_graph(&graph(vec![missing]))
+                .expect_err("every SQL parameter needs an explicit binding"),
+            [VariableGraphDiagnostic::for_argument(
+                VariableGraphDiagnosticCode::MissingArgumentBinding,
+                "result",
+                "day",
+                None,
+            )]
+        );
+
+        let unused = VariableGraphNode {
+            id: "result".to_owned(),
+            kind: VariableGraphNodeKind::Query {
+                returns: VariableGraphResultType::Scalar {
+                    value_type: scalar(VariableGraphScalarType::Integer, false),
+                },
+                query: VariableGraphQueryDefinition::InlineSql {
+                    sql: "SELECT 1".to_owned(),
+                },
+                arguments: vec![binding("day", "input", VariableGraphScalarType::Integer)],
+            },
+        };
+        let unused_result = compile_variable_graph(&graph(vec![
+            input("input", VariableGraphScalarType::Integer, false),
+            unused,
+        ]))
+        .expect_err("every inline SQL binding must be used");
+        assert_eq!(
+            unused_result,
+            [VariableGraphDiagnostic::for_argument(
+                VariableGraphDiagnosticCode::UnusedArgumentBinding,
+                "result",
+                "day",
+                None,
+            )]
+        );
+    }
+
+    #[test]
+    fn inline_parameter_binding_ignores_comments_literals_and_repeated_uses() {
+        let query = VariableGraphNode {
+            id: "result".to_owned(),
+            kind: VariableGraphNodeKind::Query {
+                returns: VariableGraphResultType::Scalar {
+                    value_type: scalar(VariableGraphScalarType::Integer, false),
+                },
+                query: VariableGraphQueryDefinition::InlineSql {
+                    sql:
+                        "-- $ignored\nSELECT $day + $day, '$ignored' AS literal /* $also_ignored */"
+                            .to_owned(),
+                },
+                arguments: vec![binding("day", "input", VariableGraphScalarType::Integer)],
+            },
+        };
+
+        assert!(compile_variable_graph(&graph(vec![
+            input("input", VariableGraphScalarType::Integer, false),
+            query,
+        ]))
+        .is_ok());
     }
 
     #[test]
