@@ -5,7 +5,9 @@
 //! the current values first and the ordinary SQL execution path still checks
 //! access to the Space, Forms, and exact Saved SQL revision.
 
-use crate::sql_query::{SavedSqlRevisionRef, SqlQueryRequest, MAX_SQL_QUERY_BYTES};
+use crate::sql_query::{
+    SavedSqlRevisionRef, SqlQueryRequest, MAX_SQL_QUERY_BYTES, MAX_SQL_SCALAR_PROBE_ROWS,
+};
 use chrono::{DateTime, Datelike, NaiveDate};
 use serde_json::{Map, Number, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -318,7 +320,10 @@ pub fn compile_variable_graph_query_request(
         parameters,
         parameter_types,
         include_exact_integer_values: false,
-        limit: DEFAULT_VARIABLE_GRAPH_SQL_PAGE_LIMIT,
+        limit: match returns {
+            VariableGraphResultType::Scalar { .. } => MAX_SQL_SCALAR_PROBE_ROWS,
+            VariableGraphResultType::Table { .. } => DEFAULT_VARIABLE_GRAPH_SQL_PAGE_LIMIT,
+        },
         continuation: None,
         saved_sql,
     };
@@ -784,6 +789,7 @@ mod tests {
                 revision_id: "00000000-0000-0000-0000-000000000002".to_owned(),
             })
         );
+        assert_eq!(request.limit, MAX_SQL_SCALAR_PROBE_ROWS);
         assert!(request.validate().is_ok());
     }
 
