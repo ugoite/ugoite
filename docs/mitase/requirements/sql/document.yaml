@@ -15,11 +15,14 @@ requirements:
           The bounded Rust SQL Document parser retains the exact SQL source and
           source ranges for tokenized trivia, comments, identifiers, and
           literals, plus parser-provided source ranges where usable spans are
-          available for syntax nodes. It preserves invalid drafts for correction,
-          rejects inputs above the source-byte or syntax-token limits before
-          AST construction, and distinguishes syntax or statement-shape
-          diagnostics. A parsed syntax tree alone never means that the SQL
-          executor admits the query.
+          available for syntax nodes. Each parsed SELECT projection item,
+          including wildcard and expression items, is a distinct node linked
+          to its SELECT, with a source range covering the item. Nested SELECT
+          nodes retain their query and enclosing syntax parent links. It
+          preserves invalid drafts for correction, rejects inputs above the
+          source-byte or syntax-token limits before AST construction, and
+          distinguishes syntax or statement-shape diagnostics. A parsed syntax
+          tree alone never means that the SQL executor admits the query.
         governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
       - id: source-aware-parameter-rename
         kind: behavior

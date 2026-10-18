@@ -224,6 +224,8 @@ describe("portable Ugoite API protocol WASM", () => {
     )).toBe(true);
     expect(document.nodes.some((node) => node.kind === "query_statement"))
       .toBe(true);
+    expect(document.nodes.some((node) => node.kind === "select_item"))
+      .toBe(true);
 
     await expect(parseSqlDocument("SELECT (")).resolves.toMatchObject({
       source: "SELECT (",

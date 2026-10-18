@@ -5,13 +5,13 @@ category: SQL Document parsing foundation
 features:
   - id: FEAT-SQL-001
     title: Lossless SQL Document source view
-    summary: Preserve bounded SQL drafts as exact Rust-owned source with token ranges and parser-provided syntax ranges while keeping syntax parsing separate from executor admission.
+    summary: Preserve bounded SQL drafts as exact Rust-owned source with token ranges, syntax ranges, and distinct projection-item nodes while keeping syntax parsing separate from executor admission.
     status: implemented
     bindings:
       - id: sql-document-core
         role: implementation
         facet: core
-        responsibility: Parse bounded SQL drafts into an exact-source document with lossless token ranges, usable parser-provided syntax-node ranges, and distinct syntax or statement-shape diagnostics; provide token-scoped parameter renaming without granting runtime admission.
+        responsibility: Parse bounded SQL drafts into an exact-source document with lossless token ranges, usable parser-provided syntax-node ranges, distinct SELECT projection-item nodes with parent links, and distinct syntax or statement-shape diagnostics; provide token-scoped parameter renaming without granting runtime admission.
         targets:
           - id: parser
             adapter: rust
@@ -30,7 +30,7 @@ features:
       - id: sql-document-verification
         role: verification
         facet: verification
-        responsibility: Verify exact source retention, syntax diagnostics, token-scoped parameter renaming, and the parser-versus-executor boundary with focused Rust unit tests.
+        responsibility: Verify exact source retention, projection-item ranges and nested SELECT parent links, typed frontend protocol coverage, syntax diagnostics, token-scoped parameter renaming, and the parser-versus-executor boundary with focused tests.
         targets:
           - id: lossless-document-source-and-ranges
             adapter: rust
@@ -48,6 +48,38 @@ features:
                   arguments:
                     package: ugoite-domain
                     test: sql_document::tests::lossless_document_retains_source_tokens_and_syntax_ranges_without_execution_admission
+          - id: projection-item-ranges-and-nested-select-parents
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector:
+              kind: symbol
+              name: tests::exposes_projection_item_ranges_and_nested_select_parent_links
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.lossless-document-draft
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-core/target.parser
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-domain
+                    test: sql_document::tests::exposes_projection_item_ranges_and_nested_select_parent_links
+          - id: typed-projection-item-protocol-client
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.test.ts
+            selector:
+              kind: test
+              name: parses bounded SQL drafts through the typed Rust/WASM document contract
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parser-action
+                runner:
+                  runner: frontend-vitest-file
+                  arguments:
+                    file: src/lib/ugoite-client/protocol.test.ts
+                    test: parses bounded SQL drafts through the typed Rust/WASM document contract
           - id: invalid-draft-diagnostics
             adapter: rust
             path: crates/ugoite-domain/src/sql_document.rs

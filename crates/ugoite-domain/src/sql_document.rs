@@ -8,7 +8,8 @@
 use core::ops::ControlFlow;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
-    Expr, Query, Select, Spanned, Statement, TableFactor, ValueWithSpan, Visit, Visitor,
+    Distinct, Expr, Query, Select, SelectItem, Spanned, Statement, TableFactor, ValueWithSpan,
+    Visit, Visitor,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserError};
@@ -165,6 +166,8 @@ pub enum SqlDocumentNodeKind {
     Query,
     /// A `SELECT` node.
     Select,
+    /// One item in a `SELECT` projection, including expressions and wildcards.
+    SelectItem,
     /// A named or derived relation in a `FROM` tree.
     Relation,
     /// A table factor such as a named table, join, or derived relation.
@@ -207,7 +210,8 @@ pub struct SqlDocumentNode {
     pub parent: Option<u32>,
     /// Syntax category for the node.
     pub kind: SqlDocumentNodeKind,
-    /// Parser-provided source range when the parser exposes a usable span.
+    /// Source range in the original SQL. Parser spans are used when usable;
+    /// projection-item boundaries are aligned with the tokenized source.
     pub range: Option<SqlSourceRange>,
 }
 
@@ -665,11 +669,11 @@ pub fn parse_sql_document(source: &str) -> SqlDocument {
             }
             [Statement::Query(_)] => {
                 document.status = SqlDocumentStatus::Parsed;
-                document.nodes = collect_nodes(&statements, source, &source_map);
+                document.nodes = collect_nodes(&statements, source, &source_map, &document.tokens);
             }
             [_] => {
                 document.status = SqlDocumentStatus::SelectRequired;
-                document.nodes = collect_nodes(&statements, source, &source_map);
+                document.nodes = collect_nodes(&statements, source, &source_map, &document.tokens);
                 document.diagnostics.push(SqlDocumentDiagnostic {
                     code: SqlDocumentDiagnosticCode::SelectRequired,
                     message: "a single read-only SELECT statement is required".to_owned(),
@@ -680,7 +684,7 @@ pub fn parse_sql_document(source: &str) -> SqlDocument {
             }
             _ => {
                 document.status = SqlDocumentStatus::MultipleStatements;
-                document.nodes = collect_nodes(&statements, source, &source_map);
+                document.nodes = collect_nodes(&statements, source, &source_map, &document.tokens);
                 document.diagnostics.push(SqlDocumentDiagnostic {
                     code: SqlDocumentDiagnosticCode::SingleStatementRequired,
                     message: "exactly one SQL statement is required".to_owned(),
@@ -772,22 +776,26 @@ fn collect_nodes(
     statements: &[Statement],
     source: &str,
     source_map: &SqlSourceMap,
+    tokens: &[SqlDocumentToken],
 ) -> Vec<SqlDocumentNode> {
     let mut collector = NodeCollector {
         source,
         source_map,
+        tokens,
         nodes: Vec::new(),
         parents: Vec::new(),
     };
     for statement in statements {
         let _ = statement.visit(&mut collector);
     }
+    collector.attach_projection_children();
     collector.nodes
 }
 
 struct NodeCollector<'a> {
     source: &'a str,
     source_map: &'a SqlSourceMap,
+    tokens: &'a [SqlDocumentToken],
     nodes: Vec<SqlDocumentNode>,
     parents: Vec<u32>,
 }
@@ -807,6 +815,313 @@ impl NodeCollector<'_> {
     fn pop(&mut self) {
         self.parents.pop();
     }
+
+    fn push_select_items(&mut self, select: &Select) {
+        let Some(parent) = self.parents.last().copied() else {
+            return;
+        };
+
+        let ranges = projection_item_ranges(self.source, self.source_map, self.tokens, select);
+        for (index, item) in select.projection.iter().enumerate() {
+            let id = self.nodes.len() as u32;
+            self.nodes.push(SqlDocumentNode {
+                id,
+                parent: Some(parent),
+                kind: SqlDocumentNodeKind::SelectItem,
+                range: ranges
+                    .as_ref()
+                    .and_then(|ranges| ranges.get(index).copied())
+                    .or_else(|| {
+                        SqlSourceRange::from_span(self.source, self.source_map, item.span())
+                    }),
+            });
+        }
+    }
+
+    fn attach_projection_children(&mut self) {
+        let projections = self
+            .nodes
+            .iter()
+            .filter(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+            .filter_map(|node| {
+                node.range
+                    .and_then(|range| node.parent.map(|parent| (node.id, parent, range)))
+            })
+            .collect::<Vec<_>>();
+
+        for node in &mut self.nodes {
+            let Some(parent) = node.parent else {
+                continue;
+            };
+            if node.kind == SqlDocumentNodeKind::SelectItem {
+                continue;
+            }
+            let Some(range) = node.range else {
+                continue;
+            };
+
+            if let Some((item_id, _, _)) = projections
+                .iter()
+                .filter(|(_, select_id, item_range)| {
+                    *select_id == parent
+                        && item_range.start <= range.start
+                        && range.end <= item_range.end
+                })
+                .min_by_key(|(_, _, item_range)| item_range.end - item_range.start)
+            {
+                node.parent = Some(*item_id);
+            }
+        }
+    }
+}
+
+fn projection_item_ranges(
+    source: &str,
+    source_map: &SqlSourceMap,
+    tokens: &[SqlDocumentToken],
+    select: &Select,
+) -> Option<Vec<SqlSourceRange>> {
+    let select_range = SqlSourceRange::from_span(source, source_map, select.select_token.0.span)?;
+    let mut token_index = tokens
+        .iter()
+        .position(|token| token.range.start >= select_range.end)?;
+    token_index = skip_select_prefix(source, tokens, token_index, select);
+
+    let mut ranges = Vec::with_capacity(select.projection.len());
+    let mut item_start = None;
+    let mut item_end = None;
+    let mut depth = 0_usize;
+    let mut wildcard_except_seen = false;
+
+    for token in tokens.iter().skip(token_index) {
+        let text = source.get(token.range.start..token.range.end)?;
+        if depth == 0 {
+            if token.kind == SqlDocumentTokenKind::Punctuation && text == "," {
+                push_projection_range(&mut ranges, &mut item_start, &mut item_end);
+                wildcard_except_seen = false;
+                continue;
+            }
+            if token.kind == SqlDocumentTokenKind::Punctuation && matches!(text, ")" | ";") {
+                break;
+            }
+            if token.kind == SqlDocumentTokenKind::Word && is_projection_clause_keyword(text) {
+                if text.eq_ignore_ascii_case("EXCEPT")
+                    && !wildcard_except_seen
+                    && projection_item_has_wildcard_except(select, ranges.len())
+                {
+                    wildcard_except_seen = true;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        if !matches!(
+            token.kind,
+            SqlDocumentTokenKind::Trivia | SqlDocumentTokenKind::Comment
+        ) {
+            item_start.get_or_insert(token.range.start);
+            item_end = Some(token.range.end);
+        }
+
+        if token.kind == SqlDocumentTokenKind::Punctuation {
+            match text {
+                "(" | "[" | "{" => depth = depth.checked_add(1)?,
+                ")" | "]" | "}" => depth = depth.checked_sub(1)?,
+                _ => {}
+            }
+        }
+    }
+    push_projection_range(&mut ranges, &mut item_start, &mut item_end);
+
+    (ranges.len() == select.projection.len()).then_some(ranges)
+}
+
+fn projection_item_has_wildcard_except(select: &Select, index: usize) -> bool {
+    match select.projection.get(index) {
+        Some(SelectItem::Wildcard(options) | SelectItem::QualifiedWildcard(_, options)) => {
+            options.opt_except.is_some()
+        }
+        _ => false,
+    }
+}
+
+fn push_projection_range(
+    ranges: &mut Vec<SqlSourceRange>,
+    start: &mut Option<usize>,
+    end: &mut Option<usize>,
+) {
+    if let (Some(start), Some(end)) = (start.take(), end.take()) {
+        ranges.push(SqlSourceRange { start, end });
+    }
+}
+
+fn skip_select_prefix(
+    source: &str,
+    tokens: &[SqlDocumentToken],
+    mut index: usize,
+    select: &Select,
+) -> usize {
+    loop {
+        index = skip_trivia_tokens(tokens, index);
+        let Some(token) = tokens.get(index) else {
+            return index;
+        };
+        let Some(text) = source.get(token.range.start..token.range.end) else {
+            return index;
+        };
+
+        if select.top.is_some() && token_is_keyword(token, text, "TOP") {
+            index = skip_trivia_tokens(tokens, index + 1);
+            if tokens
+                .get(index)
+                .is_some_and(|token| source.get(token.range.start..token.range.end) == Some("("))
+            {
+                index = skip_balanced_tokens(source, tokens, index).unwrap_or(index);
+            } else if tokens.get(index).is_some() {
+                index += 1;
+            }
+            index = skip_trivia_tokens(tokens, index);
+            if token_is_keyword_at(source, tokens, index, "PERCENT") {
+                index += 1;
+            }
+            index = skip_trivia_tokens(tokens, index);
+            if token_is_keyword_at(source, tokens, index, "WITH")
+                && token_is_keyword_at(
+                    source,
+                    tokens,
+                    skip_trivia_tokens(tokens, index + 1),
+                    "TIES",
+                )
+            {
+                index = skip_trivia_tokens(tokens, index + 1) + 1;
+            }
+            continue;
+        }
+
+        if select.select_modifiers.is_some() && is_select_modifier_keyword(text) {
+            index += 1;
+            continue;
+        }
+
+        if let Some(distinct) = &select.distinct {
+            if matches!(distinct, Distinct::All | Distinct::Distinct)
+                && token.kind == SqlDocumentTokenKind::Word
+                && matches!(
+                    text.to_ascii_uppercase().as_str(),
+                    "ALL" | "DISTINCT" | "DISTINCTROW"
+                )
+            {
+                index += 1;
+                continue;
+            }
+            if matches!(distinct, Distinct::On(_)) && token_is_keyword(token, text, "DISTINCT") {
+                index = skip_trivia_tokens(tokens, index + 1);
+                if token_is_keyword_at(source, tokens, index, "ON") {
+                    index = skip_trivia_tokens(tokens, index + 1);
+                    if tokens.get(index).is_some_and(|token| {
+                        source.get(token.range.start..token.range.end) == Some("(")
+                    }) {
+                        index = skip_balanced_tokens(source, tokens, index).unwrap_or(index);
+                    }
+                }
+                continue;
+            }
+        }
+
+        return index;
+    }
+}
+
+fn skip_trivia_tokens(tokens: &[SqlDocumentToken], mut index: usize) -> usize {
+    while tokens.get(index).is_some_and(|token| {
+        matches!(
+            token.kind,
+            SqlDocumentTokenKind::Trivia | SqlDocumentTokenKind::Comment
+        )
+    }) {
+        index += 1;
+    }
+    index
+}
+
+fn skip_balanced_tokens(source: &str, tokens: &[SqlDocumentToken], start: usize) -> Option<usize> {
+    let mut depth = 0_usize;
+    for (index, token) in tokens.iter().enumerate().skip(start) {
+        let text = source.get(token.range.start..token.range.end)?;
+        if token.kind == SqlDocumentTokenKind::Punctuation {
+            match text {
+                "(" => depth = depth.checked_add(1)?,
+                ")" => {
+                    depth = depth.checked_sub(1)?;
+                    if depth == 0 {
+                        return Some(index + 1);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    None
+}
+
+fn token_is_keyword(token: &SqlDocumentToken, text: &str, keyword: &str) -> bool {
+    token.kind == SqlDocumentTokenKind::Word && text.eq_ignore_ascii_case(keyword)
+}
+
+fn token_is_keyword_at(
+    source: &str,
+    tokens: &[SqlDocumentToken],
+    index: usize,
+    keyword: &str,
+) -> bool {
+    tokens.get(index).is_some_and(|token| {
+        source
+            .get(token.range.start..token.range.end)
+            .is_some_and(|text| token_is_keyword(token, text, keyword))
+    })
+}
+
+fn is_select_modifier_keyword(text: &str) -> bool {
+    matches!(
+        text.to_ascii_uppercase().as_str(),
+        "HIGH_PRIORITY"
+            | "STRAIGHT_JOIN"
+            | "SQL_SMALL_RESULT"
+            | "SQL_BIG_RESULT"
+            | "SQL_BUFFER_RESULT"
+            | "SQL_NO_CACHE"
+            | "SQL_CALC_FOUND_ROWS"
+    )
+}
+
+fn is_projection_clause_keyword(text: &str) -> bool {
+    matches!(
+        text.to_ascii_uppercase().as_str(),
+        "FROM"
+            | "WHERE"
+            | "PREWHERE"
+            | "GROUP"
+            | "HAVING"
+            | "WINDOW"
+            | "QUALIFY"
+            | "ORDER"
+            | "LIMIT"
+            | "OFFSET"
+            | "FETCH"
+            | "FOR"
+            | "INTO"
+            | "CONNECT"
+            | "CLUSTER"
+            | "DISTRIBUTE"
+            | "SORT"
+            | "SETTINGS"
+            | "FORMAT"
+            | "EMIT"
+            | "UNION"
+            | "EXCEPT"
+            | "INTERSECT"
+    )
 }
 
 impl Visitor for NodeCollector<'_> {
@@ -839,6 +1154,7 @@ impl Visitor for NodeCollector<'_> {
 
     fn pre_visit_select(&mut self, select: &Select) -> ControlFlow<Self::Break> {
         self.push(SqlDocumentNodeKind::Select, select);
+        self.push_select_items(select);
         ControlFlow::Continue(())
     }
 
@@ -1120,6 +1436,139 @@ mod tests {
             .nodes
             .iter()
             .any(|node| node.parent.is_some_and(|parent| parent < node.id)));
+    }
+
+    #[test]
+    fn exposes_projection_item_ranges_and_nested_select_parent_links() {
+        let source = "SELECT /* before */ *, t.* /* wildcard tail */, CAST(amount AS DOUBLE) AS total /* alias tail */, (SELECT x AS inner_value FROM nested) AS nested_value FROM \"G\"";
+        let document = parse_sql_document(source);
+
+        assert_eq!(document.status, SqlDocumentStatus::Parsed);
+        assert_eq!(document.to_sql(), source);
+
+        let outer_select = document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::Select
+                    && node
+                        .range
+                        .and_then(|range| document.source_slice(range))
+                        .is_some_and(|slice| slice.starts_with("SELECT /* before */"))
+            })
+            .expect("the outer SELECT has a node");
+        let outer_items = document
+            .nodes
+            .iter()
+            .filter(|node| {
+                node.kind == SqlDocumentNodeKind::SelectItem && node.parent == Some(outer_select.id)
+            })
+            .collect::<Vec<_>>();
+        let item_texts = outer_items
+            .iter()
+            .map(|node| {
+                document
+                    .source_slice(node.range.expect("projection item has a parser range"))
+                    .expect("projection range is valid")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            item_texts,
+            [
+                "*",
+                "t.*",
+                "CAST(amount AS DOUBLE) AS total",
+                "(SELECT x AS inner_value FROM nested) AS nested_value",
+            ]
+        );
+
+        let nested_item = outer_items[3];
+        let nested_item_range = nested_item.range.expect("nested projection has a range");
+        let inner_select = document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::Select
+                    && node
+                        .range
+                        .and_then(|range| document.source_slice(range))
+                        .is_some_and(|slice| slice.starts_with("SELECT x AS inner_value"))
+            })
+            .expect("nested SELECT has a node");
+        let inner_select_range = inner_select.range.expect("nested SELECT has a range");
+        assert!(nested_item_range.start <= inner_select_range.start);
+        assert!(inner_select_range.end <= nested_item_range.end);
+
+        let inner_query = document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::Query
+                    && node
+                        .range
+                        .is_some_and(|range| range.start == inner_select_range.start)
+            })
+            .expect("nested SELECT belongs to a query node");
+        assert_eq!(inner_select.parent, Some(inner_query.id));
+        let query_parent = document
+            .nodes
+            .iter()
+            .find(|node| node.id == inner_query.parent.expect("nested query has a parent"))
+            .expect("nested query parent id resolves to a node");
+        assert_eq!(query_parent.kind, SqlDocumentNodeKind::SubqueryExpression);
+        assert_eq!(query_parent.parent, Some(nested_item.id));
+        let mut ancestor = inner_query.parent;
+        let mut ancestors = Vec::new();
+        while let Some(id) = ancestor {
+            let node = document
+                .nodes
+                .iter()
+                .find(|node| node.id == id)
+                .expect("parent id resolves to a node");
+            ancestors.push(node);
+            ancestor = node.parent;
+        }
+        assert!(ancestors
+            .iter()
+            .any(|node| node.id == nested_item.id && node.kind == SqlDocumentNodeKind::SelectItem));
+
+        for comment in ["/* before */", "/* wildcard tail */", "/* alias tail */"] {
+            assert!(document.tokens.iter().any(|token| {
+                token.kind == SqlDocumentTokenKind::Comment
+                    && document.source_slice(token.range) == Some(comment)
+            }));
+        }
+        let mut next_offset = 0;
+        for token in &document.tokens {
+            assert_eq!(token.range.start, next_offset);
+            next_offset = token.range.end;
+        }
+        assert_eq!(next_offset, source.len());
+    }
+
+    #[test]
+    fn wildcard_except_options_are_included_in_projection_item_range() {
+        let source = "SELECT * EXCEPT (a) FROM t";
+        let document = parse_sql_document(source);
+
+        assert_eq!(document.status, SqlDocumentStatus::Parsed);
+        assert_eq!(document.to_sql(), source);
+        let select = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::Select)
+            .expect("SELECT has a node");
+        let item = document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::SelectItem && node.parent == Some(select.id)
+            })
+            .expect("wildcard projection has an item node");
+        assert_eq!(
+            document.source_slice(item.range.expect("projection item has a range")),
+            Some("* EXCEPT (a)")
+        );
     }
 
     #[test]
