@@ -14,14 +14,15 @@ use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserError};
 use sqlparser::tokenizer::{Location, Span, Token, Tokenizer, Whitespace};
 use std::convert::Infallible;
-use std::error::Error;
-use std::fmt::{self, Display, Formatter};
 
 /// Version of the Rust SQL Document view returned to adapters.
 pub const SQL_DOCUMENT_CONTRACT_VERSION: u32 = 1;
 
 /// Bound on source SQL accepted by the editor parser.
 pub const MAX_SQL_DOCUMENT_BYTES: usize = 256 * 1024;
+
+/// Maximum number of disjoint edits accepted by one atomic document update.
+pub const MAX_SQL_DOCUMENT_EDITS: usize = 256;
 
 /// One half-open byte range in the original UTF-8 SQL source.
 ///
@@ -254,29 +255,90 @@ impl SqlDocument {
     }
 }
 
-/// Invalid source-level parameter name supplied to a SQL Document edit.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// One guarded replacement against the original SQL source of a transaction.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SqlDocumentEdit {
+    /// Half-open UTF-8 byte range to replace in the original source.
+    pub range: SqlSourceRange,
+    /// Exact source text expected at `range`.
+    pub expected_text: String,
+    /// Replacement text. It may leave the SQL draft syntactically incomplete.
+    pub replacement: String,
+}
+
+/// A set of simultaneous edits guarded by the complete source they were made against.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SqlDocumentEditTransaction {
+    /// Exact original SQL source. A mismatch rejects the whole transaction as stale.
+    pub expected_source: String,
+    /// Disjoint replacements interpreted against `expected_source`, not sequentially.
+    pub edits: Vec<SqlDocumentEdit>,
+}
+
+/// Result of applying an edit transaction, including a guarded inverse transaction.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SqlDocumentEditResult {
+    /// Reparsed document, including diagnostics for incomplete or invalid drafts.
+    pub document: SqlDocument,
+    /// Inverse edits guarded by the exact resulting source.
+    pub undo: SqlDocumentEditTransaction,
+}
+
+/// Failure to apply an SQL Document edit transaction atomically.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SqlDocumentEditError {
     /// The old parameter name is not a valid named SQL parameter.
     InvalidOldParameterName,
     /// The new parameter name is not a valid named SQL parameter.
     InvalidNewParameterName,
+    /// The current source differs from the transaction's expected base.
+    StaleSource,
+    /// The current or expected source exceeds the bounded document size.
+    SourceTooLarge,
+    /// The transaction exceeds the edit-count limit.
+    TooManyEdits,
+    /// An edit has a reversed range.
+    InvalidRange,
+    /// An edit range extends past the source boundary.
+    RangeOutOfBounds,
+    /// An edit range splits a UTF-8 code point.
+    NotUtf8Boundary,
+    /// Two edits overlap or have an ambiguous shared insertion point.
+    OverlappingEdits,
+    /// The source at an edit range differs from its expected preimage.
+    PreimageMismatch,
+    /// The resulting source would exceed the bounded document size.
+    OutputTooLarge,
 }
 
-impl Display for SqlDocumentEditError {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
+impl core::fmt::Display for SqlDocumentEditError {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let message = match self {
             Self::InvalidOldParameterName => {
                 "old SQL parameter name must match [A-Za-z_][A-Za-z0-9_]*"
             }
             Self::InvalidNewParameterName => {
                 "new SQL parameter name must match [A-Za-z_][A-Za-z0-9_]*"
             }
-        })
+            Self::StaleSource => "SQL document edit is based on stale source",
+            Self::SourceTooLarge => "SQL source exceeds the document size limit",
+            Self::TooManyEdits => "SQL document edit transaction exceeds the edit limit",
+            Self::InvalidRange => "SQL document edit range is reversed",
+            Self::RangeOutOfBounds => "SQL document edit range is outside the source",
+            Self::NotUtf8Boundary => "SQL document edit range splits a UTF-8 code point",
+            Self::OverlappingEdits => "SQL document edits overlap or share an insertion point",
+            Self::PreimageMismatch => "SQL document edit source text does not match",
+            Self::OutputTooLarge => "SQL document edit output exceeds the size limit",
+        };
+        formatter.write_str(message)
     }
 }
 
-impl Error for SqlDocumentEditError {}
+impl std::error::Error for SqlDocumentEditError {}
 
 /// Rename every exact named `$old_name` placeholder token in a SQL source.
 ///
@@ -325,6 +387,119 @@ fn valid_sql_parameter_name(name: &str) -> bool {
     let mut characters = name.chars();
     matches!(characters.next(), Some(first) if first == '_' || first.is_ascii_alphabetic())
         && characters.all(|character| character == '_' || character.is_ascii_alphanumeric())
+}
+
+/// Apply simultaneous, guarded byte-range replacements to an SQL source.
+///
+/// Every range and expected slice is checked against the same original source.
+/// If any guard fails, no output is produced. The returned inverse transaction
+/// has both a whole-source stale guard and per-range preimage guards, so it can
+/// safely be used for undo only while the edited draft is still current.
+///
+/// This operation is a bounded source edit only. The result is reparsed for
+/// syntax diagnostics, but it does not authorize, validate, plan, save, or run
+/// SQL.
+pub fn apply_sql_document_edit_transaction(
+    current_source: &str,
+    transaction: &SqlDocumentEditTransaction,
+) -> Result<SqlDocumentEditResult, SqlDocumentEditError> {
+    if current_source.len() > MAX_SQL_DOCUMENT_BYTES
+        || transaction.expected_source.len() > MAX_SQL_DOCUMENT_BYTES
+    {
+        return Err(SqlDocumentEditError::SourceTooLarge);
+    }
+    if current_source != transaction.expected_source {
+        return Err(SqlDocumentEditError::StaleSource);
+    }
+    if transaction.edits.len() > MAX_SQL_DOCUMENT_EDITS {
+        return Err(SqlDocumentEditError::TooManyEdits);
+    }
+
+    let mut edits: Vec<_> = transaction.edits.iter().collect();
+    edits.sort_by_key(|edit| (edit.range.start, edit.range.end));
+
+    let mut previous: Option<&SqlDocumentEdit> = None;
+    let mut removed_bytes = 0usize;
+    let mut added_bytes = 0usize;
+    for edit in &edits {
+        let range = edit.range;
+        if range.start > range.end {
+            return Err(SqlDocumentEditError::InvalidRange);
+        }
+        if range.end > current_source.len() {
+            return Err(SqlDocumentEditError::RangeOutOfBounds);
+        }
+        if !current_source.is_char_boundary(range.start)
+            || !current_source.is_char_boundary(range.end)
+        {
+            return Err(SqlDocumentEditError::NotUtf8Boundary);
+        }
+        if let Some(previous) = previous {
+            if range.start < previous.range.end
+                || (range.start == previous.range.start
+                    && (range.start == range.end || previous.range.start == previous.range.end))
+            {
+                return Err(SqlDocumentEditError::OverlappingEdits);
+            }
+        }
+        if current_source.get(range.start..range.end) != Some(edit.expected_text.as_str()) {
+            return Err(SqlDocumentEditError::PreimageMismatch);
+        }
+        removed_bytes = removed_bytes
+            .checked_add(range.end - range.start)
+            .ok_or(SqlDocumentEditError::OutputTooLarge)?;
+        added_bytes = added_bytes
+            .checked_add(edit.replacement.len())
+            .ok_or(SqlDocumentEditError::OutputTooLarge)?;
+        previous = Some(edit);
+    }
+
+    let output_len = current_source
+        .len()
+        .checked_sub(removed_bytes)
+        .and_then(|size| size.checked_add(added_bytes))
+        .filter(|size| *size <= MAX_SQL_DOCUMENT_BYTES)
+        .ok_or(SqlDocumentEditError::OutputTooLarge)?;
+
+    let mut output = String::with_capacity(output_len);
+    let mut inverse_edits: Vec<SqlDocumentEdit> = Vec::with_capacity(edits.len());
+    let mut source_cursor = 0;
+    for edit in edits {
+        output.push_str(&current_source[source_cursor..edit.range.start]);
+        let inverse_start = output.len();
+        output.push_str(&edit.replacement);
+        let inverse = SqlDocumentEdit {
+            range: SqlSourceRange {
+                start: inverse_start,
+                end: output.len(),
+            },
+            expected_text: edit.replacement.clone(),
+            replacement: edit.expected_text.clone(),
+        };
+        if let Some(previous) = inverse_edits.last_mut() {
+            if previous.range.end == inverse.range.start {
+                previous.range.end = inverse.range.end;
+                previous.expected_text.push_str(&inverse.expected_text);
+                previous.replacement.push_str(&inverse.replacement);
+            } else {
+                inverse_edits.push(inverse);
+            }
+        } else {
+            inverse_edits.push(inverse);
+        }
+        source_cursor = edit.range.end;
+    }
+    output.push_str(&current_source[source_cursor..]);
+    debug_assert_eq!(output.len(), output_len);
+
+    let undo = SqlDocumentEditTransaction {
+        expected_source: output.clone(),
+        edits: inverse_edits,
+    };
+    Ok(SqlDocumentEditResult {
+        document: parse_sql_document(&output),
+        undo,
+    })
 }
 
 /// Parse SQL text into its lossless lexical document and syntax view.
@@ -658,6 +833,27 @@ mod tests {
     use super::*;
     use sqlparser::ast::Statement;
 
+    fn edit(source: &str, expected_text: &str, replacement: &str) -> SqlDocumentEdit {
+        let start = source
+            .find(expected_text)
+            .expect("test source should contain expected text");
+        SqlDocumentEdit {
+            range: SqlSourceRange {
+                start,
+                end: start + expected_text.len(),
+            },
+            expected_text: expected_text.to_owned(),
+            replacement: replacement.to_owned(),
+        }
+    }
+
+    fn transaction(source: &str, edits: Vec<SqlDocumentEdit>) -> SqlDocumentEditTransaction {
+        SqlDocumentEditTransaction {
+            expected_source: source.to_owned(),
+            edits,
+        }
+    }
+
     #[test]
     fn preserves_source_tokens_comments_and_quoted_identifiers() {
         let source = "-- title\nSELECT \"MiX\", '$day' AS literal, $day /* tail */ FROM \"G\";";
@@ -914,6 +1110,259 @@ mod tests {
         assert_eq!(document.status, SqlDocumentStatus::TooLarge);
         assert!(document.tokens.is_empty());
         assert_eq!(document.to_sql(), source);
+    }
+
+    #[test]
+    fn applies_disjoint_edits_simultaneously_against_the_original_source() {
+        let source = "SELECT alpha, beta FROM \"G\"";
+        let edits = vec![
+            edit(source, "beta", "gamma"),
+            edit(source, "alpha", "delta"),
+        ];
+        let result = apply_sql_document_edit_transaction(source, &transaction(source, edits))
+            .expect("disjoint edits should apply");
+
+        assert_eq!(result.document.to_sql(), "SELECT delta, gamma FROM \"G\"");
+        assert_eq!(result.document.status, SqlDocumentStatus::Parsed);
+        assert_eq!(result.undo.expected_source, result.document.source);
+    }
+
+    #[test]
+    fn adjacent_replacements_and_boundary_insertions_have_guarded_undo() {
+        let source = "SELECT ab";
+        let adjacent = transaction(source, vec![edit(source, "a", "A"), edit(source, "b", "B")]);
+        let changed = apply_sql_document_edit_transaction(source, &adjacent)
+            .expect("adjacent replacements should be unambiguous");
+        assert_eq!(changed.document.to_sql(), "SELECT AB");
+        assert_eq!(changed.undo.edits.len(), 1);
+        let restored = apply_sql_document_edit_transaction(&changed.document.source, &changed.undo)
+            .expect("adjacent inverse edits should be safely coalesced");
+        assert_eq!(restored.document.to_sql(), source);
+
+        let insertion_boundary = source.len();
+        let boundary_edits = transaction(
+            source,
+            vec![
+                SqlDocumentEdit {
+                    range: SqlSourceRange {
+                        start: insertion_boundary,
+                        end: insertion_boundary,
+                    },
+                    expected_text: String::new(),
+                    replacement: "!".to_owned(),
+                },
+                SqlDocumentEdit {
+                    range: SqlSourceRange {
+                        start: insertion_boundary - 1,
+                        end: insertion_boundary,
+                    },
+                    expected_text: "b".to_owned(),
+                    replacement: "B".to_owned(),
+                },
+            ],
+        );
+        let changed = apply_sql_document_edit_transaction(source, &boundary_edits)
+            .expect("insertion at an adjacent range boundary should be ordered");
+        assert_eq!(changed.document.to_sql(), "SELECT aB!");
+        let restored = apply_sql_document_edit_transaction(&changed.document.source, &changed.undo)
+            .expect("boundary insertion inverse should restore the original source");
+        assert_eq!(restored.document.to_sql(), source);
+
+        let ambiguous_insertions = transaction(
+            source,
+            vec![
+                SqlDocumentEdit {
+                    range: SqlSourceRange {
+                        start: insertion_boundary,
+                        end: insertion_boundary,
+                    },
+                    expected_text: String::new(),
+                    replacement: "!".to_owned(),
+                },
+                SqlDocumentEdit {
+                    range: SqlSourceRange {
+                        start: insertion_boundary,
+                        end: insertion_boundary,
+                    },
+                    expected_text: String::new(),
+                    replacement: "?".to_owned(),
+                },
+            ],
+        );
+        assert_eq!(
+            apply_sql_document_edit_transaction(source, &ambiguous_insertions),
+            Err(SqlDocumentEditError::OverlappingEdits)
+        );
+    }
+
+    #[test]
+    fn rejects_stale_overlapping_and_mismatched_preimage_edits_atomically() {
+        let source = "SELECT amount FROM \"G\"";
+        let stale = transaction(source, vec![edit(source, "amount", "total")]);
+        assert_eq!(
+            apply_sql_document_edit_transaction("SELECT changed FROM \"G\"", &stale),
+            Err(SqlDocumentEditError::StaleSource)
+        );
+
+        let first = source.find("amount").unwrap();
+        let overlapping = transaction(
+            source,
+            vec![
+                SqlDocumentEdit {
+                    range: SqlSourceRange {
+                        start: first,
+                        end: first + 4,
+                    },
+                    expected_text: "amou".to_owned(),
+                    replacement: "x".to_owned(),
+                },
+                SqlDocumentEdit {
+                    range: SqlSourceRange {
+                        start: first + 2,
+                        end: first + 6,
+                    },
+                    expected_text: "ount".to_owned(),
+                    replacement: "y".to_owned(),
+                },
+            ],
+        );
+        assert_eq!(
+            apply_sql_document_edit_transaction(source, &overlapping),
+            Err(SqlDocumentEditError::OverlappingEdits)
+        );
+
+        let mismatched_preimage = transaction(
+            source,
+            vec![SqlDocumentEdit {
+                range: SqlSourceRange {
+                    start: first,
+                    end: first + "amount".len(),
+                },
+                expected_text: "total".to_owned(),
+                replacement: "value".to_owned(),
+            }],
+        );
+        assert_eq!(
+            apply_sql_document_edit_transaction(source, &mismatched_preimage),
+            Err(SqlDocumentEditError::PreimageMismatch)
+        );
+    }
+
+    #[test]
+    fn rejects_out_of_bounds_and_non_utf8_boundary_ranges() {
+        let source = "SELECT '東京'";
+        let out_of_bounds = transaction(
+            source,
+            vec![SqlDocumentEdit {
+                range: SqlSourceRange {
+                    start: source.len(),
+                    end: source.len() + 1,
+                },
+                expected_text: "x".to_owned(),
+                replacement: "y".to_owned(),
+            }],
+        );
+        assert_eq!(
+            apply_sql_document_edit_transaction(source, &out_of_bounds),
+            Err(SqlDocumentEditError::RangeOutOfBounds)
+        );
+
+        let japanese_start = source.find("東京").unwrap();
+        let split_code_point = transaction(
+            source,
+            vec![SqlDocumentEdit {
+                range: SqlSourceRange {
+                    start: japanese_start + 1,
+                    end: japanese_start + 3,
+                },
+                expected_text: "京".to_owned(),
+                replacement: "都".to_owned(),
+            }],
+        );
+        assert_eq!(
+            apply_sql_document_edit_transaction(source, &split_code_point),
+            Err(SqlDocumentEditError::NotUtf8Boundary)
+        );
+    }
+
+    #[test]
+    fn keeps_invalid_draft_diagnostics_in_the_edit_result() {
+        let source = "SELECT value FROM \"G\"";
+        let result = apply_sql_document_edit_transaction(
+            source,
+            &transaction(source, vec![edit(source, "value", "(")]),
+        )
+        .expect("syntax diagnostics do not reject a source edit");
+
+        assert_eq!(result.document.status, SqlDocumentStatus::InvalidSql);
+        assert!(result
+            .document
+            .diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.code == SqlDocumentDiagnosticCode::ParseFailed }));
+        assert_eq!(result.document.to_sql(), "SELECT ( FROM \"G\"");
+    }
+
+    #[test]
+    fn guarded_undo_restores_comments_and_every_untouched_source_byte() {
+        let source =
+            "-- keep this\nSELECT /* projection */ amount, day FROM \"G\" WHERE day = 1 /* tail */";
+        let edits = vec![
+            edit(source, "amount", "total"),
+            edit(source, "day = 1", "day = 2"),
+        ];
+        let result = apply_sql_document_edit_transaction(source, &transaction(source, edits))
+            .expect("disjoint source edits should apply");
+        assert_eq!(
+            result.document.to_sql(),
+            "-- keep this\nSELECT /* projection */ total, day FROM \"G\" WHERE day = 2 /* tail */"
+        );
+        assert!(result.document.to_sql().contains("-- keep this\n"));
+        assert!(result.document.to_sql().contains("/* projection */"));
+        assert!(result.document.to_sql().ends_with("/* tail */"));
+
+        let undone = apply_sql_document_edit_transaction(&result.document.source, &result.undo)
+            .expect("guarded inverse should restore the original draft");
+        assert_eq!(undone.document.to_sql().as_bytes(), source.as_bytes());
+        assert_eq!(undone.document.status, SqlDocumentStatus::Parsed);
+
+        let stale_undo = apply_sql_document_edit_transaction(
+            "-- changed\nSELECT /* projection */ total, day FROM \"G\" WHERE day = 2 /* tail */",
+            &result.undo,
+        );
+        assert_eq!(stale_undo, Err(SqlDocumentEditError::StaleSource));
+    }
+
+    #[test]
+    fn caps_edit_count_and_result_size() {
+        let source = "SELECT 1";
+        let too_many = transaction(
+            source,
+            (0..=MAX_SQL_DOCUMENT_EDITS)
+                .map(|_| SqlDocumentEdit {
+                    range: SqlSourceRange { start: 0, end: 0 },
+                    expected_text: String::new(),
+                    replacement: String::new(),
+                })
+                .collect(),
+        );
+        assert_eq!(
+            apply_sql_document_edit_transaction(source, &too_many),
+            Err(SqlDocumentEditError::TooManyEdits)
+        );
+
+        let too_large = transaction(
+            source,
+            vec![SqlDocumentEdit {
+                range: SqlSourceRange { start: 0, end: 0 },
+                expected_text: String::new(),
+                replacement: "x".repeat(MAX_SQL_DOCUMENT_BYTES),
+            }],
+        );
+        assert_eq!(
+            apply_sql_document_edit_transaction(source, &too_large),
+            Err(SqlDocumentEditError::OutputTooLarge)
+        );
     }
 
     fn canonical_query(source: &str) -> String {
