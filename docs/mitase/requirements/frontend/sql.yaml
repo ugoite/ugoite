@@ -176,22 +176,22 @@ requirements:
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-api.test.ts, test: "deletes a SQL entry" } }
 
   - id: REQ-FE-063
-    title: Saved SQL Creation Starter and Save Flow
-    description: The saved SQL creation route starts with the selected Form relation without embedding request paging in SQL, then saves an explicitly named or generated query through the supported API before exposing the query for execution.
+    title: Saved SQL Creation and Shared Workspace Flow
+    description: The saved SQL creation route opens with a relation-free draft and uses the shared SQL Workspace for editing, preview, and structured operations before explicit save through the supported API.
     priority: medium
     status: implemented
     criteria:
-      - id: starter-query
+      - id: relation-free-starter
         kind: behavior
-        statement: When a creatable Form relation is available, the saved SQL creation route starts with a quoted relation query and leaves page limits and continuation to the stateless SQL request.
+        statement: The saved SQL creation route starts with SELECT 1, keeps Form selection out of the route-specific controls, and leaves request paging and continuation to the stateless SQL request.
         governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
       - id: explicit-save-and-run
         kind: behavior
         statement: An explicit save submits the normalized saved-query payload and makes the created query available through the supported detail and Entry-result run flow.
         governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
-      - id: form-aggregate-builder
+      - id: shared-structure-actions
         kind: behavior
-        statement: Selecting a current Form, aggregate, and compatible field generates editable ordinary SQL with one value column. An optional equality filter uses a parameter typed from the selected field and does not interpolate a value into SQL; explicit save creates a normal user-query Saved SQL entry that remains available to the standard runner and Composition sources. Form and field choices use human names without displaying internal identifiers or SQL column names.
+        statement: The route uses the shared SQL Workspace and SQL Structure Toolbar as its only structured editing surface, including aggregate and filter operations the backend contract permits. It does not add a route-specific Form selector, aggregate/filter generator, or parallel SQL state; proposed changes remain reviewable before application.
         governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
       - id: typed-variable-defaults
         kind: behavior
@@ -201,70 +201,47 @@ requirements:
       - id: saved-sql-create-verification
         role: verification
         facet: verification
-        responsibility: Verify the saved SQL creation starter query, normalized save payload, and browser journey through exact frontend and browser tests.
+        responsibility: Verify the relation-free starter, shared structured editing surface, normalized save payload, and browser journey through exact frontend and browser tests.
         targets:
           - id: create-route
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/sql/new.test.tsx
-            selector: { kind: test, name: "REQ-FE-063: starts with a Form relation and keeps paging out of SQL" }
+            selector: { kind: test, name: "REQ-FE-063: starts from a relation-free draft and saves through the shared SQL workspace" }
             claims:
               - kind: verifies
-                criterion: REQ-FE-063#criterion.starter-query
+                criterion: REQ-FE-063#criterion.relation-free-starter
                 covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.test.tsx", test: "REQ-FE-063: starts with a Form relation and keeps paging out of SQL" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.test.tsx", test: "REQ-FE-063: starts from a relation-free draft and saves through the shared SQL workspace" } }
               - kind: verifies
                 criterion: REQ-FE-063#criterion.explicit-save-and-run
                 covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.test.tsx", test: "REQ-FE-063: starts with a Form relation and keeps paging out of SQL" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.test.tsx", test: "REQ-FE-063: starts from a relation-free draft and saves through the shared SQL workspace" } }
+              - kind: verifies
+                criterion: REQ-FE-063#criterion.shared-structure-actions
+                covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.test.tsx", test: "REQ-FE-063: starts from a relation-free draft and saves through the shared SQL workspace" } }
           - id: browser-create
             adapter: typescript
             path: e2e/saved-sql-route.test.ts
-            selector: { kind: test, name: "REQ-FE-063 @smoke: new saved SQL starts with a Form relation and runs through Saved SQL" }
+            selector: { kind: test, name: "REQ-FE-063 @smoke: new saved SQL uses the shared structure actions and runs through Saved SQL" }
             claims:
               - kind: verifies
-                criterion: REQ-FE-063#criterion.starter-query
+                criterion: REQ-FE-063#criterion.relation-free-starter
                 covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063 @smoke: new saved SQL starts with a Form relation and runs through Saved SQL" } }
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063 @smoke: new saved SQL uses the shared structure actions and runs through Saved SQL" } }
               - kind: verifies
                 criterion: REQ-FE-063#criterion.explicit-save-and-run
                 covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063 @smoke: new saved SQL starts with a Form relation and runs through Saved SQL" } }
-          - id: aggregate-builder-ui
-            adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/sql/new.test.tsx
-            selector: { kind: test, name: "REQ-FE-063: builds a typed aggregate query from human Form fields" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-063#criterion.form-aggregate-builder
-                covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.test.tsx", test: "REQ-FE-063: builds a typed aggregate query from human Form fields" } }
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063 @smoke: new saved SQL uses the shared structure actions and runs through Saved SQL" } }
           - id: typed-default-create
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/sql/new.test.tsx
-            selector: { kind: test, name: saves a typed default for a generated integer filter variable }
+            selector: { kind: test, name: saves an explicitly enabled default for a SQL variable }
             claims:
               - kind: verifies
                 criterion: REQ-FE-063#criterion.typed-variable-defaults
                 covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.test.tsx", test: "saves a typed default for a generated integer filter variable" } }
-          - id: aggregate-builder-helper
-            adapter: typescript
-            path: frontend/src/lib/sql.test.ts
-            selector: { kind: test, name: "limits aggregate and filter fields to current compatible human labels" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-063#criterion.form-aggregate-builder
-                covers: [FEAT-FE-007#binding.frontend/target.sql-aggregate-builder]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/lib/sql.test.ts", test: "limits aggregate and filter fields to current compatible human labels" } }
-          - id: browser-aggregate-builder
-            adapter: typescript
-            path: e2e/saved-sql-route.test.ts
-            selector: { kind: test, name: "REQ-FE-063 @smoke: aggregate builder saves a typed filter and runs through the ordinary Saved SQL route" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-063#criterion.form-aggregate-builder
-                covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063 @smoke: aggregate builder saves a typed filter and runs through the ordinary Saved SQL route" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.test.tsx", test: "saves an explicitly enabled default for a SQL variable" } }
 
   - id: REQ-FE-061
     title: Saved SQL List Route Guidance

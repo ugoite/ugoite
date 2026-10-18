@@ -1,14 +1,10 @@
 // REQ-FE-036: SQL Query Editor
 import {
   applySqlVariableDefaultDrafts,
-  buildSqlAggregateQuery,
   buildSqlSchema,
-  buildSqlStarterQuery,
   buildSqlStructureContexts,
   normalizeSqlVariables,
   parseSqlVariableDefault,
-  sqlAggregateFieldOptions,
-  sqlFilterFieldOptions,
   sqlLintDiagnostics,
 } from "./sql";
 import type { Form } from "./types";
@@ -103,93 +99,6 @@ describe("sql helpers", () => {
     ).toBe(true);
   });
 
-  it("builds a stable relation starter without SQL-level paging", () => {
-    expect(buildSqlStarterQuery("form_entry")).toBe(
-      'SELECT * FROM "form_entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
-    );
-  });
-
-  it.each(
-    [
-      ["count-rows", "", 'SELECT COUNT(*) AS "value" FROM "Orders"'],
-      [
-        "count-values",
-        "Amount",
-        'SELECT COUNT("field_amount") AS "value" FROM "Orders"',
-      ],
-      ["sum", "Amount", 'SELECT SUM("field_amount") AS "value" FROM "Orders"'],
-      [
-        "average",
-        "Amount",
-        'SELECT AVG("field_amount") AS "value" FROM "Orders"',
-      ],
-      [
-        "minimum",
-        "Amount",
-        'SELECT MIN("field_amount") AS "value" FROM "Orders"',
-      ],
-      [
-        "maximum",
-        "Amount",
-        'SELECT MAX("field_amount") AS "value" FROM "Orders"',
-      ],
-    ] as const,
-  )("builds the %s aggregate query", (operation, fieldKey, expected) => {
-    expect(buildSqlAggregateQuery(aggregateForm, operation, fieldKey).sql)
-      .toBe(expected);
-  });
-
-  it("quotes Form and SQL column identifiers and keeps filter values parameterized", () => {
-    const quotedForm = {
-      ...aggregateForm,
-      name: 'Orders "Daily"',
-      fields: {
-        ...aggregateForm.fields,
-        Amount: {
-          ...aggregateForm.fields.Amount,
-          sql_column: 'field "amount"',
-        },
-      },
-    };
-    expect(buildSqlAggregateQuery(quotedForm, "sum", "Amount", "Category"))
-      .toEqual({
-        sql:
-          'SELECT SUM("field ""amount""") AS "value" FROM "Orders ""Daily""" WHERE "field_category" = {{filter_value}}',
-        parameter: {
-          name: "filter_value",
-          type: "string",
-          description: "Category",
-        },
-      });
-  });
-
-  it("limits aggregate and filter fields to current compatible human labels", () => {
-    expect(
-      sqlAggregateFieldOptions(aggregateForm, "sum").map((field) =>
-        field.label
-      ),
-    ).toEqual(["Amount", "Long value"]);
-    expect(
-      sqlAggregateFieldOptions(aggregateForm, "count-values").map((field) =>
-        field.label
-      ),
-    ).toEqual(["Amount", "Category", "Long value", "Starts at"]);
-    expect(
-      sqlAggregateFieldOptions(aggregateForm, "minimum").map((field) =>
-        field.label
-      ),
-    ).toEqual(["Amount", "Long value", "Starts at"]);
-    expect(
-      sqlFilterFieldOptions(aggregateForm).map((field) => [
-        field.label,
-        field.parameterType,
-      ]),
-    ).toEqual([
-      ["Amount", "integer"],
-      ["Category", "string"],
-    ]);
-  });
-
   it("builds SQL structure capabilities from trusted Form columns and typed variables", () => {
     const [context] = buildSqlStructureContexts([{
       id: "form-1",
@@ -237,13 +146,13 @@ describe("sql helpers", () => {
       parser: {
         relation: "Tasks",
         columns: [
-        { name: "_ugoite_id", type: "string" },
-        { name: "_ugoite_created_at", type: "timestamp" },
-        { name: "_ugoite_updated_at", type: "timestamp" },
-        { name: "field_title", type: "string" },
-        { name: "field_amount", type: "float" },
-        { name: "field_hidden", type: "string" },
-      ],
+          { name: "_ugoite_id", type: "string" },
+          { name: "_ugoite_created_at", type: "timestamp" },
+          { name: "_ugoite_updated_at", type: "timestamp" },
+          { name: "field_title", type: "string" },
+          { name: "field_amount", type: "float" },
+          { name: "field_hidden", type: "string" },
+        ],
         variables: [{ name: "month", type: "date" }],
         stable_key: ["_ugoite_id"],
       },
@@ -268,17 +177,6 @@ describe("sql helpers", () => {
         },
       },
     });
-  });
-
-  it("rejects aggregate and filter fields unavailable in the current Form", () => {
-    expect(() => buildSqlAggregateQuery(aggregateForm, "sum", "Category"))
-      .toThrow("The aggregate field is unavailable");
-    expect(() =>
-      buildSqlAggregateQuery(aggregateForm, "count-rows", "", "LongValue")
-    ).toThrow("The filter field is unavailable");
-    expect(() =>
-      buildSqlAggregateQuery(aggregateForm, "count-rows", "", "StartsAt")
-    ).toThrow("The filter field is unavailable");
   });
 
   it("does not extract placeholders from SQL literals or comments", () => {
