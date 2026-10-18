@@ -58,6 +58,7 @@ pub enum VariableGraphBindingDiagnosticCode {
     DuplicateLayoutComponent,
     MissingVariable,
     UnknownLayoutComponent,
+    UnplacedComponent,
     VariableTypeMismatch,
     UnplacedInput,
 }
@@ -70,6 +71,7 @@ impl VariableGraphBindingDiagnosticCode {
             Self::DuplicateLayoutComponent => "duplicate_layout_component",
             Self::MissingVariable => "missing_variable",
             Self::UnknownLayoutComponent => "unknown_layout_component",
+            Self::UnplacedComponent => "unplaced_component",
             Self::VariableTypeMismatch => "variable_type_mismatch",
             Self::UnplacedInput => "unplaced_input",
         }
@@ -212,6 +214,18 @@ pub fn compile_variable_graph_bindings(
                 )
             }),
     );
+    diagnostics.extend(
+        known_component_ids
+            .iter()
+            .filter(|component_id| !layout_counts.contains_key(**component_id))
+            .map(|component_id| {
+                binding_diagnostic(
+                    VariableGraphBindingDiagnosticCode::UnplacedComponent,
+                    Some(*component_id),
+                    None,
+                )
+            }),
+    );
 
     for (variable_id, kind) in &nodes {
         if !matches!(kind, VariableGraphNodeKind::Input { .. }) {
@@ -222,7 +236,7 @@ pub fn compile_variable_graph_bindings(
             .and_then(|component_ids| {
                 component_ids
                     .iter()
-                    .find(|component_id| layout_counts.contains_key(component_id.as_str()))
+                    .find(|component_id| layout_counts.get(component_id.as_str()) == Some(&1))
             });
         if placed_component.is_none() {
             diagnostics.push(binding_diagnostic(
@@ -532,11 +546,18 @@ mod tests {
             .expect_err("input component is not present in layout");
         assert_eq!(
             unplaced.components,
-            [binding_diagnostic(
-                VariableGraphBindingDiagnosticCode::UnplacedInput,
-                Some("day_input"),
-                Some("day"),
-            )]
+            [
+                binding_diagnostic(
+                    VariableGraphBindingDiagnosticCode::UnplacedComponent,
+                    Some("day_input"),
+                    None,
+                ),
+                binding_diagnostic(
+                    VariableGraphBindingDiagnosticCode::UnplacedInput,
+                    Some("day_input"),
+                    Some("day"),
+                ),
+            ]
         );
 
         let invalid_layout = compile_variable_graph_bindings(
@@ -555,5 +576,25 @@ mod tests {
         assert!(invalid_layout.components.iter().any(|diagnostic| {
             diagnostic.code == VariableGraphBindingDiagnosticCode::UnknownLayoutComponent
         }));
+    }
+
+    #[test]
+    fn every_component_requires_exactly_one_layout_placement() {
+        let graph = graph(vec![constant("title", VariableGraphScalarType::String)]);
+        let components = vec![VariableGraphComponentBinding::Text {
+            id: "title_text".to_owned(),
+            variable: Some("title".to_owned()),
+        }];
+
+        let error = compile_variable_graph_bindings(&graph, &components, &[])
+            .expect_err("component without a layout item");
+        assert_eq!(
+            error.components,
+            [binding_diagnostic(
+                VariableGraphBindingDiagnosticCode::UnplacedComponent,
+                Some("title_text"),
+                None,
+            )]
+        );
     }
 }
