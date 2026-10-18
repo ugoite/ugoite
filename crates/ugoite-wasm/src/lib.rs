@@ -445,29 +445,38 @@ fn compile_variable_graph_v1(request: serde_json::Value) -> String {
                 },
             });
             if ensure_json_size(&envelope, MAX_PROTOCOL_REQUEST_BYTES).is_err() {
-                return serde_json::json!({
-                    "ok": false,
-                    "error": {
-                        "kind": "domain_validation",
-                        "code": "variable_graph_result_too_large",
-                        "message": "variable graph compilation result exceeds the protocol size limit",
-                    },
-                })
-                .to_string();
+                return variable_graph_result_too_large();
             }
             envelope.to_string()
         }
-        Err(diagnostics) => serde_json::json!({
-            "ok": false,
-            "error": {
-                "kind": "variable_graph_diagnostics",
-                "message": "variable graph validation failed",
-                "contract_version": 1,
-                "diagnostics": diagnostics,
-            },
-        })
-        .to_string(),
+        Err(diagnostics) => {
+            let envelope = serde_json::json!({
+                "ok": false,
+                "error": {
+                    "kind": "variable_graph_diagnostics",
+                    "message": "variable graph validation failed",
+                    "contract_version": 1,
+                    "diagnostics": diagnostics,
+                },
+            });
+            if ensure_json_size(&envelope, MAX_PROTOCOL_REQUEST_BYTES).is_err() {
+                return variable_graph_result_too_large();
+            }
+            envelope.to_string()
+        }
     }
+}
+
+fn variable_graph_result_too_large() -> String {
+    serde_json::json!({
+        "ok": false,
+        "error": {
+            "kind": "domain_validation",
+            "code": "variable_graph_result_too_large",
+            "message": "variable graph compilation result exceeds the protocol size limit",
+        },
+    })
+    .to_string()
 }
 
 fn composition_canonicalization_error(
