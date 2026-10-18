@@ -6,10 +6,13 @@ This is the acceptance matrix for the SQL-first Composition v1 prerelease
 candidate. It records implementation and validation evidence without implying
 a product release. The prior implementation evidence is preserved in the
 [prereplacement snapshot](history/composition-prereplacement-acceptance.md)
-and does not apply to the replacement.
+and does not apply to the replacement. The accepted next target in ADR-025 is
+not covered by this current-candidate matrix and remains planned work.
 
 The normative document shape is in the [Composition contract](../contracts/composition.md)
-and [ADR-024](../contracts/adr-024-composition-sql-first.md). The canonical
+and [ADR-024](../contracts/adr-024-composition-sql-first.md); the future
+variable-graph contract is [ADR-025](../contracts/adr-025-composition-query-variable-graph.md).
+The canonical
 Composition and workspace requirements are `REQ-COMP-008`, `REQ-FE-079`, and
 `REQ-FE-080`; their Feature bindings locate the implementation and its
 verification evidence.

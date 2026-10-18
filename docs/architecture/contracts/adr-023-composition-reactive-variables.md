@@ -2,14 +2,12 @@
 title: "ADR-023 — Typed reactive Composition variables"
 ---
 
-**Status: Accepted target for pre-release Composition; implementation pending.**
-This decision authorizes a breaking change to the unreleased Composition v1
-grammar. It does not authorize a product release. Its SQL and Metric boundary
-inherits ADR-022. It does not select a product version or schedule a release.
-ADR-024 is now the normative source for the replacement v1 source and
-presentation grammar. ADR-023 continues to define typed variable parsing and
-reactive value ownership except where ADR-024 explicitly replaces those
-decisions.
+**Status: Historical prerelease target; superseded by ADR-024 before release.**
+This decision recorded a breaking change to the unreleased Composition v1
+grammar; its implementation was replaced before release. ADR-024 records the
+current prerelease implementation, and ADR-025 defines the accepted next
+target. This ADR does not define a compatibility contract or authorize a
+product release. Its SQL and Metric boundary inherited ADR-022.
 
 This ruling supersedes ADR-019 only where it requires parameters and parameter
 layout items, restricts Components to Text/Metric/Table, and forbids variable-
