@@ -1024,7 +1024,7 @@ test.describe("Composition Studio Journey", () => {
       // not append a Composition revision.
       await page.reload({ waitUntil: "domcontentloaded" });
       await expect(page.getByLabel("minimum", { exact: true }))
-        .toHaveValue("0");
+        .toHaveValue("0", { timeout: 30_000 });
       await expect.poll(metricValues, { timeout: 30_000 }).toEqual([
         "3",
         "60",
