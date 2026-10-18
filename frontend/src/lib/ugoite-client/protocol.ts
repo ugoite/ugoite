@@ -232,6 +232,95 @@ export type CompositionDocumentCanonicalization = {
   fingerprint: string;
 };
 
+/** Half-open UTF-8 byte offsets into the UTF-8 encoding of SqlDocument.source. */
+export type SqlDocumentSourceRange = {
+  start: number;
+  end: number;
+};
+
+export type SqlDocumentTokenKind =
+  | "trivia"
+  | "comment"
+  | "word"
+  | "quoted_identifier"
+  | "literal"
+  | "placeholder"
+  | "punctuation"
+  | "operator";
+
+export type SqlDocumentToken = {
+  kind: SqlDocumentTokenKind;
+  range: SqlDocumentSourceRange;
+};
+
+export type SqlDocumentNodeKind =
+  | "query_statement"
+  | "other_statement"
+  | "query"
+  | "select"
+  | "relation"
+  | "table_factor"
+  | "identifier_expression"
+  | "compound_identifier_expression"
+  | "literal_expression"
+  | "binary_expression"
+  | "unary_expression"
+  | "function_expression"
+  | "case_expression"
+  | "cast_expression"
+  | "subquery_expression"
+  | "predicate_expression"
+  | "nested_expression"
+  | "other_expression"
+  | "value";
+
+export type SqlDocumentNode = {
+  id: number;
+  parent: number | null;
+  kind: SqlDocumentNodeKind;
+  range: SqlDocumentSourceRange | null;
+};
+
+export type SqlDocumentStatus =
+  | "parsed"
+  | "empty"
+  | "invalid_sql"
+  | "multiple_statements"
+  | "select_required"
+  | "too_complex"
+  | "too_large";
+
+export type SqlDocumentDiagnosticCode =
+  | "sql_too_large"
+  | "sql_too_complex"
+  | "parse_failed"
+  | "empty_document"
+  | "single_statement_required"
+  | "select_required";
+
+export type SqlDocumentDiagnostic = {
+  code: SqlDocumentDiagnosticCode;
+  message: string;
+  range: SqlDocumentSourceRange | null;
+};
+
+/** Parser view only; a parsed document has not passed executor admission. */
+export type SqlDocument = {
+  contract_version: number;
+  source: string;
+  status: SqlDocumentStatus;
+  diagnostics: SqlDocumentDiagnostic[];
+  tokens: SqlDocumentToken[];
+  nodes: SqlDocumentNode[];
+};
+
+/** Parse one bounded SQL draft through the shared Rust/WASM domain parser. */
+export const parseSqlDocument = async (sql: string): Promise<SqlDocument> =>
+  await invokeProtocol<SqlDocument>({
+    action: "domain.parse_sql_document",
+    value: { sql },
+  });
+
 export type SqlStructureColumnType =
   | "string"
   | "boolean"

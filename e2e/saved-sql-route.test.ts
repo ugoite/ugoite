@@ -143,6 +143,16 @@ test.describe("Saved SQL route", () => {
       await expect(page.locator(".ui-sql-editor")).toContainText(
         /SELECT \* FROM "[^"]+" ORDER BY _ugoite_updated_at DESC, _ugoite_id/,
       );
+      const structureActions = page.getByRole("group", { name: "SQL" });
+      await expect(structureActions.getByRole("button", { name: /^Columns/ }))
+        .toBeEnabled();
+      await expect(structureActions.getByRole("button", { name: /^Filter/ }))
+        .toBeEnabled();
+      await expect(structureActions.getByRole("button", { name: /^Sort/ }))
+        .toBeEnabled();
+      await expect(
+        structureActions.getByRole("button", { name: /^Aggregate/ }),
+      ).toBeEnabled();
       await expect(page.locator(".ui-sql-editor")).not.toContainText(
         /\b(?:LIMIT|OFFSET)\b/i,
       );
