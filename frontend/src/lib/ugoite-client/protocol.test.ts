@@ -4,6 +4,7 @@ import {
   analyzeSqlStructure,
   buildSpreadsheetCsvRequest,
   canonicalizeCompositionDocument,
+  compileVariableGraph,
   encodeSpreadsheetCsv,
   getWasmSupportedOperations,
   parseCompositionVariableInput,
@@ -19,6 +20,7 @@ import {
   UGOITE_API_OPERATIONS,
   UGOITE_WASM_PROTOCOL_VERSION,
   UgoiteApiError,
+  type VariableGraph,
   validateAssetReference,
 } from "./protocol";
 import { testApiUrl } from "~/test/http-origin";
@@ -119,6 +121,72 @@ describe("portable Ugoite API protocol WASM", () => {
       "revision_id: 00000000-0000-7000-8000-000000000021",
     );
     expect(canonical.fingerprint).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("compiles a typed variable graph through the versioned Rust/WASM action", async () => {
+    const integer = { scalar_type: "integer", nullable: false } as const;
+    const graph: VariableGraph = {
+      variables: [
+        {
+          id: "total",
+          kind: {
+            kind: "query",
+            returns: { kind: "scalar", value_type: integer },
+            query: { kind: "inline_sql", sql: "SELECT $amount" },
+            arguments: [{
+              name: "amount",
+              value_type: integer,
+              variable: "amount",
+            }],
+          },
+        },
+        {
+          id: "amount",
+          kind: {
+            kind: "input",
+            value_type: integer,
+            required: true,
+          },
+        },
+        {
+          id: "independent",
+          kind: {
+            kind: "constant",
+            value_type: integer,
+            value: { kind: "integer", value: 1 },
+          },
+        },
+      ],
+    };
+
+    await expect(compileVariableGraph(graph)).resolves.toEqual({
+      contract_version: 1,
+      topological_order: ["amount", "independent", "total"],
+      dependencies: {
+        amount: [],
+        independent: [],
+        total: ["amount"],
+      },
+    });
+
+    const invalidGraph: VariableGraph = {
+      variables: [
+        {
+          id: "amount",
+          kind: {
+            kind: "input",
+            value_type: { scalar_type: "string", nullable: false },
+            required: true,
+          },
+        },
+        graph.variables[0],
+      ],
+    };
+    await expect(compileVariableGraph(invalidGraph)).rejects.toMatchObject({
+      kind: "variable_graph_diagnostics",
+      contract_version: 1,
+      diagnostics: [{ code: "variable_type_mismatch" }],
+    } satisfies Partial<UgoiteApiError>);
   });
 
   it("analyzes SQL structure and returns confirmation proposals through Rust/WASM", async () => {
