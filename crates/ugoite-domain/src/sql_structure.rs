@@ -682,13 +682,13 @@ fn parse_projection(
             {
                 columns.push(value.value.to_string());
             }
-            SelectItem::UnnamedExpr(Expr::Function(function)) => {
+            SelectItem::UnnamedExpr(Expr::Function(function)) if !context.relation.is_empty() => {
                 aggregates.push(parse_aggregate(function, None, context)?);
             }
             SelectItem::ExprWithAlias {
                 expr: Expr::Function(function),
                 alias,
-            } => {
+            } if !context.relation.is_empty() => {
                 aggregates.push(parse_aggregate(
                     function,
                     Some(SqlStructureAlias {
@@ -1900,7 +1900,13 @@ mod tests {
             stable_key: Vec::new(),
         };
 
-        for sql in ["SELECT *", "SELECT $value", "SELECT 1 FROM \"Task\""] {
+        for sql in [
+            "SELECT *",
+            "SELECT $value",
+            "SELECT COUNT(*)",
+            "SELECT COUNT(*) AS n",
+            "SELECT 1 FROM \"Task\"",
+        ] {
             let analysis = analyze_sql_structure(sql, &relation_free_context);
             assert_eq!(analysis.status, SqlStructureStatus::Unsupported, "{sql}");
         }

@@ -117,6 +117,7 @@
           "backend_admission": "planner_decides",
           "editor_coverage": "bounded",
           "limits": [
+            "relation-free integer/string/boolean/NULL literal projections",
             "wildcard or simple columns",
             "allowlisted aggregates over supported arguments"
           ]
