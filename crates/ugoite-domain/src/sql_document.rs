@@ -8,7 +8,8 @@
 use core::ops::ControlFlow;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
-    Distinct, Expr, Query, Select, Spanned, Statement, TableFactor, ValueWithSpan, Visit, Visitor,
+    Distinct, Expr, Query, Select, SelectItem, Spanned, Statement, TableFactor, ValueWithSpan,
+    Visit, Visitor,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserError};
@@ -890,19 +891,28 @@ fn projection_item_ranges(
     let mut item_start = None;
     let mut item_end = None;
     let mut depth = 0_usize;
+    let mut wildcard_except_seen = false;
 
     for token in tokens.iter().skip(token_index) {
         let text = source.get(token.range.start..token.range.end)?;
         if depth == 0 {
             if token.kind == SqlDocumentTokenKind::Punctuation && text == "," {
                 push_projection_range(&mut ranges, &mut item_start, &mut item_end);
+                wildcard_except_seen = false;
                 continue;
             }
             if token.kind == SqlDocumentTokenKind::Punctuation && matches!(text, ")" | ";") {
                 break;
             }
             if token.kind == SqlDocumentTokenKind::Word && is_projection_clause_keyword(text) {
-                break;
+                if text.eq_ignore_ascii_case("EXCEPT")
+                    && !wildcard_except_seen
+                    && projection_item_has_wildcard_except(select, ranges.len())
+                {
+                    wildcard_except_seen = true;
+                } else {
+                    break;
+                }
             }
         }
 
@@ -925,6 +935,15 @@ fn projection_item_ranges(
     push_projection_range(&mut ranges, &mut item_start, &mut item_end);
 
     (ranges.len() == select.projection.len()).then_some(ranges)
+}
+
+fn projection_item_has_wildcard_except(select: &Select, index: usize) -> bool {
+    match select.projection.get(index) {
+        Some(SelectItem::Wildcard(options) | SelectItem::QualifiedWildcard(_, options)) => {
+            options.opt_except.is_some()
+        }
+        _ => false,
+    }
 }
 
 fn push_projection_range(
@@ -1525,6 +1544,31 @@ mod tests {
             next_offset = token.range.end;
         }
         assert_eq!(next_offset, source.len());
+    }
+
+    #[test]
+    fn wildcard_except_options_are_included_in_projection_item_range() {
+        let source = "SELECT * EXCEPT (a) FROM t";
+        let document = parse_sql_document(source);
+
+        assert_eq!(document.status, SqlDocumentStatus::Parsed);
+        assert_eq!(document.to_sql(), source);
+        let select = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::Select)
+            .expect("SELECT has a node");
+        let item = document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::SelectItem && node.parent == Some(select.id)
+            })
+            .expect("wildcard projection has an item node");
+        assert_eq!(
+            document.source_slice(item.range.expect("projection item has a range")),
+            Some("* EXCEPT (a)")
+        );
     }
 
     #[test]
