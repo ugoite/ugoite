@@ -11,6 +11,14 @@ pub use ugoite_domain as domain;
 pub use ugoite_konase as konase;
 
 const MAX_PROTOCOL_REQUEST_BYTES: usize = 256 * 1024;
+// JSON can expand each control byte in a SQL source to a six-byte `\u00xx`
+// escape. Bound the action-specific envelope at that worst case so every
+// source within the domain limit reaches the parser and receives its normal
+// diagnostic, while unrelated protocol actions keep the 256 KiB limit.
+const MAX_SQL_DOCUMENT_REQUEST_BYTES: usize =
+    ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES * 6 + 1024;
+const MAX_SQL_DOCUMENT_RESPONSE_BYTES: usize =
+    ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES * 4;
 const ENTRY_OPERATIONS: &[&str] = &["entry.validate_draft"];
 
 fn is_entry_operation(action: &str) -> bool {
@@ -19,6 +27,15 @@ fn is_entry_operation(action: &str) -> bool {
 
 pub fn invoke_json(input: &str) -> String {
     if input.len() > MAX_PROTOCOL_REQUEST_BYTES {
+        if input.len() <= MAX_SQL_DOCUMENT_REQUEST_BYTES {
+            if let Ok(request) = serde_json::from_str::<serde_json::Value>(input) {
+                if request.get("action").and_then(serde_json::Value::as_str)
+                    == Some("domain.parse_sql_document")
+                {
+                    return invoke_domain(request);
+                }
+            }
+        }
         return protocol_input_too_large_error();
     }
     if let Ok(request) = serde_json::from_str::<serde_json::Value>(input) {
@@ -154,6 +171,12 @@ fn invoke_konase(request: serde_json::Value) -> String {
 }
 
 fn invoke_domain(request: serde_json::Value) -> String {
+    if request.get("action").and_then(serde_json::Value::as_str)
+        == Some("domain.parse_sql_document")
+    {
+        return invoke_sql_document(request);
+    }
+
     if request.get("action").and_then(serde_json::Value::as_str)
         == Some("domain.canonicalize_composition_document")
     {
@@ -394,6 +417,40 @@ fn invoke_domain(request: serde_json::Value) -> String {
         Ok(value) => serde_json::json!({"ok": true, "value": value}).to_string(),
         Err(message) => serde_json::json!({"ok": false, "error": {"kind": "domain_validation", "message": message}}).to_string(),
     }
+}
+
+fn invoke_sql_document(request: serde_json::Value) -> String {
+    let result = (|| -> Result<serde_json::Value, String> {
+        let payload = request
+            .get("value")
+            .cloned()
+            .ok_or_else(|| "value is required".to_string())?;
+        let sql = payload
+            .get("sql")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| "sql must be a string".to_string())?;
+        serde_json::to_value(ugoite_domain::sql_document::parse_sql_document(sql))
+            .map_err(|error| error.to_string())
+    })();
+
+    let envelope = match result {
+        Ok(value) => serde_json::json!({"ok": true, "value": value}),
+        Err(message) => serde_json::json!({
+            "ok": false,
+            "error": {"kind": "domain_validation", "message": message},
+        }),
+    };
+    if ensure_json_size(&envelope, MAX_SQL_DOCUMENT_RESPONSE_BYTES).is_err() {
+        return serde_json::json!({
+            "ok": false,
+            "error": {
+                "kind": "domain_output_too_large",
+                "message": "SQL Document response exceeds the 1 MiB limit",
+            },
+        })
+        .to_string();
+    }
+    envelope.to_string()
 }
 
 fn composition_canonicalization_error(
@@ -655,6 +712,83 @@ mod tests {
         let response: Value = serde_json::from_str(&response).unwrap();
         assert_eq!(response["ok"], true, "{response}");
         assert_eq!(response["value"]["protocol_version"], 1);
+    }
+
+    #[test]
+    fn sql_document_protocol_matches_native_parser_for_draft_states_and_ranges() {
+        let oversized_sql = "x".repeat(ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES + 1);
+        let cases = [
+            (
+                "parsed",
+                "-- 日付\nSELECT \"日付\", $day FROM \"G\" WHERE note = '$day'",
+                "parsed",
+            ),
+            ("invalid", "SELECT (", "invalid_sql"),
+            ("multiple", "SELECT 1; SELECT 2", "multiple_statements"),
+            ("oversized", oversized_sql.as_str(), "too_large"),
+        ];
+
+        for (name, sql, status) in cases {
+            let request = serde_json::json!({
+                "action": "domain.parse_sql_document",
+                "value": {"sql": sql},
+            })
+            .to_string();
+            if name == "oversized" {
+                assert!(request.len() > super::MAX_PROTOCOL_REQUEST_BYTES);
+                assert!(request.len() <= super::MAX_SQL_DOCUMENT_REQUEST_BYTES);
+            }
+
+            let response: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
+            assert_eq!(response["ok"], true, "{name}: {response}");
+            assert_eq!(response["value"]["source"], sql, "{name}: source");
+            assert_eq!(response["value"]["status"], status, "{name}: status");
+
+            // The portable adapter returns the exact domain document, including
+            // UTF-8 byte ranges and diagnostics; it does not plan or execute SQL.
+            let native = ugoite_domain::sql_document::parse_sql_document(sql);
+            assert_eq!(response["value"], serde_json::to_value(native).unwrap());
+        }
+    }
+
+    #[test]
+    fn sql_document_protocol_accepts_maximum_source_with_json_escaped_trivia() {
+        let sql = format!(
+            "SELECT 1 /*{}*/",
+            "\n".repeat(ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES - 13)
+        );
+        assert_eq!(
+            sql.len(),
+            ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES
+        );
+        let request = serde_json::json!({
+            "action": "domain.parse_sql_document",
+            "value": {"sql": sql},
+        })
+        .to_string();
+        assert!(request.len() > super::MAX_PROTOCOL_REQUEST_BYTES);
+        assert!(request.len() <= super::MAX_SQL_DOCUMENT_REQUEST_BYTES);
+
+        let response: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"]["status"], "parsed");
+        assert_eq!(response["value"]["source"], sql);
+    }
+
+    #[test]
+    fn sql_document_protocol_bounds_amplified_parser_output() {
+        let sql = format!("SELECT {}", vec!["1"; 20_000].join(","));
+        let request = serde_json::json!({
+            "action": "domain.parse_sql_document",
+            "value": {"sql": sql},
+        })
+        .to_string();
+        let response_text = super::invoke_json(&request);
+        assert!(response_text.len() <= super::MAX_SQL_DOCUMENT_RESPONSE_BYTES);
+
+        let response: Value = serde_json::from_str(&response_text).unwrap();
+        assert_eq!(response["ok"], false, "{response}");
+        assert_eq!(response["error"]["kind"], "domain_output_too_large");
     }
 
     #[test]
