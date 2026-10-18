@@ -141,9 +141,11 @@ test.describe("Saved SQL route", () => {
 
       await expect(page.locator(".ui-sql-editor")).toContainText("SELECT 1");
       await expect(page.getByLabel("Form for this query")).toHaveCount(0);
-      await expect(page.getByLabel("Aggregate", { exact: true })).toHaveCount(
-        0,
-      );
+      await expect(
+        page.getByRole("button", { name: "Aggregate", exact: true }),
+      ).toHaveCount(1);
+      await expect(page.getByLabel("Filter field")).toHaveCount(0);
+
       const structureActions = page.getByRole("group", { name: "SQL" });
       await expect(structureActions.getByRole("button", { name: /^Columns/ }))
         .toBeEnabled();
