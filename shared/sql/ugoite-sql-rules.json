@@ -45,8 +45,8 @@
       }
     },
     "direct_sql_lint": {
-      "require_from": true,
-      "fromless_select_diagnostic": "error"
+      "require_from": false,
+      "fromless_select_diagnostic": "none"
     },
     "editor": {
       "aggregate_contract": {

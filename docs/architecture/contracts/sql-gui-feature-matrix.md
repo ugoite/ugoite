@@ -26,16 +26,13 @@ constructs that are context supplied, preserved without an editor operation, or
 outside structured coverage. Its `keywords` list is not consumed by the SQL
 admission or lint paths and is not a closed grammar definition.
 
-The matrix records two contract gaps. First, direct SQL lint reports an error
-when a `SELECT` has no `FROM`, although `SELECT 1` passes the backend statement
-gate; this is tracked by
-[issue #4382](https://github.com/ugoite/ugoite/issues/4382). Second, that gate
-is weaker than the documented SELECT-only boundary because the query AST body is
-not restricted; narrowing it is tracked by
+The matrix records one contract gap: the backend statement gate is weaker than
+the documented SELECT-only boundary because the query AST body is not
+restricted; narrowing it is tracked by
 [issue #4383](https://github.com/ugoite/ugoite/issues/4383). `VALUES` is
-rejected downstream by physical-plan authorization. This inventory does not
-change lint or SQL admission behavior; the SQL Workspace follow-up should
-reconcile these differences.
+rejected downstream by physical-plan authorization. Relation-free scalar
+queries align with direct SQL lint and the structure editor; this inventory
+does not change backend admission behavior.
 
 Aggregate parity is checked here only at the canonical function-name level and
 the runtime alias map is checked separately. Signatures,
