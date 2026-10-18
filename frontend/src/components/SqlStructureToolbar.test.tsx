@@ -176,7 +176,7 @@ describe("SqlStructureToolbar adapter", () => {
     const sql = "SELECT 1";
     const contexts = buildSqlStructureContexts([], [], "new-sql");
     const scalarAnalysis: SqlStructureAnalysis = {
-      contract_version: 1,
+      contract_version: 2,
       status: "supported",
       projection: ["1"],
       filters: [],
@@ -201,7 +201,7 @@ describe("SqlStructureToolbar adapter", () => {
     };
     analyzeMock.mockResolvedValue(scalarAnalysis);
     proposeMock.mockResolvedValue({
-      contract_version: 1,
+      contract_version: 2,
       status: "supported",
       base_sql: sql,
       proposed_sql: "SELECT DISTINCT 1",
