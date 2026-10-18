@@ -323,8 +323,7 @@ pub fn rename_sql_document_parameter(
 
 fn valid_sql_parameter_name(name: &str) -> bool {
     let mut characters = name.chars();
-    name.len() <= 128
-        && matches!(characters.next(), Some(first) if first == '_' || first.is_ascii_alphabetic())
+    matches!(characters.next(), Some(first) if first == '_' || first.is_ascii_alphabetic())
         && characters.all(|character| character == '_' || character.is_ascii_alphanumeric())
 }
 
@@ -728,10 +727,11 @@ mod tests {
             rename_sql_document_parameter("SELECT $old", "old", "$new"),
             Err(SqlDocumentEditError::InvalidNewParameterName)
         );
-        assert_eq!(
-            rename_sql_document_parameter("SELECT $old", "old", &"a".repeat(129)),
-            Err(SqlDocumentEditError::InvalidNewParameterName)
-        );
+        let long_name = "a".repeat(129);
+        let source = format!("SELECT ${long_name}");
+        let renamed = rename_sql_document_parameter(&source, &long_name, "short")
+            .expect("the shared SQL name grammar has no 128-byte limit");
+        assert_eq!(renamed.source, "SELECT $short");
     }
 
     #[test]
