@@ -232,7 +232,8 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   const actionDisabled = (action: StructureAction) => {
     if (action === "form") {
       return Boolean(
-        props.disabled?.() || !props.onSqlChange || formOptions().length === 0,
+        props.disabled?.() || !props.onSqlChange ||
+          analysisState().status !== "ready" || formOptions().length === 0,
       );
     }
     return Boolean(
@@ -248,6 +249,10 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
       if (props.disabled?.() || !props.onSqlChange) {
         return t("sqlPage.structureReadOnly");
       }
+      const state = analysisState();
+      if (state.status === "loading") return t("sqlPage.structureAnalyzing");
+      if (state.status === "error") return t("sqlPage.structureUnavailable");
+      if (state.status === "no_context") return t("sqlPage.structureNoForm");
       return formOptions().length === 0
         ? t("sqlPage.structureUnavailable")
         : undefined;

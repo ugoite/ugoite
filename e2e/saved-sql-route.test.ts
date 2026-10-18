@@ -144,7 +144,7 @@ test.describe("Saved SQL route", () => {
       await expect(page.locator(".ui-sql-editor")).toContainText("SELECT 1");
       await expect(page.getByLabel("Form for this query")).toHaveCount(0);
       await expect(
-        page.getByRole("button", { name: "Aggregate", exact: true }),
+        page.getByRole("button", { name: /^Aggregate(?:$|:)/ }),
       ).toHaveCount(1);
       await expect(page.getByLabel("Filter field")).toHaveCount(0);
 
@@ -156,8 +156,7 @@ test.describe("Saved SQL route", () => {
       await expect(formAction).toBeEnabled();
       await expect(
         structureActions.getByRole("button", {
-          name: "Aggregate",
-          exact: true,
+          name: /^Aggregate(?:$|:)/,
         }),
       ).toBeDisabled();
       await expect(page.locator(".ui-sql-editor")).not.toContainText(

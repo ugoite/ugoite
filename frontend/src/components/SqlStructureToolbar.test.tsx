@@ -20,14 +20,15 @@ import type {
 } from "~/lib/ugoite-client";
 import { SqlStructureToolbar } from "./SqlStructureToolbar";
 
-const { analyzeMock, proposeMock } = vi.hoisted(() => ({
+const { analyzeMock, prepareMock, proposeMock } = vi.hoisted(() => ({
   analyzeMock: vi.fn(),
+  prepareMock: vi.fn(),
   proposeMock: vi.fn(),
 }));
 
 vi.mock("~/lib/ugoite-client", () => ({
   analyzeSqlStructure: analyzeMock,
-  prepareSqlStructureParser: vi.fn(async () => undefined),
+  prepareSqlStructureParser: prepareMock,
   proposeSqlStructureOperation: proposeMock,
 }));
 
@@ -110,7 +111,9 @@ describe("SqlStructureToolbar adapter", () => {
   beforeEach(() => {
     setLocale("en");
     analyzeMock.mockReset();
+    prepareMock.mockReset();
     proposeMock.mockReset();
+    prepareMock.mockResolvedValue(undefined);
     analyzeMock.mockResolvedValue(analysis);
     proposeMock.mockImplementation(async (baseSql: string) => ({
       contract_version: 1,
@@ -264,6 +267,20 @@ describe("SqlStructureToolbar adapter", () => {
     const contexts = [targetContext, relationFreeContext];
     const onSqlChange = vi.fn();
     const proposedSql = 'SELECT * FROM "Orders"';
+    analyzeMock.mockImplementation((
+      _sql: string,
+      parser: { relation: string },
+    ) =>
+      Promise.resolve(
+        parser.relation
+          ? {
+            ...analysis,
+            status: "unsupported",
+            reason: "relation_unsupported",
+          }
+          : analysis,
+      )
+    );
     proposeMock.mockResolvedValue({
       contract_version: 1,
       status: "supported",
@@ -298,8 +315,63 @@ describe("SqlStructureToolbar adapter", () => {
       { kind: "set_relation", relation: "Orders" },
     );
     expect(onSqlChange).not.toHaveBeenCalled();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Apply change" }));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Apply change" }),
+    );
     expect(onSqlChange).toHaveBeenCalledWith(proposedSql);
+  });
+
+  it("waits for delayed parser initialization before allowing first Form selection", async () => {
+    const sql = "SELECT 1";
+    const targetContext: SqlStructureAdapterContext = {
+      ...context,
+      parser: { ...context.parser, relation: "Orders" },
+    };
+    const contexts = [targetContext];
+    const onSqlChange = vi.fn();
+    let resolveParser: (() => void) | undefined;
+    prepareMock.mockImplementationOnce(() =>
+      new Promise<void>((resolve) => resolveParser = resolve)
+    );
+    proposeMock.mockResolvedValue({
+      contract_version: 1,
+      status: "supported",
+      base_sql: sql,
+      proposed_sql: 'SELECT * FROM "Orders"',
+      requires_confirmation: true,
+      added_stable_tie_breakers: [],
+    });
+    let actions: readonly SQLWorkspaceAction[] = [];
+
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => contexts}
+        onSqlChange={onSqlChange}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() => expect(prepareMock).toHaveBeenCalledOnce());
+    expect(actions.find((action) => action.kind === "form")?.disabled)
+      .toBe(true);
+    expect(screen.queryByRole("dialog", { name: "Form" })).toBeNull();
+
+    resolveParser?.();
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "form")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "form")!.onActivate();
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Form" })).getByRole(
+        "button",
+        { name: "Orders" },
+      ),
+    );
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(onSqlChange).not.toHaveBeenCalled();
   });
 
   it("discards a proposal and closes its dialog when SQL context changes", async () => {
