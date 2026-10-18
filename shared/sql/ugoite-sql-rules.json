@@ -23,7 +23,7 @@
   ],
   "lint": {
     "require_select": true,
-    "require_from": true,
+    "require_from": false,
     "single_statement_only": true,
     "limit_requires_number": true
   },

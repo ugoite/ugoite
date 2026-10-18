@@ -106,7 +106,7 @@ export interface SqlStructureColumnCapabilities {
 
 /** Typed parser input plus the server-derived per-column action contract. */
 export interface SqlStructureAdapterContext {
-  /** Identity of the source/Form pair that produced this adapter context. */
+  /** Identity of the source and schema context that produced this adapter context. */
   identity: string;
   parser: SqlStructureContext;
   columnCapabilities: Readonly<Record<string, SqlStructureColumnCapabilities>>;
@@ -131,7 +131,7 @@ const queryOperators = (
   ];
 };
 
-/** Build parser inputs and action limits from adapter-owned Form metadata. */
+/** Build Form-backed and relation-free parser contexts for SQL Workspace. */
 export const buildSqlStructureContexts = (
   forms: readonly Form[],
   variables: readonly { name: string; type: string }[] = [],
@@ -142,7 +142,7 @@ export const buildSqlStructureContexts = (
     return type ? [{ name: variable.name, type }] : [];
   });
 
-  return forms.flatMap((form) => {
+  const formContexts = forms.flatMap((form) => {
     const relation = form.name.trim();
     if (!relation) return [];
     const columns = [
@@ -249,6 +249,20 @@ export const buildSqlStructureContexts = (
       columnCapabilities,
     }];
   });
+  const parser: SqlStructureContext = {
+    relation: "",
+    columns: [],
+    variables: structureVariables,
+    stable_key: [],
+  };
+  return [
+    ...formContexts,
+    {
+      identity: JSON.stringify({ sourceIdentity, relation: null, parser }),
+      parser,
+      columnCapabilities: {},
+    },
+  ];
 };
 
 export function buildSqlSchema(forms: Form[]): SqlSchema {
@@ -842,18 +856,6 @@ export function sqlLintDiagnostics(query: string): Diagnostic[] {
       to: leadingWhitespace + Math.min(trimmed.length, 6),
       severity: "error",
       message: "Read-only query must start with SELECT",
-    });
-  }
-
-  if (
-    lintRules.require_from !== false &&
-    !parsedQuery.statementKeywords.has("from")
-  ) {
-    diagnostics.push({
-      from: Math.max(0, query.length - 1),
-      to: query.length,
-      severity: "error",
-      message: "Read-only query must include FROM",
     });
   }
 

@@ -396,20 +396,27 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
             const structureContexts = () => {
               if (selected().kind !== "inline_sql") return [];
               const bindings = selected().formBindings ?? [];
-              if (bindings.length === 0) return [];
+              const identity = `composition:${sourceId()}:${
+                JSON.stringify(bindings)
+              }`;
+              if (bindings.length === 0) {
+                return buildSqlStructureContexts([], variables(), identity);
+              }
               const boundForms = bindings.map((binding) =>
                 props.forms.find((item) => item.id === binding.form_id)
               );
               // Do not give the editor a partial schema: an unresolved
-              // relation must keep the whole query out of structure editing.
-              if (boundForms.some((form) => !form)) return [];
+              // relation must not lend a partial schema to structure editing.
+              if (boundForms.some((form) => !form)) {
+                return buildSqlStructureContexts([], variables(), identity);
+              }
               return buildSqlStructureContexts(
                 boundForms.map((form, index) => ({
                   ...form!,
                   name: bindings[index].relation,
                 })),
                 variables(),
-                `composition:${sourceId()}:${JSON.stringify(bindings)}`,
+                identity,
               );
             };
             const parameterValues = () =>

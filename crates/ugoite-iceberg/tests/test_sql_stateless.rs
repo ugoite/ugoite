@@ -723,6 +723,22 @@ async fn exact_integer_values_are_opt_in_and_preserve_the_legacy_sql_rows() -> R
         .query_sql(&space.space_id, text_request)
         .await?;
     assert_eq!(text_page.exact_integer_rows, Some(vec![vec![None]]));
+
+    let literal_page = space
+        .service
+        .query_sql(&space.space_id, query_request("SELECT 1".to_string(), 10))
+        .await?;
+    assert_eq!(literal_page.rows.len(), 1);
+    assert_eq!(
+        literal_page.rows[0].as_object().map(|row| row.len()),
+        Some(1)
+    );
+    assert_eq!(
+        literal_page.rows[0]
+            .as_object()
+            .and_then(|row| row.values().next()),
+        Some(&json!(1))
+    );
     Ok(())
 }
 

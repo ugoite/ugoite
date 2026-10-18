@@ -28,6 +28,8 @@ names in Saved SQL diagnostics.
 SQL accepts exactly one read-only `SELECT` statement. The authorized query
 context exposes only permitted Form relations, columns, and functions, and
 executes through the fixed Space publication selected for the request chain.
+Relation-free scalar queries such as `SELECT 1` are also valid; statements
+that name relations still resolve only against Forms authorized for the caller.
 Core-owned SQL function policies admit scalar, aggregate, and window functions
 independently. Stateless page and count inputs share the closed
 `ReadOnlyAggregateV1` allowlist: `COUNT`, `SUM`, `AVG`, `MIN`, and `MAX` are

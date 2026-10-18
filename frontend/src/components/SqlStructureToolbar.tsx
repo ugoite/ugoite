@@ -331,6 +331,10 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     // Turning DISTINCT off is a safe structural simplification even if the
     // existing projection has no trusted comparable type metadata.
     if (current.analysis.distinct) return true;
+    if (current.context.parser.relation === "") {
+      return current.analysis.capabilities.distinct.enabled &&
+        current.analysis.projection.length > 0;
+    }
     const projected = current.analysis.projection.includes("*")
       ? current.context.parser.columns.map((column) => column.name)
       : current.analysis.projection;
