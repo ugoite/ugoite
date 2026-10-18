@@ -23,6 +23,8 @@ pub const MAX_SQL_DOCUMENT_BYTES: usize = 256 * 1024;
 
 /// Maximum number of disjoint edits accepted by one atomic document update.
 pub const MAX_SQL_DOCUMENT_EDITS: usize = 256;
+/// Bound on syntax tokens processed into an editable SQL tree.
+pub const MAX_SQL_DOCUMENT_COMPLEXITY_TOKENS: usize = 65_536;
 
 /// One half-open byte range in the original UTF-8 SQL source.
 ///
@@ -225,6 +227,8 @@ pub enum SqlDocumentStatus {
     SelectRequired,
     /// The source exceeds the bounded editor input size.
     TooLarge,
+    /// The source contains too many syntax tokens for bounded tree construction.
+    TooComplex,
 }
 
 /// Stable error category for a SQL document diagnostic.
@@ -233,6 +237,8 @@ pub enum SqlDocumentStatus {
 pub enum SqlDocumentDiagnosticCode {
     /// Source exceeded the bounded editor input size.
     SqlTooLarge,
+    /// SQL contains more syntax tokens than the editor parser accepts.
+    SqlTooComplex,
     /// The parser or tokenizer rejected the SQL syntax.
     ParseFailed,
     /// The SQL source is empty.
@@ -334,6 +340,8 @@ pub enum SqlDocumentEditError {
     StaleSource,
     /// The current or expected source exceeds the bounded document size.
     SourceTooLarge,
+    /// The source exceeds the bounded syntax complexity used for token edits.
+    SourceTooComplex,
     /// The transaction exceeds the edit-count limit.
     TooManyEdits,
     /// An edit has a reversed range.
@@ -361,6 +369,7 @@ impl core::fmt::Display for SqlDocumentEditError {
             }
             Self::StaleSource => "SQL document edit is based on stale source",
             Self::SourceTooLarge => "SQL source exceeds the document size limit",
+            Self::SourceTooComplex => "SQL source exceeds the document complexity limit",
             Self::TooManyEdits => "SQL document edit transaction exceeds the edit limit",
             Self::InvalidRange => "SQL document edit range is reversed",
             Self::RangeOutOfBounds => "SQL document edit range is outside the source",
@@ -395,6 +404,11 @@ pub fn rename_sql_document_parameter(
     }
 
     let document = parse_sql_document(source);
+    match document.status {
+        SqlDocumentStatus::TooLarge => return Err(SqlDocumentEditError::SourceTooLarge),
+        SqlDocumentStatus::TooComplex => return Err(SqlDocumentEditError::SourceTooComplex),
+        _ => {}
+    }
     let replacements = document
         .tokens
         .iter()
@@ -596,7 +610,29 @@ pub fn parse_sql_document(source: &str) -> SqlDocument {
     let source_map = SqlSourceMap::new(source);
     let dialect = GenericDialect {};
     match tokenize_source(source, &dialect, &source_map) {
-        Ok(tokens) => document.tokens = tokens,
+        Ok(tokens) => {
+            let syntax_token_count = tokens
+                .iter()
+                .filter(|token| {
+                    !matches!(
+                        token.kind,
+                        SqlDocumentTokenKind::Trivia | SqlDocumentTokenKind::Comment
+                    )
+                })
+                .count();
+            if syntax_token_count > MAX_SQL_DOCUMENT_COMPLEXITY_TOKENS {
+                document.status = SqlDocumentStatus::TooComplex;
+                document.diagnostics.push(SqlDocumentDiagnostic {
+                    code: SqlDocumentDiagnosticCode::SqlTooComplex,
+                    message: format!(
+                        "SQL exceeds the {MAX_SQL_DOCUMENT_COMPLEXITY_TOKENS}-token SQL Document complexity limit"
+                    ),
+                    range: None,
+                });
+                return document;
+            }
+            document.tokens = tokens;
+        }
         Err(error) => {
             document.diagnostics.push(SqlDocumentDiagnostic {
                 code: SqlDocumentDiagnosticCode::ParseFailed,
@@ -1020,6 +1056,28 @@ mod tests {
         let renamed = rename_sql_document_parameter(&source, &long_name, "short")
             .expect("the shared SQL name grammar has no 128-byte limit");
         assert_eq!(renamed.source, "SELECT $short");
+    }
+
+    #[test]
+    fn parameter_rename_rejects_sources_over_complexity_limit() {
+        let source = format!(
+            "SELECT $old {}",
+            "(".repeat(MAX_SQL_DOCUMENT_COMPLEXITY_TOKENS + 1)
+        );
+        assert!(source.len() < MAX_SQL_DOCUMENT_BYTES);
+        assert_eq!(
+            rename_sql_document_parameter(&source, "old", "new"),
+            Err(SqlDocumentEditError::SourceTooComplex)
+        );
+    }
+
+    #[test]
+    fn parameter_rename_rejects_sources_over_byte_limit() {
+        let source = format!("SELECT $old {}", "x".repeat(MAX_SQL_DOCUMENT_BYTES));
+        assert_eq!(
+            rename_sql_document_parameter(&source, "old", "new"),
+            Err(SqlDocumentEditError::SourceTooLarge)
+        );
     }
 
     #[test]
@@ -1454,6 +1512,20 @@ mod tests {
         assert_eq!(
             apply_sql_document_edit_transaction(source, &too_large),
             Err(SqlDocumentEditError::OutputTooLarge)
+        );
+    }
+
+    #[test]
+    fn excessive_syntax_tokens_fail_before_ast_construction() {
+        let source = "(".repeat(MAX_SQL_DOCUMENT_COMPLEXITY_TOKENS + 1);
+        let document = parse_sql_document(&source);
+
+        assert_eq!(document.status, SqlDocumentStatus::TooComplex);
+        assert!(document.tokens.is_empty());
+        assert!(document.nodes.is_empty());
+        assert_eq!(
+            document.diagnostics[0].code,
+            SqlDocumentDiagnosticCode::SqlTooComplex
         );
     }
 
