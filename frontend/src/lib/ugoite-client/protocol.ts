@@ -441,7 +441,9 @@ export const parseSqlDocument = async (sql: string): Promise<SqlDocument> =>
     value: { sql },
   });
 
-/** Rename a SQL parameter through the shared Rust/WASM document contract. */
+/** Rename a SQL parameter through the shared Rust/WASM document contract.
+ * Parameter names omit the $ prefix.
+ */
 export const renameSqlDocumentParameter = async (
   sql: string,
   oldName: string,
