@@ -50,14 +50,9 @@
     },
     "editor": {
       "aggregate_contract": {
-        "checked": "name_catalog_only",
-        "known_editor_rejections": ["COUNT(DISTINCT *)", "MEAN"],
-        "verification_gaps": [
-          "runtime_structure_frontend_signature_and_type_parity",
-          "supported_aggregate_modifier_parity",
-          "count_distinct_wildcard_execution_semantics",
-          "aggregate_alias_parity"
-        ]
+        "checked": "registry_signatures_modifiers_and_runtime_behavior",
+        "known_editor_rejections": [],
+        "verification_gaps": []
       },
       "operations": [
         {

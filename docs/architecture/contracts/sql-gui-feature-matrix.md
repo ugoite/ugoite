@@ -13,8 +13,9 @@ public error. The admission gate remains unchanged. The stateless
 `ReadOnlyAggregateV1` policy currently admits `COUNT`, `SUM`, `AVG`, `MIN`, and
 `MAX` as canonical aggregate names, with the `MEAN` alias resolving to `AVG`,
 and no user SQL scalar or window functions. The current structure editor does
-not recognize `MEAN`; the shared matrix records that alias gap until the editor
-implements the same registry.
+recognize these names and aliases from the same Domain registry used by runtime
+policy. The browser picker and protocol are checked against that registry, and
+the matrix records signature, modifier, and authorized execution coverage.
 
 The structure editor is a separate, narrower contract. Its parser accepts a
 bounded subset that it can safely analyze and rewrite; direct SQL editing
@@ -30,17 +31,15 @@ The matrix records one contract gap: the backend statement gate is weaker than
 the documented SELECT-only boundary because the query AST body is not
 restricted; narrowing it is tracked by
 [issue #4383](https://github.com/ugoite/ugoite/issues/4383). `VALUES` is
-rejected downstream by physical-plan authorization. Relation-free scalar
-queries align with direct SQL lint and the structure editor; this inventory
-does not change backend admission behavior.
+rejected downstream by physical-plan authorization. Relation-free scalar queries
+align with direct SQL lint and the structure editor; this inventory does not
+change backend admission behavior.
 
-Aggregate parity is checked here only at the canonical function-name level and
-the runtime alias map is checked separately. Signatures,
-type restrictions, modifier round-trips, and runtime behavior for
-`COUNT(DISTINCT *)` remain unverified; the structure parser explicitly rejects
-that form. These gaps are tracked by
-[issue #4381](https://github.com/ugoite/ugoite/issues/4381). The matrix records
-them so its name check is not read as complete aggregate parity.
+Aggregate parity is covered across the Domain registry, structure parser,
+browser picker and protocol, and authorized SQL execution tests. The tests cover
+aggregate aliases, argument arity, input type restrictions, DISTINCT handling,
+multi-column COUNT, wildcard COUNT, and runtime results for `COUNT(DISTINCT *)`
+and `MEAN`. This does not include general scalar or window functions.
 
 `backend_admission: planner_decides` means the statement gate does not decide
 that construct's validity. It does not promise that every use will plan or

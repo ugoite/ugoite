@@ -169,20 +169,15 @@ Deno.test("SQL feature matrix aggregate catalog remains present in the typed UI 
   assertEquals(backendAggregateAliases, { mean: "avg" });
   assertEquals(
     matrix.editor.aggregate_contract.checked,
-    "name_catalog_only",
+    "registry_signatures_modifiers_and_runtime_behavior",
   );
   assertEquals(
     matrix.editor.aggregate_contract.known_editor_rejections,
-    ["COUNT(DISTINCT *)", "MEAN"],
+    [],
   );
   assertEquals(
     matrix.editor.aggregate_contract.verification_gaps,
-    [
-      "runtime_structure_frontend_signature_and_type_parity",
-      "supported_aggregate_modifier_parity",
-      "count_distinct_wildcard_execution_semantics",
-      "aggregate_alias_parity",
-    ],
+    [],
   );
   const aggregateParser = domainSql.slice(
     domainSql.indexOf("fn parse_aggregate("),
