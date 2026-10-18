@@ -157,6 +157,17 @@ mod tests {
         }
     }
 
+    fn string_input(id: &str) -> VariableGraphNode {
+        VariableGraphNode {
+            id: id.to_owned(),
+            kind: VariableGraphNodeKind::Input {
+                value_type: descriptor(VariableGraphScalarType::String, false),
+                required: false,
+                default: None,
+            },
+        }
+    }
+
     fn graph(variables: Vec<VariableGraphNode>) -> VariableGraph {
         VariableGraph { variables }
     }
@@ -268,6 +279,25 @@ mod tests {
         )
         .expect("nullable input accepts null");
         assert_eq!(resolved.values["nullable"], VariableGraphLiteral::Null);
+    }
+
+    #[test]
+    fn supplied_strings_obey_the_portable_value_contract() {
+        let error = resolve_variable_graph_inputs(
+            &graph(vec![string_input("text")]),
+            &BTreeMap::from([(
+                "text".to_owned(),
+                VariableGraphLiteral::String("bad\0value".to_owned()),
+            )]),
+        )
+        .expect_err("control characters are not portable input values");
+        assert_eq!(
+            error.inputs,
+            [diagnostic(
+                VariableGraphInputDiagnosticCode::InputTypeMismatch,
+                "text"
+            )]
+        );
     }
 
     #[test]

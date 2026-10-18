@@ -584,8 +584,10 @@ pub(crate) fn literal_matches(
         return descriptor.nullable;
     }
     match (descriptor.scalar_type, literal) {
-        (VariableGraphScalarType::String, VariableGraphLiteral::String(_))
-        | (VariableGraphScalarType::Boolean, VariableGraphLiteral::Boolean(_))
+        (VariableGraphScalarType::String, VariableGraphLiteral::String(value)) => {
+            super::valid_variable_string(value)
+        }
+        (VariableGraphScalarType::Boolean, VariableGraphLiteral::Boolean(_))
         | (VariableGraphScalarType::Integer, VariableGraphLiteral::Integer(_)) => true,
         (VariableGraphScalarType::Float, VariableGraphLiteral::Float(value)) => value.is_finite(),
         (VariableGraphScalarType::Decimal, VariableGraphLiteral::Decimal(value)) => {
@@ -1953,6 +1955,29 @@ mod tests {
             VariableGraphResultDiagnosticCode::ScalarMultipleRows.as_str(),
             "scalar_multiple_rows"
         );
+    }
+
+    #[test]
+    fn rejects_string_literals_outside_the_portable_value_contract() {
+        let invalid_strings = vec![
+            "bad\0value".to_owned(),
+            "x".repeat(super::super::MAX_COMPOSITION_VARIABLE_STRING_BYTES + 1),
+        ];
+        for value in invalid_strings {
+            let constant = VariableGraphNode {
+                id: "value".to_owned(),
+                kind: VariableGraphNodeKind::Constant {
+                    value_type: scalar(VariableGraphScalarType::String, false),
+                    value: VariableGraphLiteral::String(value),
+                },
+            };
+            assert_eq!(
+                compile_variable_graph(&graph(vec![constant]))
+                    .expect_err("invalid portable string constant")[0]
+                    .code,
+                VariableGraphDiagnosticCode::InvalidConstantValue
+            );
+    }
     }
 
     #[test]
