@@ -340,6 +340,8 @@ pub enum SqlDocumentEditError {
     StaleSource,
     /// The current or expected source exceeds the bounded document size.
     SourceTooLarge,
+    /// The source exceeds the bounded syntax complexity used for token edits.
+    SourceTooComplex,
     /// The transaction exceeds the edit-count limit.
     TooManyEdits,
     /// An edit has a reversed range.
@@ -367,6 +369,7 @@ impl core::fmt::Display for SqlDocumentEditError {
             }
             Self::StaleSource => "SQL document edit is based on stale source",
             Self::SourceTooLarge => "SQL source exceeds the document size limit",
+            Self::SourceTooComplex => "SQL source exceeds the document complexity limit",
             Self::TooManyEdits => "SQL document edit transaction exceeds the edit limit",
             Self::InvalidRange => "SQL document edit range is reversed",
             Self::RangeOutOfBounds => "SQL document edit range is outside the source",
@@ -401,6 +404,11 @@ pub fn rename_sql_document_parameter(
     }
 
     let document = parse_sql_document(source);
+    match document.status {
+        SqlDocumentStatus::TooLarge => return Err(SqlDocumentEditError::SourceTooLarge),
+        SqlDocumentStatus::TooComplex => return Err(SqlDocumentEditError::SourceTooComplex),
+        _ => {}
+    }
     let replacements = document
         .tokens
         .iter()
@@ -1048,6 +1056,28 @@ mod tests {
         let renamed = rename_sql_document_parameter(&source, &long_name, "short")
             .expect("the shared SQL name grammar has no 128-byte limit");
         assert_eq!(renamed.source, "SELECT $short");
+    }
+
+    #[test]
+    fn parameter_rename_rejects_sources_over_complexity_limit() {
+        let source = format!(
+            "SELECT $old {}",
+            "(".repeat(MAX_SQL_DOCUMENT_COMPLEXITY_TOKENS + 1)
+        );
+        assert!(source.len() < MAX_SQL_DOCUMENT_BYTES);
+        assert_eq!(
+            rename_sql_document_parameter(&source, "old", "new"),
+            Err(SqlDocumentEditError::SourceTooComplex)
+        );
+    }
+
+    #[test]
+    fn parameter_rename_rejects_sources_over_byte_limit() {
+        let source = format!("SELECT $old {}", "x".repeat(MAX_SQL_DOCUMENT_BYTES));
+        assert_eq!(
+            rename_sql_document_parameter(&source, "old", "new"),
+            Err(SqlDocumentEditError::SourceTooLarge)
+        );
     }
 
     #[test]
