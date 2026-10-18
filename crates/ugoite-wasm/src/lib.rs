@@ -14,11 +14,13 @@ pub use ugoite_konase as konase;
 
 const MAX_PROTOCOL_REQUEST_BYTES: usize = 256 * 1024;
 // JSON can expand each control byte in a SQL source to a six-byte `\u00xx`
-// escape. Bound the action-specific envelope at that worst case so every
-// source within the domain limit reaches the parser and receives its normal
-// diagnostic, while unrelated protocol actions keep the 256 KiB limit.
+// escape. Allow that worst case plus a small action envelope for parsing.
 const MAX_SQL_DOCUMENT_REQUEST_BYTES: usize =
     ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES * 6 + 1024;
+// Parameter rename has two additional caller-provided names. Bound their
+// combined JSON envelope to one ordinary protocol-sized request.
+const MAX_SQL_DOCUMENT_RENAME_REQUEST_BYTES: usize =
+    ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES * 6 + MAX_PROTOCOL_REQUEST_BYTES;
 const MAX_SQL_DOCUMENT_RESPONSE_BYTES: usize =
     ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES * 4;
 const ENTRY_OPERATIONS: &[&str] = &["entry.validate_draft"];
@@ -58,12 +60,25 @@ fn is_entry_operation(action: &str) -> bool {
     ENTRY_OPERATIONS.contains(&action)
 }
 
+fn sql_document_request_limit(action: &str) -> Option<usize> {
+    match action {
+        "domain.parse_sql_document" => Some(MAX_SQL_DOCUMENT_REQUEST_BYTES),
+        "domain.rename_sql_document_parameter" => Some(MAX_SQL_DOCUMENT_RENAME_REQUEST_BYTES),
+        _ => None,
+    }
+}
+
 pub fn invoke_json(input: &str) -> String {
     if input.len() > MAX_PROTOCOL_REQUEST_BYTES {
-        if input.len() <= MAX_SQL_DOCUMENT_REQUEST_BYTES {
+        // Bound JSON decoding before inspecting the action; the rename envelope
+        // is the largest SQL Document request this adapter will decode.
+        if input.len() <= MAX_SQL_DOCUMENT_RENAME_REQUEST_BYTES {
             if let Ok(request) = serde_json::from_str::<serde_json::Value>(input) {
-                if request.get("action").and_then(serde_json::Value::as_str)
-                    == Some("domain.parse_sql_document")
+                if request
+                    .get("action")
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(sql_document_request_limit)
+                    .is_some_and(|max_bytes| input.len() <= max_bytes)
                 {
                     return invoke_domain(request);
                 }
@@ -204,15 +219,13 @@ fn invoke_konase(request: serde_json::Value) -> String {
 }
 
 fn invoke_domain(request: serde_json::Value) -> String {
-    if request.get("action").and_then(serde_json::Value::as_str)
-        == Some("domain.compile_variable_graph.v1")
-    {
-        return compile_variable_graph_v1(request);
-    }
-    if request.get("action").and_then(serde_json::Value::as_str)
-        == Some("domain.parse_sql_document")
-    {
-        return invoke_sql_document(request);
+    match request.get("action").and_then(serde_json::Value::as_str) {
+        Some("domain.compile_variable_graph.v1") => return compile_variable_graph_v1(request),
+        Some("domain.parse_sql_document") => return invoke_sql_document(request),
+        Some("domain.rename_sql_document_parameter") => {
+            return invoke_sql_document_parameter_rename(request)
+        }
+        _ => {}
     }
 
     if request.get("action").and_then(serde_json::Value::as_str)
@@ -545,6 +558,39 @@ fn invoke_sql_document(request: serde_json::Value) -> String {
             .and_then(serde_json::Value::as_str)
             .ok_or_else(|| "sql must be a string".to_string())?;
         Ok(ugoite_domain::sql_document::parse_sql_document(sql))
+    })();
+
+    match result {
+        Ok(document) => serialize_sql_document_response(&document)
+            .unwrap_or_else(|()| sql_document_response_too_large()),
+        Err(message) => serde_json::json!({
+            "ok": false,
+            "error": {"kind": "domain_validation", "message": message},
+        })
+        .to_string(),
+    }
+}
+
+fn invoke_sql_document_parameter_rename(request: serde_json::Value) -> String {
+    let result = (|| -> Result<ugoite_domain::sql_document::SqlDocument, String> {
+        let payload = request
+            .get("value")
+            .cloned()
+            .ok_or_else(|| "value is required".to_string())?;
+        let sql = payload
+            .get("sql")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| "sql must be a string".to_string())?;
+        let old_name = payload
+            .get("old_name")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| "old_name must be a string".to_string())?;
+        let new_name = payload
+            .get("new_name")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| "new_name must be a string".to_string())?;
+        ugoite_domain::sql_document::rename_sql_document_parameter(sql, old_name, new_name)
+            .map_err(|error| error.to_string())
     })();
 
     match result {
@@ -1089,6 +1135,87 @@ mod tests {
     }
 
     #[test]
+    fn sql_document_parameter_rename_protocol_matches_native_tokens_and_ranges() {
+        let source = "-- $day\nSELECT $day + $day AS total, '$day' AS literal, $day2 AS other FROM \"G\" /* $day */";
+        let native = ugoite_domain::sql_document::rename_sql_document_parameter(
+            source,
+            "day",
+            "billing_day",
+        )
+        .expect("valid parameter rename");
+        let request = serde_json::json!({
+            "action": "domain.rename_sql_document_parameter",
+            "value": {"sql": source, "old_name": "day", "new_name": "billing_day"},
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).expect("JSON response");
+
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"], serde_json::to_value(&native).unwrap());
+        assert_eq!(
+            native.source,
+            "-- $day\nSELECT $billing_day + $billing_day AS total, '$day' AS literal, $day2 AS other FROM \"G\" /* $day */"
+        );
+        let renamed: ugoite_domain::sql_document::SqlDocument =
+            serde_json::from_value(response["value"].clone()).expect("domain document");
+        let placeholders = renamed
+            .tokens
+            .iter()
+            .filter(|token| {
+                token.kind == ugoite_domain::sql_document::SqlDocumentTokenKind::Placeholder
+            })
+            .map(|token| renamed.source_slice(token.range).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(placeholders, ["$billing_day", "$billing_day", "$day2"]);
+    }
+
+    #[test]
+    fn sql_document_parameter_rename_protocol_preserves_no_match_documents() {
+        let source = "-- retain $other\nSELECT '$other' AS literal, $other FROM \"G\"";
+        let native = ugoite_domain::sql_document::rename_sql_document_parameter(
+            source,
+            "missing",
+            "replacement",
+        )
+        .expect("valid names with no matching placeholder");
+        let request = serde_json::json!({
+            "action": "domain.rename_sql_document_parameter",
+            "value": {"sql": source, "old_name": "missing", "new_name": "replacement"},
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).expect("JSON response");
+
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"], serde_json::to_value(&native).unwrap());
+        assert_eq!(native.source, source);
+    }
+
+    #[test]
+    fn sql_document_parameter_rename_protocol_matches_native_invalid_name_errors() {
+        for (old_name, new_name) in [("bad-name", "new_name"), ("old", "$new")] {
+            let native_error = ugoite_domain::sql_document::rename_sql_document_parameter(
+                "SELECT $old",
+                old_name,
+                new_name,
+            )
+            .expect_err("invalid parameter names must fail");
+            let request = serde_json::json!({
+                "action": "domain.rename_sql_document_parameter",
+                "value": {
+                    "sql": "SELECT $old",
+                    "old_name": old_name,
+                    "new_name": new_name,
+                },
+            });
+            let response: Value = serde_json::from_str(&super::invoke_json(&request.to_string()))
+                .expect("JSON response");
+
+            assert_eq!(response["ok"], false, "{response}");
+            assert_eq!(response["error"]["kind"], "domain_validation");
+            assert_eq!(response["error"]["message"], native_error.to_string());
+        }
+
+    #[test]
     fn sql_document_protocol_accepts_maximum_source_with_json_escaped_trivia() {
         let sql = format!(
             "SELECT 1 /*{}*/",
@@ -1113,11 +1240,63 @@ mod tests {
     }
 
     #[test]
+    fn sql_document_parameter_rename_accepts_maximum_escaped_source() {
+        let sql = format!(
+            "SELECT 1 /*{}*/",
+            "\n".repeat(ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES - 13)
+        );
+        let request = serde_json::json!({
+            "action": "domain.rename_sql_document_parameter",
+            "value": {"sql": sql, "old_name": "old", "new_name": "new"},
+        })
+        .to_string();
+        assert!(request.len() > super::MAX_PROTOCOL_REQUEST_BYTES);
+        assert!(request.len() <= super::MAX_SQL_DOCUMENT_RENAME_REQUEST_BYTES);
+
+        let response: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
+        let native =
+            ugoite_domain::sql_document::rename_sql_document_parameter(&sql, "old", "new").unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"], serde_json::to_value(native).unwrap());
+    }
+
+    #[test]
+    fn sql_document_parameter_rename_rejects_request_over_limit() {
+        let request = serde_json::json!({
+            "action": "domain.rename_sql_document_parameter",
+            "value": {"sql": "SELECT 1", "old_name": "old", "new_name": "new"},
+            "padding": "x".repeat(super::MAX_SQL_DOCUMENT_RENAME_REQUEST_BYTES),
+        })
+        .to_string();
+        assert!(request.len() > super::MAX_SQL_DOCUMENT_RENAME_REQUEST_BYTES);
+
+        let response: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
+        assert_eq!(response["ok"], false, "{response}");
+        assert_eq!(response["error"]["kind"], "input_too_large");
+    }
+
+    #[test]
     fn sql_document_protocol_bounds_amplified_parser_output() {
         let sql = format!("SELECT {}", vec!["1"; 20_000].join(","));
         let request = serde_json::json!({
             "action": "domain.parse_sql_document",
             "value": {"sql": sql},
+        })
+        .to_string();
+        let response_text = super::invoke_json(&request);
+        assert!(response_text.len() <= super::MAX_SQL_DOCUMENT_RESPONSE_BYTES);
+
+        let response: Value = serde_json::from_str(&response_text).unwrap();
+        assert_eq!(response["ok"], false, "{response}");
+        assert_eq!(response["error"]["kind"], "domain_output_too_large");
+    }
+
+    #[test]
+    fn sql_document_parameter_rename_bounds_amplified_output() {
+        let sql = format!("SELECT {}", vec!["$x"; 20_000].join(","));
+        let request = serde_json::json!({
+            "action": "domain.rename_sql_document_parameter",
+            "value": {"sql": sql, "old_name": "x", "new_name": "renamed"},
         })
         .to_string();
         let response_text = super::invoke_json(&request);
