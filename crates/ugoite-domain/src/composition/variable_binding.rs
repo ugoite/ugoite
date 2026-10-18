@@ -344,7 +344,7 @@ mod tests {
     use super::*;
     use crate::composition::variable_graph::{
         VariableGraphArgumentBinding, VariableGraphColumn, VariableGraphLiteral, VariableGraphNode,
-        VariableGraphScalarDescriptor,
+        VariableGraphQueryDefinition, VariableGraphScalarDescriptor,
     };
     use serde_json::json;
 
@@ -391,6 +391,9 @@ mod tests {
                         name: "id".to_owned(),
                         value_type: scalar(VariableGraphScalarType::Integer),
                     }],
+                },
+                query: VariableGraphQueryDefinition::InlineSql {
+                    sql: "SELECT 1 AS id".to_owned(),
                 },
                 arguments: Vec::<VariableGraphArgumentBinding>::new(),
             },
