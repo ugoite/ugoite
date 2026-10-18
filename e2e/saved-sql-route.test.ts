@@ -188,8 +188,12 @@ test.describe("Saved SQL route", () => {
         .click();
       await aggregateDialog.getByRole("button", { name: "Review change" })
         .click();
-      await expect(aggregateDialog.getByText(/COUNT\(\*\)/)).toBeVisible();
-      await aggregateDialog.getByRole("button", { name: "Apply change" })
+      const aggregateReviewDialog = page.getByRole("dialog", {
+        name: "Review SQL change",
+      });
+      await expect(aggregateReviewDialog.getByText(/COUNT\(\*\)/))
+        .toBeVisible();
+      await aggregateReviewDialog.getByRole("button", { name: "Apply change" })
         .click();
       await expect(page.locator(".ui-sql-editor")).toContainText(/COUNT\(\*\)/);
       await page.getByLabel("Query name").fill(queryName);
