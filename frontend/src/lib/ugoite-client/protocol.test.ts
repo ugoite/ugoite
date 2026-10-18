@@ -207,8 +207,9 @@ describe("portable Ugoite API protocol WASM", () => {
   });
 
   it("parses bounded SQL drafts through the typed Rust/WASM document contract", async () => {
-    const sql = '-- draft\nSELECT $day FROM "G"';
+    const sql = '-- 日本語\nSELECT $day FROM "G"';
     const document = await parseSqlDocument(sql);
+    const sourceBytes = new TextEncoder().encode(sql);
 
     expect(document).toMatchObject({
       contract_version: 1,
@@ -217,7 +218,9 @@ describe("portable Ugoite API protocol WASM", () => {
     });
     expect(document.tokens.some((token) =>
       token.kind === "placeholder" &&
-      sql.slice(token.range.start, token.range.end) === "$day"
+      new TextDecoder().decode(
+          sourceBytes.subarray(token.range.start, token.range.end),
+        ) === "$day"
     )).toBe(true);
     expect(document.nodes.some((node) => node.kind === "query_statement"))
       .toBe(true);

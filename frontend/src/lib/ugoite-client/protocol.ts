@@ -232,6 +232,7 @@ export type CompositionDocumentCanonicalization = {
   fingerprint: string;
 };
 
+/** Half-open UTF-8 byte offsets into the UTF-8 encoding of SqlDocument.source. */
 export type SqlDocumentSourceRange = {
   start: number;
   end: number;
