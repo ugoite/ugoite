@@ -14,6 +14,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 mod canonical;
 pub mod variable_graph;
 pub mod variable_invalidation;
+pub mod variable_graph_input;
 mod yaml;
 
 pub use variable_graph::{
@@ -21,6 +22,10 @@ pub use variable_graph::{
     VariableGraphColumn, VariableGraphDiagnostic, VariableGraphDiagnosticCode,
     VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind, VariableGraphQueryDefinition,
     VariableGraphResultType, VariableGraphScalarDescriptor, VariableGraphScalarType,
+};
+pub use variable_graph_input::{
+    resolve_variable_graph_inputs, ResolvedVariableGraphInputs, VariableGraphInputDiagnostic,
+    VariableGraphInputDiagnosticCode, VariableGraphInputError,
 };
 
 pub use canonical::{

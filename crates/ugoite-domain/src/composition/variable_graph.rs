@@ -576,7 +576,7 @@ fn scalar_type_assignable(
     expected.scalar_type == actual.scalar_type && (!actual.nullable || expected.nullable)
 }
 
-fn literal_matches(
+pub(crate) fn literal_matches(
     descriptor: &VariableGraphScalarDescriptor,
     literal: &VariableGraphLiteral,
 ) -> bool {
