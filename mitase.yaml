@@ -255,7 +255,7 @@ inventory:
         - tools/workspace_test.ts
         - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
         - crates/ugoite-wasm/tests/composition_parity.ts
-        - crates/ugoite-wasm/tests/sql_structure_parity.ts
+        - crates/ugoite-wasm/tests/sql_structure_wasm_fixtures.ts
         - frontend/src/lib/composition-api.ts
         - frontend/src/lib/composition-api.test.ts
         - frontend/src/lib/composition-draft.ts
