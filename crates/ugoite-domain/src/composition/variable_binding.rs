@@ -9,7 +9,7 @@ use super::variable_graph::{
     VariableGraphResultType, VariableGraphScalarType,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A strict, variable-only reference from a display component.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -55,7 +55,9 @@ impl VariableGraphComponentBinding {
 pub enum VariableGraphBindingDiagnosticCode {
     InvalidComponentId,
     DuplicateComponentId,
+    DuplicateLayoutComponent,
     MissingVariable,
+    UnknownLayoutComponent,
     VariableTypeMismatch,
     UnplacedInput,
 }
@@ -65,7 +67,9 @@ impl VariableGraphBindingDiagnosticCode {
         match self {
             Self::InvalidComponentId => "invalid_component_id",
             Self::DuplicateComponentId => "duplicate_component_id",
+            Self::DuplicateLayoutComponent => "duplicate_layout_component",
             Self::MissingVariable => "missing_variable",
+            Self::UnknownLayoutComponent => "unknown_layout_component",
             Self::VariableTypeMismatch => "variable_type_mismatch",
             Self::UnplacedInput => "unplaced_input",
         }
@@ -108,6 +112,7 @@ pub struct CompiledVariableGraphBindings {
 pub fn compile_variable_graph_bindings(
     graph: &VariableGraph,
     components: &[VariableGraphComponentBinding],
+    layout_component_ids: &[String],
 ) -> Result<CompiledVariableGraphBindings, VariableGraphBindingValidationError> {
     if let Err(graph) = compile_variable_graph(graph) {
         return Err(VariableGraphBindingValidationError {
@@ -125,6 +130,7 @@ pub fn compile_variable_graph_bindings(
     let mut component_counts = BTreeMap::<&str, usize>::new();
     let mut component_variables = BTreeMap::new();
     let mut input_components = BTreeMap::<String, Vec<String>>::new();
+    let mut known_component_ids = BTreeSet::new();
 
     for component in components {
         let component_id = component.id();
@@ -136,6 +142,7 @@ pub fn compile_variable_graph_bindings(
             ));
         } else {
             *component_counts.entry(component_id).or_default() += 1;
+            known_component_ids.insert(component_id);
         }
 
         let Some(variable_id) = component.variable() else {
@@ -181,13 +188,49 @@ pub fn compile_variable_graph_bindings(
             }),
     );
 
+    let mut layout_counts = BTreeMap::<&str, usize>::new();
+    for component_id in layout_component_ids {
+        if !known_component_ids.contains(component_id.as_str()) {
+            diagnostics.push(binding_diagnostic(
+                VariableGraphBindingDiagnosticCode::UnknownLayoutComponent,
+                Some(component_id),
+                None,
+            ));
+            continue;
+        }
+        *layout_counts.entry(component_id).or_default() += 1;
+    }
+    diagnostics.extend(
+        layout_counts
+            .iter()
+            .filter(|(_, count)| **count > 1)
+            .map(|(id, _)| {
+                binding_diagnostic(
+                    VariableGraphBindingDiagnosticCode::DuplicateLayoutComponent,
+                    Some(id),
+                    None,
+                )
+            }),
+    );
+
     for (variable_id, kind) in &nodes {
-        if matches!(kind, VariableGraphNodeKind::Input { .. })
-            && !input_components.contains_key(*variable_id)
-        {
+        if !matches!(kind, VariableGraphNodeKind::Input { .. }) {
+            continue;
+        }
+        let placed_component = input_components
+            .get(*variable_id)
+            .and_then(|component_ids| {
+                component_ids
+                    .iter()
+                    .find(|component_id| layout_counts.contains_key(component_id.as_str()))
+            });
+        if placed_component.is_none() {
             diagnostics.push(binding_diagnostic(
                 VariableGraphBindingDiagnosticCode::UnplacedInput,
-                None,
+                input_components
+                    .get(*variable_id)
+                    .and_then(|component_ids| component_ids.first())
+                    .map(String::as_str),
                 Some(variable_id),
             ));
         }
@@ -373,7 +416,18 @@ mod tests {
             },
         ];
 
-        let compiled = compile_variable_graph_bindings(&graph, &bindings).unwrap();
+        let compiled = compile_variable_graph_bindings(
+            &graph,
+            &bindings,
+            &[
+                "day_input".to_owned(),
+                "title_text".to_owned(),
+                "count_metric".to_owned(),
+                "rows_table".to_owned(),
+                "literal_text".to_owned(),
+            ],
+        )
+        .unwrap();
         assert_eq!(compiled.component_variables["rows_table"], "rows");
         assert_eq!(compiled.component_variables["count_metric"], "count");
         assert_eq!(compiled.input_components["day"], ["day_input"]);
@@ -407,7 +461,7 @@ mod tests {
             },
         ];
 
-        let error = compile_variable_graph_bindings(&graph, &bindings).unwrap_err();
+        let error = compile_variable_graph_bindings(&graph, &bindings, &[]).unwrap_err();
         assert!(error.graph.is_empty());
         assert_eq!(
             error
@@ -438,7 +492,7 @@ mod tests {
                 variable: Some("missing".to_owned()),
             },
         ];
-        let error = compile_variable_graph_bindings(&graph, &bindings).unwrap_err();
+        let error = compile_variable_graph_bindings(&graph, &bindings, &[]).unwrap_err();
         assert!(error.components.iter().any(|diagnostic| {
             diagnostic.code == VariableGraphBindingDiagnosticCode::DuplicateComponentId
         }));
@@ -464,5 +518,42 @@ mod tests {
             value[legacy] = json!("legacy");
             assert!(serde_json::from_value::<VariableGraphComponentBinding>(value).is_err());
         }
+    }
+
+    #[test]
+    fn input_variables_must_be_placed_and_layout_must_resolve_unique_components() {
+        let graph = graph(vec![input("day", VariableGraphScalarType::String)]);
+        let components = vec![VariableGraphComponentBinding::Input {
+            id: "day_input".to_owned(),
+            variable: "day".to_owned(),
+        }];
+
+        let unplaced = compile_variable_graph_bindings(&graph, &components, &[])
+            .expect_err("input component is not present in layout");
+        assert_eq!(
+            unplaced.components,
+            [binding_diagnostic(
+                VariableGraphBindingDiagnosticCode::UnplacedInput,
+                Some("day_input"),
+                Some("day"),
+            )]
+        );
+
+        let invalid_layout = compile_variable_graph_bindings(
+            &graph,
+            &components,
+            &[
+                "day_input".to_owned(),
+                "day_input".to_owned(),
+                "missing_component".to_owned(),
+            ],
+        )
+        .expect_err("layout references must be unique and resolve");
+        assert!(invalid_layout.components.iter().any(|diagnostic| {
+            diagnostic.code == VariableGraphBindingDiagnosticCode::DuplicateLayoutComponent
+        }));
+        assert!(invalid_layout.components.iter().any(|diagnostic| {
+            diagnostic.code == VariableGraphBindingDiagnosticCode::UnknownLayoutComponent
+        }));
     }
 }
