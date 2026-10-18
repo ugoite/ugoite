@@ -77,7 +77,12 @@ pub enum VariableGraphScalarType {
 
 /// A typed constant or input default.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum VariableGraphLiteral {
     String(String),
     Boolean(bool),
@@ -287,7 +292,7 @@ pub fn compile_variable_graph(
                 }
                 let mut argument_counts = BTreeMap::<&str, usize>::new();
                 for argument in arguments {
-                    if argument.name.trim().is_empty() {
+                    if !valid_argument_name(&argument.name) {
                         diagnostics.push(VariableGraphDiagnostic::for_argument(
                             VariableGraphDiagnosticCode::InvalidArgumentName,
                             &node.id,
@@ -392,6 +397,16 @@ fn result_descriptor_is_valid(result: &VariableGraphResultType) -> bool {
     }
 }
 
+fn valid_argument_name(name: &str) -> bool {
+    let Some((first, rest)) = name.as_bytes().split_first() else {
+        return false;
+    };
+    matches!(*first, b'A'..=b'Z' | b'a'..=b'z' | b'_')
+        && rest
+            .iter()
+            .all(|byte| matches!(*byte, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_'))
+}
+
 fn scalar_type_of(kind: &VariableGraphNodeKind) -> Option<VariableGraphScalarDescriptor> {
     match kind {
         VariableGraphNodeKind::Constant { value_type, .. }
@@ -433,10 +448,10 @@ fn literal_matches(
             decimal_text_is_valid(value)
         }
         (VariableGraphScalarType::Date, VariableGraphLiteral::Date(value)) => {
-            chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").is_ok()
+            super::valid_variable_date(value)
         }
         (VariableGraphScalarType::Timestamp, VariableGraphLiteral::Timestamp(value)) => {
-            chrono::DateTime::parse_from_rfc3339(value).is_ok()
+            super::valid_variable_timestamp(value)
         }
         (VariableGraphScalarType::Json, VariableGraphLiteral::Json(value)) => !value.is_null(),
         _ => false,
@@ -682,6 +697,38 @@ mod tests {
     }
 
     #[test]
+    fn accepts_only_sql_identifier_argument_names() {
+        let valid = graph(vec![
+            input("value", VariableGraphScalarType::Integer, false),
+            query(
+                "result",
+                vec![binding("_x9", "value", VariableGraphScalarType::Integer)],
+            ),
+        ]);
+        assert!(compile_variable_graph(&valid).is_ok());
+
+        for invalid_name in ["", "9value", "has-dash", "has space", "値"] {
+            let invalid = graph(vec![
+                input("value", VariableGraphScalarType::Integer, false),
+                query(
+                    "result",
+                    vec![binding(
+                        invalid_name,
+                        "value",
+                        VariableGraphScalarType::Integer,
+                    )],
+                ),
+            ]);
+            let diagnostics = compile_variable_graph(&invalid).expect_err("invalid argument name");
+            assert_eq!(
+                diagnostics[0].code,
+                VariableGraphDiagnosticCode::InvalidArgumentName,
+                "argument name {invalid_name:?}"
+            );
+        }
+    }
+
+    #[test]
     fn rejects_missing_references_and_table_to_scalar_bindings() {
         let missing = graph(vec![query(
             "result",
@@ -837,6 +884,30 @@ mod tests {
             VariableGraphDiagnosticCode::InvalidInputDefault
         );
 
+        for invalid_date in ["0000-01-01", "2026-1-01", "10000-01-01"] {
+            let invalid_date = VariableGraphNode {
+                id: "date".to_owned(),
+                kind: VariableGraphNodeKind::Constant {
+                    value_type: scalar(VariableGraphScalarType::Date, false),
+                    value: VariableGraphLiteral::Date(invalid_date.to_owned()),
+                },
+            };
+            assert_eq!(
+                compile_variable_graph(&graph(vec![invalid_date])).expect_err("non-canonical date")
+                    [0]
+                .code,
+                VariableGraphDiagnosticCode::InvalidConstantValue
+            );
+        }
+        let canonical_leap_day = VariableGraphNode {
+            id: "date".to_owned(),
+            kind: VariableGraphNodeKind::Constant {
+                value_type: scalar(VariableGraphScalarType::Date, false),
+                value: VariableGraphLiteral::Date("2024-02-29".to_owned()),
+            },
+        };
+        assert!(compile_variable_graph(&graph(vec![canonical_leap_day])).is_ok());
+
         let invalid_table = VariableGraphNode {
             id: "rows".to_owned(),
             kind: VariableGraphNodeKind::Query {
@@ -861,5 +932,22 @@ mod tests {
                 .code,
             VariableGraphDiagnosticCode::InvalidResultDescriptor
         );
+    }
+
+    #[test]
+    fn literal_deserialization_rejects_unknown_fields() {
+        let known_fields = serde_json::json!({ "kind": "string", "value": "value" });
+        assert_eq!(
+            serde_json::from_value::<VariableGraphLiteral>(known_fields)
+                .expect("known literal fields"),
+            VariableGraphLiteral::String("value".to_owned())
+        );
+
+        let unknown_field = serde_json::json!({
+            "kind": "string",
+            "value": "value",
+            "legacy": true
+        });
+        assert!(serde_json::from_value::<VariableGraphLiteral>(unknown_field).is_err());
     }
 }
