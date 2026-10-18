@@ -11,7 +11,7 @@ features:
       - id: sql-document-core
         role: implementation
         facet: core
-        responsibility: Parse bounded SQL drafts into an exact-source document with lossless token ranges, usable parser-provided syntax-node ranges, and distinct syntax or statement-shape diagnostics without granting runtime admission.
+        responsibility: Parse bounded SQL drafts into an exact-source document with lossless token ranges, usable parser-provided syntax-node ranges, and distinct syntax or statement-shape diagnostics; provide token-scoped parameter renaming without granting runtime admission.
         targets:
           - id: parser
             adapter: rust
@@ -20,10 +20,17 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.lossless-document-draft
+          - id: parameter-rename
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: rename_sql_document_parameter }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.source-aware-parameter-rename
       - id: sql-document-verification
         role: verification
         facet: verification
-        responsibility: Verify exact source retention, token and syntax ranges, and the parser-versus-executor boundary with a focused Rust unit test.
+        responsibility: Verify exact source retention, syntax diagnostics, token-scoped parameter renaming, and the parser-versus-executor boundary with focused Rust unit tests.
         targets:
           - id: lossless-document-source-and-ranges
             adapter: rust
@@ -57,3 +64,67 @@ features:
                   arguments:
                     package: ugoite-domain
                     test: sql_document::tests::invalid_and_unsupported_drafts_keep_the_original_source
+          - id: parameter-rename-references-and-lookalikes
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector:
+              kind: symbol
+              name: tests::renames_repeated_parameter_tokens_and_preserves_lookalikes
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.source-aware-parameter-rename
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-core/target.parameter-rename
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-domain
+                    test: sql_document::tests::renames_repeated_parameter_tokens_and_preserves_lookalikes
+          - id: parameter-rename-no-match
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector:
+              kind: symbol
+              name: tests::parameter_rename_without_a_match_preserves_source_and_diagnostics
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.source-aware-parameter-rename
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-core/target.parameter-rename
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-domain
+                    test: sql_document::tests::parameter_rename_without_a_match_preserves_source_and_diagnostics
+          - id: parameter-rename-invalid-names
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector:
+              kind: symbol
+              name: tests::parameter_rename_rejects_invalid_names
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.source-aware-parameter-rename
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-core/target.parameter-rename
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-domain
+                    test: sql_document::tests::parameter_rename_rejects_invalid_names
+          - id: parameter-rename-draft-diagnostics
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector:
+              kind: symbol
+              name: tests::parameter_rename_reparses_invalid_drafts_and_keeps_diagnostics
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.source-aware-parameter-rename
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-core/target.parameter-rename
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-domain
+                    test: sql_document::tests::parameter_rename_reparses_invalid_drafts_and_keeps_diagnostics

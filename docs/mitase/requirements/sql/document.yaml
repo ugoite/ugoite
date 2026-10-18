@@ -19,3 +19,13 @@ requirements:
           and distinguishes syntax or statement-shape diagnostics. A parsed
           syntax tree alone never means that the SQL executor admits the query.
         governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: source-aware-parameter-rename
+        kind: behavior
+        statement: >-
+          The Rust SQL Document can rename valid named parameter placeholder
+          tokens in a supplied draft while preserving every unrelated source
+          byte, including strings, comments, and quoted identifiers. Invalid
+          names are rejected, no-match input remains unchanged, and edited
+          drafts are reparsed so syntax diagnostics remain current; this edit
+          does not authorize parameter binding or query execution.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]

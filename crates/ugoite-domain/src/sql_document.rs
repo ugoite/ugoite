@@ -14,6 +14,8 @@ use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserError};
 use sqlparser::tokenizer::{Location, Span, Token, Tokenizer, Whitespace};
 use std::convert::Infallible;
+use std::error::Error;
+use std::fmt::{self, Display, Formatter};
 
 /// Version of the Rust SQL Document view returned to adapters.
 pub const SQL_DOCUMENT_CONTRACT_VERSION: u32 = 1;
@@ -250,6 +252,80 @@ impl SqlDocument {
     pub fn source_slice(&self, range: SqlSourceRange) -> Option<&str> {
         self.source.get(range.start..range.end)
     }
+}
+
+/// Invalid source-level parameter name supplied to a SQL Document edit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SqlDocumentEditError {
+    /// The old parameter name is not a valid named SQL parameter.
+    InvalidOldParameterName,
+    /// The new parameter name is not a valid named SQL parameter.
+    InvalidNewParameterName,
+}
+
+impl Display for SqlDocumentEditError {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::InvalidOldParameterName => {
+                "old SQL parameter name must match [A-Za-z_][A-Za-z0-9_]*"
+            }
+            Self::InvalidNewParameterName => {
+                "new SQL parameter name must match [A-Za-z_][A-Za-z0-9_]*"
+            }
+        })
+    }
+}
+
+impl Error for SqlDocumentEditError {}
+
+/// Rename every exact named `$old_name` placeholder token in a SQL source.
+///
+/// Names are supplied without the `$` prefix. Replacements are limited to
+/// tokenizer-classified placeholder tokens, so strings, comments, quoted
+/// identifiers, and longer parameter names remain byte-for-byte unchanged.
+/// The resulting source is reparsed into a document; syntax-invalid drafts
+/// remain editable and retain their updated diagnostics.
+pub fn rename_sql_document_parameter(
+    source: &str,
+    old_name: &str,
+    new_name: &str,
+) -> Result<SqlDocument, SqlDocumentEditError> {
+    if !valid_sql_parameter_name(old_name) {
+        return Err(SqlDocumentEditError::InvalidOldParameterName);
+    }
+    if !valid_sql_parameter_name(new_name) {
+        return Err(SqlDocumentEditError::InvalidNewParameterName);
+    }
+
+    let document = parse_sql_document(source);
+    let replacements = document
+        .tokens
+        .iter()
+        .filter(|token| token.kind == SqlDocumentTokenKind::Placeholder)
+        .filter_map(|token| {
+            let text = document.source_slice(token.range)?;
+            (text.strip_prefix('$') == Some(old_name)).then_some(token.range)
+        })
+        .collect::<Vec<_>>();
+
+    if replacements.is_empty() {
+        return Ok(document);
+    }
+
+    let replacement = format!("${new_name}");
+    let mut rewritten_source = source.to_owned();
+    for range in replacements.into_iter().rev() {
+        rewritten_source.replace_range(range.start..range.end, &replacement);
+    }
+
+    Ok(parse_sql_document(&rewritten_source))
+}
+
+fn valid_sql_parameter_name(name: &str) -> bool {
+    let mut characters = name.chars();
+    name.len() <= 128
+        && matches!(characters.next(), Some(first) if first == '_' || first.is_ascii_alphabetic())
+        && characters.all(|character| character == '_' || character.is_ascii_alphanumeric())
 }
 
 /// Parse SQL text into its lossless lexical document and syntax view.
@@ -609,6 +685,72 @@ mod tests {
                 .find(|token| document.source_slice(token.range) == Some("$day"))
                 .map(|token| token.kind),
             Some(SqlDocumentTokenKind::Placeholder)
+        );
+    }
+
+    #[test]
+    fn renames_repeated_parameter_tokens_and_preserves_lookalikes() {
+        let source = "-- $day\nSELECT $day + $day AS total, '$day' AS literal, \"$day\" AS identifier, $day2 AS other, $$ $day $$ AS dollar_text FROM \"G\" /* $day */";
+        let document = rename_sql_document_parameter(source, "day", "billing_day")
+            .expect("valid parameter names");
+
+        assert_eq!(document.status, SqlDocumentStatus::Parsed);
+        assert_eq!(
+            document.source,
+            "-- $day\nSELECT $billing_day + $billing_day AS total, '$day' AS literal, \"$day\" AS identifier, $day2 AS other, $$ $day $$ AS dollar_text FROM \"G\" /* $day */"
+        );
+        let placeholders = document
+            .tokens
+            .iter()
+            .filter(|token| token.kind == SqlDocumentTokenKind::Placeholder)
+            .map(|token| document.source_slice(token.range).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(placeholders, ["$billing_day", "$billing_day", "$day2"]);
+    }
+
+    #[test]
+    fn parameter_rename_without_a_match_preserves_source_and_diagnostics() {
+        let source = "-- keep $other\nSELECT '$other' AS literal, $other FROM \"G\"";
+        let document = rename_sql_document_parameter(source, "missing", "replacement")
+            .expect("valid parameter names");
+
+        assert_eq!(document.source, source);
+        assert_eq!(document, parse_sql_document(source));
+    }
+
+    #[test]
+    fn parameter_rename_rejects_invalid_names() {
+        assert_eq!(
+            rename_sql_document_parameter("SELECT $old", "bad-name", "new_name"),
+            Err(SqlDocumentEditError::InvalidOldParameterName)
+        );
+        assert_eq!(
+            rename_sql_document_parameter("SELECT $old", "old", "$new"),
+            Err(SqlDocumentEditError::InvalidNewParameterName)
+        );
+        assert_eq!(
+            rename_sql_document_parameter("SELECT $old", "old", &"a".repeat(129)),
+            Err(SqlDocumentEditError::InvalidNewParameterName)
+        );
+    }
+
+    #[test]
+    fn parameter_rename_reparses_invalid_drafts_and_keeps_diagnostics() {
+        let source = "SELECT $old +";
+        let before = parse_sql_document(source);
+        assert_eq!(before.status, SqlDocumentStatus::InvalidSql);
+        assert_eq!(
+            before.diagnostics.first().map(|diagnostic| diagnostic.code),
+            Some(SqlDocumentDiagnosticCode::ParseFailed)
+        );
+
+        let after =
+            rename_sql_document_parameter(source, "old", "new").expect("valid parameter names");
+        assert_eq!(after.source, "SELECT $new +");
+        assert_eq!(after.status, SqlDocumentStatus::InvalidSql);
+        assert_eq!(
+            after.diagnostics.first().map(|diagnostic| diagnostic.code),
+            Some(SqlDocumentDiagnosticCode::ParseFailed)
         );
     }
 
