@@ -791,7 +791,10 @@ describe("CompositionStudioSync", () => {
     );
     renderStudio(sqlMetricDraft());
 
-    await vi.advanceTimersByTimeAsync(401);
+    // Let the initial Solid effects schedule the debounce before asserting
+    // that canonicalization has started; this keeps the test independent of
+    // when the render's effects flush under CI load.
+    await vi.advanceTimersByTimeAsync(521);
     expect(canonicalizeMock).toHaveBeenCalledTimes(1);
     expect(previewMock).not.toHaveBeenCalled();
 
