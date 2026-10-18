@@ -187,7 +187,7 @@ features:
       - id: sql-document-wasm-verification
         role: verification
         facet: verification
-        responsibility: Verify native parity for representable protocol responses, bounded serialization, and bounded memory growth for near-limit malformed SQL.
+        responsibility: Verify native parity for representable protocol responses and exercise the SQL Document protocol in the actual WASM runtime, including bounded serialization and bounded memory growth for near-limit malformed SQL through the root sql-structure parity task.
         targets:
           - id: protocol-matches-native-parser
             adapter: rust
@@ -221,3 +221,16 @@ features:
                   arguments:
                     package: ugoite-wasm
                     test: tests::sql_document_protocol_bounds_amplified_parser_output
+          - id: actual-wasm-document-parity-and-resource-bounds
+            adapter: typescript
+            path: crates/ugoite-wasm/tests/sql_structure_parity.ts
+            selector: { kind: file }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parser-action
+                runner:
+                  runner: mise-task
+                  arguments:
+                    task: check:wasm:sql-structure-parity
