@@ -140,6 +140,18 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.portable-protocol
+      - id: sql-document-frontend-client
+        role: evidence
+        facet: protocol-client
+        responsibility: Expose the SQL Document response as typed frontend client data while keeping parsing in the shared Rust/WASM domain protocol.
+        targets:
+          - id: parser-client
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.ts
+            selector: { kind: symbol, name: parseSqlDocument }
+            claims:
+              - kind: evidences
+                anchor: REQ-SQL-001#criterion.portable-protocol
       - id: sql-document-wasm-verification
         role: verification
         facet: verification

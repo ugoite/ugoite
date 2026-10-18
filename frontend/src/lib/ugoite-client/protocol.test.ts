@@ -8,6 +8,7 @@ import {
   getWasmSupportedOperations,
   parseCompositionVariableInput,
   parseCompositionVariableInputSync,
+  parseSqlDocument,
   prepareApiRequest,
   prepareCompositionVariableInputParser,
   prepareSqlStructureParser,
@@ -203,6 +204,29 @@ describe("portable Ugoite API protocol WASM", () => {
       { kind: "set_distinct", distinct: true },
     );
     expect(distinctProposal.proposed_sql).toContain("SELECT DISTINCT");
+  });
+
+  it("parses bounded SQL drafts through the typed Rust/WASM document contract", async () => {
+    const sql = '-- draft\nSELECT $day FROM "G"';
+    const document = await parseSqlDocument(sql);
+
+    expect(document).toMatchObject({
+      contract_version: 1,
+      source: sql,
+      status: "parsed",
+    });
+    expect(document.tokens.some((token) =>
+      token.kind === "placeholder" &&
+      sql.slice(token.range.start, token.range.end) === "$day"
+    )).toBe(true);
+    expect(document.nodes.some((node) => node.kind === "query_statement"))
+      .toBe(true);
+
+    await expect(parseSqlDocument("SELECT (")).resolves.toMatchObject({
+      source: "SELECT (",
+      status: "invalid_sql",
+      diagnostics: [{ code: "parse_failed" }],
+    });
   });
 
   it("parses Composition Input with the shared Rust Domain contract without coercion", async () => {
