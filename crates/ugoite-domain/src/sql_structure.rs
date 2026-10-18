@@ -1760,6 +1760,250 @@ mod tests {
     }
 
     #[test]
+    fn every_sql_feature_matrix_construct_and_limit_has_a_parser_probe() {
+        let matrix: serde_json::Value =
+            serde_json::from_str(include_str!("../../../shared/sql/ugoite-sql-rules.json"))
+                .expect("SQL feature matrix is valid JSON");
+        let constructs = matrix["feature_matrix"]["editor"]["constructs"]
+            .as_array()
+            .expect("SQL feature matrix lists editor constructs");
+        let construct = |id: &str| {
+            constructs
+                .iter()
+                .find(|entry| entry["id"] == id)
+                .unwrap_or_else(|| panic!("SQL matrix is missing construct {id}"))
+        };
+        let assert_contract = |id: &str, coverage: &str, limits: &[&str]| {
+            let entry = construct(id);
+            assert_eq!(entry["editor_coverage"], coverage, "{id}");
+            let declared_limits = entry["limits"]
+                .as_array()
+                .map(|items| {
+                    items
+                        .iter()
+                        .map(|item| item.as_str().unwrap())
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            assert_eq!(declared_limits, limits, "{id} limits need matching probes");
+        };
+        let supports = |sql: &str| {
+            let analysis = analyze_sql_structure(sql, &context());
+            assert_eq!(analysis.status, SqlStructureStatus::Supported, "{sql}");
+            assert_eq!(analysis.reason, None, "{sql}");
+        };
+        let rejects = |sql: &str, reason| {
+            let analysis = analyze_sql_structure(sql, &context());
+            assert_eq!(analysis.status, SqlStructureStatus::Unsupported, "{sql}");
+            assert_eq!(analysis.reason, Some(reason), "{sql}");
+        };
+
+        assert_contract(
+            "from_relation",
+            "context_only",
+            &[
+                "one relation",
+                "matching context relation",
+                "no alias",
+                "no joins",
+            ],
+        );
+        supports("SELECT * FROM \"Task\"");
+        rejects(
+            "SELECT * FROM \"Other\"",
+            SqlStructureReason::RelationMismatch,
+        );
+        rejects(
+            "SELECT * FROM \"Task\" AS task",
+            SqlStructureReason::RelationUnsupported,
+        );
+        rejects(
+            "SELECT * FROM \"Task\", \"Task\" AS other",
+            SqlStructureReason::RelationUnsupported,
+        );
+        rejects(
+            "SELECT * FROM \"Task\" JOIN \"Task\" AS other ON true",
+            SqlStructureReason::JoinUnsupported,
+        );
+
+        assert_contract(
+            "projection",
+            "bounded",
+            &[
+                "relation-free integer/string/boolean/NULL literal projections",
+                "wildcard or simple columns",
+                "allowlisted aggregates over supported arguments",
+            ],
+        );
+        supports("SELECT * FROM \"Task\"");
+        supports("SELECT \"field_101\" FROM \"Task\"");
+        supports("SELECT COUNT(*) FROM \"Task\"");
+        let relation_free_context = SqlStructureContext {
+            relation: String::new(),
+            columns: Vec::new(),
+            variables: Vec::new(),
+            stable_key: Vec::new(),
+        };
+        let relation_free_literal = analyze_sql_structure("SELECT 1", &relation_free_context);
+        assert_eq!(
+            relation_free_literal.status,
+            SqlStructureStatus::Supported,
+            "SELECT 1"
+        );
+        assert_eq!(relation_free_literal.reason, None, "SELECT 1");
+        rejects(
+            "SELECT CAST(\"field_102\" AS BIGINT) FROM \"Task\"",
+            SqlStructureReason::ProjectionUnsupported,
+        );
+
+        assert_contract(
+            "where_predicate",
+            "bounded",
+            &[
+                "AND of column-to-parameter comparisons",
+                "IS NULL and IS NOT NULL",
+                "no OR or NOT",
+            ],
+        );
+        supports(
+            "SELECT * FROM \"Task\" WHERE \"field_101\" = $status AND \"field_102\" >= $priority",
+        );
+        supports(
+            "SELECT * FROM \"Task\" WHERE \"field_101\" IS NULL AND \"field_102\" IS NOT NULL",
+        );
+        rejects(
+            "SELECT * FROM \"Task\" WHERE \"field_101\" = $status OR \"field_102\" = $priority",
+            SqlStructureReason::FilterUnsupported,
+        );
+        rejects(
+            "SELECT * FROM \"Task\" WHERE NOT (\"field_101\" = $status)",
+            SqlStructureReason::FilterUnsupported,
+        );
+
+        assert_contract(
+            "grouping",
+            "bounded",
+            &["simple columns only", "projected columns must be grouped"],
+        );
+        supports("SELECT \"field_101\" FROM \"Task\" GROUP BY \"field_101\"");
+        rejects(
+            "SELECT \"field_101\" FROM \"Task\" GROUP BY LOWER(\"field_101\")",
+            SqlStructureReason::GroupByUnsupported,
+        );
+        rejects(
+            "SELECT \"field_102\" FROM \"Task\" GROUP BY \"field_101\"",
+            SqlStructureReason::GroupByUnsupported,
+        );
+
+        assert_contract("having", "none", &[]);
+        rejects(
+            "SELECT COUNT(*) FROM \"Task\" HAVING COUNT(*) > 0",
+            SqlStructureReason::QueryClauseUnsupported,
+        );
+
+        assert_contract(
+            "ordering",
+            "bounded",
+            &["simple columns only", "ASC or DESC", "no NULLS FIRST/LAST"],
+        );
+        supports("SELECT * FROM \"Task\" ORDER BY \"field_101\" ASC, \"field_102\" DESC");
+        rejects(
+            "SELECT * FROM \"Task\" ORDER BY \"field_102\" + 1",
+            SqlStructureReason::SortUnsupported,
+        );
+        rejects(
+            "SELECT * FROM \"Task\" ORDER BY \"field_102\" NULLS FIRST",
+            SqlStructureReason::SortUnsupported,
+        );
+
+        assert_contract(
+            "row_limit",
+            "preserved_only",
+            &[
+                "the structure parser recognizes non-negative integer literals",
+                "there is no edit operation",
+            ],
+        );
+        supports("SELECT * FROM \"Task\" LIMIT 50 OFFSET 10");
+        rejects(
+            "SELECT * FROM \"Task\" LIMIT $priority",
+            SqlStructureReason::QueryClauseUnsupported,
+        );
+        rejects(
+            "SELECT * FROM \"Task\" LIMIT -1",
+            SqlStructureReason::QueryClauseUnsupported,
+        );
+        rejects(
+            "SELECT * FROM \"Task\" LIMIT 50 OFFSET -1",
+            SqlStructureReason::QueryClauseUnsupported,
+        );
+        let limit_proposal = propose_sql_structure_operation(
+            "SELECT * FROM \"Task\" LIMIT 50 OFFSET 10",
+            &context(),
+            SqlStructureOperation::SetSort { order_by: vec![] },
+        );
+        let proposed = limit_proposal.proposed_sql.expect("valid sort proposal");
+        assert!(proposed.contains("LIMIT 50"));
+        assert!(proposed.contains("OFFSET 10"));
+        assert!(!matrix["feature_matrix"]["editor"]["operations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|operation| operation["protocol"] == "set_limit"));
+
+        assert_contract("joins", "none", &[]);
+        rejects(
+            "SELECT * FROM \"Task\" JOIN \"Task\" AS other ON true",
+            SqlStructureReason::JoinUnsupported,
+        );
+        assert_contract("common_table_expressions", "none", &[]);
+        rejects(
+            "WITH current AS (SELECT * FROM \"Task\") SELECT * FROM current",
+            SqlStructureReason::CommonTableExpressionUnsupported,
+        );
+        assert_contract("set_operations", "none", &[]);
+        rejects(
+            "SELECT * FROM \"Task\" UNION SELECT * FROM \"Task\"",
+            SqlStructureReason::SetOperationUnsupported,
+        );
+        assert_contract("values_query", "none", &[]);
+        rejects("VALUES (1)", SqlStructureReason::SetOperationUnsupported);
+        assert_contract("general_expressions", "none", &[]);
+        for sql in [
+            "SELECT CASE WHEN \"field_102\" > 0 THEN 1 ELSE 0 END FROM \"Task\"",
+            "SELECT \"field_102\" + 1 FROM \"Task\"",
+        ] {
+            rejects(sql, SqlStructureReason::ProjectionUnsupported);
+        }
+        rejects(
+            "SELECT LOWER(\"field_101\") FROM \"Task\"",
+            SqlStructureReason::AggregateUnsupported,
+        );
+
+        let tested_ids = [
+            "from_relation",
+            "projection",
+            "where_predicate",
+            "grouping",
+            "having",
+            "ordering",
+            "row_limit",
+            "joins",
+            "common_table_expressions",
+            "set_operations",
+            "values_query",
+            "general_expressions",
+        ]
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+        let matrix_ids = constructs
+            .iter()
+            .map(|entry| entry["id"].as_str().expect("construct ID"))
+            .collect::<BTreeSet<_>>();
+        assert_eq!(matrix_ids, tested_ids, "each matrix construct needs probes");
+    }
+
+    #[test]
     fn shared_sql_feature_matrix_matches_structure_protocol_and_aggregate_types() {
         let matrix: serde_json::Value =
             serde_json::from_str(include_str!("../../../shared/sql/ugoite-sql-rules.json"))

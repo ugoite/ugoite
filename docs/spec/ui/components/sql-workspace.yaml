@@ -26,25 +26,29 @@ query or persistence authority.
 
 The adapter-supplied action list is the only source of structured operations.
 `analyzeSqlStructure` and `proposeSqlStructureOperation` in the portable client
-use the Rust domain parser through WASM. The capability contract accepts one
-SELECT over the selected Form relation and literal-only scalar SELECT
-statements without a relation, such as `SELECT 1`. For a relation-free
-statement, the adapter provides an empty relation context and the parser exposes
-only operations that do not need Form columns. Typed parameter comparisons,
-null checks, and column ordering remain bound to Form metadata. It reports
-stable reason codes for unsupported SQL and never makes direct SQL unavailable.
+use the Rust domain parser through WASM. The current bounded editor supports
+columns, filters, sort, aggregate, group-by, and distinct operations over one
+trusted Form relation. It accepts wildcard or simple-column projections,
+allowlisted aggregates, typed column-to-parameter comparisons joined by AND,
+null checks, simple-column grouping, and simple-column ordering. Relation-free
+literal projections such as `SELECT 1` are supported without Form-column
+actions; aggregates and parameter expressions still require a Form relation.
+Numeric literal LIMIT/OFFSET clauses are preserved but have no edit operation.
+Joins, CTEs, set operations, HAVING, general expressions, relation aliases, and
+other unsupported shapes return stable reason codes instead of being rewritten.
 The checked backend-admission and current structure-editor coverage inventory
 is recorded in the [SQL feature matrix contract](../../../architecture/contracts/sql-gui-feature-matrix.md).
+Direct SQL editing remains available for constructs outside this subset.
 Sort proposals append adapter-supplied stable keys where needed. A proposal is
 non-mutating: the adapter must show its SQL diff and wait for explicit user
 confirmation before updating the controlled SQL value. `SqlStructureToolbar`
-renders columns, filter, and sort controls when a trusted single-Form context
-exists. It disables operations that the Rust parser cannot safely round-trip
-and includes the capability reason in each disabled action's accessible name.
-Its proposal view shows the existing and proposed SQL and applies the new SQL
-only after explicit confirmation. `/sql/new`, Saved SQL detail/edit, and
-Composition inline SQL supply their context from Form metadata together with a
-relation-free scalar context.
+renders the six structured actions when a trusted single-Form context exists,
+disables operations that the Rust parser cannot safely round-trip, and includes
+the capability reason in each disabled action's accessible name. Its proposal
+view shows the existing and proposed SQL and applies the new SQL only after
+explicit confirmation. `/sql/new`, Saved SQL detail/edit, and Composition
+inline SQL supply their context from Form metadata together with a relation-free
+scalar context.
 
 ## Preview and results
 

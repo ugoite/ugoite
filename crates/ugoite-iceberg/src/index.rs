@@ -3034,9 +3034,13 @@ pub(crate) async fn execute_sql_query_authorized_by_form_count_at_checkpoint_sta
         .map_err(map_sql_error)
 }
 
-/// Shared read-only SQL admission. This runs before any SQL planning,
-/// checkpoint resolution, or DataFusion execution so that write/DDL,
-/// multi-statement, and non-SELECT input is rejected with the same stable
+/// Shared read-only SQL statement gate. This runs before any SQL planning,
+/// checkpoint resolution, or DataFusion execution and admits exactly one
+/// DataFusion `Query` AST. A query AST can contain a non-SELECT body such as
+/// `VALUES`; logical planning and authorized physical-plan validation remain
+/// responsible for rejecting query bodies or relations that cannot execute
+/// against an approved read-only data source. The gate rejects write/DDL,
+/// non-query, and multi-statement input with the stable
 /// `READ_ONLY_SQL_REQUIRED` contract on every entry point.
 pub fn validate_read_only_sql(sql: &str) -> Result<()> {
     if sql.trim().is_empty() {
@@ -3051,22 +3055,22 @@ pub fn validate_read_only_sql(sql: &str) -> Result<()> {
     if parsed.len() != 1 {
         return Err(AppError::invalid_input(
             ErrorCode::ReadOnlySqlRequired,
-            "read-only SQL is required: expected exactly one SELECT statement",
+            "read-only SQL is required: expected exactly one query statement",
         )
         .into());
     }
     let statement = parsed.front().expect("one statement was checked above");
-    let is_select = match statement {
+    let is_query_statement = match statement {
         datafusion::sql::parser::Statement::Statement(inner) => matches!(
             inner.as_ref(),
             datafusion::sql::sqlparser::ast::Statement::Query(_)
         ),
         _ => false,
     };
-    if !is_select {
+    if !is_query_statement {
         return Err(AppError::invalid_input(
             ErrorCode::ReadOnlySqlRequired,
-            "read-only SQL is required: only a single SELECT statement is allowed",
+            "read-only SQL is required: only a single query statement is allowed",
         )
         .into());
     }
