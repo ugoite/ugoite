@@ -59,7 +59,7 @@ const context: SqlStructureAdapterContext = {
       filterable: true,
       sortable: true,
       supportedOperators: ["eq", "gt"],
-      aggregateFunctions: ["count", "sum", "avg", "min", "max"],
+      aggregateFunctions: ["count", "sum", "avg", "mean", "min", "max"],
       groupable: true,
       distinctable: true,
     },
@@ -85,7 +85,7 @@ const context: SqlStructureAdapterContext = {
 };
 
 const analysis: SqlStructureAnalysis = {
-  contract_version: 1,
+  contract_version: 2,
   status: "supported",
   projection: ["*"],
   filters: [],
@@ -113,7 +113,7 @@ describe("SqlStructureToolbar adapter", () => {
     proposeMock.mockReset();
     analyzeMock.mockResolvedValue(analysis);
     proposeMock.mockImplementation(async (baseSql: string) => ({
-      contract_version: 1,
+      contract_version: 2,
       status: "supported",
       base_sql: baseSql,
       proposed_sql: 'SELECT "amount" FROM "Orders" ORDER BY "_ugoite_id" ASC',
@@ -289,7 +289,7 @@ describe("SqlStructureToolbar adapter", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
     resolveProposal?.({
-      contract_version: 1,
+      contract_version: 2,
       status: "supported",
       base_sql: initialSql,
       proposed_sql: 'SELECT "amount" FROM "Orders"',
@@ -424,7 +424,7 @@ describe("SqlStructureToolbar adapter", () => {
         kind: "set_aggregates",
         aggregates: [{
           function: "sum",
-          column: "amount",
+          arguments: [{ kind: "column", column: "amount" }],
           distinct: true,
         }],
       },
@@ -459,7 +459,7 @@ describe("SqlStructureToolbar adapter", () => {
     );
 
     const column = () => within(dialog).getByLabelText("Column");
-    expect(column()).toHaveValue("");
+    expect(column()).toHaveValue("*");
     expect(column().closest(".sql-structure-aggregate-row")).toHaveClass(
       "sql-structure-aggregate-row--count-all",
     );
@@ -484,11 +484,88 @@ describe("SqlStructureToolbar adapter", () => {
         kind: "set_aggregates",
         aggregates: [{
           function: "count",
-          column: "amount",
+          arguments: [{ kind: "column", column: "amount" }],
           distinct: true,
         }],
       },
     );
+  });
+
+  it("edits COUNT(DISTINCT *) and multi-column COUNT arguments", async () => {
+    const sql = 'SELECT * FROM "Orders"';
+    let actions: readonly SQLWorkspaceAction[] = [];
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [context]}
+        onSqlChange={vi.fn()}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "aggregate")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "aggregate")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Aggregate" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add aggregate" }),
+    );
+    fireEvent.click(within(dialog).getByLabelText("Distinct values"));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(proposeMock).toHaveBeenCalledWith(sql, context.parser, {
+      kind: "set_aggregates",
+      aggregates: [{
+        function: "count",
+        arguments: [{ kind: "wildcard" }],
+        distinct: true,
+      }],
+    });
+  });
+
+  it("adds multiple COUNT arguments from the aggregate editor", async () => {
+    const sql = 'SELECT * FROM "Orders"';
+    let actions: readonly SQLWorkspaceAction[] = [];
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [context]}
+        onSqlChange={vi.fn()}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "aggregate")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "aggregate")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Aggregate" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add aggregate" }),
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add aggregate argument" }),
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add aggregate argument" }),
+    );
+    expect(within(dialog).queryByRole("option", { name: "All rows" }))
+      .toBeNull();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    const operation = proposeMock.mock.calls[0][2] as {
+      aggregates: Array<{ arguments: unknown[]; distinct: boolean }>;
+    };
+    expect(operation.aggregates[0].arguments).toHaveLength(2);
+    expect(operation.aggregates[0].distinct).toBe(false);
   });
 
   it("proposes only capability-approved GROUP BY keys and SELECT DISTINCT", async () => {

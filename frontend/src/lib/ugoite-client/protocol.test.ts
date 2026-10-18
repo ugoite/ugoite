@@ -168,7 +168,7 @@ describe("portable Ugoite API protocol WASM", () => {
       projection: ["field_101"],
       aggregates: [{
         function: "count",
-        column: "field_102",
+        arguments: [{ kind: "column", column: "field_102" }],
         distinct: true,
         alias: { name: "unique_count", quoted: false },
       }],
@@ -183,7 +183,7 @@ describe("portable Ugoite API protocol WASM", () => {
         kind: "set_aggregates",
         aggregates: [{
           function: "sum",
-          column: "field_102",
+          arguments: [{ kind: "column", column: "field_102" }],
           distinct: true,
           alias: { name: "total", quoted: true },
         }],

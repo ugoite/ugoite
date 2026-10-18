@@ -5,6 +5,7 @@
 //! authorize, plan, or execute queries. The server remains authoritative for
 //! read-only SQL validation, Form access, parameter types, and pagination.
 
+use crate::sql_functions::{user_sql_aggregate, SqlAggregateDistinct, SqlAggregateWildcard};
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
     BinaryOperator, Distinct, DuplicateTreatment, Expr, Function, FunctionArg, FunctionArgExpr,
@@ -20,7 +21,7 @@ use std::collections::BTreeSet;
 use crate::sql_document::{has_comment_token_in_range, source_range_from_span, SqlSourceRange};
 
 /// The parser/capability contract version exposed through the WASM adapter.
-pub const SQL_STRUCTURE_CONTRACT_VERSION: u32 = 1;
+pub const SQL_STRUCTURE_CONTRACT_VERSION: u32 = 2;
 
 /// Keep SQL parsing within the same bound as the stateless SQL request.
 pub const MAX_SQL_STRUCTURE_QUERY_BYTES: usize = 256 * 1024;
@@ -130,12 +131,19 @@ pub enum SqlStructureOperation {
 #[serde(deny_unknown_fields)]
 pub struct SqlStructureAggregate {
     pub function: SqlStructureAggregateFunction,
-    /// `None` represents the supported `COUNT(*)` form.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub column: Option<String>,
+    /// SQL aggregate arguments. `COUNT()` is represented by an empty list.
+    pub arguments: Vec<SqlStructureAggregateArgument>,
     pub distinct: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alias: Option<SqlStructureAlias>,
+}
+
+/// One aggregate argument, using trusted schema identifiers instead of SQL fragments.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum SqlStructureAggregateArgument {
+    Wildcard,
+    Column { column: String },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -144,6 +152,7 @@ pub enum SqlStructureAggregateFunction {
     Count,
     Sum,
     Avg,
+    Mean,
     Min,
     Max,
 }
@@ -731,58 +740,84 @@ fn parse_aggregate(
     if name.quote_style.is_some() {
         return Err(SqlStructureReason::AggregateUnsupported);
     }
-    let aggregate_function = match name.value.to_ascii_lowercase().as_str() {
-        "count" => SqlStructureAggregateFunction::Count,
-        "sum" => SqlStructureAggregateFunction::Sum,
-        "avg" => SqlStructureAggregateFunction::Avg,
-        "min" => SqlStructureAggregateFunction::Min,
-        "max" => SqlStructureAggregateFunction::Max,
-        _ => return Err(SqlStructureReason::AggregateUnsupported),
+    let descriptor =
+        user_sql_aggregate(&name.value).ok_or(SqlStructureReason::AggregateUnsupported)?;
+    let aggregate_function = if name.value.eq_ignore_ascii_case("mean") {
+        SqlStructureAggregateFunction::Mean
+    } else {
+        match descriptor.name {
+            "count" => SqlStructureAggregateFunction::Count,
+            "sum" => SqlStructureAggregateFunction::Sum,
+            "avg" => SqlStructureAggregateFunction::Avg,
+            "min" => SqlStructureAggregateFunction::Min,
+            "max" => SqlStructureAggregateFunction::Max,
+            _ => return Err(SqlStructureReason::AggregateUnsupported),
+        }
     };
-    let FunctionArguments::List(arguments) = &function.args else {
-        return Err(SqlStructureReason::AggregateUnsupported);
+    let (argument_nodes, clauses, duplicate_treatment) = match &function.args {
+        FunctionArguments::None => (&[][..], &[][..], None),
+        FunctionArguments::List(arguments) => (
+            arguments.args.as_slice(),
+            arguments.clauses.as_slice(),
+            arguments.duplicate_treatment,
+        ),
+        FunctionArguments::Subquery(_) => return Err(SqlStructureReason::AggregateUnsupported),
     };
-    if !arguments.clauses.is_empty() || arguments.args.len() != 1 {
+    if !clauses.is_empty() || !descriptor.arity.accepts(argument_nodes.len()) {
         return Err(SqlStructureReason::AggregateUnsupported);
     }
-    let distinct = match arguments.duplicate_treatment {
+    let distinct = match duplicate_treatment {
         None | Some(DuplicateTreatment::All) => false,
         Some(DuplicateTreatment::Distinct) => true,
     };
-    let FunctionArg::Unnamed(argument) = &arguments.args[0] else {
+    if distinct && descriptor.distinct == SqlAggregateDistinct::Unsupported {
         return Err(SqlStructureReason::AggregateUnsupported);
-    };
-    let column = match argument {
-        FunctionArgExpr::Wildcard if aggregate_function == SqlStructureAggregateFunction::Count => {
-            if distinct {
-                return Err(SqlStructureReason::AggregateUnsupported);
-            }
-            None
-        }
-        FunctionArgExpr::Expr(Expr::Identifier(identifier)) => {
-            let column = find_column_by_ident(context, identifier)
-                .ok_or(SqlStructureReason::UnknownColumn)?;
-            if distinct && !column_type_supports_distinct_aggregate(column.column_type) {
-                return Err(SqlStructureReason::AggregateTypeUnsupported);
-            }
-            if matches!(
-                aggregate_function,
-                SqlStructureAggregateFunction::Sum | SqlStructureAggregateFunction::Avg
-            ) && !column_type_supports_numeric_aggregate(column.column_type)
+    }
+    if distinct
+        && descriptor.distinct == SqlAggregateDistinct::SingleArgument
+        && argument_nodes.len() != 1
+    {
+        return Err(SqlStructureReason::AggregateUnsupported);
+    }
+    let mut parsed_arguments = Vec::with_capacity(argument_nodes.len());
+    for argument_node in argument_nodes {
+        let FunctionArg::Unnamed(argument) = argument_node else {
+            return Err(SqlStructureReason::AggregateUnsupported);
+        };
+        match argument {
+            FunctionArgExpr::Wildcard
+                if descriptor.wildcard != SqlAggregateWildcard::Unsupported
+                    && argument_nodes.len() == 1 =>
             {
-                return Err(SqlStructureReason::AggregateTypeUnsupported);
+                parsed_arguments.push(SqlStructureAggregateArgument::Wildcard);
             }
-            if matches!(
-                aggregate_function,
-                SqlStructureAggregateFunction::Min | SqlStructureAggregateFunction::Max
-            ) && !column_type_supports_sort(column.column_type)
-            {
-                return Err(SqlStructureReason::AggregateTypeUnsupported);
+            FunctionArgExpr::Expr(Expr::Identifier(identifier)) => {
+                let column = find_column_by_ident(context, identifier)
+                    .ok_or(SqlStructureReason::UnknownColumn)?;
+                if distinct && !column_type_supports_distinct_aggregate(column.column_type) {
+                    return Err(SqlStructureReason::AggregateTypeUnsupported);
+                }
+                if matches!(
+                    descriptor.input,
+                    crate::sql_functions::SqlAggregateInput::Numeric
+                ) && !column_type_supports_numeric_aggregate(column.column_type)
+                {
+                    return Err(SqlStructureReason::AggregateTypeUnsupported);
+                }
+                if matches!(
+                    descriptor.input,
+                    crate::sql_functions::SqlAggregateInput::Orderable
+                ) && !column_type_supports_sort(column.column_type)
+                {
+                    return Err(SqlStructureReason::AggregateTypeUnsupported);
+                }
+                parsed_arguments.push(SqlStructureAggregateArgument::Column {
+                    column: column.name.clone(),
+                });
             }
-            Some(column.name.clone())
+            _ => return Err(SqlStructureReason::AggregateUnsupported),
         }
-        _ => return Err(SqlStructureReason::AggregateUnsupported),
-    };
+    }
     if alias.as_ref().is_some_and(|alias| {
         alias.name.is_empty()
             || alias.name.len() > 1024
@@ -793,7 +828,7 @@ fn parse_aggregate(
     }
     Ok(SqlStructureAggregate {
         function: aggregate_function,
-        column,
+        arguments: parsed_arguments,
         distinct,
         alias,
     })
@@ -1401,24 +1436,58 @@ fn validate_aggregate(
     context: &SqlStructureContext,
     aggregate: &SqlStructureAggregate,
 ) -> Result<(), SqlStructureReason> {
-    match (&aggregate.function, aggregate.column.as_deref()) {
-        (SqlStructureAggregateFunction::Count, None) if !aggregate.distinct => {}
-        (SqlStructureAggregateFunction::Count, Some(column)) => {
-            find_column(context, column).ok_or(SqlStructureReason::UnknownColumn)?;
-        }
-        (SqlStructureAggregateFunction::Sum | SqlStructureAggregateFunction::Avg, Some(column)) => {
-            let column = find_column(context, column).ok_or(SqlStructureReason::UnknownColumn)?;
-            if !column_type_supports_numeric_aggregate(column.column_type) {
-                return Err(SqlStructureReason::AggregateTypeUnsupported);
+    let function_name = match aggregate.function {
+        SqlStructureAggregateFunction::Count => "count",
+        SqlStructureAggregateFunction::Sum => "sum",
+        SqlStructureAggregateFunction::Avg => "avg",
+        SqlStructureAggregateFunction::Mean => "mean",
+        SqlStructureAggregateFunction::Min => "min",
+        SqlStructureAggregateFunction::Max => "max",
+    };
+    let descriptor =
+        user_sql_aggregate(function_name).ok_or(SqlStructureReason::AggregateUnsupported)?;
+    if !descriptor.arity.accepts(aggregate.arguments.len()) {
+        return Err(SqlStructureReason::AggregateUnsupported);
+    }
+    if aggregate.distinct
+        && (descriptor.distinct == SqlAggregateDistinct::Unsupported
+            || (descriptor.distinct == SqlAggregateDistinct::SingleArgument
+                && aggregate.arguments.len() != 1))
+    {
+        return Err(SqlStructureReason::AggregateUnsupported);
+    }
+    for argument in &aggregate.arguments {
+        match argument {
+            SqlStructureAggregateArgument::Wildcard
+                if descriptor.wildcard != SqlAggregateWildcard::Unsupported
+                    && aggregate.arguments.len() == 1 => {}
+            SqlStructureAggregateArgument::Wildcard => {
+                return Err(SqlStructureReason::AggregateUnsupported);
+            }
+            SqlStructureAggregateArgument::Column { column } => {
+                let column =
+                    find_column(context, column).ok_or(SqlStructureReason::UnknownColumn)?;
+                if aggregate.distinct
+                    && !column_type_supports_distinct_aggregate(column.column_type)
+                {
+                    return Err(SqlStructureReason::AggregateTypeUnsupported);
+                }
+                if matches!(
+                    descriptor.input,
+                    crate::sql_functions::SqlAggregateInput::Numeric
+                ) && !column_type_supports_numeric_aggregate(column.column_type)
+                {
+                    return Err(SqlStructureReason::AggregateTypeUnsupported);
+                }
+                if matches!(
+                    descriptor.input,
+                    crate::sql_functions::SqlAggregateInput::Orderable
+                ) && !column_type_supports_sort(column.column_type)
+                {
+                    return Err(SqlStructureReason::AggregateTypeUnsupported);
+                }
             }
         }
-        (SqlStructureAggregateFunction::Min | SqlStructureAggregateFunction::Max, Some(column)) => {
-            let column = find_column(context, column).ok_or(SqlStructureReason::UnknownColumn)?;
-            if !column_type_supports_sort(column.column_type) {
-                return Err(SqlStructureReason::AggregateTypeUnsupported);
-            }
-        }
-        _ => return Err(SqlStructureReason::AggregateUnsupported),
     }
     if aggregate.alias.as_ref().is_some_and(|alias| {
         alias.name.is_empty()
@@ -1436,12 +1505,9 @@ fn aggregate_to_select_item(aggregate: SqlStructureAggregate) -> SelectItem {
         SqlStructureAggregateFunction::Count => "COUNT",
         SqlStructureAggregateFunction::Sum => "SUM",
         SqlStructureAggregateFunction::Avg => "AVG",
+        SqlStructureAggregateFunction::Mean => "MEAN",
         SqlStructureAggregateFunction::Min => "MIN",
         SqlStructureAggregateFunction::Max => "MAX",
-    };
-    let argument = match aggregate.column {
-        Some(column) => FunctionArgExpr::Expr(Expr::Identifier(Ident::with_quote('"', column))),
-        None => FunctionArgExpr::Wildcard,
     };
     let function = Expr::Function(Function {
         name: ObjectName(vec![ObjectNamePart::Identifier(Ident::new(function_name))]),
@@ -1449,7 +1515,18 @@ fn aggregate_to_select_item(aggregate: SqlStructureAggregate) -> SelectItem {
         parameters: FunctionArguments::None,
         args: FunctionArguments::List(FunctionArgumentList {
             duplicate_treatment: aggregate.distinct.then_some(DuplicateTreatment::Distinct),
-            args: vec![FunctionArg::Unnamed(argument)],
+            args: aggregate
+                .arguments
+                .into_iter()
+                .map(|argument| {
+                    FunctionArg::Unnamed(match argument {
+                        SqlStructureAggregateArgument::Wildcard => FunctionArgExpr::Wildcard,
+                        SqlStructureAggregateArgument::Column { column } => {
+                            FunctionArgExpr::Expr(Expr::Identifier(Ident::with_quote('"', column)))
+                        }
+                    })
+                })
+                .collect(),
             clauses: Vec::new(),
         }),
         filter: None,
@@ -1743,6 +1820,10 @@ mod tests {
                 SqlStructureColumn {
                     name: "opaque_json".to_owned(),
                     column_type: SqlStructureColumnType::Json,
+                },
+                SqlStructureColumn {
+                    name: "opaque_other".to_owned(),
+                    column_type: SqlStructureColumnType::Other,
                 },
             ],
             variables: vec![
@@ -2098,7 +2179,9 @@ mod tests {
             analysis.aggregates[0],
             SqlStructureAggregate {
                 function: SqlStructureAggregateFunction::Count,
-                column: Some("field_102".to_owned()),
+                arguments: vec![SqlStructureAggregateArgument::Column {
+                    column: "field_102".to_owned(),
+                }],
                 distinct: true,
                 alias: Some(SqlStructureAlias {
                     name: "unique_count".to_owned(),
@@ -2110,7 +2193,10 @@ mod tests {
             analysis.aggregates[1].function,
             SqlStructureAggregateFunction::Count
         );
-        assert_eq!(analysis.aggregates[1].column, None);
+        assert_eq!(
+            analysis.aggregates[1].arguments,
+            vec![SqlStructureAggregateArgument::Wildcard]
+        );
         assert_eq!(
             analysis
                 .aggregates
@@ -2135,6 +2221,128 @@ mod tests {
     }
 
     #[test]
+    fn aggregate_editor_tracks_registry_signatures_and_modifiers() {
+        for sql in [
+            "SELECT COUNT() FROM \"Task\"",
+            "SELECT COUNT(*) FROM \"Task\"",
+            "SELECT COUNT(DISTINCT *) FROM \"Task\"",
+            "SELECT COUNT(\"field_101\", \"field_102\") FROM \"Task\"",
+            "SELECT MEAN(\"field_102\") FROM \"Task\"",
+        ] {
+            let analysis = analyze_sql_structure(sql, &context());
+            assert_eq!(analysis.status, SqlStructureStatus::Supported, "{sql}");
+            assert!(analysis.capabilities.aggregate.enabled, "{sql}");
+        }
+
+        let count_empty = analyze_sql_structure("SELECT COUNT() FROM \"Task\"", &context());
+        assert!(count_empty.aggregates[0].arguments.is_empty());
+        let count_distinct_star =
+            analyze_sql_structure("SELECT COUNT(DISTINCT *) FROM \"Task\"", &context());
+        assert_eq!(
+            count_distinct_star.aggregates[0].arguments,
+            vec![SqlStructureAggregateArgument::Wildcard]
+        );
+        assert!(count_distinct_star.aggregates[0].distinct);
+        let mean = analyze_sql_structure("SELECT MEAN(\"field_102\") FROM \"Task\"", &context());
+        assert_eq!(
+            mean.aggregates[0].function,
+            SqlStructureAggregateFunction::Mean
+        );
+        let mean_rewrite = propose_sql_structure_operation(
+            "SELECT MEAN(\"field_102\") FROM \"Task\"",
+            &context(),
+            SqlStructureOperation::SetAggregates {
+                aggregates: mean.aggregates.clone(),
+            },
+        );
+        assert!(mean_rewrite
+            .proposed_sql
+            .expect("MEAN rewrite")
+            .contains("MEAN(\"field_102\")"));
+
+        let multiple = propose_sql_structure_operation(
+            "SELECT * FROM \"Task\"",
+            &context(),
+            SqlStructureOperation::SetAggregates {
+                aggregates: vec![SqlStructureAggregate {
+                    function: SqlStructureAggregateFunction::Count,
+                    arguments: vec![
+                        SqlStructureAggregateArgument::Column {
+                            column: "field_101".to_owned(),
+                        },
+                        SqlStructureAggregateArgument::Column {
+                            column: "field_102".to_owned(),
+                        },
+                    ],
+                    distinct: false,
+                    alias: None,
+                }],
+            },
+        );
+        assert_eq!(multiple.status, SqlStructureStatus::Supported);
+        assert!(multiple
+            .proposed_sql
+            .unwrap()
+            .contains("COUNT(\"field_101\", \"field_102\")"));
+
+        let unsupported_distinct_arity = analyze_sql_structure(
+            "SELECT COUNT(DISTINCT \"field_101\", \"field_102\") FROM \"Task\"",
+            &context(),
+        );
+        assert_eq!(
+            unsupported_distinct_arity.status,
+            SqlStructureStatus::Unsupported
+        );
+        assert_eq!(
+            unsupported_distinct_arity.reason,
+            Some(SqlStructureReason::AggregateUnsupported)
+        );
+
+        let count_other =
+            analyze_sql_structure("SELECT COUNT(\"opaque_other\") FROM \"Task\"", &context());
+        assert_eq!(count_other.status, SqlStructureStatus::Supported);
+        let distinct_count_other = analyze_sql_structure(
+            "SELECT COUNT(DISTINCT \"opaque_other\") FROM \"Task\"",
+            &context(),
+        );
+        assert_eq!(distinct_count_other.status, SqlStructureStatus::Unsupported);
+        assert_eq!(
+            distinct_count_other.reason,
+            Some(SqlStructureReason::AggregateTypeUnsupported)
+        );
+    }
+
+    #[test]
+    fn every_registered_aggregate_name_and_alias_has_a_gui_parse_path() {
+        for descriptor in crate::sql_functions::USER_SQL_AGGREGATES {
+            let argument = match descriptor.input {
+                crate::sql_functions::SqlAggregateInput::AnyScalar => "\"field_101\"",
+                crate::sql_functions::SqlAggregateInput::Numeric => "\"field_102\"",
+                crate::sql_functions::SqlAggregateInput::Orderable => "\"field_101\"",
+            };
+            for spelling in
+                std::iter::once(descriptor.name).chain(descriptor.aliases.iter().copied())
+            {
+                let sql = format!("SELECT {spelling}({argument}) FROM \"Task\"");
+                let analysis = analyze_sql_structure(&sql, &context());
+                assert_eq!(analysis.status, SqlStructureStatus::Supported, "{sql}");
+                assert_eq!(analysis.aggregates.len(), 1, "{sql}");
+
+                if descriptor.distinct != SqlAggregateDistinct::Unsupported {
+                    let distinct_sql =
+                        format!("SELECT {spelling}(DISTINCT {argument}) FROM \"Task\"");
+                    let distinct_analysis = analyze_sql_structure(&distinct_sql, &context());
+                    assert_eq!(
+                        distinct_analysis.status,
+                        SqlStructureStatus::Supported,
+                        "{distinct_sql}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn proposes_aggregate_group_by_and_select_distinct_operations_as_ast_rewrites() {
         let sql = "SELECT \"field_101\" FROM \"Task\"";
         let grouped = propose_sql_structure_operation(
@@ -2155,7 +2363,9 @@ mod tests {
             SqlStructureOperation::SetAggregates {
                 aggregates: vec![SqlStructureAggregate {
                     function: SqlStructureAggregateFunction::Sum,
-                    column: Some("field_102".to_owned()),
+                    arguments: vec![SqlStructureAggregateArgument::Column {
+                        column: "field_102".to_owned(),
+                    }],
                     distinct: true,
                     alias: Some(SqlStructureAlias {
                         name: "total".to_owned(),
@@ -2192,7 +2402,7 @@ mod tests {
             SqlStructureOperation::SetAggregates {
                 aggregates: vec![SqlStructureAggregate {
                     function: SqlStructureAggregateFunction::Count,
-                    column: None,
+                    arguments: vec![SqlStructureAggregateArgument::Wildcard],
                     distinct: false,
                     alias: Some(SqlStructureAlias {
                         name: "total".to_owned(),
@@ -2211,7 +2421,9 @@ mod tests {
             SqlStructureOperation::SetAggregates {
                 aggregates: vec![SqlStructureAggregate {
                     function: SqlStructureAggregateFunction::Max,
-                    column: Some("field_102".to_owned()),
+                    arguments: vec![SqlStructureAggregateArgument::Column {
+                        column: "field_102".to_owned(),
+                    }],
                     distinct: false,
                     alias: None,
                 }],
@@ -2231,37 +2443,55 @@ mod tests {
                 aggregates: vec![
                     SqlStructureAggregate {
                         function: SqlStructureAggregateFunction::Count,
-                        column: None,
+                        arguments: vec![SqlStructureAggregateArgument::Wildcard],
                         distinct: false,
                         alias: None,
                     },
                     SqlStructureAggregate {
                         function: SqlStructureAggregateFunction::Count,
-                        column: Some("field_101".to_owned()),
+                        arguments: vec![SqlStructureAggregateArgument::Column {
+                            column: "field_101".to_owned(),
+                        }],
                         distinct: true,
                         alias: None,
                     },
                     SqlStructureAggregate {
                         function: SqlStructureAggregateFunction::Sum,
-                        column: Some("field_102".to_owned()),
+                        arguments: vec![SqlStructureAggregateArgument::Column {
+                            column: "field_102".to_owned(),
+                        }],
                         distinct: false,
                         alias: None,
                     },
                     SqlStructureAggregate {
                         function: SqlStructureAggregateFunction::Avg,
-                        column: Some("field_102".to_owned()),
+                        arguments: vec![SqlStructureAggregateArgument::Column {
+                            column: "field_102".to_owned(),
+                        }],
+                        distinct: false,
+                        alias: None,
+                    },
+                    SqlStructureAggregate {
+                        function: SqlStructureAggregateFunction::Mean,
+                        arguments: vec![SqlStructureAggregateArgument::Column {
+                            column: "field_102".to_owned(),
+                        }],
                         distinct: false,
                         alias: None,
                     },
                     SqlStructureAggregate {
                         function: SqlStructureAggregateFunction::Min,
-                        column: Some("field_102".to_owned()),
+                        arguments: vec![SqlStructureAggregateArgument::Column {
+                            column: "field_102".to_owned(),
+                        }],
                         distinct: false,
                         alias: None,
                     },
                     SqlStructureAggregate {
                         function: SqlStructureAggregateFunction::Max,
-                        column: Some("field_102".to_owned()),
+                        arguments: vec![SqlStructureAggregateArgument::Column {
+                            column: "field_102".to_owned(),
+                        }],
                         distinct: false,
                         alias: None,
                     },
@@ -2275,6 +2505,7 @@ mod tests {
             "COUNT(DISTINCT \"field_101\")",
             "SUM(\"field_102\")",
             "AVG(\"field_102\")",
+            "MEAN(\"field_102\")",
             "MIN(\"field_102\")",
             "MAX(\"field_102\")",
         ] {
@@ -2292,10 +2523,6 @@ mod tests {
             (
                 "SELECT COUNT(DISTINCT \"opaque_json\") FROM \"Task\"",
                 SqlStructureReason::AggregateTypeUnsupported,
-            ),
-            (
-                "SELECT COUNT(DISTINCT *) FROM \"Task\"",
-                SqlStructureReason::AggregateUnsupported,
             ),
             (
                 "SELECT COUNT(*) FILTER (WHERE \"field_102\" > 0) FROM \"Task\"",
@@ -2347,15 +2574,15 @@ mod tests {
         );
         assert!(invalid_group.proposed_sql.is_none());
 
-        let unsupported_sql = "SELECT COUNT(DISTINCT *) FROM \"Task\"";
-        let rejected = propose_sql_structure_operation(
-            unsupported_sql,
+        let supported_sql = "SELECT COUNT(DISTINCT *) FROM \"Task\"";
+        let accepted = propose_sql_structure_operation(
+            supported_sql,
             &context(),
             SqlStructureOperation::SetDistinct { distinct: true },
         );
-        assert_eq!(rejected.status, SqlStructureStatus::Unsupported);
-        assert_eq!(rejected.base_sql, unsupported_sql);
-        assert!(rejected.proposed_sql.is_none());
+        assert_eq!(accepted.status, SqlStructureStatus::Supported);
+        assert_eq!(accepted.base_sql, supported_sql);
+        assert!(accepted.proposed_sql.is_some());
 
         let incompatible_distinct = "SELECT \"field_101\" FROM \"Task\" ORDER BY \"_ugoite_id\"";
         let rejected = propose_sql_structure_operation(
@@ -2391,7 +2618,7 @@ mod tests {
             SqlStructureOperation::SetAggregates {
                 aggregates: vec![SqlStructureAggregate {
                     function: SqlStructureAggregateFunction::Count,
-                    column: None,
+                    arguments: vec![SqlStructureAggregateArgument::Wildcard],
                     distinct: false,
                     alias: None,
                 }],

@@ -5377,11 +5377,30 @@ a.tool {
 }
 
 .sql-structure-aggregate-row {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto 44px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto auto 44px;
 }
 
 .sql-structure-aggregate-row--count-all {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) 44px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto auto 44px;
+}
+
+.sql-structure-aggregate-arguments {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sql-structure-aggregate-argument {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sql-structure-aggregate-argument .ui-field {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .sql-structure-filter-row .ui-input,

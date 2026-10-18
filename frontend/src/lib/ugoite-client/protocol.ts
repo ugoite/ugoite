@@ -283,8 +283,13 @@ export type SqlStructureAggregateFunction =
   | "count"
   | "sum"
   | "avg"
+  | "mean"
   | "min"
   | "max";
+
+export type SqlStructureAggregateArgument =
+  | { kind: "wildcard" }
+  | { kind: "column"; column: string };
 
 export type SqlStructureAlias = {
   name: string;
@@ -293,8 +298,8 @@ export type SqlStructureAlias = {
 
 export type SqlStructureAggregate = {
   function: SqlStructureAggregateFunction;
-  /** Omitted only for COUNT(*). */
-  column?: string;
+  /** Empty represents COUNT(); COUNT(*) has one wildcard argument. */
+  arguments: SqlStructureAggregateArgument[];
   distinct: boolean;
   alias?: SqlStructureAlias;
 };

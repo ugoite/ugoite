@@ -35,6 +35,10 @@ null checks, and column ordering remain bound to Form metadata. It reports
 stable reason codes for unsupported SQL and never makes direct SQL unavailable.
 The checked backend-admission and current structure-editor coverage inventory
 is recorded in the [SQL feature matrix contract](../../../architecture/contracts/sql-gui-feature-matrix.md).
+Its version 2 aggregate contract uses the Domain aggregate registry for names,
+aliases, arity, DISTINCT, and wildcard validation. COUNT arguments are carried
+as typed column/wildcard nodes, including nullary COUNT, variadic COUNT, and
+COUNT(DISTINCT *); MEAN remains distinguishable from AVG during AST rewrites.
 Sort proposals append adapter-supplied stable keys where needed. A proposal is
 non-mutating: the adapter must show its SQL diff and wait for explicit user
 confirmation before updating the controlled SQL value. `SqlStructureToolbar`

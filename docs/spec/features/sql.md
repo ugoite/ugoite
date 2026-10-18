@@ -45,9 +45,13 @@ not become an execution parameter unless the user explicitly runs the query
 with that value. `sql.query` and `sql saved run` continue to use only the
 parameters supplied in the request.
 
-The permitted aggregate functions are `COUNT`, `SUM`, `AVG`, `MIN`, and `MAX`.
-`COUNT(*)` counts rows; `COUNT(expression)` ignores `NULL`; `SUM` and `AVG`
-accept numeric values; and `MIN`/`MAX` accept comparable scalar values. `SUM`,
+The permitted aggregate functions are `COUNT`, `SUM`, `AVG`, `MIN`, and `MAX`;
+`MEAN` is an alias for `AVG`. `COUNT()` and `COUNT(*)` count rows,
+`COUNT(expression, ...)` counts rows where every argument is non-`NULL`, and
+`COUNT(DISTINCT expression)` counts distinct non-`NULL` values. DataFusion also
+admits `COUNT(DISTINCT *)`, which counts the single distinct wildcard marker
+for a non-empty input. `SUM` and `AVG` accept numeric values; `MIN`/`MAX`
+accept comparable scalar values. `SUM`,
 `AVG`, and floating aggregate results use checked accumulation: integer and
 decimal overflow, unsupported numeric types, and non-finite floating results
 fail the query instead of returning a wrapped, partial, or non-finite value.

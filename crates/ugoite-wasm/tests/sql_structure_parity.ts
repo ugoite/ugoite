@@ -182,7 +182,10 @@ async function main(): Promise<void> {
   const aggregates = aggregateValue.aggregates as Record<string, unknown>[];
   assertEqual(aggregates.length, 1, "aggregate count");
   assertEqual(aggregates[0].function, "count", "aggregate function");
-  assertEqual(aggregates[0].column, "amount", "aggregate column");
+  const aggregateArguments = aggregates[0].arguments as Record<string, unknown>[];
+  assertEqual(aggregateArguments.length, 1, "aggregate argument count");
+  assertEqual(aggregateArguments[0].kind, "column", "aggregate argument kind");
+  assertEqual(aggregateArguments[0].column, "amount", "aggregate argument column");
   assertEqual(aggregates[0].distinct, true, "DISTINCT aggregate");
   const alias = aggregates[0].alias as Record<string, unknown>;
   assertEqual(alias.name, "unique_count", "aggregate alias");
@@ -197,7 +200,7 @@ async function main(): Promise<void> {
         kind: "set_aggregates",
         aggregates: [{
           function: "sum",
-          column: "amount",
+          arguments: [{ kind: "column", column: "amount" }],
           distinct: true,
           alias: { name: "total", quoted: true },
         }],

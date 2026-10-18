@@ -51,6 +51,7 @@ export {
   protocolFetchResponse,
   spreadsheetCsvRequestBytes,
   type SqlStructureActionCapability,
+  type SqlStructureAggregateArgument,
   type SqlStructureAggregate,
   type SqlStructureAggregateFunction,
   type SqlStructureAlias,
