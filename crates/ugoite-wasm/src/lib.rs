@@ -1089,6 +1089,42 @@ mod tests {
     }
 
     #[test]
+    fn sql_structure_protocol_proposes_form_relation_selection() {
+        let relation = "form_0123456789abcdef0123456789abcdef";
+        for (sql, expected) in [
+            ("SELECT 1", format!("SELECT * FROM \"{relation}\"")),
+            (
+                "SELECT \"_ugoite_id\" FROM \"old_relation\"",
+                format!("SELECT \"_ugoite_id\" FROM \"{relation}\""),
+            ),
+        ] {
+            let request = serde_json::json!({
+                "action": "domain.propose_sql_structure_operation",
+                "value": {
+                    "sql": sql,
+                    "context": {
+                        "relation": relation,
+                        "columns": [
+                            {"name": "_ugoite_id", "type": "string"}
+                        ],
+                        "variables": [],
+                        "stable_key": ["_ugoite_id"]
+                    },
+                    "operation": {
+                        "kind": "set_relation",
+                        "relation": relation
+                    }
+                }
+            })
+            .to_string();
+            let response: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
+            assert_eq!(response["ok"], true, "{response}");
+            assert_eq!(response["value"]["status"], "supported");
+            assert_eq!(response["value"]["proposed_sql"], expected);
+        }
+    }
+
+    #[test]
     fn sql_document_protocol_accepts_maximum_source_with_json_escaped_trivia() {
         let sql = format!(
             "SELECT 1 /*{}*/",

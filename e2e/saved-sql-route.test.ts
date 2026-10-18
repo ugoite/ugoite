@@ -131,8 +131,10 @@ test.describe("Saved SQL route", () => {
   });
 
   test("REQ-FE-063 @smoke: new saved SQL uses the shared structure actions and runs through Saved SQL", async ({ page, request }) => {
-    const queryName = `Relation-free draft ${Date.now()}`;
+    const queryName = `Form-bound draft ${Date.now()}`;
     let savedSqlId: string | undefined;
+    await ensureDefaultForm(request, spaceId);
+    const relation = await getDefaultFormRelation(request, spaceId);
 
     try {
       await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/new`), {
@@ -147,30 +149,50 @@ test.describe("Saved SQL route", () => {
       await expect(page.getByLabel("Filter field")).toHaveCount(0);
 
       const structureActions = page.getByRole("group", { name: "SQL" });
-      await expect(structureActions.getByRole("button", { name: /^Columns/ }))
-        .toBeEnabled();
-      await expect(structureActions.getByRole("button", { name: /^Filter/ }))
-        .toBeEnabled();
-      await expect(structureActions.getByRole("button", { name: /^Sort/ }))
-        .toBeEnabled();
+      const formAction = structureActions.getByRole("button", {
+        name: "Form",
+        exact: true,
+      });
+      await expect(formAction).toBeEnabled();
       await expect(
-        structureActions.getByRole("button", { name: /^Aggregate/ }),
-      ).toBeEnabled();
+        structureActions.getByRole("button", {
+          name: "Aggregate",
+          exact: true,
+        }),
+      ).toBeDisabled();
       await expect(page.locator(".ui-sql-editor")).not.toContainText(
         /\b(?:LIMIT|OFFSET)\b/i,
       );
       await expect(page.getByLabel("Filter field")).toHaveCount(0);
 
-      const distinct = page.getByRole("button", { name: "Distinct" });
-      await expect(distinct).toBeEnabled();
-      await distinct.click();
-      const dialog = page.getByRole("dialog", { name: "Distinct" });
-      await dialog.getByRole("checkbox").check();
-      await dialog.getByRole("button", { name: "Review change" }).click();
-      await dialog.getByRole("button", { name: "Apply change" }).click();
+      await formAction.click();
+      const formDialog = page.getByRole("dialog", { name: "Form" });
+      await formDialog.getByRole("button", { name: "Entry" }).click();
+      const reviewDialog = page.getByRole("dialog", {
+        name: "Review SQL change",
+      });
+      await expect(reviewDialog.getByText(`SELECT * FROM "${relation}"`))
+        .toBeVisible();
+      await reviewDialog.getByRole("button", { name: "Apply change" }).click();
       await expect(page.locator(".ui-sql-editor")).toContainText(
-        "SELECT DISTINCT 1",
+        `SELECT * FROM "${relation}"`,
       );
+
+      const aggregate = structureActions.getByRole("button", {
+        name: "Aggregate",
+        exact: true,
+      });
+      await expect(aggregate).toBeEnabled();
+      await aggregate.click();
+      const aggregateDialog = page.getByRole("dialog", { name: "Aggregate" });
+      await aggregateDialog.getByRole("button", { name: "Add aggregate" })
+        .click();
+      await aggregateDialog.getByRole("button", { name: "Review change" })
+        .click();
+      await expect(aggregateDialog.getByText(/COUNT\(\*\)/)).toBeVisible();
+      await aggregateDialog.getByRole("button", { name: "Apply change" })
+        .click();
+      await expect(page.locator(".ui-sql-editor")).toContainText(/COUNT\(\*\)/);
       await page.getByLabel("Query name").fill(queryName);
       const createResponsePromise = page.waitForResponse((response) => {
         const url = new URL(response.url());

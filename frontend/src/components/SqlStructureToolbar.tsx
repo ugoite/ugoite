@@ -6,6 +6,7 @@ import {
   Show,
 } from "solid-js";
 import { IconButton } from "~/components/IconButton";
+import { UiIcon } from "~/components/UiIcon";
 import { handleDialogKeyDown, useDialogFocus } from "~/components/dialog-focus";
 import { t } from "~/lib/i18n";
 import { normalizeSqlVariables } from "~/lib/sql";
@@ -29,6 +30,7 @@ import type {
 } from "~/lib/ugoite-client";
 
 type StructureAction =
+  | "form"
   | "columns"
   | "filter"
   | "sort"
@@ -212,19 +214,44 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   };
 
   const capability = (action: StructureAction) => {
+    if (action === "form") return undefined;
     const current = ready()?.analysis;
     return current?.capabilities[action];
   };
 
-  const actionDisabled = (action: StructureAction) =>
-    Boolean(
+  const formOptions = () => {
+    const seen = new Set<string>();
+    return props.contexts().flatMap((context) => {
+      const relation = context.parser.relation;
+      if (!relation || seen.has(relation)) return [];
+      seen.add(relation);
+      return [context];
+    });
+  };
+
+  const actionDisabled = (action: StructureAction) => {
+    if (action === "form") {
+      return Boolean(
+        props.disabled?.() || !props.onSqlChange || formOptions().length === 0,
+      );
+    }
+    return Boolean(
       props.disabled?.() || !props.onSqlChange ||
         analysisState().status !== "ready" ||
         ready()?.analysis.status !== "supported" ||
         !capability(action)?.enabled || !hasEditableCapabilities(action),
     );
+  };
 
   const actionReason = (action: StructureAction) => {
+    if (action === "form") {
+      if (props.disabled?.() || !props.onSqlChange) {
+        return t("sqlPage.structureReadOnly");
+      }
+      return formOptions().length === 0
+        ? t("sqlPage.structureUnavailable")
+        : undefined;
+    }
     const commonReason = analysisReason(analysisState());
     if (commonReason) return commonReason;
     if (props.disabled?.() || !props.onSqlChange) {
@@ -396,6 +423,14 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   });
 
   const openAction = (action: StructureAction) => {
+    if (action === "form") {
+      if (actionDisabled(action)) return;
+      setError(null);
+      setProposal(undefined);
+      setProposalContextIdentity(undefined);
+      setActiveAction(action);
+      return;
+    }
     const current = ready();
     if (!current || actionDisabled(action)) return;
     setError(null);
@@ -615,7 +650,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   const applyOperation = async () => {
     const current = ready();
     const action = activeAction();
-    if (!current || !action || actionDisabled(action) || busy()) return;
+    if (!current || !action || action === "form" || actionDisabled(action) || busy()) return;
     const operation: SqlStructureOperation = action === "columns"
       ? { kind: "set_columns", columns: selectedColumns() }
       : action === "filter"
@@ -688,6 +723,57 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     }
   };
 
+  const selectForm = async (target: SqlStructureAdapterContext) => {
+    if (actionDisabled("form") || busy() || !target.parser.relation) return;
+    const baseSql = props.sql();
+    const parserSql = normalizeSqlVariables(baseSql).sql;
+    const currentIdentity = ready()?.identity;
+    const targetIdentity = target.identity;
+    const generation = ++proposalGeneration;
+    setBusy(true);
+    setError(null);
+    setProposal(undefined);
+    setProposalContextIdentity(undefined);
+    try {
+      await prepareSqlStructureParser();
+      const latestTarget = formOptions().find((context) =>
+        context.identity === targetIdentity
+      );
+      if (
+        generation !== proposalGeneration || props.sql() !== baseSql ||
+        !latestTarget
+      ) return;
+      const result = await proposeSqlStructureOperation(
+        parserSql,
+        latestTarget.parser,
+        { kind: "set_relation", relation: latestTarget.parser.relation },
+      );
+      if (
+        generation !== proposalGeneration || props.sql() !== baseSql ||
+        ready()?.identity !== currentIdentity
+      ) return;
+      if (result.status !== "supported" || result.proposed_sql === undefined) {
+        setError(unavailableReason());
+        return;
+      }
+      if (!result.requires_confirmation) {
+        setActiveAction(null);
+        return;
+      }
+      setProposal({ ...result, base_sql: baseSql });
+      setProposalContextIdentity(currentIdentity);
+    } catch {
+      if (
+        generation === proposalGeneration && props.sql() === baseSql &&
+        ready()?.identity === currentIdentity
+      ) {
+        setError(t("sqlPage.structureUnavailable"));
+      }
+    } finally {
+      if (generation === proposalGeneration) setBusy(false);
+    }
+  };
+
   const confirmProposal = () => {
     const current = proposal();
     if (
@@ -735,6 +821,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
 
   createEffect(() => {
     const actions = ([
+      "form",
       "columns",
       "filter",
       "sort",
@@ -748,7 +835,11 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
         const disabled = actionDisabled(action);
         return {
           kind: action,
-          icon: action === "group_by" ? "group-by" : action,
+          icon: action === "form"
+            ? "forms"
+            : action === "group_by"
+            ? "group-by"
+            : action,
           label,
           disabled,
           disabledReason: disabled ? reason : undefined,
@@ -793,6 +884,24 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
               when={proposal()}
               fallback={
                 <div class="sql-structure-dialog-content">
+                  <Show when={activeAction() === "form"}>
+                    <div class="sql-structure-form-list">
+                      <For each={formOptions()}>
+                        {(context) => (
+                          <button
+                            type="button"
+                            class="sql-structure-form-option"
+                            disabled={busy() || actionDisabled("form")}
+                            onClick={() => void selectForm(context)}
+                          >
+                            <UiIcon name="forms" />
+                            <span>{context.label ?? context.parser.relation}</span>
+                          </button>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+
                   <Show when={activeAction() === "columns"}>
                     <fieldset class="sql-structure-column-list">
                       <legend class="ui-sr-only">
@@ -1258,32 +1367,34 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
               <Show
                 when={proposal()}
                 fallback={
-                  <button
-                    type="button"
-                    class="ui-button ui-button-primary"
-                    onClick={() => void applyOperation()}
-                    disabled={busy() || (
-                      activeAction() === "columns" &&
-                      selectedColumns().length === 0
-                    ) || (activeAction() === "filter" && !filterRowsValid()) ||
-                      (activeAction() === "sort" && !sortRowsValid()) ||
-                      (activeAction() === "aggregate" &&
-                        !aggregateOperationValid()) ||
-                      (activeAction() === "group_by" && !groupByRowsValid()) ||
-                      (activeAction() === "distinct" &&
-                        !distinctProjectionIsEditable())}
-                    aria-label={operationBlockedReason()
-                      ? `${
-                        t("sqlPage.structure.previewChange")
-                      }: ${operationBlockedReason()}`
-                      : undefined}
-                    title={operationBlockedReason()}
-                    aria-busy={busy() || undefined}
-                  >
-                    {busy()
-                      ? t("sqlPage.structure.preparing")
-                      : t("sqlPage.structure.previewChange")}
-                  </button>
+                  <Show when={activeAction() !== "form"}>
+                    <button
+                      type="button"
+                      class="ui-button ui-button-primary"
+                      onClick={() => void applyOperation()}
+                      disabled={busy() || (
+                        activeAction() === "columns" &&
+                        selectedColumns().length === 0
+                      ) || (activeAction() === "filter" && !filterRowsValid()) ||
+                        (activeAction() === "sort" && !sortRowsValid()) ||
+                        (activeAction() === "aggregate" &&
+                          !aggregateOperationValid()) ||
+                        (activeAction() === "group_by" && !groupByRowsValid()) ||
+                        (activeAction() === "distinct" &&
+                          !distinctProjectionIsEditable())}
+                      aria-label={operationBlockedReason()
+                        ? `${
+                          t("sqlPage.structure.previewChange")
+                        }: ${operationBlockedReason()}`
+                        : undefined}
+                      title={operationBlockedReason()}
+                      aria-busy={busy() || undefined}
+                    >
+                      {busy()
+                        ? t("sqlPage.structure.preparing")
+                        : t("sqlPage.structure.previewChange")}
+                    </button>
+                  </Show>
                 }
               >
                 <button

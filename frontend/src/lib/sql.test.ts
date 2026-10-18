@@ -103,6 +103,7 @@ describe("sql helpers", () => {
     const [context] = buildSqlStructureContexts([{
       id: "form-1",
       name: "Tasks",
+      sql_relation: "form_tasks",
       version: 1,
       template: "task",
       fields: {
@@ -143,8 +144,9 @@ describe("sql helpers", () => {
 
     expect(context).toMatchObject({
       identity: expect.stringContaining("composition:source-1"),
+      label: "Tasks",
       parser: {
-        relation: "Tasks",
+        relation: "form_tasks",
         columns: [
           { name: "_ugoite_id", type: "string" },
           { name: "_ugoite_created_at", type: "timestamp" },
@@ -205,6 +207,7 @@ describe("sql helpers", () => {
       {
         id: "00000000-0000-0000-0000-000000000002",
         name: "__proto__",
+        sql_relation: "__proto__",
         version: 1,
         template: "",
         fields: {},
@@ -234,19 +237,40 @@ describe("sql helpers", () => {
       },
     ];
     const schema = buildSqlSchema(forms);
-    const columns = schema.tables?.Meeting;
+    const columns =
+      schema.tables?.form_00000000000000000000000000000001;
     expect(columns).toEqual([
       "_ugoite_id",
       "_ugoite_created_at",
       "_ugoite_updated_at",
       "field_104",
     ]);
-    expect(schema.tables).not.toHaveProperty(
-      "form_00000000000000000000000000000001",
-    );
+    expect(schema.tables).not.toHaveProperty("Meeting");
     expect(columns).not.toContain("id");
     expect(columns).not.toContain("title");
     expect(columns).not.toContain("updated_at");
+  });
+
+  it("uses the server SQL relation for Form structure contexts", () => {
+    const form: Form = {
+      id: "stable-form-id",
+      name: "Renamed Form",
+      sql_relation: "form_00000000000000000000000000000001",
+      version: 1,
+      template: "",
+      fields: {},
+    };
+    const [formContext] = buildSqlStructureContexts([form]);
+    const schema = buildSqlSchema([form]);
+
+    expect(formContext).toMatchObject({
+      label: "Renamed Form",
+      parser: { relation: "form_00000000000000000000000000000001" },
+    });
+    expect(schema.tables).toHaveProperty(
+      "form_00000000000000000000000000000001",
+    );
+    expect(schema.tables).not.toHaveProperty("Renamed Form");
   });
 
   it("should flag empty query", () => {
@@ -543,7 +567,7 @@ describe("SQL structure adapter context", () => {
     expect(context.columnCapabilities).toEqual({});
   });
 
-  it("uses the written Form relation and intersects typed column capabilities", () => {
+  it("uses the server-derived Form relation and intersects typed column capabilities", () => {
     const formWithUntrustedType: Form = {
       ...aggregateForm,
       fields: {
@@ -567,8 +591,8 @@ describe("SQL structure adapter context", () => {
       "composition:inline-1",
     );
 
-    expect(context.parser.relation).toBe("Orders");
-    expect(context.parser.relation).not.toBe(aggregateForm.sql_relation);
+    expect(context.parser.relation).toBe(aggregateForm.sql_relation);
+    expect(context.parser.relation).not.toBe("Orders");
     expect(context.parser.stable_key).toEqual(["_ugoite_id"]);
     expect(context.columnCapabilities.field_amount.supportedOperators).toEqual([
       "eq",

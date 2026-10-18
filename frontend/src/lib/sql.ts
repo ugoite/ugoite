@@ -108,6 +108,8 @@ export interface SqlStructureColumnCapabilities {
 export interface SqlStructureAdapterContext {
   /** Identity of the source and schema context that produced this adapter context. */
   identity: string;
+  /** Human-readable Form name for picker rows; SQL uses parser.relation. */
+  label?: string;
   parser: SqlStructureContext;
   columnCapabilities: Readonly<Record<string, SqlStructureColumnCapabilities>>;
 }
@@ -143,7 +145,7 @@ export const buildSqlStructureContexts = (
   });
 
   const formContexts = forms.flatMap((form) => {
-    const relation = form.name.trim();
+    const relation = form.sql_relation?.trim();
     if (!relation) return [];
     const columns = [
       { name: "_ugoite_id", type: "string" as const },
@@ -240,11 +242,13 @@ export const buildSqlStructureContexts = (
       identity: JSON.stringify({
         sourceIdentity,
         formId: form.id ?? null,
+        formName: form.name,
         formVersion: form.version,
         relation,
         parser,
         columnCapabilities,
       }),
+      label: form.name.trim() || relation,
       parser,
       columnCapabilities,
     }];
@@ -271,7 +275,7 @@ export function buildSqlSchema(forms: Form[]): SqlSchema {
   // an ordinary table entry.
   const tables: Record<string, string[]> = Object.create(null);
   for (const item of forms) {
-    const name = item.name.trim();
+    const name = item.sql_relation?.trim();
     if (!name) continue;
     const columns = Object.values(item.fields ?? {})
       .map((field) => field.sql_column?.trim())

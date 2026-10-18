@@ -135,7 +135,7 @@ describe("SqlStructureToolbar adapter", () => {
       />
     ));
 
-    await waitFor(() => expect(actions).toHaveLength(6));
+    await waitFor(() => expect(actions).toHaveLength(7));
     await waitFor(() =>
       expect(actions.find((action) => action.kind === "columns")?.disabled)
         .toBe(false)
@@ -252,6 +252,54 @@ describe("SqlStructureToolbar adapter", () => {
       within(dialog).getByRole("button", { name: "Apply change" }),
     );
     expect(onSqlChange).toHaveBeenCalledWith("SELECT DISTINCT 1");
+  });
+
+  it("routes Form selection through the Rust relation proposal", async () => {
+    const sql = "SELECT 1";
+    const targetContext: SqlStructureAdapterContext = {
+      ...context,
+      parser: { ...context.parser, relation: "Orders" },
+    };
+    const relationFreeContext = buildSqlStructureContexts([], [], "new-sql")[0];
+    const contexts = [targetContext, relationFreeContext];
+    const onSqlChange = vi.fn();
+    const proposedSql = 'SELECT * FROM "Orders"';
+    proposeMock.mockResolvedValue({
+      contract_version: 1,
+      status: "supported",
+      base_sql: sql,
+      proposed_sql: proposedSql,
+      requires_confirmation: true,
+      added_stable_tie_breakers: [],
+    });
+    let actions: readonly SQLWorkspaceAction[] = [];
+
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => contexts}
+        onSqlChange={onSqlChange}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "form")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "form")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Form" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Orders" }));
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(proposeMock).toHaveBeenCalledWith(
+      sql,
+      targetContext.parser,
+      { kind: "set_relation", relation: "Orders" },
+    );
+    expect(onSqlChange).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply change" }));
+    expect(onSqlChange).toHaveBeenCalledWith(proposedSql);
   });
 
   it("discards a proposal and closes its dialog when SQL context changes", async () => {
@@ -576,7 +624,7 @@ describe("SqlStructureToolbar adapter", () => {
       expect(actions.find((action) => action.kind === "aggregate")?.disabled)
         .toBe(false)
     );
-    expect(actions).toHaveLength(6);
+    expect(actions).toHaveLength(7);
     for (const kind of ["group_by", "distinct"] as const) {
       expect(actions.find((action) => action.kind === kind)?.disabled).toBe(
         true,

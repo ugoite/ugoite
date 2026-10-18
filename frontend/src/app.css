@@ -5362,6 +5362,42 @@ a.tool {
   flex: 0 0 auto;
 }
 
+.sql-structure-form-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(55dvh, 480px);
+  overflow: auto;
+}
+
+.sql-structure-form-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface-2);
+  color: var(--ui-foreground);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.sql-structure-form-option:hover:not(:disabled) {
+  background: var(--ui-surface-3);
+}
+
+.sql-structure-form-option:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.sql-structure-form-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .sql-structure-filter-row,
 .sql-structure-sort-row,
 .sql-structure-aggregate-row {
