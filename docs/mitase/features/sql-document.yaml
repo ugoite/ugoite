@@ -418,7 +418,7 @@ features:
       - id: sql-document-guarded-edit-frontend-client
         role: implementation
         facet: frontend
-        responsibility: Expose the guarded WASM edit operation as typed request, result, and stable error-code data.
+        responsibility: Expose the guarded WASM edit operation as typed request and result data, and parameterize the shared API error type with the stable SQL Document edit error-code union while preserving generic API error codes elsewhere.
         targets:
           - id: edit-transaction-client
             adapter: typescript
@@ -502,6 +502,22 @@ features:
                   arguments:
                     file: src/lib/ugoite-client/protocol.test.ts
                     test: applies typed SQL Document edits atomically and returns a usable undo
+          - id: edit-error-code-api-client-contract
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.test.ts
+            selector:
+              kind: test
+              name: exposes SQL Document edit codes through the typed API error contract
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-guarded-edit-frontend-client/target.edit-transaction-client
+                runner:
+                  runner: frontend-vitest-file
+                  arguments:
+                    file: src/lib/ugoite-client/protocol.test.ts
+                    test: exposes SQL Document edit codes through the typed API error contract
           - id: edit-protocol-wasm-fixtures
             adapter: typescript
             path: crates/ugoite-wasm/tests/sql_structure_wasm_fixtures.ts
