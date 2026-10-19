@@ -375,6 +375,7 @@ pub fn compile_inline_sql_source(
         include_exact_integer_values: false,
         limit: DEFAULT_COMPOSITION_SQL_PAGE_LIMIT,
         continuation: None,
+        execution_id: None,
         saved_sql: None,
     };
     if request.validate().is_err() {
@@ -523,6 +524,7 @@ pub fn compile_saved_sql_source(
         include_exact_integer_values: false,
         limit: DEFAULT_COMPOSITION_SQL_PAGE_LIMIT,
         continuation: None,
+        execution_id: None,
         saved_sql: Some(SavedSqlRevisionRef {
             id: expected_id,
             revision_id: expected_revision_id,

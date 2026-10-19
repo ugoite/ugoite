@@ -18,6 +18,10 @@ import type { CompositionResolvedSource } from "~/lib/composition-api";
 import type { CompositionSourcePageState } from "~/lib/composition-query-handle";
 import { setLocale } from "~/lib/i18n";
 
+const { captureToolbarProps } = vi.hoisted(() => ({
+  captureToolbarProps: vi.fn(),
+}));
+
 vi.mock("~/components/SQLWorkspace", () => ({
   SQLWorkspace: (
     props: Record<string, unknown> & {
@@ -48,20 +52,27 @@ vi.mock("~/components/SQLWorkspace", () => ({
 
 vi.mock("~/components/SqlStructureToolbar", () => ({
   SqlStructureToolbar: (props: {
+    onVariablesAdded?: (
+      variables: readonly { name: string; type: string }[],
+    ) => boolean | void;
+    reservedVariableNames?: () => readonly string[];
     contexts: () => Array<{
       identity: string;
       parser: { relation: string; columns: Array<{ name: string }> };
     }>;
-  }) => (
-    <output data-testid="structure-contexts">
-      {JSON.stringify(
-        props.contexts().map((context) => ({
-          relation: context.parser.relation,
-          columns: context.parser.columns.map((column) => column.name),
-        })),
-      )}
-    </output>
-  ),
+  }) => {
+    captureToolbarProps(props);
+    return (
+      <output data-testid="structure-contexts">
+        {JSON.stringify(
+          props.contexts().map((context) => ({
+            relation: context.parser.relation,
+            columns: context.parser.columns.map((column) => column.name),
+          })),
+        )}
+      </output>
+    );
+  },
 }));
 
 vi.mock("@solidjs/router", () => ({
@@ -125,6 +136,7 @@ const propsFor = (
   onRemoveSource: vi.fn(),
   onInlineSql: vi.fn(() => true),
   onInlineSqlName: vi.fn(() => true),
+  onVariablesAdded: vi.fn(() => true),
   variables: [],
   variableValues: {},
   savedSqlEditHref: (entryId) => `/spaces/space-1/sql/${entryId}`,
@@ -223,6 +235,39 @@ describe("CompositionDataWorkspace", () => {
       .toEqual([{ relation: "", columns: [] }]);
   });
 
+  it("passes SQL-created arguments to the Composition host and reserves existing variable IDs", () => {
+    captureToolbarProps.mockClear();
+    const onVariablesAdded = vi.fn(() => true);
+    render(() => (
+      <>
+        <h2 id="data-heading">Data</h2>
+        <CompositionDataWorkspace
+          {...propsFor(inlineDraft(), {
+            variables: [{
+              id: "filter_amount",
+              type: "string",
+              required: true,
+            }],
+            onVariablesAdded,
+          })}
+        />
+      </>
+    ));
+
+    const toolbar = captureToolbarProps.mock.calls.at(-1)?.[0] as {
+      onVariablesAdded?: (
+        variables: readonly { name: string; type: string }[],
+      ) => boolean | void;
+      reservedVariableNames?: () => readonly string[];
+    };
+    expect(toolbar.reservedVariableNames?.()).toEqual(["filter_amount"]);
+    toolbar.onVariablesAdded?.([{ name: "filter_amount_2", type: "integer" }]);
+    expect(onVariablesAdded).toHaveBeenCalledWith([{
+      name: "filter_amount_2",
+      type: "integer",
+    }]);
+  });
+
   it("does not infer a Form context from relation-bearing SQL", () => {
     render(() => (
       <>
@@ -240,7 +285,11 @@ describe("CompositionDataWorkspace", () => {
   });
 
   it("resolves a single Form binding using its SQL relation", () => {
-    const draft = inlineDraft();
+    const relation = "form_00000000000070008000000000000001";
+    const draft = inlineDraft(
+      `SELECT "Amount" AS total FROM "${relation}"`,
+      [{ relation, form_id: "form-1" }],
+    );
     render(() => (
       <>
         <h2 id="data-heading">Data</h2>
@@ -249,6 +298,7 @@ describe("CompositionDataWorkspace", () => {
             forms: [{
               id: "form-1",
               name: "Renamed Expenses",
+              sql_relation: relation,
               version: 1,
               template: "",
               fields: {
@@ -268,21 +318,23 @@ describe("CompositionDataWorkspace", () => {
       screen.getByTestId("structure-contexts").textContent ?? "[]",
     ) as Array<{ relation: string; columns: string[] }>;
     expect(contexts.map((context) => context.relation)).toEqual([
-      "Expenses",
+      relation,
       "",
     ]);
     const expenseContext = contexts.find((context) =>
-      context.relation === "Expenses"
+      context.relation === relation
     );
     expect(expenseContext?.columns).toContain("Amount");
   });
 
   it("preserves every resolved Form context for multi-relation SQL", () => {
+    const expenseRelation = "form_00000000000070008000000000000001";
+    const budgetRelation = "form_00000000000070008000000000000002";
     const draft = inlineDraft(
-      'SELECT "Amount" FROM "Expenses" JOIN "Budgets" ON "Expenses"."Budget" = "Budgets"."_ugoite_id"',
+      `SELECT "Amount" FROM "${expenseRelation}" JOIN "${budgetRelation}" ON "${expenseRelation}"."Budget" = "${budgetRelation}"."_ugoite_id"`,
       [
-        { relation: "Expenses", form_id: "form-1" },
-        { relation: "Budgets", form_id: "form-2" },
+        { relation: expenseRelation, form_id: "form-1" },
+        { relation: budgetRelation, form_id: "form-2" },
       ],
     );
     render(() => (
@@ -294,6 +346,7 @@ describe("CompositionDataWorkspace", () => {
               {
                 id: "form-1",
                 name: "Expense records",
+                sql_relation: expenseRelation,
                 version: 1,
                 template: "",
                 fields: {},
@@ -301,6 +354,7 @@ describe("CompositionDataWorkspace", () => {
               {
                 id: "form-2",
                 name: "Budget records",
+                sql_relation: budgetRelation,
                 version: 3,
                 template: "",
                 fields: {},
@@ -315,10 +369,36 @@ describe("CompositionDataWorkspace", () => {
       screen.getByTestId("structure-contexts").textContent ?? "[]",
     ) as Array<{ relation: string }>;
     expect(contexts.map((context) => context.relation)).toEqual([
-      "Expenses",
-      "Budgets",
+      expenseRelation,
+      budgetRelation,
       "",
     ]);
+  });
+
+  it("does not expose a context for a stale server-derived Form relation", () => {
+    const draft = inlineDraft();
+    render(() => (
+      <>
+        <h2 id="data-heading">Data</h2>
+        <CompositionDataWorkspace
+          {...propsFor(draft, {
+            forms: [{
+              id: "form-1",
+              name: "Renamed Expenses",
+              sql_relation: "form_00000000000070008000000000000001",
+              version: 1,
+              template: "",
+              fields: {},
+            }],
+          })}
+        />
+      </>
+    ));
+
+    const contexts = JSON.parse(
+      screen.getByTestId("structure-contexts").textContent ?? "[]",
+    ) as Array<{ relation: string }>;
+    expect(contexts).toEqual([]);
   });
 
   it("does not create a partial context when any Form binding is unresolved", () => {

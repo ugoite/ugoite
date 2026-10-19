@@ -34,18 +34,28 @@ requirements:
           drafts are reparsed so syntax diagnostics remain current; this edit
           does not authorize parameter binding or query execution.
         governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: guarded-edit-transaction
+        kind: behavior
+        statement: >-
+          The bounded Rust SQL Document edit operation applies disjoint
+          UTF-8 byte-range replacements atomically against an exact source
+          snapshot. Stale snapshots, invalid or overlapping ranges, and
+          mismatched preimages reject the whole transaction. A successful
+          transaction preserves untouched source bytes, reparses even an
+          incomplete draft, and returns a guarded inverse transaction that
+          restores the original source; editing does not authorize or execute
+          SQL.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
       - id: portable-protocol
         kind: behavior
         statement: >-
-          The portable WASM domain protocol exposes the bounded SQL Document
-          parser and source-aware named-parameter rename operation, returning
-          the same document value and diagnostics as the corresponding native
-          Rust operation when the serialized response fits the protocol
-          response limit. If the response would exceed that limit, the action
-          returns a bounded domain_output_too_large error without first
-          materializing an unbounded JSON value. The protocol actions do not
-          grant executor admission or execute the SQL. JSON escaping does not
-          prevent a source at the SQL Document byte limit from reaching either
-          action when its request is within that action's bounded request
-          envelope; a larger request is rejected before JSON decoding.
+          The portable WASM domain protocol exposes bounded SQL Document
+          parsing, source-aware named-parameter renaming, and atomic guarded
+          edits. Each operation matches its native Rust result when the
+          serialized response fits the protocol response limit. Invalid edit
+          requests return stable error codes, and oversized results return a
+          bounded domain_output_too_large error without materializing
+          unbounded JSON. Requests beyond each action's bounded envelope are
+          rejected before JSON decoding. These actions do not grant executor
+          admission or execute the SQL.
         governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]

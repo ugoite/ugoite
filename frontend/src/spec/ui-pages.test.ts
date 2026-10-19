@@ -65,6 +65,7 @@ const allowedComponentTypes = new Set([
   "typed-variable-list",
   "history",
   "composition-studio",
+  "shared-sql-workspace",
 ]);
 
 const collectYamlFiles = (dir: string): string[] => {

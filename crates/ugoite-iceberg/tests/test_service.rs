@@ -641,6 +641,7 @@ async fn saved_sql_acl_is_applied_before_payload_decode() -> Result<()> {
                 include_exact_integer_values: false,
                 limit: 10,
                 continuation: None,
+                execution_id: None,
                 saved_sql: Some(visible_source.clone()),
             },
         )
@@ -702,6 +703,7 @@ async fn saved_sql_acl_is_applied_before_payload_decode() -> Result<()> {
                 include_exact_integer_values: false,
                 limit: 10,
                 continuation: None,
+                execution_id: None,
                 saved_sql: Some(visible_source.clone()),
             },
         )
@@ -793,6 +795,7 @@ async fn saved_sql_form_authorization_is_rechecked_for_continuation_and_count() 
                 include_exact_integer_values: false,
                 limit: 1,
                 continuation: None,
+                execution_id: None,
                 saved_sql: Some(source.clone()),
             },
         )
@@ -828,6 +831,7 @@ async fn saved_sql_form_authorization_is_rechecked_for_continuation_and_count() 
                     include_exact_integer_values: false,
                     limit: 1,
                     continuation: Some(continuation),
+                    execution_id: None,
                     saved_sql: Some(source.clone()),
                 },
             )

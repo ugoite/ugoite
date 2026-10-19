@@ -20,6 +20,7 @@ export interface SQLWorkspaceVariable {
 }
 
 export type SQLWorkspaceActionKind =
+  | "form"
   | "columns"
   | "filter"
   | "sort"
@@ -36,6 +37,7 @@ export type SQLWorkspaceActionKind =
 export interface SQLWorkspaceAction {
   kind: SQLWorkspaceActionKind;
   icon:
+    | "forms"
     | "columns"
     | "filter"
     | "sort"

@@ -1,14 +1,11 @@
 // REQ-FE-036: SQL Query Editor
 import {
   applySqlVariableDefaultDrafts,
-  buildSqlAggregateQuery,
   buildSqlSchema,
-  buildSqlStarterQuery,
   buildSqlStructureContexts,
+  mergeSqlStructureVariables,
   normalizeSqlVariables,
   parseSqlVariableDefault,
-  sqlAggregateFieldOptions,
-  sqlFilterFieldOptions,
   sqlLintDiagnostics,
 } from "./sql";
 import type { Form } from "./types";
@@ -103,97 +100,11 @@ describe("sql helpers", () => {
     ).toBe(true);
   });
 
-  it("builds a stable relation starter without SQL-level paging", () => {
-    expect(buildSqlStarterQuery("form_entry")).toBe(
-      'SELECT * FROM "form_entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id',
-    );
-  });
-
-  it.each(
-    [
-      ["count-rows", "", 'SELECT COUNT(*) AS "value" FROM "Orders"'],
-      [
-        "count-values",
-        "Amount",
-        'SELECT COUNT("field_amount") AS "value" FROM "Orders"',
-      ],
-      ["sum", "Amount", 'SELECT SUM("field_amount") AS "value" FROM "Orders"'],
-      [
-        "average",
-        "Amount",
-        'SELECT AVG("field_amount") AS "value" FROM "Orders"',
-      ],
-      [
-        "minimum",
-        "Amount",
-        'SELECT MIN("field_amount") AS "value" FROM "Orders"',
-      ],
-      [
-        "maximum",
-        "Amount",
-        'SELECT MAX("field_amount") AS "value" FROM "Orders"',
-      ],
-    ] as const,
-  )("builds the %s aggregate query", (operation, fieldKey, expected) => {
-    expect(buildSqlAggregateQuery(aggregateForm, operation, fieldKey).sql)
-      .toBe(expected);
-  });
-
-  it("quotes Form and SQL column identifiers and keeps filter values parameterized", () => {
-    const quotedForm = {
-      ...aggregateForm,
-      name: 'Orders "Daily"',
-      fields: {
-        ...aggregateForm.fields,
-        Amount: {
-          ...aggregateForm.fields.Amount,
-          sql_column: 'field "amount"',
-        },
-      },
-    };
-    expect(buildSqlAggregateQuery(quotedForm, "sum", "Amount", "Category"))
-      .toEqual({
-        sql:
-          'SELECT SUM("field ""amount""") AS "value" FROM "Orders ""Daily""" WHERE "field_category" = {{filter_value}}',
-        parameter: {
-          name: "filter_value",
-          type: "string",
-          description: "Category",
-        },
-      });
-  });
-
-  it("limits aggregate and filter fields to current compatible human labels", () => {
-    expect(
-      sqlAggregateFieldOptions(aggregateForm, "sum").map((field) =>
-        field.label
-      ),
-    ).toEqual(["Amount", "Long value"]);
-    expect(
-      sqlAggregateFieldOptions(aggregateForm, "count-values").map((field) =>
-        field.label
-      ),
-    ).toEqual(["Amount", "Category", "Long value", "Starts at"]);
-    expect(
-      sqlAggregateFieldOptions(aggregateForm, "minimum").map((field) =>
-        field.label
-      ),
-    ).toEqual(["Amount", "Long value", "Starts at"]);
-    expect(
-      sqlFilterFieldOptions(aggregateForm).map((field) => [
-        field.label,
-        field.parameterType,
-      ]),
-    ).toEqual([
-      ["Amount", "integer"],
-      ["Category", "string"],
-    ]);
-  });
-
   it("builds SQL structure capabilities from trusted Form columns and typed variables", () => {
     const [context] = buildSqlStructureContexts([{
       id: "form-1",
       name: "Tasks",
+      sql_relation: "form_tasks",
       version: 1,
       template: "task",
       fields: {
@@ -234,16 +145,17 @@ describe("sql helpers", () => {
 
     expect(context).toMatchObject({
       identity: expect.stringContaining("composition:source-1"),
+      label: "Tasks",
       parser: {
-        relation: "Tasks",
+        relation: "form_tasks",
         columns: [
-        { name: "_ugoite_id", type: "string" },
-        { name: "_ugoite_created_at", type: "timestamp" },
-        { name: "_ugoite_updated_at", type: "timestamp" },
-        { name: "field_title", type: "string" },
-        { name: "field_amount", type: "float" },
-        { name: "field_hidden", type: "string" },
-      ],
+          { name: "_ugoite_id", type: "string" },
+          { name: "_ugoite_created_at", type: "timestamp" },
+          { name: "_ugoite_updated_at", type: "timestamp" },
+          { name: "field_title", type: "string" },
+          { name: "field_amount", type: "float" },
+          { name: "field_hidden", type: "string" },
+        ],
         variables: [{ name: "month", type: "date" }],
         stable_key: ["_ugoite_id"],
       },
@@ -268,17 +180,6 @@ describe("sql helpers", () => {
         },
       },
     });
-  });
-
-  it("rejects aggregate and filter fields unavailable in the current Form", () => {
-    expect(() => buildSqlAggregateQuery(aggregateForm, "sum", "Category"))
-      .toThrow("The aggregate field is unavailable");
-    expect(() =>
-      buildSqlAggregateQuery(aggregateForm, "count-rows", "", "LongValue")
-    ).toThrow("The filter field is unavailable");
-    expect(() =>
-      buildSqlAggregateQuery(aggregateForm, "count-rows", "", "StartsAt")
-    ).toThrow("The filter field is unavailable");
   });
 
   it("does not extract placeholders from SQL literals or comments", () => {
@@ -307,6 +208,7 @@ describe("sql helpers", () => {
       {
         id: "00000000-0000-0000-0000-000000000002",
         name: "__proto__",
+        sql_relation: "__proto__",
         version: 1,
         template: "",
         fields: {},
@@ -336,19 +238,39 @@ describe("sql helpers", () => {
       },
     ];
     const schema = buildSqlSchema(forms);
-    const columns = schema.tables?.Meeting;
+    const columns = schema.tables?.form_00000000000000000000000000000001;
     expect(columns).toEqual([
       "_ugoite_id",
       "_ugoite_created_at",
       "_ugoite_updated_at",
       "field_104",
     ]);
-    expect(schema.tables).not.toHaveProperty(
-      "form_00000000000000000000000000000001",
-    );
+    expect(schema.tables).not.toHaveProperty("Meeting");
     expect(columns).not.toContain("id");
     expect(columns).not.toContain("title");
     expect(columns).not.toContain("updated_at");
+  });
+
+  it("uses the server SQL relation for Form structure contexts", () => {
+    const form: Form = {
+      id: "stable-form-id",
+      name: "Renamed Form",
+      sql_relation: "form_00000000000000000000000000000001",
+      version: 1,
+      template: "",
+      fields: {},
+    };
+    const [formContext] = buildSqlStructureContexts([form]);
+    const schema = buildSqlSchema([form]);
+
+    expect(formContext).toMatchObject({
+      label: "Renamed Form",
+      parser: { relation: "form_00000000000000000000000000000001" },
+    });
+    expect(schema.tables).toHaveProperty(
+      "form_00000000000000000000000000000001",
+    );
+    expect(schema.tables).not.toHaveProperty("Renamed Form");
   });
 
   it("should flag empty query", () => {
@@ -466,6 +388,31 @@ describe("sql helpers", () => {
     ).toEqual([existing[1], existing[0]]);
     expect(normalizeSqlVariables("SELECT $title", existing).variables).toEqual([
       existing[1],
+    ]);
+  });
+
+  it("replaces a stale saved declaration when a structure action reuses its name", () => {
+    expect(mergeSqlStructureVariables([
+      {
+        type: "string",
+        name: "filter_amount",
+        description: "Old",
+        default: "x",
+      },
+      {
+        type: "integer",
+        name: "threshold",
+        description: "Threshold",
+        default: 4,
+      },
+    ], [{ name: "filter_amount", type: "integer" }])).toEqual([
+      { type: "integer", name: "filter_amount", description: "" },
+      {
+        type: "integer",
+        name: "threshold",
+        description: "Threshold",
+        default: 4,
+      },
     ]);
   });
 
@@ -645,7 +592,7 @@ describe("SQL structure adapter context", () => {
     expect(context.columnCapabilities).toEqual({});
   });
 
-  it("uses the written Form relation and intersects typed column capabilities", () => {
+  it("uses the server-derived Form relation and intersects typed column capabilities", () => {
     const formWithUntrustedType: Form = {
       ...aggregateForm,
       fields: {
@@ -669,8 +616,8 @@ describe("SQL structure adapter context", () => {
       "composition:inline-1",
     );
 
-    expect(context.parser.relation).toBe("Orders");
-    expect(context.parser.relation).not.toBe(aggregateForm.sql_relation);
+    expect(context.parser.relation).toBe(aggregateForm.sql_relation);
+    expect(context.parser.relation).not.toBe("Orders");
     expect(context.parser.stable_key).toEqual(["_ugoite_id"]);
     expect(context.columnCapabilities.field_amount.supportedOperators).toEqual([
       "eq",
@@ -736,6 +683,42 @@ describe("SQL structure adapter context", () => {
     });
     expect(context.identity).toContain("composition:inline-1");
     expect(context.identity).toContain('"formVersion":1');
+  });
+
+  it("offers only user-creatable Forms as SQL relation candidates", () => {
+    const reservedForms: Form[] = [
+      "SQL",
+      "User",
+      "UserGroup",
+      "_ugoite_compositions",
+    ].map((name, index) => ({
+      id: `reserved-${index}`,
+      name,
+      sql_relation: `form_reserved_${index}`,
+      version: 1,
+      template: "",
+      fields: {},
+    }));
+    const eligibleForm: Form = {
+      ...aggregateForm,
+      name: "Orders",
+      sql_relation: "form_orders",
+    };
+
+    const contexts = buildSqlStructureContexts(
+      [...reservedForms, eligibleForm],
+      [],
+      "new-sql",
+    );
+
+    expect(contexts.map((context) => context.label)).toEqual([
+      "Orders",
+      undefined,
+    ]);
+    expect(contexts.map((context) => context.parser.relation)).toEqual([
+      "form_orders",
+      "",
+    ]);
   });
 
   it("changes its identity when the Form version changes", () => {

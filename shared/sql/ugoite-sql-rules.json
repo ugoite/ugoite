@@ -30,8 +30,8 @@
   "feature_matrix": {
     "version": 1,
     "backend": {
-      "statement_gate": "exactly_one_query_ast_statement",
-      "query_body_form_restricted": false,
+      "statement_gate": "exactly_one_select_query_statement",
+      "query_body_form_restricted": true,
       "clause_admission": "datafusion_parser_and_planner",
       "closed_clause_allowlist": false,
       "function_policy": "ReadOnlyAggregateV1",
@@ -60,6 +60,12 @@
         ]
       },
       "operations": [
+        {
+          "action": "form",
+          "protocol": "set_relation",
+          "sql": ["FROM"],
+          "coverage": "bounded"
+        },
         {
           "action": "columns",
           "protocol": "set_columns",
@@ -103,12 +109,12 @@
           "id": "from_relation",
           "sql": "FROM",
           "backend_admission": "planner_decides",
-          "editor_coverage": "context_only",
+          "editor_coverage": "bounded",
           "limits": [
-            "one relation",
-            "matching context relation",
-            "no alias",
-            "no joins"
+            "one relation selected from trusted Form context",
+            "relation-free SELECT 1 draft can select a Form",
+            "plain aliases on a single relation are supported and preserved; edited column references remain unqualified",
+            "joins, derived relations, and table alias column lists are not supported"
           ]
         },
         {
@@ -183,12 +189,21 @@
           "id": "set_operations",
           "sql": "UNION/INTERSECT/EXCEPT",
           "backend_admission": "planner_decides",
-          "editor_coverage": "none"
+          "editor_coverage": "none",
+          "limits": [
+            "every set-operation operand must be a SELECT query body"
+          ]
         },
         {
           "id": "values_query",
           "sql": "VALUES",
-          "backend_admission": "statement_gate_passes_but_authorized_physical_plan_rejects",
+          "backend_admission": "statement_gate_rejects",
+          "editor_coverage": "none"
+        },
+        {
+          "id": "table_query",
+          "sql": "TABLE",
+          "backend_admission": "statement_gate_rejects",
           "editor_coverage": "none"
         },
         {

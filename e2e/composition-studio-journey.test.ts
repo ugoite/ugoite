@@ -730,9 +730,8 @@ test.describe("Composition Studio Journey", () => {
       await expect(page.getByLabel("month_start")).toHaveValue(
         seed.monthStart,
       );
-      await expect(page.getByLabel("report_title")).toHaveValue(
-        "January expenses",
-      );
+      await expect(page.getByLabel("report_title", { exact: true }))
+        .toHaveValue("January expenses", { timeout: 30_000 });
       await expect(page.getByText("January expenses", { exact: true }))
         .toBeVisible();
       await expect(page.getByLabel("month_start")).toBeEditable();
@@ -777,9 +776,10 @@ test.describe("Composition Studio Journey", () => {
       await page.reload({ waitUntil: "domcontentloaded" });
       await expect(page.getByLabel("report_title")).toHaveValue(
         "January expenses",
+        { timeout: 30_000 },
       );
       await expect(page.getByText("January expenses", { exact: true }))
-        .toBeVisible();
+        .toBeVisible({ timeout: 30_000 });
       await expectHistoryTotal(request, seed.spaceId, compositionId, 1);
 
       // Edit the exact revision by changing a metric's SQL result column.

@@ -216,6 +216,7 @@ async fn prebinding_space_saved_sql_reads_executes_and_reopens_without_mutation(
                 include_exact_integer_values: false,
                 limit: 100,
                 continuation: None,
+                execution_id: None,
                 saved_sql: Some(source.clone()),
             },
         )
@@ -273,6 +274,7 @@ async fn prebinding_space_saved_sql_reads_executes_and_reopens_without_mutation(
                 include_exact_integer_values: false,
                 limit: 100,
                 continuation: None,
+                execution_id: None,
                 saved_sql: Some(SavedSqlRevisionRef {
                     id: expected.saved_sql.id,
                     revision_id: expected.saved_sql.revision_id,

@@ -49,6 +49,10 @@ pub struct SqlQueryRequest {
     pub limit: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub continuation: Option<String>,
+    /// Client-generated nonce that binds one query-variable response to the
+    /// exact request that produced it. Ordinary SQL clients may omit it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_id: Option<uuid::Uuid>,
     /// Selects an exact immutable Saved SQL revision while retaining the
     /// stateless page execution contract. `sql` must match that revision.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -96,6 +100,23 @@ impl SqlQueryRequest {
         let bytes = serde_json::to_vec(&canonical).map_err(SqlQueryError::Serialize)?;
         fingerprint(&bytes)
     }
+
+    /// Fingerprint every client-held coordinate that distinguishes one page
+    /// request, including a continuation token on later pages.
+    pub fn execution_fingerprint(&self) -> Result<String, SqlQueryError> {
+        let coordinate = (
+            &self.sql,
+            &self.parameters,
+            &self.parameter_types,
+            self.include_exact_integer_values,
+            self.limit,
+            &self.continuation,
+            self.execution_id,
+            &self.saved_sql,
+        );
+        let bytes = serde_json::to_vec(&coordinate).map_err(SqlQueryError::Serialize)?;
+        fingerprint(&bytes)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -120,6 +141,7 @@ impl SqlQueryCountRequest {
             include_exact_integer_values: false,
             limit: 1,
             continuation: None,
+            execution_id: None,
             saved_sql: self.saved_sql.clone(),
         }
         .validate()
@@ -134,6 +156,15 @@ pub struct SqlQueryPage {
     pub has_more: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next: Option<String>,
+    /// Internal echo of the request execution nonce, used to reject stale
+    /// pages when Composition binds a response to current inputs. This stays
+    /// out of the public SQL page DTO.
+    #[serde(skip)]
+    pub execution_id: Option<uuid::Uuid>,
+    /// Internal fingerprint of the exact request coordinate, including its
+    /// continuation token. This stays out of the public SQL page DTO.
+    #[serde(skip)]
+    pub request_fingerprint: Option<String>,
     /// Server-owned portable column types in `columns` order. `None` only
     /// when read from a response written before this extension; new pages
     /// always carry the descriptor, including null and empty results whose
@@ -171,6 +202,15 @@ pub struct SqlResultColumn {
     pub name: String,
     #[serde(rename = "type")]
     pub column_type: SqlResultColumnType,
+    /// Whether the planned SQL output can return SQL NULL. Older typed result
+    /// schemas omit this additive field; consumers conservatively treat those
+    /// columns as nullable when decoding them.
+    #[serde(default = "sql_result_column_nullable_by_default")]
+    pub nullable: bool,
+}
+
+fn sql_result_column_nullable_by_default() -> bool {
+    true
 }
 
 /// Portable logical type of a SQL output column.
@@ -408,26 +448,46 @@ mod tests {
                 .expect("legacy page");
         assert_eq!(legacy.result_schema, None);
         assert_eq!(legacy.exact_integer_rows, None);
+        assert_eq!(legacy.execution_id, None);
+        assert_eq!(legacy.request_fingerprint, None);
+
+        let old_typed_schema: SqlQueryPage = serde_json::from_str(
+            r#"{"columns":["a"],"rows":[],"has_more":false,"result_schema":[{"name":"a","type":"integer"}]}"#,
+        )
+        .expect("older typed schema without nullability");
+        assert!(old_typed_schema.result_schema.expect("typed schema")[0].nullable);
 
         let typed = SqlQueryPage {
             columns: vec!["total".to_string(), "label".to_string()],
             rows: vec![],
             has_more: false,
             next: None,
+            execution_id: None,
+            request_fingerprint: None,
             exact_integer_rows: None,
             result_schema: Some(vec![
                 SqlResultColumn {
                     name: "total".to_string(),
                     column_type: SqlResultColumnType::Float,
+                    nullable: true,
                 },
                 SqlResultColumn {
                     name: "label".to_string(),
                     column_type: SqlResultColumnType::String,
+                    nullable: false,
                 },
             ]),
         };
         let encoded = serde_json::to_value(&typed).expect("encode");
         assert_eq!(encoded["result_schema"][0]["type"], "float");
+        assert!(encoded.get("execution_id").is_none());
+        assert!(encoded.get("request_fingerprint").is_none());
+        assert!(encoded["result_schema"][0]["nullable"]
+            .as_bool()
+            .expect("nullable metadata is boolean"));
+        assert!(!encoded["result_schema"][1]["nullable"]
+            .as_bool()
+            .expect("nullable metadata is boolean"));
         assert!(encoded.get("exact_integer_rows").is_none());
         assert_eq!(
             serde_json::from_value::<SqlQueryPage>(encoded).expect("decode"),
@@ -439,9 +499,12 @@ mod tests {
             rows: vec![serde_json::json!({"total": i64::MAX})],
             has_more: false,
             next: None,
+            execution_id: None,
+            request_fingerprint: None,
             result_schema: Some(vec![SqlResultColumn {
                 name: "total".to_string(),
                 column_type: SqlResultColumnType::Integer,
+                nullable: false,
             }]),
             exact_integer_rows: Some(vec![vec![Some(i64::MAX.to_string())]]),
         };
@@ -476,6 +539,29 @@ mod tests {
                 format!("\"{spelling}\"")
             );
         }
+    }
+
+    #[test]
+    fn internal_execution_coordinates_do_not_change_the_public_page_shape() {
+        let page = SqlQueryPage {
+            columns: vec!["value".to_owned()],
+            rows: vec![],
+            has_more: false,
+            next: None,
+            execution_id: Some(uuid::Uuid::from_u128(7)),
+            request_fingerprint: Some("request-fingerprint".to_owned()),
+            result_schema: None,
+            exact_integer_rows: None,
+        };
+        let encoded = serde_json::to_value(page).expect("encode public page");
+        assert_eq!(
+            encoded,
+            serde_json::json!({
+                "columns": ["value"],
+                "rows": [],
+                "has_more": false
+            })
+        );
     }
 
     #[test]

@@ -10,7 +10,7 @@ import {
   schemaCompletionSource,
   StandardSQL,
 } from "@codemirror/lang-sql";
-import type { SqlSchema } from "./sql";
+import { type SqlSchema, sqlSchemaFormLabelsFor } from "./sql";
 
 const NON_CODE_NODES = new Set([
   "String",
@@ -43,10 +43,29 @@ export function sqlCompletionSource(schema: SqlSchema): CompletionSource {
   const schemaSource = schemaCompletionSource({ schema });
   const keywords = keywordCompletionSource(StandardSQL);
   const names = Object.keys(schema.tables ?? {});
+  const tableLabels = sqlSchemaFormLabelsFor(schema);
+  const quoteIdentifier = (name: string) => `"${name.replaceAll('"', '""')}"`;
+  const withTableLabels = (result: ReturnType<typeof schemaSource>) => {
+    if (!result) return result;
+    return {
+      ...result,
+      options: result.options.map((option) => {
+        if (!Object.hasOwn(tableLabels, option.label)) return option;
+        const relation = option.label;
+        return {
+          ...option,
+          label: tableLabels[relation],
+          apply: quoteIdentifier(relation),
+        };
+      }),
+    };
+  };
 
   return (context: CompletionContext) => {
     const node = syntaxTree(context.state).resolve(context.pos, -1);
-    if (node.name === "QuotedIdentifier") return schemaSource(context);
+    if (node.name === "QuotedIdentifier") {
+      return withTableLabels(schemaSource(context));
+    }
     if (NON_CODE_NODES.has(node.name)) return null;
 
     const beforeCursor = context.state.sliceDoc(0, context.pos);
@@ -58,9 +77,9 @@ export function sqlCompletionSource(schema: SqlSchema): CompletionSource {
       return {
         from: token?.from ?? context.pos,
         options: names.map((name) => ({
-          label: name,
+          label: tableLabels[name] ?? name,
           type: "type",
-          apply: `"${name.replaceAll('"', '""')}"`,
+          apply: quoteIdentifier(name),
         })),
         validFor: /^[A-Za-z0-9_-]*$/,
       };

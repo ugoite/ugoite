@@ -6,15 +6,19 @@
 //! access to the Space, Forms, and exact Saved SQL revision.
 
 use crate::sql_query::{
-    SavedSqlRevisionRef, SqlQueryRequest, MAX_SQL_QUERY_BYTES, MAX_SQL_SCALAR_PROBE_ROWS,
+    SavedSqlRevisionRef, SqlQueryPage, SqlQueryRequest, SqlResultColumnType, MAX_SQL_QUERY_BYTES,
+    MAX_SQL_SCALAR_PROBE_ROWS,
 };
 use chrono::{DateTime, Datelike, NaiveDate};
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use ugoite_domain::composition::{
-    compile_variable_graph, VariableGraph, VariableGraphArgumentBinding, VariableGraphDiagnostic,
+    compile_variable_graph, validate_variable_graph_result, VariableGraph,
+    VariableGraphArgumentBinding, VariableGraphColumn, VariableGraphDiagnostic,
     VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind, VariableGraphQueryDefinition,
-    VariableGraphResultType, VariableGraphScalarDescriptor, VariableGraphScalarType,
+    VariableGraphResultDiagnostic, VariableGraphResultType, VariableGraphScalarDescriptor,
+    VariableGraphScalarType, VariableGraphValidatedResult,
 };
 use ugoite_domain::sql_document::{parse_sql_document, SqlDocumentStatus};
 use uuid::Uuid;
@@ -57,6 +61,89 @@ impl VariableGraphQueryRequestDiagnosticCode {
             Self::InvalidArgumentValue => "invalid_argument_value",
             Self::UnsupportedArgumentType => "unsupported_argument_type",
             Self::RequestOutOfBounds => "request_out_of_bounds",
+        }
+    }
+}
+
+/// Stable diagnostics raised while checking one typed SQL page against a
+/// query variable's declared return contract.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VariableGraphQueryResultDiagnosticCode {
+    QueryVariableNotFound,
+    QueryNodeRequired,
+    RequestSourceMismatch,
+    ExecutionMismatch,
+    ResultSchemaMissing,
+    ResultSchemaMismatch,
+    InvalidResultRow,
+    SavedSqlColumnMissing,
+    SavedSqlColumnAmbiguous,
+    ScalarResultIncomplete,
+    ResultContractMismatch,
+}
+
+impl VariableGraphQueryResultDiagnosticCode {
+    /// Stable machine-readable spelling.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::QueryVariableNotFound => "query_variable_not_found",
+            Self::QueryNodeRequired => "query_node_required",
+            Self::RequestSourceMismatch => "request_source_mismatch",
+            Self::ExecutionMismatch => "execution_mismatch",
+            Self::ResultSchemaMissing => "result_schema_missing",
+            Self::ResultSchemaMismatch => "result_schema_mismatch",
+            Self::InvalidResultRow => "invalid_result_row",
+            Self::SavedSqlColumnMissing => "saved_sql_column_missing",
+            Self::SavedSqlColumnAmbiguous => "saved_sql_column_ambiguous",
+            Self::ScalarResultIncomplete => "scalar_result_incomplete",
+            Self::ResultContractMismatch => "result_contract_mismatch",
+        }
+    }
+}
+
+/// A query-result diagnostic scoped to its graph variable.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VariableGraphQueryResultDiagnostic {
+    pub code: VariableGraphQueryResultDiagnosticCode,
+    pub variable_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column_name: Option<String>,
+    /// Detailed stable Domain diagnostic for a declared descriptor mismatch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_diagnostic: Option<VariableGraphResultDiagnostic>,
+}
+
+impl VariableGraphQueryResultDiagnostic {
+    fn for_node(code: VariableGraphQueryResultDiagnosticCode, variable_id: &str) -> Self {
+        Self {
+            code,
+            variable_id: variable_id.to_owned(),
+            column_name: None,
+            result_diagnostic: None,
+        }
+    }
+
+    fn for_column(
+        code: VariableGraphQueryResultDiagnosticCode,
+        variable_id: &str,
+        column_name: &str,
+    ) -> Self {
+        Self {
+            code,
+            variable_id: variable_id.to_owned(),
+            column_name: Some(column_name.to_owned()),
+            result_diagnostic: None,
+        }
+    }
+
+    fn for_contract(variable_id: &str, result_diagnostic: VariableGraphResultDiagnostic) -> Self {
+        Self {
+            code: VariableGraphQueryResultDiagnosticCode::ResultContractMismatch,
+            variable_id: variable_id.to_owned(),
+            column_name: result_diagnostic.column_name.clone(),
+            result_diagnostic: Some(result_diagnostic),
         }
     }
 }
@@ -154,9 +241,12 @@ pub struct VariableGraphQueryRequestDeferredArgument {
 /// to a bounded first page and carries no continuation token.
 /// A Saved SQL output-column selection remains query-result metadata because
 /// `SqlQueryRequest` carries the pinned revision and parameters only.
+/// The caller owns the execution snapshot identity so this portable compiler
+/// does not depend on a platform-specific random-number provider.
 pub fn compile_variable_graph_query_request(
     graph: &VariableGraph,
     query_variable_id: &str,
+    execution_id: Uuid,
     resolved_values: &BTreeMap<String, VariableGraphLiteral>,
 ) -> Result<SqlQueryRequest, Vec<VariableGraphQueryRequestDiagnostic>> {
     if let Err(domain_diagnostics) = compile_variable_graph(graph) {
@@ -174,17 +264,19 @@ pub fn compile_variable_graph_query_request(
         )]);
     };
 
-    compile_validated_query_node(graph, node, resolved_values)
+    compile_validated_query_node(graph, node, execution_id, resolved_values)
 }
 
 fn compile_validated_query_node(
     graph: &VariableGraph,
     node: &VariableGraphNode,
+    execution_id: Uuid,
     resolved_values: &BTreeMap<String, VariableGraphLiteral>,
 ) -> Result<SqlQueryRequest, Vec<VariableGraphQueryRequestDiagnostic>> {
     compile_validated_query_node_with_deferred_dependencies(
         graph,
         node,
+        execution_id,
         resolved_values,
         &BTreeSet::new(),
     )
@@ -194,6 +286,7 @@ fn compile_validated_query_node(
 fn compile_validated_query_node_with_deferred_dependencies(
     graph: &VariableGraph,
     node: &VariableGraphNode,
+    execution_id: Uuid,
     resolved_values: &BTreeMap<String, VariableGraphLiteral>,
     deferred_query_variable_ids: &BTreeSet<String>,
 ) -> Result<
@@ -384,6 +477,7 @@ fn compile_validated_query_node_with_deferred_dependencies(
             VariableGraphResultType::Table { .. } => DEFAULT_VARIABLE_GRAPH_SQL_PAGE_LIMIT,
         },
         continuation: None,
+        execution_id: Some(execution_id),
         saved_sql,
     };
     request.validate().map_err(|_| {
@@ -406,10 +500,13 @@ fn compile_validated_query_node_with_deferred_dependencies(
 /// for those queries to produce fresh values and then compile the dependent
 /// request with [`compile_variable_graph_query_request`]. This helper only
 /// prepares requests; it does not authorize, execute, or validate query
-/// results.
+/// results. `execution_id` is the immutable snapshot identity shared by the
+/// requests in this batch; each request fingerprint still distinguishes its
+/// own SQL and parameter subset.
 pub fn compile_variable_graph_query_request_batch(
     graph: &VariableGraph,
     requested_query_variable_ids: &[String],
+    execution_id: Uuid,
     resolved_values: &BTreeMap<String, VariableGraphLiteral>,
 ) -> Result<Vec<VariableGraphQueryRequestBatchItem>, Vec<VariableGraphQueryRequestDiagnostic>> {
     let compiled_graph = compile_variable_graph(graph).map_err(|diagnostics| {
@@ -452,6 +549,7 @@ pub fn compile_variable_graph_query_request_batch(
         match compile_validated_query_node_with_deferred_dependencies(
             graph,
             node,
+            execution_id,
             resolved_values,
             &requested_ids,
         ) {
@@ -484,6 +582,239 @@ fn map_graph_diagnostics(
     mapped.sort();
     mapped.dedup();
     mapped
+}
+
+/// Validate a typed SQL page before exposing it as a query variable value.
+///
+/// The caller passes the exact request used to obtain the page so Saved SQL
+/// results remain tied to the query variable's pinned entry and revision. The
+/// page's ordered planner schema supplies column names and portable types;
+/// values are converted without coercion and checked by the Domain result
+/// contract. Older typed SQL schemas that omit nullability are conservatively
+/// decoded as nullable.
+///
+/// A Saved SQL scalar may project a named output column only when that name is
+/// present exactly once in the pinned revision's result schema. No first-row
+/// or first-column selection is performed implicitly.
+pub fn validate_variable_graph_sql_page(
+    graph: &VariableGraph,
+    query_variable_id: &str,
+    request: &SqlQueryRequest,
+    page: &SqlQueryPage,
+) -> Result<VariableGraphValidatedResult, Vec<VariableGraphQueryResultDiagnostic>> {
+    let Some(node) = graph
+        .variables
+        .iter()
+        .find(|node| node.id == query_variable_id)
+    else {
+        return Err(vec![VariableGraphQueryResultDiagnostic::for_node(
+            VariableGraphQueryResultDiagnosticCode::QueryVariableNotFound,
+            query_variable_id,
+        )]);
+    };
+    let VariableGraphNodeKind::Query { returns, query, .. } = &node.kind else {
+        return Err(vec![VariableGraphQueryResultDiagnostic::for_node(
+            VariableGraphQueryResultDiagnosticCode::QueryNodeRequired,
+            &node.id,
+        )]);
+    };
+
+    let selected_column = match query {
+        VariableGraphQueryDefinition::InlineSql { sql }
+            if request.saved_sql.is_none() && request.sql == *sql =>
+        {
+            None
+        }
+        VariableGraphQueryDefinition::SavedSql {
+            entry_id: Some(entry_id),
+            revision_id: Some(revision_id),
+            column,
+        } if request.saved_sql.as_ref().is_some_and(|saved_sql| {
+            saved_sql.id == *entry_id && saved_sql.revision_id == *revision_id
+        }) =>
+        {
+            column.as_deref()
+        }
+        _ => {
+            return Err(vec![VariableGraphQueryResultDiagnostic::for_node(
+                VariableGraphQueryResultDiagnosticCode::RequestSourceMismatch,
+                &node.id,
+            )]);
+        }
+    };
+
+    let request_fingerprint = request.execution_fingerprint().ok();
+    if request.execution_id.is_none()
+        || request.execution_id != page.execution_id
+        || request_fingerprint.as_deref() != page.request_fingerprint.as_deref()
+    {
+        return Err(vec![VariableGraphQueryResultDiagnostic::for_node(
+            VariableGraphQueryResultDiagnosticCode::ExecutionMismatch,
+            &node.id,
+        )]);
+    }
+
+    let Some(result_schema) = page.result_schema.as_deref() else {
+        return Err(vec![VariableGraphQueryResultDiagnostic::for_node(
+            VariableGraphQueryResultDiagnosticCode::ResultSchemaMissing,
+            &node.id,
+        )]);
+    };
+    if page.columns.len() != result_schema.len()
+        || page
+            .columns
+            .iter()
+            .zip(result_schema)
+            .any(|(name, column)| name != &column.name)
+    {
+        return Err(vec![VariableGraphQueryResultDiagnostic::for_node(
+            VariableGraphQueryResultDiagnosticCode::ResultSchemaMismatch,
+            &node.id,
+        )]);
+    }
+
+    let selected_indices = if let Some(selected_column) = selected_column {
+        let matches = result_schema
+            .iter()
+            .enumerate()
+            .filter_map(|(index, column)| (column.name == selected_column).then_some(index))
+            .collect::<Vec<_>>();
+        match matches.as_slice() {
+            [] => {
+                return Err(vec![VariableGraphQueryResultDiagnostic::for_column(
+                    VariableGraphQueryResultDiagnosticCode::SavedSqlColumnMissing,
+                    &node.id,
+                    selected_column,
+                )]);
+            }
+            [index] => vec![*index],
+            _ => {
+                return Err(vec![VariableGraphQueryResultDiagnostic::for_column(
+                    VariableGraphQueryResultDiagnosticCode::SavedSqlColumnAmbiguous,
+                    &node.id,
+                    selected_column,
+                )]);
+            }
+        }
+    } else {
+        (0..result_schema.len()).collect()
+    };
+
+    let selected_schema = selected_indices
+        .iter()
+        .map(|index| &result_schema[*index])
+        .collect::<Vec<_>>();
+    let expected_row_names = page.columns.iter().collect::<BTreeSet<_>>();
+    let mut observed_rows = Vec::with_capacity(page.rows.len());
+    for row in &page.rows {
+        let Some(row) = row.as_object() else {
+            return Err(vec![VariableGraphQueryResultDiagnostic::for_node(
+                VariableGraphQueryResultDiagnosticCode::InvalidResultRow,
+                &node.id,
+            )]);
+        };
+        if row.keys().any(|name| !expected_row_names.contains(name)) {
+            return Err(vec![VariableGraphQueryResultDiagnostic::for_node(
+                VariableGraphQueryResultDiagnosticCode::InvalidResultRow,
+                &node.id,
+            )]);
+        }
+        let mut values = Vec::with_capacity(selected_schema.len());
+        for column in &selected_schema {
+            let Some(value) = row.get(&column.name) else {
+                return Err(vec![VariableGraphQueryResultDiagnostic::for_node(
+                    VariableGraphQueryResultDiagnosticCode::InvalidResultRow,
+                    &node.id,
+                )]);
+            };
+            let Some(value) = sql_result_literal(column.column_type, value) else {
+                return Err(vec![VariableGraphQueryResultDiagnostic::for_node(
+                    VariableGraphQueryResultDiagnosticCode::InvalidResultRow,
+                    &node.id,
+                )]);
+            };
+            values.push(value);
+        }
+        observed_rows.push(values);
+    }
+
+    let observed_columns = selected_schema
+        .iter()
+        .map(|column| VariableGraphColumn {
+            name: column.name.clone(),
+            value_type: VariableGraphScalarDescriptor {
+                scalar_type: graph_scalar_type(column.column_type),
+                nullable: column.nullable,
+            },
+        })
+        .collect::<Vec<_>>();
+
+    let result = validate_variable_graph_result(returns, &observed_columns, &observed_rows)
+        .map_err(|diagnostics| {
+            diagnostics
+                .into_iter()
+                .map(|diagnostic| {
+                    VariableGraphQueryResultDiagnostic::for_contract(&node.id, diagnostic)
+                })
+                .collect::<Vec<_>>()
+        })?;
+
+    if matches!(returns, VariableGraphResultType::Scalar { .. })
+        && (request.limit != MAX_SQL_SCALAR_PROBE_ROWS
+            || request.continuation.is_some()
+            || page.has_more
+            || page.next.is_some())
+    {
+        return Err(vec![VariableGraphQueryResultDiagnostic::for_node(
+            VariableGraphQueryResultDiagnosticCode::ScalarResultIncomplete,
+            &node.id,
+        )]);
+    }
+
+    Ok(result)
+}
+
+fn graph_scalar_type(column_type: SqlResultColumnType) -> VariableGraphScalarType {
+    match column_type {
+        SqlResultColumnType::String => VariableGraphScalarType::String,
+        SqlResultColumnType::Boolean => VariableGraphScalarType::Boolean,
+        SqlResultColumnType::Integer => VariableGraphScalarType::Integer,
+        SqlResultColumnType::Float => VariableGraphScalarType::Float,
+        SqlResultColumnType::Date => VariableGraphScalarType::Date,
+        SqlResultColumnType::Timestamp => VariableGraphScalarType::Timestamp,
+        SqlResultColumnType::Decimal => VariableGraphScalarType::Decimal,
+        SqlResultColumnType::Json => VariableGraphScalarType::Json,
+    }
+}
+
+fn sql_result_literal(
+    column_type: SqlResultColumnType,
+    value: &Value,
+) -> Option<VariableGraphLiteral> {
+    if value.is_null() {
+        return Some(VariableGraphLiteral::Null);
+    }
+    match column_type {
+        SqlResultColumnType::String => value
+            .as_str()
+            .map(|value| VariableGraphLiteral::String(value.to_owned())),
+        SqlResultColumnType::Boolean => value.as_bool().map(VariableGraphLiteral::Boolean),
+        SqlResultColumnType::Integer => value.as_i64().map(VariableGraphLiteral::Integer),
+        SqlResultColumnType::Float => value
+            .as_f64()
+            .filter(|value| value.is_finite())
+            .map(VariableGraphLiteral::Float),
+        SqlResultColumnType::Date => value
+            .as_str()
+            .map(|value| VariableGraphLiteral::Date(value.to_owned())),
+        SqlResultColumnType::Timestamp => value
+            .as_str()
+            .map(|value| VariableGraphLiteral::Timestamp(value.to_owned())),
+        SqlResultColumnType::Decimal => value
+            .as_str()
+            .map(|value| VariableGraphLiteral::Decimal(value.to_owned())),
+        SqlResultColumnType::Json => Some(VariableGraphLiteral::Json(value.clone())),
+    }
 }
 
 fn scalar_descriptor_of(kind: &VariableGraphNodeKind) -> Option<VariableGraphScalarDescriptor> {
@@ -700,9 +1031,11 @@ fn decimal_pair(tens: u8, ones: u8) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sql_query::MAX_SQL_PARAMETER_BYTES;
+    use crate::sql_query::{SqlResultColumn, MAX_SQL_PARAMETER_BYTES};
+    use serde_json::json;
     use ugoite_domain::composition::{
-        VariableGraphColumn, VariableGraphResultType, VariableGraphScalarDescriptor,
+        VariableGraphColumn, VariableGraphResultDiagnosticCode, VariableGraphResultType,
+        VariableGraphScalarDescriptor,
     };
 
     fn scalar(
@@ -713,6 +1046,10 @@ mod tests {
             scalar_type: value_type,
             nullable,
         }
+    }
+
+    fn test_execution_id() -> Uuid {
+        Uuid::from_u128(1)
     }
 
     fn argument(
@@ -815,7 +1152,7 @@ mod tests {
         resolved_values: &BTreeMap<String, VariableGraphLiteral>,
     ) -> Result<SqlQueryRequest, Vec<VariableGraphQueryRequestDiagnostic>> {
         let graph = graph_for(node.clone());
-        compile_variable_graph_query_request(&graph, &node.id, resolved_values)
+        compile_variable_graph_query_request(&graph, &node.id, Uuid::from_u128(1), resolved_values)
     }
 
     fn argument_diagnostic(
@@ -845,6 +1182,455 @@ mod tests {
             domain_code: Some(domain_code.to_owned()),
             cycle: Vec::new(),
         }
+    }
+
+    fn result_node(
+        query: VariableGraphQueryDefinition,
+        returns: VariableGraphResultType,
+    ) -> VariableGraphNode {
+        VariableGraphNode {
+            id: "result".to_owned(),
+            kind: VariableGraphNodeKind::Query {
+                returns,
+                query,
+                arguments: Vec::new(),
+            },
+        }
+    }
+
+    fn result_page(
+        request: &SqlQueryRequest,
+        columns: &[(&str, SqlResultColumnType)],
+        rows: Vec<Value>,
+    ) -> SqlQueryPage {
+        SqlQueryPage {
+            columns: columns.iter().map(|(name, _)| (*name).to_owned()).collect(),
+            rows,
+            has_more: false,
+            next: None,
+            execution_id: request.execution_id,
+            request_fingerprint: request.execution_fingerprint().ok(),
+            result_schema: Some(
+                columns
+                    .iter()
+                    .map(|(name, column_type)| SqlResultColumn {
+                        name: (*name).to_owned(),
+                        column_type: *column_type,
+                        nullable: false,
+                    })
+                    .collect(),
+            ),
+            exact_integer_rows: None,
+        }
+    }
+
+    #[test]
+    fn planned_nullable_column_cannot_satisfy_a_required_scalar_descriptor() {
+        let node = result_node(
+            VariableGraphQueryDefinition::InlineSql {
+                sql: "SELECT maybe_total".to_owned(),
+            },
+            VariableGraphResultType::Scalar {
+                value_type: scalar(VariableGraphScalarType::Integer, false),
+            },
+        );
+        let graph = graph_for(node);
+        let request = compile_variable_graph_query_request(
+            &graph,
+            "result",
+            Uuid::from_u128(1),
+            &BTreeMap::new(),
+        )
+        .expect("query request compiles");
+        let mut page = result_page(
+            &request,
+            &[("maybe_total", SqlResultColumnType::Integer)],
+            vec![json!({"maybe_total": 8})],
+        );
+        page.result_schema.as_mut().expect("planner result schema")[0].nullable = true;
+
+        let diagnostics = validate_variable_graph_sql_page(&graph, "result", &request, &page)
+            .expect_err("planner nullability is part of the declared result contract");
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.result_diagnostic.as_ref().is_some_and(|result| {
+                result.code == VariableGraphResultDiagnosticCode::ColumnTypeMismatch
+                    && result
+                        .observed_value_type
+                        .is_some_and(|value_type| value_type.nullable)
+            })
+        }));
+    }
+
+    #[test]
+    fn validates_inline_planner_schema_before_exposing_scalar_values() {
+        let node = result_node(
+            VariableGraphQueryDefinition::InlineSql {
+                sql: "SELECT COUNT(*) AS total".to_owned(),
+            },
+            VariableGraphResultType::Scalar {
+                value_type: scalar(VariableGraphScalarType::Integer, false),
+            },
+        );
+        let graph = graph_for(node);
+        let request = compile_variable_graph_query_request(
+            &graph,
+            "result",
+            Uuid::from_u128(1),
+            &BTreeMap::new(),
+        )
+        .expect("request compiles");
+        let page = result_page(
+            &request,
+            &[("total", SqlResultColumnType::Integer)],
+            vec![json!({"total": 3})],
+        );
+
+        assert_eq!(
+            validate_variable_graph_sql_page(&graph, "result", &request, &page)
+                .expect("planner result matches declared scalar"),
+            VariableGraphValidatedResult::Scalar {
+                value: VariableGraphLiteral::Integer(3),
+            }
+        );
+
+        let wrong_type_node = result_node(
+            VariableGraphQueryDefinition::InlineSql {
+                sql: "SELECT COUNT(*) AS total".to_owned(),
+            },
+            VariableGraphResultType::Scalar {
+                value_type: scalar(VariableGraphScalarType::String, false),
+            },
+        );
+        let wrong_type_graph = graph_for(wrong_type_node);
+        let mut wrong_type_request = compile_variable_graph_query_request(
+            &wrong_type_graph,
+            "result",
+            Uuid::from_u128(1),
+            &BTreeMap::new(),
+        )
+        .expect("query request compiles despite runtime result drift");
+        wrong_type_request.execution_id = request.execution_id;
+        let mismatch = validate_variable_graph_sql_page(
+            &wrong_type_graph,
+            "result",
+            &wrong_type_request,
+            &page,
+        )
+        .expect_err("planned integer must not be exposed as a string");
+        assert_eq!(
+            mismatch[0].code,
+            VariableGraphQueryResultDiagnosticCode::ResultContractMismatch
+        );
+        assert_eq!(
+            mismatch[0]
+                .result_diagnostic
+                .as_ref()
+                .expect("Domain result diagnostic")
+                .code,
+            VariableGraphResultDiagnosticCode::ColumnTypeMismatch
+        );
+    }
+
+    #[test]
+    fn validates_saved_sql_output_column_against_the_pinned_result_schema() {
+        let node = result_node(
+            VariableGraphQueryDefinition::SavedSql {
+                entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
+                revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
+                column: Some("total".to_owned()),
+            },
+            VariableGraphResultType::Scalar {
+                value_type: scalar(VariableGraphScalarType::Integer, false),
+            },
+        );
+        let graph = graph_for(node);
+        let request = compile_variable_graph_query_request(
+            &graph,
+            "result",
+            Uuid::from_u128(1),
+            &BTreeMap::new(),
+        )
+        .expect("request pins Saved SQL revision");
+        let page = result_page(
+            &request,
+            &[
+                ("label", SqlResultColumnType::String),
+                ("total", SqlResultColumnType::Integer),
+            ],
+            vec![json!({"label": "March", "total": 17})],
+        );
+        assert_eq!(
+            validate_variable_graph_sql_page(&graph, "result", &request, &page)
+                .expect("explicitly selected output column is scalar"),
+            VariableGraphValidatedResult::Scalar {
+                value: VariableGraphLiteral::Integer(17),
+            }
+        );
+
+        let missing = result_page(
+            &request,
+            &[("label", SqlResultColumnType::String)],
+            vec![json!({"label": "March"})],
+        );
+        let missing_diagnostic =
+            validate_variable_graph_sql_page(&graph, "result", &request, &missing)
+                .expect_err("selected column must exist in the pinned revision schema");
+        assert_eq!(
+            missing_diagnostic[0].code,
+            VariableGraphQueryResultDiagnosticCode::SavedSqlColumnMissing
+        );
+        assert_eq!(missing_diagnostic[0].column_name.as_deref(), Some("total"));
+
+        let ambiguous = result_page(
+            &request,
+            &[
+                ("total", SqlResultColumnType::Integer),
+                ("total", SqlResultColumnType::Integer),
+            ],
+            vec![json!({"total": 17})],
+        );
+        assert_eq!(
+            validate_variable_graph_sql_page(&graph, "result", &request, &ambiguous)
+                .expect_err("duplicate selected names are ambiguous")[0]
+                .code,
+            VariableGraphQueryResultDiagnosticCode::SavedSqlColumnAmbiguous
+        );
+
+        let mut wrong_revision_request = request.clone();
+        wrong_revision_request
+            .saved_sql
+            .as_mut()
+            .expect("Saved SQL request")
+            .revision_id = "00000000-0000-0000-0000-000000000003".to_owned();
+        assert_eq!(
+            validate_variable_graph_sql_page(&graph, "result", &wrong_revision_request, &page,)
+                .expect_err("the response request must retain the exact pinned revision")[0]
+                .code,
+            VariableGraphQueryResultDiagnosticCode::RequestSourceMismatch
+        );
+    }
+
+    #[test]
+    fn scalar_results_never_choose_a_first_row_or_column() {
+        let node = result_node(
+            VariableGraphQueryDefinition::SavedSql {
+                entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
+                revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
+                column: None,
+            },
+            VariableGraphResultType::Scalar {
+                value_type: scalar(VariableGraphScalarType::Integer, false),
+            },
+        );
+        let graph = graph_for(node);
+        let request = compile_variable_graph_query_request(
+            &graph,
+            "result",
+            Uuid::from_u128(1),
+            &BTreeMap::new(),
+        )
+        .expect("query request compiles");
+        let multiple_columns = result_page(
+            &request,
+            &[
+                ("total", SqlResultColumnType::Integer),
+                ("other", SqlResultColumnType::Integer),
+            ],
+            vec![json!({"total": 4, "other": 5})],
+        );
+        let diagnostics =
+            validate_variable_graph_sql_page(&graph, "result", &request, &multiple_columns)
+                .expect_err("no selected Saved SQL column means no first-column fallback");
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.result_diagnostic.as_ref().is_some_and(|result| {
+                result.code == VariableGraphResultDiagnosticCode::ScalarColumnCountMismatch
+            })
+        }));
+
+        let selected_node = result_node(
+            VariableGraphQueryDefinition::SavedSql {
+                entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
+                revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
+                column: Some("total".to_owned()),
+            },
+            VariableGraphResultType::Scalar {
+                value_type: scalar(VariableGraphScalarType::Integer, false),
+            },
+        );
+        let selected_graph = graph_for(selected_node);
+        let selected_request = compile_variable_graph_query_request(
+            &selected_graph,
+            "result",
+            Uuid::from_u128(1),
+            &BTreeMap::new(),
+        )
+        .expect("query request compiles");
+        let multiple_rows = result_page(
+            &selected_request,
+            &[("total", SqlResultColumnType::Integer)],
+            vec![json!({"total": 4}), json!({"total": 5})],
+        );
+        let diagnostics = validate_variable_graph_sql_page(
+            &selected_graph,
+            "result",
+            &selected_request,
+            &multiple_rows,
+        )
+        .expect_err("an explicit column does not permit first-row fallback");
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.result_diagnostic.as_ref().is_some_and(|result| {
+                result.code == VariableGraphResultDiagnosticCode::ScalarMultipleRows
+            })
+        }));
+    }
+
+    #[test]
+    fn scalar_probe_rejects_continuations_and_stale_execution_pages() {
+        let node = result_node(
+            VariableGraphQueryDefinition::InlineSql {
+                sql: "SELECT COUNT(*) AS total".to_owned(),
+            },
+            VariableGraphResultType::Scalar {
+                value_type: scalar(VariableGraphScalarType::Integer, false),
+            },
+        );
+        let graph = graph_for(node);
+        let request = compile_variable_graph_query_request(
+            &graph,
+            "result",
+            Uuid::from_u128(1),
+            &BTreeMap::new(),
+        )
+        .expect("query request compiles");
+        let page = result_page(
+            &request,
+            &[("total", SqlResultColumnType::Integer)],
+            vec![json!({"total": 4})],
+        );
+
+        let mut stale_request = request.clone();
+        stale_request.execution_id = Some(Uuid::from_u128(2));
+        assert_eq!(
+            validate_variable_graph_sql_page(&graph, "result", &stale_request, &page)
+                .expect_err("a page from an older execution cannot bind to current inputs")[0]
+                .code,
+            VariableGraphQueryResultDiagnosticCode::ExecutionMismatch
+        );
+
+        let mut stale_continuation_request = request.clone();
+        stale_continuation_request.continuation = Some("opaque-next-page".to_owned());
+        assert_eq!(
+            validate_variable_graph_sql_page(&graph, "result", &stale_continuation_request, &page)
+                .expect_err("a page from a different continuation request cannot be reused")[0]
+                .code,
+            VariableGraphQueryResultDiagnosticCode::ExecutionMismatch
+        );
+
+        let mut continued_request = request;
+        continued_request.continuation = Some("opaque-next-page".to_owned());
+        let continued_page = result_page(
+            &continued_request,
+            &[("total", SqlResultColumnType::Integer)],
+            vec![json!({"total": 4})],
+        );
+        assert_eq!(
+            validate_variable_graph_sql_page(&graph, "result", &continued_request, &continued_page)
+                .expect_err("a later page cannot be accepted as a complete scalar probe")[0]
+                .code,
+            VariableGraphQueryResultDiagnosticCode::ScalarResultIncomplete
+        );
+    }
+
+    #[test]
+    fn validates_table_result_columns_and_types_from_planner_schema() {
+        let node = result_node(
+            VariableGraphQueryDefinition::InlineSql {
+                sql: "SELECT day, amount FROM \"G\"".to_owned(),
+            },
+            VariableGraphResultType::Table {
+                columns: vec![
+                    VariableGraphColumn {
+                        name: "day".to_owned(),
+                        value_type: scalar(VariableGraphScalarType::Date, false),
+                    },
+                    VariableGraphColumn {
+                        name: "amount".to_owned(),
+                        value_type: scalar(VariableGraphScalarType::Decimal, true),
+                    },
+                ],
+            },
+        );
+        let graph = graph_for(node);
+        let request = compile_variable_graph_query_request(
+            &graph,
+            "result",
+            Uuid::from_u128(1),
+            &BTreeMap::new(),
+        )
+        .expect("table request compiles");
+        let page = result_page(
+            &request,
+            &[
+                ("day", SqlResultColumnType::Date),
+                ("amount", SqlResultColumnType::Decimal),
+            ],
+            vec![json!({"day": "2026-10-18", "amount": "12.500"})],
+        );
+        assert_eq!(
+            validate_variable_graph_sql_page(&graph, "result", &request, &page)
+                .expect("matching typed table result"),
+            VariableGraphValidatedResult::Table {
+                columns: vec![
+                    VariableGraphColumn {
+                        name: "day".to_owned(),
+                        value_type: scalar(VariableGraphScalarType::Date, false),
+                    },
+                    VariableGraphColumn {
+                        name: "amount".to_owned(),
+                        value_type: scalar(VariableGraphScalarType::Decimal, true),
+                    },
+                ],
+                rows: vec![vec![
+                    VariableGraphLiteral::Date("2026-10-18".to_owned()),
+                    VariableGraphLiteral::Decimal("12.500".to_owned()),
+                ]],
+            }
+        );
+
+        let mismatched_schema = result_page(
+            &request,
+            &[
+                ("day", SqlResultColumnType::Date),
+                ("amount", SqlResultColumnType::Integer),
+            ],
+            vec![json!({"day": "2026-10-18", "amount": 12})],
+        );
+        let diagnostics =
+            validate_variable_graph_sql_page(&graph, "result", &request, &mismatched_schema)
+                .expect_err("table output type must match its declared column");
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.result_diagnostic.as_ref().is_some_and(|result| {
+                result.code == VariableGraphResultDiagnosticCode::ColumnTypeMismatch
+                    && result.column_index == Some(1)
+            })
+        }));
+
+        let missing_cell = result_page(
+            &request,
+            &[
+                ("day", SqlResultColumnType::Date),
+                ("amount", SqlResultColumnType::Decimal),
+            ],
+            vec![json!({"day": "2026-10-18"})],
+        );
+        assert_eq!(
+            validate_variable_graph_sql_page(&graph, "result", &request, &missing_cell)
+                .expect_err("missing cell is not SQL NULL")
+                .first()
+                .expect("one local diagnostic")
+                .code,
+            VariableGraphQueryResultDiagnosticCode::InvalidResultRow
+        );
     }
 
     #[test]
@@ -917,6 +1703,7 @@ mod tests {
         assert_eq!(request.parameter_types["created_at"], "timestamp");
         assert_eq!(request.limit, DEFAULT_VARIABLE_GRAPH_SQL_PAGE_LIMIT);
         assert_eq!(request.continuation, None);
+        assert_eq!(request.execution_id, Some(Uuid::from_u128(1)));
         assert_eq!(request.saved_sql, None);
         assert!(request.validate().is_ok());
     }
@@ -1228,8 +2015,13 @@ mod tests {
         let valid_node = inline_node(vec![]);
         let valid_graph = graph_for(valid_node);
         assert_eq!(
-            compile_variable_graph_query_request(&valid_graph, "absent", &BTreeMap::new())
-                .expect_err("unknown query reference"),
+            compile_variable_graph_query_request(
+                &valid_graph,
+                "absent",
+                Uuid::from_u128(1),
+                &BTreeMap::new(),
+            )
+            .expect_err("unknown query reference"),
             [VariableGraphQueryRequestDiagnostic::for_node(
                 VariableGraphQueryRequestDiagnosticCode::QueryVariableNotFound,
                 "absent",
@@ -1250,8 +2042,13 @@ mod tests {
             },
         });
         assert_eq!(
-            compile_variable_graph_query_request(&invalid_graph, "rows", &BTreeMap::new())
-                .expect_err("all graph query definitions must validate"),
+            compile_variable_graph_query_request(
+                &invalid_graph,
+                "rows",
+                Uuid::from_u128(1),
+                &BTreeMap::new(),
+            )
+            .expect_err("all graph query definitions must validate"),
             [VariableGraphQueryRequestDiagnostic {
                 code: VariableGraphQueryRequestDiagnosticCode::InvalidGraph,
                 variable_id: "bad".to_owned(),
@@ -1285,14 +2082,24 @@ mod tests {
         let values = BTreeMap::from([("upstream".to_owned(), VariableGraphLiteral::Integer(7))]);
         let requested = vec!["downstream".to_owned(), "upstream".to_owned()];
 
-        let first = compile_variable_graph_query_request_batch(&first_graph, &requested, &values)
-            .expect("valid request batch");
-        let reordered =
-            compile_variable_graph_query_request_batch(&reordered_graph, &requested, &values)
-                .expect("reordered graph keeps deterministic batch order");
+        let first = compile_variable_graph_query_request_batch(
+            &first_graph,
+            &requested,
+            test_execution_id(),
+            &values,
+        )
+        .expect("valid request batch");
+        let reordered = compile_variable_graph_query_request_batch(
+            &reordered_graph,
+            &requested,
+            test_execution_id(),
+            &values,
+        )
+        .expect("reordered graph keeps deterministic batch order");
         let reversed_request = compile_variable_graph_query_request_batch(
             &first_graph,
             &["upstream".to_owned(), "downstream".to_owned()],
+            test_execution_id(),
             &values,
         )
         .expect("reordered request IDs keep deterministic batch order");
@@ -1300,7 +2107,14 @@ mod tests {
         let batch_ids: Vec<_> = first.iter().map(|item| item.variable_id.as_str()).collect();
         assert_eq!(batch_ids, ["upstream", "downstream"]);
         assert!(first[0].deferred_arguments.is_empty());
-        assert!(first[0].request.is_some());
+        assert_eq!(
+            first[0]
+                .request
+                .as_ref()
+                .expect("upstream request is ready")
+                .execution_id,
+            Some(test_execution_id())
+        );
         assert_eq!(
             first[1].deferred_arguments,
             [VariableGraphQueryRequestDeferredArgument {
@@ -1313,9 +2127,13 @@ mod tests {
         assert_eq!(first, reordered);
         assert_eq!(first, reversed_request);
 
-        let no_previous_upstream_value =
-            compile_variable_graph_query_request_batch(&first_graph, &requested, &BTreeMap::new())
-                .expect("a deferred dependency does not require its previous value");
+        let no_previous_upstream_value = compile_variable_graph_query_request_batch(
+            &first_graph,
+            &requested,
+            test_execution_id(),
+            &BTreeMap::new(),
+        )
+        .expect("a deferred dependency does not require its previous value");
         assert!(no_previous_upstream_value[1].request.is_none());
     }
 
@@ -1344,6 +2162,7 @@ mod tests {
                 "upstream".to_owned(),
                 "downstream".to_owned(),
             ],
+            test_execution_id(),
             &values,
         )
         .expect("duplicate IDs compile once");
@@ -1360,9 +2179,13 @@ mod tests {
             "upstream"
         );
 
-        let selected =
-            compile_variable_graph_query_request_batch(&graph, &["downstream".to_owned()], &values)
-                .expect("caller can compile only an invalidated query");
+        let selected = compile_variable_graph_query_request_batch(
+            &graph,
+            &["downstream".to_owned()],
+            test_execution_id(),
+            &values,
+        )
+        .expect("caller can compile only an invalidated query");
         assert_eq!(selected.len(), 1);
         assert_eq!(selected[0].variable_id, "downstream");
         assert!(selected[0].deferred_arguments.is_empty());
@@ -1394,6 +2217,7 @@ mod tests {
         let diagnostics = compile_variable_graph_query_request_batch(
             &graph,
             &["query".to_owned(), "missing".to_owned(), "input".to_owned()],
+            test_execution_id(),
             &BTreeMap::new(),
         )
         .expect_err("invalid requested IDs reject the entire batch");
@@ -1440,6 +2264,7 @@ mod tests {
             compile_variable_graph_query_request_batch(
                 &invalid_batch_graph,
                 &["query".to_owned(), "good".to_owned()],
+                test_execution_id(),
                 &BTreeMap::new(),
             )
             .expect_err("missing one request value rejects the batch"),
@@ -1475,9 +2300,15 @@ mod tests {
         let requests = compile_variable_graph_query_request_batch(
             &valid_batch_graph,
             &["table".to_owned(), "scalar".to_owned()],
+            test_execution_id(),
             &BTreeMap::new(),
         )
         .expect("both requests fit their existing bounds");
+        assert!(requests.iter().all(|item| {
+            item.request
+                .as_ref()
+                .is_some_and(|request| request.execution_id == Some(test_execution_id()))
+        }));
         assert_eq!(requests[0].variable_id, "scalar");
         assert_eq!(
             requests[0]

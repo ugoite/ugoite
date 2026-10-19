@@ -376,3 +376,153 @@ features:
                   arguments:
                     package: ugoite-wasm
                     test: tests::sql_document_parameter_rename_rejects_request_over_limit
+      - id: sql-document-edit-protocol-contract
+        role: contract-source
+        facet: protocol
+        responsibility: Define the strict request payload shared by Rust/WASM dispatch and the typed frontend client for guarded SQL Document edits.
+        targets:
+          - id: edit-request
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: symbol, name: SqlDocumentEditProtocolRequest }
+            claims:
+              - kind: documents
+                anchor: REQ-SQL-001#criterion.portable-protocol
+      - id: sql-document-guarded-edit-core
+        role: implementation
+        facet: core
+        responsibility: Apply bounded source-range edits atomically against an exact SQL Document snapshot, preserve untouched bytes, reparse drafts, and return a guarded inverse without granting execution admission.
+        targets:
+          - id: edit-transaction
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: apply_sql_document_edit_transaction }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.guarded-edit-transaction
+      - id: sql-document-guarded-edit-wasm-protocol
+        role: implementation
+        facet: protocol
+        responsibility: Expose guarded SQL Document edits through the bounded portable WASM protocol without planning or executing SQL.
+        targets:
+          - id: edit-transaction-action
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: symbol, name: invoke_sql_document_edit_transaction }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+      - id: sql-document-guarded-edit-frontend-client
+        role: implementation
+        facet: frontend
+        responsibility: Expose the guarded WASM edit operation as typed request, result, and stable error-code data.
+        targets:
+          - id: edit-transaction-client
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.ts
+            selector: { kind: symbol, name: applySqlDocumentEditTransaction }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+      - id: sql-document-guarded-edit-verification
+        role: verification
+        facet: verification
+        responsibility: Verify atomic source-preserving edits, guarded undo, stable rejection diagnostics, native/WASM parity, request and output bounds, and typed frontend use.
+        targets:
+          - id: guarded-edit-undo
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: tests::guarded_undo_restores_comments_and_every_untouched_source_byte }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.guarded-edit-transaction
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-guarded-edit-core/target.edit-transaction
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-domain
+                    test: sql_document::tests::guarded_undo_restores_comments_and_every_untouched_source_byte
+          - id: guarded-edit-atomic-rejections
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: tests::rejects_stale_overlapping_and_mismatched_preimage_edits_atomically }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.guarded-edit-transaction
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-guarded-edit-core/target.edit-transaction
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-domain
+                    test: sql_document::tests::rejects_stale_overlapping_and_mismatched_preimage_edits_atomically
+          - id: edit-protocol-native-parity-and-undo
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: symbol, name: tests::sql_document_edit_protocol_matches_native_transaction_and_undo }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-guarded-edit-wasm-protocol/target.edit-transaction-action
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-wasm
+                    test: tests::sql_document_edit_protocol_matches_native_transaction_and_undo
+          - id: edit-protocol-errors-and-output-bounds
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: symbol, name: tests::sql_document_edit_protocol_bounds_amplified_result_and_oversized_requests }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-guarded-edit-wasm-protocol/target.edit-transaction-action
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-wasm
+                    test: tests::sql_document_edit_protocol_bounds_amplified_result_and_oversized_requests
+          - id: edit-protocol-typed-client
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.test.ts
+            selector: { kind: test, name: applies typed SQL Document edits atomically and returns a usable undo }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-guarded-edit-frontend-client/target.edit-transaction-client
+                runner:
+                  runner: frontend-vitest-file
+                  arguments:
+                    file: src/lib/ugoite-client/protocol.test.ts
+                    test: applies typed SQL Document edits atomically and returns a usable undo
+          - id: edit-protocol-actual-wasm-parity
+            adapter: typescript
+            path: crates/ugoite-wasm/tests/sql_structure_parity.ts
+            selector: { kind: file }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-guarded-edit-wasm-protocol/target.edit-transaction-action
+                runner:
+                  runner: mise-task
+                  arguments:
+                    task: check:wasm:sql-structure-parity
+    contracts:
+      - id: guarded-edit-portable-protocol
+        kind: custom
+        source: FEAT-SQL-001#binding.sql-document-edit-protocol-contract/target.edit-request
+        participants:
+          - target: FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parser-action
+            role: rust-wasm
+          - target: FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parameter-rename-action
+            role: rust-wasm
+          - target: FEAT-SQL-001#binding.sql-document-guarded-edit-wasm-protocol/target.edit-transaction-action
+            role: rust-wasm
+          - target: FEAT-SQL-001#binding.sql-document-guarded-edit-frontend-client/target.edit-transaction-client
+            role: frontend-client
+        guarantees: [REQ-SQL-001#criterion.portable-protocol]

@@ -29,6 +29,7 @@ export { spaceApi } from "../space-api";
 export { sqlApi } from "../sql-api";
 export { RevisionConflictError } from "../entry-api";
 export {
+  applySqlDocumentEditTransaction,
   analyzeSqlStructure,
   buildSpreadsheetCsvRequest,
   canonicalizeCompositionDocument,
@@ -57,6 +58,10 @@ export {
   type SqlDocument,
   type SqlDocumentDiagnostic,
   type SqlDocumentDiagnosticCode,
+  type SqlDocumentEdit,
+  type SqlDocumentEditErrorCode,
+  type SqlDocumentEditResult,
+  type SqlDocumentEditTransaction,
   type SqlDocumentNode,
   type SqlDocumentNodeKind,
   type SqlDocumentSourceRange,

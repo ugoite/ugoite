@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-10-12"
+updated: "2026-10-18"
 page:
   id: space-query-create
   title: New
@@ -28,49 +28,13 @@ components:
       type: text-input
       label: "Query name"
       placeholder: "Untitled query"
-    - id: query-form-select
-      type: select
-      label: Form for this query
-      source: current authorized non-system Forms
-      value: immutable Form ID
-    - id: query-form-generate-action
-      type: button
-      label: Generate SQL from Form
-      behavior: replace editor contents with a quoted Form-name starter query
-    - id: query-aggregate-operation-select
-      type: select
-      label: Aggregate
-      options:
-        - Count rows
-        - Count values
-        - Sum
-        - Average
-        - Minimum
-        - Maximum
-    - id: query-aggregate-field-select
-      type: select
-      label: Field
-      visibility: hidden for Count rows
-      source: current Form fields compatible with the selected aggregate
-      visible_option_names: human field labels only
-    - id: query-filter-field-select
-      type: select
-      label: Filter field
-      optional_value: None
-      source: current Form fields that support Composition-compatible typed SQL equality parameters
-      visible_option_names: human field labels only
-    - id: query-aggregate-generate-action
-      type: button
-      label: Generate aggregate SQL
-      behavior: generate one-value ordinary SQL from the selected operation and fields, using a typed parameter when a filter field is selected
-    - id: query-sql-editor
-      type: sql-editor
-      behavior: generated SQL remains editable and uses backend-owned SQL column names
-      features:
-        - syntax-highlighting
-        - linting
-        - completion
-      completion_source: current authorized Form names and public field columns
+    - id: query-sql-workspace
+      type: shared-sql-workspace
+      reference: ../components/sql-workspace.yaml
+      initial_sql: SELECT 1
+      schema: current authorized Forms, server-owned SQL relations, and public field columns
+      structured_actions: shared SQL structure toolbar only
+      preview: stateless SQL request with request-owned paging
     - id: query-variable-default-editor
       type: typed-variable-list
       visibility: only-when-sql-contains-variables
@@ -80,5 +44,5 @@ components:
       type: button
       variant: primary
       label: "Save"
-      behavior: explicitly save generated or edited content and typed variable defaults as ordinary user-query Saved SQL
+      behavior: explicitly save edited SQL and typed variable defaults as ordinary user-query Saved SQL
       target_page: space-sql
