@@ -188,7 +188,10 @@
           "limits": [
             "one INNER self-join of the selected Form with explicit distinct aliases",
             "ON must be equality between qualified columns of matching supported scalar types",
-            "wildcard projection only; join edits preserve other SQL source text",
+            "wildcard projection only; editing ON preserves other SQL source text",
+            "WHERE supports AND trees of qualified parameter comparisons plus IS NULL/IS NOT NULL on qualified columns; ORDER BY supports simple qualified columns with ASC/DESC and no NULLS FIRST/LAST; unqualified references fail closed",
+            "adding a join qualifies existing supported single-relation WHERE/ORDER BY columns with the left alias and preserves surrounding clause text",
+            "unquoted aliases and columns resolve with SQL case folding; quoted identifiers remain exact",
             "LEFT/RIGHT/FULL/CROSS/NATURAL/USING, multiple joins, derived relations, and other ON expressions fail closed"
           ]
         },

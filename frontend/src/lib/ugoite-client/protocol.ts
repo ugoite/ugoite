@@ -492,12 +492,14 @@ export type SqlStructureFilterOperator =
 
 export type SqlStructureFilter = {
   column: string;
+  qualifier?: SqlStructureAlias;
   operator: SqlStructureFilterOperator;
   parameter?: string;
 };
 
 export type SqlStructureSort = {
   column: string;
+  qualifier?: SqlStructureAlias;
   direction: "asc" | "desc";
 };
 
