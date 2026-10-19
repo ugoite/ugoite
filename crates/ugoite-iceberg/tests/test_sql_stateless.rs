@@ -103,20 +103,40 @@ async fn setup_sql_space_with_form_name(
 }
 
 #[tokio::test]
-async fn values_query_passes_statement_gate_but_is_rejected_by_production_execution() -> Result<()>
-{
+async fn values_query_is_rejected_by_shared_read_only_admission() -> Result<()> {
     let space = setup_sql_space("memory://sql-stateless-values-probe", "sqlvaluesprobe").await?;
-    let error = space
+    let query_error = space
         .service
         .query_sql(&space.space_id, query_request("VALUES (1)".to_string(), 10))
         .await
-        .expect_err("VALUES passes the statement gate but is rejected during authorized execution");
-    let app_error = error
+        .expect_err("VALUES must fail before authorized query execution");
+    let query_app_error = query_error
         .downcast_ref::<ugoite_core::error::AppError>()
-        .expect("the execution rejection maps to the public query error");
+        .expect("read-only admission maps to the public query error");
     assert_eq!(
-        app_error.message(),
-        "SQL uses an unsupported or non-read-only relation, statement, or function"
+        query_app_error.code(),
+        ugoite_core::error::ErrorCode::ReadOnlySqlRequired
+    );
+
+    let count_error = space
+        .service
+        .count_sql(
+            &space.space_id,
+            SqlQueryCountRequest {
+                sql: "VALUES (1)".to_string(),
+                parameters: Map::new(),
+                parameter_types: BTreeMap::new(),
+                saved_sql: None,
+            },
+        )
+        .await
+        .expect_err("count must share the same read-only admission gate");
+    let count_app_error = count_error
+        .downcast_ref::<ugoite_core::error::AppError>()
+        .expect("count read-only admission maps to the public query error");
+    assert_eq!(
+        count_app_error.code(),
+        ugoite_core::error::ErrorCode::ReadOnlySqlRequired
     );
     Ok(())
 }
