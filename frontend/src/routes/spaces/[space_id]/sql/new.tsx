@@ -3,17 +3,22 @@ import type { Diagnostic } from "@codemirror/lint";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { BackLink } from "~/components/BackLink";
 import { ButtonSpinner } from "~/components/ButtonSpinner";
-import { SqlQueryEditor } from "~/components";
+import { SQLWorkspace } from "~/components/SQLWorkspace";
+import type { SQLWorkspaceAction } from "~/components/SQLWorkspace";
+import { SqlStructureToolbar } from "~/components/SqlStructureToolbar";
+import { SqlVariableDefaultsEditor } from "~/components/SqlVariableDefaultsEditor";
 import { formApi } from "~/lib/ugoite-client";
 import {
+  applySqlVariableDefaultDrafts,
   buildSqlAggregateQuery,
   buildSqlSchema,
   buildSqlStarterQuery,
+  buildSqlStructureContexts,
   normalizeSqlVariables,
   sqlAggregateFieldOptions,
   sqlFilterFieldOptions,
 } from "~/lib/sql";
-import type { SqlAggregateOperation } from "~/lib/sql";
+import type { SqlAggregateOperation, SqlVariableDefaultDraft } from "~/lib/sql";
 import { sqlApi } from "~/lib/ugoite-client";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import type { Form } from "~/lib/types";
@@ -21,6 +26,7 @@ import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
+import { createSqlWorkspaceController } from "~/lib/sql-workspace";
 
 export const route = spaceRoute({ navigation: "search" });
 
@@ -35,8 +41,9 @@ export default function SpaceQueryCreateRoute() {
   const [error, setError] = createSignal<string | null>(null);
   const [isSaving, setIsSaving] = createSignal(false);
   const [selectedFormId, setSelectedFormId] = createSignal("");
-  const [aggregateOperation, setAggregateOperation] =
-    createSignal<SqlAggregateOperation>("count-rows");
+  const [aggregateOperation, setAggregateOperation] = createSignal<
+    SqlAggregateOperation
+  >("count-rows");
   const [aggregateFieldKey, setAggregateFieldKey] = createSignal("");
   const [filterFieldKey, setFilterFieldKey] = createSignal("");
   const [generatedParameter, setGeneratedParameter] = createSignal<{
@@ -44,6 +51,12 @@ export default function SpaceQueryCreateRoute() {
     type: string;
     description: string;
   }>();
+  const [defaultDrafts, setDefaultDrafts] = createSignal<
+    Record<string, SqlVariableDefaultDraft>
+  >({});
+  const [structureActions, setStructureActions] = createSignal<
+    readonly SQLWorkspaceAction[]
+  >([]);
 
   const [forms] = createResource(async () => {
     return await formApi.list(spaceId());
@@ -60,9 +73,7 @@ export default function SpaceQueryCreateRoute() {
   const aggregateFields = createMemo(() =>
     sqlAggregateFieldOptions(selectedForm(), aggregateOperation())
   );
-  const filterFields = createMemo(() =>
-    sqlFilterFieldOptions(selectedForm())
-  );
+  const filterFields = createMemo(() => sqlFilterFieldOptions(selectedForm()));
 
   createEffect(() => {
     const available = selectableForms();
@@ -88,6 +99,27 @@ export default function SpaceQueryCreateRoute() {
   });
 
   const schema = () => buildSqlSchema((forms() || []) as Form[]);
+  const variables = createMemo(() => {
+    const normalized = normalizeSqlVariables(sqlInput().trim());
+    const generated = generatedParameter();
+    return normalized.variables.map((variable) =>
+      generated && variable.name === generated.name
+        ? { ...variable, ...generated }
+        : variable
+    );
+  });
+  const workspaceVariables = createMemo(() => {
+    const defaults = applySqlVariableDefaultDrafts(
+      variables(),
+      defaultDrafts(),
+    );
+    return defaults.invalid ? variables() : defaults.variables;
+  });
+  const workspace = createSqlWorkspaceController({
+    spaceId,
+    sql: sqlInput,
+    variables: workspaceVariables,
+  });
 
   // Line/column rendering for editor diagnostics. Offsets come from the
   // CodeMirror lint gutter; the list mirrors them as text so the error
@@ -109,12 +141,15 @@ export default function SpaceQueryCreateRoute() {
       return;
     }
     const normalized = normalizeSqlVariables(sql);
-    const generated = generatedParameter();
-    const variables = normalized.variables.map((variable) =>
-      generated && variable.name === generated.name
-        ? { ...variable, ...generated }
-        : variable
+    const withTypes = variables();
+    const defaults = applySqlVariableDefaultDrafts(
+      withTypes,
+      defaultDrafts(),
     );
+    if (defaults.invalid) {
+      setError(t("sqlPage.defaultInvalid", defaults.invalid));
+      return;
+    }
 
     setIsSaving(true);
     try {
@@ -123,7 +158,7 @@ export default function SpaceQueryCreateRoute() {
         kind: "user-query",
         metadata: name ? undefined : { generatedName: "untitled" },
         sql: normalized.sql,
-        variables,
+        variables: defaults.variables,
       });
       navigate(`/spaces/${encodeURIComponent(spaceId())}/sql`);
     } catch (err) {
@@ -278,22 +313,52 @@ export default function SpaceQueryCreateRoute() {
           </button>
         </div>
 
-        <div>
-          <label class="ui-label mb-2" for="query-sql">
-            {t("sqlPage.sql")}
-          </label>
-          <SqlQueryEditor
-            id="query-sql"
-            value={sqlInput()}
-            onChange={(value) => {
-              setHasUserEditedSql(true);
-              setSqlInput(value);
-            }}
-            schema={schema()}
-            onDiagnostics={setDiagnostics}
+        <SQLWorkspace
+          id="new-sql-workspace"
+          sql={sqlInput()}
+          onSqlChange={(value) => {
+            setHasUserEditedSql(true);
+            setSqlInput(value);
+          }}
+          actions={structureActions()}
+          schema={schema()}
+          variables={workspaceVariables()}
+          parameterValues={workspace.parameterValues()}
+          onParameterChange={workspace.onParameterChange}
+          readOnly={isSaving()}
+          onDiagnostics={setDiagnostics}
+          previewDisabled={isSaving()}
+          onPreview={workspace.run}
+          onCount={workspace.count}
+          onPrevious={workspace.previous}
+          onNext={workspace.next}
+          preview={workspace.preview()}
+        />
+        <SqlStructureToolbar
+          sql={sqlInput}
+          contexts={() =>
+            buildSqlStructureContexts(
+              (forms() || []) as Form[],
+              workspaceVariables(),
+              `new-sql:${spaceId()}:${selectedFormId()}`,
+            )}
+          onSqlChange={(value) => {
+            setHasUserEditedSql(true);
+            setSqlInput(value);
+          }}
+          onActionsChange={setStructureActions}
+          disabled={isSaving}
+        />
+
+        <Show when={variables().length > 0}>
+          <SqlVariableDefaultsEditor
+            idPrefix="new-sql"
+            variables={variables()}
+            defaults={defaultDrafts()}
+            onDefaultsChange={setDefaultDrafts}
             disabled={isSaving()}
           />
-        </div>
+        </Show>
 
         <Show when={diagnostics().length > 0}>
           <ul class="text-sm ui-text-warning ui-stack-sm">

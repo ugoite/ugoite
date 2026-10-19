@@ -120,7 +120,7 @@ async fn composition_revision_admission_is_bound_to_the_validated_batch() -> any
         .await?
         .to_string();
     let document = ugoite_domain::composition::parse_composition_yaml(include_str!(
-        "../../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml"
+        "../../tests/fixtures/composition-sql-first.ugcomp.yaml"
     ))
     .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
     let saved = service
@@ -174,7 +174,7 @@ async fn restore_after_tombstone_appends_and_clears_deletion_metadata() -> anyho
         .await?
         .to_string();
     let document = parse_composition_yaml(include_str!(
-        "../../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml"
+        "../../tests/fixtures/composition-sql-first.ugcomp.yaml"
     ))
     .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
     let saved = service

@@ -14,7 +14,12 @@ type SqlMutationResponse = {
   revisionId: string;
 };
 
-const normalizeSqlEntry = (entry: SqlEntry): SqlEntry => {
+type SqlApiResponse = Omit<SqlEntry, "created_at" | "updated_at"> & {
+  created_at: string | number;
+  updated_at: string | number;
+};
+
+const normalizeSqlEntry = (entry: SqlApiResponse): SqlEntry => {
   const normalizedEntry = { ...entry };
   normalizedEntry.created_at = normalizeTimestamp(entry.created_at);
   normalizedEntry.updated_at = normalizeTimestamp(entry.updated_at);
@@ -23,14 +28,14 @@ const normalizeSqlEntry = (entry: SqlEntry): SqlEntry => {
 
 export const sqlApi = {
   async list(spaceId: string): Promise<SqlEntry[]> {
-    const entries = await protocolFetch<SqlEntry[]>("sql.list", {
+    const entries = await protocolFetch<SqlApiResponse[]>("sql.list", {
       space_id: spaceId,
     });
     return entries.map(normalizeSqlEntry);
   },
 
   async get(spaceId: string, sqlId: string): Promise<SqlEntry> {
-    const entry = await protocolFetch<SqlEntry>("sql.get", {
+    const entry = await protocolFetch<SqlApiResponse>("sql.get", {
       space_id: spaceId,
       sql_id: sqlId,
     });

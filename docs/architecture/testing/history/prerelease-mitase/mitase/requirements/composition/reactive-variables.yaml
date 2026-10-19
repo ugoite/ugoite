@@ -1,0 +1,581 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: composition
+category: Portable Composition documents, execution, and recovery
+requirements:
+  - id: REQ-COMP-007
+    title: Typed reactive Composition variables
+    description: Composition v1 pre-release grammar declares typed variables and Input components, supports direct variable-backed Text, and re-evaluates only dependent SQL Sources from a transient typed snapshot. This capability is planned; exact verification evidence is added with its implementation slices.
+    priority: high
+    status: planned
+    criteria:
+      - id: typed-variable-declarations
+        kind: behavior
+        statement: Each Composition variable has a unique stable ID, required type, required flag, optional exact-type default, and optional display metadata. The initial type set is string, boolean, integer, float, date, and timestamp; values are never inferred or implicitly coerced.
+        governed_by: [POL-000#rule.foundation-precedence]
+      - id: typed-input-lexical-contract
+        kind: behavior
+        statement: Typed Input parsing is locale-independent and follows the bounded per-type lexical grammar and value limits in ADR-023 section 2.1. A finite JSON number with integral spelling (for example, 1) remains a Float value; Saved SQL binding uses the declared Composition and SQL variable types, not the JSON number's spelling. Empty Input is explicitly unset and overrides a declaration default; omission selects the default. Unset is carried separately from typed values and is never SQL NULL. Malformed, over-limit, overflow, non-finite, or underflow-to-zero values remain invalid and cannot be bound to a query. Defaults use the same type and lexical rules.
+        governed_by: [POL-000#rule.foundation-precedence]
+      - id: input-component-binding
+        kind: behavior
+        statement: An Input component references one declared variable and owns no persisted value or setter expression. A required variable without a default has a placed Input, and each placed Input is an ordinary Component referenced once by Layout.
+        governed_by: [POL-000#rule.foundation-precedence]
+      - id: required-variable-unset-diagnostic
+        kind: behavior
+        statement: Resolving a required unset returns a `variable_missing` diagnostic with its variable ID; the Browser keeps dependent Sources invalid, hides their prior pages, and does not query them until the variable is valid.
+        governed_by: [POL-004#rule.governance]
+      - id: input-runtime-synchronization
+        kind: behavior
+        statement: Multiple Inputs bound to the same variable display one shared current raw value and validation state; editing any bound Input updates every other bound Input in the same UI cycle.
+        governed_by: [POL-000#rule.foundation-precedence]
+      - id: direct-text-binding
+        kind: behavior
+        statement: Text content is either a literal string or a direct reference to a declared string variable. Text evaluates no expressions, implicit conversions, or SQL results.
+        governed_by: [POL-000#rule.foundation-precedence]
+      - id: direct-text-reactivity
+        kind: behavior
+        statement: A valid change to a string variable updates each dependent Text in the same reactive UI cycle without issuing SQL.
+        governed_by: [POL-000#rule.foundation-precedence]
+      - id: typed-source-binding
+        kind: security
+        statement: Composition references use the variable form and bind to exact-type SQL variables declared by the pinned Saved SQL revision through the existing typed SQL parameters. SQL text is not rewritten, interpolated, or concatenated, and the stateless SQL parameters and parameter_types contract is unchanged.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: dependency-driven-execution
+        kind: behavior
+        statement: Core resolves variable-to-Input/Text/Source and Source-to-Metric/Table dependencies independently of component declaration or Layout order; layout edits do not alter the dependency graph.
+        governed_by: [POL-004#rule.governance]
+      - id: selective-source-refresh
+        kind: behavior
+        statement: A valid variable change immediately invalidates only dependent SQL Sources and their Metric/Table consumers; an unrelated variable does not issue another SQL request. Debounce, if any, affects only SQL issuing, not input, validation, Text, or stale-result invalidation.
+        governed_by: [POL-004#rule.governance]
+      - id: stale-result-and-state-safety
+        kind: security
+        statement: A SQL response is accepted only for its current Space, authorization/publication context, Composition revision, variable-subset fingerprint, and exact Saved SQL revision. Identical variable, source, and component identifiers do not allow results or cache identity to cross Space boundaries. Older generations are discarded; pending or failed requests never present prior success as current. Current ACL, bounded execution, NULL/zero/zero-row/multiple-row distinctions, exact numeric handling, and SQL diagnostics remain in force.
+        governed_by: [POL-000#rule.foundation-precedence]
+      - id: source-waiting-when-resolution-blocked
+        kind: behavior
+        statement: After the Browser has a resolved plan, malformed raw input blocks further resolution and SQL requests. An explicitly unset required variable still goes through the resolver for its authoritative missing-variable diagnostic, while dependent Sources remain invalid and are not queried. A changed Source whose own inputs are valid hides its previous result and reports a waiting state while another input blocks the plan; a Source depending on a blocked input stays invalid. Unchanged ready Sources retain their pages and cursors. Pending changes resume after all blocking inputs become valid, and only affected Sources refresh.
+        governed_by: [POL-004#rule.governance]
+      - id: runtime-values-are-transient
+        kind: behavior
+        statement: Composition Entry revisions persist variable declarations and defaults, Sources, Components, and Layout. Runtime values, raw invalid input, query results, pending state, and errors are Work and are not persisted by preview, use, implicit save, URL, local storage, or server session.
+        governed_by: [POL-000#rule.foundation-precedence]
+      - id: portable-variable-contract
+        kind: quality
+        statement: Rust Domain/Core define variable parsing, validation, canonicalization, dependency references, and diagnostics for Native and WASM. Native and WASM share raw Input outcomes as unset, an exact typed scalar, or invalid. Composition DTOs use variables and variable_definitions; one-shot CLI Composition queries use --var; SQL APIs retain parameters and parameter_types. Native and WASM canonical output and fingerprints match.
+        governed_by: [POL-004#rule.governance]
+      - id: cli-variable-query
+        kind: behavior
+        statement: Composition query accepts repeated `--var ID=VALUE`, validates declared values with the shared typed lexical rules, and sends the typed variable map separately from explicit unsets. `--var ID=` explicitly unsets even an unknown ID so Core returns the unknown-variable diagnostic; omission alone selects a default. The prerelease Composition `--param` flag is rejected without a compatibility alias. The same values and unset names reach local Core resolution, remote resolution, and Metric query requests, while SQL `--param` behavior remains unchanged.
+        governed_by: [POL-004#rule.governance]
+      - id: code-free-studio-authoring
+        kind: behavior
+        statement: Studio can declare typed variables and defaults, place Inputs, bind literal or string-variable Text, and connect exact-type Saved SQL variables without JavaScript, expressions, getters, setters, or event handlers. Saving preserves defaults and never promotes runtime input to Composition Knowledge.
+        governed_by: [POL-000#rule.foundation-precedence]
+      - id: authoring-default-parse-lifecycle
+        kind: behavior
+        statement: An asynchronous default parse updates only the variable declaration that initiated it. Removing and re-adding the same ID or changing the declaration type makes the earlier result stale; rejecting removal because the variable remains referenced leaves the declaration and its pending parse current.
+        governed_by: [POL-000#rule.foundation-precedence]
+      - id: studio-variable-identity-presentation
+        kind: quality
+        statement: Studio creates stable variable IDs internally and uses an authored label or localized declaration ordinal for variable-bound Text and Input names; ordinary visible labels, accessible names, and titles never expose variable IDs.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-005#rule.governance]
+      - id: studio-filtered-sql-metric-journey
+        kind: behavior
+        statement: Studio can save and reopen a Composition with an integer minimum bound to an exact Saved SQL revision that returns COUNT(*) and SUM(Amount); minimum 0 displays 3 and 60 for Amount values 10, 20, and 30, and changing the Input to 20 displays 2 and 50 from the dependent SQL result. Reload restores the default without appending a Composition revision.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: responsive-accessible-inputs
+        kind: quality
+        statement: At 390px width, variable Inputs, labels, invalid/loading/waiting/results states, and recovery actions remain understandable and operable by keyboard and screen reader; internal variable IDs are not primary labels.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance, POL-UI-005#rule.governance]
+    bindings:
+      - id: typed-variable-domain-verification
+        role: verification
+        facet: verification
+        responsibility: Verify exact typed Input parsing and defaults, declared Input references and placement, direct string-variable Text references, and variable-form source references in the portable Domain contract.
+        targets:
+          - id: typed-input-parser-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::typed_input_parser_enforces_the_pinned_lexical_contract }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-variable-declarations
+                covers: [FEAT-COMP-008#binding.typed-variable-domain/target.variable-declaration-and-input-parser]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::typed_input_parser_enforces_the_pinned_lexical_contract } }
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+                covers: [FEAT-COMP-008#binding.typed-variable-domain-evidence/target.exact-input-lexical-contract]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::typed_input_parser_enforces_the_pinned_lexical_contract } }
+          - id: integral-json-float-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::float_type_accepts_integral_json_numbers }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+                covers: [FEAT-COMP-008#binding.typed-variable-domain-evidence/target.integral-json-float]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::float_type_accepts_integral_json_numbers } }
+          - id: typed-variable-default-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::variable_defaults_must_match_the_type_and_lexical_contract }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-variable-declarations
+                covers: [FEAT-COMP-008#binding.typed-variable-domain/target.variable-declaration-and-input-parser]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::variable_defaults_must_match_the_type_and_lexical_contract } }
+          - id: repeated-input-reference-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::multiple_inputs_can_reference_one_variable }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.input-component-binding
+                covers: [FEAT-COMP-008#binding.typed-variable-domain/target.input-component-model]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::multiple_inputs_can_reference_one_variable } }
+          - id: declared-input-reference-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::unknown_input_variable_is_invalid }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.input-component-binding
+                covers: [FEAT-COMP-008#binding.typed-variable-domain/target.input-component-model]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::unknown_input_variable_is_invalid } }
+          - id: direct-text-reference-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::variable_text_requires_a_declared_string_variable }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.direct-text-binding
+                covers: [FEAT-COMP-008#binding.typed-variable-domain/target.direct-text-reference-model]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::variable_text_requires_a_declared_string_variable } }
+          - id: declared-source-variable-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::unknown_variable_source_references_are_invalid }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-source-binding
+                covers: [FEAT-COMP-008#binding.typed-variable-domain/target.source-variable-reference-model]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::unknown_variable_source_references_are_invalid } }
+          - id: timestamp-input-preservation-case
+            adapter: typescript
+            path: frontend/src/components/composition/InputControl.test.tsx
+            selector: { kind: test, name: preserves timezone-bearing timestamps in the shared raw input state }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+                covers: [FEAT-COMP-008#binding.browser-typed-input-control/target.input-control]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/composition/InputControl.test.tsx, test: preserves timezone-bearing timestamps in the shared raw input state } }
+      - id: typed-variable-wasm-verification
+        role: verification
+        facet: verification
+        responsibility: Verify that the portable WASM action and Browser helper preserve the Domain raw Input parser's unset, valid typed scalar, and invalid outcomes.
+        targets:
+          - id: wasm-variable-input-parity-case
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: symbol, name: tests::composition_variable_input_protocol_matches_native_domain_contract }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+                covers: [FEAT-COMP-008#binding.wasm-variable-input-parser-evidence/target.wasm-native-variable-input-parity]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::composition_variable_input_protocol_matches_native_domain_contract } }
+          - id: browser-variable-input-result-case
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.test.ts
+            selector:
+              kind: test
+              name: parses Composition Input with the shared Rust Domain contract without coercion
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+                covers: [FEAT-COMP-008#binding.browser-variable-input-parser-evidence/target.browser-variable-input-outcomes]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/ugoite-client/protocol.test.ts, test: parses Composition Input with the shared Rust Domain contract without coercion } }
+      - id: typed-variable-core-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Core rejects invalid runtime values without fallback, preserves exact SQL variable types, resolves Input/Text references locally, and indexes only semantic variable and source dependencies independent of Layout order.
+        targets:
+          - id: invalid-runtime-value-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::invalid_supplied_value_does_not_fall_back_to_a_default }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-variable-declarations
+                covers: [FEAT-COMP-008#binding.core-typed-variable-resolution/target.runtime-variable-binding]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::invalid_supplied_value_does_not_fall_back_to_a_default } }
+          - id: missing-and-unknown-variable-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::required_missing_and_unknown_names_have_stable_order }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-variable-declarations
+                covers: [FEAT-COMP-008#binding.core-typed-variable-resolution/target.runtime-variable-binding]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::required_missing_and_unknown_names_have_stable_order } }
+          - id: exact-sql-variable-type-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::saved_sql_source_checks_variable_types_and_literal_values }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-source-binding
+                covers: [FEAT-COMP-008#binding.core-typed-variable-resolution/target.typed-saved-sql-variable-binding]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_source_checks_variable_types_and_literal_values } }
+          - id: integral-json-float-sql-type-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::saved_sql_source_preserves_float_type_for_integral_json_number }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-source-binding
+                covers: [FEAT-COMP-008#binding.core-typed-variable-resolution/target.typed-saved-sql-variable-binding]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_source_preserves_float_type_for_integral_json_number } }
+          - id: supported-sql-variable-types-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::saved_sql_source_binds_every_supported_sql_variable_type }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-source-binding
+                covers: [FEAT-COMP-008#binding.core-typed-variable-resolution/target.typed-saved-sql-variable-binding]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_source_binds_every_supported_sql_variable_type } }
+          - id: local-input-value-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::input_components_resolve_through_semantic_variable_values }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.input-component-binding
+                covers: [FEAT-COMP-008#binding.core-typed-variable-resolution/target.local-components-and-dependency-index]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::input_components_resolve_through_semantic_variable_values } }
+          - id: variable-backed-text-reference-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::dependency_index_is_semantic_and_independent_of_layout_order }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.direct-text-binding
+                covers: [FEAT-COMP-008#binding.core-typed-variable-resolution/target.local-components-and-dependency-index]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::dependency_index_is_semantic_and_independent_of_layout_order } }
+          - id: semantic-dependency-index-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::dependency_index_is_semantic_and_independent_of_layout_order }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.dependency-driven-execution
+                covers: [FEAT-COMP-008#binding.core-typed-variable-resolution/target.local-components-and-dependency-index]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::dependency_index_is_semantic_and_independent_of_layout_order } }
+      - id: typed-variable-studio-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Studio edits typed numeric defaults through the shared Domain parser without saving malformed values.
+        targets:
+          - id: numeric-default-parser-case
+            adapter: typescript
+            path: frontend/src/components/CompositionVariableList.test.tsx
+            selector: { kind: test, name: parses numeric defaults through the shared Domain parser }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.code-free-studio-authoring
+                covers: [FEAT-COMP-008#binding.studio-typed-variable-defaults/target.variable-default-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableList.test.tsx, test: parses numeric defaults through the shared Domain parser } }
+          - id: stale-default-parser-after-remove-case
+            adapter: typescript
+            path: frontend/src/components/CompositionVariableList.test.tsx
+            selector: { kind: test, name: does not restore a removed variable when its default parse resolves }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.code-free-studio-authoring
+                covers: [FEAT-COMP-008#binding.studio-typed-variable-defaults/target.variable-default-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableList.test.tsx, test: does not restore a removed variable when its default parse resolves } }
+      - id: required-input-studio-save-readiness-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Studio Save is blocked when a required variable has no default and no placed Input, with the disabled reason exposed on the Save control.
+        targets:
+          - id: required-input-blocks-studio-save-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: blocks saving a required variable until its Input is placed }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.input-component-binding
+                covers: [FEAT-COMP-005#binding.studio-design-evidence/target.browser-studio-required-input-save-readiness]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: blocks saving a required variable until its Input is placed } }
+      - id: typed-variable-explicit-unset-verification
+        role: verification
+        facet: verification
+        responsibility: Verify an explicitly unset Input bypasses defaults and stays separate from typed Browser request values.
+        targets:
+          - id: explicit-unset-default-bypass-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::explicit_unset_overrides_defaults_and_reports_required_values_missing }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+                covers: [FEAT-COMP-008#binding.core-typed-variable-resolution-evidence/target.explicit-unset-default-bypass]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::explicit_unset_overrides_defaults_and_reports_required_values_missing } }
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.required-variable-unset-diagnostic
+                covers: [FEAT-COMP-008#binding.core-typed-variable-resolution-evidence/target.explicit-unset-default-bypass]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::explicit_unset_overrides_defaults_and_reports_required_values_missing } }
+          - id: explicit-unset-request-case
+            adapter: typescript
+            path: frontend/src/lib/composition-api.test.ts
+            selector: { kind: test, name: sends an explicit unset separately from typed variable values }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+                covers: [FEAT-COMP-008#binding.browser-explicit-unset-transport-evidence/target.composition-explicit-unset-request]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-api.test.ts, test: sends an explicit unset separately from typed variable values } }
+          - id: server-explicit-unset-route-case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::composition_routes_preserve_explicit_unsets_and_skip_source_queries }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+                covers: [FEAT-COMP-008#binding.server-explicit-unset-route-evidence/target.explicit-unset-route-boundary]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::composition_routes_preserve_explicit_unsets_and_skip_source_queries } }
+      - id: browser-reactive-variable-runtime-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Browser Input synchronization, direct Text reactivity, explicit unset handling, selective Source refresh, pagination safety, and stale Metric invalidation using the shared Domain parser and transient Work state.
+        targets:
+          - id: browser-input-change-resolves-current-revision
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: re-resolves the exact revision when a placed Input changes }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.input-runtime-synchronization
+                covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime/target.composition-query-work-handle]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: re-resolves the exact revision when a placed Input changes } }
+          - id: browser-variable-backed-text-reactivity
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: updates variable-backed Text immediately when a placed Input changes }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.direct-text-reactivity
+                covers: [FEAT-COMP-008#binding.browser-variable-text-reactivity/target.route-variable-text-binding]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: updates variable-backed Text immediately when a placed Input changes } }
+          - id: browser-invalid-required-unset-does-not-query-source
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.test.ts
+            selector: { kind: test, name: does not query a source when a required variable is explicitly unset }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+                covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime/target.composition-query-work-handle]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: does not query a source when a required variable is explicitly unset } }
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.stale-result-and-state-safety
+                covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime/target.composition-query-work-handle]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: does not query a source when a required variable is explicitly unset } }
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.required-variable-unset-diagnostic
+                covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime-evidence/target.required-unset-stops-dependent-source-query]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: does not query a source when a required variable is explicitly unset } }
+          - id: browser-malformed-raw-hides-source-results
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.test.ts
+            selector: { kind: test, name: hides a ready source and skips queries as soon as raw input is malformed }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.stale-result-and-state-safety
+                covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime-evidence/target.malformed-raw-hides-source-results]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: hides a ready source and skips queries as soon as raw input is malformed } }
+          - id: browser-unrelated-pagination-survives-refresh
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.test.ts
+            selector: { kind: test, name: preserves an unrelated page request while another source re-resolves }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.selective-source-refresh
+                covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime-evidence/target.dependent-page-refresh-preserves-unrelated-pagination]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: preserves an unrelated page request while another source re-resolves } }
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.stale-result-and-state-safety
+                covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime-evidence/target.dependent-page-refresh-preserves-unrelated-pagination]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: preserves an unrelated page request while another source re-resolves } }
+          - id: browser-unrelated-query-error-is-not-retried
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.test.ts
+            selector: { kind: test, name: does not retry an unchanged failed source during another variable refresh }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.selective-source-refresh
+                covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime-evidence/target.unrelated-query-error-is-not-retried]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: does not retry an unchanged failed source during another variable refresh } }
+          - id: browser-missing-dependencies-hide-stale-pages
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.test.ts
+            selector: { kind: test, name: fails closed and hides prior pages when a variable dependency index is missing }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.stale-result-and-state-safety
+                covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime-evidence/target.incomplete-source-dependencies-hide-prior-pages]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: fails closed and hides prior pages when a variable dependency index is missing } }
+          - id: browser-invalid-input-discards-metric-response
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.test.tsx
+            selector: { kind: test, name: invalidates a metric when an unset dependency becomes invalid without changing its null value }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.stale-result-and-state-safety
+                covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime-evidence/target.invalid-input-discards-delayed-metric]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: invalidates a metric when an unset dependency becomes invalid without changing its null value } }
+          - id: browser-incomplete-metric-dependencies-discard-response
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.test.tsx
+            selector: { kind: test, name: invalidates a metric when its dependency index becomes incomplete }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.stale-result-and-state-safety
+                covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime-evidence/target.incomplete-metric-dependencies-discard-delayed-result]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: invalidates a metric when its dependency index becomes incomplete } }
+          - id: browser-changed-source-waits-for-input
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.test.ts
+            selector: { kind: test, name: waits on changed sources until required inputs are valid and preserves unrelated paging }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.source-waiting-when-resolution-blocked
+                covers: [FEAT-COMP-009#binding.browser-source-waiting-evidence/target.changed-source-waits-for-blocking-input]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: waits on changed sources until required inputs are valid and preserves unrelated paging } }
+          - id: browser-metric-waits-for-blocked-plan
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.test.tsx
+            selector: { kind: test, name: keeps an unaffected metric ready and waits for changed inputs while another variable blocks resolution }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.source-waiting-when-resolution-blocked
+                covers: [FEAT-COMP-009#binding.browser-source-waiting-evidence/target.metric-waits-for-blocking-input]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: keeps an unaffected metric ready and waits for changed inputs while another variable blocks resolution } }
+          - id: browser-saved-sql-table-waiting-state
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.test.tsx
+            selector: { kind: test, name: renders an accessible waiting state for a blocked Saved SQL table }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.source-waiting-when-resolution-blocked
+                covers: [FEAT-COMP-009#binding.browser-source-waiting-evidence/target.saved-sql-table-waiting-state]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: renders an accessible waiting state for a blocked Saved SQL table } }
+          - id: browser-entry-table-waiting-state
+            adapter: typescript
+            path: frontend/src/components/CompositionEntryQueryTable.test.tsx
+            selector: { kind: test, name: shows a concise accessible waiting state while resolution is blocked }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.source-waiting-when-resolution-blocked
+                covers: [FEAT-COMP-009#binding.browser-source-waiting-evidence/target.entry-query-table-waiting-state]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionEntryQueryTable.test.tsx, test: shows a concise accessible waiting state while resolution is blocked } }
+          - id: browser-invalid-input-unset-and-stale-result
+            adapter: typescript
+            path: e2e/composition-invalid-variable-input.test.ts
+            selector: { kind: test, name: invalid_raw_input_blocks_query_and_stale_result }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.required-variable-unset-diagnostic
+                covers: [FEAT-COMP-009#binding.browser-source-waiting-evidence/target.invalid-input-hides-stale-metric]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-invalid-variable-input.test.ts, test: invalid_raw_input_blocks_query_and_stale_result } }
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.stale-result-and-state-safety
+                covers: [FEAT-COMP-009#binding.browser-source-waiting-evidence/target.invalid-input-hides-stale-metric]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-invalid-variable-input.test.ts, test: invalid_raw_input_blocks_query_and_stale_result } }
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.source-waiting-when-resolution-blocked
+                covers: [FEAT-COMP-009#binding.browser-source-waiting-evidence/target.invalid-input-hides-stale-metric]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-invalid-variable-input.test.ts, test: invalid_raw_input_blocks_query_and_stale_result } }
+          - id: browser-input-uses-shared-domain-parser
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.test.ts
+            selector: { kind: test, name: parses Composition Input synchronously after preparing the shared WASM parser }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-input-lexical-contract
+                covers: [FEAT-COMP-008#binding.browser-reactive-variable-runtime-evidence/target.browser-sync-domain-parser]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/ugoite-client/protocol.test.ts, test: parses Composition Input synchronously after preparing the shared WASM parser } }
+          - id: browser-latest-variable-generation
+            adapter: typescript
+            path: e2e/composition-latest-variable-generation.test.ts
+            selector: { kind: test, name: "Rapid typed-variable edits keep only the latest Metric and Table result" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.stale-result-and-state-safety
+                covers: [FEAT-COMP-008#binding.browser-typed-variable-journey-evidence/target.rapid-variable-edits-keep-latest-metric-and-table]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-latest-variable-generation.test.ts, test: "Rapid typed-variable edits keep only the latest Metric and Table result" } }
+      - id: studio-filtered-sql-metric-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the typed Saved SQL metric journey through Studio creation, exact-revision reopen, server-side aggregate re-evaluation, transient Input changes, and unchanged Composition history.
+        targets:
+          - id: filtered-count-and-sum-reopen-case
+            adapter: typescript
+            path: e2e/composition-studio-journey.test.ts
+            selector: { kind: test, name: "Composition Studio saves and reopens a filtered SQL metric" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.studio-filtered-sql-metric-journey
+                covers: [FEAT-COMP-008#binding.browser-typed-variable-journey-evidence/target.studio-filtered-sql-metric-reopen]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Composition Studio saves and reopens a filtered SQL metric" } }
+      - id: cli-typed-variable-query-verification
+        role: verification
+        facet: verification
+        responsibility: Verify CLI typed variable parsing, rejection of the prerelease Composition --param flag, and explicit-unset parity when a declared default exists.
+        targets:
+          - id: cli-variable-parser-case
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector: { kind: symbol, name: tests::query_cli_variables_follow_the_shared_domain_types }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.cli-variable-query
+                covers: [FEAT-COMP-008#binding.cli-typed-variable-query/target.cli-variable-assignment-parser]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: commands::composition::tests::query_cli_variables_follow_the_shared_domain_types } }
+          - id: cli-explicit-unset-case
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_journey_remote.rs
+            selector: { kind: test, name: test_cli_composition_inspect_query_export_match_core_remote }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.cli-variable-query
+                covers: [FEAT-COMP-008#binding.cli-typed-variable-query/target.cli-variable-query-dispatch, FEAT-COMP-008#binding.cli-typed-variable-query-evidence/target.cli-variable-unset-core-remote-parity]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_remote, test: test_cli_composition_inspect_query_export_match_core_remote } }
+          - id: cli-unknown-unset-diagnostic-case
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_journey_remote.rs
+            selector: { kind: test, name: test_cli_composition_inspect_query_export_match_core_remote }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.cli-variable-query
+                covers: [FEAT-COMP-008#binding.cli-typed-variable-query-evidence/target.cli-unknown-unset-core-diagnostic]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_remote, test: test_cli_composition_inspect_query_export_match_core_remote } }
+          - id: cli-unknown-empty-unset-case
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector: { kind: symbol, name: tests::query_cli_variables_send_unknown_empty_assignments_as_unsets }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.cli-variable-query
+                covers: [FEAT-COMP-008#binding.cli-typed-variable-query-evidence/target.cli-unknown-empty-unset-parser]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: commands::composition::tests::query_cli_variables_send_unknown_empty_assignments_as_unsets } }
+          - id: cli-metric-explicit-unset-case
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector: { kind: symbol, name: tests::saved_sql_metric_query_carries_variables_and_explicit_unsets_at_the_exact_revision }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.cli-variable-query
+                covers: [FEAT-COMP-008#binding.cli-typed-variable-query/target.cli-variable-query-dispatch, FEAT-COMP-008#binding.cli-typed-variable-query-evidence/target.cli-metric-variable-unset-request]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: commands::composition::tests::saved_sql_metric_query_carries_variables_and_explicit_unsets_at_the_exact_revision } }

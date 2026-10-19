@@ -13,4 +13,5 @@ export { SpaceSelector } from "./SpaceSelector";
 export { SearchBar } from "./SearchBar";
 export { SpaceSettings } from "./SpaceSettings";
 export { SqlQueryEditor } from "./SqlQueryEditor";
+export { SQLWorkspace } from "./SQLWorkspace";
 export { KonasePanel } from "./konase/KonasePanel";

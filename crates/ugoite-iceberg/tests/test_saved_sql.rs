@@ -32,6 +32,7 @@ async fn test_saved_sql_req_api_006_crud() -> anyhow::Result<()> {
                 "type": "date",
                 "name": "since",
                 "description": "Lower bound",
+                "default": "2026-10-01",
             }
         ]),
     };
@@ -55,6 +56,7 @@ async fn test_saved_sql_req_api_006_crud() -> anyhow::Result<()> {
         fetched.get("sql").and_then(|v| v.as_str()),
         Some(expected_sql.as_str())
     );
+    assert_eq!(fetched["variables"][0]["default"], json!("2026-10-01"));
 
     let entries = saved_sql::list_sql(&op, ws_path, EntryScope::AllCurrent).await?;
     assert!(entries
@@ -87,9 +89,112 @@ async fn test_saved_sql_req_api_006_crud() -> anyhow::Result<()> {
         .unwrap_or_default();
     assert!(!new_revision_id.is_empty());
     assert_ne!(revision_id, new_revision_id);
+    let updated = saved_sql::get_sql(&op, ws_path, "sql-1").await?;
+    assert_eq!(updated["variables"][0]["default"], json!("2026-10-01"));
 
     saved_sql::delete_sql(&op, ws_path, "sql-1", "deleter").await?;
     assert!(saved_sql::get_sql(&op, ws_path, "sql-1").await.is_err());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn saved_sql_variable_defaults_round_trip() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "sql-defaults", "/tmp").await?;
+    let ws_path = "spaces/sql-defaults";
+    let integrity = FakeIntegrityProvider;
+    let payload = SqlPayload {
+        name: Some("Open items".to_string()),
+        kind: SqlKind::UserQuery,
+        metadata: None,
+        sql: "SELECT $status".to_string(),
+        variables: json!([
+            {"type": "string", "name": "status", "description": "", "default": "open"}
+        ]),
+    };
+
+    let created = saved_sql::create_sql(
+        &op,
+        ws_path,
+        "sql-defaults-1",
+        &payload,
+        "author",
+        &integrity,
+    )
+    .await?;
+    assert_eq!(created["variables"][0]["default"], json!("open"));
+    assert!(created["created_at"].as_f64().is_some());
+    assert!(created["updated_at"].as_f64().is_some());
+    let revision_id = created["revision_id"]
+        .as_str()
+        .expect("create response has a revision id");
+    let fetched = saved_sql::get_sql(&op, ws_path, "sql-defaults-1").await?;
+    assert_eq!(fetched["variables"][0]["default"], json!("open"));
+
+    let updated_payload = SqlPayload {
+        sql: "SELECT $status WHERE $status <> ''".to_string(),
+        variables: json!([
+            {"type": "string", "name": "status", "description": "", "default": "closed"}
+        ]),
+        ..payload
+    };
+    let updated = saved_sql::update_sql(
+        &op,
+        ws_path,
+        "sql-defaults-1",
+        &updated_payload,
+        revision_id,
+        "author",
+        &integrity,
+    )
+    .await?;
+    assert_ne!(updated["revision_id"], json!(revision_id));
+    let fetched = saved_sql::get_sql(&op, ws_path, "sql-defaults-1").await?;
+    assert_eq!(fetched["variables"][0]["default"], json!("closed"));
+    let listed = saved_sql::list_sql(&op, ws_path, EntryScope::AllCurrent).await?;
+    let listed = listed
+        .iter()
+        .find(|entry| entry["id"] == "sql-defaults-1")
+        .expect("saved SQL appears in list");
+    assert_eq!(listed["variables"][0]["default"], json!("closed"));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn saved_sql_rejects_duplicate_variable_names_before_committing() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "sql-duplicate-defaults", "/tmp").await?;
+    let ws_path = "spaces/sql-duplicate-defaults";
+    let integrity = FakeIntegrityProvider;
+    let payload = SqlPayload {
+        name: Some("Ambiguous defaults".to_string()),
+        kind: SqlKind::UserQuery,
+        metadata: None,
+        sql: "SELECT $status".to_string(),
+        variables: json!([
+            {"type": "string", "name": "status", "description": "", "default": "open"},
+            {"type": "string", "name": "status", "description": "", "default": "closed"}
+        ]),
+    };
+
+    assert!(saved_sql::create_sql(
+        &op,
+        ws_path,
+        "sql-duplicate-defaults-1",
+        &payload,
+        "author",
+        &integrity,
+    )
+    .await
+    .is_err());
+    assert!(saved_sql::get_sql(&op, ws_path, "sql-duplicate-defaults-1")
+        .await
+        .is_err());
+    assert!(saved_sql::list_sql(&op, ws_path, EntryScope::AllCurrent)
+        .await?
+        .is_empty());
 
     Ok(())
 }

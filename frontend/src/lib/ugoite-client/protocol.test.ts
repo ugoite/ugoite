@@ -1,21 +1,28 @@
 import { http, HttpResponse } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  analyzeSqlStructure,
   buildSpreadsheetCsvRequest,
   canonicalizeCompositionDocument,
+  compileVariableGraph,
   encodeSpreadsheetCsv,
   getWasmSupportedOperations,
   parseCompositionVariableInput,
   parseCompositionVariableInputSync,
+  parseSqlDocument,
   prepareApiRequest,
   prepareCompositionVariableInputParser,
+  prepareSqlStructureParser,
+  proposeSqlStructureOperation,
   protocolFetch,
   protocolFetchResponse,
+  renameSqlDocumentParameter,
   spreadsheetCsvRequestBytes,
   UGOITE_API_OPERATIONS,
   UGOITE_WASM_PROTOCOL_VERSION,
   UgoiteApiError,
   validateAssetReference,
+  type VariableGraph,
 } from "./protocol";
 import { testApiUrl } from "~/test/http-origin";
 import { server } from "~/test/mocks/server";
@@ -34,7 +41,6 @@ const typedCompositionDocument = {
   format_version: 1,
   kind: "dashboard",
   name: "Monthly expenses",
-  tags: [],
   spec: {
     variables: [{
       id: "month_start",
@@ -48,6 +54,8 @@ const typedCompositionDocument = {
       entry_id: "00000000-0000-7000-8000-000000000020",
       revision_id: "00000000-0000-7000-8000-000000000021",
       expected_result: [{ name: "amount", type: "json" }],
+      schema_fingerprint:
+        "ed3bd3fbcd9aa04517ff6d9dbb8a7a6de4eede34a704908debdea72b5c0b1ec5",
       variables: { month_start: { variable: "month_start" } },
     }],
     components: [
@@ -116,6 +124,187 @@ describe("portable Ugoite API protocol WASM", () => {
     expect(canonical.fingerprint).toMatch(/^[0-9a-f]{64}$/);
   });
 
+  it("compiles a typed variable graph through the versioned Rust/WASM action", async () => {
+    const integer = { scalar_type: "integer", nullable: false } as const;
+    const graph: VariableGraph = {
+      variables: [
+        {
+          id: "total",
+          kind: {
+            kind: "query",
+            returns: { kind: "scalar", value_type: integer },
+            query: { kind: "inline_sql", sql: "SELECT $amount" },
+            arguments: [{
+              name: "amount",
+              value_type: integer,
+              variable: "amount",
+            }],
+          },
+        },
+        {
+          id: "amount",
+          kind: {
+            kind: "input",
+            value_type: integer,
+            required: true,
+          },
+        },
+        {
+          id: "independent",
+          kind: {
+            kind: "constant",
+            value_type: integer,
+            value: { kind: "integer", value: 1 },
+          },
+        },
+      ],
+    };
+
+    await expect(compileVariableGraph(graph)).resolves.toEqual({
+      contract_version: 1,
+      topological_order: ["amount", "independent", "total"],
+      dependencies: {
+        amount: [],
+        independent: [],
+        total: ["amount"],
+      },
+    });
+
+    const invalidGraph: VariableGraph = {
+      variables: [
+        {
+          id: "amount",
+          kind: {
+            kind: "input",
+            value_type: { scalar_type: "string", nullable: false },
+            required: true,
+          },
+        },
+        graph.variables[0],
+      ],
+    };
+    await expect(compileVariableGraph(invalidGraph)).rejects.toMatchObject(
+      {
+        kind: "variable_graph_diagnostics",
+        contract_version: 1,
+        diagnostics: [{ code: "variable_type_mismatch" }],
+      } satisfies Partial<UgoiteApiError>,
+    );
+  });
+
+  it("analyzes SQL structure and returns confirmation proposals through Rust/WASM", async () => {
+    await prepareSqlStructureParser();
+
+    const sql =
+      'SELECT * FROM "Task" WHERE "field_101" = $status ORDER BY "_ugoite_id"';
+    const context = {
+      relation: "Task",
+      columns: [
+        { name: "_ugoite_id", type: "string" },
+        { name: "field_101", type: "string" },
+        { name: "field_102", type: "integer" },
+      ],
+      variables: [
+        { name: "status", type: "string" },
+        { name: "priority", type: "integer" },
+      ],
+      stable_key: ["_ugoite_id"],
+    } as const;
+
+    const analysis = await analyzeSqlStructure(sql, context);
+    expect(analysis).toMatchObject({
+      status: "supported",
+      projection: ["*"],
+      referenced_variables: ["status"],
+      stable_pagination: true,
+    });
+
+    const proposal = await proposeSqlStructureOperation(
+      sql,
+      context,
+      { kind: "set_columns", columns: ["field_101", "field_102"] },
+    );
+    expect(proposal).toMatchObject({
+      status: "supported",
+      base_sql: sql,
+      requires_confirmation: true,
+    });
+    expect(proposal.proposed_sql).toContain('"field_101", "field_102"');
+    expect(sql).toContain('SELECT * FROM "Task"');
+
+    const aggregateSql =
+      'SELECT DISTINCT "field_101", COUNT(DISTINCT "field_102") AS unique_count FROM "Task" GROUP BY "field_101"';
+    const aggregateAnalysis = await analyzeSqlStructure(aggregateSql, context);
+    expect(aggregateAnalysis).toMatchObject({
+      status: "supported",
+      projection: ["field_101"],
+      aggregates: [{
+        function: "count",
+        column: "field_102",
+        distinct: true,
+        alias: { name: "unique_count", quoted: false },
+      }],
+      group_by: ["field_101"],
+      distinct: true,
+    });
+
+    const aggregateProposal = await proposeSqlStructureOperation(
+      'SELECT "field_101" FROM "Task" GROUP BY "field_101"',
+      context,
+      {
+        kind: "set_aggregates",
+        aggregates: [{
+          function: "sum",
+          column: "field_102",
+          distinct: true,
+          alias: { name: "total", quoted: true },
+        }],
+      },
+    );
+    expect(aggregateProposal).toMatchObject({
+      status: "supported",
+      requires_confirmation: true,
+    });
+    expect(aggregateProposal.proposed_sql).toContain(
+      'SUM(DISTINCT "field_102") AS "total"',
+    );
+
+    const distinctProposal = await proposeSqlStructureOperation(
+      'SELECT "field_101" FROM "Task"',
+      context,
+      { kind: "set_distinct", distinct: true },
+    );
+    expect(distinctProposal.proposed_sql).toContain("SELECT DISTINCT");
+  });
+
+  it("parses bounded SQL drafts through the typed Rust/WASM document contract", async () => {
+    const sql = '-- 日本語\nSELECT $day FROM "G"';
+    const document = await parseSqlDocument(sql);
+    const sourceBytes = new TextEncoder().encode(sql);
+
+    expect(document).toMatchObject({
+      contract_version: 1,
+      source: sql,
+      status: "parsed",
+    });
+    expect(document.tokens.some((token) =>
+      token.kind === "placeholder" &&
+      new TextDecoder().decode(
+          sourceBytes.subarray(token.range.start, token.range.end),
+        ) === "$day"
+    )).toBe(true);
+    expect(document.nodes.some((node) => node.kind === "query_statement"))
+      .toBe(true);
+    expect(document.nodes.some((node) => node.kind === "select_item"))
+      .toBe(true);
+
+    await expect(parseSqlDocument("SELECT (")).resolves.toMatchObject({
+      source: "SELECT (",
+      status: "invalid_sql",
+      diagnostics: [{ code: "parse_failed" }],
+    });
+  });
+
   it("parses Composition Input with the shared Rust Domain contract without coercion", async () => {
     const cases = [
       ["string", "", { status: "unset" }],
@@ -145,6 +334,31 @@ describe("portable Ugoite API protocol WASM", () => {
         expected,
       );
     }
+  });
+
+  it("renames SQL Document parameters through the typed Rust/WASM client", async () => {
+    const sql = `-- $day
+SELECT $day + $day AS total, '$day' AS literal, $day2 AS other FROM "G"`;
+    const document = await renameSqlDocumentParameter(
+      sql,
+      "day",
+      "billing_day",
+    );
+    const expectedSql = sql.replace(
+      "SELECT $day + $day",
+      "SELECT $billing_day + $billing_day",
+    );
+    const sourceBytes = new TextEncoder().encode(expectedSql);
+
+    expect(document).toMatchObject({ source: expectedSql, status: "parsed" });
+    expect(
+      document.tokens.filter((token) => token.kind === "placeholder")
+        .map((token) =>
+          new TextDecoder().decode(
+            sourceBytes.subarray(token.range.start, token.range.end),
+          )
+        ),
+    ).toEqual(["$billing_day", "$billing_day", "$day2"]);
   });
 
   it("parses Composition Input synchronously after preparing the shared WASM parser", async () => {

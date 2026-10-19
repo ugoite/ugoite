@@ -1,0 +1,78 @@
+format: ugoite.composition
+format_version: 1
+kind: dashboard
+name: Monthly expenses
+spec:
+  variables:
+    - id: month_start
+      type: date
+      required: true
+      format: year-month
+    - id: month_end
+      type: date
+      required: true
+      format: year-month
+  sources:
+    - id: expense_rows
+      kind: inline_sql
+      name: Expense rows
+      sql: |-
+        SELECT "Date", "category", "amount"
+        FROM "Expense"
+        WHERE "Date" >= $month_start AND "Date" < $month_end
+        ORDER BY "Date" DESC, "_ugoite_id"
+      form_bindings:
+        - relation: Expense
+          form_id: "00000000-0000-7000-8000-000000000010"
+      expected_result:
+        - name: Date
+          type: date
+        - name: category
+          type: string
+        - name: amount
+          type: decimal
+      schema_fingerprint: 99a980a869d3c01c212a4d175e0616b3237ddfc19b35a6f027829f7cadad3d67
+    - id: month_total
+      kind: saved_sql
+      entry_id: "00000000-0000-7000-8000-000000000020"
+      revision_id: "00000000-0000-7000-8000-000000000021"
+      variables:
+        month_start:
+          variable: month_start
+        month_end:
+          variable: month_end
+      expected_result:
+        - name: total
+          type: decimal
+      schema_fingerprint: f907f602a58c987ee0678cbdd199189fb05085e9e4d21dd05e8dbf64b63d87e1
+  components:
+    - id: month_start_input
+      kind: input
+      variable: month_start
+    - id: month_end_input
+      kind: input
+      variable: month_end
+    - id: total
+      kind: metric
+      source: month_total
+      column: total
+      presentation:
+        kind: number
+        unit: 円
+        fraction_digits: 0
+    - id: transactions
+      kind: table
+      source: expense_rows
+  layout:
+    kind: flow
+    rows:
+      - id: main
+        items:
+          - kind: component
+            component: month_start_input
+          - kind: component
+            component: month_end_input
+          - kind: component
+            component: total
+          - kind: component
+            component: transactions

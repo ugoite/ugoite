@@ -1,5 +1,6 @@
 import { type APIRequestContext, expect, test } from "@playwright/test";
 import { getBackendUrl, waitForServers } from "./lib/client.ts";
+import { completeSavedSqlCompositionYaml } from "./lib/composition.ts";
 
 type SeedState = {
   spaceId: string;
@@ -40,18 +41,14 @@ function buildYaml(
     "format_version: 1",
     `name: ${name}`,
     "kind: dashboard",
-    "tags: []",
     "spec:",
     "  sources:",
     "    - id: receipt_rows",
     "      kind: saved_sql",
     `      entry_id: "${savedSqlId}"`,
     `      revision_id: "${savedSqlRevisionId}"`,
-    "      expected_result:",
-    "        - name: total",
-    "          type: float",
-    "        - name: merchant",
-    "          type: string",
+    "      expected_result: []",
+    "      schema_fingerprint: ''",
     "  components:",
     "    - id: total",
     "      kind: metric",
@@ -169,13 +166,22 @@ async function seedReceiptComposition(
   expect(savedSql.id).toBeTruthy();
   expect(savedSql.revision_id).toBeTruthy();
 
+  const yaml = await completeSavedSqlCompositionYaml(
+    request,
+    spaceId,
+    buildYaml(compositionName, savedSql.id!, savedSql.revision_id!),
+    [{
+      id: "receipt_rows",
+      savedSqlId: savedSql.id!,
+      savedSqlRevisionId: savedSql.revision_id!,
+    }],
+  );
   return {
     spaceId,
-    yaml: buildYaml(compositionName, savedSql.id!, savedSql.revision_id!),
-    renamedYaml: buildYaml(
-      `${compositionName} renamed`,
-      savedSql.id!,
-      savedSql.revision_id!,
+    yaml,
+    renamedYaml: yaml.replace(
+      `name: ${compositionName}`,
+      `name: ${compositionName} renamed`,
     ),
   };
 }

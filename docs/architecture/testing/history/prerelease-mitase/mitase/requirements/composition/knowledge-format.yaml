@@ -1,0 +1,939 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: composition
+category: Portable Composition documents, execution, and recovery
+requirements:
+  - id: REQ-COMP-001
+    title: Composition is Space-owned Knowledge
+    description: A Composition is stored as one Entry revision in its user-owned Space and uses the existing revision, restore, receipt, and conflict contract; it does not acquire a separate database or hidden catalog as authority.
+    priority: high
+    status: implemented
+    criteria:
+      - id: space-authority
+        kind: behavior
+        statement: A Composition's authoritative document is owned by its Space and is not duplicated into a separate authoritative catalog.
+        governed_by: [POL-000#rule.foundation-precedence]
+      - id: one-entry-revision
+        kind: behavior
+        statement: Each saved Composition is represented by one Entry revision and inherits the existing append-only history, restore, receipt, and stale-write conflict behavior.
+        governed_by: [POL-000#rule.foundation-precedence, POL-014#rule.governance, POL-016#rule.governance]
+    bindings:
+      - id: composition-update-history-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Browser Composition updates save as the next revision with composition and base revision identity, historical revisions restore append-only with a stable retry key navigating to the new revision, and stale bases surface conflicts without rewriting history or leaving the route.
+        targets:
+          - id: edit-stale-base-case
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx"
+            selector: { kind: test, name: surfaces a stale base conflict without leaving the route }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-001#criterion.one-entry-revision
+                covers:
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-route
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "surfaces a stale base conflict without leaving the route" } }
+          - id: restore-append-case
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx"
+            selector: { kind: test, name: restores a historical revision with source base and a stable retry key }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-001#criterion.one-entry-revision
+                covers:
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-restore
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: "restores a historical revision with source base and a stable retry key" } }
+          - id: restore-stale-base-case
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx"
+            selector: { kind: test, name: surfaces a stale base conflict with a recovery link to history }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-001#criterion.one-entry-revision
+                covers:
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-restore
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: "surfaces a stale base conflict with a recovery link to history" } }
+  - id: REQ-COMP-002
+    title: Restricted portable Composition format
+    description: The unreleased Composition v1 exchange format is restricted `.ugcomp.yaml` with a typed envelope and spec, dashboard as its only executable kind, and Rust semantics shared by native and WASM surfaces.
+    priority: high
+    status: implemented
+    bindings:
+      - id: display-label-verification
+        role: verification
+        facet: verification
+        responsibility: Verify optional labels through native and WASM canonicalization, and verify that Metrics using different result columns from one Saved SQL source canonicalize identically across both surfaces.
+        targets:
+          - id: canonicalization-parity-case
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: symbol, name: tests::composition_canonicalization_matches_the_native_domain_contract }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.optional-display-labels
+                covers:
+                  - FEAT-COMP-001#binding.composition-display-domain/target.variable-display-label
+                  - FEAT-COMP-001#binding.composition-display-domain/target.composition-component-contract
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::composition_canonicalization_matches_the_native_domain_contract } }
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation
+                covers:
+                  - FEAT-COMP-001#binding.composition-display-domain/target.composition-component-contract
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::composition_canonicalization_matches_the_native_domain_contract } }
+      - id: saved-sql-metric-presentation-validation
+        role: verification
+        facet: verification
+        responsibility: Verify a Metric binds one exact Saved SQL source and one declared scalar output column, including shared multi-column sources, exact numeric values, distinct zero-row and multi-row outcomes, parameters, live data, and current authorization.
+        targets:
+          - id: saved-sql-metric-binding-resolution
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::saved_sql_columns_resolve_to_shared_metric_bindings }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation
+                covers:
+                  - FEAT-COMP-001#binding.composition-display-domain/target.composition-component-contract
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_columns_resolve_to_shared_metric_bindings } }
+          - id: metric-row-cardinality-diagnostics
+            adapter: rust
+            path: crates/ugoite-core/src/composition_metric.rs
+            selector: { kind: symbol, name: tests::sql_scalar_probe_distinguishes_zero_and_multiple_result_rows }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation
+                covers:
+                  - FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition_metric::tests::sql_scalar_probe_distinguishes_zero_and_multiple_result_rows } }
+          - id: saved-sql-metric-query-execution
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_query_authorization.rs
+            selector: { kind: test, name: saved_sql_columns_resolve_to_bounded_metric_results }
+            claims:
+              - { kind: verifies, criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation, covers: [FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: saved_sql_columns_resolve_to_bounded_metric_results } } }
+          - id: saved-sql-metric-current-authorization
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_query_authorization.rs
+            selector: { kind: test, name: authorized_composition_metrics_recheck_current_entry_and_saved_sql_access }
+            claims:
+              - { kind: verifies, criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation, covers: [FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: authorized_composition_metrics_recheck_current_entry_and_saved_sql_access } } }
+              - { kind: verifies, criterion: REQ-COMP-004#criterion.current-authorization, covers: [FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: authorized_composition_metrics_recheck_current_entry_and_saved_sql_access } } }
+          - id: saved-sql-metric-resource-limit-failure
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service/composition_metric_query.rs
+            selector: { kind: symbol, name: tests::authorized_saved_sql_metric_returns_no_value_when_query_exceeds_memory_limit }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation
+                covers:
+                  - FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: service::composition_metric_query::tests::authorized_saved_sql_metric_returns_no_value_when_query_exceeds_memory_limit } }
+          - id: cli-canonical-case
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector: { kind: symbol, name: tests::lint_file_preserves_saved_sql_metric_columns_and_shared_fingerprint }
+            claims:
+              - { kind: verifies, criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation, covers: [FEAT-COMP-001#binding.composition-display-domain/target.composition-component-contract], runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: commands::composition::tests::lint_file_preserves_saved_sql_metric_columns_and_shared_fingerprint } } }
+          - id: domain-canonical-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::multiple_metrics_select_columns_from_one_saved_sql_source }
+            claims:
+              - { kind: verifies, criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation, covers: [FEAT-COMP-001#binding.composition-display-domain/target.composition-component-contract], runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::multiple_metrics_select_columns_from_one_saved_sql_source } } }
+      - id: decimal-metric-value-case
+        role: verification
+        facet: verification
+        responsibility: Verify exact Decimal metric strings preserve scale and reject malformed values.
+        targets:
+          - id: exact-decimal-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition_metric.rs
+            selector: { kind: symbol, name: tests::validates_exact_decimal_metric_strings_without_losing_scale }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.metric-runtime-values
+                covers:
+                  - FEAT-COMP-001#binding.metric-runtime-value-domain/target.metric-runtime-value-validator
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition_metric::tests::validates_exact_decimal_metric_strings_without_losing_scale } }
+      - id: envelope-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the fixed envelope marker, version, name, tags, dashboard kind, and empty spec through the shared domain unit test.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::document_uses_the_portable_envelope_field_names }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.typed-dashboard-model
+                covers:
+                  - FEAT-COMP-001#binding.portable-envelope-domain/target.composition-document-type
+                  - FEAT-COMP-001#binding.portable-envelope-domain/target.composition-format-marker-type
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::document_uses_the_portable_envelope_field_names } }
+      - id: tag-verification
+        role: verification
+        facet: verification
+        responsibility: Verify document tags round-trip as the same ordered Entry metadata tags on a saved Composition revision.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition.rs
+            selector: { kind: test, name: composition_save_persists_canonical_carrier_and_receipt }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.composition-tags
+                covers:
+                  - FEAT-COMP-001#binding.portable-envelope-domain/target.composition-document-type
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition, test: composition_save_persists_canonical_carrier_and_receipt } }
+      - id: result-descriptor-verification
+        role: verification
+        facet: verification
+        responsibility: Verify ordered Saved SQL result descriptors are tracked deterministically in the resolved result fingerprint.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::saved_sql_schema_fingerprint_tracks_ordered_result_descriptors }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.saved-sql-result-descriptor
+                covers:
+                  - FEAT-COMP-001#binding.portable-envelope-domain/target.saved-sql-result-column-type
+                  - FEAT-COMP-001#binding.portable-envelope-domain/target.saved-sql-result-field-types
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_schema_fingerprint_tracks_ordered_result_descriptors } }
+      - id: entry-query-display-system-fields-verification
+        role: verification
+        facet: verification
+        responsibility: Verify omitted display timestamps remain empty and readable in old documents, and selected timestamps pass through resolution without widening the EntryQuery projection.
+        targets:
+          - id: optional-display-fields-and-preview-compatibility
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::entry_query_display_timestamps_are_optional_and_old_preview_documents_read }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.entry-query-display-system-fields
+                covers: [FEAT-COMP-001#binding.entry-query-display-system-fields-domain/target.entry-query-template]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::entry_query_display_timestamps_are_optional_and_old_preview_documents_read } }
+          - id: resolution-keeps-display-fields-separate
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::entry_query_template_compiles_to_the_existing_bounded_request }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.entry-query-display-system-fields
+                covers: [FEAT-COMP-002#binding.entry-query-resolver/target.compile-entry-query-source]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::entry_query_template_compiles_to_the_existing_bounded_request } }
+      - id: used-field-schema-snapshot-verification
+        role: verification
+        facet: verification
+        responsibility: Verify EntryQuery snapshots preserve typed property metadata and reject changes to a used field schema.
+        targets:
+          - id: field-schema-canonicalization
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: entry_query_field_schema_preserves_typed_list_and_reference_metadata }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.used-field-schema-snapshot
+                covers: [FEAT-COMP-001#binding.entry-query-field-schema-domain/target.field-schema-snapshot-entry]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::entry_query_field_schema_preserves_typed_list_and_reference_metadata } }
+          - id: current-used-field-schema-revalidation
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::changed_list_item_schema_is_reported_for_a_used_field }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.used-field-schema-snapshot
+                covers: [FEAT-COMP-001#binding.entry-query-field-schema-domain/target.field-schema-snapshot-entry]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::changed_list_item_schema_is_reported_for_a_used_field } }
+      - id: layout-verification
+        role: verification
+        facet: verification
+        responsibility: Verify unreferenced components are rejected during layout validation, which canonicalization invokes.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::unreferenced_components_are_invalid }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-001#binding.component-layout-domain/target.ordered-components
+                  - FEAT-COMP-001#binding.component-layout-domain/target.canonical-layout-validation
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::unreferenced_components_are_invalid } }
+      - id: flow-layout-verification
+        role: verification
+        facet: verification
+        responsibility: Verify empty layouts and rows, duplicate row IDs, Input placement, and the text style enum through the shared Domain unit tests.
+        targets:
+          - id: empty-layout-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::empty_layout_is_rejected }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.empty-layout-rejected
+                covers:
+                  - FEAT-COMP-001#binding.component-layout-domain/target.flow-layout
+                  - FEAT-COMP-001#binding.component-layout-domain/target.canonical-layout-validation
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::empty_layout_is_rejected } }
+          - id: empty-row-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::empty_rows_are_rejected }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.empty-layout-rejected
+                covers:
+                  - FEAT-COMP-001#binding.component-layout-domain/target.flow-row
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::empty_rows_are_rejected } }
+          - id: duplicate-row-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::duplicate_row_ids_are_rejected }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-001#binding.component-layout-domain/target.flow-row
+                  - FEAT-COMP-001#binding.component-layout-domain/target.flow-layout
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::duplicate_row_ids_are_rejected } }
+          - id: layout-item-order-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::components_follow_layout_row_and_item_order_independent_of_declarations }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-001#binding.component-layout-domain/target.ordered-components
+                  - FEAT-COMP-001#binding.component-layout-domain/target.flow-item
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::components_follow_layout_row_and_item_order_independent_of_declarations } }
+          - id: required-variable-input-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::required_variable_without_default_needs_a_layout_input }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-001#binding.component-layout-domain/target.ordered-components
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::required_variable_without_default_needs_a_layout_input } }
+          - id: unknown-input-variable-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::unknown_input_variable_is_invalid }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-001#binding.component-layout-domain/target.canonical-layout-validation
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::unknown_input_variable_is_invalid } }
+          - id: duplicate-input-placement-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::duplicate_input_placements_are_invalid }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-001#binding.component-layout-domain/target.canonical-layout-validation
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::duplicate_input_placements_are_invalid } }
+          - id: text-style-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::text_style_enum_values_round_trip }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.text-style-enum
+                covers:
+                  - FEAT-COMP-001#binding.component-layout-domain/target.text-style
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::text_style_enum_values_round_trip } }
+          - id: unknown-style-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::unknown_text_styles_and_layout_kinds_are_rejected }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.text-style-enum
+                covers:
+                  - FEAT-COMP-001#binding.component-layout-domain/target.text-style
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::unknown_text_styles_and_layout_kinds_are_rejected } }
+      - id: layout-binding-verification
+        role: verification
+        facet: verification
+        responsibility: Verify layout-ordered component bindings with interleaved Text, Input, and data components and semantic variable values through the Core resolver exercising the shared Domain ordering.
+        targets:
+          - id: interleaved-order-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::layout_order_interleaves_inputs_text_and_data_components_across_rows }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-001#binding.component-layout-domain/target.ordered-components
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::layout_order_interleaves_inputs_text_and_data_components_across_rows } }
+          - id: input-values-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::input_components_resolve_through_semantic_variable_values }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-001#binding.component-layout-domain/target.ordered-components
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::input_components_resolve_through_semantic_variable_values } }
+      - id: flow-renderer-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Browser flow renderer composes layout rows and items in order with interleaved variable-bound Input controls, fixed text styles without source fetch, and text bindings joined by component id.
+        targets:
+          - id: flow-row-order-case
+            adapter: typescript
+            path: frontend/src/components/DashboardFlowRenderer.test.tsx
+            selector: { kind: test, name: renders rows in order with Input controls interleaved }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-004#binding.browser-query-runtime/target.browser-dashboard-flow-renderer
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/DashboardFlowRenderer.test.tsx, test: "renders rows in order with Input controls interleaved" } }
+          - id: flow-parameter-control-case
+            adapter: typescript
+            path: frontend/src/components/DashboardFlowRenderer.test.tsx
+            selector: { kind: test, name: binds Input changes to transient Work state }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-004#binding.browser-query-runtime/target.browser-input-control
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/DashboardFlowRenderer.test.tsx, test: "binds Input changes to transient Work state" } }
+          - id: flow-text-style-case
+            adapter: typescript
+            path: frontend/src/components/DashboardFlowRenderer.test.tsx
+            selector: { kind: test, name: renders each text style without fetching sources }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.text-style-enum
+                covers:
+                  - FEAT-COMP-004#binding.browser-query-runtime/target.browser-flow-text
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/DashboardFlowRenderer.test.tsx, test: "renders each text style without fetching sources" } }
+          - id: renderer-text-binding-case
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.test.tsx
+            selector: { kind: test, name: renders text bindings from joined declarations without source requests }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.text-style-enum
+                covers:
+                  - FEAT-COMP-004#binding.browser-query-runtime/target.browser-composition-renderer
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: "renders text bindings from joined declarations without source requests" } }
+      - id: design-canvas-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Design canvas maps block operations onto the draft document through the single draft channel — transient selection, text insertion with exact-once placement, existing-parameter placement, keyboard-operable row and item reorder without cross-row moves, Inspector-owned display removal and parameter unplacement, and query-stable layout edits without extra queries.
+        targets:
+          - id: design-canvas-selection-case
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: selects canvas blocks without touching the draft }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "selects canvas blocks without touching the draft" } }
+          - id: design-canvas-text-insertion-case
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: inserts text blocks declared and placed exactly once }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "inserts text blocks declared and placed exactly once" } }
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.text-style-enum
+                covers:
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "inserts text blocks declared and placed exactly once" } }
+          - id: design-canvas-input-placement-case
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: places existing variable controls without creating variables }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "places existing variable controls without creating variables" } }
+          - id: design-canvas-reorder-case
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: reorders rows and items with keyboard-operable buttons }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "reorders rows and items with keyboard-operable buttons" } }
+          - id: design-canvas-remove-case
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: keeps deletion in the selected block Inspector }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "keeps deletion in the selected block Inspector" } }
+          - id: inspector-remove-action-case
+            adapter: typescript
+            path: frontend/src/components/CompositionInspector.test.tsx
+            selector: { kind: test, name: exposes removal from the selected block Inspector with a human name }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-composition-inspector
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionInspector.test.tsx, test: "exposes removal from the selected block Inspector with a human name" } }
+          - id: inspector-unplace-parameter-case
+            adapter: typescript
+            path: frontend/src/components/CompositionInspector.test.tsx
+            selector: { kind: test, name: removes the selected Input component without removing its variable }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-composition-inspector
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionInspector.test.tsx, test: "removes the selected Input component without removing its variable" } }
+          - id: narrow-inspector-remove-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: removes a selected display from the narrow Inspector sheet and returns focus to the canvas }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-composition-inspector
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-mode
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-inspector-sheet
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "removes a selected display from the narrow Inspector sheet and returns focus to the canvas" } }
+          - id: narrow-inspector-unplace-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: unplaces a variable from the narrow Inspector sheet but keeps its declaration }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-mode
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-inspector-sheet
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "unplaces a variable from the narrow Inspector sheet but keeps its declaration" } }
+          - id: design-canvas-no-refetch-case
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: routes block operations through the draft channel without extra queries }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.used-field-fingerprint
+                covers:
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "routes block operations through the draft channel without extra queries" } }
+          - id: design-canvas-draft-moves-case
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: reorders rows and items within rows only }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "reorders rows and items within rows only" } }
+          - id: design-canvas-draft-query-stable-case
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: keeps layout-only edits query-stable without refetching sources }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.used-field-fingerprint
+                covers:
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "keeps layout-only edits query-stable without refetching sources" } }
+      - id: studio-seed-readiness-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Studio seeds carry a default Table with a single-row layout plus mapped variables with controls placed only when variables exist, one-shot route consumption with no zero-display path, and the save gate blocking on name, refs, and layout with source-only drafts unable to save and the disabled Save carrying its reason.
+        targets:
+          - id: studio-form-seed-case
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: seeds a form entry point with an entry-query source and a default table }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-studio-seed
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "seeds a form entry point with an entry-query source and a default table" } }
+          - id: studio-saved-sql-seed-case
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: seeds the exact Saved SQL revision without promoting run values to defaults }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.exact-saved-sql-revision
+                covers:
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-studio-seed
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "seeds the exact Saved SQL revision without promoting run values to defaults" } }
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-studio-seed
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "seeds the exact Saved SQL revision without promoting run values to defaults" } }
+          - id: studio-seed-without-variables-case
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: seeds saved sql without variables with a table and no variable controls }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-studio-seed
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "seeds saved sql without variables with a table and no variable controls" } }
+          - id: studio-seed-form-route-case
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx"
+            selector: { kind: test, name: seeds the studio from an entry query seed with a default table }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-studio-seed
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from an entry query seed with a default table" } }
+          - id: studio-seed-sql-route-case
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx"
+            selector: { kind: test, name: seeds the studio from Saved SQL without inventing variables or Inputs }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.exact-saved-sql-revision
+                covers:
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-studio-seed
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from Saved SQL without inventing variables or Inputs" } }
+          - id: studio-readiness-matrix-case
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: "blocks saves until the name, refs, and layout are all ready" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.empty-layout-rejected
+                covers:
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-save-readiness
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "blocks saves until the name, refs, and layout are all ready" } }
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-save-readiness
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "blocks saves until the name, refs, and layout are all ready" } }
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-save-readiness
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "blocks saves until the name, refs, and layout are all ready" } }
+          - id: studio-source-only-route-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: blocks a source-only draft before canonicalization }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.empty-layout-rejected
+                covers:
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-save-readiness
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: blocks a source-only draft before canonicalization } }
+          - id: studio-canvas-operations-route-case
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx"
+            selector: { kind: test, name: "adds canvas blocks with label, reorder, and remove through the Inspector" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "adds canvas blocks with label, reorder, and remove through the Inspector" } }
+      - id: inspector-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Studio inspector binds only the selected block through draft updaters — text content and fixed style edits without touching sources, and parameter placement retargets with no label override.
+        targets:
+          - id: inspector-text-edits-case
+            adapter: typescript
+            path: frontend/src/components/CompositionInspector.test.tsx
+            selector: { kind: test, name: binds text content and style edits without touching sources }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.text-style-enum
+                covers:
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-composition-inspector
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionInspector.test.tsx, test: "binds text content and style edits without touching sources" } }
+          - id: inspector-parameter-retarget-case
+            adapter: typescript
+            path: frontend/src/components/CompositionInspector.test.tsx
+            selector: { kind: test, name: changes the selected Input's variable binding }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-composition-inspector
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionInspector.test.tsx, test: "changes the selected Input's variable binding" } }
+          - id: inspector-draft-text-edits-case
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: edits text content and style with a fixed enum }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.text-style-enum
+                covers:
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-composition-inspector
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "edits text content and style with a fixed enum" } }
+          - id: inspector-draft-parameter-retarget-case
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: retargets variable controls in place without touching declarations }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-composition-inspector
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "retargets variable controls in place without touching declarations" } }
+      - id: edit-round-trip-verification
+        role: verification
+        facet: verification
+        responsibility: Verify restoring a lint-normalized document into the draft keeps multi-row layout order with text content and style plus parameter placement against the labeled shape, entry_query sources with omitted empty filters/sort default like the domain, and unknown future component/layout kinds, removed Metric calculation and value_field shapes, and invalid text shapes fail closed.
+        targets:
+          - id: edit-round-trip-omitted-query-case
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: "loads entry_query sources whose canonical query omits empty filters and sort" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-round-trip
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "loads entry_query sources whose canonical query omits empty filters and sort" } }
+          - id: edit-round-trip-multi-row-case
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: restores multi-row layout order with text and variable placement }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-round-trip
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "restores multi-row layout order with text and variable placement" } }
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.text-style-enum
+                covers:
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-round-trip
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "restores multi-row layout order with text and variable placement" } }
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-round-trip
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "restores multi-row layout order with text and variable placement" } }
+          - id: edit-round-trip-unknown-kinds-case
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: "rejects removed Metric calculation shapes and unknown component/layout kinds" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-round-trip
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "rejects removed Metric calculation shapes and unknown component/layout kinds" } }
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.text-style-enum
+                covers:
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-round-trip
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "rejects removed Metric calculation shapes and unknown component/layout kinds" } }
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-round-trip
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "rejects removed Metric calculation shapes and unknown component/layout kinds" } }
+      - id: metric-value-verification
+        role: verification
+        facet: verification
+        responsibility: Verify accepted normalized metric dates and timestamps and stable rejection of malformed forms through the shared domain evaluator.
+        targets:
+          - id: accepted-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition_metric.rs
+            selector: { kind: symbol, name: tests::accepts_normalized_composition_metric_dates_and_timestamps }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.metric-runtime-values
+                covers:
+                  - FEAT-COMP-001#binding.metric-runtime-value-domain/target.metric-runtime-value-validator
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition_metric::tests::accepts_normalized_composition_metric_dates_and_timestamps } }
+          - id: rejected-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition_metric.rs
+            selector: { kind: symbol, name: tests::rejects_malformed_or_non_normalized_composition_metric_dates_and_timestamps }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.metric-runtime-values
+                covers:
+                  - FEAT-COMP-001#binding.metric-runtime-value-domain/target.metric-runtime-value-validator
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition_metric::tests::rejects_malformed_or_non_normalized_composition_metric_dates_and_timestamps } }
+      - id: browser-metric-verification
+        role: verification
+        facet: frontend-tests
+        responsibility: Verify the bounded metric operation and exact server-result rendering without client aggregation.
+        targets:
+          - id: query-case
+            adapter: typescript
+            path: frontend/src/lib/composition-api.test.ts
+            selector: { kind: test, name: queries one metric through the bounded portable operation }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.metric-runtime-values
+                covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-composition-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-api.test.ts, test: queries one metric through the bounded portable operation } }
+          - id: renderer-case
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.test.tsx
+            selector: { kind: test, name: queries an exact integer metric through the bounded server operation }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.metric-runtime-values
+                covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-composition-renderer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: queries an exact integer metric through the bounded server operation } }
+    criteria:
+      - id: typed-dashboard-model
+        kind: behavior
+        statement: The Composition v1 model represents its fixed envelope marker, version, name, Entry tags, dashboard kind, typed variables, sources, components, and flow layout as typed Rust domain values.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance]
+      - id: composition-tags
+        kind: behavior
+        statement: The document tags are the sole Composition tag value and must equal the ordered EntryMetadata.tags stored on its Entry revision.
+        governed_by: [POL-000#rule.foundation-precedence, POL-007#rule.governance]
+      - id: saved-sql-result-descriptor
+        kind: behavior
+        statement: A saved_sql source declares ordered expected_result columns with unique non-empty names and portable logical types; json columns may be rendered in tables but are not scalar metric values.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance]
+      - id: server-typed-result-descriptor
+        kind: behavior
+        statement: Browser save-as-tool stores the sql.query result_schema column types unchanged in the saved_sql expected_result; columns absent from the descriptor keep the json fallback, and the Browser never infers types from row values.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance]
+      - id: optional-display-labels
+        kind: behavior
+        statement: Composition variables and Metric/Table components may carry optional display labels; present labels round-trip through canonical YAML and the semantic fingerprint, do not replace stable IDs or change source and query binding semantics, and absent labels remain omitted from canonical output.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance]
+      - id: saved-sql-metric-presentation
+        kind: behavior
+        statement: >-
+          A Metric stores the ID of one Composition Saved SQL source, the name of
+          one declared output column, and optional display-only label, unit, and
+          fraction-digit settings. The source pins an exact Saved SQL revision
+          and may be shared by multiple Metrics and Tables. The selected column
+          must be a declared displayable scalar. SQL owns all calculations;
+          Metric stores no operation, Form FieldId, calculation expression, or
+          client-side aggregation configuration. Evaluation uses current ACLs
+          and typed parameters, consumes at most two rows, and succeeds only
+          for exactly one row. It never chooses a first row or inserts LIMIT.
+          SQL NULL is a successful present value distinct from numeric zero;
+          zero-row and multi-row results are distinct failures. Existing
+          read-only SQL, exact-revision, precision, and resource-limit contracts
+          remain in force. Metric-specific compatibility with former
+          prerelease shapes is not required.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance]
+      - id: metric-runtime-values
+        kind: behavior
+        statement: >-
+          Integer metric values are JSON strings in the canonical base-10 forms
+          `0`, `[1-9][0-9]*`, or `-[1-9][0-9]*`; they preserve exact precision and
+          reject leading plus signs, leading zeroes, and negative zero. Float
+          metric values are finite JSON numbers. Decimal metric values are
+          exact JSON strings in plain notation with an optional minus sign, an
+          integer part without leading zeroes, and an optional non-empty
+          fractional part. Exponents and
+          negative zero are rejected, while fractional scale, including
+          trailing zeroes, is preserved. SQL NULL is JSON null for every
+          supported scalar result type. Metric date values are valid Gregorian dates in
+          normalized YYYY-MM-DD form. Metric timestamp values are normalized
+          local timestamps in YYYY-MM-DDTHH:MM or
+          YYYY-MM-DDTHH:MM:SS[.fraction] form, or valid RFC 3339 timestamps
+          with an explicit UTC designator or numeric offset. Fractions are
+          limited to nine digits; normalized local fractions have no trailing
+          zeroes. Malformed values produce metric_result_type_mismatch through
+          the shared Rust domain evaluator.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance]
+      - id: ordered-component-layout
+        kind: behavior
+        statement: The flow layout defines component order by layout row-array order and item order; row IDs and component IDs are unique, each component is placed exactly once, duplicate row IDs, unknown references, duplicate references, unreferenced components, and empty rows produce invalid_composition, and the empty layout is invalid.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance]
+      - id: text-style-enum
+        kind: behavior
+        statement: A text component carries inline text and one fixed style of title, heading, body, or caption; unknown styles are rejected, and text has no source binding.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance]
+      - id: parameter-placement
+        kind: behavior
+        statement: The layout places Input components that reference declared variable IDs; unknown variables, duplicate component placement, or a required variable without a default and without a placed Input produce invalid_composition. Variable definitions remain in declaration order; Input placement follows Layout order.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance]
+      - id: empty-layout-rejected
+        kind: behavior
+        statement: A Composition layout with no rows, or with any row carrying no items, is rejected with invalid_composition during canonicalization.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance]
+      - id: restricted-yaml
+        kind: behavior
+        statement: Composition parsing rejects duplicate keys, multiple documents, anchors, aliases, merge keys, custom tags, implicit timestamp interpretation, and unknown fields.
+        governed_by: [POL-011#rule.governance]
+      - id: bounded-parser
+        kind: quality
+        statement: Composition parsing enforces limits for input bytes, nesting depth, YAML nodes, parser events, total scalar bytes, and items per collection through the shared Rust parser used by native and wasm32 builds.
+        governed_by: [POL-011#rule.governance]
+      - id: deterministic-diagnostics
+        kind: behavior
+        statement: Unsupported format versions and invalid Composition documents produce stable diagnostic codes independent of UI messages.
+        governed_by: [POL-014#rule.governance]
+      - id: used-field-schema-snapshot
+        kind: behavior
+        statement: >-
+          An entry_query source records a FieldId and FieldType snapshot for
+          property fields used by its filters, sort, projection, and text
+          search; a preview projection records all current property fields
+          returned by preview. Execution revalidates each FieldId and type
+          against the current authorized Form schema. The snapshot includes
+          List item and RowReference target
+          metadata when present. When text search is present, it also includes
+          every text-searchable property field under existing EntryQuery
+          semantics, excluding binary, list, object_list, and asset_reference
+          fields from the text-search expansion.
+        governed_by: [POL-007#rule.governance]
+      - id: entry-query-display-system-fields
+        kind: behavior
+        statement: An EntryQuery template may select Created and Updated as Composition table columns independently of its Preview or property projection. Omitted selections mean no system timestamp columns; older documents without the field remain readable with that empty selection.
+        governed_by: [POL-007#rule.governance]
+  - id: REQ-COMP-003
+    title: Canonical Composition representation
+    description: Canonical YAML and the document-level semantic Composition fingerprint derive from the complete normalized typed Composition value rather than source formatting; this identity is distinct from each entry_query source-schema fingerprint.
+    priority: high
+    status: implemented
+    criteria:
+      - id: canonical-yaml
+        kind: behavior
+        statement: Canonical YAML uses schema field order, block style, two-space indentation, LF line endings, and no BOM; comments are not preserved.
+        governed_by: [POL-001#rule.governance, POL-007#rule.governance]
+      - id: semantic-fingerprint
+        kind: behavior
+        statement: The document-level Composition fingerprint is SHA-256 over the complete normalized typed CompositionDocument, including its envelope, Entry tags, expected_result descriptors, and spec, so formatting-only changes do not alter it while any semantic document change does.
+        governed_by: [POL-007#rule.governance]
+      - id: wasm-parity
+        kind: behavior
+        statement: Native Rust and WASM produce identical canonical YAML, semantic fingerprints, and diagnostic codes for the shared Composition fixtures.
+        governed_by: [POL-001#rule.governance, POL-007#rule.governance]

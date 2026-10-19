@@ -1,0 +1,87 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: composition
+category: Reactive Composition execution
+features:
+  - id: FEAT-COMP-009
+    title: Reactive Composition source waiting state
+    summary: Keep changed Sources hidden and visibly waiting while an invalid or required-unset variable blocks plan resolution, then refresh only affected Sources when all inputs are valid.
+    status: planned
+    bindings:
+      - id: browser-source-waiting-runtime
+        role: implementation
+        facet: frontend
+        responsibility: Retain affected source work while blocked inputs prevent resolution, distinguish waiting Sources from invalid dependents, preserve unrelated pages and cursors, and resume changed Sources when all inputs are valid.
+        targets:
+          - id: source-waiting-query-handle
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.ts
+            selector: { kind: symbol, name: createCompositionQueryHandle }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.source-waiting-when-resolution-blocked
+          - id: saved-sql-table-waiting-presentation
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.tsx
+            selector: { kind: symbol, name: CompositionSavedSqlTable }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.source-waiting-when-resolution-blocked
+          - id: metric-waiting-presentation
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.tsx
+            selector: { kind: symbol, name: CompositionMetric }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.source-waiting-when-resolution-blocked
+          - id: entry-query-waiting-presentation
+            adapter: typescript
+            path: frontend/src/components/CompositionEntryQueryTable.tsx
+            selector: { kind: symbol, name: CompositionEntryQueryTable }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-007#criterion.source-waiting-when-resolution-blocked
+      - id: browser-source-waiting-evidence
+        role: evidence
+        facet: frontend-tests
+        responsibility: Verify waiting and invalid states, preservation of unrelated ready results and pagination, and resumption after blocking inputs become valid.
+        targets:
+          - id: changed-source-waits-for-blocking-input
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.test.ts
+            selector: { kind: test, name: waits on changed sources until required inputs are valid and preserves unrelated paging }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.source-waiting-when-resolution-blocked
+          - id: metric-waits-for-blocking-input
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.test.tsx
+            selector: { kind: test, name: keeps an unaffected metric ready and waits for changed inputs while another variable blocks resolution }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.source-waiting-when-resolution-blocked
+          - id: saved-sql-table-waiting-state
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.test.tsx
+            selector: { kind: test, name: renders an accessible waiting state for a blocked Saved SQL table }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.source-waiting-when-resolution-blocked
+          - id: entry-query-table-waiting-state
+            adapter: typescript
+            path: frontend/src/components/CompositionEntryQueryTable.test.tsx
+            selector: { kind: test, name: shows a concise accessible waiting state while resolution is blocked }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.source-waiting-when-resolution-blocked
+          - id: invalid-input-hides-stale-metric
+            adapter: typescript
+            path: e2e/composition-invalid-variable-input.test.ts
+            selector: { kind: test, name: invalid_raw_input_blocks_query_and_stale_result }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.required-variable-unset-diagnostic
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.stale-result-and-state-safety
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.source-waiting-when-resolution-blocked

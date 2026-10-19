@@ -14,13 +14,18 @@ export interface SqlQueryEditorProps {
   onChange: (value: string) => void;
   schema: SqlSchema;
   onDiagnostics?: (diagnostics: Diagnostic[]) => void;
+  ariaLabel?: string;
+  wrapLines?: boolean;
   disabled?: boolean;
 }
 
 export function SqlQueryEditor(props: SqlQueryEditorProps) {
   const [view, setView] = createSignal<EditorView | undefined>(undefined);
   const schemaCompartment = new Compartment();
+  const contentAttributesCompartment = new Compartment();
+  const wrappingCompartment = new Compartment();
   const readonlyCompartment = new Compartment();
+  const editableCompartment = new Compartment();
 
   const initEditor = (container: HTMLDivElement) => {
     if (view()) return;
@@ -40,8 +45,19 @@ export function SqlQueryEditor(props: SqlQueryEditorProps) {
           sql({ schema: props.schema }),
           sqlEditorAutocompletion(props.schema),
         ]),
+        contentAttributesCompartment.of(
+          EditorView.contentAttributes.of(
+            props.ariaLabel ? { "aria-label": props.ariaLabel } : {},
+          ),
+        ),
+        wrappingCompartment.of(
+          props.wrapLines ? EditorView.lineWrapping : [],
+        ),
         readonlyCompartment.of(
           EditorState.readOnly.of(Boolean(props.disabled)),
+        ),
+        editableCompartment.of(
+          EditorView.editable.of(!props.disabled),
         ),
         EditorView.updateListener.of((update) => {
           /* v8 ignore start */
@@ -88,6 +104,44 @@ export function SqlQueryEditor(props: SqlQueryEditorProps) {
         sql({ schema: props.schema }),
         sqlEditorAutocompletion(props.schema),
       ]),
+    });
+    /* v8 ignore stop */
+  });
+
+  createEffect(() => {
+    /* v8 ignore start */
+    const editorView = view();
+    if (!editorView) return;
+    editorView.dispatch({
+      effects: editableCompartment.reconfigure(
+        EditorView.editable.of(!props.disabled),
+      ),
+    });
+    /* v8 ignore stop */
+  });
+
+  createEffect(() => {
+    /* v8 ignore start */
+    const editorView = view();
+    if (!editorView) return;
+    editorView.dispatch({
+      effects: contentAttributesCompartment.reconfigure(
+        EditorView.contentAttributes.of(
+          props.ariaLabel ? { "aria-label": props.ariaLabel } : {},
+        ),
+      ),
+    });
+    /* v8 ignore stop */
+  });
+
+  createEffect(() => {
+    /* v8 ignore start */
+    const editorView = view();
+    if (!editorView) return;
+    editorView.dispatch({
+      effects: wrappingCompartment.reconfigure(
+        props.wrapLines ? EditorView.lineWrapping : [],
+      ),
     });
     /* v8 ignore stop */
   });

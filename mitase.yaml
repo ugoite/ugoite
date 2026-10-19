@@ -164,6 +164,8 @@ inventory:
         - e2e/composition-stale-response.test.ts
         - e2e/composition-studio-journey.test.ts
         - e2e/composition-metric-journey.test.ts
+        - e2e/composition-table-metric-pagination.test.ts
+        - e2e/composition-source-acl-isolation.test.ts
         - frontend/src/routes/spaces/[space_id]/entries/[entry_id].tsx
         - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history.tsx
         - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].tsx
@@ -203,6 +205,7 @@ inventory:
         - frontend/src/routes/spaces/[space_id]/sql/new.tsx
         - frontend/src/routes/spaces/[space_id]/sql/new.test.tsx
         - frontend/src/routes/spaces/[space_id]/sql/[sql_id]/variables.tsx
+        - frontend/src/routes/spaces/[space_id]/sql/[sql_id]/variables.test.tsx
         - frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.tsx
         - frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx
         - frontend/src/components/SqlResultTable.tsx
@@ -252,6 +255,7 @@ inventory:
         - tools/workspace_test.ts
         - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
         - crates/ugoite-wasm/tests/composition_parity.ts
+        - crates/ugoite-wasm/tests/sql_structure_parity.ts
         - frontend/src/lib/composition-api.ts
         - frontend/src/lib/composition-api.test.ts
         - frontend/src/lib/composition-draft.ts
@@ -260,9 +264,6 @@ inventory:
         - frontend/src/lib/composition-query-handle.test.ts
         - frontend/src/lib/composition-preview-handle.ts
         - frontend/src/lib/composition-preview-handle.test.ts
-        - frontend/src/lib/entry-query-composition.test.ts
-        - frontend/src/lib/entry-query-studio-capabilities.ts
-        - frontend/src/lib/entry-query-studio-capabilities.test.ts
         - frontend/src/components/CompositionRenderer.tsx
         - frontend/src/components/CompositionRenderer.test.tsx
         - frontend/src/components/DashboardFlowRenderer.tsx
@@ -273,9 +274,11 @@ inventory:
         - frontend/src/components/CompositionInspector.test.tsx
         - frontend/src/components/CompositionDataWorkspace.tsx
         - frontend/src/components/CompositionDataWorkspace.test.tsx
+        - frontend/src/components/SQLWorkspace.tsx
+        - frontend/src/components/SQLWorkspace.test.tsx
+        - frontend/src/components/SqlStructureToolbar.tsx
+        - frontend/src/components/SqlStructureToolbar.test.tsx
         - frontend/src/components/SourceNavigator.tsx
-        - frontend/src/components/EntryQuerySourceEditor.tsx
-        - frontend/src/components/SavedSqlSourceViewer.tsx
         - frontend/src/components/composition/InspectorFields.tsx
         - frontend/src/components/composition/MetricInspector.tsx
         - frontend/src/components/composition/TableInspector.tsx
@@ -284,10 +287,6 @@ inventory:
         - frontend/src/components/composition/TextComponent.tsx
         - frontend/src/components/composition/InputControl.tsx
         - frontend/src/components/composition/InputControl.test.tsx
-        - frontend/src/components/CompositionEntryQueryTable.tsx
-        - frontend/src/components/CompositionEntryQueryTable.test.tsx
-        - frontend/src/components/CompositionSourcePicker.tsx
-        - frontend/src/components/CompositionSourcePicker.test.tsx
         - frontend/src/components/CompositionSourcePicker.tsx
         - frontend/src/components/CompositionSourcePicker.test.tsx
         - frontend/src/components/CompositionDisplayList.tsx
@@ -321,6 +320,7 @@ inventory:
     declared:
       roots:
         - AGENTS.md
+        - frontend/src/app.css
         - docs/spec/index.md
         - docs/mitase/philosophies/foundation.yaml
         - docs/mitase/policies
@@ -339,6 +339,9 @@ inventory:
         - docs/mitase/requirements/composition
         - docs/mitase/requirements/frontend
         - docs/mitase/features/frontend
+        - docs/spec/ui/components/composition-sql-workspace.yaml
+        - docs/spec/ui/components/composition-studio.yaml
+        - docs/spec/ui/components/sql-workspace.yaml
         - docs/spec/ui/components/entry-browser.yaml
         - docs/spec/ui/components/form-table.yaml
         - docs/spec/ui/components/searchable-select.yaml
@@ -497,6 +500,7 @@ inventory:
         - crates/ugoite-iceberg/tests/fixtures/v0.1-knowledge.json
         - fixtures/spaces/0.1/spaces/019c1234-5678-7abc-8def-0123456789ab/meta.json
         - docs/architecture/contracts/composition.md
+        - docs/architecture/contracts/adr-024-composition-sql-first.md
         - crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml
         - crates/ugoite-domain/tests/fixtures/composition/monthly-expense-labeled.ugcomp.yaml
         - crates/ugoite-domain/tests/fixtures/composition/saved-sql-metric-columns.ugcomp.yaml
@@ -602,6 +606,9 @@ verification:
     deno-test-file:
       executable: deno
       arguments: [test, -A, --filter, "{test}", "{file}"]
+    mise-task:
+      executable: mise
+      arguments: [run, "{task}"]
 review:
   # These are bounded, path-triggered review prompts. The PR-context report
   # keeps them separate from direct and reverse Binding context; they provide

@@ -183,6 +183,71 @@
       "artifact": "e2e/fixtures/composition/evidence/composition-revision-stale-response-junit.xml",
       "artifact_digest": "be60b9497337ccf445fece288c311ea93ac478027fa5b1dee5428d4e5d94a1dd",
       "gap": "This record covers the exact-revision navigation stale-Metric selector in the required Composition Metric lane, which also ran the Saved SQL metric and Studio journeys. It verifies the delayed first-revision value (15) did not replace the second-revision value (8), error, or loading state after history navigation. It does not establish A17, A24, the full reactive-variable contract, or release-candidate byte promotion. No release candidate was built or promoted."
+    },
+    {
+      "source_sha": "4b9589c089b7ad8baca3f2eb316eae9968d8876b",
+      "candidate_sha": "4b9589c089b7ad8baca3f2eb316eae9968d8876b",
+      "command": "UGOITE_E2E_BACKEND_BINARY=target/rust/release/ugoite-server E2E_FRONTEND_MODE=static E2E_ENFORCE_CI_GATES=true UGOITE_SKIP_PLAYWRIGHT_DEPS=1 E2E_STORAGE_ROOT=.tmp/e2e-composition-source-acl-isolation-final-fresh PLAYWRIGHT_JUNIT_OUTPUT_FILE=fixtures/composition/evidence/composition-source-acl-isolation-junit.xml bash e2e/scripts/run-e2e.sh composition-source-acl-isolation",
+      "surface": "Browser + Server (direct-process static frontend E2E)",
+      "fixture": "self-seeded via API: Space, Form, Entry, exact Saved SQL revision, Composition with shared Metric and Table, viewer principal, and independently controlled ACL policies",
+      "environment": "macOS arm64 host; static SPA + direct-process release backend; Deno 2.8.3; Playwright 1.60.0 (Chromium)",
+      "result": "passed (1 passed, 0 skipped)",
+      "artifact": "e2e/fixtures/composition/evidence/composition-source-acl-isolation-junit.xml",
+      "artifact_digest": "08051cf814ba49b7d714a1c29e6746c5017db1ca5042bd07a8a641a4109749cd",
+      "gap": "This record covers only the stated Browser/server selector on this source commit. It does not independently capture the Browser-initiated SQL query response after revocation before reload, and it is not release evidence. No release candidate was built or promoted.",
+      "selector": "e2e/composition-source-acl-isolation.test.ts#test:Viewer Metric and Table clear after Form or Saved SQL Read is revoked"
+    },
+    {
+      "source_sha": "4b9589c089b7ad8baca3f2eb316eae9968d8876b",
+      "candidate_sha": "4b9589c089b7ad8baca3f2eb316eae9968d8876b",
+      "command": "UGOITE_E2E_BACKEND_BINARY=target/rust/release/ugoite-server E2E_FRONTEND_MODE=static E2E_ENFORCE_CI_GATES=true UGOITE_SKIP_PLAYWRIGHT_DEPS=1 E2E_STORAGE_ROOT=.tmp/e2e-composition-source-acl-isolation-final-fresh PLAYWRIGHT_JUNIT_OUTPUT_FILE=fixtures/composition/evidence/composition-source-acl-isolation-junit.xml bash e2e/scripts/run-e2e.sh composition-source-acl-isolation",
+      "surface": "Browser + Server (direct-process static frontend E2E)",
+      "fixture": "self-seeded via API: Space, Form, Entry, exact Saved SQL revision, Composition with shared Metric and Table, viewer principal, and independently controlled ACL policies",
+      "environment": "macOS arm64 host; static SPA + direct-process release backend; Deno 2.8.3; Playwright 1.60.0 (Chromium)",
+      "result": "passed (1 passed, 0 skipped)",
+      "artifact": "e2e/fixtures/composition/evidence/composition-source-acl-isolation-junit.xml",
+      "artifact_digest": "08051cf814ba49b7d714a1c29e6746c5017db1ca5042bd07a8a641a4109749cd",
+      "gap": "This record covers only the stated Browser/server selector on this source commit. It does not independently capture the Browser-initiated SQL query response after revocation before reload, and it is not release evidence. No release candidate was built or promoted.",
+      "selector": "e2e/composition-source-acl-isolation.test.ts#test:Space switching shows only the selected Metric result"
+    },
+    {
+      "source_sha": "ff95326b9429e5aaf793c1d71f18509f12f2f997",
+      "candidate_sha": "ff95326b9429e5aaf793c1d71f18509f12f2f997",
+      "command": "E2E_FRONTEND_MODE=static UGOITE_SKIP_PLAYWRIGHT_DEPS=1 E2E_ENFORCE_CI_GATES=true UGOITE_E2E_STARTUP_TIMEOUT_SECONDS=180 PLAYWRIGHT_JUNIT_OUTPUT_FILE=fixtures/composition/evidence/composition-studio-a26-junit.xml bash e2e/scripts/run-e2e.sh composition-metric",
+      "selector": "e2e/composition-studio-journey.test.ts#test:Composition Studio saves and reopens a filtered SQL metric",
+      "surface": "Browser + Server (direct-process static frontend E2E)",
+      "fixture": "self-seeded via API: Space, Form with Amount entries 10/20/30, parameterized Saved SQL returning COUNT and SUM, and Studio-created Composition with a typed integer Input",
+      "environment": "macOS 26.6.1 arm64; static SPA + direct-process debug backend; Deno 2.8.3; Playwright 1.60.0 (Chromium 148.0.7778.96)",
+      "result": "passed (5 passed, 0 skipped)",
+      "artifact": "e2e/fixtures/composition/evidence/composition-studio-a26-junit.xml",
+      "artifact_digest": "c260322b65a6a4b4ebfee61a86dabc671790369789f37795cf578116b13c5000",
+      "gap": "This record covers the filtered Saved SQL COUNT/SUM Metric selector in the required Composition Metric lane. It verifies exact Saved SQL revision reuse, values 3/60 at minimum 0, values 2/50 at minimum 20, authorized server-side re-evaluation, and restoration of the saved default without a new Composition revision. It does not establish every reactive-variable behavior, SQL authorization edge, or release-candidate byte promotion. No release candidate was built or promoted."
+    },
+    {
+      "source_sha": "63569271853cae544cd3f8e4d877b2b803aeb527",
+      "candidate_sha": "63569271853cae544cd3f8e4d877b2b803aeb527",
+      "command": "cd e2e && E2E_FRONTEND_MODE=static UGOITE_SKIP_PLAYWRIGHT_DEPS=1 E2E_ENFORCE_CI_GATES=true UGOITE_E2E_STARTUP_TIMEOUT_SECONDS=180 PLAYWRIGHT_JUNIT_OUTPUT_FILE=fixtures/composition/evidence/composition-studio-a26-filtered-sql-final-junit.xml bash scripts/run-e2e.sh composition-metric",
+      "selector": "e2e/composition-studio-journey.test.ts#test:Composition Studio saves and reopens a filtered SQL metric",
+      "surface": "Browser + Server (direct-process static frontend E2E)",
+      "fixture": "self-seeded via API: Space, Form with Amount entries 10/20/30, parameterized Saved SQL returning COUNT and SUM, and Studio-created Composition with a typed integer Input",
+      "environment": "macOS 26.6.1 arm64; static SPA + direct-process debug backend; Deno 2.8.3; Playwright 1.60.0 (Chromium 148.0.7778.96)",
+      "result": "passed (5 passed, 0 skipped)",
+      "artifact": "e2e/fixtures/composition/evidence/composition-studio-a26-filtered-sql-final-junit.xml",
+      "artifact_digest": "eaf8b4435483828fa628a8c42a12ad3195465bda74ec94c7a081fb9e81cd5652",
+      "gap": "This record covers the filtered Saved SQL COUNT/SUM Metric selector in the required Composition Metric lane. It verifies exact Saved SQL revision reuse, values 3/60 at minimum 0, values 2/50 at minimum 20, authorized server-side re-evaluation, and restoration of the saved default without a new Composition revision. It does not establish every reactive-variable behavior, SQL authorization edge, or release-candidate byte promotion. No release candidate was built or promoted."
+    },
+    {
+      "source_sha": "f9ff96c221cee63ab1a647f42803b8cfe1dddc47",
+      "candidate_sha": "f9ff96c221cee63ab1a647f42803b8cfe1dddc47",
+      "command": "cd e2e && E2E_FRONTEND_MODE=static UGOITE_SKIP_PLAYWRIGHT_DEPS=1 E2E_ENFORCE_CI_GATES=true UGOITE_E2E_STARTUP_TIMEOUT_SECONDS=180 PLAYWRIGHT_JUNIT_OUTPUT_FILE=fixtures/composition/evidence/composition-studio-a26-post-4238-junit.xml bash scripts/run-e2e.sh composition-metric",
+      "selector": "e2e/composition-studio-journey.test.ts#test:Composition Studio saves and reopens a filtered SQL metric",
+      "surface": "Browser + Server (direct-process static frontend E2E)",
+      "fixture": "self-seeded via API: Space, Form with Amount entries 10/20/30, parameterized Saved SQL returning COUNT and SUM, and Studio-created Composition with a typed integer Input",
+      "environment": "macOS 26.6.1 arm64; static SPA + direct-process debug backend; Deno 2.8.3; Playwright 1.60.0 (Chromium 148.0.7778.96)",
+      "result": "passed (5 passed, 0 skipped)",
+      "artifact": "e2e/fixtures/composition/evidence/composition-studio-a26-post-4238-junit.xml",
+      "artifact_digest": "d1b51abfbe539b94b3f309755f3ede8a2b5830fb71fa8d37c7f5019402b681d1",
+      "gap": "This record repeats the filtered Saved SQL COUNT/SUM Metric journey against the Composition Studio UI from #4238. It verifies exact Saved SQL revision reuse, values 3/60 at minimum 0, values 2/50 at minimum 20, authorized server-side re-evaluation, and restoration of the saved default without a new Composition revision. It does not establish every reactive-variable behavior, SQL authorization edge, or release-candidate byte promotion. No release candidate was built or promoted."
     }
   ]
 }

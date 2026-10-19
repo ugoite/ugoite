@@ -12,6 +12,7 @@ type PageSpec = {
     title?: string;
     route?: string;
     implementation?: string;
+    contract_status?: string;
     visible_heading?: string;
   };
   components?: {
@@ -61,6 +62,9 @@ const allowedComponentTypes = new Set([
   "query-results",
   "query-pagination",
   "select",
+  "typed-variable-list",
+  "history",
+  "composition-studio",
 ]);
 
 const collectYamlFiles = (dir: string): string[] => {
@@ -499,6 +503,31 @@ describe("UI spec YAML registry", () => {
     }
   });
 
+  it("REQ-FE-040: registers the SQL-first Composition and shared SQL Workspace contracts", () => {
+    const studioPath = path.join(componentsDir, "composition-studio.yaml");
+    const studioContract = readFileSync(studioPath, "utf8");
+    const sharedWorkspaceContract = readFileSync(
+      path.join(componentsDir, "sql-workspace.yaml"),
+      "utf8",
+    );
+    const dataWorkspaceSource = readFileSync(
+      path.join(repoRoot, "frontend/src/components/CompositionDataWorkspace.tsx"),
+      "utf8",
+    );
+
+    expect(studioContract).toContain(
+      "**Status: implemented for the current prerelease model.**",
+    );
+    expect(studioContract).toContain("The next unreleased target is [ADR-025]");
+    expect(studioContract.replaceAll(/\s+/g, " ")).toContain(
+      "no EntryQuery is created",
+    );
+    expect(dataWorkspaceSource).toContain("<SQLWorkspace");
+    expect(sharedWorkspaceContract.replaceAll(/\s+/g, " ")).toContain(
+      "Composition inline SQL use the same Workspace component",
+    );
+  });
+
   it("REQ-FE-040: validates page links", () => {
     const pages = loadPages();
     const pageIds = new Set(
@@ -519,51 +548,40 @@ describe("UI spec YAML registry", () => {
     }
   });
 
-  it("REQ-UX-PAGINATION-001: connects Composition pagination specs to shared chevrons", () => {
+  it("SQL-first Composition spec: keeps paging request-owned by the SQL query handle", () => {
     const revision = loadPages().find(({ spec }) =>
       spec.page?.id === "space-composition-revision"
     );
-    const pagePagination = revision?.spec.components?.body?.find(({ id }) =>
-      id === "composition-pagination"
+    const compositionComponents = revision?.spec.components?.body?.find(
+      (component) => component.id === "composition-components",
     );
-    expect(pagePagination).toMatchObject({
-      type: "query-pagination",
+    expect(compositionComponents).toMatchObject({
+      pagination_owner:
+        "SQL query handle; continuation and explicit count stay in stateless query requests",
+    });
+  });
+
+  it("REQ-UX-PAGINATION-001: connects SQL results pagination to shared chevrons", () => {
+    const sqlResults = loadPages().find(({ spec }) =>
+      spec.page?.id === "space-sql-results"
+    );
+    const sqlPagination = sqlResults?.spec.components?.body?.find(({ id }) =>
+      id === "sql-results-pagination"
+    );
+    expect(sqlPagination).toMatchObject({
       component: "ResultPagination",
       reference: "../components/result-pagination.yaml",
-      presentation: "localized-icon-only-chevron-controls",
-      source: "existing query continuation",
     });
 
-    const studioPath = path.join(componentsDir, "composition-studio.yaml");
-    const studio = parse(readFileSync(studioPath, "utf8")) as {
-      components?: Array<Record<string, unknown>>;
-    };
-    const studioData = studio.components?.find(({ id }) =>
-      id === "studio-data"
-    );
-    expect(studioData?.pagination).toMatchObject({
-      component: "ResultPagination",
-      reference: "result-pagination.yaml",
-      presentation: "localized-icon-only-chevron-controls",
-    });
-    expect(studioData?.result_pages).toBe(
-      "bounded-shared-page-with-controller-owned-paging",
-    );
-
-    const pageContractPath = path.resolve(
-      path.dirname(revision!.filePath),
-      String(pagePagination?.reference),
-    );
-    const studioContractPath = path.resolve(
-      path.dirname(studioPath),
-      String((studioData?.pagination as Record<string, unknown>).reference),
-    );
     const expectedContractPath = path.join(
       componentsDir,
       "result-pagination.yaml",
     );
-    expect(pageContractPath).toBe(expectedContractPath);
-    expect(studioContractPath).toBe(expectedContractPath);
+    const sqlContractPath = path.resolve(
+      path.dirname(sqlResults!.filePath),
+      String(sqlPagination?.reference),
+    );
+    expect(sqlContractPath).toBe(expectedContractPath);
 
     const shared = parse(readFileSync(expectedContractPath, "utf8")) as {
       components?: Array<Record<string, unknown>>;
@@ -585,6 +603,23 @@ describe("UI spec YAML registry", () => {
         },
         target_size: "44px",
       });
+  });
+
+  it("REQ-COMP-008: keeps Composition variable declarations in Knowledge and values in transient Work", () => {
+    const revision = loadPages().find(({ spec }) =>
+      spec.page?.id === "space-composition-revision"
+    );
+    const components = revision?.spec.components?.body?.find(({ id }) =>
+      id === "composition-components"
+    );
+
+    expect(revision?.spec.page?.contract_status).toBe("planned");
+    expect(components).toMatchObject({
+      variables:
+        "typed definitions/defaults are Knowledge; runtime values and raw input are transient Work",
+      input_components:
+        "reference one variable and own no saved value; no display label is persisted",
+    });
   });
 
   it("REQ-FE-040: connects Space Settings sections to implementation and test evidence", () => {

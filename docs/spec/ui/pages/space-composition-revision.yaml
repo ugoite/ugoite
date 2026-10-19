@@ -1,10 +1,11 @@
 version: "0.1"
-updated: "2026-10-11"
+updated: "2026-10-16"
 page:
   id: space-composition-revision
   title: Saved tool revision
   route: /spaces/{space_id}/compositions/{composition_id}/{revision_id}
   implementation: implemented
+  contract_status: planned
 components:
   shared:
     - id: space-shell
@@ -27,7 +28,7 @@ components:
           type: icon-button
           title: History
           status: implemented
-          contract: docs/spec/ui/components/composition-studio.yaml
+          target: /spaces/{space_id}/compositions/{composition_id}/history
         - id: composition-restore
           type: button
           title: Restore
@@ -35,45 +36,30 @@ components:
           availability: historical revisions only
           source: composition.restore with the opened revision as the restore source, the latest revision as the base, and one Idempotency-Key reused for retry
           description: Restore appends a new revision from the opened historical revision and never rewrites history. A stale base shows a conflict with a recovery link to history; the new revision opens for review and further edits.
-    - id: composition-parameters
-      type: form
-      title: Declared parameters
-      source: composition.resolve for the selected exact revision
-      placement: layout-placed controls render inside the flow in placement order; unplaced definitions stay in this section
-      labels: authored-human-label-else-localized-ordinal-by-definition-order
-      binding_key: internal-reference-only-never-a-display-fallback
-      state: transient-work-never-stored
+    - id: composition-history-identity
+      type: history
+      current_revision: operation, timestamp, and current state are visible
+      revision_identity: exact revision stays in the internal route target and is not rendered as a user-facing label
     - id: composition-diagnostics
       type: list
       title: Resolve diagnostics
-      source: current composition.resolve response
+      source: current composition.resolve response for the selected exact revision
     - id: composition-components
       type: query-results
-      title: Flow rows with parameter controls, text, metrics, and tables
-      source: entry.query and exact-revision sql.query for tables; exact-revision composition.metric.query for metrics
-
-      layout: saved-tool rows in row-array then item order
-      text_presentation: fixed title-heading-body-caption styles without source fetch
+      title: Flow rows with inputs, text, metrics, and tables
+      source: resolved SQL sources from the selected exact Composition revision
+      layout: saved-tool flow rows in declaration order; pixel coordinates are not persisted
+      variables: typed definitions/defaults are Knowledge; runtime values and raw input are transient Work
+      input_components: reference one variable and own no saved value; no display label is persisted
+      text_components: literal body or direct string-variable reference with fixed typography roles
+      table_components: render the current bounded page from one SQL source using SqlResultTable
       table_presentation:
-        entry_query: EntryResultTable
-        saved_sql: SqlResultTable
+        component: SqlResultTable
         result_presentation_reference: ../components/result-table.yaml
-      metric_presentation: server metric query result with distinct loading, zero-row, multiple-row, NULL, zero, stale, unavailable, invalid, and error states
-      metric_saved_sql_rows: exactly-one; zero-rows-and-multiple-rows-have-distinct-diagnostics-and-one-direct-Edit-action
-      metric_numeric_presentation: exact-integer-and-decimal; no-inferred-unit-or-fraction-digits
-      metric_query: opened-composition-revision-and-current-parameters; independent-from-table-page-and-pagination
-      pagination_owner: table source query handle; metric result is independent from table pages
-
-      description: Composition table components delegate presentation to the source-native Entry or SQL result presenter. Composition does not implement a third generic table grammar, and source query semantics remain unchanged.
-      entry_query_form_scoped_property_identity: A Form-scoped EntryQuery projection of property key form_id reads its value from row properties; the row's top-level system Form identity remains separate.
-      entry_query_system_form_identity: All-Forms EntryQuery table headings and cells omit the row's system Form UUID.
-      entry_query_field_names: transient-Form-label-or-human-field-key; unresolved-metadata-uses-row-keys-without-schema-ordinal-fallback
-      rendering:
-        mode: bounded-current-page
-        parameters-and-pages: transient-work
-    - id: composition-pagination
-      type: query-pagination
-      component: ResultPagination
-      reference: ../components/result-pagination.yaml
-      presentation: localized-icon-only-chevron-controls
-      source: existing query continuation
+      metric_components: server-evaluated scalar output column from one SQL source; require exactly one row and one selected scalar column
+      metric_presentation: distinguish zero rows, one-row NULL, zero, multiple rows, unavailable source, invalid result, and execution error
+      metric_numeric_presentation: optional unit and fractional-digit formatting; never changes SQL semantics
+      query_semantics: Layout does not change the source query plan
+      pagination_owner: SQL query handle; continuation and explicit count stay in stateless query requests
+      state: previews, raw input, pages, results, and diagnostics are transient Work
+      horizontal_overflow: result-table viewport only

@@ -303,6 +303,7 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "Save as tool" }),
     );
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(1));
     expect(navigateMock).toHaveBeenCalledTimes(1);
     expect(navigateMock).toHaveBeenCalledWith(
       "/spaces/default/compositions/new",
@@ -318,6 +319,7 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
                 { name: "amount", type: "float" },
                 { name: "month", type: "date" },
               ],
+              schemaFingerprint: expect.any(String),
               variables: {},
               variableTypes: { month_start: "date" },
             },

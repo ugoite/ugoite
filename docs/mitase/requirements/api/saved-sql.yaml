@@ -95,7 +95,6 @@ requirements:
                 criterion: REQ-API-006#criterion.saved-sql-lifecycle
                 covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_saved_sql_update_req_api_006_sends_parent_revision_without_author } }
-
   - id: REQ-API-007
     title: Saved SQL template validation
     description: Saved SQL entries declare every {{variable_name}} template reference. Template execution is rejected until values are bound through DataFusion parameters; Ugoite never substitutes literal text into SQL.
@@ -291,3 +290,97 @@ requirements:
                     test: synthetic_prebinding_revision_reads_and_runs_without_rewrite,
                   },
                 }
+
+  - id: REQ-API-020
+    title: Saved SQL variable defaults
+    description: Saved SQL variable definitions may provide a typed initial value for authoring and preview while SQL execution remains explicit.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: typed-variable-default
+        kind: behavior
+        statement: >-
+          A Saved SQL variable may store an optional default scalar whose type
+          exactly matches its declared SQL variable type and is validated by
+          the shared typed-value rules. Authoring and preview may initialize
+          transient input state from that value, but every SQL execution still
+          requires explicit parameter values. The SQL request contract does
+          not apply defaults implicitly. An absent default means no initial
+          value.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: saved-revision-parameter-types
+        kind: behavior
+        statement: >-
+          The `sql saved run` command uses the selected revision's variable
+          declarations for parameter types omitted from the request.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+    bindings:
+      - id: typed-variable-default-verification
+        role: verification
+        facet: verification
+        responsibility: Verify typed default persistence on Saved SQL revisions, CLI roundtrip, shared type validation, explicit SQL parameter binding, and selected-revision parameter type resolution.
+        targets:
+          - id: persistence-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_saved_sql.rs
+            selector: { kind: test, name: saved_sql_variable_defaults_round_trip }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-020#criterion.typed-variable-default
+                covers:
+                  - FEAT-API-001#binding.core/target.list-sql
+                  - FEAT-API-001#binding.core/target.get-sql
+                  - FEAT-API-001#binding.core/target.create-sql
+                  - FEAT-API-001#binding.core/target.update-sql
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_saved_sql, test: saved_sql_variable_defaults_round_trip } }
+          - id: cli-roundtrip
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_saved_sql.rs
+            selector: { kind: test, name: saved_sql_variable_defaults_round_trip }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-020#criterion.typed-variable-default
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_saved_sql, test: saved_sql_variable_defaults_round_trip } }
+          - id: selected-revision-parameter-types
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_sql_stateless_cli.rs
+            selector: { kind: test, name: cli_saved_sql_run_resolves_types_from_the_selected_revision }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-020#criterion.saved-revision-parameter-types
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_sql_stateless_cli, test: cli_saved_sql_run_resolves_types_from_the_selected_revision } }
+          - id: typed-value-validation
+            adapter: rust
+            path: crates/ugoite-iceberg/src/saved_sql.rs
+            selector: { kind: symbol, name: variable_default_tests::saved_sql_defaults_reject_null_compound_and_mismatched_values }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-020#criterion.typed-variable-default
+                covers: [FEAT-API-001#binding.core/target.create-sql]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: saved_sql::variable_default_tests::saved_sql_defaults_reject_null_compound_and_mismatched_values } }
+          - id: explicit-query-parameters
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_sql_stateless.rs
+            selector: { kind: test, name: saved_sql_variable_defaults_are_not_implicitly_applied_to_queries }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-020#criterion.typed-variable-default
+                covers:
+                  - FEAT-API-001#binding.sql-service-implementation/target.query-sql
+                  - FEAT-API-001#binding.sql-service-implementation/target.count-sql
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_stateless, test: saved_sql_variable_defaults_are_not_implicitly_applied_to_queries } }
+          - id: openapi-contract
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: openapi_documents_saved_sql_variable_defaults }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-020#criterion.typed-variable-default
+                covers:
+                  - FEAT-API-001#binding.core/target.create-sql
+                  - FEAT-API-001#binding.core/target.update-sql
+                  - FEAT-API-001#binding.sql-service-implementation/target.query-sql
+                  - FEAT-API-001#binding.sql-service-implementation/target.count-sql
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: openapi_documents_saved_sql_variable_defaults } }

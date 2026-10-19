@@ -5,6 +5,7 @@ import {
   test,
 } from "@playwright/test";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
+import { completeSavedSqlCompositionYaml } from "./lib/composition.ts";
 
 const PARAM_A_START = "2026-03-10";
 const PARAM_A_END = "2026-03-11";
@@ -152,12 +153,11 @@ async function seedStaleComposition(
   expect(savedSql.id).toBeTruthy();
   expect(savedSql.revision_id).toBeTruthy();
 
-  const yaml = [
+  let yaml = [
     "format: ugoite.composition",
     "format_version: 1",
     `name: Stale window ${suffix}`,
     "kind: dashboard",
-    "tags: []",
     "spec:",
     "  variables:",
     "    - id: month_start",
@@ -171,11 +171,8 @@ async function seedStaleComposition(
     "      kind: saved_sql",
     `      entry_id: "${savedSql.id}"`,
     `      revision_id: "${savedSql.revision_id}"`,
-    "      expected_result:",
-    "        - name: total",
-    "          type: float",
-    "        - name: merchant",
-    "          type: string",
+    "      expected_result: []",
+    "      schema_fingerprint: ''",
     "      variables:",
     "        month_start:",
     "          variable: month_start",
@@ -185,11 +182,9 @@ async function seedStaleComposition(
     "    - id: input_month_start",
     "      kind: input",
     "      variable: month_start",
-    "      label: Start date",
     "    - id: input_month_end",
     "      kind: input",
     "      variable: month_end",
-    "      label: End date",
     "    - id: total",
     "      kind: metric",
     "      source: window_rows",
@@ -214,6 +209,11 @@ async function seedStaleComposition(
     "            component: rows",
     "",
   ].join("\n");
+  yaml = await completeSavedSqlCompositionYaml(request, spaceId, yaml, [{
+    id: "window_rows",
+    savedSqlId: savedSql.id!,
+    savedSqlRevisionId: savedSql.revision_id!,
+  }]);
   const saveResponse = await request.post(
     getBackendUrl(`/spaces/${spaceId}/compositions`),
     {
@@ -348,8 +348,9 @@ test.describe("Composition Stale Response", () => {
       { waitUntil: "domcontentloaded" },
     );
 
-    await page.getByLabel("Start date").fill(PARAM_A_START);
-    await page.getByLabel("End date").fill(PARAM_A_END);
+    const inputs = page.getByRole("textbox");
+    await inputs.nth(0).fill(PARAM_A_START);
+    await inputs.nth(1).fill(PARAM_A_END);
     await page.waitForFunction(
       () => {
         const probe = (window as ProbeWindow).__compositionStaleProbe;
@@ -359,8 +360,8 @@ test.describe("Composition Stale Response", () => {
       { timeout: 30_000 },
     );
 
-    await page.getByLabel("Start date").fill(PARAM_B_START);
-    await page.getByLabel("End date").fill(PARAM_B_END);
+    await inputs.nth(0).fill(PARAM_B_START);
+    await inputs.nth(1).fill(PARAM_B_END);
     await expectUi(page, {
       metric: String(CURRENT_AMOUNT),
       alerts: [],

@@ -24,6 +24,7 @@ type HmacSha256 = Hmac<sha2::Sha256>;
 
 mod composition_local_save;
 mod composition_restore;
+mod composition_save_validation;
 
 const CHANGE_PAGE_DEFAULT_LIMIT: usize = 50;
 const CHANGE_PAGE_MAX_LIMIT: usize = 100;
@@ -186,6 +187,59 @@ pub enum SpacePermission {
 }
 
 const STORAGE_CONNECTION_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+
+fn composition_inline_form_bindings_for_save(
+    source_id: &str,
+    sql: &str,
+    previous: Option<&ugoite_domain::composition::CompositionDocument>,
+    readable_forms: &[FormDefinition],
+) -> Result<Vec<ugoite_domain::composition::CompositionFormBinding>> {
+    let references = index::quoted_form_name_references(sql)
+        .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
+    let previous_bindings = previous
+        .and_then(|document| {
+            document
+                .spec
+                .sources
+                .iter()
+                .find(|source| source.id() == source_id)
+        })
+        .and_then(|source| match source {
+            ugoite_domain::composition::CompositionSource::InlineSql { form_bindings, .. } => {
+                Some(form_bindings.as_slice())
+            }
+            ugoite_domain::composition::CompositionSource::SavedSql { .. } => None,
+        })
+        .unwrap_or_default();
+
+    references
+        .into_iter()
+        .map(|relation| {
+            if let Some(binding) = previous_bindings
+                .iter()
+                .find(|binding| binding.relation == relation)
+            {
+                // An unchanged relation in an existing source keeps its stable
+                // identity through Form renames. The later authorized planner
+                // fails closed if that Form is gone or no longer readable.
+                return Ok(binding.clone());
+            }
+            let form = readable_forms
+                .iter()
+                .find(|form| form.name == relation)
+                .ok_or_else(|| {
+                    AppError::invalid_input(
+                        ErrorCode::InvalidInput,
+                        "SQL source Form binding is unavailable",
+                    )
+                })?;
+            Ok(ugoite_domain::composition::CompositionFormBinding {
+                relation,
+                form_id: form.id,
+            })
+        })
+        .collect()
+}
 
 impl space::StorageConnectionTestConfig {
     /// Parse either the direct request shape or the `{ "storage_config": ... }`
@@ -5214,7 +5268,7 @@ impl UgoiteService {
     pub async fn save_composition_authorized_for_principals_with_operation_id(
         &self,
         space_id: &str,
-        request: composition::CompositionSaveRequest,
+        mut request: composition::CompositionSaveRequest,
         author: &str,
         principal_ids: &[Uuid],
         operation_id: &str,
@@ -5230,10 +5284,9 @@ impl UgoiteService {
         }
         // Validate before any Registry Form creation so malformed or
         // unsupported documents leave the Space unchanged.
-        let canonical = ugoite_domain::composition::canonicalize_composition(&request.document)
-            .map_err(|diagnostic| {
-                AppError::invalid_input(ErrorCode::InvalidInput, diagnostic.as_str())
-            })?;
+        ugoite_domain::composition::canonicalize_composition(&request.document).map_err(
+            |diagnostic| AppError::invalid_input(ErrorCode::InvalidInput, diagnostic.as_str()),
+        )?;
         self.ensure_mutation_admitted(space_id).await?;
         self.validate_complete_space(space_id).await?;
         let entry_id = request.entry_id.unwrap_or_else(|| {
@@ -5272,8 +5325,122 @@ impl UgoiteService {
                 return Err(AppError::forbidden("Form is not readable").into());
             }
         }
-        authorization_lease.prepare_mutation().await?;
         let workspace = self.workspace_path(space_id);
+        let readable_form_scopes = self
+            .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+            .await?;
+        let read_only_workspace =
+            iceberg_store::native_workspace_read_only(&self.operator, &workspace).await?;
+        let readable_forms = read_only_workspace
+            .list_forms_bounded(
+                MAX_AUTHORIZED_SCOPE_FORMS,
+                MAX_AUTHORIZED_SCOPE_FORM_DEFINITION_BYTES,
+            )
+            .await?
+            .into_iter()
+            .filter(|form| readable_form_scopes.contains_key(&form.name.to_ascii_lowercase()))
+            .collect::<Vec<_>>();
+        let previous_document = match (request.entry_id, request.base_revision_id) {
+            (Some(entry_id), Some(base_revision_id)) => Some(
+                composition_local_save::read_exact_base_document(
+                    &self.operator,
+                    &workspace,
+                    &entry_id.to_string(),
+                    &base_revision_id.to_string(),
+                )
+                .await?,
+            ),
+            _ => None,
+        };
+        let variables = request.document.spec.variables.clone();
+        for source in &mut request.document.spec.sources {
+            let source_for_planning = source.clone();
+            match source {
+                ugoite_domain::composition::CompositionSource::InlineSql {
+                    id,
+                    sql,
+                    form_bindings,
+                    expected_result,
+                    schema_fingerprint,
+                    ..
+                } => {
+                    let candidate_bindings = composition_inline_form_bindings_for_save(
+                        id,
+                        sql,
+                        previous_document.as_ref(),
+                        &readable_forms,
+                    )?;
+                    let metadata = self
+                        .derive_inline_sql_source_metadata(
+                            space_id,
+                            &source_for_planning,
+                            Some(&candidate_bindings),
+                            &variables,
+                            Some(principal_ids),
+                            Some(&state),
+                        )
+                        .await?
+                        .ok_or_else(|| {
+                            AppError::not_found(
+                                ErrorCode::FormNotFound,
+                                "Composition source not found",
+                            )
+                        })?;
+                    composition_save_validation::validate_inline_parameters(
+                        &metadata.parameter_names,
+                        &variables,
+                    )?;
+                    *form_bindings = metadata.form_bindings;
+                    *expected_result = metadata.expected_result;
+                    *schema_fingerprint = metadata.schema_fingerprint;
+                }
+                ugoite_domain::composition::CompositionSource::SavedSql {
+                    entry_id,
+                    revision_id,
+                    variables: source_variables,
+                    expected_result,
+                    schema_fingerprint,
+                    ..
+                } => {
+                    let saved_sql = ugoite_core::sql_query::SavedSqlRevisionRef {
+                        id: entry_id.to_string(),
+                        revision_id: revision_id.to_string(),
+                    };
+                    let metadata = self
+                        .derive_saved_sql_source_metadata(
+                            space_id,
+                            &saved_sql,
+                            Some(principal_ids),
+                            Some(&state),
+                        )
+                        .await?
+                        .ok_or_else(|| {
+                            AppError::not_found(ErrorCode::EntryNotFound, "Saved SQL not found")
+                        })?;
+                    composition_save_validation::validate_saved_sql_bindings(
+                        source_variables,
+                        &metadata.variable_types,
+                        &variables,
+                    )?;
+                    *expected_result = metadata.expected_result;
+                    *schema_fingerprint = metadata.schema_fingerprint;
+                }
+            }
+        }
+        if !request.document.has_complete_source_descriptors() {
+            return Err(AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "Composition sources require server-confirmed result descriptors",
+            )
+            .into());
+        }
+        let canonical = ugoite_domain::composition::canonicalize_composition(&request.document)
+            .map_err(|diagnostic| {
+                AppError::invalid_input(ErrorCode::InvalidInput, diagnostic.as_str())
+            })?;
+        request.document = canonical.document.clone();
+
+        authorization_lease.prepare_mutation().await?;
         let registry = crate::authorization::with_authorization_write_fence(
             authorization_lease.write_fence(),
             composition::ensure_composition_registry(&self.operator, &workspace),

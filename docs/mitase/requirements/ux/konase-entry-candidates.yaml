@@ -5,13 +5,13 @@ category: Browser Konase Entry choice identity and presentation
 requirements:
   - id: REQ-UX-LIST-003
     title: Distinguishable Browser Konase Entry Choices
-    description: Browser Konase keeps Entries with the same preview distinguishable across loaded candidate pages and selected resources without exposing technical identifiers, while selection, removal, and Context preview retain exact resource identity.
+    description: Browser Konase keeps Entries with the same preview distinguishable across loaded pages of the active search and selected resources without exposing technical identifiers. Starting a new search drops ordinals contributed only by unselected candidates from earlier searches while preserving selected Entry labels and exact resource identity.
     priority: high
     status: implemented
     criteria:
       - id: same-preview-entry-choices
         kind: behavior
-        statement: Browser Konase gives Entries with repeated previews distinct localized visible and accessible labels across loaded pages, falls back to unique candidate ordinals if a literal preview collides with a generated label, reuses those labels in selected-resource rows and remove actions, and preserves each exact stable Entry URI for selection and Context preview without showing IDs or URIs in ordinary choices.
+        statement: Browser Konase gives Entries with repeated previews distinct localized visible and accessible labels across loaded pages of the active search, falls back to unique candidate ordinals if a literal preview collides with a generated label, reuses those labels in selected-resource rows and remove actions, and preserves each exact stable Entry URI for selection and Context preview without showing IDs or URIs in ordinary choices. A new search excludes unselected candidates from prior searches when assigning ordinals and preserves the labels of selected Entries.
         governed_by: [POL-UI-005#rule.governance]
     bindings:
       - id: same-preview-entry-choice-verification
@@ -28,3 +28,12 @@ requirements:
                 criterion: REQ-UX-LIST-003#criterion.same-preview-entry-choices
                 covers: [FEAT-UX-015#binding.konase-entry-choice-implementation/target.konase-panel-surface, FEAT-UX-015#binding.konase-entry-choice-implementation/target.konase-panel-specification]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/konase/KonasePanel.test.tsx, test: "REQ-UX-LIST-003: disambiguates repeated Entry previews across pages" } }
+          - id: entry-preview-ordinals-scope-to-current-search
+            adapter: typescript
+            path: frontend/src/components/konase/KonasePanel.test.tsx
+            selector: { kind: test, name: "REQ-UX-LIST-003: scopes Entry ordinals to the active search and preserves selected labels" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-003#criterion.same-preview-entry-choices
+                covers: [FEAT-UX-015#binding.konase-entry-choice-implementation/target.konase-panel-surface, FEAT-UX-015#binding.konase-entry-choice-implementation/target.konase-panel-specification]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/konase/KonasePanel.test.tsx, test: "REQ-UX-LIST-003: scopes Entry ordinals to the active search and preserves selected labels" } }

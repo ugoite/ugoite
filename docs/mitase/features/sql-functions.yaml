@@ -1,0 +1,56 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: sql
+category: SQL function contract
+features:
+  - id: FEAT-SQL-002
+    title: User SQL aggregate function registry
+    summary: Keep the admitted read-only SQL aggregate names and editor-ready metadata in one pure Rust Domain contract, with Core deriving its aggregate policy from that registry.
+    status: implemented
+    bindings:
+      - id: aggregate-contract
+        role: contract-source
+        facet: domain
+        responsibility: Own the typed metadata that defines admitted aggregate names, aliases, argument and modifier constraints, and output behavior.
+        targets:
+          - id: aggregate-metadata
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_functions.rs
+            selector: { kind: symbol, name: USER_SQL_AGGREGATES }
+            claims:
+              - kind: documents
+                anchor: REQ-API-015#criterion.aggregate-function-metadata
+      - id: domain
+        role: implementation
+        facet: domain
+        responsibility: Define the closed user-SQL aggregate descriptors, including canonical names and aliases, argument constraints, supported DISTINCT and wildcard forms, and output type/nullability behavior without depending on a query engine.
+        targets:
+          - id: aggregate-registry
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_functions.rs
+            selector: { kind: symbol, name: user_sql_aggregate }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.aggregate-function-metadata
+      - id: core
+        role: implementation
+        facet: core
+        responsibility: Resolve aggregate names through the Domain registry for the read-only user SQL policy while keeping explicit named policies and scalar/window checks independent.
+        targets:
+          - id: aggregate-policy
+            adapter: rust
+            path: crates/ugoite-core/src/query.rs
+            selector: { kind: symbol, name: allows_aggregate }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.aggregate-function-metadata
+    contracts:
+      - id: read-only-user-sql-aggregates
+        kind: custom
+        source: FEAT-SQL-002#binding.aggregate-contract/target.aggregate-metadata
+        participants:
+          - target: FEAT-SQL-002#binding.domain/target.aggregate-registry
+            role: domain
+          - target: FEAT-SQL-002#binding.core/target.aggregate-policy
+            role: core
+        guarantees: [REQ-API-015#criterion.aggregate-function-metadata]

@@ -20,6 +20,8 @@ export type { CompositionInspectorDataJump };
 
 export interface CompositionInspectorProps {
   draft: CompositionDraft;
+  /** Session-scoped literal cache shared across responsive inspector mounts. */
+  textLiteralCache?: Map<string, string>;
   /** Transient canvas selection; the inspector renders one block only. */
   selectedId: string | null;
   /** Single draft mutation channel shared with the canvas. */
@@ -27,6 +29,7 @@ export interface CompositionInspectorProps {
   /** Remove the selected display or Input component. */
   onRemove: () => void;
   onDataJump: (jump: CompositionInspectorDataJump) => void;
+  onChangeTableSource: (displayId: string) => void;
 }
 
 type InspectorSelection =
@@ -46,17 +49,16 @@ const resolveSelection = (
 };
 
 /**
- * Inspector for the selected canvas block only. Metric edits bind label,
- * Saved SQL source, and result column; table edits bind label and source; text edits
- * bind content and fixed style; Input components bind one variable and an
- * optional label. Every edit flows
- * through draft updaters into the shared debounced preview; text, label,
- * and style edits never reshape sources, so they never refetch. Without a
+ * Inspector for the selected canvas block only. Metrics bind SQL source and
+ * result column; tables bind source; text binds content and fixed style;
+ * Inputs bind one variable. Every edit flows through draft updaters into the
+ * shared debounced preview. Without a
  * resolvable selection the inspector renders nothing: no panel, no prose.
  * Every selected Component can be removed without deleting its variable.
  */
 export function CompositionInspector(props: CompositionInspectorProps) {
   const selection = () => resolveSelection(props.draft, props.selectedId);
+  const textLiteralCache = props.textLiteralCache ?? new Map<string, string>();
 
   const apply: InspectorApply = (result) => {
     if (result.ok) props.onDraftChange(result.draft);
@@ -74,6 +76,8 @@ export function CompositionInspector(props: CompositionInspectorProps) {
               onDraftChange={props.onDraftChange}
               onRemove={props.onRemove}
               onDataJump={props.onDataJump}
+              onChangeTableSource={props.onChangeTableSource}
+              textLiteralCache={textLiteralCache}
             />
           }
         >
@@ -86,11 +90,10 @@ export function CompositionInspector(props: CompositionInspectorProps) {
               const input = props.draft.inputs.find((item) =>
                 item.draftId === inputId
               );
-              const name = input?.label?.trim() ||
-                compositionVariableDisplayName(
-                  props.draft.variables,
-                  input?.variable ?? "",
-                );
+              const name = compositionVariableDisplayName(
+                props.draft.variables,
+                input?.variable ?? "",
+              );
               const label = t("composition.studioRemoveInput", { name });
               return (
                 <IconButton
@@ -114,6 +117,8 @@ function ComponentInspector(props: {
   onDraftChange: (draft: CompositionDraft) => void;
   onRemove: () => void;
   onDataJump: (jump: CompositionInspectorDataJump) => void;
+  onChangeTableSource: (displayId: string) => void;
+  textLiteralCache: Map<string, string>;
 }) {
   const display = () => props.display;
   const apply: InspectorApply = (result) => {
@@ -146,9 +151,9 @@ function ComponentInspector(props: {
             <TableInspector
               draft={props.draft}
               display={display()}
-              apply={apply}
               actions={removeAction()}
               onDataJump={props.onDataJump}
+              onChangeSource={props.onChangeTableSource}
             />
           }
         >
@@ -167,6 +172,7 @@ function ComponentInspector(props: {
         display={display()}
         apply={apply}
         actions={removeAction()}
+        textLiteralCache={props.textLiteralCache}
       />
     </Show>
   );

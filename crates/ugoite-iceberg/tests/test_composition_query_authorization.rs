@@ -4,19 +4,13 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
-use ugoite_core::{
-    entry_query::EntryPageRequest,
-    sql_query::{SavedSqlRevisionRef, SqlQueryRequest},
-};
+use ugoite_core::sql_query::{SavedSqlRevisionRef, SqlQueryRequest};
 use ugoite_domain::composition::{
-    CompositionComponent, CompositionDocument, CompositionFieldSchemaEntry, CompositionFormat,
-    CompositionKind, CompositionResultColumn, CompositionResultFieldType, CompositionSortDirection,
-    CompositionSource, CompositionSpec, CompositionValue, CompositionVariable,
-    CompositionVariableReference, CompositionVariableType, DashboardFlowLayout,
-    EntryQueryProjectionTemplate, EntryQuerySortTemplate, EntryQueryTemplate, FlowItem,
-    FlowLayoutKind, FlowRow,
+    CompositionComponent, CompositionDocument, CompositionFormat, CompositionKind,
+    CompositionResultColumn, CompositionResultFieldType, CompositionSource, CompositionSpec,
+    CompositionValue, CompositionVariable, CompositionVariableReference, CompositionVariableType,
+    DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow,
 };
-use ugoite_domain::form::FieldType;
 use ugoite_domain::identity::{
     AccessPolicy, Action, Grant, PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
 };
@@ -26,19 +20,23 @@ use ugoite_iceberg::saved_sql::{SqlKind, SqlPayload};
 use ugoite_iceberg::service::UgoiteService;
 use uuid::Uuid;
 
-fn resolved_entry_request(
+fn resolved_sql_request(
     resolution: &ugoite_iceberg::service::CompositionResolution,
-) -> Result<EntryPageRequest> {
+) -> Result<SqlQueryRequest> {
     let plan = resolution
         .plan
         .as_ref()
         .context("authorized Composition resolution should return a plan")?;
-    let [ugoite_core::composition::ResolvedSourceRequest::EntryQuery { request, .. }] =
+    let [ugoite_core::composition::ResolvedSourceRequest::Sql { request, .. }] =
         plan.sources.as_slice()
     else {
-        anyhow::bail!("test Composition should resolve to exactly one EntryQuery source");
+        anyhow::bail!("test Composition should resolve to exactly one SQL source");
     };
     Ok(request.clone())
+}
+
+fn placeholder_schema_fingerprint() -> String {
+    "0".repeat(64)
 }
 
 #[tokio::test]
@@ -102,132 +100,158 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
         sql,
         variables,
     };
-    let summary_sql = service
-        .create_saved_sql(
-            &space_id,
-            None,
-            &saved_sql(
-                "Metric summary",
-                format!(
-                    "SELECT COUNT(*) AS row_count, COUNT(\"{amount_column}\") AS value_count, SUM(\"{amount_column}\") AS total, AVG(\"{amount_column}\") AS average, MIN(\"{amount_column}\") AS minimum, MAX(\"{amount_column}\") AS maximum, SUM(\"{all_null_column}\") AS null_total FROM \"{form_name}\""
-                ),
-                json!([]),
-            ),
-            "owner",
-        )
-        .await?;
-    let empty_summary_sql = service
-        .create_saved_sql(
-            &space_id,
-            None,
-            &saved_sql(
-                "Metric empty summary",
-                format!(
-                    "SELECT COUNT(*) AS row_count, SUM(\"{amount_column}\") AS total FROM \"{form_name}\" WHERE \"{amount_column}\" < 0"
-                ),
-                json!([]),
-            ),
-            "owner",
-        )
-        .await?;
-    let empty_rows_sql = service
-        .create_saved_sql(
-            &space_id,
-            None,
-            &saved_sql(
-                "Metric empty rows",
-                format!(
-                    "SELECT \"{amount_column}\" AS total FROM \"{form_name}\" WHERE \"{amount_column}\" < 0"
-                ),
-                json!([]),
-            ),
-            "owner",
-        )
-        .await?;
-    let multiple_rows_sql = service
-        .create_saved_sql(
-            &space_id,
-            None,
-            &saved_sql(
-                "Metric multiple rows",
-                format!(
-                    "SELECT \"{amount_column}\" AS total FROM \"{form_name}\" ORDER BY \"{amount_column}\""
-                ),
-                json!([]),
-            ),
-            "owner",
-        )
-        .await?;
-    let decimal_sql = service
-        .create_saved_sql(
-            &space_id,
-            None,
-            &saved_sql(
-                "Metric decimal",
-                format!(
-                    "SELECT CAST(SUM(\"{amount_column}\") AS DECIMAL(30, 4)) AS total FROM \"{form_name}\""
-                ),
-                json!([]),
-            ),
-            "owner",
-        )
-        .await?;
-    let parameter_sql = service
-        .create_saved_sql(
-            &space_id,
-            None,
-            &saved_sql(
-                "Metric parameter",
-                "SELECT {{minimum}} AS total".to_string(),
-                json!([{
-                    "name": "minimum",
-                    "type": "integer",
-                    "description": "Selected amount"
-                }]),
-            ),
-            "owner",
-        )
-        .await?;
-
-    let summary_result = vec![
-        ("row_count", CompositionResultFieldType::Integer),
-        ("value_count", CompositionResultFieldType::Integer),
-        ("total", CompositionResultFieldType::Integer),
-        ("average", CompositionResultFieldType::Float),
-        ("minimum", CompositionResultFieldType::Integer),
-        ("maximum", CompositionResultFieldType::Integer),
-        ("null_total", CompositionResultFieldType::Integer),
-    ]
-    .into_iter()
-    .map(|(name, result_type)| CompositionResultColumn {
-        name: name.to_string(),
-        result_type,
-    })
-    .collect::<Vec<_>>();
-    let source = |id: &str, sql: &Value, expected_result| CompositionSource::SavedSql {
-        id: id.to_string(),
-        entry_id: serde_json::from_value(sql["id"].clone()).unwrap(),
-        revision_id: serde_json::from_value(sql["revision_id"].clone()).unwrap(),
-        expected_result,
-        variables: BTreeMap::new(),
+    let metric_sql_specs = vec![
+        (
+            "row_count_sql",
+            "Metric row count",
+            "row_count",
+            CompositionResultFieldType::Integer,
+            format!("SELECT COUNT(*) AS row_count FROM \"{form_name}\""),
+            json!([]),
+        ),
+        (
+            "value_count_sql",
+            "Metric value count",
+            "value_count",
+            CompositionResultFieldType::Integer,
+            format!("SELECT COUNT(\"{amount_column}\") AS value_count FROM \"{form_name}\""),
+            json!([]),
+        ),
+        (
+            "total_sql",
+            "Metric total",
+            "total",
+            CompositionResultFieldType::Integer,
+            format!("SELECT SUM(\"{amount_column}\") AS total FROM \"{form_name}\""),
+            json!([]),
+        ),
+        (
+            "average_sql",
+            "Metric average",
+            "average",
+            CompositionResultFieldType::Float,
+            format!("SELECT AVG(\"{amount_column}\") AS average FROM \"{form_name}\""),
+            json!([]),
+        ),
+        (
+            "minimum_sql",
+            "Metric minimum",
+            "minimum",
+            CompositionResultFieldType::Integer,
+            format!("SELECT MIN(\"{amount_column}\") AS minimum FROM \"{form_name}\""),
+            json!([]),
+        ),
+        (
+            "maximum_sql",
+            "Metric maximum",
+            "maximum",
+            CompositionResultFieldType::Integer,
+            format!("SELECT MAX(\"{amount_column}\") AS maximum FROM \"{form_name}\""),
+            json!([]),
+        ),
+        (
+            "null_total_sql",
+            "Metric null total",
+            "null_total",
+            CompositionResultFieldType::Integer,
+            format!("SELECT SUM(\"{all_null_column}\") AS null_total FROM \"{form_name}\""),
+            json!([]),
+        ),
+        (
+            "empty_count_sql",
+            "Metric empty count",
+            "row_count",
+            CompositionResultFieldType::Integer,
+            format!("SELECT COUNT(*) AS row_count FROM \"{form_name}\" WHERE \"{amount_column}\" < 0"),
+            json!([]),
+        ),
+        (
+            "empty_total_sql",
+            "Metric empty total",
+            "total",
+            CompositionResultFieldType::Integer,
+            format!("SELECT SUM(\"{amount_column}\") AS total FROM \"{form_name}\" WHERE \"{amount_column}\" < 0"),
+            json!([]),
+        ),
+        (
+            "empty_rows_sql",
+            "Metric empty rows",
+            "total",
+            CompositionResultFieldType::Integer,
+            format!("SELECT \"{amount_column}\" AS total FROM \"{form_name}\" WHERE \"{amount_column}\" < 0"),
+            json!([]),
+        ),
+        (
+            "multiple_rows_sql",
+            "Metric multiple rows",
+            "total",
+            CompositionResultFieldType::Integer,
+            format!("SELECT \"{amount_column}\" AS total FROM \"{form_name}\" ORDER BY \"{amount_column}\""),
+            json!([]),
+        ),
+        (
+            "decimal_sql",
+            "Metric decimal",
+            "total",
+            CompositionResultFieldType::Decimal,
+            format!("SELECT CAST(SUM(\"{amount_column}\") AS DECIMAL(30, 4)) AS total FROM \"{form_name}\""),
+            json!([]),
+        ),
+        (
+            "parameter_sql",
+            "Metric parameter",
+            "total",
+            CompositionResultFieldType::Integer,
+            "SELECT {{minimum}} AS total".to_string(),
+            json!([{
+                "name": "minimum",
+                "type": "integer",
+                "description": "Selected amount"
+            }]),
+        ),
+    ];
+    let mut saved_sqls = BTreeMap::new();
+    for (id, name, _, _, sql, variables) in &metric_sql_specs {
+        let saved = service
+            .create_saved_sql(
+                &space_id,
+                None,
+                &saved_sql(name, sql.clone(), variables.clone()),
+                "owner",
+            )
+            .await?;
+        saved_sqls.insert(*id, saved);
+    }
+    let source = |id: &str, column: &str, result_type| {
+        let sql = saved_sqls.get(id).unwrap();
+        CompositionSource::SavedSql {
+            id: id.to_string(),
+            entry_id: serde_json::from_value(sql["id"].clone()).unwrap(),
+            revision_id: serde_json::from_value(sql["revision_id"].clone()).unwrap(),
+            expected_result: vec![CompositionResultColumn {
+                name: column.to_string(),
+                result_type,
+            }],
+            schema_fingerprint: placeholder_schema_fingerprint(),
+            variables: BTreeMap::new(),
+        }
     };
     let metric = |id: &str, source: &str, column: &str| CompositionComponent::Metric {
         id: id.to_string(),
-        label: None,
         source: source.to_string(),
         column: column.to_string(),
         presentation: None,
     };
     let mut components = [
-        ("row_count", "summary_sql", "row_count"),
-        ("value_count", "summary_sql", "value_count"),
-        ("total", "summary_sql", "total"),
-        ("average", "summary_sql", "average"),
-        ("minimum", "summary_sql", "minimum"),
-        ("maximum", "summary_sql", "maximum"),
-        ("null_total", "summary_sql", "null_total"),
-        ("empty_count", "empty_summary_sql", "row_count"),
-        ("empty_total", "empty_summary_sql", "total"),
+        ("row_count", "row_count_sql", "row_count"),
+        ("value_count", "value_count_sql", "value_count"),
+        ("total", "total_sql", "total"),
+        ("average", "average_sql", "average"),
+        ("minimum", "minimum_sql", "minimum"),
+        ("maximum", "maximum_sql", "maximum"),
+        ("null_total", "null_total_sql", "null_total"),
+        ("empty_count", "empty_count_sql", "row_count"),
+        ("empty_total", "empty_total_sql", "total"),
         ("no_rows", "empty_rows_sql", "total"),
         ("multiple_rows", "multiple_rows_sql", "total"),
         ("decimal_total", "decimal_sql", "total"),
@@ -238,65 +262,29 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
     .collect::<Vec<_>>();
     components.push(CompositionComponent::Input {
         id: "minimum_input".to_string(),
-        label: None,
         variable: "minimum".to_string(),
     });
-    let source_list = vec![
-        source("summary_sql", &summary_sql, summary_result),
-        source(
-            "empty_summary_sql",
-            &empty_summary_sql,
-            vec![
-                CompositionResultColumn {
-                    name: "row_count".to_string(),
-                    result_type: CompositionResultFieldType::Integer,
-                },
-                CompositionResultColumn {
-                    name: "total".to_string(),
-                    result_type: CompositionResultFieldType::Integer,
-                },
-            ],
-        ),
-        source(
-            "empty_rows_sql",
-            &empty_rows_sql,
-            vec![CompositionResultColumn {
-                name: "total".to_string(),
-                result_type: CompositionResultFieldType::Integer,
-            }],
-        ),
-        source(
-            "multiple_rows_sql",
-            &multiple_rows_sql,
-            vec![CompositionResultColumn {
-                name: "total".to_string(),
-                result_type: CompositionResultFieldType::Integer,
-            }],
-        ),
-        source(
-            "decimal_sql",
-            &decimal_sql,
-            vec![CompositionResultColumn {
-                name: "total".to_string(),
-                result_type: CompositionResultFieldType::Decimal,
-            }],
-        ),
-        CompositionSource::SavedSql {
-            id: "parameter_sql".to_string(),
-            entry_id: serde_json::from_value(parameter_sql["id"].clone())?,
-            revision_id: serde_json::from_value(parameter_sql["revision_id"].clone())?,
-            expected_result: vec![CompositionResultColumn {
-                name: "total".to_string(),
-                result_type: CompositionResultFieldType::Integer,
-            }],
-            variables: BTreeMap::from([(
-                "minimum".to_string(),
-                CompositionValue::Variable(CompositionVariableReference {
-                    variable: "minimum".to_string(),
-                }),
-            )]),
-        },
-    ];
+    let source_list = metric_sql_specs
+        .iter()
+        .map(|(id, _, column, result_type, _, _)| source(id, column, *result_type))
+        .collect::<Vec<_>>();
+    let source_list = source_list
+        .into_iter()
+        .map(|mut source| {
+            match &mut source {
+                CompositionSource::SavedSql { id, variables, .. } if id == "parameter_sql" => {
+                    variables.insert(
+                        "minimum".to_string(),
+                        CompositionValue::Variable(CompositionVariableReference {
+                            variable: "minimum".to_string(),
+                        }),
+                    );
+                }
+                _ => {}
+            }
+            source
+        })
+        .collect::<Vec<_>>();
     let component_ids = components
         .iter()
         .map(|component| component.id().to_string())
@@ -306,11 +294,9 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
         format_version: 1,
         kind: CompositionKind::Dashboard,
         name: "Metric query contract".to_string(),
-        tags: Vec::new(),
         spec: CompositionSpec {
             variables: vec![CompositionVariable {
                 id: "minimum".to_string(),
-                label: None,
                 variable_type: CompositionVariableType::Integer,
                 required: true,
                 default: None,
@@ -349,6 +335,7 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
             composition_id: saved.entry_id.to_string(),
             revision_id: saved.revision_id.to_string(),
         },
+        draft_base: None,
         component_id: component_id.to_string(),
         variables: BTreeMap::from([("minimum".to_string(), json!(minimum))]),
         unset_variables: Vec::new(),
@@ -482,7 +469,7 @@ async fn source_resolution_and_continuation_recheck_current_authorization() -> R
     let authorizer = Authorizer::new(op);
 
     let form_name = "Composition-Query-Auth";
-    let form = service
+    service
         .upsert_form_result(
             &space_id,
             &json!({
@@ -494,6 +481,7 @@ async fn source_resolution_and_continuation_recheck_current_authorization() -> R
         )
         .await?;
     let field_id = ugoite_domain::id::FieldId::new(100)?;
+    let title_column = ugoite_domain::form::sql_column_name(field_id);
     for index in 0..4 {
         service
             .create_structured_entry_with_receipt(
@@ -528,33 +516,20 @@ async fn source_resolution_and_continuation_recheck_current_authorization() -> R
         format_version: 1,
         kind: CompositionKind::Dashboard,
         name: "Authorized query pages".to_string(),
-        tags: Vec::new(),
         spec: CompositionSpec {
             variables: Vec::new(),
-            sources: vec![CompositionSource::EntryQuery {
+            sources: vec![CompositionSource::InlineSql {
                 id: "source".to_string(),
-                form_id: form.form_id,
-                field_schema: vec![CompositionFieldSchemaEntry {
-                    field_id,
-                    field_type: FieldType::String,
-                    reference_form: None,
-                    list_item: None,
-                }],
-                query: EntryQueryTemplate {
-                    text: None,
-                    filters: Vec::new(),
-                    sort: vec![EntryQuerySortTemplate {
-                        field_id,
-                        direction: CompositionSortDirection::Asc,
-                    }],
-                    page_limit: 2,
-                    projection: EntryQueryProjectionTemplate::Preview,
-                    display_system_fields: Vec::new(),
-                },
+                name: "Authorized query source".to_string(),
+                sql: format!(
+                    "SELECT \"_ugoite_id\" AS id, \"{title_column}\" AS title FROM \"{form_name}\" ORDER BY \"_ugoite_id\""
+                ),
+                form_bindings: Vec::new(),
+                expected_result: Vec::new(),
+                schema_fingerprint: String::new(),
             }],
             components: vec![CompositionComponent::Table {
                 id: "table".to_string(),
-                label: None,
                 source: "source".to_string(),
             }],
             layout: DashboardFlowLayout {
@@ -594,10 +569,10 @@ async fn source_resolution_and_continuation_recheck_current_authorization() -> R
         )
         .await?;
     assert!(resolution.diagnostics.is_empty());
-    let compiled_request = resolved_entry_request(&resolution)?;
+    let compiled_request = resolved_sql_request(&resolution)?;
 
-    // Revoke Form access after resolve but before its first page. The existing
-    // authorized query boundary returns no source rows for the stale plan.
+    // Revoke Form access after resolve but before execution. The SQL boundary
+    // must deny the stale plan using the caller's current ACL.
     authorizer
         .set_policy(
             &space_id,
@@ -617,16 +592,10 @@ async fn source_resolution_and_continuation_recheck_current_authorization() -> R
             },
         )
         .await?;
-    let first_page_after_revoke = service
-        .query_entry_page_authorized_for_principals(&space_id, &[viewer], compiled_request.clone())
+    let _first_page_after_revoke = service
+        .query_sql_authorized_for_principals(&space_id, &[viewer], compiled_request.clone())
         .await
-        .context("the existing query path should complete with the current ACL")?;
-    assert!(
-        first_page_after_revoke.rows.is_empty(),
-        "the stale resolved request must return no rows after Form access is revoked"
-    );
-    assert!(!first_page_after_revoke.has_more);
-    assert!(first_page_after_revoke.next.is_none());
+        .expect_err("the stale SQL plan must be denied after Form access is revoked");
 
     // Restore access, resolve the same exact Composition revision, and issue a
     // continuation. Revoking one later-page Entry must invalidate that cursor.
@@ -657,15 +626,17 @@ async fn source_resolution_and_continuation_recheck_current_authorization() -> R
         )
         .await?;
     assert!(resolution.diagnostics.is_empty());
-    let compiled_request = resolved_entry_request(&resolution)?;
+    let mut compiled_request = resolved_sql_request(&resolution)?;
+    // Keep the page small so this query exercises a continuation.
+    compiled_request.limit = 2;
     let first_page = service
-        .query_entry_page_authorized_for_principals(&space_id, &[viewer], compiled_request.clone())
+        .query_sql_authorized_for_principals(&space_id, &[viewer], compiled_request.clone())
         .await?;
     assert_eq!(first_page.rows.len(), 2);
     assert!(first_page
         .rows
         .iter()
-        .all(|row| row.id != "composition-query-02"));
+        .all(|row| { row.get("id").and_then(Value::as_str) != Some("composition-query-02") }));
     let cursor = first_page
         .next
         .context("first query page should provide a continuation")?;
@@ -688,11 +659,11 @@ async fn source_resolution_and_continuation_recheck_current_authorization() -> R
         )
         .await?;
     let continued = service
-        .query_entry_page_authorized_for_principals(
+        .query_sql_authorized_for_principals(
             &space_id,
             &[viewer],
-            EntryPageRequest {
-                after: Some(cursor),
+            SqlQueryRequest {
+                continuation: Some(cursor),
                 ..compiled_request
             },
         )
@@ -861,7 +832,6 @@ async fn authorized_composition_metrics_recheck_current_entry_and_saved_sql_acce
         format_version: 1,
         kind: CompositionKind::Dashboard,
         name: "Authorized metric".to_string(),
-        tags: Vec::new(),
         spec: CompositionSpec {
             variables: Vec::new(),
             sources: vec![CompositionSource::SavedSql {
@@ -872,11 +842,11 @@ async fn authorized_composition_metrics_recheck_current_entry_and_saved_sql_acce
                     name: "total".to_string(),
                     result_type: CompositionResultFieldType::Integer,
                 }],
+                schema_fingerprint: placeholder_schema_fingerprint(),
                 variables: BTreeMap::new(),
             }],
             components: vec![CompositionComponent::Metric {
                 id: "amount_metric".to_string(),
-                label: None,
                 source: "amount_sql".to_string(),
                 column: "total".to_string(),
                 presentation: None,
@@ -909,6 +879,7 @@ async fn authorized_composition_metrics_recheck_current_entry_and_saved_sql_acce
             composition_id: saved.entry_id.to_string(),
             revision_id: saved.revision_id.to_string(),
         },
+        draft_base: None,
         component_id: "amount_metric".to_string(),
         variables: BTreeMap::new(),
         unset_variables: Vec::new(),

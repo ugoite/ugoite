@@ -201,15 +201,22 @@ supported-backend matrix and S1 acceptance contract are maintained in
 
 ## ADR-016 — Composition is Space-owned Knowledge
 
-**Accepted target contract for v0.2.2.** A saved Composition is one Entry
+> ADR-016 through ADR-023 below record decisions made for the prereplacement
+> Composition implementation. Their old source, tag, label, and UI grammar is
+> historical evidence only. ADR-024 and [`composition.md`](composition.md) are
+> the sole accepted Composition v1 target; replacement implementation and
+> browser/server acceptance remain pending. ADR-016's Space-owned Entry and
+> recovery boundary is retained by ADR-024.
+
+**Historical prerelease target contract for v0.2.2.** A saved Composition is one Entry
 revision in its user-owned Space. The Space remains its authority; Entry
 history, restore, receipts, and stale-write conflicts remain the persistence
 contract. A separate database or hidden catalog is not a Composition authority.
 The initial executable kind is `dashboard`. The initial
 save/list/get/history/resolve persistence operations, the CLI commands, and the
 Browser save/list/resolve/query paths have landed with focused bindings and
-evidence (see the [Composition contract](composition.md) and the
-[acceptance plan](../testing/composition-acceptance.md); the complete journey
+evidence in the prereplacement [contract snapshot](../testing/history/composition-prereplacement-contract.md)
+and [acceptance snapshot](../testing/history/composition-prereplacement-acceptance.md); the complete journey
 acceptance, plus chart DSL, layout engine, actions, Konase generation, and
 proposals store, remain future work.
 
@@ -220,7 +227,7 @@ Composition.
 
 ## ADR-017 — Composition semantics use a restricted YAML contract
 
-**Accepted.** `.ugcomp.yaml` v1 is a restricted exchange representation with the
+**Historical accepted grammar; superseded before release by ADR-024.** `.ugcomp.yaml` v1 was a restricted exchange representation with the
 ordered envelope `format`, `format_version`, `kind`, `name`, `tags`, and `spec`.
 The fixed format marker is `ugoite.composition`. Rust typed domain values own
 its meaning; native and WASM callers use the same parser, validation,
@@ -231,8 +238,8 @@ ordered tag list written to the owning Entry.
 The Metric design recorded below is historical. It was revised by
 [ADR-021](#adr-021--typed-only-composition-metrics) and superseded before Metric
 release by [ADR-022](#adr-022--composition-metrics-present-saved-sql-results).
-The restricted YAML and parser rules above remain current. The current
-pre-release Metric contract uses a direct Saved SQL `source` and `column`; no
+At the time, the restricted YAML and parser rules above were current. The
+pre-release Metric contract used a direct Saved SQL `source` and `column`; no
 compatibility reader or migration is required for the earlier Metric shapes.
 
 An exact Saved SQL source carries an ordered `expected_result` descriptor with
@@ -265,14 +272,15 @@ series, with removal assigned to the next minor version without migration or
 conversion.
 ADR-022 supersedes that Metric compatibility statement before release.
 
-The parser uses `serde-saphyr` 1.3.0 with duplicate-key errors, strict typed
+The prereplacement parser used `serde-saphyr` 1.3.0 with duplicate-key errors, strict typed
 deserialization, and explicit resource budgets. It rejects multiple documents,
 anchors and aliases, merge keys, unsupported/custom tags, and unknown fields. It
 limits input to 65,536 bytes, nesting depth to 64, YAML nodes to 4,096, parser
 events to 8,192, total scalar bytes to 32,768, and each Composition collection
 to 256 items. A bounded probe checks the fixed format marker and reads
 `format_version` before strict v1 deserialization. The numeric limits and
-candidate comparison are maintained in [`composition.md`](composition.md).
+candidate comparison are preserved in the
+[prereplacement contract snapshot](../testing/history/composition-prereplacement-contract.md).
 
 Canonical output derives from normalized typed values, uses schema field order
 and stable YAML formatting, and does not preserve comments. The semantic
@@ -284,8 +292,9 @@ The fingerprint hashes compact JSON serialization of the normalized typed value;
 the public digest is lowercase hexadecimal. Rust's domain and WASM paths return
 the same canonical YAML, fingerprint, and diagnostic code for a given fixture.
 
-The complete current contract is maintained in
-[`composition.md`](composition.md); the shared example is
+The complete prereplacement contract is preserved in the
+[historical snapshot](../testing/history/composition-prereplacement-contract.md);
+the shared example is
 `crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml`.
 
 Local CLI operator authority remains distinct from remote Server principal
@@ -294,9 +303,10 @@ authorization. The storage layer supplies conditional publication mechanics;
 
 ## ADR-018 — Composition Studio preview and typed SQL result schema
 
-**Accepted ruling for the v0.2.2 Composition Studio uplift.** This ruling
-authorizes two additive extensions without reopening the Composition v1
-grammar freeze recorded in [`composition.md`](composition.md):
+**Historical ruling for the v0.2.2 Composition Studio uplift; superseded for
+Composition grammar by ADR-024 before release.** This ruling authorized
+additive extensions over the grammar recorded in the
+[prereplacement snapshot](../testing/history/composition-prereplacement-contract.md):
 
 1. `composition.preview`: a side-effect-free authoring adapter that parses a
    candidate document, applies current source authorization, resolves through
@@ -334,7 +344,8 @@ the same change that introduces `composition.preview`.
 
 ## ADR-019 — Composition layout v1 ruling (sections to layout AST)
 
-**Accepted ruling for the v0.2.2 Composition Studio redesign.** The semantic
+**Historical ruling for the v0.2.2 Composition Studio redesign; superseded by
+ADR-024 before release.** The semantic
 vocabulary `parameters` / `sources` / `components` is shared with the future
 v0.3 Dashboard / Application / Presentation / Master grammar and is kept.
 The pre-release `sections` array is removed and replaced by a first-class
@@ -381,10 +392,10 @@ this ruling:
    (selected block only), plus desktop-only `Split`. Studio and Use surfaces
    share one renderer.
 
-This ruling authorizes the `composition.md` v1 re-freeze once the domain,
-resolver, DTO, renderer, Studio, seed/save-readiness, mobile, history, and
-story-E2E work lands. Until then the frozen v1 pin above still describes the
-shipped grammar. Stop conditions: canvas coordinates in Knowledge, split
+ADR-024 replaces this v1 freeze before release. The accepted replacement
+contract is [`composition.md`](composition.md), and the prereplacement grammar
+is preserved only in the historical snapshot. Stop conditions in this ruling
+included canvas coordinates in Knowledge, split
 Design/Use semantics, parameter duplication into a UI-only type, Saved SQL
 latest-fallback, Browser aggregation or type inference, `text` runtime
 extension, or a permanent `sections` compatibility layer.
@@ -445,7 +456,8 @@ reader or migration is provided. Metric evaluation uses the bounded
 Composition Metric query operation: aggregates use the authorized full
 matching set, and Saved SQL metrics use a bounded scalar probe. The shared
 Domain layer validates returned scalar values, not query pages. The
-`composition.md` contract and Mitase bindings describe this current behavior.
+prereplacement Composition contract and Mitase bindings described this
+behavior; they are historical evidence and do not define replacement v1.
 
 This accepted next-minor contract ruling retires the earlier compatibility
 statements in ADR-017 through ADR-019. It does not authorize release or change
@@ -453,11 +465,11 @@ unrelated Composition persistence and query contracts.
 
 ## ADR-022 — Composition Metrics present Saved SQL results
 
-**Status: Accepted; pre-release implementation is in progress. This ADR does not authorize a release.**
-This ruling replaces the Metric-specific design in ADR-020 and ADR-021 before
-Metric release. It does not change Saved SQL, SQL execution, Space Knowledge,
-EntryQuery Table, or `sql.query.count` contracts, and it does not authorize a
-release.
+**Historical prereplacement decision; ADR-024 supersedes its Composition source
+grammar before release.** The Saved SQL scalar Metric rule is retained. Saved
+SQL, general SQL execution, Space Knowledge, and `sql.query.count` retain their
+separate contracts; `entry.query` remains a general API while Composition stops
+using its EntryQuery source path.
 
 ### Decision
 
@@ -559,11 +571,36 @@ is tested at the SQL layer; Metric tests prove selection and presentation only.
 
 ## ADR-023 — Composition typed reactive variables
 
-**Status: Accepted target for pre-release Composition; implementation pending.**
-This ruling authorizes the prerelease Composition grammar and runtime defined in
+**Status: Historical prerelease target; its source and presentation grammar is
+superseded by ADR-024 before release.** This ruling recorded the variable
+behavior retained by the replacement and the prerelease grammar defined in
 [ADR-023](adr-023-composition-reactive-variables.md), with no compatibility
 reader or migration. It supersedes only ADR-019's parameter declarations,
 parameter layout controls, and fixed-Text-only rule; ADR-019's Layout AST and
 presentation rules remain. It inherits ADR-022's SQL-only Metric boundary and
 does not change Space, Entry, Form, Saved SQL, SQL API, ACL, or publication
 contracts. The ruling does not authorize release.
+
+## ADR-024 — SQL-first Composition sources and workspace
+
+**Status: Implemented current prerelease model; superseded as the accepted next target by ADR-025.**
+ADR-024 documents the grammar implemented by the current prerelease candidate,
+including stable Form-ID binding, Saved SQL defaults, the scalar Metric
+boundary, transient Work, and the shared SQL Workspace. It retains ADR-023's
+typed variables and direct Input/Text bindings while removing EntryQuery
+sources, Composition tags, and Composition-owned display labels. ADR-024 is no
+longer the accepted next target; ADR-025 defines that target. Existing
+published SQL, Form, Entry, authorization, and history contracts remain in
+force. Neither ADR authorizes or schedules a product release or version
+change.
+
+## ADR-025 — Composition query variable graph and complete SQL Workspace
+
+**Status: Accepted target; implementation in progress.** ADR-025 replaces the
+unreleased split between Composition variables and SQL sources with one typed
+query-variable graph and requires GUI coverage for every SQL construct admitted
+by the Rust read-only executor. The current code remains on ADR-024 until the
+new schema and editor gates are complete. It preserves the published Space,
+Form, Entry, Saved SQL, SQL API, ACL, Publication, and append-only history
+contracts and does not authorize release preparation or publication. See
+[ADR-025](adr-025-composition-query-variable-graph.md).

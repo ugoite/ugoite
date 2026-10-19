@@ -50,6 +50,11 @@ ugoite sql saved create \
 ugoite sql saved create \
   --sql query.sql
 
+# Store a typed default with a SQL variable.
+ugoite sql saved create \
+  --sql 'SELECT field_<PriorityId> FROM "Task" WHERE field_<PriorityId> >= $minimum ORDER BY _ugoite_id' \
+  --variables '[{"name":"minimum","type":"integer","description":"","default":3}]'
+
 # Update only SQL; the current name, variables, and revision base are loaded automatically.
 ugoite sql saved update <SQL_ID> --sql updated-query.sql
 
@@ -87,6 +92,13 @@ returns a conflict. Use `--untitled` to clear a name; it cannot be combined
 with `--name`. `sql query` and `sql count` accept only one read-only `SELECT`
 statement and reject DDL, DML, and multiple statements before execution. Use
 `ugoite sql --help` for the complete option grammar.
+
+Each object in the `--variables` JSON array declares `name`, `type`, and
+`description`, and may add an optional scalar `default` that matches the
+declared type. Defaults are stored with the revision. Browser variable inputs
+show a saved default as their initial value, but neither the Browser nor CLI
+adds it to a query until the user explicitly runs with that value; CLI runs
+use `--param` and `--param-type`.
 
 </TabItem>
 </Tabs>
@@ -178,10 +190,12 @@ the exit code before treating the stream as complete. Export does not call
 
 ## Parameters
 
-Repeat `--param NAME=VALUE` for each named parameter. Scalar JSON values are
-accepted; unquoted values that are not valid JSON are treated as strings.
-Use `--param-type NAME=TYPE` when a null value needs an explicit type or when
-the inferred scalar type is not the intended SQL type.
+For `sql query`, `sql count`, and `sql export`, repeat `--param NAME=VALUE` for
+each named parameter. Scalar JSON values are accepted; unquoted values that are
+not valid JSON are treated as strings. Use `--param-type NAME=TYPE` when a null
+value needs an explicit type or when the inferred scalar type is not the
+intended SQL type. For `sql saved run`, parameter types come from the selected
+Saved SQL revision instead.
 
 ## Read-only and authorization contract
 
@@ -210,6 +224,10 @@ exact and case-sensitive: quote names such as `"Expense"`, `"expense"`, or
 `"2026-Expense"`. Legacy `form_<UUID>` SQL keeps working. Existing Saved SQL
 is not rewritten when read; editing and saving it creates a revision with
 bindings resolved by the server.
+Saved SQL variable defaults are displayed in the variable-input route and are
+sent only when the user presses Run. Clearing a displayed input sends a typed
+null value; the saved default itself remains unchanged until it is edited and
+saved on the Saved SQL detail route.
 
 The CLI can execute the current Saved SQL revision by ID:
 
@@ -218,17 +236,22 @@ ugoite sql saved run <SQL_ID> --limit 100
 ```
 
 Use `--revision-id <REVISION_ID>` to run a specific earlier revision. Repeat
-`--param NAME=VALUE` and `--param-type NAME=TYPE` for SQL variables. The command
-returns one stateless page in the selected format, including its continuation
-when more rows are available. Each request checks current authorization and
-uses the Form IDs bound to that revision.
+`--param NAME=VALUE` to supply each variable's execution value. Its type comes
+from the selected revision's Saved SQL definition. `--param-type NAME=TYPE` is
+optional and, when supplied, must match the saved declaration. Defaults are
+for authoring and preview; Saved SQL execution still requires explicit values.
+The command returns one stateless page in the selected format, including its
+continuation when more rows are available. Each request checks current
+authorization and uses the Form IDs bound to that revision.
 
 ## If it fails
 
 - SQL rejected: check the quoted Form name (or `form_<FormId>` relation), `field_<FieldId>` columns,
   and statement kind; only authorized read-only selects run.
-- Parameter rejected: check `NAME=VALUE` syntax and add `--param-type` for
-  null or an explicitly typed scalar.
+- Parameter rejected: for `sql query`, `sql count`, and `sql export`, check
+  `NAME=VALUE` syntax and add `--param-type` when a null or scalar needs an
+  explicit type. For `sql saved run`, supply every variable value and make
+  sure any `--param-type` matches the selected revision's declaration.
 - Continuation rejected: start a fresh query when SQL, parameters, or current
   authorization no longer match the continuation.
 - `LEGACY_SQL_BINDING_UNAVAILABLE`: this pre-binding revision contains a quoted

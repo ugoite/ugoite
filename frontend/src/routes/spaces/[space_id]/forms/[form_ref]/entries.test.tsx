@@ -230,37 +230,11 @@ describe("/spaces/:space_id/forms/:form_ref/entries", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("navigates to the studio with the entry query seed", async () => {
+  it("does not expose the retired EntryQuery-to-Composition action", () => {
     renderRoute([noteForm]);
 
-    const saveButton = await screen.findByRole("button", {
-      name: "Save as tool",
-    });
-    expect(saveButton).toBeEnabled();
-    fireEvent.click(saveButton);
-
-    expect(navigate).toHaveBeenCalledTimes(1);
-    expect(navigate).toHaveBeenCalledWith(
-      "/spaces/default/compositions/new",
-      {
-        state: {
-          seed: {
-            kind: "entry_query",
-            seed: {
-              formId: noteForm.id,
-              name: "Notes",
-              fieldSchema: [{ field_id: 7, field_type: "string" }],
-              query: {
-                filters: [],
-                sort: [],
-                projection: { kind: "fields", fields: [7] },
-              },
-            },
-          },
-        },
-      },
-    );
-    expect(screen.queryByRole("dialog", { name: "Save as tool" }))
+    expect(screen.queryByRole("button", { name: /Save as tool/ }))
       .not.toBeInTheDocument();
+    expect(navigate).not.toHaveBeenCalled();
   });
 });

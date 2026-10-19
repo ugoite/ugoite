@@ -31,25 +31,17 @@ const resolved = (parameter: unknown) => ({
       revision_id: identity.revisionId,
     },
     sources: [{
-      kind: "entry_query" as const,
+      kind: "inline_sql" as const,
       source_id: "entries",
       source_schema_fingerprint: "fingerprint",
       request: {
-        query: {
-          scope: { kind: "form" as const, form_id: "form-1" },
-          filters: [{
-            field: { kind: "property" as const, field_id: 7 },
-            operator: "equals" as const,
-            value: parameter,
-          }],
-          sort: [],
-        },
-        projection: {
-          kind: "fields" as const,
-          fields: [{ kind: "property" as const, field_id: 7 }],
-        },
+        sql: 'SELECT name FROM "Form" WHERE name = :month',
+        parameters: { month: parameter },
+        parameter_types: { month: "string" },
         limit: 10,
       },
+      form_bindings: [{ relation: "Form", form_id: "form-1" }],
+      expected_result: [{ name: "name", type: "string" as const }],
     }],
     component_bindings: [{
       component_id: "entry_rows",
@@ -65,18 +57,14 @@ const resolved = (parameter: unknown) => ({
   diagnostics: [],
 });
 
-const entryPage = (id: string) => ({
-  kind: "entry_query" as const,
+const sqlPage = (id: string, next?: string) => ({
+  kind: "sql" as const,
   page: {
-    rows: [{
-      id,
-      form_id: "form-1",
-      revision_id: `revision-${id}`,
-      created_at_micros: 1,
-      updated_at_micros: 1,
-      properties: { name: id },
-    }],
-    has_more: false,
+    columns: ["name"],
+    rows: [[id]],
+    result_schema: [{ name: "name", type: "string" as const }],
+    has_more: next !== undefined,
+    ...(next === undefined ? {} : { next }),
   },
 });
 
@@ -120,7 +108,7 @@ const resolvedSavedSql = (monthStart: string) => ({
 });
 
 const savedSqlPage = (row: string, next?: string) => ({
-  kind: "saved_sql" as const,
+  kind: "sql" as const,
   page: {
     columns: ["amount"],
     rows: [[row]],
@@ -200,17 +188,7 @@ describe("CompositionQueryHandle", () => {
     handle.dispose();
   });
 
-  it("does not query a source when a required variable is explicitly unset", async () => {
-    const missing = {
-      ok: false,
-      variable_definitions: [{
-        id: "month_start",
-        type: "date" as const,
-        required: true,
-        default: "2026-03-01",
-      }],
-      diagnostics: [{ code: "variable_missing", variable_id: "month_start" }],
-    };
+  it("gets required-unset diagnostics without querying invalid sources", async () => {
     const api: CompositionQueryApi = {
       get: vi.fn().mockResolvedValue({
         revision: {
@@ -222,7 +200,19 @@ describe("CompositionQueryHandle", () => {
       }),
       resolve: vi.fn()
         .mockResolvedValueOnce(resolvedSavedSql("2026-03-01"))
-        .mockResolvedValueOnce(missing),
+        .mockResolvedValueOnce({
+          ok: false,
+          variable_definitions: [{
+            id: "month_start",
+            type: "date" as const,
+            required: true,
+            default: "2026-03-01",
+          }],
+          diagnostics: [{
+            code: "variable_missing",
+            variable_id: "month_start",
+          }],
+        }),
       querySource: vi.fn().mockResolvedValue(savedSqlPage("initial")),
     };
     const handle = createCompositionQueryHandle(api);
@@ -234,18 +224,17 @@ describe("CompositionQueryHandle", () => {
       savedSqlPage("initial"),
     );
     handle.setVariableRaw("month_start", "");
-    await vi.waitFor(() => expect(api.resolve).toHaveBeenCalledTimes(2));
     await vi.waitFor(() => {
       expect(handle.state().resolving).toBe(false);
-      expect(handle.state().resolved).toMatchObject({
-        ok: false,
-        diagnostics: [{
-          code: "variable_missing",
-          variable_id: "month_start",
-        }],
-      });
+      expect(handle.state().sources.sql_results?.status).toBe("invalid");
+      expect(handle.state().resolved?.diagnostics).toEqual([{
+        code: "variable_missing",
+        variable_id: "month_start",
+      }]);
     });
 
+    expect(handle.state().sources.sql_results?.page).toBeUndefined();
+    expect(api.resolve).toHaveBeenCalledTimes(2);
     expect(api.resolve).toHaveBeenLastCalledWith(
       identity.spaceId,
       identity.compositionId,
@@ -253,15 +242,172 @@ describe("CompositionQueryHandle", () => {
       { month_start: null },
       expect.any(AbortSignal),
     );
-    expect(handle.state().resolved?.diagnostics).toEqual([{
-      code: "variable_missing",
-      variable_id: "month_start",
-    }]);
-    expect(handle.state().sources.sql_results).toMatchObject({
+    expect(api.querySource).toHaveBeenCalledOnce();
+    handle.dispose();
+  });
+
+  it("waits on changed sources until required inputs are valid and preserves unrelated paging", async () => {
+    const definitions = [
+      {
+        id: "month",
+        type: "string" as const,
+        required: true,
+        default: "2026-03",
+      },
+      {
+        id: "status",
+        type: "string" as const,
+        required: true,
+        default: "active",
+      },
+    ];
+    const planFor = (month: string, status: string) => {
+      const response = resolved(month) as CompositionResolveResponse;
+      response.variable_definitions = definitions;
+      const base = response.plan!.sources[0]!;
+      if (base.kind !== "inline_sql") {
+        throw new Error("expected inline SQL source");
+      }
+      const sourceFor = (sourceId: string, value: string) => ({
+        ...base,
+        source_id: sourceId,
+        request: {
+          ...base.request,
+          sql: `SELECT name FROM "Form" WHERE ${sourceId} = :${sourceId}`,
+          parameters: { [sourceId === "month_rows" ? "month" : "status"]: value },
+        },
+      });
+      response.plan!.sources = [
+        sourceFor("month_rows", month),
+        sourceFor("status_rows", status),
+        sourceFor("unrelated_rows", "fixed"),
+      ];
+      response.plan!.component_bindings = [
+        { component_id: "month_table", kind: "table", source_id: "month_rows" },
+        {
+          component_id: "status_table",
+          kind: "table",
+          source_id: "status_rows",
+        },
+        {
+          component_id: "unrelated_table",
+          kind: "table",
+          source_id: "unrelated_rows",
+        },
+      ];
+      response.plan!.dependencies = {
+        variable_consumers: {
+          month: { source_ids: ["month_rows"] },
+          status: { source_ids: ["status_rows"] },
+        },
+      };
+      return response;
+    };
+    const queryCalls: { sourceId: string; cursor?: string }[] = [];
+    const blockedResolve = deferred<CompositionResolveResponse>();
+    const api: CompositionQueryApi = {
+      get: vi.fn().mockResolvedValue({
+        revision: {
+          entry_id: identity.compositionId,
+          revision_id: identity.revisionId,
+        },
+        fields: { name: "Budget" },
+        unmapped_field_values: {},
+      }),
+      resolve: vi.fn((_space, _composition, _revision, values) => {
+        const month = typeof values.month === "string"
+          ? values.month
+          : "2026-03";
+        const status = typeof values.status === "string"
+          ? values.status
+          : "active";
+        if (values.status === null) {
+          return Promise.resolve({
+            ok: false,
+            variable_definitions: definitions,
+            diagnostics: [{ code: "variable_missing", variable_id: "status" }],
+          });
+        }
+        return month === "2026-04" && status === "active"
+          ? blockedResolve.promise
+          : Promise.resolve(planFor(month, status));
+      }),
+      querySource: vi.fn((_space, source, cursor) => {
+        queryCalls.push({ sourceId: source.source_id, cursor });
+        if (source.source_id === "unrelated_rows" && cursor === "next") {
+          return Promise.resolve(sqlPage("unrelated-next"));
+        }
+        return Promise.resolve(
+          sqlPage(
+            source.source_id,
+            source.source_id === "unrelated_rows" ? "next" : undefined,
+          ),
+        );
+      }),
+    };
+    const handle = createCompositionQueryHandle(api);
+
+    await handle.open(identity);
+    expect(queryCalls).toHaveLength(3);
+    handle.next("unrelated_rows");
+    await vi.waitFor(() => {
+      expect(handle.state().sources.unrelated_rows?.cursorStack).toEqual([
+        undefined,
+        "next",
+      ]);
+    });
+    const unrelatedPageState = handle.state().sources.unrelated_rows;
+
+    handle.setVariableRaw("month", "2026-04");
+    await vi.waitFor(() => expect(api.resolve).toHaveBeenCalledTimes(2));
+    expect(handle.state().resolving).toBe(true);
+
+    handle.setVariableRaw("status", "");
+    expect(handle.state().sources.month_rows).toMatchObject({
+      status: "waiting",
+    });
+    expect(handle.state().sources.month_rows?.page).toBeUndefined();
+    expect(handle.state().sources.status_rows).toMatchObject({
       status: "invalid",
     });
-    expect(handle.state().sources.sql_results?.page).toBeUndefined();
-    expect(api.querySource).toHaveBeenCalledOnce();
+    expect(handle.state().sources.status_rows?.page).toBeUndefined();
+    expect(handle.state().resolving).toBe(false);
+    expect(handle.state().sources.unrelated_rows).toEqual(unrelatedPageState);
+    await vi.waitFor(() => expect(api.resolve).toHaveBeenCalledTimes(3));
+    expect(handle.state().resolved?.diagnostics).toEqual([{
+      code: "variable_missing",
+      variable_id: "status",
+    }]);
+    expect(queryCalls).toHaveLength(4);
+
+    handle.setVariableRaw("status", "bad\u0001value");
+    expect(handle.state().sources.month_rows).toMatchObject({
+      status: "waiting",
+    });
+    expect(handle.state().sources.status_rows).toMatchObject({
+      status: "invalid",
+    });
+    expect(api.resolve).toHaveBeenCalledTimes(3);
+    expect(queryCalls).toHaveLength(4);
+    blockedResolve.resolve(planFor("2026-04", "active"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(handle.state().resolving).toBe(false);
+    expect(handle.state().sources.month_rows?.status).toBe("waiting");
+
+    handle.setVariableRaw("status", "active-2");
+    await vi.waitFor(() => expect(api.resolve).toHaveBeenCalledTimes(4));
+    await vi.waitFor(() => {
+      expect(handle.state().sources.month_rows?.status).toBe("ready");
+      expect(handle.state().sources.status_rows?.status).toBe("ready");
+    });
+
+    expect(queryCalls.filter((call) => call.sourceId === "month_rows"))
+      .toHaveLength(2);
+    expect(queryCalls.filter((call) => call.sourceId === "status_rows"))
+      .toHaveLength(2);
+    expect(queryCalls.filter((call) => call.sourceId === "unrelated_rows"))
+      .toHaveLength(2);
+    expect(handle.state().sources.unrelated_rows).toEqual(unrelatedPageState);
     handle.dispose();
   });
 
@@ -307,8 +453,8 @@ describe("CompositionQueryHandle", () => {
   });
 
   it("pins get and resolve to the selected revision and ignores a stale variable response", async () => {
-    const oldPage = deferred<ReturnType<typeof entryPage>>();
-    const currentPage = deferred<ReturnType<typeof entryPage>>();
+    const oldPage = deferred<ReturnType<typeof sqlPage>>();
+    const currentPage = deferred<ReturnType<typeof sqlPage>>();
     const querySignals: AbortSignal[] = [];
     const api: CompositionQueryApi = {
       get: vi.fn().mockResolvedValue({
@@ -359,19 +505,19 @@ describe("CompositionQueryHandle", () => {
     );
     expect(querySignals[0].aborted).toBe(true);
 
-    currentPage.resolve(entryPage("current"));
+    currentPage.resolve(sqlPage("current"));
     await vi.waitFor(() =>
       expect(handle.state().sources.entries?.status).toBe("ready")
     );
-    oldPage.resolve(entryPage("stale"));
+    oldPage.resolve(sqlPage("stale"));
     await opening;
 
-    expect(handle.state().sources.entries?.page).toEqual(entryPage("current"));
+    expect(handle.state().sources.entries?.page).toEqual(sqlPage("current"));
     expect(handle.variables()).toEqual({ month: "2026-04" });
     handle.dispose();
   });
 
-  it("uses the existing opaque Entry continuation for next and previous pages", async () => {
+  it("uses the existing SQL continuation for next and previous pages", async () => {
     const cursors: (string | undefined)[] = [];
     const api: CompositionQueryApi = {
       get: vi.fn().mockResolvedValue({
@@ -386,8 +532,9 @@ describe("CompositionQueryHandle", () => {
       querySource: vi.fn((_space, _source, cursor) => {
         cursors.push(cursor);
         return Promise.resolve({
-          kind: "entry_query" as const,
+          kind: "sql" as const,
           page: {
+            columns: ["name"],
             rows: [],
             has_more: cursor === undefined,
             ...(cursor === undefined ? { next: "opaque-next" } : {}),
@@ -638,7 +785,7 @@ describe("CompositionQueryHandle", () => {
   });
 
   it("preserves an unrelated page request while another source re-resolves", async () => {
-    const secondPage = deferred<ReturnType<typeof entryPage>>();
+    const secondPage = deferred<ReturnType<typeof sqlPage>>();
     const sourceRequestCounts = new Map<string, number>();
     const queryCalls: Array<{
       sourceId: string;
@@ -664,39 +811,29 @@ describe("CompositionQueryHandle", () => {
           revision_id: identity.revisionId,
         },
         sources: [{
-          kind: "entry_query",
+          kind: "inline_sql",
           source_id: "month_rows",
           source_schema_fingerprint: "month-schema",
           request: {
-            query: {
-              scope: { kind: "form", form_id: "form-1" },
-              filters: [{
-                field: { kind: "property", field_id: 7 },
-                operator: "equals",
-                value: month,
-              }],
-              sort: [],
-            },
-            projection: { kind: "fields", fields: [] },
+            sql: 'SELECT name FROM "Form" WHERE name = :month',
+            parameters: { month },
+            parameter_types: { month: "string" },
             limit: 10,
           },
+          form_bindings: [{ relation: "Form", form_id: "form-1" }],
+          expected_result: [{ name: "name", type: "string" }],
         }, {
-          kind: "entry_query",
+          kind: "inline_sql",
           source_id: "status_rows",
           source_schema_fingerprint: "status-schema",
           request: {
-            query: {
-              scope: { kind: "form", form_id: "form-1" },
-              filters: [{
-                field: { kind: "property", field_id: 8 },
-                operator: "equals",
-                value: "active",
-              }],
-              sort: [],
-            },
-            projection: { kind: "fields", fields: [] },
+            sql: 'SELECT name FROM "Form" WHERE status = :status',
+            parameters: { status: "active" },
+            parameter_types: { status: "string" },
             limit: 10,
           },
+          form_bindings: [{ relation: "Form", form_id: "form-1" }],
+          expected_result: [{ name: "name", type: "string" }],
         }],
         component_bindings: [{
           component_id: "month_table",
@@ -739,7 +876,7 @@ describe("CompositionQueryHandle", () => {
           return secondPage.promise;
         }
         if (sourceId === "status_rows" && count === 1) {
-          const initial = entryPage("status-page-1");
+          const initial = sqlPage("status-page-1");
           return Promise.resolve({
             ...initial,
             page: {
@@ -749,7 +886,7 @@ describe("CompositionQueryHandle", () => {
             },
           });
         }
-        return Promise.resolve(entryPage(`${sourceId}-${count}`));
+        return Promise.resolve(sqlPage(`${sourceId}-${count}`));
       }),
     };
     const handle = createCompositionQueryHandle(api);
@@ -770,10 +907,10 @@ describe("CompositionQueryHandle", () => {
       cursorStack: [undefined, "status-page-2"],
     });
 
-    secondPage.resolve(entryPage("status-page-2-result"));
+    secondPage.resolve(sqlPage("status-page-2-result"));
     await vi.waitFor(() =>
       expect(handle.state().sources.status_rows?.page)
-        .toEqual(entryPage("status-page-2-result"))
+        .toEqual(sqlPage("status-page-2-result"))
     );
     expect(handle.state().sources.status_rows?.cursorStack).toEqual([
       undefined,
@@ -798,8 +935,8 @@ describe("CompositionQueryHandle", () => {
         default: "active",
       }];
       const monthSource = response.plan!.sources[0];
-      if (monthSource.kind !== "entry_query") {
-        throw new Error("expected entries");
+      if (monthSource.kind !== "inline_sql") {
+        throw new Error("expected inline SQL source");
       }
       response.plan!.sources.push({
         ...monthSource,
@@ -807,14 +944,8 @@ describe("CompositionQueryHandle", () => {
         source_schema_fingerprint: "status-schema",
         request: {
           ...monthSource.request,
-          query: {
-            ...monthSource.request.query,
-            filters: [{
-              field: { kind: "property", field_id: 8 },
-              operator: "equals",
-              value: "active",
-            }],
-          },
+          sql: 'SELECT name FROM "Form" WHERE status = :status',
+          parameters: { status: "active" },
         },
       });
       response.plan!.component_bindings.push({
@@ -848,7 +979,7 @@ describe("CompositionQueryHandle", () => {
         if (source.source_id === "status_rows") {
           return Promise.reject(new Error("temporary query failure"));
         }
-        return Promise.resolve(entryPage(`entries-${count}`));
+        return Promise.resolve(sqlPage(`entries-${count}`));
       }),
     };
     const handle = createCompositionQueryHandle(api);
@@ -880,7 +1011,7 @@ describe("CompositionQueryHandle", () => {
       resolve: vi.fn()
         .mockResolvedValueOnce(complete)
         .mockResolvedValueOnce(incomplete),
-      querySource: vi.fn().mockResolvedValue(entryPage("first-page")),
+      querySource: vi.fn().mockResolvedValue(sqlPage("first-page")),
     };
     const handle = createCompositionQueryHandle(api);
 

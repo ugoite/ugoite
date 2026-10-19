@@ -34,6 +34,9 @@ components:
         - name: variable
           type: text-input
           repeatable: true
+          initial_value: saved typed default when present
+          behavior: user edits override the displayed default; clearing the input sends null when Run is pressed
+      auto_run: false
     - id: run-query-button
       type: button
       variant: primary

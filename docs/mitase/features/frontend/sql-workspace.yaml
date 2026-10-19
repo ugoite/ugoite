@@ -1,0 +1,92 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: frontend
+category: Shared SQL Workspace
+features:
+  - id: FEAT-FE-008
+    title: Shared SQL Workspace component
+    summary: Provide a controlled SQL editing and preview surface for SQL route and Composition adapters to reuse.
+    status: implemented
+    bindings:
+      - id: frontend
+        role: implementation
+        facet: frontend
+        responsibility: Keep the shared SQL editing, transient parameter presentation, explicit preview actions, adapter capabilities, and workspace control sizes connected to reusable frontend components.
+        targets:
+          - id: sql-workspace
+            adapter: typescript
+            path: frontend/src/components/SQLWorkspace.tsx
+            selector: { kind: symbol, name: SQLWorkspace }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.shared-editor-and-preview
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.workspace-presentation-api
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.adapter-owned-persistence-and-execution
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.transient-typed-parameters
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.adapter-supplied-structured-actions
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.explicit-preview-count-and-paging
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.editor-accessibility-and-wrapping
+          - id: sql-workspace-layout
+            adapter: declared
+            path: frontend/src/app.css
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.mobile-sql-editor-and-results
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.workspace-control-size-rules
+          - id: sql-structure-toolbar
+            adapter: typescript
+            path: frontend/src/components/SqlStructureToolbar.tsx
+            selector: { kind: symbol, name: SqlStructureToolbar }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.safe-structured-operations
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.sql-toolbar-keeps-query-meanings
+          - id: sql-structure-context
+            adapter: typescript
+            path: frontend/src/lib/sql.ts
+            selector: { kind: symbol, name: buildSqlStructureContexts }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.safe-structured-operations
+      - id: rust-structure-capabilities
+        role: evidence
+        facet: domain
+        responsibility: Parse only the SQL subset that can be safely transformed, expose typed action capabilities and non-mutating proposals through the portable WASM client, and preserve direct SQL as the owning adapter's source.
+        targets:
+          - id: sql-structure-analysis
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_structure.rs
+            selector: { kind: symbol, name: analyze_sql_structure }
+            claims:
+              - kind: evidences
+                anchor: REQ-FE-080#criterion.safe-structured-operations
+          - id: sql-structure-proposal
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_structure.rs
+            selector: { kind: symbol, name: propose_sql_structure_operation }
+            claims:
+              - kind: evidences
+                anchor: REQ-FE-080#criterion.safe-structured-operations
+          - id: sql-structure-wasm-protocol
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: symbol, name: invoke_domain }
+            claims:
+              - kind: evidences
+                anchor: REQ-FE-080#criterion.safe-structured-operations
+          - id: sql-structure-frontend-protocol
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.ts
+            selector: { kind: symbol, name: analyzeSqlStructure }
+            claims:
+              - kind: evidences
+                anchor: REQ-FE-080#criterion.safe-structured-operations

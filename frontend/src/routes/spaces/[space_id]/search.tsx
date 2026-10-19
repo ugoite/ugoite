@@ -10,7 +10,6 @@ import {
 import { A } from "@solidjs/router";
 import { UiIcon } from "~/components/UiIcon";
 import { EntryBrowser } from "~/components/EntryBrowser";
-import { EntryQuerySaveAsTool } from "~/components/EntryQuerySaveAsTool";
 import { formApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
 import {
@@ -177,14 +176,6 @@ export default function SpaceSearchRoute() {
             >
               <UiIcon name="sql" />
             </A>
-            <EntryQuerySaveAsTool
-              spaceId={spaceId}
-              defaultName={() => t("searchPage.title")}
-              query={controller.query}
-              projection={controller.projection}
-              form={() => undefined}
-              knownForms={() => formMetadata()?.forms ?? []}
-            />
           </>
         }
       />

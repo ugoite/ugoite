@@ -177,13 +177,13 @@ requirements:
 
   - id: REQ-FE-063
     title: Saved SQL Creation Starter and Save Flow
-    description: The saved SQL creation route provides a runnable total-ordered starter query for the selected Form relation and saves an explicitly named or generated query through the supported API before exposing the query for execution.
+    description: The saved SQL creation route starts with the selected Form relation without embedding request paging in SQL, then saves an explicitly named or generated query through the supported API before exposing the query for execution.
     priority: medium
     status: implemented
     criteria:
       - id: starter-query
         kind: behavior
-        statement: When a creatable Form relation is available, the saved SQL creation route starts with a runnable query ordered by the server-backed update timestamp and stable entry identifier with a bounded result limit.
+        statement: When a creatable Form relation is available, the saved SQL creation route starts with a quoted relation query and leaves page limits and continuation to the stateless SQL request.
         governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
       - id: explicit-save-and-run
         kind: behavior
@@ -193,6 +193,10 @@ requirements:
         kind: behavior
         statement: Selecting a current Form, aggregate, and compatible field generates editable ordinary SQL with one value column. An optional equality filter uses a parameter typed from the selected field and does not interpolate a value into SQL; explicit save creates a normal user-query Saved SQL entry that remains available to the standard runner and Composition sources. Form and field choices use human names without displaying internal identifiers or SQL column names.
         governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+      - id: typed-variable-defaults
+        kind: behavior
+        statement: The creation route lets users explicitly set or omit each optional Saved SQL variable default, validates it against the variable type, and persists the typed value on save.
+        governed_by: [POL-001#rule.governance, POL-UI-002#rule.governance]
     bindings:
       - id: saved-sql-create-verification
         role: verification
@@ -202,29 +206,29 @@ requirements:
           - id: create-route
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/sql/new.test.tsx
-            selector: { kind: test, name: "REQ-FE-063: uses a runnable Form relation starter with session ordering" }
+            selector: { kind: test, name: "REQ-FE-063: starts with a Form relation and keeps paging out of SQL" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-063#criterion.starter-query
                 covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.test.tsx", test: "REQ-FE-063: uses a runnable Form relation starter with session ordering" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.test.tsx", test: "REQ-FE-063: starts with a Form relation and keeps paging out of SQL" } }
               - kind: verifies
                 criterion: REQ-FE-063#criterion.explicit-save-and-run
                 covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.test.tsx", test: "REQ-FE-063: uses a runnable Form relation starter with session ordering" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.test.tsx", test: "REQ-FE-063: starts with a Form relation and keeps paging out of SQL" } }
           - id: browser-create
             adapter: typescript
             path: e2e/saved-sql-route.test.ts
-            selector: { kind: test, name: "REQ-FE-063: new saved SQL starts with a runnable total-ordered query" }
+            selector: { kind: test, name: "REQ-FE-063 @smoke: new saved SQL starts with a Form relation and runs through Saved SQL" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-063#criterion.starter-query
                 covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063: new saved SQL starts with a runnable total-ordered query" } }
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063 @smoke: new saved SQL starts with a Form relation and runs through Saved SQL" } }
               - kind: verifies
                 criterion: REQ-FE-063#criterion.explicit-save-and-run
                 covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063: new saved SQL starts with a runnable total-ordered query" } }
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063 @smoke: new saved SQL starts with a Form relation and runs through Saved SQL" } }
           - id: aggregate-builder-ui
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/sql/new.test.tsx
@@ -234,6 +238,15 @@ requirements:
                 criterion: REQ-FE-063#criterion.form-aggregate-builder
                 covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.test.tsx", test: "REQ-FE-063: builds a typed aggregate query from human Form fields" } }
+          - id: typed-default-create
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/new.test.tsx
+            selector: { kind: test, name: saves a typed default for a generated integer filter variable }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-063#criterion.typed-variable-defaults
+                covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.test.tsx", test: "saves a typed default for a generated integer filter variable" } }
           - id: aggregate-builder-helper
             adapter: typescript
             path: frontend/src/lib/sql.test.ts
@@ -324,7 +337,7 @@ requirements:
 
   - id: REQ-FE-062
     title: Saved SQL Detail Route Actions
-    description: The saved SQL detail route loads and presents the saved query text and metadata, then exposes a stateless variable-free result flow or the variable-input flow.
+    description: The saved SQL detail route loads and presents the saved query text and metadata, then exposes an inline stateless variable-free result flow or the variable-input flow.
     priority: medium
     status: implemented
     criteria:
@@ -338,12 +351,16 @@ requirements:
         governed_by: [POL-UI-005#rule.governance]
       - id: supported-actions
         kind: behavior
-        statement: A variable-free saved query uses the canonical stateless SQL query API and routes to SQL results, while a query with variables links to the existing variable-input flow.
+        statement: A variable-free saved query uses the canonical stateless SQL query API and renders results in the detail route, while a query with variables links to the existing variable-input flow.
         governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
       - id: revision-aware-save
         kind: behavior
         statement: Saving a user-query edit derives variables from the SQL body and uses the currently loaded revision as the optimistic concurrency base, then uses the returned revision for subsequent saves. Search-history entries remain read-only.
         governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+      - id: typed-variable-defaults
+        kind: behavior
+        statement: The saved SQL detail route preserves typed variable definitions while users explicitly add, edit, or clear optional defaults, and the variables route pre-fills those values without running until the user presses Run.
+        governed_by: [POL-001#rule.governance, POL-UI-002#rule.governance]
       - id: delete
         kind: behavior
         statement: The saved SQL detail route requires the shared destructive confirmation before deleting a user-query entry and returns to the Saved SQL list after a successful deletion. Search-history entries remain read-only.
@@ -356,7 +373,7 @@ requirements:
       - id: saved-sql-detail-verification
         role: verification
         facet: verification
-        responsibility: Verify saved SQL detail rendering, editable and revision-aware saves, delete confirmation and navigation, variable-input navigation, stateless variable-free execution, and the browser journey through exact frontend tests.
+        responsibility: Verify saved SQL detail rendering, editable and revision-aware saves, delete confirmation and navigation, variable-input navigation, inline stateless variable-free execution, and the browser journey through exact frontend tests.
         targets:
           - id: detail-summary
             adapter: typescript
@@ -420,12 +437,215 @@ requirements:
                 criterion: REQ-FE-062#criterion.supported-actions
                 covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "REQ-FE-062: saved SQL detail routes variable-free queries to stateless results" } }
+          - id: typed-default-edit
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
+            selector: { kind: test, name: saves an explicitly configured typed variable default }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-062#criterion.typed-variable-defaults
+                covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "saves an explicitly configured typed variable default" } }
+          - id: typed-default-preview
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id]/variables.test.tsx
+            selector: { kind: test, name: pre-fills saved defaults and passes them only after Run is pressed }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-062#criterion.typed-variable-defaults
+                covers: [FEAT-FE-007#binding.frontend/target.sql-variables-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id]/variables.test.tsx", test: "pre-fills saved defaults and passes them only after Run is pressed" } }
           - id: browser-detail
             adapter: typescript
             path: e2e/saved-sql-route.test.ts
-            selector: { kind: test, name: "REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to stateless results" }
+            selector: { kind: test, name: "REQ-FE-062: saved SQL detail loads query text and runs variable-free queries inline" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-062#criterion.supported-actions
                 covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to stateless results" } }
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-062: saved SQL detail loads query text and runs variable-free queries inline" } }
+
+  - id: REQ-FE-080
+    title: Shared SQL Workspace
+    description: >-
+      SQL authoring surfaces share one controlled editing and preview Workspace;
+      route adapters own persistence and query execution while SQL remains the
+      authoritative source.
+    priority: high
+    status: implemented
+    criteria:
+      - id: shared-editor-and-preview
+        kind: behavior
+        statement: >-
+          New Saved SQL, Saved SQL detail/edit, and Composition inline SQL use
+          one shared SQL Workspace for typed variables, structured query
+          operations, direct SQL editing, preview, and paged native results.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+      - id: workspace-presentation-api
+        kind: behavior
+        statement: >-
+          The reusable Workspace is a controlled presentation component. It
+          accepts SQL, schema, diagnostics, preview results, and explicit action
+          callbacks from its owner without implementing persistence or query
+          transport itself.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+      - id: adapter-owned-persistence-and-execution
+        kind: behavior
+        statement: >-
+          The owning route or Composition source adapter supplies SQL state,
+          schema, transient parameter values, query preview, count, and page
+          continuation. It owns persistence and execution; the shared Workspace
+          presents those capabilities without creating another SQL authority.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+      - id: transient-typed-parameters
+        kind: behavior
+        statement: >-
+          The shared Workspace presents declared typed parameters using their
+          transient Work values or declared defaults. Unset values remain
+          unset instead of being coerced or silently replaced by a default, and
+          the Workspace does not persist parameter values.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+      - id: adapter-supplied-structured-actions
+        kind: behavior
+        statement: >-
+          The Workspace renders only structured action capabilities supplied by
+          its owner and dispatches explicit callbacks. Activating a control does
+          not silently rewrite the SQL text.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+      - id: safe-structured-operations
+        kind: behavior
+        statement: >-
+          Structured SQL operations are enabled only for syntax that the shared
+          parser/capability model can safely round-trip. Directly edited SQL
+          remains authoritative; unsupported syntax stays editable in the code
+          editor and a structured rewrite requires explicit diff confirmation.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+      - id: explicit-preview-count-and-paging
+        kind: behavior
+        statement: >-
+          The Workspace makes preview and total counting explicit actions and
+          delegates page continuation to its owner. It presents loading,
+          failure, empty, and typed result states without retaining a stale
+          result as the current preview. The owner explicitly marks a result
+          current only while it matches the SQL and transient parameter values
+          used to run it; results without that confirmation stay hidden.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+      - id: editor-accessibility-and-wrapping
+        kind: quality
+        statement: >-
+          The shared SQL editor exposes an accessible name and wraps long lines
+          in the Workspace while preserving the SQL editor's existing default
+          behavior for other consumers.
+        governed_by: [POL-UI-004#rule.governance, POL-UI-005#rule.governance]
+      - id: mobile-sql-editor-and-results
+        kind: quality
+        statement: >-
+          SQL inputs use at least 16px text at narrow widths, only result tables
+          scroll horizontally, icon-only actions have accessible names and
+          at least 44px targets. Primary actions remain reachable without
+          wrapped or horizontal page overflow.
+        governed_by: [POL-UI-004#rule.governance, POL-UI-005#rule.governance, POL-UI-007#rule.governance]
+      - id: workspace-control-size-rules
+        kind: quality
+        statement: >-
+          Shared Workspace SQL and variable inputs use at least 16px text, and
+          primary, paging, and icon-only actions use at least 44px targets.
+        governed_by: [POL-UI-004#rule.governance, POL-UI-005#rule.governance]
+    bindings:
+      - id: verification
+        role: verification
+        facet: verification
+        responsibility: Verify shared SQL presentation, adapter ownership, structured capabilities, transient parameters, paging, accessibility, and control sizes with focused frontend tests.
+        targets:
+          - id: workspace-presentation-contract
+            adapter: typescript
+            path: frontend/src/components/SQLWorkspace.test.tsx
+            selector: { kind: test, name: "REQ-FE-080: keeps SQL editing controlled and passes the accessible name" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.shared-editor-and-preview
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: keeps SQL editing controlled and passes the accessible name" } }
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.workspace-presentation-api
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: keeps SQL editing controlled and passes the accessible name" } }
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.editor-accessibility-and-wrapping
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: keeps SQL editing controlled and passes the accessible name" } }
+          - id: adapter-owned-query
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: edits inline SQL directly and passes the current SQL page to the shared workspace }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.adapter-owned-persistence-and-execution
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: edits inline SQL directly and passes the current SQL page to the shared workspace } }
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-uses-shared-workspace
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: edits inline SQL directly and passes the current SQL page to the shared workspace } }
+          - id: transient-parameters
+            adapter: typescript
+            path: frontend/src/components/SQLWorkspace.test.tsx
+            selector: { kind: test, name: "REQ-FE-080: presents variable defaults and forwards raw transient values" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.transient-typed-parameters
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: presents variable defaults and forwards raw transient values" } }
+          - id: adapter-actions
+            adapter: typescript
+            path: frontend/src/components/SQLWorkspace.test.tsx
+            selector: { kind: test, name: "REQ-FE-080: exposes operation reasons and never rewrites SQL on action" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.adapter-supplied-structured-actions
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: exposes operation reasons and never rewrites SQL on action" } }
+          - id: explicit-preview-and-paging
+            adapter: typescript
+            path: frontend/src/components/SQLWorkspace.test.tsx
+            selector: { kind: test, name: "REQ-FE-080: keeps count explicit and delegates result paging" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.explicit-preview-count-and-paging
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: keeps count explicit and delegates result paging" } }
+          - id: mobile-control-sizes
+            adapter: typescript
+            path: frontend/src/components/SQLWorkspace.test.tsx
+            selector: { kind: test, name: "REQ-FE-080: uses 16px inputs and 44px action targets" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.mobile-sql-editor-and-results
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace-layout]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: uses 16px inputs and 44px action targets" } }
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.workspace-control-size-rules
+                covers: [FEAT-FE-008#binding.frontend/target.sql-workspace-layout]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: uses 16px inputs and 44px action targets" } }
+          - id: sql-structure-context
+            adapter: typescript
+            path: frontend/src/lib/sql.test.ts
+            selector: { kind: test, name: uses the written Form relation and intersects typed column capabilities }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.safe-structured-operations
+                covers: [FEAT-FE-008#binding.frontend/target.sql-structure-context]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: uses the written Form relation and intersects typed column capabilities } }
+          - id: sql-structure-proposal
+            adapter: typescript
+            path: frontend/src/components/SqlStructureToolbar.test.tsx
+            selector: { kind: test, name: intersects Form capabilities and changes SQL only after proposal confirmation }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.safe-structured-operations
+                covers: [FEAT-FE-008#binding.frontend/target.sql-structure-toolbar]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlStructureToolbar.test.tsx, test: intersects Form capabilities and changes SQL only after proposal confirmation } }
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.sql-toolbar-keeps-query-meanings
+                covers: [FEAT-FE-008#binding.frontend/target.sql-structure-toolbar]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlStructureToolbar.test.tsx, test: intersects Form capabilities and changes SQL only after proposal confirmation } }

@@ -4,7 +4,6 @@ import {
   type CompositionInspectorDataJump,
   type InspectorApply,
   InspectorDataJumpButton,
-  InspectorLabelField,
   InspectorShell,
   InspectorSourceField,
 } from "~/components/composition/InspectorFields";
@@ -36,7 +35,7 @@ export function MetricInspector(props: {
   const columnValue = () => metric()?.column ?? "";
   const sqlCandidates = () => {
     const currentSource = source();
-    return currentSource?.kind === "saved_sql"
+    return currentSource
       ? savedSqlScalarCandidates(currentSource.expectedResult)
       : [];
   };
@@ -104,19 +103,13 @@ export function MetricInspector(props: {
       <Show when={metric()}>
         {(entry) => (
           <>
-            <InspectorLabelField
-              display={entry()}
-              draft={props.draft}
-              apply={props.apply}
-            />
             <InspectorSourceField
               draft={props.draft}
               sourceDraftId={sourceId()}
-              sourceKind="saved_sql"
               fieldId={`studio-inspector-source-${entry().draftId}`}
               onPick={pickSource}
             />
-            <Show when={source()?.kind === "saved_sql"}>
+            <Show when={source()}>
               <div class="ui-field">
                 <label
                   class="ui-label"

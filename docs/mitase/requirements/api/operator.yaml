@@ -51,7 +51,11 @@ requirements:
         governed_by: [POL-004#rule.governance, POL-008#rule.governance]
       - id: function-class-policy
         kind: security
-        statement: Authorized SQL contexts register only functions admitted by a Core-owned policy, with scalar, aggregate, and window functions filtered independently; stateless page and count inputs admit only the COUNT, SUM, AVG, MIN, and MAX aggregate allowlist, while the explicit count operation's internal row-count expression remains separate from user SQL.
+        statement: Authorized SQL contexts register only functions admitted by a Core-owned policy, with scalar, aggregate, and window functions filtered independently; stateless page and count inputs admit only the COUNT, SUM, AVG, MIN, and MAX aggregate set, while the explicit count operation's internal row-count expression remains separate from user SQL.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: aggregate-function-metadata
+        kind: quality
+        statement: The admitted user-SQL aggregates have one engine-independent Rust Domain registry for canonical names and aliases, arity, input constraints, DISTINCT and wildcard support, and output type/nullability; Core derives ReadOnlyAggregateV1 aggregate admission from that registry while scalar and window functions remain independently closed. DataFusion's `mean` alias continues to resolve as AVG.
         governed_by: [POL-004#rule.governance, POL-008#rule.governance]
       - id: local-remote-parity
         kind: quality
@@ -226,15 +230,6 @@ requirements:
                 criterion: REQ-API-015#criterion.checked-numeric-aggregates
                 covers: [FEAT-API-001#binding.sql-service-implementation/target.checked-numeric-aggregates]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts } }
-          - id: descriptor-passthrough
-            adapter: typescript
-            path: frontend/src/lib/composition-api.test.ts
-            selector: { kind: test, name: stores the server-owned column types unchanged and never infers from rows }
-            claims:
-              - kind: verifies
-                criterion: REQ-COMP-002#criterion.server-typed-result-descriptor
-                covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-composition-api]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-api.test.ts, test: stores the server-owned column types unchanged and never infers from rows } }
       - id: function-policy-verification
         role: verification
         facet: verification
@@ -247,8 +242,31 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-API-015#criterion.function-class-policy
-                covers: [FEAT-API-001#binding.sql-service-implementation/target.core-function-policy]
+                covers:
+                  - FEAT-API-001#binding.sql-service-implementation/target.core-function-policy
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: query::tests::read_only_aggregate_policy_filters_function_classes } }
+              - kind: verifies
+                criterion: REQ-API-015#criterion.aggregate-function-metadata
+                covers: [FEAT-SQL-002#binding.core/target.aggregate-policy]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: query::tests::read_only_aggregate_policy_filters_function_classes } }
+          - id: aggregate-metadata
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_functions.rs
+            selector: { kind: symbol, name: tests::user_sql_aggregate_registry_describes_the_admitted_set }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.aggregate-function-metadata
+                covers: [FEAT-SQL-002#binding.domain/target.aggregate-registry]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_functions::tests::user_sql_aggregate_registry_describes_the_admitted_set } }
+          - id: aggregate-name-lookup
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_functions.rs
+            selector: { kind: symbol, name: tests::aggregate_lookup_is_closed_and_case_insensitive }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.aggregate-function-metadata
+                covers: [FEAT-SQL-002#binding.domain/target.aggregate-registry]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: sql_functions::tests::aggregate_lookup_is_closed_and_case_insensitive } }
           - id: datafusion-registration
             adapter: rust
             path: crates/ugoite-iceberg/src/query_context.rs
@@ -259,6 +277,10 @@ requirements:
                 covers:
                   - FEAT-API-001#binding.sql-service-implementation/target.function-registration
                   - FEAT-API-001#binding.sql-service-implementation/target.function-policy-validation
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: query_context::function_policy_tests::read_only_aggregate_policy_registers_only_aggregate_functions } }
+              - kind: verifies
+                criterion: REQ-API-015#criterion.aggregate-function-metadata
+                covers: [FEAT-SQL-002#binding.core/target.aggregate-policy]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: query_context::function_policy_tests::read_only_aggregate_policy_registers_only_aggregate_functions } }
           - id: stateless-input-and-count
             adapter: rust

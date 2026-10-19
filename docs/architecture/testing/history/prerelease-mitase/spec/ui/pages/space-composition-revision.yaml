@@ -1,0 +1,79 @@
+version: "0.1"
+updated: "2026-10-11"
+page:
+  id: space-composition-revision
+  title: Saved tool revision
+  route: /spaces/{space_id}/compositions/{composition_id}/{revision_id}
+  implementation: implemented
+components:
+  shared:
+    - id: space-shell
+      type: persistent-workspace-navigation
+      reference: ../components/space-shell.yaml
+  body:
+    - id: composition-heading
+      type: heading
+      title: Saved tool name
+      ownership: object-identity
+    - id: composition-actions
+      type: toolbar
+      actions:
+        - id: composition-edit
+          type: icon-button
+          title: Edit
+          status: implemented
+          target: /spaces/{space_id}/compositions/{composition_id}/{revision_id}/edit
+        - id: composition-history
+          type: icon-button
+          title: History
+          status: implemented
+          contract: docs/spec/ui/components/composition-studio.yaml
+        - id: composition-restore
+          type: button
+          title: Restore
+          status: implemented
+          availability: historical revisions only
+          source: composition.restore with the opened revision as the restore source, the latest revision as the base, and one Idempotency-Key reused for retry
+          description: Restore appends a new revision from the opened historical revision and never rewrites history. A stale base shows a conflict with a recovery link to history; the new revision opens for review and further edits.
+    - id: composition-parameters
+      type: form
+      title: Declared parameters
+      source: composition.resolve for the selected exact revision
+      placement: layout-placed controls render inside the flow in placement order; unplaced definitions stay in this section
+      labels: authored-human-label-else-localized-ordinal-by-definition-order
+      binding_key: internal-reference-only-never-a-display-fallback
+      state: transient-work-never-stored
+    - id: composition-diagnostics
+      type: list
+      title: Resolve diagnostics
+      source: current composition.resolve response
+    - id: composition-components
+      type: query-results
+      title: Flow rows with parameter controls, text, metrics, and tables
+      source: entry.query and exact-revision sql.query for tables; exact-revision composition.metric.query for metrics
+
+      layout: saved-tool rows in row-array then item order
+      text_presentation: fixed title-heading-body-caption styles without source fetch
+      table_presentation:
+        entry_query: EntryResultTable
+        saved_sql: SqlResultTable
+        result_presentation_reference: ../components/result-table.yaml
+      metric_presentation: server metric query result with distinct loading, zero-row, multiple-row, NULL, zero, stale, unavailable, invalid, and error states
+      metric_saved_sql_rows: exactly-one; zero-rows-and-multiple-rows-have-distinct-diagnostics-and-one-direct-Edit-action
+      metric_numeric_presentation: exact-integer-and-decimal; no-inferred-unit-or-fraction-digits
+      metric_query: opened-composition-revision-and-current-parameters; independent-from-table-page-and-pagination
+      pagination_owner: table source query handle; metric result is independent from table pages
+
+      description: Composition table components delegate presentation to the source-native Entry or SQL result presenter. Composition does not implement a third generic table grammar, and source query semantics remain unchanged.
+      entry_query_form_scoped_property_identity: A Form-scoped EntryQuery projection of property key form_id reads its value from row properties; the row's top-level system Form identity remains separate.
+      entry_query_system_form_identity: All-Forms EntryQuery table headings and cells omit the row's system Form UUID.
+      entry_query_field_names: transient-Form-label-or-human-field-key; unresolved-metadata-uses-row-keys-without-schema-ordinal-fallback
+      rendering:
+        mode: bounded-current-page
+        parameters-and-pages: transient-work
+    - id: composition-pagination
+      type: query-pagination
+      component: ResultPagination
+      reference: ../components/result-pagination.yaml
+      presentation: localized-icon-only-chevron-controls
+      source: existing query continuation

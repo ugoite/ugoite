@@ -1,8 +1,4 @@
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
-import {
-  CompositionEntryQueryTable,
-  type CompositionFieldTypeLookup,
-} from "~/components/CompositionEntryQueryTable";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { ResultPagination } from "~/components/ResultPagination";
 import { SqlResultTable } from "~/components/SqlResultTable";
@@ -24,20 +20,6 @@ import { TextComponent } from "~/components/composition/TextComponent";
 import type { CompositionSourcePageState } from "~/lib/composition-query-handle";
 import { compositionVariableDisplayName } from "~/lib/composition-variable-name";
 
-export type CompositionFieldNames = (
-  formId: string,
-  fieldId: number,
-  sourceId?: string,
-) => string | undefined;
-
-export type CompositionFieldKeys = (
-  formId: string,
-  fieldId: number,
-  sourceId?: string,
-) => string | undefined;
-
-export type { CompositionFieldTypeLookup };
-
 type SavedRevisionMetricQueryContext = {
   spaceId: string;
   target: Extract<CompositionMetricQueryTarget, { kind: "saved_revision" }>;
@@ -52,6 +34,8 @@ type DraftMetricQueryContext = {
   target: Extract<CompositionMetricQueryTarget, { kind: "draft" }>;
   draftFingerprint: string;
   variables: Record<string, unknown>;
+  base_entry_id?: string;
+  base_revision_id?: string;
   invalidVariables?: readonly string[];
   dependencies?: CompositionDependencyIndex;
   onEdit?: () => void;
@@ -79,9 +63,6 @@ type RendererProps = {
   texts?: Readonly<
     Record<string, { text: string; style: CompositionTextStyle }>
   >;
-  fieldNames?: CompositionFieldNames;
-  fieldKeys?: CompositionFieldKeys;
-  fieldTypes?: CompositionFieldTypeLookup;
   /** Exact saved revision identity and transient variables for server metrics. */
   metricQueryContext?: CompositionMetricQueryContext;
   onNext: (sourceId: string) => void;
@@ -114,7 +95,7 @@ const directEditMetricDiagnosticCodes = new Set([
 
 export const compositionDiagnosticMessage = (
   diagnostic: CompositionResolveDiagnostic,
-  variableDefinitions: readonly { id: string; label?: string }[] = [],
+  variableDefinitions: readonly { id: string }[] = [],
 ): string => {
   if (!knownDiagnosticCodes.has(diagnostic.code)) {
     return t("composition.detailFailed");
@@ -134,7 +115,7 @@ export const compositionDiagnosticMessage = (
 
 export function CompositionDiagnostics(props: {
   diagnostics: readonly CompositionResolveDiagnostic[];
-  variableDefinitions?: readonly { id: string; label?: string }[];
+  variableDefinitions?: readonly { id: string }[];
 }) {
   return (
     <ul
@@ -295,9 +276,9 @@ const formatMetricValue = (
   return formatted;
 };
 
-export function CompositionSavedSqlTable(props: {
+export function CompositionSqlTable(props: {
   binding: Extract<CompositionResolvedComponentBinding, { kind: "table" }>;
-  source: Extract<CompositionResolvedSource, { kind: "saved_sql" }>;
+  source: CompositionResolvedSource;
   sourceState?: CompositionSourcePageState;
   ownsSourceStatus: boolean;
   onNext: () => void;
@@ -306,7 +287,7 @@ export function CompositionSavedSqlTable(props: {
 }) {
   const page = () => {
     const state = props.sourceState?.page;
-    return state?.kind === "saved_sql" ? state.page : undefined;
+    return state?.kind === "sql" ? state.page : undefined;
   };
   const rows = () => page()?.rows ?? [];
   const sourceId = () => props.binding.source_id;
@@ -318,9 +299,6 @@ export function CompositionSavedSqlTable(props: {
 
   return (
     <section class="section">
-      <Show when={props.binding.label}>
-        <h2>{props.binding.label}</h2>
-      </Show>
       <Show
         when={props.ownsSourceStatus || status() === "ready"}
       >
@@ -344,6 +322,11 @@ export function CompositionSavedSqlTable(props: {
             {t("composition.variableInvalid")}
           </p>
         </Show>
+        <Show when={status() === "waiting"}>
+          <p class="ui-muted" role="status" aria-live="polite">
+            {t("composition.waitingForInputs")}
+          </p>
+        </Show>
         <Show when={status() === "ready" && rows().length === 0 && !failed()}>
           <p class="ui-muted">{t("composition.queryEmpty")}</p>
         </Show>
@@ -356,7 +339,7 @@ export function CompositionSavedSqlTable(props: {
             pageIdentity={`${sourceId()}:${
               props.sourceState?.cursor ?? "first"
             }`}
-            tableLabel={props.binding.label ?? t("composition.resultPages")}
+            tableLabel={t("composition.resultPages")}
           />
         </Show>
         <ResultPagination
@@ -392,12 +375,14 @@ export function CompositionMetric(props: {
   const [serverFailed, setServerFailed] = createSignal(false);
   const [serverInvalid, setServerInvalid] = createSignal(false);
   const [serverVariableInvalid, setServerVariableInvalid] = createSignal(false);
+  const [serverWaiting, setServerWaiting] = createSignal(false);
   const [serverRetry, setServerRetry] = createSignal(0);
   let serverGeneration = 0;
   let serverController: AbortController | undefined;
   let serverTimer: ReturnType<typeof setTimeout> | undefined;
   let lastRequestSignature: string | undefined;
   let lastRequestRetry: number | undefined;
+  let lastSuccessfulSourceSignature: string | undefined;
 
   createEffect(() => {
     const context = props.metricQueryContext;
@@ -432,6 +417,29 @@ export function CompositionMetric(props: {
     );
     const invalidVariable = !!context && (!dependencyIndexComplete ||
       invalidSourceVariables.length > 0);
+    const sourceValueSignature = context
+      ? JSON.stringify([
+        context.spaceId,
+        context.target.kind === "saved_revision"
+          ? [
+            context.target.kind,
+            context.target.composition_id,
+            context.target.revision_id,
+          ]
+          : [
+            context.target.kind,
+            context.target.yaml,
+            context.draftFingerprint,
+          ],
+        props.binding.source_id,
+        [...sourceVariables].sort(),
+        Object.entries(variables)
+          .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0),
+      ])
+      : "no-context";
+    const globallyBlockedVariables = [
+      ...(context?.invalidVariables ?? []),
+    ].sort();
     const requestSignature = context
       ? JSON.stringify([
         context.spaceId,
@@ -455,6 +463,7 @@ export function CompositionMetric(props: {
           ]),
         dependencyIndexComplete,
         invalidSourceVariables,
+        globallyBlockedVariables,
       ])
       : "no-context";
     if (
@@ -468,14 +477,29 @@ export function CompositionMetric(props: {
     serverTimer = undefined;
     serverController?.abort();
     serverController = undefined;
-    setServerResult(undefined);
     setServerFailed(false);
     setServerInvalid(false);
-    setServerVariableInvalid(invalidVariable);
     if (invalidVariable) {
+      setServerResult(undefined);
+      setServerWaiting(false);
+      setServerVariableInvalid(true);
       setServerLoading(false);
       return;
     }
+    setServerVariableInvalid(false);
+    const blockedByAnotherVariable = globallyBlockedVariables.length > 0;
+    if (blockedByAnotherVariable) {
+      const currentResult = serverResult();
+      const unchangedSuccessfulValue =
+        sourceValueSignature === lastSuccessfulSourceSignature &&
+        currentResult?.ok === true && currentResult.result !== undefined;
+      if (!unchangedSuccessfulValue) setServerResult(undefined);
+      setServerWaiting(!unchangedSuccessfulValue);
+      setServerLoading(false);
+      return;
+    }
+    setServerWaiting(false);
+    setServerResult(undefined);
     if (!context) {
       setServerLoading(false);
       setServerFailed(true);
@@ -490,6 +514,12 @@ export function CompositionMetric(props: {
         context.spaceId,
         {
           target: { ...context.target },
+          ...(context.base_entry_id && context.base_revision_id
+            ? {
+              base_entry_id: context.base_entry_id,
+              base_revision_id: context.base_revision_id,
+            }
+            : {}),
           component_id: props.binding.component_id,
           variables,
         },
@@ -529,6 +559,7 @@ export function CompositionMetric(props: {
               setServerInvalid(true);
               return;
             }
+            lastSuccessfulSourceSignature = sourceValueSignature;
           }
           setServerResult(result);
         },
@@ -573,11 +604,16 @@ export function CompositionMetric(props: {
 
   return (
     <section class="section">
-      <Show when={props.binding.label}>
-        <h2>{props.binding.label}</h2>
+      <Show when={props.binding.result_property_key}>
+        <h2>{props.binding.result_property_key}</h2>
       </Show>
       <Show when={serverLoading()}>
         <LocalBusyIndicator label={t("composition.queryLoading")} />
+      </Show>
+      <Show when={!serverLoading() && serverWaiting()}>
+        <p class="ui-muted" role="status" aria-live="polite">
+          {t("composition.waitingForInputs")}
+        </p>
       </Show>
       <Show when={!serverLoading() && serverFailed()}>
         <p class="ui-text-danger" role="alert">
@@ -686,32 +722,17 @@ export function CompositionRenderer(props: RendererProps) {
               />
             );
           }
-          return source.kind === "entry_query"
-            ? (
-              <CompositionEntryQueryTable
-                binding={binding}
-                source={source}
-                sourceState={sourceState()}
-                ownsSourceStatus={ownsSourceStatus}
-                fieldNames={props.fieldNames}
-                fieldKeys={props.fieldKeys}
-                fieldTypes={props.fieldTypes}
-                onNext={() => props.onNext(binding.source_id)}
-                onPrevious={() => props.onPrevious(binding.source_id)}
-                onRetry={() => props.onRetry(binding.source_id)}
-              />
-            )
-            : (
-              <CompositionSavedSqlTable
-                binding={binding}
-                source={source}
-                sourceState={sourceState()}
-                ownsSourceStatus={ownsSourceStatus}
-                onNext={() => props.onNext(binding.source_id)}
-                onPrevious={() => props.onPrevious(binding.source_id)}
-                onRetry={() => props.onRetry(binding.source_id)}
-              />
-            );
+          return (
+            <CompositionSqlTable
+              binding={binding}
+              source={source}
+              sourceState={sourceState()}
+              ownsSourceStatus={ownsSourceStatus}
+              onNext={() => props.onNext(binding.source_id)}
+              onPrevious={() => props.onPrevious(binding.source_id)}
+              onRetry={() => props.onRetry(binding.source_id)}
+            />
+          );
         }}
       </For>
     </div>

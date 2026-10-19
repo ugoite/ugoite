@@ -1,0 +1,94 @@
+---
+title: "Shared SQL Workspace"
+---
+
+**Status: implemented for the current SQL editing contract.** `/sql/new`, Saved
+SQL detail/edit, and Composition inline SQL use the same Workspace component.
+The next target in [ADR-025](../../../architecture/contracts/adr-025-composition-query-variable-graph.md)
+expands its grammar coverage and action contract; that target is not yet
+implemented. The owning route or Composition source
+supplies SQL state, schema, parameters, preview, count, pagination, save, and
+execution callbacks. The Workspace presents them without becoming another
+query or persistence authority.
+
+## Editing and parameter presentation
+
+- Keep direct SQL editing available. A read-only adapter can present an exact
+  pinned Saved SQL revision without enabling edits.
+- Keep SQL text controlled by the owning adapter. Workspace controls dispatch
+  explicit callbacks and do not parse or regenerate SQL themselves.
+- Present declared variables using their transient Work values or declared
+  defaults. An explicit unset value overrides the default; the Workspace does
+  not coerce or persist parameter values.
+- Give the editor an accessible name and wrap long lines within the Workspace.
+- Keep the shared SQL editor's default wrapping behavior unchanged for other
+  callers.
+
+The adapter-supplied action list is the only source of structured operations.
+`analyzeSqlStructure` and `proposeSqlStructureOperation` in the portable client
+use the Rust domain parser through WASM. The capability contract accepts one
+SELECT over the selected Form relation and literal-only scalar SELECT
+statements without a relation, such as `SELECT 1`. For a relation-free
+statement, the adapter provides an empty relation context and the parser exposes
+only operations that do not need Form columns. Typed parameter comparisons,
+null checks, and column ordering remain bound to Form metadata. It reports
+stable reason codes for unsupported SQL and never makes direct SQL unavailable.
+The checked backend-admission and current structure-editor coverage inventory
+is recorded in the [SQL feature matrix contract](../../../architecture/contracts/sql-gui-feature-matrix.md).
+Sort proposals append adapter-supplied stable keys where needed. A proposal is
+non-mutating: the adapter must show its SQL diff and wait for explicit user
+confirmation before updating the controlled SQL value. `SqlStructureToolbar`
+renders columns, filter, and sort controls when a trusted single-Form context
+exists. It disables operations that the Rust parser cannot safely round-trip
+and includes the capability reason in each disabled action's accessible name.
+Its proposal view shows the existing and proposed SQL and applies the new SQL
+only after explicit confirmation. `/sql/new`, Saved SQL detail/edit, and
+Composition inline SQL supply their context from Form metadata together with a
+relation-free scalar context.
+
+## Preview and results
+
+Run Query, Count rows, and page continuation are explicit actions delegated to
+the owning adapter. Preview presents loading, failure, empty, and current-page
+states with the existing typed `SqlResultTable` and `ResultPagination`. The
+adapter uses stateless SQL execution, request page size, and request
+continuation; generated SQL does not add `LIMIT` to simulate paging. Row counts
+do not run implicitly on every page.
+
+## Layout and controls
+
+- Keep the page in one column at narrow widths. Only the result-table viewport
+  scrolls horizontally.
+- Render SQL editor and variable input text at no less than 16px.
+- Give icon-only actions accessible names and at least 44px targets. Disabled
+  actions include their reason in the accessible name and title.
+- The owning route's primary Save action retains its visible text label.
+- Keep the steady state free of explanatory paragraphs and decorative cards.
+
+The Composition source rail, source naming, pinned-revision lifecycle, and
+Composition-specific drawer behavior are defined in
+[`composition-studio.yaml`](composition-studio.yaml).
+
+## ADR-025 target: shared SQL document controls
+
+The accepted next target gives `/sql/new`, Saved SQL editing, and Composition
+query variables the same six icon actions in one row: Form/relation, columns,
+filter, sort, structure, and arguments. At widths up to 320px, only this row
+scrolls horizontally. The optional SQL argument-value row appears only when
+the host has declared arguments and supplied runtime values; its labels and
+inputs have one owner. The remaining order is SQL document, then result table.
+
+Each action edits the Rust-owned SQL document through typed operations. Text
+and structure edits synchronize through the same parser, diagnostics, and
+serializer; unsupported drafts cannot run or save, and no local generator
+replaces edited SQL. The available operations cover every SQL construct the
+authorized Rust executor admits. The Form/relation tree can start empty, so
+valid relation-free SELECT statements remain editable. Argument creation is
+available with zero existing arguments and from an expression that needs one.
+Parameter name/type errors stay local to the affected expression and do not
+disable unrelated actions.
+
+The shared controls keep icon accessible names, visible focus, 44px targets,
+Escape and focus restoration for dialogs, and text inputs of at least 16px.
+The host owns saving and execution; SQL remains one durable string, and result
+pages remain request state rather than generated `LIMIT` clauses.

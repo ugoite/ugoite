@@ -5,20 +5,85 @@
 //! prepares requests and decodes responses using the same Rust implementation
 //! used by the native CLI.
 
+use std::io::{self, Write};
+
 pub use ugoite_api_client as api_client;
 pub use ugoite_core as core;
 pub use ugoite_domain as domain;
 pub use ugoite_konase as konase;
 
 const MAX_PROTOCOL_REQUEST_BYTES: usize = 256 * 1024;
+// JSON can expand each control byte in a SQL source to a six-byte `\u00xx`
+// escape. Allow that worst case plus a small action envelope for parsing.
+const MAX_SQL_DOCUMENT_REQUEST_BYTES: usize =
+    ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES * 6 + 1024;
+// Parameter rename has two additional caller-provided names. Bound their
+// combined JSON envelope to one ordinary protocol-sized request.
+const MAX_SQL_DOCUMENT_RENAME_REQUEST_BYTES: usize =
+    ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES * 6 + MAX_PROTOCOL_REQUEST_BYTES;
+const MAX_SQL_DOCUMENT_RESPONSE_BYTES: usize =
+    ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES * 4;
 const ENTRY_OPERATIONS: &[&str] = &["entry.validate_draft"];
+
+struct BoundedJsonWriter {
+    bytes: Vec<u8>,
+    max_bytes: usize,
+}
+
+impl BoundedJsonWriter {
+    fn new(max_bytes: usize) -> Self {
+        Self {
+            bytes: Vec::new(),
+            max_bytes,
+        }
+    }
+}
+
+impl Write for BoundedJsonWriter {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if bytes.len() > self.max_bytes.saturating_sub(self.bytes.len()) {
+            return Err(io::Error::new(
+                io::ErrorKind::WriteZero,
+                "bounded JSON output limit exceeded",
+            ));
+        }
+        self.bytes.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
 
 fn is_entry_operation(action: &str) -> bool {
     ENTRY_OPERATIONS.contains(&action)
 }
 
+fn sql_document_request_limit(action: &str) -> Option<usize> {
+    match action {
+        "domain.parse_sql_document" => Some(MAX_SQL_DOCUMENT_REQUEST_BYTES),
+        "domain.rename_sql_document_parameter" => Some(MAX_SQL_DOCUMENT_RENAME_REQUEST_BYTES),
+        _ => None,
+    }
+}
+
 pub fn invoke_json(input: &str) -> String {
     if input.len() > MAX_PROTOCOL_REQUEST_BYTES {
+        // Bound JSON decoding before inspecting the action; the rename envelope
+        // is the largest SQL Document request this adapter will decode.
+        if input.len() <= MAX_SQL_DOCUMENT_RENAME_REQUEST_BYTES {
+            if let Ok(request) = serde_json::from_str::<serde_json::Value>(input) {
+                if request
+                    .get("action")
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(sql_document_request_limit)
+                    .is_some_and(|max_bytes| input.len() <= max_bytes)
+                {
+                    return invoke_domain(request);
+                }
+            }
+        }
         return protocol_input_too_large_error();
     }
     if let Ok(request) = serde_json::from_str::<serde_json::Value>(input) {
@@ -154,6 +219,15 @@ fn invoke_konase(request: serde_json::Value) -> String {
 }
 
 fn invoke_domain(request: serde_json::Value) -> String {
+    match request.get("action").and_then(serde_json::Value::as_str) {
+        Some("domain.compile_variable_graph.v1") => return compile_variable_graph_v1(request),
+        Some("domain.parse_sql_document") => return invoke_sql_document(request),
+        Some("domain.rename_sql_document_parameter") => {
+            return invoke_sql_document_parameter_rename(request)
+        }
+        _ => {}
+    }
+
     if request.get("action").and_then(serde_json::Value::as_str)
         == Some("domain.canonicalize_composition_document")
     {
@@ -221,6 +295,52 @@ fn invoke_domain(request: serde_json::Value) -> String {
             .cloned()
             .ok_or_else(|| "value is required".to_string())?;
         match action {
+            "domain.analyze_sql_structure" => {
+                let sql = payload
+                    .get("sql")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| "sql must be a string".to_string())?;
+                let context: ugoite_domain::sql_structure::SqlStructureContext =
+                    serde_json::from_value(
+                        payload
+                            .get("context")
+                            .cloned()
+                            .ok_or_else(|| "context is required".to_string())?,
+                    )
+                    .map_err(|error| error.to_string())?;
+                serde_json::to_value(ugoite_domain::sql_structure::analyze_sql_structure(
+                    sql, &context,
+                ))
+                .map_err(|error| error.to_string())
+            }
+            "domain.propose_sql_structure_operation" => {
+                let sql = payload
+                    .get("sql")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| "sql must be a string".to_string())?;
+                let context: ugoite_domain::sql_structure::SqlStructureContext =
+                    serde_json::from_value(
+                        payload
+                            .get("context")
+                            .cloned()
+                            .ok_or_else(|| "context is required".to_string())?,
+                    )
+                    .map_err(|error| error.to_string())?;
+                let operation: ugoite_domain::sql_structure::SqlStructureOperation =
+                    serde_json::from_value(
+                        payload
+                            .get("operation")
+                            .cloned()
+                            .ok_or_else(|| "operation is required".to_string())?,
+                    )
+                    .map_err(|error| error.to_string())?;
+                serde_json::to_value(
+                    ugoite_domain::sql_structure::propose_sql_structure_operation(
+                        sql, &context, operation,
+                    ),
+                )
+                .map_err(|error| error.to_string())
+            }
             "domain.parse_composition_variable_input" => {
                 let variable_type =
                     serde_json::from_value::<ugoite_domain::composition::CompositionVariableType>(
@@ -348,6 +468,156 @@ fn invoke_domain(request: serde_json::Value) -> String {
         Ok(value) => serde_json::json!({"ok": true, "value": value}).to_string(),
         Err(message) => serde_json::json!({"ok": false, "error": {"kind": "domain_validation", "message": message}}).to_string(),
     }
+}
+
+/// Compile the strict typed Composition variable graph protocol payload.
+///
+/// The action is pure: it validates the graph and returns its deterministic
+/// dependency plan without executing queries or accessing host state.
+fn compile_variable_graph_v1(request: serde_json::Value) -> String {
+    let Some(value) = request.get("value").cloned() else {
+        return serde_json::json!({
+            "ok": false,
+            "error": {
+                "kind": "domain_validation",
+                "code": "invalid_variable_graph_payload",
+                "message": "value must be a strict VariableGraph object",
+            },
+        })
+        .to_string();
+    };
+
+    let graph = match serde_json::from_value::<ugoite_domain::composition::VariableGraph>(value) {
+        Ok(graph) => graph,
+        Err(_) => {
+            return serde_json::json!({
+                "ok": false,
+                "error": {
+                    "kind": "domain_validation",
+                    "code": "invalid_variable_graph_payload",
+                    "message": "value must be a strict VariableGraph object",
+                },
+            })
+            .to_string();
+        }
+    };
+
+    match ugoite_domain::composition::compile_variable_graph(&graph) {
+        Ok(compiled) => {
+            let envelope = serde_json::json!({
+                "ok": true,
+                "value": {
+                    "contract_version": 1,
+                    "topological_order": compiled.topological_order,
+                    "dependencies": compiled.dependencies,
+                },
+            });
+            if ensure_json_size(&envelope, MAX_PROTOCOL_REQUEST_BYTES).is_err() {
+                return variable_graph_result_too_large();
+            }
+            envelope.to_string()
+        }
+        Err(diagnostics) => {
+            let envelope = serde_json::json!({
+                "ok": false,
+                "error": {
+                    "kind": "variable_graph_diagnostics",
+                    "message": "variable graph validation failed",
+                    "contract_version": 1,
+                    "diagnostics": diagnostics,
+                },
+            });
+            if ensure_json_size(&envelope, MAX_PROTOCOL_REQUEST_BYTES).is_err() {
+                return variable_graph_result_too_large();
+            }
+            envelope.to_string()
+        }
+    }
+}
+
+fn variable_graph_result_too_large() -> String {
+    serde_json::json!({
+        "ok": false,
+        "error": {
+            "kind": "domain_validation",
+            "code": "variable_graph_result_too_large",
+            "message": "variable graph compilation result exceeds the protocol size limit",
+        },
+    })
+    .to_string()
+}
+
+fn invoke_sql_document(request: serde_json::Value) -> String {
+    let result = (|| -> Result<ugoite_domain::sql_document::SqlDocument, String> {
+        let payload = request
+            .get("value")
+            .cloned()
+            .ok_or_else(|| "value is required".to_string())?;
+        let sql = payload
+            .get("sql")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| "sql must be a string".to_string())?;
+        Ok(ugoite_domain::sql_document::parse_sql_document(sql))
+    })();
+
+    match result {
+        Ok(document) => serialize_sql_document_response(&document)
+            .unwrap_or_else(|()| sql_document_response_too_large()),
+        Err(message) => serde_json::json!({
+            "ok": false,
+            "error": {"kind": "domain_validation", "message": message},
+        })
+        .to_string(),
+    }
+}
+
+fn invoke_sql_document_parameter_rename(request: serde_json::Value) -> String {
+    let result = (|| -> Result<ugoite_domain::sql_document::SqlDocument, String> {
+        let payload = request
+            .get("value")
+            .cloned()
+            .ok_or_else(|| "value is required".to_string())?;
+        let sql = payload
+            .get("sql")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| "sql must be a string".to_string())?;
+        let old_name = payload
+            .get("old_name")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| "old_name must be a string".to_string())?;
+        let new_name = payload
+            .get("new_name")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| "new_name must be a string".to_string())?;
+        ugoite_domain::sql_document::rename_sql_document_parameter(sql, old_name, new_name)
+            .map_err(|error| error.to_string())
+    })();
+
+    match result {
+        Ok(document) => serialize_sql_document_response(&document)
+            .unwrap_or_else(|()| sql_document_response_too_large()),
+        Err(message) => serde_json::json!({
+            "ok": false,
+            "error": {"kind": "domain_validation", "message": message},
+        })
+        .to_string(),
+    }
+}
+
+fn serialize_sql_document_response(
+    document: &ugoite_domain::sql_document::SqlDocument,
+) -> Result<String, ()> {
+    let mut writer = BoundedJsonWriter::new(MAX_SQL_DOCUMENT_RESPONSE_BYTES);
+    writer
+        .write_all(b"{\"ok\":true,\"value\":")
+        .map_err(|_| ())?;
+    serde_json::to_writer(&mut writer, document).map_err(|_| ())?;
+    writer.write_all(b"}").map_err(|_| ())?;
+    String::from_utf8(writer.bytes).map_err(|_| ())
+}
+
+fn sql_document_response_too_large() -> String {
+    r#"{"ok":false,"error":{"kind":"domain_output_too_large","message":"SQL Document response exceeds the 1 MiB limit"}}"#.to_owned()
 }
 
 fn composition_canonicalization_error(
@@ -600,19 +870,8 @@ mod abi {
 mod tests {
     use serde_json::Value;
 
-    const MONTHLY_EXPENSE_COMPOSITION: &str =
-        include_str!("../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml");
-    const MONTHLY_EXPENSE_LABELED_COMPOSITION: &str = include_str!(
-        "../../ugoite-domain/tests/fixtures/composition/monthly-expense-labeled.ugcomp.yaml"
-    );
-    const SAVED_SQL_METRIC_COLUMNS_COMPOSITION: &str = include_str!(
-        "../../ugoite-domain/tests/fixtures/composition/saved-sql-metric-columns.ugcomp.yaml"
-    );
-    const UNKNOWN_LIST_ITEM_FIELD_COMPOSITION: &str = include_str!(
-        "../../ugoite-domain/tests/fixtures/composition/unknown-list-item-field.ugcomp.yaml"
-    );
-    const UNKNOWN_FORMAT_VERSION_COMPOSITION: &str =
-        include_str!("../../../e2e/fixtures/composition/unknown-format-version.ugcomp.yaml");
+    const SQL_FIRST_COMPOSITION: &str =
+        include_str!("../../ugoite-domain/tests/fixtures/composition/sql-first.ugcomp.yaml");
 
     #[test]
     fn test_api_req_api_001_wasm_adapter_exposes_protocol_version() {
@@ -623,96 +882,472 @@ mod tests {
     }
 
     #[test]
-    fn composition_canonicalization_matches_the_native_domain_contract() {
-        for yaml in [
-            MONTHLY_EXPENSE_COMPOSITION,
-            MONTHLY_EXPENSE_LABELED_COMPOSITION,
-            SAVED_SQL_METRIC_COLUMNS_COMPOSITION,
-        ] {
-            let native = ugoite_domain::composition::canonicalize_composition_yaml(yaml).unwrap();
+    fn variable_graph_protocol_returns_deterministic_native_compilation() {
+        let integer = serde_json::json!({
+            "scalar_type": "integer",
+            "nullable": false,
+        });
+        let query = |id: &str, sql: &str, arguments: Value| {
+            serde_json::json!({
+                "id": id,
+                "kind": {
+                    "kind": "query",
+                    "returns": {"kind": "scalar", "value_type": integer},
+                    "query": {"kind": "inline_sql", "sql": sql},
+                    "arguments": arguments,
+                },
+            })
+        };
+        let input = serde_json::json!({
+            "id": "input",
+            "kind": {
+                "kind": "input",
+                "value_type": integer,
+                "required": true,
+            },
+        });
+        let binding = serde_json::json!([{
+            "name": "value",
+            "value_type": integer,
+            "variable": "input",
+        }]);
+        let graph_value = serde_json::json!({
+            "variables": [
+                query("z_query", "SELECT $value", binding),
+                input,
+                query("b_query", "SELECT 1", serde_json::json!([])),
+            ],
+        });
+
+        let graph = serde_json::from_value::<ugoite_domain::composition::VariableGraph>(
+            graph_value.clone(),
+        )
+        .expect("strict graph fixture");
+        let native =
+            ugoite_domain::composition::compile_variable_graph(&graph).expect("graph compiles");
+        assert_eq!(native.topological_order, ["b_query", "input", "z_query"]);
+
+        let compile = |value| {
             let request = serde_json::json!({
-                "action": "domain.canonicalize_composition",
-                "value": {"yaml": yaml},
+                "action": "domain.compile_variable_graph.v1",
+                "value": value,
             });
             let response: Value =
                 serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
-
             assert_eq!(response["ok"], true, "{response}");
-            assert_eq!(
-                response["value"]["document"],
-                serde_json::to_value(native.document).unwrap()
-            );
-            assert_eq!(response["value"]["canonical_yaml"], native.yaml);
-            assert_eq!(response["value"]["fingerprint"], native.fingerprint);
-        }
+            response["value"].clone()
+        };
+        let first = compile(graph_value.clone());
+        let mut reversed = graph_value;
+        reversed["variables"].as_array_mut().unwrap().reverse();
+        let second = compile(reversed);
 
-        let invalid_metric_shapes = [
-            MONTHLY_EXPENSE_COMPOSITION.replace(
-                "      source: month_total\n      column: total",
-                "      definition:\n        kind: sql_scalar\n        source: month_total\n        column: total",
-            ),
-            MONTHLY_EXPENSE_COMPOSITION.replace(
-                "      source: month_total\n      column: total",
-                "      source: expense_rows\n      column: total",
-            ),
-            MONTHLY_EXPENSE_COMPOSITION.replace(
-                "      source: month_total\n      column: total",
-                "      source: month_total\n      value_field:\n        kind: sql_column\n        name: total",
-            ),
-            MONTHLY_EXPENSE_COMPOSITION.replace(
-                "      source: month_total\n      column: total",
-                "      source: month_total\n      column: total\n      operation: sum\n      field_id: 102",
-            ),
-            MONTHLY_EXPENSE_COMPOSITION.replace(
-                "      source: month_total\n      column: total",
-                "      source: month_total\n      column: missing",
-            ),
-        ];
-        for yaml in invalid_metric_shapes {
-            assert_eq!(
-                ugoite_domain::composition::canonicalize_composition_yaml(&yaml),
-                Err(ugoite_domain::composition::CompositionDiagnosticCode::InvalidComposition),
-                "native domain accepted an invalid SQL Metric binding: {yaml}"
-            );
+        assert_eq!(first, second);
+        assert_eq!(first["contract_version"], 1);
+        assert_eq!(
+            first,
+            serde_json::json!({
+                "contract_version": 1,
+                "topological_order": native.topological_order,
+                "dependencies": native.dependencies,
+            })
+        );
+    }
+
+    #[test]
+    fn variable_graph_protocol_returns_stable_reference_and_type_diagnostics() {
+        let query_graph = |reference: &str, input_type: &str| {
+            serde_json::json!({
+                "variables": [
+                    {
+                        "id": "input",
+                        "kind": {
+                            "kind": "input",
+                            "value_type": {"scalar_type": input_type, "nullable": false},
+                            "required": true,
+                        },
+                    },
+                    {
+                        "id": "result",
+                        "kind": {
+                            "kind": "query",
+                            "returns": {
+                                "kind": "scalar",
+                                "value_type": {"scalar_type": "integer", "nullable": false},
+                            },
+                            "query": {"kind": "inline_sql", "sql": "SELECT $value"},
+                            "arguments": [{
+                                "name": "value",
+                                "value_type": {"scalar_type": "integer", "nullable": false},
+                                "variable": reference,
+                            }],
+                        },
+                    },
+                ],
+            })
+        };
+
+        for graph_value in [
+            query_graph("missing", "integer"),
+            query_graph("input", "string"),
+        ] {
+            let graph = serde_json::from_value::<ugoite_domain::composition::VariableGraph>(
+                graph_value.clone(),
+            )
+            .expect("strict graph fixture");
+            let native = ugoite_domain::composition::compile_variable_graph(&graph)
+                .expect_err("graph reference or type is invalid");
             let request = serde_json::json!({
-                "action": "domain.canonicalize_composition",
-                "value": {"yaml": yaml},
+                "action": "domain.compile_variable_graph.v1",
+                "value": graph_value,
             });
             let response: Value =
                 serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
             assert_eq!(response["ok"], false, "{response}");
-            assert_eq!(response["error"]["code"], "invalid_composition");
+            assert_eq!(response["error"]["kind"], "variable_graph_diagnostics");
+            assert_eq!(response["error"]["contract_version"], 1);
+            assert_eq!(
+                response["error"]["diagnostics"],
+                serde_json::to_value(native).unwrap()
+            );
         }
+    }
 
+    #[test]
+    fn sql_document_protocol_matches_native_parser_for_draft_states_and_ranges() {
+        let oversized_sql = "x".repeat(ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES + 1);
+        let too_complex_sql =
+            "(".repeat(ugoite_domain::sql_document::MAX_SQL_DOCUMENT_COMPLEXITY_TOKENS + 1);
+        let cases = [
+            (
+                "parsed",
+                "-- 日付\nSELECT \"日付\", $day FROM \"G\" WHERE note = '$day'",
+                "parsed",
+            ),
+            ("invalid", "SELECT (", "invalid_sql"),
+            ("multiple", "SELECT 1; SELECT 2", "multiple_statements"),
+            ("too complex", too_complex_sql.as_str(), "too_complex"),
+            ("oversized", oversized_sql.as_str(), "too_large"),
+        ];
+
+        for (name, sql, status) in cases {
+            let request = serde_json::json!({
+                "action": "domain.parse_sql_document",
+                "value": {"sql": sql},
+            })
+            .to_string();
+            if name == "oversized" {
+                assert!(request.len() > super::MAX_PROTOCOL_REQUEST_BYTES);
+                assert!(request.len() <= super::MAX_SQL_DOCUMENT_REQUEST_BYTES);
+            }
+
+            let response: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
+            assert_eq!(response["ok"], true, "{name}: {response}");
+            assert_eq!(response["value"]["source"], sql, "{name}: source");
+            assert_eq!(response["value"]["status"], status, "{name}: status");
+
+            // The portable adapter returns the exact domain document, including
+            // UTF-8 byte ranges and diagnostics; it does not plan or execute SQL.
+            let native = ugoite_domain::sql_document::parse_sql_document(sql);
+            assert_eq!(response["value"], serde_json::to_value(native).unwrap());
+        }
+    }
+
+    #[test]
+    fn variable_graph_protocol_reports_cycles_and_rejects_unknown_fields() {
+        let integer = serde_json::json!({
+            "scalar_type": "integer",
+            "nullable": false,
+        });
+        let cycle_graph = serde_json::json!({
+            "variables": [
+                {
+                    "id": "alpha",
+                    "kind": {
+                        "kind": "query",
+                        "returns": {"kind": "scalar", "value_type": integer},
+                        "query": {"kind": "inline_sql", "sql": "SELECT $value"},
+                        "arguments": [{"name": "value", "value_type": integer, "variable": "beta"}],
+                    },
+                },
+                {
+                    "id": "beta",
+                    "kind": {
+                        "kind": "query",
+                        "returns": {"kind": "scalar", "value_type": integer},
+                        "query": {"kind": "inline_sql", "sql": "SELECT $value"},
+                        "arguments": [{"name": "value", "value_type": integer, "variable": "alpha"}],
+                    },
+                },
+            ],
+        });
+        let graph = serde_json::from_value::<ugoite_domain::composition::VariableGraph>(
+            cycle_graph.clone(),
+        )
+        .unwrap();
+        let native = ugoite_domain::composition::compile_variable_graph(&graph)
+            .expect_err("cycle must fail");
+        let request = serde_json::json!({
+            "action": "domain.compile_variable_graph.v1",
+            "value": cycle_graph,
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+        assert_eq!(response["ok"], false, "{response}");
+        assert_eq!(
+            response["error"]["diagnostics"],
+            serde_json::to_value(native).unwrap()
+        );
+        assert_eq!(
+            response["error"]["diagnostics"][0]["code"],
+            "dependency_cycle"
+        );
+
+        let mut unknown_graph = serde_json::json!({"variables": []});
+        unknown_graph["future_field"] = serde_json::json!(true);
+        let unknown_request = serde_json::json!({
+            "action": "domain.compile_variable_graph.v1",
+            "value": unknown_graph,
+        });
+        let unknown_response: Value =
+            serde_json::from_str(&super::invoke_json(&unknown_request.to_string())).unwrap();
+        assert_eq!(unknown_response["ok"], false, "{unknown_response}");
+        assert_eq!(
+            unknown_response["error"]["code"],
+            "invalid_variable_graph_payload"
+        );
+        assert_eq!(
+            unknown_response["error"]["message"],
+            "value must be a strict VariableGraph object"
+        );
+
+        let nested_unknown_request = serde_json::json!({
+            "action": "domain.compile_variable_graph.v1",
+            "value": {"variables": [{"id": "x", "kind": {"kind": "input", "value_type": integer, "required": true, "future_field": 1}}]},
+        });
+        let nested_unknown_response: Value =
+            serde_json::from_str(&super::invoke_json(&nested_unknown_request.to_string())).unwrap();
+        assert_eq!(nested_unknown_response["ok"], false);
+        assert_eq!(
+            nested_unknown_response["error"]["code"],
+            "invalid_variable_graph_payload"
+        );
+    }
+
+    #[test]
+    fn sql_document_parameter_rename_protocol_matches_native_tokens_and_ranges() {
+        let source = "-- $day\nSELECT $day + $day AS total, '$day' AS literal, $day2 AS other FROM \"G\" /* $day */";
+        let native = ugoite_domain::sql_document::rename_sql_document_parameter(
+            source,
+            "day",
+            "billing_day",
+        )
+        .expect("valid parameter rename");
+        let request = serde_json::json!({
+            "action": "domain.rename_sql_document_parameter",
+            "value": {"sql": source, "old_name": "day", "new_name": "billing_day"},
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).expect("JSON response");
+
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"], serde_json::to_value(&native).unwrap());
+        assert_eq!(
+            native.source,
+            "-- $day\nSELECT $billing_day + $billing_day AS total, '$day' AS literal, $day2 AS other FROM \"G\" /* $day */"
+        );
+        let renamed: ugoite_domain::sql_document::SqlDocument =
+            serde_json::from_value(response["value"].clone()).expect("domain document");
+        let placeholders = renamed
+            .tokens
+            .iter()
+            .filter(|token| {
+                token.kind == ugoite_domain::sql_document::SqlDocumentTokenKind::Placeholder
+            })
+            .map(|token| renamed.source_slice(token.range).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(placeholders, ["$billing_day", "$billing_day", "$day2"]);
+    }
+
+    #[test]
+    fn sql_document_parameter_rename_protocol_preserves_no_match_documents() {
+        let source = "-- retain $other\nSELECT '$other' AS literal, $other FROM \"G\"";
+        let native = ugoite_domain::sql_document::rename_sql_document_parameter(
+            source,
+            "missing",
+            "replacement",
+        )
+        .expect("valid names with no matching placeholder");
+        let request = serde_json::json!({
+            "action": "domain.rename_sql_document_parameter",
+            "value": {"sql": source, "old_name": "missing", "new_name": "replacement"},
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).expect("JSON response");
+
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"], serde_json::to_value(&native).unwrap());
+        assert_eq!(native.source, source);
+    }
+
+    #[test]
+    fn sql_document_parameter_rename_protocol_matches_native_invalid_name_errors() {
+        for (old_name, new_name) in [("bad-name", "new_name"), ("old", "$new")] {
+            let native_error = ugoite_domain::sql_document::rename_sql_document_parameter(
+                "SELECT $old",
+                old_name,
+                new_name,
+            )
+            .expect_err("invalid parameter names must fail");
+            let request = serde_json::json!({
+                "action": "domain.rename_sql_document_parameter",
+                "value": {
+                    "sql": "SELECT $old",
+                    "old_name": old_name,
+                    "new_name": new_name,
+                },
+            });
+            let response: Value = serde_json::from_str(&super::invoke_json(&request.to_string()))
+                .expect("JSON response");
+
+            assert_eq!(response["ok"], false, "{response}");
+            assert_eq!(response["error"]["kind"], "domain_validation");
+            assert_eq!(response["error"]["message"], native_error.to_string());
+        }
+    }
+
+    #[test]
+    fn sql_document_protocol_accepts_maximum_source_with_json_escaped_trivia() {
+        let sql = format!(
+            "SELECT 1 /*{}*/",
+            "\n".repeat(ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES - 13)
+        );
+        assert_eq!(
+            sql.len(),
+            ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES
+        );
+        let request = serde_json::json!({
+            "action": "domain.parse_sql_document",
+            "value": {"sql": sql},
+        })
+        .to_string();
+        assert!(request.len() > super::MAX_PROTOCOL_REQUEST_BYTES);
+        assert!(request.len() <= super::MAX_SQL_DOCUMENT_REQUEST_BYTES);
+
+        let response: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"]["status"], "parsed");
+        assert_eq!(response["value"]["source"], sql);
+    }
+
+    #[test]
+    fn sql_document_parameter_rename_accepts_maximum_escaped_source() {
+        let sql = format!(
+            "SELECT 1 /*{}*/",
+            "\n".repeat(ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES - 13)
+        );
+        let request = serde_json::json!({
+            "action": "domain.rename_sql_document_parameter",
+            "value": {"sql": sql, "old_name": "old", "new_name": "new"},
+        })
+        .to_string();
+        assert!(request.len() > super::MAX_PROTOCOL_REQUEST_BYTES);
+        assert!(request.len() <= super::MAX_SQL_DOCUMENT_RENAME_REQUEST_BYTES);
+
+        let response: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
         let native =
-            ugoite_domain::composition::canonicalize_composition_yaml(MONTHLY_EXPENSE_COMPOSITION)
+            ugoite_domain::sql_document::rename_sql_document_parameter(&sql, "old", "new").unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"], serde_json::to_value(native).unwrap());
+    }
+
+    #[test]
+    fn sql_document_parameter_rename_rejects_request_over_limit() {
+        let request = serde_json::json!({
+            "action": "domain.rename_sql_document_parameter",
+            "value": {"sql": "SELECT 1", "old_name": "old", "new_name": "new"},
+            "padding": "x".repeat(super::MAX_SQL_DOCUMENT_RENAME_REQUEST_BYTES),
+        })
+        .to_string();
+        assert!(request.len() > super::MAX_SQL_DOCUMENT_RENAME_REQUEST_BYTES);
+
+        let response: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
+        assert_eq!(response["ok"], false, "{response}");
+        assert_eq!(response["error"]["kind"], "input_too_large");
+    }
+
+    #[test]
+    fn sql_document_protocol_bounds_amplified_parser_output() {
+        let sql = format!("SELECT {}", vec!["1"; 20_000].join(","));
+        let request = serde_json::json!({
+            "action": "domain.parse_sql_document",
+            "value": {"sql": sql},
+        })
+        .to_string();
+        let response_text = super::invoke_json(&request);
+        assert!(response_text.len() <= super::MAX_SQL_DOCUMENT_RESPONSE_BYTES);
+
+        let response: Value = serde_json::from_str(&response_text).unwrap();
+        assert_eq!(response["ok"], false, "{response}");
+        assert_eq!(response["error"]["kind"], "domain_output_too_large");
+    }
+
+    #[test]
+    fn sql_document_parameter_rename_bounds_amplified_output() {
+        let sql = format!("SELECT {}", vec!["$x"; 20_000].join(","));
+        let request = serde_json::json!({
+            "action": "domain.rename_sql_document_parameter",
+            "value": {"sql": sql, "old_name": "x", "new_name": "renamed"},
+        })
+        .to_string();
+        let response_text = super::invoke_json(&request);
+        assert!(response_text.len() <= super::MAX_SQL_DOCUMENT_RESPONSE_BYTES);
+
+        let response: Value = serde_json::from_str(&response_text).unwrap();
+        assert_eq!(response["ok"], false, "{response}");
+        assert_eq!(response["error"]["kind"], "domain_output_too_large");
+    }
+
+    #[test]
+    fn composition_canonicalization_matches_the_native_domain_contract() {
+        let native =
+            ugoite_domain::composition::canonicalize_composition_yaml(SQL_FIRST_COMPOSITION)
                 .unwrap();
+        let request = serde_json::json!({
+            "action": "domain.canonicalize_composition",
+            "value": {"yaml": SQL_FIRST_COMPOSITION},
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(
+            response["value"]["document"],
+            serde_json::to_value(&native.document).unwrap()
+        );
+        assert_eq!(response["value"]["canonical_yaml"], native.yaml);
+        assert_eq!(response["value"]["fingerprint"], native.fingerprint);
+
         let normalized_document = serde_json::to_value(&native.document).unwrap();
         let mut unnormalized_document = normalized_document.clone();
-        {
-            let sources = unnormalized_document["spec"]["sources"]
-                .as_array_mut()
-                .expect("the Composition fixture has a source array");
-            let entry_query_source = sources
-                .iter_mut()
-                .find(|source| source.get("kind").and_then(Value::as_str) == Some("entry_query"))
-                .expect("the Composition fixture has an EntryQuery source");
-            let field_schema = entry_query_source["field_schema"]
-                .as_array_mut()
-                .expect("the EntryQuery fixture has a field schema");
-            field_schema.reverse();
-        }
+        let bindings = unnormalized_document["spec"]["sources"][0]["form_bindings"]
+            .as_array_mut()
+            .expect("the inline SQL source has Form bindings");
+        let mut second_binding = bindings[0].clone();
+        second_binding["relation"] = serde_json::json!("Other");
+        bindings.push(second_binding);
+        bindings.reverse();
         assert_ne!(unnormalized_document, normalized_document);
         let native_typed = ugoite_domain::composition::canonicalize_composition_document_value(
             unnormalized_document.clone(),
         )
         .unwrap();
-        assert_eq!(
-            serde_json::to_value(&native_typed.document).unwrap(),
-            normalized_document
-        );
-        assert_eq!(native_typed.yaml, native.yaml);
-        assert_eq!(native_typed.fingerprint, native.fingerprint);
+        let ugoite_domain::composition::CompositionSource::InlineSql { form_bindings, .. } =
+            &native_typed.document.spec.sources[0]
+        else {
+            panic!("first source should be Inline SQL");
+        };
+        assert_eq!(form_bindings[0].relation, "Expense");
+        assert_eq!(form_bindings[1].relation, "Other");
         let typed_request = serde_json::json!({
             "action": "domain.canonicalize_composition_document",
             "value": {"document": unnormalized_document},
@@ -728,6 +1363,26 @@ mod tests {
         assert_eq!(
             typed_response["value"]["fingerprint"],
             native_typed.fingerprint
+        );
+
+        let invalid_metric_yaml = SQL_FIRST_COMPOSITION.replace(
+            "      source: month_total\n      column: total",
+            "      source: month_total\n      column: missing",
+        );
+        let native_invalid_metric =
+            ugoite_domain::composition::canonicalize_composition_yaml(&invalid_metric_yaml)
+                .unwrap_err();
+        let invalid_metric_request = serde_json::json!({
+            "action": "domain.canonicalize_composition",
+            "value": {"yaml": invalid_metric_yaml},
+        });
+        let invalid_metric_response: Value =
+            serde_json::from_str(&super::invoke_json(&invalid_metric_request.to_string())).unwrap();
+        assert_eq!(native_invalid_metric.as_str(), "invalid_composition");
+        assert_eq!(invalid_metric_response["ok"], false);
+        assert_eq!(
+            invalid_metric_response["error"]["code"],
+            native_invalid_metric.as_str()
         );
 
         let invalid_typed_request = serde_json::json!({
@@ -776,7 +1431,8 @@ mod tests {
         );
 
         let mut unknown_v1_field_document = serde_json::to_value(&native.document).unwrap();
-        unknown_v1_field_document["future_field"] = serde_json::json!({"enabled": true});
+        unknown_v1_field_document["spec"]["layout"]["rows"][0]["items"][0]["future_field"] =
+            serde_json::json!({"enabled": true});
         let native_unknown_v1_error =
             ugoite_domain::composition::canonicalize_composition_document_value(
                 unknown_v1_field_document.clone(),
@@ -796,54 +1452,26 @@ mod tests {
             native_unknown_v1_error.as_str()
         );
 
-        let unreferenced_component = MONTHLY_EXPENSE_COMPOSITION.replace(
+        let invalid_layout_yaml = SQL_FIRST_COMPOSITION.replace(
             "          - kind: component\n            component: transactions\n",
             "",
         );
-        assert_ne!(unreferenced_component, MONTHLY_EXPENSE_COMPOSITION);
-        let invalid_metric_value_field = MONTHLY_EXPENSE_COMPOSITION.replace(
-            "      source: month_total\n      column: total",
-            "      source: month_total\n      value_field:\n        kind: sql_column\n        name: total",
-        );
-        assert_ne!(invalid_metric_value_field, MONTHLY_EXPENSE_COMPOSITION);
-
-        // Unsupported versions use their own complete fixture; the v1 cases
-        // below reach strict validation after the supported envelope probe.
-        let version_error = ugoite_domain::composition::canonicalize_composition_yaml(
-            UNKNOWN_FORMAT_VERSION_COMPOSITION,
-        )
-        .unwrap_err();
-        let version_request = serde_json::json!({
+        assert_ne!(invalid_layout_yaml, SQL_FIRST_COMPOSITION);
+        let native_invalid_layout =
+            ugoite_domain::composition::canonicalize_composition_yaml(&invalid_layout_yaml)
+                .unwrap_err();
+        let invalid_layout_request = serde_json::json!({
             "action": "domain.canonicalize_composition",
-            "value": {"yaml": UNKNOWN_FORMAT_VERSION_COMPOSITION},
+            "value": {"yaml": invalid_layout_yaml},
         });
-        let version_response: Value =
-            serde_json::from_str(&super::invoke_json(&version_request.to_string())).unwrap();
-        assert_eq!(version_error.as_str(), "unsupported_format_version");
-        assert_eq!(version_response["ok"], false, "{version_response}");
-        assert_eq!(version_response["error"]["kind"], "composition_diagnostic");
-        assert_eq!(version_response["error"]["code"], version_error.as_str());
-
-        // Each invalid v1 document has a complete envelope and one strict
-        // schema or layout defect, so the native and WASM codes must agree.
-        for (yaml, expected_code) in [
-            (UNKNOWN_LIST_ITEM_FIELD_COMPOSITION, "invalid_composition"),
-            (invalid_metric_value_field.as_str(), "invalid_composition"),
-            (unreferenced_component.as_str(), "invalid_composition"),
-        ] {
-            let native_error =
-                ugoite_domain::composition::canonicalize_composition_yaml(yaml).unwrap_err();
-            let request = serde_json::json!({
-                "action": "domain.canonicalize_composition",
-                "value": {"yaml": yaml},
-            });
-            let response: Value =
-                serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
-            assert_eq!(native_error.as_str(), expected_code);
-            assert_eq!(response["ok"], false, "{response}");
-            assert_eq!(response["error"]["kind"], "composition_diagnostic");
-            assert_eq!(response["error"]["code"], native_error.as_str());
-        }
+        let invalid_layout_response: Value =
+            serde_json::from_str(&super::invoke_json(&invalid_layout_request.to_string())).unwrap();
+        assert_eq!(native_invalid_layout.as_str(), "invalid_composition");
+        assert_eq!(invalid_layout_response["ok"], false);
+        assert_eq!(
+            invalid_layout_response["error"]["code"],
+            native_invalid_layout.as_str()
+        );
     }
 
     #[test]

@@ -275,6 +275,10 @@ run = [
 description = "Verify Composition canonicalization, diagnostics, and typed Input parsing in the actual WASM runtime"
 run = "deno run -A crates/ugoite-wasm/tests/composition_parity.ts"
 
+[tasks."check:wasm:sql-structure-parity"]
+description = "Verify parser-backed SQL Workspace capabilities and proposals in the actual WASM runtime"
+run = "deno run -A crates/ugoite-wasm/tests/sql_structure_parity.ts"
+
 [tasks."profile:composition:parser"]
 description = "Measure the Composition YAML fixture parser budget and local throughput"
 run = "cargo test -p ugoite-domain --locked profile_monthly_expense_fixture -- --ignored --nocapture"
@@ -311,6 +315,7 @@ description = "Run all repository checks"
 run = [
   { task = "check:rust" },
   { task = "check:wasm:composition-parity" },
+  { task = "check:wasm:sql-structure-parity" },
   { task = "check:deno" },
   { task = "check:repo" },
 ]
@@ -445,6 +450,10 @@ run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2
 [tasks."test:e2e:smoke"]
 run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:smoke"
 
+[tasks."test:e2e:saved-sql-route"]
+description = "Run the focused Saved SQL route E2E"
+run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:saved-sql-route"
+
 [tasks."test:e2e:asset-owned"]
 run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:asset-owned"
 
@@ -466,6 +475,11 @@ run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2
 description = "Run saved SQL Composition Metric authoring and cardinality E2E"
 env = { PLAYWRIGHT_JUNIT_OUTPUT_FILE = "test-results/composition-metric-junit.xml", PLAYWRIGHT_OUTPUT_DIR = "test-results/composition-metric-results" }
 run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:composition-metric"
+
+[tasks."test:e2e:composition-source-acl-isolation"]
+description = "Run Composition source ACL revocation and Space isolation E2E"
+env = { PLAYWRIGHT_JUNIT_OUTPUT_FILE = "test-results/composition-source-acl-isolation-junit.xml", PLAYWRIGHT_OUTPUT_DIR = "test-results/composition-source-acl-isolation-results" }
+run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:composition-source-acl-isolation"
 
 [tasks."test:e2e:owner-recovery"]
 description = "Run the required owner-approved Space access recovery E2E"
@@ -506,6 +520,10 @@ run = "cargo nextest run -p ugoite-api-client -p ugoite-server -E 'test(composit
 [tasks."test:composition:domain"]
 description = "Run the typed Composition domain contract tests"
 run = "cargo nextest run -p ugoite-domain --locked -E 'test(composition::)'"
+
+[tasks."test:sql-structure:domain"]
+description = "Run focused SQL Workspace structure parser and proposal tests"
+run = "cargo nextest run -p ugoite-domain --locked -E 'test(sql_structure::)'"
 
 [tasks."package:docsite"]
 description = "Stage the built docsite under target/artifacts"
@@ -624,6 +642,7 @@ run = [
   { task = "test:e2e:navigation" },
   { task = "test:e2e:mobile-ui" },
   { task = "test:e2e:composition-metric" },
+  { task = "test:e2e:composition-source-acl-isolation" },
   { task = "test:e2e:owner-recovery" },
   { task = "test:e2e:portable-space", env = { UGOITE_PORTABLE_CLI_BINARY = "target/rust/release/ugoite" } },
 ]
@@ -644,6 +663,7 @@ run = [
   { task = "test:e2e:navigation" },
   { task = "test:e2e:mobile-ui" },
   { task = "test:e2e:composition-metric" },
+  { task = "test:e2e:composition-source-acl-isolation" },
 ]
 
 [tasks."ci:lane:e2e-owner"]

@@ -1,0 +1,172 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: composition
+category: Portable Composition documents and SQL-backed source resolution
+requirements:
+  - id: REQ-COMP-008
+    title: SQL-first Composition source contract
+    description: The accepted Composition v1 contract has one SQL source model over Space-owned Knowledge and the existing stateless SQL executor. Its replaced prerelease grammar has no compatibility reader or migration.
+    priority: high
+    status: implemented
+    criteria:
+      - id: sql-source-grammar
+        kind: behavior
+        statement: >-
+          The replacement Composition grammar has stable source IDs and accepts
+          only inline SQL or an exact Saved SQL Entry/revision reference.
+          Selecting a Form produces editable inline SQL; no EntryQuery source,
+          Comp-specific query language, latest-revision fallback, or silent
+          source rebind exists.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: strict-replacement-envelope
+        kind: behavior
+        statement: >-
+          The replacement keeps format_version 1 and has one strict envelope:
+          format, format_version, dashboard kind, Composition name, and spec
+          containing variables, sources, components, and flow layout. The
+          canonical reader rejects unknown fields, including the replaced
+          root tags, EntryQuery payload fields, and persisted display labels.
+          It does not parse and then discard those fields.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: no-composition-tags-or-label-fields
+        kind: behavior
+        statement: >-
+          Composition Knowledge has no root tags and no user-editable label on
+          variables, sources, or components. The root name, inline SQL object
+          name, SQL output aliases, variable IDs, Text content, Form field names,
+          accessibility names, and Metric numeric presentation retain their
+          separate semantic purposes and are not Composition display labels.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: trusted-inline-form-bindings
+        kind: security
+        statement: >-
+          Core derives immutable Form IDs from parsed inline SQL relation
+          references when linting/saving. Clients cannot provide trusted Form
+          bindings. Execution reuses the existing SQL planner and reevaluates
+          current ACL and Publication access; a rename retains identity while
+          deletion, replacement, or revoked access fails closed.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: exact-sql-result-descriptor
+        kind: behavior
+        statement: >-
+          Each SQL source has a server-confirmed portable result descriptor and
+          schema fingerprint. An unavailable or unsafe descriptor produces a
+          repairable diagnostic; empty results do not cause the Browser to
+          invent a schema.
+        governed_by: [POL-000#rule.foundation-precedence]
+      - id: saved-sql-exact-revision-and-defaults
+        kind: behavior
+        statement: >-
+          Composition Saved SQL sources pin one exact Entry and revision and
+          bind only declared SQL parameters of exactly matching types. Saved SQL
+          variable definitions may add an optional typed default for standalone
+          preview; stateless SQL query requests continue to require explicit
+          execution values in the existing parameters and parameter_types
+          fields. A copied default becomes owned by the Composition variable.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: scalar-metric-results
+        kind: behavior
+        statement: >-
+          A Metric selects one declared scalar SQL output column and succeeds
+          only for exactly one row. No-row, one-row NULL, zero, multiple rows,
+          type mismatch, and access denial remain distinct. The Browser does not
+          aggregate fetched rows or add LIMIT 1 to user SQL.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: stateless-bounded-execution
+        kind: security
+        statement: >-
+          SQL paging, explicit count, continuation, cancellation, resource
+          limits, current authorization, and typed results continue through the
+          existing stateless SQL execution path. Only a changed source or a
+          variable used by its SQL plan invalidates its displays; Layout does
+          not change query semantics.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: no-composition-legacy-reader
+        kind: behavior
+        statement: >-
+          The replacement has one canonical Composition grammar and no reader,
+          alias, fallback, dual-write, or migration for the replaced prerelease
+          grammar. Raw inspection, export, Entry history, append-only restore,
+          receipts, and stale-write conflicts remain available through their
+          existing contracts.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: space-knowledge-and-transient-work
+        kind: behavior
+        statement: >-
+          Composition remains one Space-owned Entry revision. SQL text or an
+          exact Saved SQL reference, variable declarations/defaults, source
+          descriptors, components, and layout are Knowledge; runtime values,
+          raw input, results, paging, previews, and UI state remain transient
+          Work.
+        governed_by: [POL-000#rule.foundation-precedence]
+    bindings:
+      - id: sql-first-composition-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the canonical replacement grammar, trusted SQL binding, exact revisions, descriptors, scalar result selection, and transient runtime behavior through exact domain, Core, storage, and frontend tests.
+        targets:
+          - id: strict-domain-grammar
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::old_composition_v1_grammar_and_display_fields_fail_closed }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-008#criterion.sql-source-grammar
+                covers: [FEAT-COMP-010#binding.sql-first-domain-implementation/target.canonical-composition-model]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::old_composition_v1_grammar_and_display_fields_fail_closed } }
+              - kind: verifies
+                criterion: REQ-COMP-008#criterion.strict-replacement-envelope
+                covers: [FEAT-COMP-010#binding.sql-first-domain-implementation/target.canonical-composition-model]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::old_composition_v1_grammar_and_display_fields_fail_closed } }
+              - kind: verifies
+                criterion: REQ-COMP-008#criterion.no-composition-tags-or-label-fields
+                covers: [FEAT-COMP-010#binding.sql-first-domain-implementation/target.canonical-composition-model]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::old_composition_v1_grammar_and_display_fields_fail_closed } }
+              - kind: verifies
+                criterion: REQ-COMP-008#criterion.no-composition-legacy-reader
+                covers: [FEAT-COMP-010#binding.sql-first-domain-implementation/target.canonical-composition-model]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::old_composition_v1_grammar_and_display_fields_fail_closed } }
+          - id: inline-sql-server-resolution
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_preview.rs
+            selector: { kind: test, name: draft_preview_resolves_sql_schema_without_executing_source_rows }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-008#criterion.trusted-inline-form-bindings
+                covers: [FEAT-COMP-010#binding.sql-first-resolution-implementation/target.storage-composition-resolution]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: draft_preview_resolves_sql_schema_without_executing_source_rows } }
+              - kind: verifies
+                criterion: REQ-COMP-008#criterion.exact-sql-result-descriptor
+                covers: [FEAT-COMP-010#binding.sql-first-resolution-implementation/target.storage-composition-resolution]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: draft_preview_resolves_sql_schema_without_executing_source_rows } }
+          - id: inline-form-binding-spoof
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_preview.rs
+            selector: { kind: test, name: preview_ignores_yaml_form_binding_spoof_and_keeps_exact_base_form }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-008#criterion.trusted-inline-form-bindings
+                covers: [FEAT-COMP-010#binding.sql-first-resolution-implementation/target.storage-composition-resolution]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: preview_ignores_yaml_form_binding_spoof_and_keeps_exact_base_form } }
+          - id: saved-sql-exact-revision
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::saved_sql_uses_exact_revision_and_keeps_parameters_stateless }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-008#criterion.saved-sql-exact-revision-and-defaults
+                covers: [FEAT-COMP-010#binding.sql-first-resolution-implementation/target.composition-resolver]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_uses_exact_revision_and_keeps_parameters_stateless } }
+              - kind: verifies
+                criterion: REQ-COMP-008#criterion.stateless-bounded-execution
+                covers: [FEAT-COMP-010#binding.sql-first-resolution-implementation/target.composition-resolver]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_uses_exact_revision_and_keeps_parameters_stateless } }
+          - id: scalar-metric-domain
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::metric_component_selects_one_typed_scalar_column_from_shared_source }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-008#criterion.scalar-metric-results
+                covers: [FEAT-COMP-010#binding.sql-first-resolution-implementation/target.composition-resolver]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::metric_component_selects_one_typed_scalar_column_from_shared_source } }

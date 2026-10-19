@@ -1,5 +1,6 @@
 import { type APIRequestContext, expect, test } from "@playwright/test";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
+import { completeSavedSqlCompositionYaml } from "./lib/composition.ts";
 
 const SOURCE_UNAVAILABLE_DIAGNOSTIC = "A data source is unavailable.";
 
@@ -9,7 +10,6 @@ type SeedState = {
   revisionId: string;
   compositionName: string;
   canonicalYaml: string;
-  missingFormId: string;
 };
 
 type CompositionSaveResponse = {
@@ -29,6 +29,10 @@ type CompositionHistoryPage = {
   revisions?: CompositionRawRevision[];
 };
 
+function sqlIdentifier(value: string): string {
+  return `"${value.replaceAll('"', '""')}"`;
+}
+
 async function createSpace(request: APIRequestContext): Promise<string> {
   const suffix = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
   const response = await request.post(getBackendUrl("/spaces"), {
@@ -43,40 +47,106 @@ async function createSpace(request: APIRequestContext): Promise<string> {
   return result.space_uid!;
 }
 
-async function seedBrokenComposition(
+async function seedUnavailableSourceComposition(
   request: APIRequestContext,
 ): Promise<SeedState> {
   const spaceId = await createSpace(request);
   const suffix = crypto.randomUUID().slice(0, 8);
   const compositionName = `Broken recovery ${suffix}`;
-  // A never-created Form ID. The reference is shape-valid so regular save
-  // accepts it; resolve must then report source_unavailable.
-  const missingFormId = crypto.randomUUID();
-  const yaml = [
+  const formName = `RecoverySource${suffix}`;
+  const formResponse = await request.post(
+    getBackendUrl(`/spaces/${spaceId}/forms`),
+    {
+      data: {
+        name: formName,
+        version: 1,
+        template: `# ${formName}\n\n## Private value\n`,
+        fields: { "Private value": { type: "string", required: true } },
+      },
+    },
+  );
+  expect([200, 201]).toContain(formResponse.status());
+
+  const formsResponse = await request.get(
+    getBackendUrl(`/spaces/${spaceId}/forms`),
+  );
+  expect(formsResponse.ok()).toBe(true);
+  const forms = await formsResponse.json() as Array<{
+    name?: string;
+    sql_relation?: string;
+    fields?: Record<string, { sql_column?: string }>;
+  }>;
+  const form = forms.find((candidate) => candidate.name === formName);
+  const relation = form?.sql_relation;
+  const valueColumn = form?.fields?.["Private value"]?.sql_column;
+  expect(relation).toBeTruthy();
+  expect(valueColumn).toBeTruthy();
+
+  const entryResponse = await request.post(
+    getBackendUrl(`/spaces/${spaceId}/entries`),
+    {
+      data: {
+        form: formName,
+        fields: { "Private value": `recovery-private-${suffix}` },
+      },
+    },
+  );
+  expect(entryResponse.status()).toBe(201);
+
+  const savedSqlName = `Recovery source ${suffix}`;
+  const savedSqlText = `SELECT ${sqlIdentifier(valueColumn!)} AS value FROM ${
+    sqlIdentifier(relation!)
+  }`;
+  const savedSqlResponse = await request.post(
+    getBackendUrl(`/spaces/${spaceId}/sql`),
+    {
+      data: {
+        name: savedSqlName,
+        kind: "user-query",
+        sql: savedSqlText,
+        variables: [],
+      },
+    },
+  );
+  expect([200, 201]).toContain(savedSqlResponse.status());
+  const savedSql = await savedSqlResponse.json() as {
+    id?: string;
+    revision_id?: string;
+  };
+  expect(savedSql.id).toBeTruthy();
+  expect(savedSql.revision_id).toBeTruthy();
+
+  let yaml = [
     "format: ugoite.composition",
     "format_version: 1",
     `name: ${compositionName}`,
     "kind: dashboard",
-    "tags: []",
     "spec:",
     "  sources:",
-    "    - id: removed_form_rows",
-    "      kind: entry_query",
-    `      form_id: "${missingFormId}"`,
-    "      query: {}",
+    "    - id: recovery_rows",
+    "      kind: saved_sql",
+    `      entry_id: "${savedSql.id}"`,
+    `      revision_id: "${savedSql.revision_id}"`,
+    "      expected_result: []",
+    "      schema_fingerprint: ''",
     "  components:",
-    "    - id: removed_form_table",
+    "    - id: recovery_table",
     "      kind: table",
-    "      source: removed_form_rows",
+    "      source: recovery_rows",
     "  layout:",
     "    kind: flow",
     "    rows:",
     "      - id: main",
     "        items:",
     "          - kind: component",
-    "            component: removed_form_table",
+    "            component: recovery_table",
     "",
   ].join("\n");
+  yaml = await completeSavedSqlCompositionYaml(request, spaceId, yaml, [{
+    id: "recovery_rows",
+    savedSqlId: savedSql.id!,
+    savedSqlRevisionId: savedSql.revision_id!,
+  }]);
   const saveResponse = await request.post(
     getBackendUrl(`/spaces/${spaceId}/compositions`),
     {
@@ -96,7 +166,6 @@ async function seedBrokenComposition(
     revisionId: saved.revision_id!,
     compositionName,
     canonicalYaml: saved.canonical_yaml!,
-    missingFormId,
   };
 }
 
@@ -106,10 +175,10 @@ test.describe("Composition Recovery Authorization", () => {
   test.beforeAll(async ({ request }) => {
     test.setTimeout(120_000);
     await waitForServers(request);
-    seed = await seedBrokenComposition(request);
+    seed = await seedUnavailableSourceComposition(request);
   });
 
-  test("Composition raw recovery and ACL denial preserve caller-visible contracts", async ({ browser, context, playwright, request }) => {
+  test("Composition raw recovery preserves caller-visible contracts", async ({ browser, context, playwright, request }) => {
     test.setTimeout(120_000);
 
     // Typed inspect (latest), the exact raw revision, and history preserve
@@ -146,23 +215,6 @@ test.describe("Composition Recovery Authorization", () => {
     expect(history.total).toBe(1);
     expect(history.revisions).toHaveLength(1);
     expect(history.revisions![0]!.fields["spec"]).toBe(seed.canonicalYaml);
-
-    // Resolve reports source_unavailable with no source metadata.
-    const resolveResponse = await request.post(
-      getBackendUrl(
-        `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/resolve`,
-      ),
-      { data: { revision_id: seed.revisionId, variables: {} } },
-    );
-    expect(resolveResponse.ok()).toBe(true);
-    const resolved = await resolveResponse.json();
-    expect(resolved).toEqual({
-      ok: false,
-      variable_definitions: [],
-      diagnostics: [{ code: "source_unavailable" }],
-    });
-    expect(JSON.stringify(resolved)).not.toContain("removed_form_rows");
-    expect(JSON.stringify(resolved)).not.toContain(seed.missingFormId);
 
     // A missing composition read returns the generic error shape.
     // Authenticated-denied reads share this shape by construction; that

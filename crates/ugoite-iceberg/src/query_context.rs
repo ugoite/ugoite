@@ -1248,6 +1248,26 @@ impl AuthorizedQueryContext {
         .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
     }
 
+    /// Resolves the portable output schema for a stateless SQL statement
+    /// without executing its physical plan or materializing rows.
+    pub async fn stateless_result_schema(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    ) -> Result<Vec<SqlResultColumn>> {
+        let _permit = self
+            .permits
+            .clone()
+            .try_acquire_owned()
+            .map_err(AuthorizedQueryError::resource_limit)?;
+        tokio::time::timeout(
+            self.limits.timeout,
+            self.stateless_result_schema_with_permit(sql, parameters),
+        )
+        .await
+        .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
+    }
+
     /// Executes the explicit count operation for stateless SQL. It is kept
     /// separate from page execution so a normal page never performs an
     /// arbitrary count wrapper.
@@ -1369,6 +1389,16 @@ impl AuthorizedQueryContext {
             batches,
             has_order,
         })
+    }
+
+    async fn stateless_result_schema_with_permit(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    ) -> Result<Vec<SqlResultColumn>> {
+        let plan = self.prepared_plan(sql, parameters).await?;
+        let (_, result_schema) = sql_output_shape(&plan)?;
+        Ok(result_schema)
     }
 
     async fn execute_stateless_count_with_permit(
@@ -1848,18 +1878,25 @@ pub(crate) fn resolve_form_name_references_with_used(
     sql: &str,
     aliases: &BTreeMap<String, String>,
 ) -> Result<(String, BTreeSet<String>)> {
-    let (sql, used, _) = resolve_form_name_references_with_references(sql, aliases)?;
+    let (sql, used, _, _) = resolve_form_name_references_with_references(sql, aliases)?;
     Ok((sql, used))
 }
 
 pub(crate) fn collect_quoted_form_name_references(sql: &str) -> Result<BTreeSet<String>> {
-    resolve_form_name_references_with_references(sql, &BTreeMap::new()).map(|(_, _, refs)| refs)
+    resolve_form_name_references_with_references(sql, &BTreeMap::new()).map(|(_, _, refs, _)| refs)
 }
+
+pub(crate) fn collect_quoted_form_relation_names(sql: &str) -> Result<BTreeSet<String>> {
+    resolve_form_name_references_with_references(sql, &BTreeMap::new())
+        .map(|(_, _, _, relations)| relations)
+}
+
+type FormNameReferenceResolution = (String, BTreeSet<String>, BTreeSet<String>, BTreeSet<String>);
 
 fn resolve_form_name_references_with_references(
     sql: &str,
     aliases: &BTreeMap<String, String>,
-) -> Result<(String, BTreeSet<String>, BTreeSet<String>)> {
+) -> Result<FormNameReferenceResolution> {
     use datafusion::sql::parser::DFParser;
     use datafusion::sql::sqlparser::ast::{
         Ident, ObjectName, ObjectNamePart, VisitMut, VisitorMut,
@@ -1873,6 +1910,7 @@ fn resolve_form_name_references_with_references(
         changed: bool,
         used: BTreeSet<String>,
         references: BTreeSet<String>,
+        relation_names: BTreeSet<String>,
     }
 
     impl VisitorMut for AliasReferenceResolver<'_> {
@@ -1928,6 +1966,9 @@ fn resolve_form_name_references_with_references(
             {
                 return ControlFlow::Continue(());
             }
+            if relation.0.len() == 1 && identifier.quote_style == Some('"') {
+                self.relation_names.insert(name.to_string());
+            }
             if relation.0.len() == 1
                 && identifier.quote_style == Some('"')
                 && !is_legacy_relation_name(name)
@@ -1966,6 +2007,7 @@ fn resolve_form_name_references_with_references(
         changed: false,
         used: BTreeSet::new(),
         references: BTreeSet::new(),
+        relation_names: BTreeSet::new(),
     };
     for statement in &mut statements {
         let datafusion::sql::parser::Statement::Statement(statement) = statement else {
@@ -1979,7 +2021,12 @@ fn resolve_form_name_references_with_references(
         return Err(AuthorizedQueryError::invalid_query(error).into());
     }
     if !resolver.changed {
-        return Ok((sql.to_string(), resolver.used, resolver.references));
+        return Ok((
+            sql.to_string(),
+            resolver.used,
+            resolver.references,
+            resolver.relation_names,
+        ));
     }
     Ok((
         statements
@@ -1989,6 +2036,7 @@ fn resolve_form_name_references_with_references(
             .join(";\n"),
         resolver.used,
         resolver.references,
+        resolver.relation_names,
     ))
 }
 
@@ -2273,7 +2321,10 @@ mod result_schema_tests {
 
 #[cfg(test)]
 mod form_name_resolution_tests {
-    use super::{is_legacy_relation_name, resolve_form_name_references};
+    use super::{
+        collect_quoted_form_name_references, collect_quoted_form_relation_names,
+        is_legacy_relation_name, resolve_form_name_references,
+    };
     use std::collections::BTreeMap;
 
     #[test]
@@ -2320,12 +2371,29 @@ mod form_name_resolution_tests {
         assert!(is_legacy_relation_name(&format!("FORM_{}", "A".repeat(32))));
         assert!(!is_legacy_relation_name("form_not-a-uuid"));
     }
+
+    #[test]
+    fn collects_stable_sql_relations_without_treating_them_as_form_aliases() {
+        let relation = format!("form_{}", "a".repeat(32));
+        let sql = format!("SELECT * FROM \"{relation}\"");
+
+        assert!(collect_quoted_form_name_references(&sql)
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            collect_quoted_form_relation_names(&sql).unwrap(),
+            [relation].into_iter().collect()
+        );
+    }
 }
 
 #[cfg(test)]
 mod function_policy_tests {
-    use super::bounded_session_context;
+    use super::{bounded_session_context, AuthorizedQueryContext};
+    use std::collections::{BTreeMap, BTreeSet, HashMap};
+    use std::sync::Arc;
     use std::time::Duration;
+    use tokio::sync::{Mutex, Semaphore};
     use ugoite_core::query::{QueryLimits, SqlFunctionPolicy};
 
     fn limits(function_policy: SqlFunctionPolicy) -> QueryLimits {
@@ -2345,8 +2413,10 @@ mod function_policy_tests {
 
         for sql in [
             "SELECT COUNT(*)",
+            "SELECT COUNT(DISTINCT *)",
             "SELECT SUM(1)",
             "SELECT AVG(1)",
+            "SELECT MEAN(1)",
             "SELECT MIN(1)",
             "SELECT MAX(1)",
         ] {
@@ -2390,5 +2460,39 @@ mod function_policy_tests {
             .create_logical_plan("SELECT COUNT(*)")
             .await
             .is_err());
+    }
+
+    #[tokio::test]
+    async fn values_query_reaches_planner_but_fails_authorized_physical_plan_validation() {
+        let limits = limits(SqlFunctionPolicy::ReadOnlyAggregateV1);
+        let context =
+            bounded_session_context(&limits).expect("bounded DataFusion context should be created");
+        let query_context = AuthorizedQueryContext {
+            context,
+            permits: Arc::new(Semaphore::new(limits.max_concurrency)),
+            limits,
+            authorized_relations: BTreeSet::new(),
+            form_name_aliases: BTreeMap::new(),
+            authorized_scans: BTreeSet::new(),
+            duplicate_head_checks: Vec::new(),
+            duplicate_head_checks_validated: Arc::new(Mutex::new(BTreeSet::new())),
+        };
+
+        let error = match query_context
+            .execute_stateless_page("VALUES (1)", HashMap::new(), 0, 10)
+            .await
+        {
+            Err(error) => error,
+            Ok(_) => panic!("VALUES has no authorized physical data source"),
+        };
+        let unauthorized = error
+            .downcast_ref::<super::AuthorizedQueryError>()
+            .expect("the physical-plan policy rejection keeps its query error classification");
+        assert_eq!(
+            std::error::Error::source(unauthorized)
+                .expect("rejection has a source")
+                .to_string(),
+            "physical plan has an unauthorized data source"
+        );
     }
 }

@@ -1,12 +1,8 @@
 import { For, Show } from "solid-js";
-import { CompositionEntryQueryTable } from "~/components/CompositionEntryQueryTable";
 import {
-  type CompositionFieldKeys,
-  type CompositionFieldNames,
-  type CompositionFieldTypeLookup,
   CompositionMetric,
   type CompositionMetricQueryContext,
-  CompositionSavedSqlTable,
+  CompositionSqlTable,
   usesServerMetricQuery,
 } from "~/components/CompositionRenderer";
 import { InputControl } from "~/components/composition/InputControl";
@@ -76,9 +72,6 @@ export interface DashboardFlowItemProps {
     CompositionResolvePlan["sources"][number]
   >;
   ownsSourceStatus: boolean;
-  fieldNames?: CompositionFieldNames;
-  fieldKeys?: CompositionFieldKeys;
-  fieldTypes?: CompositionFieldTypeLookup;
   metricQueryContext?: CompositionMetricQueryContext;
   onNext: (sourceId: string) => void;
   onPrevious: (sourceId: string) => void;
@@ -93,38 +86,40 @@ export interface DashboardFlowItemProps {
  */
 export function DashboardFlowItem(props: DashboardFlowItemProps) {
   if (!props.item.component) return null;
-  if (props.binding?.kind === "input" && props.definition) {
-    return (
-      <div class="compositionFlowItem compositionFlowItem--input">
-        <InputControl
-          definition={props.definition}
-          displayName={props.inputDisplayName ??
-            t("composition.studioVariables")}
-          value={props.variableValues?.[props.definition.id]}
-          rawValue={props.variableInputs?.[props.definition.id]?.raw}
-          onChange={(raw) => props.onVariableInput?.(props.definition.id, raw)}
-          invalid={props.variableInvalid?.(props.definition.id)}
-        />
-      </div>
-    );
-  }
   return (
-    <Show when={props.binding}>
-      {(entry) => (
-        <DashboardFlowComponent
-          binding={entry()}
-          texts={props.texts}
-          sources={props.sources}
-          sourceById={props.sourceById}
-          ownsSourceStatus={props.ownsSourceStatus}
-          fieldNames={props.fieldNames}
-          fieldKeys={props.fieldKeys}
-          fieldTypes={props.fieldTypes}
-          metricQueryContext={props.metricQueryContext}
-          onNext={props.onNext}
-          onPrevious={props.onPrevious}
-          onRetry={props.onRetry}
-        />
+    <Show
+      when={props.binding?.kind === "input" && props.definition}
+      fallback={
+        <Show when={props.binding}>
+          {(entry) => (
+            <DashboardFlowComponent
+              binding={entry()}
+              texts={props.texts}
+              sources={props.sources}
+              sourceById={props.sourceById}
+              ownsSourceStatus={props.ownsSourceStatus}
+              metricQueryContext={props.metricQueryContext}
+              onNext={props.onNext}
+              onPrevious={props.onPrevious}
+              onRetry={props.onRetry}
+            />
+          )}
+        </Show>
+      }
+    >
+      {(definition) => (
+        <div class="compositionFlowItem compositionFlowItem--input">
+          <InputControl
+            definition={definition()}
+            displayName={props.inputDisplayName ??
+              t("composition.studioVariables")}
+            value={props.variableValues?.[definition().id]}
+            rawValue={props.variableInputs?.[definition().id]?.raw}
+            onChange={(raw) =>
+              props.onVariableInput?.(definition().id, raw)}
+            invalid={props.variableInvalid?.(definition().id)}
+          />
+        </div>
       )}
     </Show>
   );
@@ -139,8 +134,6 @@ type DashboardFlowRendererProps = {
   layout: Pick<CompositionFlowLayout, "rows">;
   /** Input component id -> variable id from the canonical document. */
   inputVariables?: Readonly<Record<string, string>>;
-  /** Optional Input label overrides keyed by component id. */
-  inputLabels?: Readonly<Record<string, string>>;
   /** Resolved sources with their layout-ordered component bindings. */
   plan: Pick<
     CompositionResolvePlan,
@@ -158,9 +151,6 @@ type DashboardFlowRendererProps = {
   variableInvalid?: (variableId: string) => boolean;
   onVariableInput?: (variableId: string, raw: string) => void;
   sources: Record<string, CompositionSourcePageState>;
-  fieldNames?: CompositionFieldNames;
-  fieldKeys?: CompositionFieldKeys;
-  fieldTypes?: CompositionFieldTypeLookup;
   metricQueryContext?: CompositionMetricQueryContext;
   onNext: (sourceId: string) => void;
   onPrevious: (sourceId: string) => void;
@@ -252,13 +242,11 @@ export function DashboardFlowRenderer(props: DashboardFlowRendererProps) {
                       texts={props.texts}
                       definition={definition()}
                       inputDisplayName={binding()?.kind === "input"
-                        ? binding()!.label?.trim() ||
-                          props.inputLabels?.[item.component] ||
-                          compositionVariableDisplayName(
-                            props.variableDisplayDefinitions ??
-                              props.variableDefinitions,
-                            binding()!.variable_id,
-                          )
+                        ? compositionVariableDisplayName(
+                          props.variableDisplayDefinitions ??
+                            props.variableDefinitions,
+                          binding()!.variable_id,
+                        )
                         : undefined}
                       variableValues={props.variableValues}
                       variableInputs={props.variableInputs}
@@ -267,9 +255,6 @@ export function DashboardFlowRenderer(props: DashboardFlowRendererProps) {
                       sources={props.sources}
                       sourceById={sourceById()}
                       ownsSourceStatus={ownsSourceStatus()}
-                      fieldNames={props.fieldNames}
-                      fieldKeys={props.fieldKeys}
-                      fieldTypes={props.fieldTypes}
                       metricQueryContext={metricQueryContext()}
                       onNext={props.onNext}
                       onPrevious={props.onPrevious}
@@ -295,9 +280,6 @@ function DashboardFlowComponent(props: {
     CompositionResolvePlan["sources"][number]
   >;
   ownsSourceStatus: boolean;
-  fieldNames?: CompositionFieldNames;
-  fieldKeys?: CompositionFieldKeys;
-  fieldTypes?: CompositionFieldTypeLookup;
   metricQueryContext?: CompositionMetricQueryContext;
   onNext: (sourceId: string) => void;
   onPrevious: (sourceId: string) => void;
@@ -341,40 +323,14 @@ function DashboardFlowComponent(props: {
                 />
               </div>
             )
-            : entry().kind === "entry_query"
-            ? (
-              <div class="compositionFlowItem compositionFlowItem--table">
-                <CompositionEntryQueryTable
-                  binding={sourced() as Extract<
-                    CompositionResolvedComponentBinding,
-                    { kind: "table" }
-                  >}
-                  source={entry() as Extract<
-                    CompositionResolvePlan["sources"][number],
-                    { kind: "entry_query" }
-                  >}
-                  sourceState={sourceState()}
-                  ownsSourceStatus={props.ownsSourceStatus}
-                  fieldNames={props.fieldNames}
-                  fieldKeys={props.fieldKeys}
-                  fieldTypes={props.fieldTypes}
-                  onNext={() => props.onNext(sourced().source_id)}
-                  onPrevious={() => props.onPrevious(sourced().source_id)}
-                  onRetry={() => props.onRetry(sourced().source_id)}
-                />
-              </div>
-            )
             : (
               <div class="compositionFlowItem compositionFlowItem--table">
-                <CompositionSavedSqlTable
+                <CompositionSqlTable
                   binding={sourced() as Extract<
                     CompositionResolvedComponentBinding,
                     { kind: "table" }
                   >}
-                  source={entry() as Extract<
-                    CompositionResolvePlan["sources"][number],
-                    { kind: "saved_sql" }
-                  >}
+                  source={entry()}
                   sourceState={sourceState()}
                   ownsSourceStatus={props.ownsSourceStatus}
                   onNext={() => props.onNext(sourced().source_id)}

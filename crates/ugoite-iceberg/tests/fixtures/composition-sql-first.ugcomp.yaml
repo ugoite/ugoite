@@ -1,0 +1,25 @@
+format: ugoite.composition
+format_version: 1
+kind: dashboard
+name: Iceberg Composition test
+spec:
+  sources:
+    - id: total
+      kind: inline_sql
+      name: Total
+      sql: SELECT 1 AS total
+      form_bindings: []
+      expected_result: []
+      schema_fingerprint: ''
+  components:
+    - id: total_metric
+      kind: metric
+      source: total
+      column: total
+  layout:
+    kind: flow
+    rows:
+      - id: main
+        items:
+          - kind: component
+            component: total_metric

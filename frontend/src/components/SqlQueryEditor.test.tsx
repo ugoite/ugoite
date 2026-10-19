@@ -1,8 +1,18 @@
+import "@testing-library/jest-dom/vitest";
 import { createSignal } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import { render, waitFor } from "@solidjs/testing-library";
 import { SqlQueryEditor } from "./SqlQueryEditor";
 import { buildSqlSchema } from "~/lib/sql";
+
+const codeMirrorViewMocks = vi.hoisted(() => ({
+  contentAttributesOf: vi.fn((attributes: Record<string, string>) => ({
+    type: "contentAttributes",
+    attributes,
+  })),
+  editableOf: vi.fn((value: boolean) => ({ type: "editable", value })),
+  lineWrapping: { type: "lineWrapping" },
+}));
 
 vi.mock("@codemirror/autocomplete", () => ({
   autocompletion: (config: unknown) => ({ type: "autocompletion", config }),
@@ -74,6 +84,11 @@ vi.mock("@codemirror/view", () => {
   return {
     EditorView: class FakeEditorView {
       static updateListener = updateListener;
+      static contentAttributes = {
+        of: codeMirrorViewMocks.contentAttributesOf,
+      };
+      static editable = { of: codeMirrorViewMocks.editableOf };
+      static lineWrapping = codeMirrorViewMocks.lineWrapping;
 
       state: {
         doc: {
@@ -88,13 +103,42 @@ vi.mock("@codemirror/view", () => {
 
       constructor({
         state,
+        parent,
       }: {
         state: {
           doc: { toString: () => string; length: number };
           extensions?: unknown[];
         };
+        parent?: HTMLDivElement;
       }) {
         this.state = state;
+        const contentAttributes = (state.extensions ?? []).find(
+          (extension) =>
+            typeof extension === "object" && extension !== null &&
+            "type" in extension && extension.type === "contentAttributes" &&
+            "attributes" in extension &&
+            typeof extension.attributes === "object",
+        );
+        if (parent) {
+          const label = contentAttributes && "attributes" in contentAttributes
+            ? (contentAttributes.attributes as Record<string, string>)[
+              "aria-label"
+            ]
+            : undefined;
+          parent.dataset.editorAccessibleName = label ?? "";
+          parent.dataset.lineWrapping = String(
+            (state.extensions ?? []).includes(codeMirrorViewMocks.lineWrapping),
+          );
+          const editable = (state.extensions ?? []).find(
+            (extension) =>
+              typeof extension === "object" && extension !== null &&
+              "type" in extension && extension.type === "editable" &&
+              "value" in extension,
+          );
+          parent.dataset.editorEditable = String(
+            editable && "value" in editable ? editable.value : "",
+          );
+        }
         this.listeners = (state.extensions ?? [])
           .filter(
             (
@@ -166,6 +210,54 @@ describe("REQ-FE-036: SQL Query Editor", () => {
       />
     ));
     expect(onDiagnostics).toHaveBeenCalled();
+    expect(result.container.querySelector(".ui-sql-editor")).toHaveAttribute(
+      "data-line-wrapping",
+      "false",
+    );
+    result.unmount();
+  });
+
+  it("names the SQL editor and enables line wrapping when requested", () => {
+    codeMirrorViewMocks.contentAttributesOf.mockClear();
+    const result = render(() => (
+      <SqlQueryEditor
+        value='SELECT * FROM "form_00000000000000000000000000000001"'
+        onChange={() => undefined}
+        schema={buildSqlSchema([])}
+        ariaLabel="SQL"
+        wrapLines
+      />
+    ));
+
+    expect(codeMirrorViewMocks.contentAttributesOf)
+      .toHaveBeenCalledWith({ "aria-label": "SQL" });
+    expect(result.container.querySelector(".ui-sql-editor")).toHaveAttribute(
+      "data-editor-accessible-name",
+      "SQL",
+    );
+    expect(result.container.querySelector(".ui-sql-editor")).toHaveAttribute(
+      "data-line-wrapping",
+      "true",
+    );
+    result.unmount();
+  });
+
+  it("configures disabled editors as non-editable", () => {
+    codeMirrorViewMocks.editableOf.mockClear();
+    const result = render(() => (
+      <SqlQueryEditor
+        value="SELECT 1"
+        onChange={() => undefined}
+        schema={buildSqlSchema([])}
+        disabled
+      />
+    ));
+
+    expect(codeMirrorViewMocks.editableOf).toHaveBeenCalledWith(false);
+    expect(result.container.querySelector(".ui-sql-editor")).toHaveAttribute(
+      "data-editor-editable",
+      "false",
+    );
     result.unmount();
   });
 

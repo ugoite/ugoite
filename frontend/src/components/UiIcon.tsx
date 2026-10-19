@@ -30,6 +30,9 @@ export type UiIconName =
   | "columns"
   | "filter"
   | "sort"
+  | "aggregate"
+  | "group-by"
+  | "distinct"
   | "canvas-text"
   | "canvas-metric"
   | "canvas-table"
@@ -204,6 +207,19 @@ const paths: Record<UiIconName, () => JSX.Element> = {
   sort: () => (
     <>
       <path d="M8 5v14M8 5l-3 3M8 5l3 3M16 19V5m0 14-3-3m3 3 3-3" />
+    </>
+  ),
+  aggregate: () => <path d="M19 4H7l7 8-7 8h12" />,
+  "group-by": () => (
+    <>
+      <path d="M4 5h5M4 12h5M4 19h5M9 5l7 7-7 7M16 12h4" />
+    </>
+  ),
+  distinct: () => (
+    <>
+      <circle cx="8" cy="12" r="4" />
+      <circle cx="16" cy="12" r="4" />
+      <path d="M5 19 19 5" />
     </>
   ),
   "canvas-text": () => (

@@ -1,31 +1,26 @@
 //! Pure Composition variable binding and source compilation.
 //!
-//! This module resolves typed Composition values into the existing bounded
-//! EntryQuery and stateless SQL query contracts. It performs no storage reads,
+//! This module resolves typed Composition values into the existing stateless
+//! SQL query contract. It performs no storage reads,
 //! grants no authorization, and creates no persistent query state.
 
-use crate::entry_query::{
-    entry_field_capability, entry_query_text_searches_field_type, EntryFieldRef, EntryFilter,
-    EntryPageRequest, EntryProjection, EntryQuery, EntryQueryFieldKind, EntryQueryScope, EntrySort,
-    EntrySortDirection, SearchOperator,
+use crate::sql_query::{
+    SavedSqlRevisionRef, SqlQueryRequest, MAX_SQL_COLUMN_NAME_BYTES, MAX_SQL_OUTPUT_COLUMNS,
 };
-use crate::sql_query::{SavedSqlRevisionRef, SqlQueryRequest};
-use chrono::{DateTime, NaiveDate, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use ugoite_domain::composition::{
-    CompositionComponent, CompositionDiagnosticCode, CompositionFieldSchemaEntry,
-    CompositionLiteral, CompositionMetricPresentation, CompositionQueryOperator,
-    CompositionResultFieldType, CompositionSortDirection, CompositionSource, CompositionSpec,
-    CompositionTextContent, CompositionValue, CompositionVariable, CompositionVariableType,
-    EntryQueryDisplaySystemField, EntryQueryProjectionTemplate, EntryQueryTemplate,
-    DEFAULT_COMPOSITION_PAGE_LIMIT,
+    CompositionComponent, CompositionDiagnosticCode, CompositionFormBinding, CompositionLiteral,
+    CompositionMetricPresentation, CompositionResultColumn, CompositionResultFieldType,
+    CompositionSource, CompositionSpec, CompositionTextContent, CompositionValue,
+    CompositionVariable, CompositionVariableType,
 };
 use ugoite_domain::composition_metric::validate_composition_metric_result_type;
-use ugoite_domain::form::{FieldType, FormDefinition};
-use ugoite_domain::id::{EntryId, FormId, RevisionId};
+use ugoite_domain::id::{EntryId, RevisionId};
+
+/// Bounded default page size for Composition SQL sources.
+const DEFAULT_COMPOSITION_SQL_PAGE_LIMIT: usize = 100;
 
 /// One stable diagnostic emitted while binding a variable or value template.
 ///
@@ -236,353 +231,183 @@ fn value_matches_variable(value: &Value, variable_type: CompositionVariableType)
     variable_type.accepts_value(value)
 }
 
-fn parse_date(value: &str) -> Option<NaiveDate> {
-    let parsed = NaiveDate::parse_from_str(value, "%Y-%m-%d").ok()?;
-    (parsed.format("%Y-%m-%d").to_string() == value).then_some(parsed)
+/// Metadata produced by the server's SQL planner for the current inline SQL
+/// source. Core deliberately does not parse SQL: relation bindings, parameter
+/// names, planned output columns, and the stable relation rewrite all come from
+/// the authorized server boundary.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InlineSqlSourceMetadata {
+    /// SQL after the server resolves Form relations to their stable internal IDs.
+    pub bound_sql: String,
+    pub form_bindings: Vec<CompositionFormBinding>,
+    pub parameter_names: BTreeSet<String>,
+    pub expected_result: Vec<CompositionResultColumn>,
+    pub schema_fingerprint: String,
 }
 
-fn parse_wall_timestamp(value: &str) -> Option<NaiveDateTime> {
-    let parsed = NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.f")
-        .or_else(|_| NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M"))
-        .ok()?;
-    let seconds = parsed.format("%Y-%m-%dT%H:%M:%S%.f").to_string();
-    let minutes = parsed.format("%Y-%m-%dT%H:%M").to_string();
-    (seconds == value || minutes == value).then_some(parsed)
+/// Metadata for one exact Saved SQL revision, projected by the authorized
+/// storage boundary into the transport-neutral Core resolver input.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SavedSqlRevisionMetadata {
+    pub id: String,
+    pub revision_id: String,
+    pub variable_types: BTreeMap<String, String>,
+    pub expected_result: Vec<CompositionResultColumn>,
+    pub schema_fingerprint: String,
 }
 
-fn parse_zoned_timestamp(value: &str) -> Option<DateTime<chrono::FixedOffset>> {
-    DateTime::parse_from_rfc3339(value).ok()
-}
-
-/// An EntryQuery template compiled to the existing bounded query contract.
+/// An inline SQL source compiled to the existing stateless SQL request.
 #[derive(Clone, Debug, PartialEq)]
-pub struct CompiledEntryQuery {
-    pub request: EntryPageRequest,
-    pub display_system_fields: Vec<EntryQueryDisplaySystemField>,
-    /// Variable IDs that affect this source request, sorted and deduplicated.
+pub struct CompiledInlineSqlSource {
+    pub request: SqlQueryRequest,
+    pub form_bindings: Vec<CompositionFormBinding>,
+    pub expected_result: Vec<CompositionResultColumn>,
+    /// Composition variable IDs used by this source, sorted and deduplicated.
     pub variable_dependencies: Vec<String>,
-    /// SHA-256 over the source Form ID and used field IDs/schema snapshots.
+    /// The schema fingerprint persisted with this source.
     pub source_schema_fingerprint: String,
 }
 
-/// Compile one Composition EntryQuery against a current, already-authorized
-/// Form descriptor. This function performs no storage reads and grants no
-/// authorization; callers must obtain `current_form` through the current ACL
-/// boundary and query execution must recheck authorization independently.
-pub fn compile_entry_query_source(
-    form_id: FormId,
-    field_schema: &[CompositionFieldSchemaEntry],
-    template: &EntryQueryTemplate,
+/// Compile inline SQL against the server's current, authorized SQL plan.
+/// Stored Form bindings and result schema are snapshots, never instructions to
+/// rebind a relation. The request carries server-rewritten SQL; execution still
+/// repeats the ordinary SQL ACL and resource checks.
+pub fn compile_inline_sql_source(
+    source: &CompositionSource,
+    current_schema: Option<&InlineSqlSourceMetadata>,
     bindings: &VariableBindings,
-    current_form: &FormDefinition,
-) -> Result<CompiledEntryQuery, Vec<CompositionDiagnostic>> {
-    if current_form.id != form_id || current_form.validate().is_err() {
+    allow_incomplete_source_descriptors: bool,
+) -> Result<CompiledInlineSqlSource, Vec<CompositionDiagnostic>> {
+    let CompositionSource::InlineSql {
+        form_bindings,
+        expected_result,
+        schema_fingerprint,
+        ..
+    } = source
+    else {
+        return Err(vec![CompositionDiagnostic::without_variable(
+            CompositionDiagnosticCode::InvalidComposition,
+        )]);
+    };
+    let Some(current_schema) = current_schema else {
+        return Err(vec![CompositionDiagnostic::without_variable(
+            CompositionDiagnosticCode::SourceUnavailable,
+        )]);
+    };
+    if current_schema.bound_sql.trim().is_empty() {
         return Err(vec![CompositionDiagnostic::without_variable(
             CompositionDiagnosticCode::SourceUnavailable,
         )]);
     }
+    if !result_schema_is_well_formed(
+        &current_schema.expected_result,
+        &current_schema.schema_fingerprint,
+    ) || current_schema
+        .form_bindings
+        .iter()
+        .any(|binding| binding.relation.trim().is_empty())
+        || current_schema
+            .form_bindings
+            .iter()
+            .map(|binding| binding.relation.as_str())
+            .collect::<BTreeSet<_>>()
+            .len()
+            != current_schema.form_bindings.len()
+        || current_schema
+            .parameter_names
+            .iter()
+            .any(|name| name.trim().is_empty())
+    {
+        return Err(vec![CompositionDiagnostic::without_variable(
+            CompositionDiagnosticCode::SourceUnavailable,
+        )]);
+    }
+    let draft_placeholder =
+        form_bindings.is_empty() && expected_result.is_empty() && schema_fingerprint.is_empty();
+    if !(allow_incomplete_source_descriptors && draft_placeholder)
+        && (&current_schema.form_bindings != form_bindings
+            || &current_schema.expected_result != expected_result
+            || &current_schema.schema_fingerprint != schema_fingerprint)
+    {
+        return Err(vec![CompositionDiagnostic::without_variable(
+            CompositionDiagnosticCode::SourceSchemaChanged,
+        )]);
+    }
 
+    let mut parameters = serde_json::Map::new();
+    let mut parameter_types = BTreeMap::new();
     let mut variable_dependencies = BTreeSet::new();
-    if let Some(CompositionValue::Variable(reference)) = template.text.as_ref() {
-        variable_dependencies.insert(reference.variable.clone());
-    }
-    for filter in &template.filters {
-        if let CompositionValue::Variable(reference) = &filter.value {
-            variable_dependencies.insert(reference.variable.clone());
-        }
-    }
-
     let mut diagnostics = Vec::new();
-    let text = template.text.as_ref().and_then(|value| {
-        let bound = match resolve_value_template(value, bindings) {
-            Ok(bound) => bound,
-            Err(diagnostic) => {
-                diagnostics.push(diagnostic);
-                return None;
-            }
+    for variable_id in &current_schema.parameter_names {
+        let Some(variable_type) = bindings.variable_types.get(variable_id).copied() else {
+            diagnostics.push(CompositionDiagnostic::without_variable(
+                CompositionDiagnosticCode::VariableUnknown,
+            ));
+            continue;
         };
-        if bound
-            .variable_type
-            .is_some_and(|kind| kind != CompositionVariableType::String)
-        {
+        let Some(value) = bindings.values.get(variable_id) else {
+            diagnostics.push(CompositionDiagnostic::without_variable(
+                CompositionDiagnosticCode::VariableMissing,
+            ));
+            continue;
+        };
+        if !value_matches_variable(value, variable_type) {
             diagnostics.push(CompositionDiagnostic::without_variable(
                 CompositionDiagnosticCode::VariableTypeMismatch,
             ));
-            return None;
+            continue;
         }
-        match bound.value.as_str() {
-            Some(text) => Some(text.to_owned()),
-            None => {
-                diagnostics.push(CompositionDiagnostic::without_variable(
-                    if bound.variable_type.is_some() {
-                        CompositionDiagnosticCode::VariableTypeMismatch
-                    } else {
-                        CompositionDiagnosticCode::InvalidComposition
-                    },
-                ));
-                None
-            }
-        }
-    });
-
-    let mut filters = Vec::with_capacity(template.filters.len());
-    for filter in &template.filters {
-        match resolve_value_template(&filter.value, bindings) {
-            Ok(bound) => filters.push((filter, bound)),
-            Err(diagnostic) => diagnostics.push(diagnostic),
-        }
+        variable_dependencies.insert(variable_id.clone());
+        parameters.insert(variable_id.clone(), value.clone());
+        parameter_types.insert(
+            variable_id.clone(),
+            sql_type_for_composition_variable(variable_type).to_owned(),
+        );
     }
     if !diagnostics.is_empty() {
         return Err(deduplicate_diagnostics(diagnostics));
     }
 
-    let query = EntryQuery {
-        scope: EntryQueryScope::Form { form_id },
-        text,
-        filters: filters
-            .iter()
-            .map(|(filter, bound)| EntryFilter {
-                field: EntryFieldRef::Property {
-                    field_id: filter.field_id,
-                },
-                operator: map_operator(filter.operator),
-                value: bound.value.clone(),
-            })
-            .collect(),
-        sort: template
-            .sort
-            .iter()
-            .map(|sort| EntrySort {
-                field: EntryFieldRef::Property {
-                    field_id: sort.field_id,
-                },
-                direction: match sort.direction {
-                    CompositionSortDirection::Asc => EntrySortDirection::Asc,
-                    CompositionSortDirection::Desc => EntrySortDirection::Desc,
-                },
-            })
-            .collect(),
-    };
-    let preview_requested = matches!(template.projection, EntryQueryProjectionTemplate::Preview);
-    let projection = match &template.projection {
-        EntryQueryProjectionTemplate::Preview => EntryProjection::Preview,
-        EntryQueryProjectionTemplate::Fields { fields } => EntryProjection::Fields {
-            fields: fields
-                .iter()
-                .copied()
-                .map(|field_id| EntryFieldRef::Property { field_id })
-                .collect(),
-        },
-    };
-    let request = EntryPageRequest {
-        query,
-        projection,
-        limit: template.page_limit,
-        after: None,
+    let request = SqlQueryRequest {
+        sql: current_schema.bound_sql.clone(),
+        parameters,
+        parameter_types,
+        include_exact_integer_values: false,
+        limit: DEFAULT_COMPOSITION_SQL_PAGE_LIMIT,
+        continuation: None,
+        saved_sql: None,
     };
     if request.validate().is_err() {
         return Err(vec![CompositionDiagnostic::without_variable(
             CompositionDiagnosticCode::InvalidComposition,
         )]);
     }
-
-    let current_by_id = current_form
-        .fields
-        .iter()
-        .map(|field| (field.id, field))
-        .collect::<BTreeMap<_, _>>();
-    let expected_by_id = field_schema
-        .iter()
-        .map(|field| (field.field_id, field))
-        .collect::<BTreeMap<_, _>>();
-    if expected_by_id.len() != field_schema.len() {
-        return Err(vec![CompositionDiagnostic::without_variable(
-            CompositionDiagnosticCode::InvalidComposition,
-        )]);
-    }
-
-    let mut explicit_fields = BTreeSet::new();
-    explicit_fields.extend(filters.iter().map(|(filter, _)| filter.field_id));
-    explicit_fields.extend(template.sort.iter().map(|sort| sort.field_id));
-    if let EntryProjection::Fields { fields } = &request.projection {
-        explicit_fields.extend(fields.iter().filter_map(|field| match field {
-            EntryFieldRef::Property { field_id } => Some(*field_id),
-            EntryFieldRef::Form | EntryFieldRef::CreatedAt | EntryFieldRef::UpdatedAt => None,
-        }));
-    }
-    let text_fields = request
-        .query
-        .text
-        .as_ref()
-        .map(|_| {
-            current_form
-                .fields
-                .iter()
-                .filter(|field| entry_query_text_searches_field_type(&field.field_type))
-                .map(|field| field.id)
-                .collect::<BTreeSet<_>>()
-        })
-        .unwrap_or_default();
-    let preview_fields = if preview_requested {
-        current_by_id.keys().copied().collect::<BTreeSet<_>>()
-    } else {
-        BTreeSet::new()
-    };
-
-    let mut used_fields = explicit_fields.clone();
-    used_fields.extend(text_fields.iter().copied());
-    used_fields.extend(preview_fields.iter().copied());
-
-    for (field, bound) in &filters {
-        match current_by_id.get(&field.field_id) {
-            Some(definition)
-                if expected_by_id
-                    .get(&field.field_id)
-                    .is_some_and(|expected| expected.field_type == definition.field_type) =>
-            {
-                if !filter_value_matches_field(
-                    &bound.value,
-                    bound.variable_type,
-                    field.operator,
-                    &definition.field_type,
-                ) {
-                    diagnostics.push(CompositionDiagnostic::without_variable(
-                        if bound.variable_type.is_some() {
-                            CompositionDiagnosticCode::VariableTypeMismatch
-                        } else {
-                            CompositionDiagnosticCode::InvalidComposition
-                        },
-                    ));
-                }
-            }
-            Some(_) => {}
-            None => diagnostics.push(CompositionDiagnostic::without_variable(
-                CompositionDiagnosticCode::MissingField,
-            )),
-        }
-    }
-
-    for sort in &template.sort {
-        match current_by_id.get(&sort.field_id) {
-            Some(definition)
-                if expected_by_id
-                    .get(&sort.field_id)
-                    .is_some_and(|expected| expected.field_type == definition.field_type)
-                    && !entry_field_capability(definition).sortable =>
-            {
-                diagnostics.push(CompositionDiagnostic::without_variable(
-                    CompositionDiagnosticCode::InvalidComposition,
-                ));
-            }
-            Some(_) | None => {}
-        }
-    }
-
-    for field_id in &explicit_fields {
-        if !current_by_id.contains_key(field_id) {
-            diagnostics.push(CompositionDiagnostic::without_variable(
-                CompositionDiagnosticCode::MissingField,
-            ));
-        }
-    }
-
-    if !text_fields.is_empty() || request.query.text.is_some() {
-        let expected_text_fields = expected_by_id
-            .iter()
-            .filter(|(_, field)| entry_query_text_searches_field_type(&field.field_type))
-            .map(|(field_id, _)| *field_id)
-            .collect::<BTreeSet<_>>();
-        if expected_text_fields != text_fields {
-            diagnostics.push(CompositionDiagnostic::without_variable(
-                CompositionDiagnosticCode::SourceSchemaChanged,
-            ));
-        }
-    }
-
-    if preview_requested
-        && expected_by_id.keys().copied().collect::<BTreeSet<_>>() != preview_fields
-    {
-        diagnostics.push(CompositionDiagnostic::without_variable(
-            CompositionDiagnosticCode::SourceSchemaChanged,
-        ));
-    }
-
-    for field_id in &used_fields {
-        let Some(current) = current_by_id.get(field_id) else {
-            continue;
-        };
-        let Some(expected) = expected_by_id.get(field_id) else {
-            diagnostics.push(CompositionDiagnostic::without_variable(
-                CompositionDiagnosticCode::SourceSchemaChanged,
-            ));
-            continue;
-        };
-        if current.field_type != expected.field_type {
-            diagnostics.push(CompositionDiagnostic::without_variable(
-                CompositionDiagnosticCode::FieldTypeChanged,
-            ));
-        } else if current.reference_form != expected.reference_form
-            || current.list_item != expected.list_item
-        {
-            diagnostics.push(CompositionDiagnostic::without_variable(
-                CompositionDiagnosticCode::SourceSchemaChanged,
-            ));
-        }
-    }
-
-    if !diagnostics.is_empty() {
-        return Err(deduplicate_diagnostics(diagnostics));
-    }
-
-    let schema_material = used_fields
-        .iter()
-        .filter_map(|field_id| current_by_id.get(field_id))
-        .map(|field| CompositionFieldSchemaEntry {
-            field_id: field.id,
-            field_type: field.field_type.clone(),
-            reference_form: field.reference_form,
-            list_item: field.list_item.clone(),
-        })
-        .collect::<Vec<_>>();
-    let schema_bytes = serde_json::to_vec(&(form_id, schema_material)).map_err(|_| {
-        vec![CompositionDiagnostic::without_variable(
-            CompositionDiagnosticCode::InvalidComposition,
-        )]
-    })?;
-    Ok(CompiledEntryQuery {
+    Ok(CompiledInlineSqlSource {
         request,
-        display_system_fields: template.display_system_fields.clone(),
+        form_bindings: current_schema.form_bindings.clone(),
+        expected_result: current_schema.expected_result.clone(),
         variable_dependencies: variable_dependencies.into_iter().collect(),
-        source_schema_fingerprint: hex::encode(Sha256::digest(schema_bytes)),
+        source_schema_fingerprint: if draft_placeholder && allow_incomplete_source_descriptors {
+            current_schema.schema_fingerprint.clone()
+        } else {
+            schema_fingerprint.clone()
+        },
     })
-}
-
-/// Current metadata for one exact Saved SQL revision, projected by the
-/// authorized storage boundary into the core resolver's transport-neutral
-/// input. SQL text and variable descriptions are deliberately not included.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SavedSqlRevisionMetadata {
-    pub id: String,
-    pub revision_id: String,
-    pub variable_types: BTreeMap<String, String>,
 }
 
 /// An exact Saved SQL source compiled to the existing stateless SQL request.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CompiledSavedSqlSource {
     pub request: SqlQueryRequest,
+    pub expected_result: Vec<CompositionResultColumn>,
     /// Composition variable IDs bound into this source, sorted and deduplicated.
     pub variable_dependencies: Vec<String>,
-    /// SHA-256 over the exact revision identity, ordered result schema, and
-    /// used variable schema.
+    /// The schema fingerprint pinned by this exact revision.
     pub source_schema_fingerprint: String,
 }
 
 /// Compile a Composition Saved SQL source against metadata read for its exact
-/// current revision. The caller must obtain the descriptor through the
-/// current ACL boundary. A missing descriptor (including a concealed denied
-/// read) produces one stable unavailable-revision diagnostic. SQL execution
-/// remains in the existing query path, which rechecks current authorization.
+/// pinned revision. Missing or concealed reads share one stable diagnostic.
 pub fn compile_saved_sql_source(
     source: &CompositionSource,
     current_revision: Option<&SavedSqlRevisionMetadata>,
@@ -592,6 +417,7 @@ pub fn compile_saved_sql_source(
         entry_id,
         revision_id,
         expected_result,
+        schema_fingerprint,
         variables,
         ..
     } = source
@@ -600,7 +426,6 @@ pub fn compile_saved_sql_source(
             CompositionDiagnosticCode::InvalidComposition,
         )]);
     };
-
     let Some(current_revision) = current_revision else {
         return Err(vec![CompositionDiagnostic::without_variable(
             CompositionDiagnosticCode::SourceUnavailable,
@@ -614,17 +439,22 @@ pub fn compile_saved_sql_source(
             CompositionDiagnosticCode::SourceUnavailable,
         )]);
     }
+    if !result_schema_is_well_formed(
+        &current_revision.expected_result,
+        &current_revision.schema_fingerprint,
+    ) || current_revision.expected_result != *expected_result
+        || current_revision.schema_fingerprint != *schema_fingerprint
+    {
+        return Err(vec![CompositionDiagnostic::without_variable(
+            CompositionDiagnosticCode::SourceSchemaChanged,
+        )]);
+    }
 
     let mut diagnostics = Vec::new();
     let mut parameters = serde_json::Map::new();
     let mut parameter_types = BTreeMap::new();
-    let mut used_variable_types = BTreeMap::new();
     let mut variable_dependencies = BTreeSet::new();
-
     for (variable_name, value_template) in variables {
-        if let CompositionValue::Variable(reference) = value_template {
-            variable_dependencies.insert(reference.variable.clone());
-        }
         let Some(sql_type_name) = current_revision.variable_types.get(variable_name) else {
             diagnostics.push(CompositionDiagnostic::without_variable(
                 CompositionDiagnosticCode::SourceSchemaChanged,
@@ -653,9 +483,6 @@ pub fn compile_saved_sql_source(
             ));
             continue;
         }
-        // SQL query binding uses the descriptor's declared type to preserve a
-        // typed NULL; non-null literals and named parameters still require an
-        // exact Composition type/value match.
         if (bound.value.is_null() && bound.variable_type.is_some())
             || (!bound.value.is_null() && !value_matches_variable(&bound.value, variable_type))
         {
@@ -668,12 +495,12 @@ pub fn compile_saved_sql_source(
             ));
             continue;
         }
-
+        if let CompositionValue::Variable(reference) = value_template {
+            variable_dependencies.insert(reference.variable.clone());
+        }
         parameters.insert(variable_name.clone(), bound.value);
         parameter_types.insert(variable_name.clone(), sql_type_name.clone());
-        used_variable_types.insert(variable_name.clone(), sql_type_name.clone());
     }
-
     if current_revision
         .variable_types
         .keys()
@@ -683,32 +510,23 @@ pub fn compile_saved_sql_source(
             CompositionDiagnosticCode::VariableMissing,
         ));
     }
-
     if !diagnostics.is_empty() {
         return Err(deduplicate_diagnostics(diagnostics));
     }
 
-    let saved_sql = SavedSqlRevisionRef {
-        id: expected_id,
-        revision_id: expected_revision_id,
-    };
-    let fingerprint_material =
-        serde_json::to_vec(&(&saved_sql, expected_result, &used_variable_types)).map_err(|_| {
-            vec![CompositionDiagnostic::without_variable(
-                CompositionDiagnosticCode::InvalidComposition,
-            )]
-        })?;
     let request = SqlQueryRequest {
-        // The SQL text is resolved by the existing executor from this exact
-        // revision reference. Sending a client copy would create a second
-        // authority for the query text.
+        // Saved SQL text is owned by the exact immutable revision. Supplying an
+        // empty body prevents a second copy from becoming query authority.
         sql: String::new(),
         parameters,
         parameter_types,
         include_exact_integer_values: false,
-        limit: DEFAULT_COMPOSITION_PAGE_LIMIT,
+        limit: DEFAULT_COMPOSITION_SQL_PAGE_LIMIT,
         continuation: None,
-        saved_sql: Some(saved_sql),
+        saved_sql: Some(SavedSqlRevisionRef {
+            id: expected_id,
+            revision_id: expected_revision_id,
+        }),
     };
     if request.validate().is_err() {
         return Err(vec![CompositionDiagnostic::without_variable(
@@ -718,9 +536,64 @@ pub fn compile_saved_sql_source(
 
     Ok(CompiledSavedSqlSource {
         request,
+        expected_result: current_revision.expected_result.clone(),
         variable_dependencies: variable_dependencies.into_iter().collect(),
-        source_schema_fingerprint: hex::encode(Sha256::digest(fingerprint_material)),
+        source_schema_fingerprint: schema_fingerprint.clone(),
     })
+}
+
+fn composition_variable_type_for_sql(variable_type: &str) -> Option<CompositionVariableType> {
+    match variable_type {
+        "string" => Some(CompositionVariableType::String),
+        "boolean" => Some(CompositionVariableType::Boolean),
+        "integer" => Some(CompositionVariableType::Integer),
+        "float" => Some(CompositionVariableType::Float),
+        "date" => Some(CompositionVariableType::Date),
+        "timestamp" => Some(CompositionVariableType::Timestamp),
+        _ => None,
+    }
+}
+
+fn result_schema_is_well_formed(columns: &[CompositionResultColumn], fingerprint: &str) -> bool {
+    !columns.is_empty()
+        && columns.len() <= MAX_SQL_OUTPUT_COLUMNS
+        && columns.iter().all(|column| {
+            !column.name.trim().is_empty() && column.name.len() <= MAX_SQL_COLUMN_NAME_BYTES
+        })
+        && columns
+            .iter()
+            .map(|column| column.name.as_str())
+            .collect::<BTreeSet<_>>()
+            .len()
+            == columns.len()
+        && fingerprint.len() == 64
+        && fingerprint
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn sql_type_for_composition_variable(variable_type: CompositionVariableType) -> &'static str {
+    match variable_type {
+        CompositionVariableType::String => "string",
+        CompositionVariableType::Boolean => "boolean",
+        CompositionVariableType::Integer => "integer",
+        CompositionVariableType::Float => "float",
+        CompositionVariableType::Date => "date",
+        CompositionVariableType::Timestamp => "timestamp",
+    }
+}
+
+fn deduplicate_diagnostics(diagnostics: Vec<CompositionDiagnostic>) -> Vec<CompositionDiagnostic> {
+    let mut seen = BTreeSet::new();
+    diagnostics
+        .into_iter()
+        .filter(|diagnostic| {
+            seen.insert((
+                diagnostic.code.as_str().to_owned(),
+                diagnostic.variable_id.clone(),
+            ))
+        })
+        .collect()
 }
 
 /// Identity of the exact Composition revision being resolved.
@@ -736,9 +609,9 @@ pub struct CompositionRevisionRef {
 /// same `source_unavailable` diagnostic.
 #[derive(Clone, Copy)]
 pub enum CurrentSourceDescriptor<'a> {
-    EntryQuery {
+    InlineSql {
         source_id: &'a str,
-        current_form: Option<&'a FormDefinition>,
+        current_schema: Option<&'a InlineSqlSourceMetadata>,
     },
     SavedSql {
         source_id: &'a str,
@@ -749,7 +622,7 @@ pub enum CurrentSourceDescriptor<'a> {
 impl CurrentSourceDescriptor<'_> {
     fn source_id(&self) -> &str {
         match self {
-            Self::EntryQuery { source_id, .. } | Self::SavedSql { source_id, .. } => source_id,
+            Self::InlineSql { source_id, .. } | Self::SavedSql { source_id, .. } => source_id,
         }
     }
 }
@@ -769,17 +642,12 @@ pub struct ResolveInput<'a> {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ResolvedSourceRequest {
-    EntryQuery {
-        source_id: String,
-        request: EntryPageRequest,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        display_system_fields: Vec<EntryQueryDisplaySystemField>,
-        source_schema_fingerprint: String,
-    },
-    SavedSql {
+    Sql {
         source_id: String,
         request: SqlQueryRequest,
         source_schema_fingerprint: String,
+        form_bindings: Vec<CompositionFormBinding>,
+        expected_result: Vec<CompositionResultColumn>,
     },
 }
 
@@ -842,12 +710,10 @@ pub struct ResolvedComponentBinding {
     pub component_id: String,
     pub kind: ResolvedComponentKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub label: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variable_id: Option<String>,
-    /// Selected exact Saved SQL output alias for a Metric component.
+    /// Selected SQL output column alias for a Metric component.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result_property_key: Option<String>,
     /// Portable logical result type for scalar metric components.
@@ -915,6 +781,7 @@ pub fn resolve_composition_with_unset(
         input.variables,
         unset_variables,
         input.current_sources,
+        false,
     )?;
     Ok(ResolvedCompositionPlan {
         composition_revision: input.composition_revision,
@@ -947,7 +814,7 @@ pub fn resolve_composition_preview_with_unset(
     draft_fingerprint: String,
 ) -> Result<PreviewCompositionPlan, Vec<CompositionDiagnostic>> {
     let (sources, component_bindings, dependencies) =
-        resolve_composition_parts(spec, variables, unset_variables, current_sources)?;
+        resolve_composition_parts(spec, variables, unset_variables, current_sources, true)?;
     Ok(PreviewCompositionPlan {
         draft_fingerprint,
         sources,
@@ -962,6 +829,7 @@ fn resolve_composition_parts(
     variables: &BTreeMap<String, Value>,
     unset_variables: &[String],
     current_sources: &[CurrentSourceDescriptor<'_>],
+    allow_incomplete_source_descriptors: bool,
 ) -> Result<
     (
         Vec<ResolvedSourceRequest>,
@@ -1023,22 +891,13 @@ fn resolve_composition_parts(
         let source_id = source.id();
         match (source, current_by_id.get(source_id).copied()) {
             (
-                CompositionSource::EntryQuery {
-                    form_id,
-                    field_schema,
-                    query,
-                    ..
-                },
-                Some(CurrentSourceDescriptor::EntryQuery {
-                    current_form: Some(current_form),
-                    ..
-                }),
-            ) => match compile_entry_query_source(
-                *form_id,
-                field_schema,
-                query,
+                CompositionSource::InlineSql { .. },
+                Some(CurrentSourceDescriptor::InlineSql { current_schema, .. }),
+            ) => match compile_inline_sql_source(
+                source,
+                *current_schema,
                 &bindings,
-                current_form,
+                allow_incomplete_source_descriptors,
             ) {
                 Ok(compiled) => {
                     record_source_dependencies(
@@ -1047,11 +906,12 @@ fn resolve_composition_parts(
                         &compiled.variable_dependencies,
                     )
                     .map_err(|diagnostic| vec![diagnostic])?;
-                    resolved_sources.push(ResolvedSourceRequest::EntryQuery {
+                    resolved_sources.push(ResolvedSourceRequest::Sql {
                         source_id: source_id.to_owned(),
                         request: compiled.request,
-                        display_system_fields: compiled.display_system_fields,
                         source_schema_fingerprint: compiled.source_schema_fingerprint,
+                        form_bindings: compiled.form_bindings,
+                        expected_result: compiled.expected_result,
                     });
                 }
                 Err(source_diagnostics) => diagnostics.extend(source_diagnostics),
@@ -1069,10 +929,12 @@ fn resolve_composition_parts(
                         &compiled.variable_dependencies,
                     )
                     .map_err(|diagnostic| vec![diagnostic])?;
-                    resolved_sources.push(ResolvedSourceRequest::SavedSql {
+                    resolved_sources.push(ResolvedSourceRequest::Sql {
                         source_id: source_id.to_owned(),
                         request: compiled.request,
                         source_schema_fingerprint: compiled.source_schema_fingerprint,
+                        form_bindings: Vec::new(),
+                        expected_result: compiled.expected_result,
                     });
                 }
                 Err(source_diagnostics) => diagnostics.extend(source_diagnostics),
@@ -1130,7 +992,6 @@ fn resolve_component_bindings(
                 resolved.push(ResolvedComponentBinding {
                     component_id: component_id.to_owned(),
                     kind: ResolvedComponentKind::Input,
-                    label: component.label().map(str::to_owned),
                     source_id: None,
                     variable_id: Some(variable.clone()),
                     result_property_key: None,
@@ -1155,7 +1016,6 @@ fn resolve_component_bindings(
                 resolved.push(ResolvedComponentBinding {
                     component_id: component_id.to_owned(),
                     kind: ResolvedComponentKind::Text,
-                    label: component.label().map(str::to_owned),
                     source_id: None,
                     variable_id,
                     result_property_key: None,
@@ -1175,27 +1035,24 @@ fn resolve_component_bindings(
                         CompositionDiagnosticCode::InvalidComposition,
                     )]
                 })?;
-                let CompositionSource::SavedSql {
-                    expected_result, ..
-                } = source_definition
-                else {
-                    return Err(vec![CompositionDiagnostic::without_variable(
-                        CompositionDiagnosticCode::InvalidComposition,
-                    )]);
-                };
-                let mut matching_columns = expected_result
+                let expected_result = source_definition.expected_result();
+                let matching_columns = expected_result
                     .iter()
-                    .filter(|result_column| result_column.name == *column);
-                let Some(result_column) = matching_columns.next() else {
-                    return Err(vec![CompositionDiagnostic::without_variable(
-                        CompositionDiagnosticCode::MetricResultColumnMissing,
-                    )]);
+                    .filter(|result_column| result_column.name == *column)
+                    .collect::<Vec<_>>();
+                let result_column = match matching_columns.as_slice() {
+                    [] => {
+                        return Err(vec![CompositionDiagnostic::without_variable(
+                            CompositionDiagnosticCode::MetricResultColumnMissing,
+                        )]);
+                    }
+                    [result_column] => *result_column,
+                    _ => {
+                        return Err(vec![CompositionDiagnostic::without_variable(
+                            CompositionDiagnosticCode::MetricResultColumnAmbiguous,
+                        )]);
+                    }
                 };
-                if matching_columns.next().is_some() {
-                    return Err(vec![CompositionDiagnostic::without_variable(
-                        CompositionDiagnosticCode::MetricResultColumnAmbiguous,
-                    )]);
-                }
                 validate_composition_metric_result_type(result_column.result_type)
                     .map_err(|code| vec![CompositionDiagnostic::without_variable(code.into())])?;
                 if presentation.is_some()
@@ -1221,7 +1078,6 @@ fn resolve_component_bindings(
                 resolved.push(ResolvedComponentBinding {
                     component_id: component_id.to_owned(),
                     kind: ResolvedComponentKind::Metric,
-                    label: component.label().map(str::to_owned),
                     source_id: Some(source_id.to_owned()),
                     variable_id: None,
                     result_property_key: Some(column.clone()),
@@ -1247,7 +1103,6 @@ fn resolve_component_bindings(
                 resolved.push(ResolvedComponentBinding {
                     component_id: component_id.to_owned(),
                     kind: ResolvedComponentKind::Tabular,
-                    label: component.label().map(str::to_owned),
                     source_id: Some(source_id.to_owned()),
                     variable_id: None,
                     result_property_key: None,
@@ -1260,3246 +1115,527 @@ fn resolve_component_bindings(
     Ok(resolved)
 }
 
-fn composition_variable_type_for_sql(variable_type: &str) -> Option<CompositionVariableType> {
-    match variable_type {
-        "string" => Some(CompositionVariableType::String),
-        "boolean" => Some(CompositionVariableType::Boolean),
-        "integer" => Some(CompositionVariableType::Integer),
-        "float" => Some(CompositionVariableType::Float),
-        "date" => Some(CompositionVariableType::Date),
-        "timestamp" => Some(CompositionVariableType::Timestamp),
-        _ => None,
-    }
-}
-
-fn deduplicate_diagnostics(diagnostics: Vec<CompositionDiagnostic>) -> Vec<CompositionDiagnostic> {
-    let mut seen = BTreeSet::new();
-    diagnostics
-        .into_iter()
-        .filter(|diagnostic| {
-            seen.insert((
-                diagnostic.code.as_str().to_owned(),
-                diagnostic.variable_id.clone(),
-            ))
-        })
-        .collect()
-}
-
-fn map_operator(operator: CompositionQueryOperator) -> SearchOperator {
-    match operator {
-        CompositionQueryOperator::Equals => SearchOperator::Equals,
-        CompositionQueryOperator::Contains => SearchOperator::Contains,
-        CompositionQueryOperator::Lt => SearchOperator::Lt,
-        CompositionQueryOperator::Lte => SearchOperator::Lte,
-        CompositionQueryOperator::Gt => SearchOperator::Gt,
-        CompositionQueryOperator::Gte => SearchOperator::Gte,
-    }
-}
-
-fn filter_value_matches_field(
-    value: &Value,
-    variable_type: Option<CompositionVariableType>,
-    operator: CompositionQueryOperator,
-    field_type: &FieldType,
-) -> bool {
-    let Some(kind) = EntryQueryFieldKind::of(field_type) else {
-        return false;
-    };
-    if !kind.supports(map_operator(operator)) {
-        return false;
-    }
-    if value.is_null() {
-        return operator == CompositionQueryOperator::Equals && variable_type.is_none();
-    }
-
-    let expected_type = match field_type {
-        FieldType::String | FieldType::Markdown => CompositionVariableType::String,
-        FieldType::Boolean => CompositionVariableType::Boolean,
-        FieldType::Integer | FieldType::Long => CompositionVariableType::Integer,
-        FieldType::Float | FieldType::Double => CompositionVariableType::Float,
-        FieldType::Date => CompositionVariableType::Date,
-        FieldType::Timestamp
-        | FieldType::TimestampTz
-        | FieldType::TimestampNs
-        | FieldType::TimestampTzNs => CompositionVariableType::Timestamp,
-        FieldType::Sql
-        | FieldType::Time
-        | FieldType::Uuid
-        | FieldType::Binary
-        | FieldType::List
-        | FieldType::ObjectList
-        | FieldType::RowReference
-        | FieldType::AssetReference => return false,
-    };
-    if variable_type.is_some_and(|actual| actual != expected_type) {
-        return false;
-    }
-    if operator == CompositionQueryOperator::Contains {
-        return value.is_string();
-    }
-    match field_type {
-        FieldType::String | FieldType::Markdown => value.is_string(),
-        FieldType::Boolean => value.is_boolean(),
-        FieldType::Integer => value
-            .as_i64()
-            .is_some_and(|value| i32::try_from(value).is_ok()),
-        FieldType::Long => value.as_i64().is_some(),
-        FieldType::Float => value
-            .as_f64()
-            .is_some_and(|value| value.is_finite() && (value as f32).is_finite()),
-        FieldType::Double => value.as_f64().is_some_and(f64::is_finite),
-        FieldType::Date => value
-            .as_str()
-            .is_some_and(|value| parse_date(value).is_some()),
-        FieldType::Timestamp => value
-            .as_str()
-            .is_some_and(|value| parse_wall_timestamp(value).is_some()),
-        FieldType::TimestampNs => value.as_str().is_some_and(|value| {
-            parse_wall_timestamp(value).is_some_and(wall_timestamp_nanos_are_representable)
-        }),
-        FieldType::TimestampTz => value
-            .as_str()
-            .is_some_and(|value| parse_zoned_timestamp(value).is_some()),
-        FieldType::TimestampTzNs => value.as_str().is_some_and(|value| {
-            parse_zoned_timestamp(value)
-                .is_some_and(|timestamp| timestamp.timestamp_nanos_opt().is_some())
-        }),
-        FieldType::Sql
-        | FieldType::Time
-        | FieldType::Uuid
-        | FieldType::Binary
-        | FieldType::List
-        | FieldType::ObjectList
-        | FieldType::RowReference
-        | FieldType::AssetReference => false,
-    }
-}
-
-fn wall_timestamp_nanos_are_representable(timestamp: NaiveDateTime) -> bool {
-    let Some(epoch) =
-        NaiveDate::from_ymd_opt(1970, 1, 1).and_then(|date| date.and_hms_opt(0, 0, 0))
-    else {
-        return false;
-    };
-    timestamp
-        .signed_duration_since(epoch)
-        .num_nanoseconds()
-        .is_some()
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        bind_variables, bind_variables_with_unset, compile_entry_query_source,
-        compile_saved_sql_source, resolve_composition, resolve_composition_preview,
-        resolve_value_template, CompositionDiagnostic, CompositionRevisionRef,
-        CurrentSourceDescriptor, ResolveInput, ResolvedSourceRequest, SavedSqlRevisionMetadata,
-        VariableBindings,
+        bind_variables, compile_inline_sql_source, compile_saved_sql_source, resolve_composition,
+        resolve_composition_preview, CompositionRevisionRef, CurrentSourceDescriptor,
+        InlineSqlSourceMetadata, ResolveInput, ResolvedSourceRequest, SavedSqlRevisionMetadata,
     };
-    use crate::entry_query::EntryFieldRef;
     use serde_json::{json, Value};
     use std::collections::{BTreeMap, BTreeSet};
     use ugoite_domain::composition::{
-        CompositionComponent, CompositionDiagnosticCode, CompositionFieldSchemaEntry,
-        CompositionLiteral, CompositionQueryOperator, CompositionResultColumn,
-        CompositionResultFieldType, CompositionSortDirection, CompositionSource, CompositionSpec,
-        CompositionTextContent, CompositionValue, CompositionVariable, CompositionVariableFormat,
-        CompositionVariableReference, CompositionVariableType, DashboardFlowLayout,
-        EntryQueryDisplaySystemField, EntryQueryFilterTemplate, EntryQueryProjectionTemplate,
-        EntryQuerySortTemplate, EntryQueryTemplate, FlowItem, FlowLayoutKind, FlowRow, TextStyle,
+        CompositionComponent, CompositionDiagnosticCode, CompositionFormBinding,
+        CompositionResultColumn, CompositionResultFieldType, CompositionSource, CompositionSpec,
+        CompositionVariable, CompositionVariableType, DashboardFlowLayout, FlowItem,
+        FlowLayoutKind, FlowRow,
     };
-    use ugoite_domain::form::{
-        FieldType, FormDefinition, FormField, FormVersion, ListItemDefinition,
-    };
-    use ugoite_domain::id::{EntryId, FieldId, FormId, RevisionId};
+    use ugoite_domain::id::{EntryId, FormId, RevisionId};
 
-    const SAVED_SQL_METRIC_COLUMNS: &str = include_str!(
-        "../../ugoite-domain/tests/fixtures/composition/saved-sql-metric-columns.ugcomp.yaml"
-    );
+    fn result(name: &str, result_type: CompositionResultFieldType) -> Vec<CompositionResultColumn> {
+        vec![CompositionResultColumn {
+            name: name.to_owned(),
+            result_type,
+        }]
+    }
 
-    fn variable(
-        id: &str,
-        variable_type: CompositionVariableType,
-        required: bool,
-        default: Option<CompositionLiteral>,
-        format: Option<CompositionVariableFormat>,
-    ) -> CompositionVariable {
+    fn form_binding(relation: &str) -> Vec<CompositionFormBinding> {
+        vec![CompositionFormBinding {
+            relation: relation.to_owned(),
+            form_id: FormId::from(uuid::Uuid::from_u128(42)),
+        }]
+    }
+
+    fn inline_source(
+        bindings: Vec<CompositionFormBinding>,
+        columns: Vec<CompositionResultColumn>,
+        fingerprint: &str,
+    ) -> CompositionSource {
+        CompositionSource::InlineSql {
+            id: "rows".to_owned(),
+            name: "Rows".to_owned(),
+            sql: "SELECT * FROM \"Records\"".to_owned(),
+            form_bindings: bindings,
+            expected_result: columns,
+            schema_fingerprint: fingerprint.to_owned(),
+        }
+    }
+
+    fn inline_metadata(
+        bindings: Vec<CompositionFormBinding>,
+        columns: Vec<CompositionResultColumn>,
+        fingerprint: &str,
+        parameter_names: &[&str],
+    ) -> InlineSqlSourceMetadata {
+        InlineSqlSourceMetadata {
+            bound_sql: "SELECT * FROM \"__form_42\"".to_owned(),
+            form_bindings: bindings,
+            parameter_names: parameter_names
+                .iter()
+                .map(|name| (*name).to_owned())
+                .collect(),
+            expected_result: columns,
+            schema_fingerprint: fingerprint.to_owned(),
+        }
+    }
+
+    fn variable(id: &str, variable_type: CompositionVariableType) -> CompositionVariable {
         CompositionVariable {
             id: id.to_owned(),
-            label: None,
             variable_type,
-            required,
-            default,
-            format,
+            required: false,
+            default: None,
+            format: None,
         }
     }
 
-    fn tabular_component(id: &str, label: Option<&str>, source: &str) -> CompositionComponent {
-        serde_json::from_value(json!({
-            "kind": "table",
-            "id": id,
-            "label": label,
-            "source": source,
-        }))
-        .expect("the domain component representation deserializes")
-    }
-
-    fn input_component(id: &str, variable: &str) -> CompositionComponent {
-        CompositionComponent::Input {
-            id: id.to_owned(),
-            label: None,
-            variable: variable.to_owned(),
-        }
-    }
-
-    fn variable_ref(id: &str) -> CompositionValue {
-        CompositionValue::Variable(CompositionVariableReference {
-            variable: id.to_owned(),
-        })
-    }
-
-    fn literal(value: Value) -> CompositionLiteral {
-        serde_json::from_value(value).unwrap()
-    }
-
-    fn value(value: Value) -> CompositionValue {
-        CompositionValue::Literal(literal(value))
-    }
-
-    fn form(fields: &[(i32, FieldType)]) -> FormDefinition {
-        FormDefinition {
-            id: FormId::from(uuid::Uuid::from_u128(42)),
-            version: FormVersion::new(1).unwrap(),
-            name: "Example".to_owned(),
-            description: None,
-            fields: fields
-                .iter()
-                .map(|(id, field_type)| FormField {
-                    id: FieldId::new(*id).unwrap(),
-                    name: format!("field_{id}"),
-                    field_type: field_type.clone(),
-                    required: false,
-                    label: None,
-                    description: None,
-                    semantic_role: None,
-                    reference_form: None,
-                    list_item: None,
-                    validation: None,
-                    enum_values: Vec::new(),
-                    deprecated: false,
-                })
-                .collect(),
-            allow_extra_attributes: false,
-            extension_metadata: BTreeMap::new(),
-        }
-    }
-
-    fn schema(form: &FormDefinition) -> Vec<CompositionFieldSchemaEntry> {
-        form.fields
+    fn bindings(
+        variables: &[CompositionVariable],
+        values: &[(&str, Value)],
+    ) -> super::VariableBindings {
+        let supplied = values
             .iter()
-            .map(|field| CompositionFieldSchemaEntry {
-                field_id: field.id,
-                field_type: field.field_type.clone(),
-                reference_form: field.reference_form,
-                list_item: field.list_item.clone(),
+            .map(|(name, value)| ((*name).to_owned(), value.clone()))
+            .collect::<BTreeMap<_, _>>();
+        bind_variables(variables, &supplied)
+    }
+
+    fn composition_spec(
+        variables: Vec<CompositionVariable>,
+        source: CompositionSource,
+        components: Vec<CompositionComponent>,
+    ) -> CompositionSpec {
+        let items = components
+            .iter()
+            .map(|component| FlowItem::Component {
+                component: component.id().to_owned(),
             })
-            .collect()
+            .collect();
+        CompositionSpec {
+            variables,
+            sources: vec![source],
+            components,
+            layout: DashboardFlowLayout {
+                kind: FlowLayoutKind::Flow,
+                rows: vec![FlowRow {
+                    id: "main".to_owned(),
+                    items,
+                }],
+            },
+        }
     }
 
-    fn empty_bindings() -> VariableBindings {
-        VariableBindings::default()
+    fn source_revision() -> (EntryId, RevisionId) {
+        (
+            EntryId::from_uuid(uuid::Uuid::from_u128(100)),
+            RevisionId::from_uuid(uuid::Uuid::from_u128(200)),
+        )
     }
 
-    fn saved_sql_source(
+    fn saved_source(
         entry_id: EntryId,
         revision_id: RevisionId,
-        variables: BTreeMap<String, CompositionValue>,
+        columns: Vec<CompositionResultColumn>,
+        fingerprint: &str,
+        variables: BTreeMap<String, super::CompositionValue>,
     ) -> CompositionSource {
         CompositionSource::SavedSql {
-            id: "monthly-expenses".to_owned(),
+            id: "summary".to_owned(),
             entry_id,
             revision_id,
-            expected_result: expected_result(),
+            expected_result: columns,
+            schema_fingerprint: fingerprint.to_owned(),
             variables,
         }
     }
 
-    fn expected_result() -> Vec<CompositionResultColumn> {
-        vec![CompositionResultColumn {
-            name: "total".to_owned(),
-            result_type: CompositionResultFieldType::Float,
-        }]
-    }
-
-    fn saved_sql_metadata(
+    fn saved_metadata(
         entry_id: EntryId,
         revision_id: RevisionId,
-        variable_types: BTreeMap<String, &str>,
+        columns: Vec<CompositionResultColumn>,
+        fingerprint: &str,
+        variable_types: &[(&str, &str)],
     ) -> SavedSqlRevisionMetadata {
         SavedSqlRevisionMetadata {
             id: entry_id.to_string(),
             revision_id: revision_id.to_string(),
             variable_types: variable_types
-                .into_iter()
-                .map(|(name, value)| (name, value.to_owned()))
+                .iter()
+                .map(|(name, kind)| ((*name).to_owned(), (*kind).to_owned()))
                 .collect(),
-        }
-    }
-
-    fn empty_entry_query_template() -> EntryQueryTemplate {
-        EntryQueryTemplate {
-            text: None,
-            filters: Vec::new(),
-            sort: Vec::new(),
-            page_limit: 100,
-            projection: EntryQueryProjectionTemplate::Preview,
-            display_system_fields: Vec::new(),
-        }
-    }
-
-    fn entry_query_source(
-        id: &str,
-        form: &FormDefinition,
-        query: EntryQueryTemplate,
-    ) -> CompositionSource {
-        CompositionSource::EntryQuery {
-            id: id.to_owned(),
-            form_id: form.id,
-            field_schema: schema(form),
-            query,
-        }
-    }
-
-    fn composition_spec(
-        variables: Vec<CompositionVariable>,
-        sources: Vec<CompositionSource>,
-    ) -> CompositionSpec {
-        CompositionSpec {
-            variables,
-            sources,
-            components: Vec::new(),
-            layout: DashboardFlowLayout {
-                kind: FlowLayoutKind::Flow,
-                rows: Vec::new(),
-            },
-        }
-    }
-
-    fn layout_row(id: &str, items: Vec<FlowItem>) -> FlowRow {
-        FlowRow {
-            id: id.to_owned(),
-            items,
-        }
-    }
-
-    fn component_item(id: &str) -> FlowItem {
-        FlowItem::Component {
-            component: id.to_owned(),
-        }
-    }
-
-    fn flow_layout(rows: Vec<FlowRow>) -> DashboardFlowLayout {
-        DashboardFlowLayout {
-            kind: FlowLayoutKind::Flow,
-            rows,
-        }
-    }
-
-    fn single_row_layout(row_id: &str, components: &[&str]) -> DashboardFlowLayout {
-        flow_layout(vec![layout_row(
-            row_id,
-            components.iter().map(|id| component_item(id)).collect(),
-        )])
-    }
-
-    /// Attach presentation-only components required for a source-focused
-    /// resolve test to carry a valid layout.
-    fn spec_with_note(mut spec: CompositionSpec) -> CompositionSpec {
-        let mut components = vec![CompositionComponent::Text {
-            id: "note".to_owned(),
-            label: None,
-            content: CompositionTextContent::Literal {
-                text: "Note".to_owned(),
-            },
-            style: TextStyle::Body,
-        }];
-        let mut items = vec![component_item("note")];
-        for variable in spec
-            .variables
-            .iter()
-            .filter(|variable| variable.required && variable.default.is_none())
-        {
-            let component_id = format!("input-{}", variable.id);
-            components.push(input_component(&component_id, &variable.id));
-            items.push(component_item(&component_id));
-        }
-        spec.components = components;
-        spec.layout = flow_layout(vec![layout_row("main", items)]);
-        spec
-    }
-
-    fn id_pair() -> (EntryId, RevisionId) {
-        (
-            EntryId::from(uuid::Uuid::from_u128(42)),
-            RevisionId::from(uuid::Uuid::from_u128(43)),
-        )
-    }
-
-    fn sql_metric_diagnostics(
-        expected_result: Vec<CompositionResultColumn>,
-        selector: &str,
-        current_revision_available: bool,
-    ) -> Vec<CompositionDiagnosticCode> {
-        let (entry_id, revision_id) = id_pair();
-        let source = CompositionSource::SavedSql {
-            id: "report".to_owned(),
-            entry_id,
-            revision_id,
-            expected_result,
-            variables: BTreeMap::new(),
-        };
-        let mut spec = composition_spec(Vec::new(), vec![source]);
-        spec.components = vec![CompositionComponent::Metric {
-            id: "total".to_owned(),
-            label: None,
-            source: "report".to_owned(),
-            column: selector.to_owned(),
-            presentation: None,
-        }];
-        spec.layout = single_row_layout("summary", &["total"]);
-        let metadata = saved_sql_metadata(entry_id, revision_id, BTreeMap::new());
-        let current_sources = [CurrentSourceDescriptor::SavedSql {
-            source_id: "report",
-            current_revision: current_revision_available.then_some(&metadata),
-        }];
-        diagnostic_codes(resolve_composition(ResolveInput {
-            composition_revision: CompositionRevisionRef {
-                entry_id,
-                revision_id,
-            },
-            spec: &spec,
-            variables: &BTreeMap::new(),
-            current_sources: &current_sources,
-        }))
-    }
-
-    #[test]
-    fn saved_sql_columns_resolve_to_shared_metric_bindings() {
-        let document = ugoite_domain::composition::parse_composition_yaml(SAVED_SQL_METRIC_COLUMNS)
-            .expect("Saved SQL metric columns are accepted by the domain");
-        let mut current_form = form(&[(100, FieldType::String)]);
-        current_form.id =
-            FormId::from(uuid::Uuid::parse_str("00000000-0000-7000-8000-000000000010").unwrap());
-        let sql_entry_id =
-            EntryId::from(uuid::Uuid::parse_str("00000000-0000-7000-8000-000000000020").unwrap());
-        let sql_revision_id = RevisionId::from(
-            uuid::Uuid::parse_str("00000000-0000-7000-8000-000000000021").unwrap(),
-        );
-        let sql_metadata = saved_sql_metadata(sql_entry_id, sql_revision_id, BTreeMap::new());
-        let current_sources = [
-            CurrentSourceDescriptor::EntryQuery {
-                source_id: "expense_rows",
-                current_form: Some(&current_form),
-            },
-            CurrentSourceDescriptor::SavedSql {
-                source_id: "monthly_summary",
-                current_revision: Some(&sql_metadata),
-            },
-        ];
-
-        let plan = resolve_composition_preview(
-            &document.spec,
-            &BTreeMap::new(),
-            &current_sources,
-            "saved-sql-metrics-draft".to_owned(),
-        )
-        .expect("one exact Saved SQL revision resolves for all Metrics");
-
-        let metrics = plan
-            .component_bindings
-            .iter()
-            .filter(|binding| binding.kind == super::ResolvedComponentKind::Metric)
-            .collect::<Vec<_>>();
-        assert_eq!(metrics.len(), 3);
-        assert!(metrics
-            .iter()
-            .all(|binding| binding.source_id.as_deref() == Some("monthly_summary")));
-        assert_eq!(
-            metrics
-                .iter()
-                .map(|binding| binding.result_property_key.as_deref().unwrap())
-                .collect::<Vec<_>>(),
-            ["count", "total", "latest"]
-        );
-        assert_eq!(
-            metrics
-                .iter()
-                .map(|binding| binding.expected_result_type.unwrap())
-                .collect::<Vec<_>>(),
-            [
-                CompositionResultFieldType::Integer,
-                CompositionResultFieldType::Decimal,
-                CompositionResultFieldType::Date,
-            ]
-        );
-    }
-
-    fn diagnostic_codes<T>(
-        result: Result<T, Vec<CompositionDiagnostic>>,
-    ) -> Vec<CompositionDiagnosticCode> {
-        result
-            .err()
-            .expect("composition source should be rejected")
-            .into_iter()
-            .map(|diagnostic| diagnostic.code)
-            .collect()
-    }
-
-    #[test]
-    fn defaults_are_bound_without_applying_format_hints() {
-        let variables = [variable(
-            "month_start",
-            CompositionVariableType::Date,
-            true,
-            Some(literal(json!("2026-10-01"))),
-            Some(CompositionVariableFormat::YearMonth),
-        )];
-
-        let bindings = bind_variables(&variables, &BTreeMap::new());
-
-        assert!(bindings.diagnostics.is_empty());
-        assert_eq!(bindings.values["month_start"], json!("2026-10-01"));
-        let bound = resolve_value_template(&variable_ref("month_start"), &bindings).unwrap();
-        assert_eq!(bound.value, json!("2026-10-01"));
-        assert_eq!(bound.variable_type, Some(CompositionVariableType::Date));
-    }
-
-    #[test]
-    fn explicit_unset_overrides_defaults_and_reports_required_values_missing() {
-        let variables = [
-            variable(
-                "required_limit",
-                CompositionVariableType::Integer,
-                true,
-                Some(literal(json!(12))),
-                None,
-            ),
-            variable(
-                "optional_label",
-                CompositionVariableType::String,
-                false,
-                Some(literal(json!("default"))),
-                None,
-            ),
-        ];
-        let explicitly_unset = ["optional_label".to_owned(), "required_limit".to_owned()];
-
-        let bindings = bind_variables_with_unset(&variables, &BTreeMap::new(), &explicitly_unset);
-
-        assert_eq!(bindings.values, BTreeMap::new());
-        assert_eq!(
-            bindings.diagnostics,
-            vec![CompositionDiagnostic {
-                code: CompositionDiagnosticCode::VariableMissing,
-                variable_id: Some("required_limit".to_owned()),
-            }]
-        );
-    }
-
-    #[test]
-    fn explicit_unset_cannot_conflict_with_a_supplied_value() {
-        let variables = [variable(
-            "limit",
-            CompositionVariableType::Integer,
-            false,
-            Some(literal(json!(12))),
-            None,
-        )];
-        let supplied = BTreeMap::from([("limit".to_owned(), json!(14))]);
-
-        let bindings = bind_variables_with_unset(&variables, &supplied, &["limit".to_owned()]);
-
-        assert_eq!(
-            bindings.diagnostics,
-            vec![CompositionDiagnostic {
-                code: CompositionDiagnosticCode::VariableTypeMismatch,
-                variable_id: Some("limit".to_owned()),
-            }]
-        );
-    }
-
-    #[test]
-    fn required_missing_and_unknown_names_have_stable_order() {
-        let variables = [
-            variable("start", CompositionVariableType::Date, true, None, None),
-            variable(
-                "optional",
-                CompositionVariableType::String,
-                false,
-                None,
-                None,
-            ),
-        ];
-        let supplied = BTreeMap::from([
-            ("unknown_z".to_owned(), json!(1)),
-            ("unknown_a".to_owned(), json!(2)),
-        ]);
-
-        let bindings = bind_variables(&variables, &supplied);
-
-        assert_eq!(
-            bindings.diagnostics,
-            vec![
-                super::CompositionDiagnostic {
-                    code: CompositionDiagnosticCode::VariableMissing,
-                    variable_id: Some("start".to_owned()),
-                },
-                super::CompositionDiagnostic {
-                    code: CompositionDiagnosticCode::VariableUnknown,
-                    variable_id: Some("unknown_a".to_owned()),
-                },
-                super::CompositionDiagnostic {
-                    code: CompositionDiagnosticCode::VariableUnknown,
-                    variable_id: Some("unknown_z".to_owned()),
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn invalid_supplied_value_does_not_fall_back_to_a_default() {
-        let variables = [variable(
-            "limit",
-            CompositionVariableType::Integer,
-            true,
-            Some(literal(json!(5))),
-            None,
-        )];
-        let supplied = BTreeMap::from([("limit".to_owned(), json!("five"))]);
-
-        let bindings = bind_variables(&variables, &supplied);
-
-        assert_eq!(
-            bindings.diagnostics,
-            vec![super::CompositionDiagnostic {
-                code: CompositionDiagnosticCode::VariableTypeMismatch,
-                variable_id: Some("limit".to_owned()),
-            }]
-        );
-        assert!(!bindings.values.contains_key("limit"));
-        assert!(bindings.invalid_values.contains("limit"));
-        let reference_error =
-            resolve_value_template(&variable_ref("limit"), &bindings).unwrap_err();
-        assert_eq!(
-            reference_error.code,
-            CompositionDiagnosticCode::VariableTypeMismatch
-        );
-        assert_eq!(reference_error.variable_id, None);
-    }
-
-    #[test]
-    fn invalid_default_is_rejected_even_when_caller_supplies_a_valid_value() {
-        let variables = [variable(
-            "limit",
-            CompositionVariableType::Integer,
-            true,
-            Some(literal(json!("not an integer"))),
-            None,
-        )];
-        let supplied = BTreeMap::from([("limit".to_owned(), json!(5))]);
-
-        let bindings = bind_variables(&variables, &supplied);
-
-        assert_eq!(
-            bindings.diagnostics,
-            vec![super::CompositionDiagnostic {
-                code: CompositionDiagnosticCode::InvalidComposition,
-                variable_id: None,
-            }]
-        );
-        assert!(bindings.values.is_empty());
-        assert!(bindings.invalid_values.is_empty());
-    }
-
-    #[test]
-    fn optional_unset_values_are_missing_only_when_referenced() {
-        let variables = [variable(
-            "search_text",
-            CompositionVariableType::String,
-            false,
-            None,
-            None,
-        )];
-        let bindings = bind_variables(&variables, &BTreeMap::new());
-
-        assert!(bindings.diagnostics.is_empty());
-        let error = resolve_value_template(&variable_ref("search_text"), &bindings).unwrap_err();
-        assert_eq!(error.code, CompositionDiagnosticCode::VariableMissing);
-        assert_eq!(error.variable_id, None);
-    }
-
-    #[test]
-    fn undeclared_reference_is_unknown_and_literal_is_passed_through() {
-        let bindings = bind_variables(&[], &BTreeMap::new());
-
-        let error = resolve_value_template(&variable_ref("typo"), &bindings).unwrap_err();
-        assert_eq!(error.code, CompositionDiagnosticCode::VariableUnknown);
-        assert_eq!(error.variable_id, None);
-
-        let literal_template = CompositionValue::Literal(literal(json!("unchanged")));
-        assert_eq!(
-            resolve_value_template(&literal_template, &bindings)
-                .unwrap()
-                .value,
-            json!("unchanged")
-        );
-    }
-
-    #[test]
-    fn invalid_date_timestamp_and_float_values_are_not_coerced() {
-        let variables = [
-            variable("date", CompositionVariableType::Date, false, None, None),
-            variable(
-                "timestamp",
-                CompositionVariableType::Timestamp,
-                false,
-                None,
-                None,
-            ),
-            variable("float", CompositionVariableType::Float, false, None, None),
-        ];
-        let supplied = BTreeMap::from([
-            ("date".to_owned(), json!("2026-02-30")),
-            ("timestamp".to_owned(), json!("next Tuesday")),
-            ("float".to_owned(), json!("1.0")),
-        ]);
-
-        let bindings = bind_variables(&variables, &supplied);
-
-        assert_eq!(
-            bindings.diagnostics,
-            vec![
-                super::CompositionDiagnostic {
-                    code: CompositionDiagnosticCode::VariableTypeMismatch,
-                    variable_id: Some("date".to_owned()),
-                },
-                super::CompositionDiagnostic {
-                    code: CompositionDiagnosticCode::VariableTypeMismatch,
-                    variable_id: Some("timestamp".to_owned()),
-                },
-                super::CompositionDiagnostic {
-                    code: CompositionDiagnosticCode::VariableTypeMismatch,
-                    variable_id: Some("float".to_owned()),
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn signed_integer_range_and_timestamp_forms_are_typed_without_coercion() {
-        let variables = [
-            variable("signed", CompositionVariableType::Integer, true, None, None),
-            variable(
-                "wall_time",
-                CompositionVariableType::Timestamp,
-                true,
-                None,
-                None,
-            ),
-            variable(
-                "zoned_time",
-                CompositionVariableType::Timestamp,
-                true,
-                None,
-                None,
-            ),
-            variable("ratio", CompositionVariableType::Float, true, None, None),
-            variable(
-                "whole_number_ratio",
-                CompositionVariableType::Float,
-                true,
-                None,
-                None,
-            ),
-        ];
-        let supplied = BTreeMap::from([
-            ("signed".to_owned(), json!(9_007_199_254_740_991_i64)),
-            ("wall_time".to_owned(), json!("2026-10-02T12:30:00.125Z")),
-            ("zoned_time".to_owned(), json!("2026-10-02T12:30:00+09:00")),
-            ("ratio".to_owned(), json!(1.25)),
-            ("whole_number_ratio".to_owned(), json!(1)),
-        ]);
-
-        let bindings = bind_variables(&variables, &supplied);
-
-        assert!(bindings.diagnostics.is_empty());
-        assert_eq!(bindings.values, supplied);
-    }
-
-    #[test]
-    fn float_variables_accept_finite_integer_notation_from_json() {
-        let variables = [variable(
-            "ratio",
-            CompositionVariableType::Float,
-            true,
-            None,
-            None,
-        )];
-        let supplied = BTreeMap::from([("ratio".to_owned(), json!(1))]);
-
-        let bindings = bind_variables(&variables, &supplied);
-
-        assert!(bindings.diagnostics.is_empty());
-        assert!(bindings.invalid_values.is_empty());
-        assert_eq!(bindings.values, supplied);
-    }
-
-    #[test]
-    fn duplicate_declarations_are_invalid_composition() {
-        let variables = [
-            variable("same", CompositionVariableType::String, true, None, None),
-            variable("same", CompositionVariableType::String, true, None, None),
-        ];
-
-        let bindings = bind_variables(&variables, &BTreeMap::new());
-
-        assert_eq!(bindings.diagnostics.len(), 1);
-        assert_eq!(
-            bindings.diagnostics[0].code,
-            CompositionDiagnosticCode::InvalidComposition
-        );
-        assert_eq!(bindings.diagnostics[0].variable_id, None);
-    }
-
-    #[test]
-    fn entry_query_template_compiles_to_the_existing_bounded_request() {
-        let form = form(&[
-            (100, FieldType::String),
-            (101, FieldType::Integer),
-            (102, FieldType::Boolean),
-        ]);
-        let variables = [
-            variable("search", CompositionVariableType::String, false, None, None),
-            variable(
-                "minimum",
-                CompositionVariableType::Integer,
-                true,
-                None,
-                None,
-            ),
-        ];
-        let bindings = bind_variables(
-            &variables,
-            &BTreeMap::from([
-                ("search".to_owned(), json!("rent")),
-                ("minimum".to_owned(), json!(10)),
-            ]),
-        );
-        let template = EntryQueryTemplate {
-            text: Some(variable_ref("search")),
-            filters: vec![EntryQueryFilterTemplate {
-                field_id: FieldId::new(101).unwrap(),
-                operator: CompositionQueryOperator::Gte,
-                value: variable_ref("minimum"),
-            }],
-            sort: vec![EntryQuerySortTemplate {
-                field_id: FieldId::new(101).unwrap(),
-                direction: CompositionSortDirection::Desc,
-            }],
-            page_limit: 25,
-            projection: EntryQueryProjectionTemplate::Fields {
-                fields: vec![FieldId::new(100).unwrap(), FieldId::new(101).unwrap()],
-            },
-            display_system_fields: vec![EntryQueryDisplaySystemField::CreatedAt],
-        };
-
-        let compiled =
-            compile_entry_query_source(form.id, &schema(&form), &template, &bindings, &form)
-                .expect("EntryQuery template compiles");
-
-        assert_eq!(compiled.request.limit, 25);
-        assert_eq!(
-            compiled.display_system_fields,
-            vec![EntryQueryDisplaySystemField::CreatedAt]
-        );
-        assert_eq!(compiled.request.after, None);
-        assert_eq!(compiled.request.query.text.as_deref(), Some("rent"));
-        assert_eq!(
-            compiled.request.query.scope,
-            crate::entry_query::EntryQueryScope::Form { form_id: form.id }
-        );
-        assert_eq!(compiled.request.query.filters.len(), 1);
-        assert_eq!(compiled.request.query.filters[0].value, json!(10));
-        assert_eq!(compiled.request.query.sort.len(), 1);
-        assert_eq!(
-            compiled.request.projection,
-            crate::entry_query::EntryProjection::Fields {
-                fields: vec![
-                    crate::entry_query::EntryFieldRef::Property {
-                        field_id: FieldId::new(100).unwrap()
-                    },
-                    crate::entry_query::EntryFieldRef::Property {
-                        field_id: FieldId::new(101).unwrap()
-                    },
-                ]
-            }
-        );
-        assert_eq!(compiled.source_schema_fingerprint.len(), 64);
-    }
-
-    #[test]
-    fn entry_query_projection_limit_is_enforced() {
-        let fields = (100..=164)
-            .map(|id| (id, FieldType::String))
-            .collect::<Vec<_>>();
-        let form = form(&fields);
-        let over_limit_template = EntryQueryTemplate {
-            projection: EntryQueryProjectionTemplate::Fields {
-                fields: (100..=164).map(|id| FieldId::new(id).unwrap()).collect(),
-            },
-            ..empty_entry_query_template()
-        };
-        assert_eq!(
-            diagnostic_codes(compile_entry_query_source(
-                form.id,
-                &schema(&form),
-                &over_limit_template,
-                &empty_bindings(),
-                &form,
-            )),
-            [CompositionDiagnosticCode::InvalidComposition]
-        );
-    }
-
-    #[test]
-    fn entry_query_fingerprint_ignores_unreferenced_schema_fields() {
-        let mut current = form(&[
-            (100, FieldType::String),
-            (101, FieldType::Integer),
-            (102, FieldType::List),
-        ]);
-        current.fields[2].list_item = Some(ListItemDefinition {
-            field_type: FieldType::String,
-            reference_form: None,
-        });
-        let changed_unrelated = form(&[
-            (100, FieldType::String),
-            (101, FieldType::Integer),
-            (102, FieldType::Double),
-        ]);
-        let mut changed_unreferenced_list_item = current.clone();
-        changed_unreferenced_list_item.fields[2].list_item = Some(ListItemDefinition {
-            field_type: FieldType::Integer,
-            reference_form: None,
-        });
-        let expected = schema(&current);
-        let template = EntryQueryTemplate {
-            text: None,
-            filters: vec![],
-            sort: vec![],
-            page_limit: 10,
-            projection: EntryQueryProjectionTemplate::Fields {
-                fields: vec![FieldId::new(100).unwrap()],
-            },
-            display_system_fields: Vec::new(),
-        };
-
-        let first = compile_entry_query_source(
-            current.id,
-            &expected,
-            &template,
-            &empty_bindings(),
-            &current,
-        )
-        .expect("first schema compiles");
-        let second = compile_entry_query_source(
-            changed_unrelated.id,
-            &expected,
-            &template,
-            &empty_bindings(),
-            &changed_unrelated,
-        )
-        .expect("unrelated schema change does not invalidate projection");
-
-        assert_eq!(
-            first.source_schema_fingerprint,
-            second.source_schema_fingerprint
-        );
-        let third = compile_entry_query_source(
-            changed_unreferenced_list_item.id,
-            &expected,
-            &template,
-            &empty_bindings(),
-            &changed_unreferenced_list_item,
-        )
-        .expect("unreferenced List item metadata does not invalidate projection");
-        assert_eq!(
-            first.source_schema_fingerprint,
-            third.source_schema_fingerprint
-        );
-
-        let mut same_schema_different_form = current.clone();
-        same_schema_different_form.id = FormId::from(uuid::Uuid::from_u128(43));
-        let third = compile_entry_query_source(
-            same_schema_different_form.id,
-            &expected,
-            &template,
-            &empty_bindings(),
-            &same_schema_different_form,
-        )
-        .expect("same schema in a different Form compiles");
-        assert_ne!(
-            first.source_schema_fingerprint,
-            third.source_schema_fingerprint
-        );
-    }
-
-    #[test]
-    fn text_search_fingerprints_only_fields_searched_by_entry_query() {
-        let current = form(&[
-            (100, FieldType::String),
-            (101, FieldType::Binary),
-            (102, FieldType::List),
-        ]);
-        let expected = vec![CompositionFieldSchemaEntry {
-            field_id: FieldId::new(100).unwrap(),
-            field_type: FieldType::String,
-            reference_form: None,
-            list_item: None,
-        }];
-        let template = EntryQueryTemplate {
-            text: Some(value(json!("hello"))),
-            filters: vec![],
-            sort: vec![],
-            page_limit: 10,
-            projection: EntryQueryProjectionTemplate::Fields {
-                fields: vec![FieldId::new(100).unwrap()],
-            },
-            display_system_fields: Vec::new(),
-        };
-
-        let compiled = compile_entry_query_source(
-            current.id,
-            &expected,
-            &template,
-            &empty_bindings(),
-            &current,
-        )
-        .expect("binary and list fields are not used by EntryQuery text search");
-        assert_eq!(compiled.source_schema_fingerprint.len(), 64);
-    }
-
-    #[test]
-    fn new_text_search_field_changes_source_schema() {
-        let current = form(&[(100, FieldType::String), (101, FieldType::String)]);
-        let expected = vec![CompositionFieldSchemaEntry {
-            field_id: FieldId::new(100).unwrap(),
-            field_type: FieldType::String,
-            reference_form: None,
-            list_item: None,
-        }];
-        let template = EntryQueryTemplate {
-            text: Some(value(json!("hello"))),
-            filters: vec![],
-            sort: vec![],
-            page_limit: 10,
-            projection: EntryQueryProjectionTemplate::Fields {
-                fields: vec![FieldId::new(100).unwrap()],
-            },
-            display_system_fields: Vec::new(),
-        };
-
-        assert_eq!(
-            diagnostic_codes(compile_entry_query_source(
-                current.id,
-                &expected,
-                &template,
-                &empty_bindings(),
-                &current,
-            )),
-            vec![CompositionDiagnosticCode::SourceSchemaChanged]
-        );
-    }
-
-    #[test]
-    fn changed_list_item_schema_is_reported_for_a_used_field() {
-        let mut original = form(&[(100, FieldType::List)]);
-        original.fields[0].list_item = Some(ListItemDefinition {
-            field_type: FieldType::String,
-            reference_form: None,
-        });
-        let expected = schema(&original);
-        let mut current = original.clone();
-        current.fields[0].list_item = Some(ListItemDefinition {
-            field_type: FieldType::Integer,
-            reference_form: None,
-        });
-        let template = EntryQueryTemplate {
-            text: None,
-            filters: vec![],
-            sort: vec![],
-            page_limit: 10,
-            projection: EntryQueryProjectionTemplate::Fields {
-                fields: vec![FieldId::new(100).unwrap()],
-            },
-            display_system_fields: Vec::new(),
-        };
-
-        assert_eq!(
-            diagnostic_codes(compile_entry_query_source(
-                current.id,
-                &expected,
-                &template,
-                &empty_bindings(),
-                &current,
-            )),
-            vec![CompositionDiagnosticCode::SourceSchemaChanged]
-        );
-    }
-
-    #[test]
-    fn changed_row_reference_target_is_reported_for_a_used_field() {
-        let mut original = form(&[(100, FieldType::RowReference)]);
-        original.fields[0].reference_form = Some(FormId::from(uuid::Uuid::from_u128(1000)));
-        let expected = schema(&original);
-        let mut current = original.clone();
-        current.fields[0].reference_form = Some(FormId::from(uuid::Uuid::from_u128(1001)));
-        let template = EntryQueryTemplate {
-            text: None,
-            filters: vec![],
-            sort: vec![],
-            page_limit: 10,
-            projection: EntryQueryProjectionTemplate::Fields {
-                fields: vec![FieldId::new(100).unwrap()],
-            },
-            display_system_fields: Vec::new(),
-        };
-
-        assert_eq!(
-            diagnostic_codes(compile_entry_query_source(
-                current.id,
-                &expected,
-                &template,
-                &empty_bindings(),
-                &current,
-            )),
-            vec![CompositionDiagnosticCode::SourceSchemaChanged]
-        );
-    }
-
-    #[test]
-    fn source_schema_fingerprint_includes_typed_list_and_reference_metadata() {
-        let template = EntryQueryTemplate {
-            text: None,
-            filters: vec![],
-            sort: vec![],
-            page_limit: 10,
-            projection: EntryQueryProjectionTemplate::Fields {
-                fields: vec![FieldId::new(100).unwrap()],
-            },
-            display_system_fields: Vec::new(),
-        };
-
-        let mut string_list = form(&[(100, FieldType::List)]);
-        string_list.fields[0].list_item = Some(ListItemDefinition {
-            field_type: FieldType::String,
-            reference_form: None,
-        });
-        let mut integer_list = string_list.clone();
-        integer_list.fields[0].list_item = Some(ListItemDefinition {
-            field_type: FieldType::Integer,
-            reference_form: None,
-        });
-        let string_list_fingerprint = compile_entry_query_source(
-            string_list.id,
-            &schema(&string_list),
-            &template,
-            &empty_bindings(),
-            &string_list,
-        )
-        .unwrap()
-        .source_schema_fingerprint;
-        let integer_list_fingerprint = compile_entry_query_source(
-            integer_list.id,
-            &schema(&integer_list),
-            &template,
-            &empty_bindings(),
-            &integer_list,
-        )
-        .unwrap()
-        .source_schema_fingerprint;
-        assert_ne!(string_list_fingerprint, integer_list_fingerprint);
-
-        let mut first_reference = form(&[(100, FieldType::RowReference)]);
-        first_reference.fields[0].reference_form = Some(FormId::from(uuid::Uuid::from_u128(1000)));
-        let mut second_reference = first_reference.clone();
-        second_reference.fields[0].reference_form = Some(FormId::from(uuid::Uuid::from_u128(1001)));
-        let first_reference_fingerprint = compile_entry_query_source(
-            first_reference.id,
-            &schema(&first_reference),
-            &template,
-            &empty_bindings(),
-            &first_reference,
-        )
-        .unwrap()
-        .source_schema_fingerprint;
-        let second_reference_fingerprint = compile_entry_query_source(
-            second_reference.id,
-            &schema(&second_reference),
-            &template,
-            &empty_bindings(),
-            &second_reference,
-        )
-        .unwrap()
-        .source_schema_fingerprint;
-        assert_ne!(first_reference_fingerprint, second_reference_fingerprint);
-    }
-
-    #[test]
-    fn changed_or_missing_query_field_has_a_stable_diagnostic() {
-        let original = form(&[(100, FieldType::Integer)]);
-        let changed = form(&[(100, FieldType::Long)]);
-        let removed = form(&[]);
-        let expected = schema(&original);
-        let template = EntryQueryTemplate {
-            text: None,
-            filters: vec![EntryQueryFilterTemplate {
-                field_id: FieldId::new(100).unwrap(),
-                operator: CompositionQueryOperator::Equals,
-                value: value(json!(1)),
-            }],
-            sort: vec![],
-            page_limit: 10,
-            projection: EntryQueryProjectionTemplate::Fields {
-                fields: vec![FieldId::new(100).unwrap()],
-            },
-            display_system_fields: Vec::new(),
-        };
-
-        assert_eq!(
-            diagnostic_codes(compile_entry_query_source(
-                changed.id,
-                &expected,
-                &template,
-                &empty_bindings(),
-                &changed,
-            )),
-            vec![CompositionDiagnosticCode::FieldTypeChanged]
-        );
-        assert_eq!(
-            diagnostic_codes(compile_entry_query_source(
-                removed.id,
-                &expected,
-                &template,
-                &empty_bindings(),
-                &removed,
-            )),
-            vec![CompositionDiagnosticCode::MissingField]
-        );
-    }
-
-    #[test]
-    fn query_variable_and_literal_types_must_match_filter_fields() {
-        let form = form(&[(100, FieldType::Integer)]);
-        let expected = schema(&form);
-        let variables = [variable(
-            "value",
-            CompositionVariableType::String,
-            true,
-            None,
-            None,
-        )];
-        let bindings = bind_variables(
-            &variables,
-            &BTreeMap::from([("value".to_owned(), json!("1"))]),
-        );
-        let filter_template = |value| EntryQueryTemplate {
-            text: None,
-            filters: vec![EntryQueryFilterTemplate {
-                field_id: FieldId::new(100).unwrap(),
-                operator: CompositionQueryOperator::Equals,
-                value,
-            }],
-            sort: vec![],
-            page_limit: 10,
-            projection: EntryQueryProjectionTemplate::Fields {
-                fields: vec![FieldId::new(100).unwrap()],
-            },
-            display_system_fields: Vec::new(),
-        };
-
-        assert_eq!(
-            diagnostic_codes(compile_entry_query_source(
-                form.id,
-                &expected,
-                &filter_template(variable_ref("value")),
-                &bindings,
-                &form,
-            )),
-            vec![CompositionDiagnosticCode::VariableTypeMismatch]
-        );
-        assert_eq!(
-            diagnostic_codes(compile_entry_query_source(
-                form.id,
-                &expected,
-                &filter_template(value(json!("1"))),
-                &empty_bindings(),
-                &form,
-            )),
-            vec![CompositionDiagnosticCode::InvalidComposition]
-        );
-    }
-
-    #[test]
-    fn query_sort_rejects_fields_outside_entry_query_capabilities() {
-        for (field_id, field_type) in [
-            (100, FieldType::Binary),
-            (102, FieldType::List),
-            (103, FieldType::ObjectList),
-            (104, FieldType::AssetReference),
-        ] {
-            let form = form(&[(field_id, field_type), (101, FieldType::String)]);
-            let template = EntryQueryTemplate {
-                text: None,
-                filters: vec![],
-                sort: vec![EntryQuerySortTemplate {
-                    field_id: FieldId::new(field_id).unwrap(),
-                    direction: CompositionSortDirection::Asc,
-                }],
-                page_limit: 10,
-                projection: EntryQueryProjectionTemplate::Fields {
-                    fields: vec![FieldId::new(101).unwrap()],
-                },
-                display_system_fields: Vec::new(),
-            };
-
-            assert_eq!(
-                diagnostic_codes(compile_entry_query_source(
-                    form.id,
-                    &schema(&form),
-                    &template,
-                    &empty_bindings(),
-                    &form,
-                )),
-                vec![CompositionDiagnosticCode::InvalidComposition]
-            );
+            expected_result: columns,
+            schema_fingerprint: fingerprint.to_owned(),
         }
     }
 
     #[test]
-    fn nanosecond_timestamp_filters_reject_unrepresentable_values_at_resolve_time() {
-        for (field_type, timestamp) in [
-            (FieldType::TimestampNs, "0001-01-01T00:00:00"),
-            (FieldType::TimestampTzNs, "0001-01-01T00:00:00Z"),
-        ] {
-            let form = form(&[(100, field_type)]);
-            let template = EntryQueryTemplate {
-                text: None,
-                filters: vec![EntryQueryFilterTemplate {
-                    field_id: FieldId::new(100).unwrap(),
-                    operator: CompositionQueryOperator::Equals,
-                    value: value(json!(timestamp)),
-                }],
-                sort: vec![],
-                page_limit: 10,
-                projection: EntryQueryProjectionTemplate::Fields {
-                    fields: vec![FieldId::new(100).unwrap()],
-                },
-                display_system_fields: Vec::new(),
-            };
+    fn inline_sql_uses_server_bound_sql_and_typed_parameters() {
+        let definitions = [variable("active", CompositionVariableType::Boolean)];
+        let bound = bindings(&definitions, &[("active", json!(true))]);
+        let columns = result("active", CompositionResultFieldType::Boolean);
+        let forms = form_binding("Records");
+        let source = inline_source(forms.clone(), columns.clone(), &"a".repeat(64));
+        let metadata = inline_metadata(forms, columns, &"a".repeat(64), &["active"]);
 
-            assert_eq!(
-                diagnostic_codes(compile_entry_query_source(
-                    form.id,
-                    &schema(&form),
-                    &template,
-                    &empty_bindings(),
-                    &form,
-                )),
-                vec![CompositionDiagnosticCode::InvalidComposition]
-            );
-        }
+        let compiled = compile_inline_sql_source(&source, Some(&metadata), &bound, false)
+            .expect("the current server plan matches the stored snapshot");
+
+        assert_eq!(compiled.request.sql, metadata.bound_sql);
+        assert_eq!(
+            Value::Object(compiled.request.parameters.clone()),
+            json!({"active": true})
+        );
+        assert_eq!(compiled.request.parameter_types["active"], "boolean");
+        assert!(compiled.request.saved_sql.is_none());
+        assert_eq!(compiled.variable_dependencies, ["active"]);
+        assert_eq!(compiled.source_schema_fingerprint, "a".repeat(64));
     }
 
     #[test]
-    fn zoned_timestamp_variable_matches_entry_query_filter_syntax() {
-        let variables = [variable(
-            "at",
-            CompositionVariableType::Timestamp,
-            true,
-            None,
-            None,
-        )];
-        let supplied = BTreeMap::from([("at".to_owned(), json!("2026-10-02T12:30:00Z"))]);
-        let bindings = bind_variables(&variables, &supplied);
-        assert!(bindings.diagnostics.is_empty());
+    fn inline_sql_rejects_stale_server_schema_and_unavailable_sources() {
+        let columns = result("record_id", CompositionResultFieldType::String);
+        let forms = form_binding("Records");
+        let source = inline_source(forms.clone(), columns.clone(), &"a".repeat(64));
+        let changed = inline_metadata(forms, columns, &"b".repeat(64), &[]);
+        let empty = bindings(&[], &[]);
 
-        let form = form(&[(100, FieldType::TimestampTzNs)]);
-        let template = EntryQueryTemplate {
-            text: None,
-            filters: vec![EntryQueryFilterTemplate {
-                field_id: FieldId::new(100).unwrap(),
-                operator: CompositionQueryOperator::Equals,
-                value: variable_ref("at"),
-            }],
-            sort: vec![],
-            page_limit: 10,
-            projection: EntryQueryProjectionTemplate::Fields {
-                fields: vec![FieldId::new(100).unwrap()],
-            },
-            display_system_fields: Vec::new(),
-        };
-
-        let compiled =
-            compile_entry_query_source(form.id, &schema(&form), &template, &bindings, &form)
-                .expect("minute-precision timestamps are accepted by EntryQuery");
         assert_eq!(
-            compiled.request.query.filters[0].value,
-            json!("2026-10-02T12:30:00Z")
+            compile_inline_sql_source(&source, Some(&changed), &empty, false).unwrap_err()[0].code,
+            CompositionDiagnosticCode::SourceSchemaChanged,
+        );
+        assert_eq!(
+            compile_inline_sql_source(&source, None, &empty, false).unwrap_err()[0].code,
+            CompositionDiagnosticCode::SourceUnavailable,
         );
     }
 
     #[test]
-    fn composition_query_limits_are_enforced_by_entry_query() {
-        let form = form(&[(100, FieldType::String)]);
-        let base = EntryQueryTemplate {
-            text: None,
-            filters: vec![],
-            sort: vec![],
-            page_limit: 10,
-            projection: EntryQueryProjectionTemplate::Fields {
-                fields: vec![FieldId::new(100).unwrap()],
-            },
-            display_system_fields: Vec::new(),
-        };
-        let mut over_limit = Vec::new();
-
-        let mut too_much_text = base.clone();
-        too_much_text.text = Some(value(json!(
-            "x".repeat(crate::entry_query::MAX_ENTRY_QUERY_TEXT_BYTES + 1)
-        )));
-        over_limit.push(too_much_text);
-
-        let mut too_many_filters = base.clone();
-        too_many_filters.filters = (0..=crate::entry_query::MAX_ENTRY_FILTERS)
-            .map(|_| EntryQueryFilterTemplate {
-                field_id: FieldId::new(100).unwrap(),
-                operator: CompositionQueryOperator::Equals,
-                value: value(json!("value")),
-            })
-            .collect();
-        over_limit.push(too_many_filters);
-
-        let mut too_many_sorts = base.clone();
-        too_many_sorts.sort = (0..=crate::entry_query::MAX_ENTRY_SORTS)
-            .map(|_| EntryQuerySortTemplate {
-                field_id: FieldId::new(100).unwrap(),
-                direction: CompositionSortDirection::Asc,
-            })
-            .collect();
-        over_limit.push(too_many_sorts);
-
-        let mut too_many_projection_fields = base.clone();
-        too_many_projection_fields.projection = EntryQueryProjectionTemplate::Fields {
-            fields: (0..=crate::entry_query::MAX_ENTRY_PROJECTION_FIELDS)
-                .map(|_| FieldId::new(100).unwrap())
-                .collect(),
-        };
-        over_limit.push(too_many_projection_fields);
-
-        let mut too_large_page = base;
-        too_large_page.page_limit = crate::entry_query::MAX_ENTRY_PAGE_LIMIT + 1;
-        over_limit.push(too_large_page);
-
-        for template in over_limit {
-            assert_eq!(
-                diagnostic_codes(compile_entry_query_source(
-                    form.id,
-                    &schema(&form),
-                    &template,
-                    &empty_bindings(),
-                    &form,
-                )),
-                vec![CompositionDiagnosticCode::InvalidComposition]
-            );
-        }
-    }
-
-    #[test]
-    fn saved_sql_source_compiles_to_the_exact_stateless_sql_request() {
-        let (entry_id, revision_id) = id_pair();
-        let source = saved_sql_source(
-            entry_id,
-            revision_id,
-            BTreeMap::from([
-                ("enabled".to_owned(), value(json!(true))),
-                ("period_start".to_owned(), variable_ref("start")),
-            ]),
+    fn inline_sql_reports_unknown_and_missing_typed_parameters() {
+        let definitions = [variable("active", CompositionVariableType::Boolean)];
+        let source = inline_source(
+            vec![],
+            result("active", CompositionResultFieldType::Boolean),
+            &"a".repeat(64),
         );
-        let variables = [variable(
-            "start",
-            CompositionVariableType::Date,
-            true,
-            None,
-            None,
-        )];
-        let bindings = bind_variables(
-            &variables,
-            &BTreeMap::from([("start".to_owned(), json!("2026-10-01"))]),
+        let metadata = inline_metadata(
+            vec![],
+            result("active", CompositionResultFieldType::Boolean),
+            &"a".repeat(64),
+            &["missing"],
         );
-        let current_revision = saved_sql_metadata(
-            entry_id,
-            revision_id,
-            BTreeMap::from([
-                ("enabled".to_owned(), "boolean"),
-                ("period_start".to_owned(), "date"),
-            ]),
-        );
-
-        let compiled = compile_saved_sql_source(&source, Some(&current_revision), &bindings)
-            .expect("the exact Saved SQL revision and its parameters compile");
-
-        assert_eq!(compiled.request.sql, "");
-        assert_eq!(
-            compiled.request.saved_sql.as_ref().unwrap().id,
-            entry_id.to_string()
-        );
-        assert_eq!(
-            compiled.request.saved_sql.as_ref().unwrap().revision_id,
-            revision_id.to_string()
-        );
-        assert_eq!(compiled.request.parameters["enabled"], json!(true));
-        assert_eq!(
-            compiled.request.parameters["period_start"],
-            json!("2026-10-01")
-        );
-        assert_eq!(compiled.request.parameter_types["enabled"], "boolean");
-        assert_eq!(compiled.request.parameter_types["period_start"], "date");
-        assert_eq!(
-            compiled.request.limit,
-            ugoite_domain::composition::DEFAULT_COMPOSITION_PAGE_LIMIT
-        );
-        assert!(compiled.request.continuation.is_none());
-        assert!(compiled.request.validate().is_ok());
-
-        let repeated = compile_saved_sql_source(&source, Some(&current_revision), &bindings)
-            .expect("the same source and descriptor compile deterministically");
-        assert_eq!(
-            compiled.source_schema_fingerprint,
-            repeated.source_schema_fingerprint
-        );
-    }
-
-    #[test]
-    fn saved_sql_source_requires_the_exact_current_revision_descriptor() {
-        let (entry_id, revision_id) = id_pair();
-        let source = saved_sql_source(entry_id, revision_id, BTreeMap::new());
-        let bindings = empty_bindings();
 
         assert_eq!(
-            diagnostic_codes(compile_saved_sql_source(&source, None, &bindings)),
-            vec![CompositionDiagnosticCode::SourceUnavailable]
-        );
-
-        let wrong_revision = saved_sql_metadata(
-            entry_id,
-            RevisionId::from(uuid::Uuid::from_u128(44)),
-            BTreeMap::new(),
-        );
-        assert_eq!(
-            diagnostic_codes(compile_saved_sql_source(
+            compile_inline_sql_source(
                 &source,
-                Some(&wrong_revision),
-                &bindings
-            )),
-            vec![CompositionDiagnosticCode::SourceUnavailable]
-        );
-    }
-
-    #[test]
-    fn saved_sql_source_requires_declared_variables_to_be_bound_once() {
-        let (entry_id, revision_id) = id_pair();
-        let source = saved_sql_source(
-            entry_id,
-            revision_id,
-            BTreeMap::from([("not_declared".to_owned(), value(json!(5)))]),
-        );
-        let current_revision = saved_sql_metadata(
-            entry_id,
-            revision_id,
-            BTreeMap::from([("required".to_owned(), "integer")]),
+                Some(&metadata),
+                &bindings(&definitions, &[]),
+                false
+            )
+            .unwrap_err()[0]
+                .code,
+            CompositionDiagnosticCode::VariableUnknown,
         );
 
+        let metadata = inline_metadata(
+            vec![],
+            result("active", CompositionResultFieldType::Boolean),
+            &"a".repeat(64),
+            &["active"],
+        );
         assert_eq!(
-            diagnostic_codes(compile_saved_sql_source(
+            compile_inline_sql_source(
                 &source,
-                Some(&current_revision),
-                &empty_bindings()
-            )),
-            vec![
-                CompositionDiagnosticCode::SourceSchemaChanged,
-                CompositionDiagnosticCode::VariableMissing,
-            ]
+                Some(&metadata),
+                &bindings(&definitions, &[]),
+                false
+            )
+            .unwrap_err()[0]
+                .code,
+            CompositionDiagnosticCode::VariableMissing,
         );
     }
 
     #[test]
-    fn saved_sql_source_binds_every_supported_sql_variable_type() {
-        let (entry_id, revision_id) = id_pair();
-        let variables = [
-            variable("text", CompositionVariableType::String, true, None, None),
-            variable("flag", CompositionVariableType::Boolean, true, None, None),
-            variable("count", CompositionVariableType::Integer, true, None, None),
-            variable("ratio", CompositionVariableType::Float, true, None, None),
-            variable("date", CompositionVariableType::Date, true, None, None),
-            variable(
-                "timestamp",
-                CompositionVariableType::Timestamp,
-                true,
-                None,
-                None,
-            ),
-        ];
-        let values = BTreeMap::from([
-            ("text".to_owned(), json!("october")),
-            ("flag".to_owned(), json!(true)),
-            ("count".to_owned(), json!(3)),
-            ("ratio".to_owned(), json!(1.25)),
-            ("date".to_owned(), json!("2026-10-02")),
-            ("timestamp".to_owned(), json!("2026-10-02T12:30:00Z")),
-        ]);
-        let bindings = bind_variables(&variables, &values);
-        let source = saved_sql_source(
-            entry_id,
-            revision_id,
-            BTreeMap::from([
-                ("sql_text".to_owned(), variable_ref("text")),
-                ("sql_flag".to_owned(), variable_ref("flag")),
-                ("sql_count".to_owned(), variable_ref("count")),
-                ("sql_ratio".to_owned(), variable_ref("ratio")),
-                ("sql_date".to_owned(), variable_ref("date")),
-                ("sql_timestamp".to_owned(), variable_ref("timestamp")),
-            ]),
-        );
-        let current_revision = saved_sql_metadata(
-            entry_id,
-            revision_id,
-            BTreeMap::from([
-                ("sql_text".to_owned(), "string"),
-                ("sql_flag".to_owned(), "boolean"),
-                ("sql_count".to_owned(), "integer"),
-                ("sql_ratio".to_owned(), "float"),
-                ("sql_date".to_owned(), "date"),
-                ("sql_timestamp".to_owned(), "timestamp"),
-            ]),
-        );
-
-        let compiled = compile_saved_sql_source(&source, Some(&current_revision), &bindings)
-            .expect("all existing Saved SQL variable types are supported");
-
-        assert_eq!(compiled.request.parameters.len(), 6);
-        assert_eq!(compiled.request.parameter_types.len(), 6);
-        assert_eq!(compiled.request.parameters["sql_date"], json!("2026-10-02"));
-        assert_eq!(
-            compiled.request.parameters["sql_timestamp"],
-            json!("2026-10-02T12:30:00Z")
-        );
-    }
-
-    #[test]
-    fn saved_sql_source_checks_variable_types_and_literal_values() {
-        let (entry_id, revision_id) = id_pair();
-        let variables = [variable(
-            "amount",
-            CompositionVariableType::Integer,
-            true,
-            None,
-            None,
-        )];
-        let bindings = bind_variables(
-            &variables,
-            &BTreeMap::from([("amount".to_owned(), json!(5))]),
-        );
-        let source = saved_sql_source(
-            entry_id,
-            revision_id,
-            BTreeMap::from([("threshold".to_owned(), variable_ref("amount"))]),
-        );
-        let current_revision = saved_sql_metadata(
-            entry_id,
-            revision_id,
-            BTreeMap::from([("threshold".to_owned(), "float")]),
-        );
-        assert_eq!(
-            diagnostic_codes(compile_saved_sql_source(
-                &source,
-                Some(&current_revision),
-                &bindings
-            )),
-            vec![CompositionDiagnosticCode::VariableTypeMismatch]
-        );
-
-        let invalid_literal = saved_sql_source(
-            entry_id,
-            revision_id,
-            BTreeMap::from([("start".to_owned(), value(json!("not-a-date")))]),
-        );
-        let date_revision = saved_sql_metadata(
-            entry_id,
-            revision_id,
-            BTreeMap::from([("start".to_owned(), "date")]),
-        );
-        assert_eq!(
-            diagnostic_codes(compile_saved_sql_source(
-                &invalid_literal,
-                Some(&date_revision),
-                &empty_bindings()
-            )),
-            vec![CompositionDiagnosticCode::InvalidComposition]
-        );
-    }
-
-    #[test]
-    fn saved_sql_source_preserves_float_type_for_integral_json_number() {
-        let (entry_id, revision_id) = id_pair();
-        let variables = [variable(
-            "ratio",
-            CompositionVariableType::Float,
-            true,
-            None,
-            None,
-        )];
-        let bindings = bind_variables(
-            &variables,
-            &BTreeMap::from([("ratio".to_owned(), json!(1))]),
-        );
-        assert!(bindings.diagnostics.is_empty());
-        assert!(bindings.invalid_values.is_empty());
-
-        let source = saved_sql_source(
-            entry_id,
-            revision_id,
-            BTreeMap::from([("threshold".to_owned(), variable_ref("ratio"))]),
-        );
-        let float_revision = saved_sql_metadata(
-            entry_id,
-            revision_id,
-            BTreeMap::from([("threshold".to_owned(), "float")]),
-        );
-        let compiled = compile_saved_sql_source(&source, Some(&float_revision), &bindings)
-            .expect("integral JSON spelling preserves the declared Float variable type");
-
-        assert_eq!(compiled.request.parameters["threshold"], json!(1));
-        assert_eq!(compiled.request.parameter_types["threshold"], "float");
-
-        let integer_revision = saved_sql_metadata(
-            entry_id,
-            revision_id,
-            BTreeMap::from([("threshold".to_owned(), "integer")]),
-        );
-        assert_eq!(
-            diagnostic_codes(compile_saved_sql_source(
-                &source,
-                Some(&integer_revision),
-                &bindings
-            )),
-            vec![CompositionDiagnosticCode::VariableTypeMismatch]
-        );
-    }
-
-    #[test]
-    fn saved_sql_source_preserves_typed_null_literals() {
-        let (entry_id, revision_id) = id_pair();
-        let source = saved_sql_source(
-            entry_id,
-            revision_id,
-            BTreeMap::from([("optional_limit".to_owned(), value(Value::Null))]),
-        );
-        let current_revision = saved_sql_metadata(
-            entry_id,
-            revision_id,
-            BTreeMap::from([("optional_limit".to_owned(), "integer")]),
-        );
-
-        let compiled =
-            compile_saved_sql_source(&source, Some(&current_revision), &empty_bindings())
-                .expect("the exact SQL variable type supplies the null parameter type");
-
-        assert_eq!(compiled.request.parameters["optional_limit"], Value::Null);
-        assert_eq!(
-            compiled.request.parameter_types["optional_limit"],
-            "integer"
-        );
-    }
-
-    #[test]
-    fn saved_sql_source_rejects_null_from_a_named_variable() {
-        let (entry_id, revision_id) = id_pair();
-        let source = saved_sql_source(
-            entry_id,
-            revision_id,
-            BTreeMap::from([("optional_limit".to_owned(), variable_ref("limit"))]),
-        );
-        let current_revision = saved_sql_metadata(
-            entry_id,
-            revision_id,
-            BTreeMap::from([("optional_limit".to_owned(), "integer")]),
-        );
-        let bindings = VariableBindings {
-            values: BTreeMap::from([("limit".to_owned(), Value::Null)]),
-            variable_types: BTreeMap::from([(
-                "limit".to_owned(),
-                CompositionVariableType::Integer,
-            )]),
-            ..VariableBindings::default()
-        };
-
-        assert_eq!(
-            diagnostic_codes(compile_saved_sql_source(
-                &source,
-                Some(&current_revision),
-                &bindings
-            )),
-            vec![CompositionDiagnosticCode::VariableTypeMismatch]
-        );
-    }
-
-    #[test]
-    fn any_variable_error_stops_resolution_before_compiling_any_source() {
-        let current_form = form(&[(100, FieldType::String)]);
-        let (entry_id, revision_id) = id_pair();
-        let spec = composition_spec(
-            vec![variable(
-                "limit",
-                CompositionVariableType::Integer,
-                true,
-                None,
-                None,
-            )],
-            vec![
-                entry_query_source("entries", &current_form, empty_entry_query_template()),
-                CompositionSource::SavedSql {
-                    id: "report".to_owned(),
-                    entry_id,
-                    revision_id,
-                    expected_result: expected_result(),
-                    variables: BTreeMap::from([("limit".to_owned(), variable_ref("limit"))]),
-                },
-            ],
-        );
-        let supplied = BTreeMap::from([("limit".to_owned(), json!("not-an-integer"))]);
-        let current_sources = [
-            CurrentSourceDescriptor::EntryQuery {
-                source_id: "entries",
-                current_form: Some(&current_form),
-            },
-            // If resolution starts compiling, this unavailable second source
-            // would add a source diagnostic to the binding error.
-            CurrentSourceDescriptor::SavedSql {
-                source_id: "report",
-                current_revision: None,
-            },
-        ];
-        let (composition_entry_id, composition_revision_id) = id_pair();
-
-        let diagnostics = resolve_composition(ResolveInput {
-            composition_revision: CompositionRevisionRef {
-                entry_id: composition_entry_id,
-                revision_id: composition_revision_id,
-            },
-            spec: &spec,
-            variables: &supplied,
-            current_sources: &current_sources,
-        })
-        .expect_err("one invalid variable rejects the complete plan");
-
-        assert_eq!(
-            diagnostics,
-            vec![CompositionDiagnostic {
-                code: CompositionDiagnosticCode::VariableTypeMismatch,
-                variable_id: Some("limit".to_owned()),
-            }]
-        );
-    }
-
-    #[test]
-    fn resolve_plan_preserves_document_order_and_exact_revision_identity() {
-        let current_form = form(&[(100, FieldType::String)]);
-        let (sql_entry_id, sql_revision_id) = id_pair();
-        let saved_sql = CompositionSource::SavedSql {
-            id: "report".to_owned(),
-            entry_id: sql_entry_id,
-            revision_id: sql_revision_id,
-            expected_result: expected_result(),
-            variables: BTreeMap::new(),
-        };
-        let spec = spec_with_note(composition_spec(
-            Vec::new(),
-            vec![
-                saved_sql,
-                entry_query_source("entries", &current_form, empty_entry_query_template()),
-            ],
-        ));
-        let sql_metadata = saved_sql_metadata(sql_entry_id, sql_revision_id, BTreeMap::new());
-        // Metadata lookup order is independent of Composition source order.
-        let current_sources = [
-            CurrentSourceDescriptor::EntryQuery {
-                source_id: "entries",
-                current_form: Some(&current_form),
-            },
-            CurrentSourceDescriptor::SavedSql {
-                source_id: "report",
-                current_revision: Some(&sql_metadata),
-            },
-        ];
-        let (composition_entry_id, composition_revision_id) = id_pair();
-
-        let plan = resolve_composition(ResolveInput {
-            composition_revision: CompositionRevisionRef {
-                entry_id: composition_entry_id,
-                revision_id: composition_revision_id,
-            },
-            spec: &spec,
-            variables: &BTreeMap::new(),
-            current_sources: &current_sources,
-        })
-        .expect("both sources compile");
-
-        assert_eq!(
-            plan.composition_revision,
-            CompositionRevisionRef {
-                entry_id: composition_entry_id,
-                revision_id: composition_revision_id,
-            }
-        );
-        assert!(matches!(
-            &plan.sources[0],
-            ResolvedSourceRequest::SavedSql {
-                source_id,
-                request,
-                source_schema_fingerprint,
-            } if source_id == "report"
-                && request.saved_sql.as_ref().is_some_and(|saved_sql| {
-                    saved_sql.id == sql_entry_id.to_string()
-                        && saved_sql.revision_id == sql_revision_id.to_string()
-                })
-                && source_schema_fingerprint.len() == 64
-        ));
-        assert!(matches!(
-            &plan.sources[1],
-            ResolvedSourceRequest::EntryQuery {
-                source_id,
-                source_schema_fingerprint,
-                ..
-            } if source_id == "entries" && source_schema_fingerprint.len() == 64
-        ));
-    }
-
-    #[test]
-    fn preview_resolves_through_the_same_semantics_without_revision_identity() {
-        let current_form = form(&[(100, FieldType::String)]);
-        let (sql_entry_id, sql_revision_id) = id_pair();
-        let saved_sql = CompositionSource::SavedSql {
-            id: "report".to_owned(),
-            entry_id: sql_entry_id,
-            revision_id: sql_revision_id,
-            expected_result: expected_result(),
-            variables: BTreeMap::new(),
-        };
-        let mut spec = composition_spec(
-            vec![variable(
-                "month",
-                CompositionVariableType::String,
-                true,
-                None,
-                None,
-            )],
-            vec![
-                saved_sql,
-                entry_query_source("entries", &current_form, empty_entry_query_template()),
-            ],
-        );
-        // Declaration order never determines render order; the layout mixes
-        // an Input, Text, and tabular component across rows.
-        spec.components = vec![
-            tabular_component("rows", None, "entries"),
-            input_component("month-input", "month"),
-            CompositionComponent::Text {
-                id: "note".to_owned(),
-                label: None,
-                content: CompositionTextContent::Literal {
-                    text: "Note".to_owned(),
-                },
-                style: TextStyle::Body,
-            },
-        ];
-        spec.layout = flow_layout(vec![
-            layout_row(
-                "controls",
-                vec![component_item("month-input"), component_item("note")],
-            ),
-            layout_row("details", vec![component_item("rows")]),
-        ]);
-        let supplied = BTreeMap::from([("month".to_owned(), json!("2026-10"))]);
-        let sql_metadata = saved_sql_metadata(sql_entry_id, sql_revision_id, BTreeMap::new());
-        let current_sources = [
-            CurrentSourceDescriptor::EntryQuery {
-                source_id: "entries",
-                current_form: Some(&current_form),
-            },
-            CurrentSourceDescriptor::SavedSql {
-                source_id: "report",
-                current_revision: Some(&sql_metadata),
-            },
-        ];
-        let (composition_entry_id, composition_revision_id) = id_pair();
-
-        let saved = resolve_composition(ResolveInput {
-            composition_revision: CompositionRevisionRef {
-                entry_id: composition_entry_id,
-                revision_id: composition_revision_id,
-            },
-            spec: &spec,
-            variables: &supplied,
-            current_sources: &current_sources,
-        })
-        .expect("saved revision compiles");
-        let preview = resolve_composition_preview(
-            &spec,
-            &supplied,
-            &current_sources,
-            "draft-fingerprint".to_owned(),
-        )
-        .expect("same draft compiles");
-
-        // Identical sources and bindings; identity is the fingerprint.
-        assert_eq!(preview.sources, saved.sources);
-        assert_eq!(preview.component_bindings, saved.component_bindings);
-        assert_eq!(preview.draft_fingerprint, "draft-fingerprint");
-        assert_eq!(preview.dependencies, saved.dependencies);
-        // Layout order holds on both paths; Input and Text add no source
-        // requests, while preserving their component identities.
-        for plan in [&saved.component_bindings, &preview.component_bindings] {
-            assert_eq!(
-                plan.iter()
-                    .map(|binding| binding.component_id.as_str())
-                    .collect::<Vec<_>>(),
-                ["month-input", "note", "rows"]
-            );
-            assert_eq!(plan[0].kind, super::ResolvedComponentKind::Input);
-            assert_eq!(plan[0].variable_id.as_deref(), Some("month"));
-            assert_eq!(plan[0].source_id, None);
-            assert_eq!(plan[1].kind, super::ResolvedComponentKind::Text);
-            assert_eq!(plan[1].source_id, None);
-        }
-    }
-
-    #[test]
-    fn resolve_plan_binds_shared_saved_sql_metrics_and_entry_query_table_in_layout_order() {
-        let current_form = form(&[(100, FieldType::String)]);
-        let entry_source = entry_query_source(
-            "entries",
-            &current_form,
-            EntryQueryTemplate {
-                projection: EntryQueryProjectionTemplate::Fields {
-                    fields: vec![FieldId::new(100).unwrap()],
-                },
-                ..empty_entry_query_template()
-            },
-        );
-        let (sql_entry_id, sql_revision_id) = id_pair();
-        let sql_source = CompositionSource::SavedSql {
-            id: "report".to_owned(),
-            entry_id: sql_entry_id,
-            revision_id: sql_revision_id,
-            expected_result: vec![
-                CompositionResultColumn {
-                    name: "total".to_owned(),
-                    result_type: CompositionResultFieldType::Float,
-                },
-                CompositionResultColumn {
-                    name: "count".to_owned(),
-                    result_type: CompositionResultFieldType::Integer,
-                },
-            ],
-            variables: BTreeMap::new(),
-        };
-        let mut spec = composition_spec(Vec::new(), vec![entry_source, sql_source]);
-        spec.components = vec![
-            CompositionComponent::Metric {
-                id: "sql-total".to_owned(),
-                label: Some("SQL total".to_owned()),
-                source: "report".to_owned(),
-                column: "total".to_owned(),
-                presentation: None,
-            },
-            tabular_component("rows", None, "entries"),
-            CompositionComponent::Metric {
-                id: "sql-count".to_owned(),
-                label: Some("SQL count".to_owned()),
-                source: "report".to_owned(),
-                column: "count".to_owned(),
-                presentation: None,
-            },
-        ];
-        spec.layout = flow_layout(vec![
-            layout_row(
-                "summary",
-                vec![component_item("sql-count"), component_item("sql-total")],
-            ),
-            layout_row("details", vec![component_item("rows")]),
-        ]);
-        let sql_metadata = saved_sql_metadata(sql_entry_id, sql_revision_id, BTreeMap::new());
-        let current_sources = [
-            CurrentSourceDescriptor::SavedSql {
-                source_id: "report",
-                current_revision: Some(&sql_metadata),
-            },
-            CurrentSourceDescriptor::EntryQuery {
-                source_id: "entries",
-                current_form: Some(&current_form),
-            },
-        ];
-
-        let plan = resolve_composition(ResolveInput {
-            composition_revision: CompositionRevisionRef {
-                entry_id: sql_entry_id,
-                revision_id: sql_revision_id,
-            },
-            spec: &spec,
-            variables: &BTreeMap::new(),
-            current_sources: &current_sources,
-        })
-        .expect("multiple Metrics share Saved SQL while EntryQuery stays supported");
-
-        assert_eq!(
-            plan.component_bindings
-                .iter()
-                .map(|binding| binding.component_id.as_str())
-                .collect::<Vec<_>>(),
-            ["sql-count", "sql-total", "rows"]
-        );
-        assert!(plan.component_bindings[..2]
-            .iter()
-            .all(|binding| binding.source_id.as_deref() == Some("report")));
-        assert_eq!(
-            plan.component_bindings[0].result_property_key.as_deref(),
-            Some("count")
-        );
-        assert_eq!(
-            plan.component_bindings[0].expected_result_type,
-            Some(CompositionResultFieldType::Integer)
-        );
-        assert_eq!(
-            plan.component_bindings[1].result_property_key.as_deref(),
-            Some("total")
-        );
-        assert_eq!(
-            plan.component_bindings[1].expected_result_type,
-            Some(CompositionResultFieldType::Float)
-        );
-        assert_eq!(
-            plan.component_bindings[2].kind,
-            super::ResolvedComponentKind::Tabular
-        );
-        assert_eq!(
-            plan.component_bindings[2].source_id.as_deref(),
-            Some("entries")
-        );
-        assert_eq!(plan.component_bindings[2].result_property_key, None);
-        assert_eq!(plan.component_bindings[2].expected_result_type, None);
-        let plan_json = serde_json::to_value(&plan).unwrap();
-        assert!(plan_json["component_bindings"][0]
-            .get("metric_field_id")
-            .is_none());
-        assert_eq!(
-            plan_json["component_bindings"][0]["result_property_key"],
-            json!("count")
-        );
-        assert_eq!(
-            plan_json["component_bindings"][0]["expected_result_type"],
-            json!("integer")
-        );
-        let ResolvedSourceRequest::EntryQuery { request, .. } = &plan.sources[0] else {
-            panic!("the first source is the declared EntryQuery source");
-        };
-        assert_eq!(
-            request.projection,
-            crate::entry_query::EntryProjection::Fields {
-                fields: vec![EntryFieldRef::Property {
-                    field_id: FieldId::new(100).unwrap(),
-                }],
-            }
-        );
-        assert!(matches!(
-            &plan.sources[1],
-            ResolvedSourceRequest::SavedSql { source_id, request, .. }
-                if source_id == "report"
-                    && request.saved_sql.as_ref().is_some_and(|saved_sql| {
-                        saved_sql.id == sql_entry_id.to_string()
-                            && saved_sql.revision_id == sql_revision_id.to_string()
-                    })
-        ));
-    }
-
-    #[test]
-    fn text_components_emit_layout_ordered_bindings_without_source_requests() {
-        let current_form = form(&[(100, FieldType::String)]);
-        let mut spec = composition_spec(
-            Vec::new(),
-            vec![entry_query_source(
-                "entries",
-                &current_form,
-                empty_entry_query_template(),
-            )],
-        );
-        spec.components = vec![
-            CompositionComponent::Text {
-                id: "note".to_owned(),
-                label: None,
-                content: CompositionTextContent::Literal {
-                    text: "Note".to_owned(),
-                },
-                style: TextStyle::Body,
-            },
-            tabular_component("rows", None, "entries"),
-        ];
-        spec.layout = flow_layout(vec![layout_row(
-            "main",
-            vec![component_item("note"), component_item("rows")],
-        )]);
-        let current_sources = [CurrentSourceDescriptor::EntryQuery {
-            source_id: "entries",
-            current_form: Some(&current_form),
-        }];
-
-        let plan = resolve_composition(ResolveInput {
-            composition_revision: CompositionRevisionRef {
-                entry_id: id_pair().0,
-                revision_id: id_pair().1,
-            },
-            spec: &spec,
-            variables: &BTreeMap::new(),
-            current_sources: &current_sources,
-        })
-        .expect("text alongside a table resolves");
-
-        // Text triggers no source request but keeps its layout position.
-        assert_eq!(plan.sources.len(), 1);
-        assert_eq!(
-            plan.component_bindings
-                .iter()
-                .map(|binding| binding.component_id.as_str())
-                .collect::<Vec<_>>(),
-            ["note", "rows"]
-        );
-        let text = &plan.component_bindings[0];
-        assert_eq!(text.kind, super::ResolvedComponentKind::Text);
-        assert_eq!(text.source_id, None);
-        assert_eq!(text.result_property_key, None);
-        assert_eq!(text.expected_result_type, None);
-        let plan_json = serde_json::to_value(&plan).unwrap();
-        assert_eq!(plan_json["component_bindings"][0]["kind"], json!("text"));
-        assert!(plan_json["component_bindings"][0]
-            .get("source_id")
-            .is_none());
-    }
-
-    #[test]
-    fn layout_order_interleaves_inputs_text_and_data_components_across_rows() {
-        let mut current_form = form(&[(100, FieldType::String), (101, FieldType::Integer)]);
-        current_form.fields[1].name = "total_amount".to_owned();
-        let mut spec = composition_spec(
-            vec![
-                variable("month", CompositionVariableType::String, true, None, None),
-                variable("region", CompositionVariableType::String, false, None, None),
-            ],
-            vec![
-                entry_query_source(
-                    "entries",
-                    &current_form,
-                    EntryQueryTemplate {
-                        projection: EntryQueryProjectionTemplate::Fields {
-                            fields: vec![FieldId::new(100).unwrap(), FieldId::new(101).unwrap()],
-                        },
-                        ..empty_entry_query_template()
-                    },
-                ),
-                saved_sql_source(id_pair().0, id_pair().1, BTreeMap::new()),
-            ],
-        );
-        // Declaration order is scrambled relative to the layout on purpose.
-        spec.components = vec![
-            tabular_component("rows", None, "entries"),
-            input_component("month-input", "month"),
-            input_component("region-input", "region"),
-            CompositionComponent::Text {
-                id: "note".to_owned(),
-                label: None,
-                content: CompositionTextContent::Literal {
-                    text: "Note".to_owned(),
-                },
-                style: TextStyle::Body,
-            },
-            CompositionComponent::Metric {
-                id: "sql-total".to_owned(),
-                label: None,
-                source: "monthly-expenses".to_owned(),
-                column: "total".to_owned(),
-                presentation: None,
-            },
-        ];
-        spec.layout = flow_layout(vec![
-            layout_row(
-                "top",
-                vec![
-                    component_item("month-input"),
-                    component_item("note"),
-                    component_item("sql-total"),
-                ],
-            ),
-            layout_row(
-                "bottom",
-                vec![component_item("rows"), component_item("region-input")],
-            ),
-        ]);
-        let (sql_entry_id, sql_revision_id) = id_pair();
-        let sql_metadata = saved_sql_metadata(sql_entry_id, sql_revision_id, BTreeMap::new());
-        let current_sources = [
-            CurrentSourceDescriptor::EntryQuery {
-                source_id: "entries",
-                current_form: Some(&current_form),
-            },
-            CurrentSourceDescriptor::SavedSql {
-                source_id: "monthly-expenses",
-                current_revision: Some(&sql_metadata),
-            },
-        ];
-        let supplied = BTreeMap::from([("month".to_owned(), json!("2026-10"))]);
-
-        let plan = resolve_composition(ResolveInput {
-            composition_revision: CompositionRevisionRef {
-                entry_id: id_pair().0,
-                revision_id: id_pair().1,
-            },
-            spec: &spec,
-            variables: &supplied,
-            current_sources: &current_sources,
-        })
-        .expect("interleaved Inputs, Text, and data components resolve");
-
-        // Inputs and Text do not create source requests and keep their
-        // presentation positions in the resolved component bindings.
-        assert_eq!(plan.sources.len(), 2);
-        assert_eq!(
-            plan.component_bindings
-                .iter()
-                .map(|binding| binding.component_id.as_str())
-                .collect::<Vec<_>>(),
-            ["month-input", "note", "sql-total", "rows", "region-input"]
-        );
-        assert_eq!(
-            plan.component_bindings
-                .iter()
-                .map(|binding| binding.kind)
-                .collect::<Vec<_>>(),
-            [
-                super::ResolvedComponentKind::Input,
-                super::ResolvedComponentKind::Text,
-                super::ResolvedComponentKind::Metric,
-                super::ResolvedComponentKind::Tabular,
-                super::ResolvedComponentKind::Input,
-            ]
-        );
-        assert!(plan.component_bindings.iter().all(|binding| {
-            binding.component_id != "month" && binding.component_id != "region"
-        }));
-    }
-
-    #[test]
-    fn layout_only_additions_leave_source_requests_unchanged() {
-        let current_form = form(&[(100, FieldType::String)]);
-        let mut spec = composition_spec(
-            vec![variable(
-                "region",
-                CompositionVariableType::String,
-                false,
-                None,
-                None,
-            )],
-            vec![entry_query_source(
-                "entries",
-                &current_form,
-                empty_entry_query_template(),
-            )],
-        );
-        spec.components = vec![tabular_component("rows", None, "entries")];
-        spec.layout = single_row_layout("main", &["rows"]);
-        let current_sources = [CurrentSourceDescriptor::EntryQuery {
-            source_id: "entries",
-            current_form: Some(&current_form),
-        }];
-        let resolve = |spec: &CompositionSpec| {
-            resolve_composition(ResolveInput {
-                composition_revision: CompositionRevisionRef {
-                    entry_id: id_pair().0,
-                    revision_id: id_pair().1,
-                },
-                spec,
-                variables: &BTreeMap::new(),
-                current_sources: &current_sources,
-            })
-            .expect("layout-only edits resolve")
-            .sources
-        };
-
-        let base_sources = resolve(&spec);
-
-        // Adding a text component appends a binding but recompiles no source.
-        spec.components.push(CompositionComponent::Text {
-            id: "note".to_owned(),
-            label: None,
-            content: CompositionTextContent::Literal {
-                text: "Note".to_owned(),
-            },
-            style: TextStyle::Body,
-        });
-        spec.layout
-            .rows
-            .push(layout_row("note-row", vec![component_item("note")]));
-        assert_eq!(resolve(&spec), base_sources);
-
-        // Placing an optional Input component is also query-free.
-        spec.components
-            .push(input_component("region-input", "region"));
-        spec.layout.rows[0]
-            .items
-            .push(component_item("region-input"));
-        assert_eq!(resolve(&spec), base_sources);
-    }
-
-    #[test]
-    fn input_components_resolve_through_semantic_variable_values() {
-        let current_form = form(&[(100, FieldType::String)]);
-        let mut spec = composition_spec(
-            vec![variable(
-                "month",
-                CompositionVariableType::String,
-                true,
-                None,
-                None,
-            )],
-            vec![entry_query_source(
-                "entries",
-                &current_form,
-                EntryQueryTemplate {
-                    filters: vec![EntryQueryFilterTemplate {
-                        field_id: FieldId::new(100).unwrap(),
-                        operator: CompositionQueryOperator::Equals,
-                        value: variable_ref("month"),
-                    }],
-                    projection: EntryQueryProjectionTemplate::Fields {
-                        fields: vec![FieldId::new(100).unwrap()],
-                    },
-                    ..empty_entry_query_template()
-                },
-            )],
-        );
-        spec.components = vec![
-            input_component("month-input", "month"),
-            tabular_component("rows", None, "entries"),
-        ];
-        spec.layout = flow_layout(vec![layout_row(
-            "main",
-            vec![component_item("month-input"), component_item("rows")],
-        )]);
-        let current_sources = [CurrentSourceDescriptor::EntryQuery {
-            source_id: "entries",
-            current_form: Some(&current_form),
-        }];
-        let supplied = BTreeMap::from([("month".to_owned(), json!("2026-10"))]);
-
-        let plan = resolve_composition(ResolveInput {
-            composition_revision: CompositionRevisionRef {
-                entry_id: id_pair().0,
-                revision_id: id_pair().1,
-            },
-            spec: &spec,
-            variables: &supplied,
-            current_sources: &current_sources,
-        })
-        .expect("an Input resolves through its semantic variable value");
-
-        assert_eq!(plan.component_bindings.len(), 2);
-        assert_eq!(plan.component_bindings[0].component_id, "month-input");
-        assert_eq!(
-            plan.component_bindings[0].kind,
-            super::ResolvedComponentKind::Input
-        );
-        assert_eq!(
-            plan.component_bindings[0].variable_id.as_deref(),
-            Some("month")
-        );
-        assert_eq!(plan.component_bindings[1].component_id, "rows");
-        let ResolvedSourceRequest::EntryQuery { request, .. } = &plan.sources[0] else {
-            panic!("the source is the declared EntryQuery source");
-        };
-        assert_eq!(
-            request
-                .query
-                .filters
-                .iter()
-                .map(|filter| filter.value.clone())
-                .collect::<Vec<_>>(),
-            vec![json!("2026-10")]
-        );
-    }
-
-    #[test]
-    fn dependency_index_is_semantic_and_independent_of_layout_order() {
-        let current_form = form(&[(100, FieldType::String)]);
-        let (sql_entry_id, sql_revision_id) = id_pair();
-        let entry_source = entry_query_source(
-            "entries",
-            &current_form,
-            EntryQueryTemplate {
-                filters: vec![EntryQueryFilterTemplate {
-                    field_id: FieldId::new(100).unwrap(),
-                    operator: CompositionQueryOperator::Equals,
-                    value: variable_ref("query_term"),
-                }],
-                projection: EntryQueryProjectionTemplate::Fields {
-                    fields: vec![FieldId::new(100).unwrap()],
-                },
-                ..empty_entry_query_template()
-            },
-        );
-        let sql_source = saved_sql_source(
-            sql_entry_id,
-            sql_revision_id,
-            BTreeMap::from([("sql_region".to_owned(), variable_ref("region"))]),
-        );
-        let mut spec = composition_spec(
-            vec![
-                variable(
-                    "query_term",
-                    CompositionVariableType::String,
-                    true,
-                    None,
-                    None,
-                ),
-                variable(
-                    "heading",
-                    CompositionVariableType::String,
-                    false,
-                    None,
-                    None,
-                ),
-                variable("region", CompositionVariableType::String, false, None, None),
-                variable("unused", CompositionVariableType::String, false, None, None),
-            ],
-            vec![entry_source, sql_source],
-        );
-        spec.components = vec![
-            input_component("filter-input", "query_term"),
-            input_component("filter-input-secondary", "query_term"),
-            CompositionComponent::Text {
-                id: "heading-text".to_owned(),
-                label: None,
-                content: CompositionTextContent::Variable {
-                    variable: "heading".to_owned(),
-                },
-                style: TextStyle::Body,
-            },
-            CompositionComponent::Metric {
-                id: "total-metric".to_owned(),
-                label: None,
-                source: "monthly-expenses".to_owned(),
-                column: "total".to_owned(),
-                presentation: None,
-            },
-            tabular_component("sql-table", None, "monthly-expenses"),
-            tabular_component("entry-table", None, "entries"),
-        ];
-        spec.layout = flow_layout(vec![
-            layout_row(
-                "controls",
-                vec![
-                    component_item("filter-input"),
-                    component_item("filter-input-secondary"),
-                    component_item("heading-text"),
-                ],
-            ),
-            layout_row(
-                "results",
-                vec![
-                    component_item("total-metric"),
-                    component_item("sql-table"),
-                    component_item("entry-table"),
-                ],
-            ),
-        ]);
-
-        let sql_metadata = saved_sql_metadata(
-            sql_entry_id,
-            sql_revision_id,
-            BTreeMap::from([("sql_region".to_owned(), "string")]),
-        );
-        let current_sources = [
-            CurrentSourceDescriptor::EntryQuery {
-                source_id: "entries",
-                current_form: Some(&current_form),
-            },
-            CurrentSourceDescriptor::SavedSql {
-                source_id: "monthly-expenses",
-                current_revision: Some(&sql_metadata),
-            },
-        ];
-        let supplied = BTreeMap::from([
-            ("query_term".to_owned(), json!("october")),
-            ("heading".to_owned(), json!("October")),
-            ("region".to_owned(), json!("west")),
-        ]);
-        let resolve = |spec: &CompositionSpec,
-                       current_sources: &[CurrentSourceDescriptor<'_>],
-                       variables: &BTreeMap<String, Value>| {
-            resolve_composition(ResolveInput {
-                composition_revision: CompositionRevisionRef {
-                    entry_id: id_pair().0,
-                    revision_id: id_pair().1,
-                },
-                spec,
-                variables,
-                current_sources,
-            })
-            .expect("the same semantic sources resolve for each layout")
-        };
-
-        let first = resolve(&spec, &current_sources, &supplied);
-        let sql_request_count = first
-            .sources
-            .iter()
-            .filter(|source| {
-                matches!(source, ResolvedSourceRequest::SavedSql { source_id, .. }
-                    if source_id == "monthly-expenses")
-            })
-            .count();
-        assert_eq!(sql_request_count, 1);
-        let reordered_sources = [current_sources[1], current_sources[0]];
-        spec.layout = flow_layout(vec![
-            layout_row(
-                "results",
-                vec![
-                    component_item("entry-table"),
-                    component_item("sql-table"),
-                    component_item("total-metric"),
-                ],
-            ),
-            layout_row(
-                "controls",
-                vec![
-                    component_item("heading-text"),
-                    component_item("filter-input-secondary"),
-                    component_item("filter-input"),
-                ],
-            ),
-        ]);
-        let second = resolve(&spec, &reordered_sources, &supplied);
-
-        assert_eq!(first.sources, second.sources);
-        assert_eq!(first.dependencies, second.dependencies);
-        assert_eq!(first.sources.len(), 2);
-        assert_eq!(
-            first.dependencies.variable_consumers["query_term"].input_component_ids,
-            BTreeSet::from([
-                "filter-input".to_owned(),
-                "filter-input-secondary".to_owned()
-            ])
-        );
-        assert_eq!(
-            first.dependencies.variable_consumers["query_term"].source_ids,
-            BTreeSet::from(["entries".to_owned()])
-        );
-        assert_eq!(
-            first.dependencies.variable_consumers["heading"].text_component_ids,
-            BTreeSet::from(["heading-text".to_owned()])
-        );
-        assert!(first.dependencies.variable_consumers["heading"]
-            .source_ids
-            .is_empty());
-        assert_eq!(
-            first.dependencies.variable_consumers["region"].source_ids,
-            BTreeSet::from(["monthly-expenses".to_owned()])
-        );
-        assert_eq!(
-            first.dependencies.variable_consumers["unused"],
-            Default::default()
-        );
-        assert_eq!(
-            first.dependencies.source_consumers["monthly-expenses"].metric_component_ids,
-            BTreeSet::from(["total-metric".to_owned()])
-        );
-        assert_eq!(
-            first.dependencies.source_consumers["monthly-expenses"].table_component_ids,
-            BTreeSet::from(["sql-table".to_owned()])
-        );
-        assert_eq!(
-            first.dependencies.source_consumers["entries"].table_component_ids,
-            BTreeSet::from(["entry-table".to_owned()])
-        );
-
-        let mut changed_unrelated_value = supplied.clone();
-        changed_unrelated_value.insert("unused".to_owned(), json!("ignored"));
-        assert_eq!(
-            resolve(&spec, &current_sources, &changed_unrelated_value).sources,
-            first.sources
-        );
-
-        let mut changed_region = supplied.clone();
-        changed_region.insert("region".to_owned(), json!("east"));
-        let changed_region_plan = resolve(&spec, &current_sources, &changed_region);
-        fn source_by_id<'a>(
-            sources: &'a [ResolvedSourceRequest],
-            id: &str,
-        ) -> &'a ResolvedSourceRequest {
-            sources
-                .iter()
-                .find(|source| match source {
-                    ResolvedSourceRequest::EntryQuery { source_id, .. }
-                    | ResolvedSourceRequest::SavedSql { source_id, .. } => source_id == id,
-                })
-                .expect("resolved plan contains each declared source once")
-        }
-        assert_eq!(
-            source_by_id(&changed_region_plan.sources, "entries"),
-            source_by_id(&first.sources, "entries")
-        );
-        let ResolvedSourceRequest::SavedSql {
-            request: before_sql,
-            ..
-        } = source_by_id(&first.sources, "monthly-expenses")
-        else {
-            panic!("the referenced variable belongs to Saved SQL");
-        };
-        let ResolvedSourceRequest::SavedSql {
-            request: after_sql, ..
-        } = source_by_id(&changed_region_plan.sources, "monthly-expenses")
-        else {
-            panic!("the referenced variable belongs to Saved SQL");
-        };
-        assert_eq!(before_sql.parameters["sql_region"], json!("west"));
-        assert_eq!(after_sql.parameters["sql_region"], json!("east"));
-    }
-
-    #[test]
-    fn required_variable_input_gates_resolution() {
-        let current_form = form(&[(100, FieldType::String)]);
-        let mut spec = composition_spec(
-            vec![variable(
-                "month",
-                CompositionVariableType::String,
-                true,
-                None,
-                None,
-            )],
-            vec![entry_query_source(
-                "entries",
-                &current_form,
-                empty_entry_query_template(),
-            )],
-        );
-        spec.components = vec![
-            input_component("month-input", "month"),
-            tabular_component("rows", None, "entries"),
-        ];
-        spec.layout = flow_layout(vec![layout_row(
-            "main",
-            vec![component_item("month-input"), component_item("rows")],
-        )]);
-        let current_sources = [CurrentSourceDescriptor::EntryQuery {
-            source_id: "entries",
-            current_form: Some(&current_form),
-        }];
-        let supplied = BTreeMap::from([("month".to_owned(), json!("2026-10"))]);
-
-        let plan = resolve_composition(ResolveInput {
-            composition_revision: CompositionRevisionRef {
-                entry_id: id_pair().0,
-                revision_id: id_pair().1,
-            },
-            spec: &spec,
-            variables: &supplied,
-            current_sources: &current_sources,
-        })
-        .expect("a placed required variable Input resolves");
-        assert_eq!(plan.component_bindings.len(), 2);
-
-        spec.components
-            .retain(|component| component.id() != "month-input");
-        spec.layout = single_row_layout("main", &["rows"]);
-        let diagnostics = resolve_composition(ResolveInput {
-            composition_revision: CompositionRevisionRef {
-                entry_id: id_pair().0,
-                revision_id: id_pair().1,
-            },
-            spec: &spec,
-            variables: &supplied,
-            current_sources: &current_sources,
-        })
-        .expect_err("a required variable without an Input is invalid");
-        assert_eq!(
-            diagnostics
-                .into_iter()
-                .map(|diagnostic| diagnostic.code)
-                .collect::<Vec<_>>(),
-            vec![CompositionDiagnosticCode::InvalidComposition]
-        );
-    }
-
-    #[test]
-    fn saved_sql_metric_selector_requires_one_declared_scalar_column() {
-        assert_eq!(
-            sql_metric_diagnostics(expected_result(), "not_declared", true,),
-            vec![CompositionDiagnosticCode::MetricResultColumnMissing]
-        );
-        assert_eq!(
-            sql_metric_diagnostics(
-                vec![
-                    CompositionResultColumn {
-                        name: "total".to_owned(),
-                        result_type: CompositionResultFieldType::Float,
-                    },
-                    CompositionResultColumn {
-                        name: "total".to_owned(),
-                        result_type: CompositionResultFieldType::Integer,
-                    },
-                ],
-                "total",
-                true,
-            ),
-            vec![CompositionDiagnosticCode::MetricResultColumnAmbiguous]
-        );
-        assert_eq!(
-            sql_metric_diagnostics(
-                vec![CompositionResultColumn {
-                    name: "payload".to_owned(),
-                    result_type: CompositionResultFieldType::Json,
-                }],
-                "payload",
-                true,
-            ),
-            vec![CompositionDiagnosticCode::MetricResultNotScalar]
-        );
-    }
-
-    #[test]
-    fn missing_component_source_is_an_invalid_composition() {
-        let mut spec = composition_spec(Vec::new(), Vec::new());
-        spec.components = vec![tabular_component("rows", None, "missing")];
-        spec.layout = single_row_layout("main", &["rows"]);
-
-        let diagnostics = resolve_composition(ResolveInput {
-            composition_revision: CompositionRevisionRef {
-                entry_id: id_pair().0,
-                revision_id: id_pair().1,
-            },
-            spec: &spec,
-            variables: &BTreeMap::new(),
-            current_sources: &[],
-        })
-        .expect_err("a component cannot point to an undeclared source");
-
-        assert_eq!(
-            diagnostics,
-            vec![CompositionDiagnostic::without_variable(
-                CompositionDiagnosticCode::InvalidComposition
-            )]
-        );
-    }
-
-    #[test]
-    fn denied_metric_source_is_concealed_as_source_unavailable() {
-        let current_form = form(&[(100, FieldType::Integer)]);
-        let mut spec = composition_spec(
-            Vec::new(),
-            vec![entry_query_source(
-                "private-source-name",
-                &current_form,
-                empty_entry_query_template(),
-            )],
-        );
-        spec.components = vec![CompositionComponent::Metric {
-            id: "private-component".to_owned(),
-            label: None,
-            source: "private-source-name".to_owned(),
-            column: "total".to_owned(),
-            presentation: None,
-        }];
-        spec.layout = single_row_layout("private-section", &["private-component"]);
-        let current_sources = [CurrentSourceDescriptor::EntryQuery {
-            source_id: "private-source-name",
-            current_form: None,
-        }];
-
-        let diagnostics = resolve_composition(ResolveInput {
-            composition_revision: CompositionRevisionRef {
-                entry_id: id_pair().0,
-                revision_id: id_pair().1,
-            },
-            spec: &spec,
-            variables: &BTreeMap::new(),
-            current_sources: &current_sources,
-        })
-        .expect_err("denied sources cannot produce a partial renderer plan");
-
-        assert_eq!(
-            diagnostics,
-            vec![CompositionDiagnostic::without_variable(
-                CompositionDiagnosticCode::SourceUnavailable
-            )]
-        );
-        let diagnostic_debug = format!("{diagnostics:?}");
-        assert!(!diagnostic_debug.contains("private-source-name"));
-        assert!(!diagnostic_debug.contains("private-component"));
-    }
-
-    #[test]
-    fn table_field_diagnostics_require_an_authorized_source_form_read() {
-        let saved_form = form(&[(101, FieldType::Integer)]);
-        let changed_form = form(&[(101, FieldType::String)]);
-        let source_id = "private-source-name";
-        let field_id = FieldId::new(101).unwrap();
-        let mut spec = composition_spec(
-            Vec::new(),
-            vec![entry_query_source(
-                source_id,
-                &saved_form,
-                EntryQueryTemplate {
-                    projection: EntryQueryProjectionTemplate::Fields {
-                        fields: vec![field_id],
-                    },
-                    ..empty_entry_query_template()
-                },
-            )],
-        );
-        spec.components = vec![tabular_component("private-component", None, source_id)];
-        spec.layout = single_row_layout("private-section", &["private-component"]);
-
-        let denied_sources = [CurrentSourceDescriptor::EntryQuery {
-            source_id,
-            current_form: None,
-        }];
-        let denied_diagnostics = resolve_composition(ResolveInput {
-            composition_revision: CompositionRevisionRef {
-                entry_id: id_pair().0,
-                revision_id: id_pair().1,
-            },
-            spec: &spec,
-            variables: &BTreeMap::new(),
-            current_sources: &denied_sources,
-        })
-        .expect_err("denied source Form reads cannot produce field diagnostics");
-
-        assert_eq!(
-            denied_diagnostics,
-            vec![CompositionDiagnostic::without_variable(
-                CompositionDiagnosticCode::SourceUnavailable
-            )]
-        );
-        let denied_debug = format!("{denied_diagnostics:?}");
-        let saved_form_id = saved_form.id.to_string();
-        let field_id_string = field_id.get().to_string();
-        for concealed_value in [
-            source_id,
-            "private-component",
-            "private-section",
-            saved_form_id.as_str(),
-            field_id_string.as_str(),
-            "field_101",
-        ] {
-            assert!(
-                !denied_debug.contains(concealed_value),
-                "denied source diagnostics disclosed {concealed_value}"
-            );
-        }
-
-        let authorized_sources = [CurrentSourceDescriptor::EntryQuery {
-            source_id,
-            current_form: Some(&changed_form),
-        }];
-        let authorized_diagnostics = resolve_composition(ResolveInput {
-            composition_revision: CompositionRevisionRef {
-                entry_id: id_pair().0,
-                revision_id: id_pair().1,
-            },
-            spec: &spec,
-            variables: &BTreeMap::new(),
-            current_sources: &authorized_sources,
-        })
-        .expect_err("an authorized schema read exposes deterministic field drift");
-
-        assert_eq!(
-            authorized_diagnostics,
-            vec![CompositionDiagnostic::without_variable(
-                CompositionDiagnosticCode::FieldTypeChanged
-            )]
-        );
-    }
-
-    #[test]
-    fn resolve_sources_in_document_order_without_a_partial_plan() {
-        let expected_form = form(&[(100, FieldType::String)]);
-        let current_form = form(&[(100, FieldType::Integer)]);
-        let (sql_entry_id, sql_revision_id) = id_pair();
-        let spec = spec_with_note(composition_spec(
-            Vec::new(),
-            vec![
-                entry_query_source("entries", &expected_form, empty_entry_query_template()),
-                CompositionSource::SavedSql {
-                    id: "report".to_owned(),
-                    entry_id: sql_entry_id,
-                    revision_id: sql_revision_id,
-                    expected_result: expected_result(),
-                    variables: BTreeMap::new(),
-                },
-            ],
-        ));
-        let unavailable_sql = SavedSqlRevisionMetadata {
-            id: "concealed-or-missing".to_owned(),
-            revision_id: sql_revision_id.to_string(),
-            variable_types: BTreeMap::new(),
-        };
-        let current_sources = [
-            CurrentSourceDescriptor::SavedSql {
-                source_id: "report",
-                current_revision: Some(&unavailable_sql),
-            },
-            CurrentSourceDescriptor::EntryQuery {
-                source_id: "entries",
-                current_form: Some(&current_form),
-            },
-        ];
-        let (composition_entry_id, composition_revision_id) = id_pair();
-
-        let diagnostics = resolve_composition(ResolveInput {
-            composition_revision: CompositionRevisionRef {
-                entry_id: composition_entry_id,
-                revision_id: composition_revision_id,
-            },
-            spec: &spec,
-            variables: &BTreeMap::new(),
-            current_sources: &current_sources,
-        })
-        .expect_err("a failed source prevents returning a partial plan");
-
-        assert_eq!(
-            diagnostics
-                .into_iter()
-                .map(|diagnostic| diagnostic.code)
-                .collect::<Vec<_>>(),
-            vec![
-                CompositionDiagnosticCode::FieldTypeChanged,
-                CompositionDiagnosticCode::SourceUnavailable,
-            ]
-        );
-    }
-
-    #[test]
-    fn saved_sql_schema_fingerprint_tracks_variable_types_deterministically() {
-        let (entry_id, revision_id) = id_pair();
-        let source = saved_sql_source(
-            entry_id,
-            revision_id,
-            BTreeMap::from([("threshold".to_owned(), value(json!(5)))]),
-        );
-        let bindings = empty_bindings();
-        let integer_revision = saved_sql_metadata(
-            entry_id,
-            revision_id,
-            BTreeMap::from([("threshold".to_owned(), "integer")]),
-        );
-        let float_revision = saved_sql_metadata(
-            entry_id,
-            revision_id,
-            BTreeMap::from([("threshold".to_owned(), "float")]),
-        );
-
-        let integer = compile_saved_sql_source(&source, Some(&integer_revision), &bindings)
-            .expect("integer literal binds");
-        let float = compile_saved_sql_source(&source, Some(&float_revision), &bindings)
-            .expect("the same JSON number is valid for float");
-        let repeated = compile_saved_sql_source(&source, Some(&integer_revision), &bindings)
-            .expect("the same source fingerprint is deterministic");
-        assert_ne!(
-            integer.source_schema_fingerprint,
-            float.source_schema_fingerprint
-        );
-        assert_eq!(
-            integer.source_schema_fingerprint,
-            repeated.source_schema_fingerprint
-        );
-    }
-
-    #[test]
-    fn saved_sql_schema_fingerprint_tracks_ordered_result_descriptors() {
-        let (entry_id, revision_id) = id_pair();
+    fn saved_sql_uses_exact_revision_and_keeps_parameters_stateless() {
+        let (entry_id, revision_id) = source_revision();
         let columns = vec![
             CompositionResultColumn {
                 name: "total".to_owned(),
-                result_type: CompositionResultFieldType::Float,
+                result_type: CompositionResultFieldType::Integer,
             },
             CompositionResultColumn {
-                name: "count".to_owned(),
-                result_type: CompositionResultFieldType::Integer,
+                name: "currency".to_owned(),
+                result_type: CompositionResultFieldType::String,
             },
         ];
-        let source_for = |expected_result| CompositionSource::SavedSql {
-            id: "monthly-expenses".to_owned(),
+        let fingerprint = "c".repeat(64);
+        let variables = BTreeMap::from([(
+            "minimum".to_owned(),
+            super::CompositionValue::Variable(
+                ugoite_domain::composition::CompositionVariableReference {
+                    variable: "min_total".to_owned(),
+                },
+            ),
+        )]);
+        let source = saved_source(
             entry_id,
             revision_id,
-            expected_result,
-            variables: BTreeMap::new(),
-        };
-        let baseline_source = source_for(columns.clone());
-        let renamed_source = source_for(vec![
-            CompositionResultColumn {
-                name: "amount".to_owned(),
-                result_type: CompositionResultFieldType::Float,
-            },
-            columns[1].clone(),
-        ]);
-        let retyped_source = source_for(vec![
-            CompositionResultColumn {
-                name: "total".to_owned(),
-                result_type: CompositionResultFieldType::Integer,
-            },
-            columns[1].clone(),
-        ]);
-        let reordered_source = source_for(vec![columns[1].clone(), columns[0].clone()]);
-        let current_revision = saved_sql_metadata(entry_id, revision_id, BTreeMap::new());
-        let bindings = empty_bindings();
-
-        let baseline =
-            compile_saved_sql_source(&baseline_source, Some(&current_revision), &bindings)
-                .expect("the source compiles");
-        let renamed = compile_saved_sql_source(&renamed_source, Some(&current_revision), &bindings)
-            .expect("the renamed result schema compiles");
-        let retyped = compile_saved_sql_source(&retyped_source, Some(&current_revision), &bindings)
-            .expect("the retyped result schema compiles");
-        let reordered =
-            compile_saved_sql_source(&reordered_source, Some(&current_revision), &bindings)
-                .expect("the reordered result schema compiles");
-        let repeated =
-            compile_saved_sql_source(&baseline_source, Some(&current_revision), &bindings)
-                .expect("the same source fingerprint is deterministic");
-
-        assert_ne!(
-            baseline.source_schema_fingerprint,
-            renamed.source_schema_fingerprint
+            columns.clone(),
+            &fingerprint,
+            variables,
         );
-        assert_ne!(
-            baseline.source_schema_fingerprint,
-            retyped.source_schema_fingerprint
+        let metadata = saved_metadata(
+            entry_id,
+            revision_id,
+            columns,
+            &fingerprint,
+            &[("minimum", "integer")],
         );
-        assert_ne!(
-            baseline.source_schema_fingerprint,
-            reordered.source_schema_fingerprint
+        let definitions = [variable("min_total", CompositionVariableType::Integer)];
+        let bound = bindings(&definitions, &[("min_total", json!(3))]);
+
+        let compiled = compile_saved_sql_source(&source, Some(&metadata), &bound)
+            .expect("the exact revision and its schema match");
+
+        assert!(compiled.request.sql.is_empty());
+        assert_eq!(
+            compiled.request.saved_sql,
+            Some(crate::sql_query::SavedSqlRevisionRef {
+                id: entry_id.to_string(),
+                revision_id: revision_id.to_string(),
+            })
         );
         assert_eq!(
-            baseline.source_schema_fingerprint,
-            repeated.source_schema_fingerprint
+            Value::Object(compiled.request.parameters.clone()),
+            json!({"minimum": 3})
+        );
+        assert_eq!(compiled.request.parameter_types["minimum"], "integer");
+        assert_eq!(compiled.variable_dependencies, ["min_total"]);
+        assert_eq!(compiled.source_schema_fingerprint, fingerprint);
+    }
+
+    #[test]
+    fn saved_sql_rejects_changed_schema_and_non_exact_revision() {
+        let (entry_id, revision_id) = source_revision();
+        let columns = result("total", CompositionResultFieldType::Integer);
+        let fingerprint = "c".repeat(64);
+        let source = saved_source(
+            entry_id,
+            revision_id,
+            columns.clone(),
+            &fingerprint,
+            BTreeMap::new(),
+        );
+        let changed = saved_metadata(
+            entry_id,
+            revision_id,
+            result("count", CompositionResultFieldType::Integer),
+            &fingerprint,
+            &[],
+        );
+        assert_eq!(
+            compile_saved_sql_source(&source, Some(&changed), &bindings(&[], &[])).unwrap_err()[0]
+                .code,
+            CompositionDiagnosticCode::SourceSchemaChanged,
+        );
+
+        let wrong_revision = saved_metadata(
+            entry_id,
+            RevisionId::from_uuid(uuid::Uuid::from_u128(201)),
+            columns,
+            &fingerprint,
+            &[],
+        );
+        assert_eq!(
+            compile_saved_sql_source(&source, Some(&wrong_revision), &bindings(&[], &[]),)
+                .unwrap_err()[0]
+                .code,
+            CompositionDiagnosticCode::SourceUnavailable,
         );
     }
 
     #[test]
-    fn shared_saved_sql_source_fingerprint_is_independent_of_metric_column_selection() {
-        let (entry_id, revision_id) = id_pair();
-        let source = CompositionSource::SavedSql {
-            id: "monthly-expenses".to_owned(),
-            entry_id,
-            revision_id,
-            expected_result: vec![
-                CompositionResultColumn {
-                    name: "total".to_owned(),
-                    result_type: CompositionResultFieldType::Float,
-                },
-                CompositionResultColumn {
-                    name: "count".to_owned(),
-                    result_type: CompositionResultFieldType::Integer,
-                },
-            ],
-            variables: BTreeMap::new(),
+    fn preview_resolves_an_empty_inline_descriptor_from_current_server_metadata() {
+        let source = CompositionSource::InlineSql {
+            id: "rows".to_owned(),
+            name: "Rows".to_owned(),
+            sql: "SELECT * FROM \"Records\"".to_owned(),
+            form_bindings: vec![],
+            expected_result: vec![],
+            schema_fingerprint: String::new(),
         };
-        let current_revision = saved_sql_metadata(entry_id, revision_id, BTreeMap::new());
-        let current_sources = [CurrentSourceDescriptor::SavedSql {
-            source_id: "monthly-expenses",
-            current_revision: Some(&current_revision),
+        let spec = composition_spec(
+            vec![],
+            source,
+            vec![CompositionComponent::Table {
+                id: "records".to_owned(),
+                source: "rows".to_owned(),
+            }],
+        );
+        let columns = result("record_id", CompositionResultFieldType::String);
+        let metadata = inline_metadata(form_binding("Records"), columns, &"d".repeat(64), &[]);
+        let descriptors = [CurrentSourceDescriptor::InlineSql {
+            source_id: "rows",
+            current_schema: Some(&metadata),
         }];
-        let resolve_selected_column = |column: &str| {
-            let mut spec = composition_spec(Vec::new(), vec![source.clone()]);
-            spec.components = vec![
-                CompositionComponent::Metric {
-                    id: "summary".to_owned(),
-                    label: None,
-                    source: "monthly-expenses".to_owned(),
-                    column: column.to_owned(),
-                    presentation: None,
-                },
-                CompositionComponent::Metric {
-                    id: "count".to_owned(),
-                    label: None,
-                    source: "monthly-expenses".to_owned(),
-                    column: "count".to_owned(),
-                    presentation: None,
-                },
-                CompositionComponent::Table {
-                    id: "detail".to_owned(),
-                    label: None,
-                    source: "monthly-expenses".to_owned(),
-                },
-            ];
-            spec.layout = single_row_layout("main", &["summary", "count", "detail"]);
 
-            let plan = resolve_composition(ResolveInput {
+        let preview =
+            resolve_composition_preview(&spec, &BTreeMap::new(), &descriptors, "draft".to_owned())
+                .expect("the exact empty draft placeholder may be planned");
+
+        assert_eq!(preview.sources.len(), 1);
+        let ResolvedSourceRequest::Sql {
+            request,
+            source_schema_fingerprint,
+            ..
+        } = &preview.sources[0];
+        assert_eq!(request.sql, metadata.bound_sql);
+        assert_eq!(source_schema_fingerprint, &"d".repeat(64));
+    }
+
+    #[test]
+    fn saved_resolution_rejects_incomplete_inline_snapshot() {
+        let source = CompositionSource::InlineSql {
+            id: "rows".to_owned(),
+            name: "Rows".to_owned(),
+            sql: "SELECT * FROM \"Records\"".to_owned(),
+            form_bindings: vec![],
+            expected_result: vec![],
+            schema_fingerprint: String::new(),
+        };
+        let spec = composition_spec(
+            vec![],
+            source,
+            vec![CompositionComponent::Table {
+                id: "records".to_owned(),
+                source: "rows".to_owned(),
+            }],
+        );
+        let metadata = inline_metadata(
+            form_binding("Records"),
+            result("record_id", CompositionResultFieldType::String),
+            &"d".repeat(64),
+            &[],
+        );
+        let descriptors = [CurrentSourceDescriptor::InlineSql {
+            source_id: "rows",
+            current_schema: Some(&metadata),
+        }];
+
+        assert_eq!(
+            resolve_composition(ResolveInput {
                 composition_revision: CompositionRevisionRef {
-                    entry_id,
-                    revision_id,
+                    entry_id: EntryId::from_uuid(uuid::Uuid::from_u128(1)),
+                    revision_id: RevisionId::from_uuid(uuid::Uuid::from_u128(2)),
                 },
                 spec: &spec,
                 variables: &BTreeMap::new(),
-                current_sources: &current_sources,
-            })
-            .expect("the selected Saved SQL column resolves");
-            let ResolvedSourceRequest::SavedSql {
-                source_schema_fingerprint,
-                ..
-            } = &plan.sources[0]
-            else {
-                panic!("the plan retains its Saved SQL source");
-            };
-            let binding = plan
-                .component_bindings
-                .first()
-                .expect("selected Metric binding");
-            assert_eq!(plan.sources.len(), 1);
-            assert_eq!(plan.component_bindings.len(), 3);
-            assert!(plan
-                .component_bindings
+                current_sources: &descriptors,
+            },)
+            .unwrap_err()[0]
+                .code,
+            CompositionDiagnosticCode::SourceSchemaChanged,
+        );
+    }
+
+    #[test]
+    fn resolver_returns_only_sql_requests_and_indexes_dependencies() {
+        let definitions = vec![variable("active", CompositionVariableType::Boolean)];
+        let forms = form_binding("Records");
+        let columns = result("active", CompositionResultFieldType::Boolean);
+        let source = inline_source(forms.clone(), columns.clone(), &"e".repeat(64));
+        let components = vec![
+            CompositionComponent::Input {
+                id: "active_input".to_owned(),
+                variable: "active".to_owned(),
+            },
+            CompositionComponent::Table {
+                id: "records".to_owned(),
+                source: "rows".to_owned(),
+            },
+        ];
+        let spec = composition_spec(definitions, source, components);
+        let metadata = inline_metadata(forms, columns, &"e".repeat(64), &["active"]);
+        let descriptors = [CurrentSourceDescriptor::InlineSql {
+            source_id: "rows",
+            current_schema: Some(&metadata),
+        }];
+        let variables = BTreeMap::from([("active".to_owned(), json!(false))]);
+
+        let plan = resolve_composition(ResolveInput {
+            composition_revision: CompositionRevisionRef {
+                entry_id: EntryId::from_uuid(uuid::Uuid::from_u128(1)),
+                revision_id: RevisionId::from_uuid(uuid::Uuid::from_u128(2)),
+            },
+            spec: &spec,
+            variables: &variables,
+            current_sources: &descriptors,
+        })
+        .expect("the SQL source and component graph are valid");
+
+        assert!(matches!(plan.sources[0], ResolvedSourceRequest::Sql { .. }));
+        assert_eq!(
+            plan.dependencies.variable_consumers["active"].source_ids,
+            BTreeSet::from(["rows".to_owned()]),
+        );
+        assert_eq!(
+            plan.dependencies.variable_consumers["active"].input_component_ids,
+            BTreeSet::from(["active_input".to_owned()]),
+        );
+        let wire = serde_json::to_value(&plan.component_bindings[0]).unwrap();
+        assert!(wire.get("label").is_none());
+    }
+
+    #[test]
+    fn metric_component_selects_one_typed_scalar_column_from_shared_source() {
+        let forms = form_binding("Records");
+        let columns = result("total", CompositionResultFieldType::Integer);
+        let source = inline_source(forms.clone(), columns.clone(), &"f".repeat(64));
+        let spec = composition_spec(
+            vec![],
+            source,
+            vec![
+                CompositionComponent::Metric {
+                    id: "total_metric".to_owned(),
+                    source: "rows".to_owned(),
+                    column: "total".to_owned(),
+                    presentation: None,
+                },
+                CompositionComponent::Table {
+                    id: "rows_table".to_owned(),
+                    source: "rows".to_owned(),
+                },
+            ],
+        );
+        let metadata = inline_metadata(forms.clone(), columns, &"f".repeat(64), &[]);
+        let descriptors = [CurrentSourceDescriptor::InlineSql {
+            source_id: "rows",
+            current_schema: Some(&metadata),
+        }];
+        let plan = resolve_composition(ResolveInput {
+            composition_revision: CompositionRevisionRef {
+                entry_id: EntryId::from_uuid(uuid::Uuid::from_u128(1)),
+                revision_id: RevisionId::from_uuid(uuid::Uuid::from_u128(2)),
+            },
+            spec: &spec,
+            variables: &BTreeMap::new(),
+            current_sources: &descriptors,
+        })
+        .expect("a selected integer output supports a metric alongside other columns");
+        assert_eq!(
+            plan.component_bindings
                 .iter()
-                .all(|binding| { binding.source_id.as_deref() == Some("monthly-expenses") }));
-            (
-                source_schema_fingerprint.clone(),
-                binding.result_property_key.clone(),
-            )
-        };
-
-        let total = resolve_selected_column("total");
-        let count = resolve_selected_column("count");
-        let repeated_total = resolve_selected_column("total");
-
-        assert_eq!(total.0, count.0);
-        assert_eq!(total.1.as_deref(), Some("total"));
-        assert_eq!(count.1.as_deref(), Some("count"));
-        assert_eq!(total, repeated_total);
+                .find(|binding| binding.component_id == "total_metric")
+                .and_then(|binding| binding.expected_result_type),
+            Some(CompositionResultFieldType::Integer),
+        );
+        assert_eq!(
+            plan.dependencies.source_consumers["rows"].metric_component_ids,
+            BTreeSet::from(["total_metric".to_owned()]),
+        );
+        assert_eq!(
+            plan.dependencies.source_consumers["rows"].table_component_ids,
+            BTreeSet::from(["rows_table".to_owned()]),
+        );
     }
 }

@@ -36,7 +36,7 @@ describe("composition variable list", () => {
     render(() => (
       <CompositionVariableList
         variables={[]}
-        headingId="params"
+        headingId="variables"
         onAdd={() => {}}
         onUpdate={() => {}}
         onRemove={() => undefined}
@@ -45,84 +45,78 @@ describe("composition variable list", () => {
     expect(screen.getByText("Add a variable to begin.")).toBeInTheDocument();
   });
 
-  it("creates a labeled variable without displaying its generated id", () => {
+  it("adds a typed variable with an authored ID and no display label field", () => {
     const onAdd = vi.fn();
     render(() => (
       <CompositionVariableList
         variables={[]}
-        headingId="params"
+        headingId="variables"
         onAdd={onAdd}
         onUpdate={() => {}}
         onRemove={() => undefined}
       />
     ));
 
-    fireEvent.input(screen.getByLabelText("New variable label"), {
-      target: { value: "Revenue" },
+    fireEvent.input(screen.getByLabelText("Variable ID"), {
+      target: { value: "revenue_total" },
+    });
+    fireEvent.change(screen.getByLabelText("Type"), {
+      target: { value: "integer" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
     expect(onAdd).toHaveBeenCalledWith({
-      id: "variable_1",
-      type: "string",
+      id: "revenue_total",
+      type: "integer",
       required: true,
-      label: "Revenue",
     });
-    expect(screen.queryByText("variable_1")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("New variable label")).not
+      .toBeInTheDocument();
   });
 
-  it("selects an unused generated id without exposing it", () => {
+  it("blocks duplicate IDs and advances the default ID after adding", () => {
     const onAdd = vi.fn();
     render(() => (
       <CompositionVariableList
-        variables={[
-          { id: "variable_1", type: "string", required: false },
-          { id: "variable_3", type: "string", required: false },
-        ]}
-        headingId="params"
+        variables={[{ id: "variable_1", type: "string", required: false }]}
+        headingId="variables"
         onAdd={onAdd}
         onUpdate={() => {}}
         onRemove={() => undefined}
       />
     ));
 
+    const idInput = screen.getByLabelText("Variable ID");
+    expect(idInput).toHaveValue("variable_2");
+    fireEvent.input(idInput, { target: { value: "variable_1" } });
+    expect(screen.getByRole("button", { name: "Add variable" }))
+      .toBeDisabled();
+    fireEvent.input(idInput, { target: { value: "next_period" } });
     fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
     expect(onAdd).toHaveBeenCalledWith({
-      id: "variable_2",
+      id: "next_period",
       type: "string",
       required: true,
     });
-    expect(screen.queryByText("variable_1")).not.toBeInTheDocument();
-    expect(screen.queryByText("variable_3")).not.toBeInTheDocument();
   });
 
-  it("adds typed variables and edits defaults inline", () => {
-    const onAdd = vi.fn();
+  it("shows stable IDs as variable names and edits typed defaults inline", () => {
     const onUpdate = vi.fn();
     render(() => (
       <CompositionVariableList
         variables={[month]}
-        headingId="params"
-        onAdd={onAdd}
+        headingId="variables"
+        onAdd={() => {}}
         onUpdate={onUpdate}
         onRemove={() => undefined}
       />
     ));
-    expect(screen.getByText("Variable 1")).toBeInTheDocument();
-    expect(screen.queryByText("month")).not.toBeInTheDocument();
-
-    fireEvent.input(screen.getByLabelText("New variable label"), {
-      target: { value: "Region" },
+    expect(screen.getByText("month")).toBeInTheDocument();
+    expect(screen.getByLabelText("Default for month")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove month" }))
+      .toBeInTheDocument();
+    fireEvent.input(screen.getByLabelText("Default for month"), {
+      target: { value: "2026-10-01" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
-    expect(onAdd).toHaveBeenCalledWith({
-      id: "variable_1",
-      type: "string",
-      required: true,
-      label: "Region",
-    });
-
-    const defaultInput = screen.getByLabelText("Default for Variable 1");
-    fireEvent.input(defaultInput, { target: { value: "2026-10-01" } });
     expect(onUpdate).toHaveBeenCalledWith({ ...month, default: "2026-10-01" });
   });
 
@@ -137,14 +131,14 @@ describe("composition variable list", () => {
     render(() => (
       <CompositionVariableList
         variables={[integer]}
-        headingId="params"
+        headingId="variables"
         onAdd={() => {}}
         onUpdate={onUpdate}
         onRemove={() => undefined}
       />
     ));
 
-    const input = screen.getByLabelText("Default for Variable 1");
+    const input = screen.getByLabelText("Default for limit");
     expect(input).toHaveValue("0");
     expect(input).not.toHaveAttribute("readonly");
     fireEvent.input(input, { target: { value: "+00042" } });
@@ -154,15 +148,12 @@ describe("composition variable list", () => {
 
     fireEvent.input(input, { target: { value: "1.0" } });
     await waitFor(() => {
-      expect(onUpdate).toHaveBeenLastCalledWith({
-        ...integer,
-        default: "1.0",
-      });
+      expect(onUpdate).toHaveBeenLastCalledWith({ ...integer, default: "1.0" });
     });
     expect(input).toHaveValue("1.0");
   });
 
-  it("maps the boolean choice to its typed literal without parsing arbitrary input", () => {
+  it("maps the boolean choice to its typed literal", () => {
     const boolean: DraftVariable = {
       id: "include_archived",
       type: "boolean",
@@ -173,86 +164,17 @@ describe("composition variable list", () => {
     render(() => (
       <CompositionVariableList
         variables={[boolean]}
-        headingId="params"
+        headingId="variables"
         onAdd={() => {}}
         onUpdate={onUpdate}
         onRemove={() => undefined}
       />
     ));
 
-    fireEvent.change(screen.getByLabelText("Default for Variable 1"), {
+    fireEvent.change(screen.getByLabelText("Default for include_archived"), {
       target: { value: "true" },
     });
     expect(onUpdate).toHaveBeenCalledWith({ ...boolean, default: true });
-  });
-
-  it("uses localized ordinal labels instead of unlabeled variable keys", () => {
-    const region: DraftVariable = {
-      id: "region_key",
-      type: "string",
-      required: false,
-    };
-    render(() => (
-      <CompositionVariableList
-        variables={[month, region]}
-        headingId="params"
-        onAdd={() => {}}
-        onUpdate={() => {}}
-        onRemove={() => undefined}
-      />
-    ));
-
-    expect(screen.getByText("Variable 1")).toBeInTheDocument();
-    expect(screen.getByText("Variable 2")).toBeInTheDocument();
-    expect(screen.queryByText("month")).not.toBeInTheDocument();
-    expect(screen.queryByText("region_key")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Default for Variable 2"))
-      .toBeInTheDocument();
-
-    setLocale("ja");
-    expect(screen.getByText("変数1")).toBeInTheDocument();
-    expect(screen.getByText("変数2")).toBeInTheDocument();
-    expect(screen.getByLabelText("変数2の既定値"))
-      .toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "変数1を削除" }))
-      .toBeInTheDocument();
-  });
-
-  it("uses the declared label while keeping the variable name for updates and removal", () => {
-    const labeledMonth: DraftVariable = {
-      ...month,
-      id: "month_key",
-      label: "Month",
-    };
-    const onUpdate = vi.fn();
-    const onRemove = vi.fn(() => undefined);
-    render(() => (
-      <CompositionVariableList
-        variables={[labeledMonth]}
-        headingId="params"
-        onAdd={() => {}}
-        onUpdate={onUpdate}
-        onRemove={onRemove}
-      />
-    ));
-
-    expect(screen.getByText("Month")).toBeInTheDocument();
-    expect(screen.queryByText("month_key")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Label for Month")).toHaveValue("Month");
-    expect(screen.queryByLabelText("Label for month_key")).not
-      .toBeInTheDocument();
-    expect(screen.queryByLabelText("Default for month_key")).not
-      .toBeInTheDocument();
-    fireEvent.input(screen.getByLabelText("Default for Month"), {
-      target: { value: "2026-10-01" },
-    });
-    expect(onUpdate).toHaveBeenCalledWith({
-      ...labeledMonth,
-      default: "2026-10-01",
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Remove Month" }));
-    expect(onRemove).toHaveBeenCalledWith("month_key");
   });
 
   it("surfaces guarded removal without deleting", () => {
@@ -260,19 +182,16 @@ describe("composition variable list", () => {
     render(() => (
       <CompositionVariableList
         variables={[month]}
-        headingId="params"
+        headingId="variables"
         onAdd={() => {}}
         onUpdate={() => {}}
         onRemove={onRemove}
       />
     ));
-    fireEvent.click(
-      screen.getByRole("button", { name: "Remove Variable 1" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Remove month" }));
     expect(onRemove).toHaveBeenCalledWith("month");
-    expect(
-      screen.getByText("This variable is used by a data source."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("This variable is used by a data source."))
+      .toBeInTheDocument();
   });
 
   it("does not restore a removed variable when its default parse resolves", async () => {
@@ -306,27 +225,26 @@ describe("composition variable list", () => {
     render(() => (
       <CompositionVariableList
         variables={variables()}
-        headingId="params"
+        headingId="variables"
         onAdd={() => {}}
         onUpdate={onUpdate}
         onRemove={onRemove}
       />
     ));
 
-    fireEvent.input(screen.getByLabelText("Default for Variable 1"), {
+    fireEvent.input(screen.getByLabelText("Default for limit"), {
       target: { value: "42" },
     });
     expect(onUpdate).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("button", { name: "Remove Variable 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove limit" }));
     expect(onRemove).toHaveBeenCalledWith("limit");
     expect(variables()).toEqual([]);
 
     resolveParse({ status: "valid", value: 42 });
     await pendingParse;
     await waitFor(() => expect(variables()).toEqual([]));
-
     expect(onUpdate).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText("Variable 1")).not.toBeInTheDocument();
+    expect(screen.queryByText("limit")).not.toBeInTheDocument();
   });
 
   it("ignores a pending default parse after removing and re-adding the same ID", async () => {

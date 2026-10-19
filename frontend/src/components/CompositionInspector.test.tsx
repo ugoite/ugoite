@@ -1,101 +1,92 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSignal } from "solid-js";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   CompositionInspector,
   type CompositionInspectorDataJump,
 } from "./CompositionInspector";
 import {
-  addEntryQuerySource,
+  addInlineSqlSource,
   addInputComponent,
   addMetricDisplay,
   addSavedSqlSource,
   addTableDisplay,
   addTextDisplay,
   addVariable,
+  setTextContent,
   type CompositionDraft,
   createEmptyDraft,
-  setInputLabel,
-  toStudioDocument,
 } from "~/lib/composition-draft";
 import { setLocale } from "~/lib/i18n";
 
-const sqlSeed = (name: string) => ({
-  entryId: `sql-${name}`,
-  revisionId: "rev-1",
-  name,
-  expectedResult: [
-    { name: "total", type: "float" as const },
-    { name: "count", type: "integer" as const },
-  ],
-  variables: {},
-});
+const harnessCalls = {
+  draft: [] as CompositionDraft[],
+  jump: [] as CompositionInspectorDataJump[],
+  changeSource: [] as string[],
+  remove: 0,
+};
 
-const entrySeed = () => ({
-  formId: "form-1",
-  name: "Expenses",
-  fieldSchema: [
-    { field_id: 1, field_type: "string" },
-    { field_id: 2, field_type: "double" },
-    { field_id: 3, field_type: "date" },
-  ],
-  query: { filters: [], sort: [], projection: { kind: "preview" as const } },
-});
-
-/** Metric on sql-1, table on the entry source, text, month placed. */
-const seedDraft = (): CompositionDraft => {
+const seedDraft = (
+  withStringVariable = false,
+  withSecondText = false,
+): CompositionDraft => {
   let draft = createEmptyDraft("Studio");
-  draft = addSavedSqlSource(draft, sqlSeed("Monthly")).draft;
-  draft = addEntryQuerySource(draft, entrySeed()).draft;
-  draft = addSavedSqlSource(draft, sqlSeed("Backup")).draft;
+  draft = addSavedSqlSource(draft, {
+    entryId: "sql-1",
+    revisionId: "rev-1",
+    name: "Monthly totals",
+    expectedResult: [
+      { name: "total", type: "float" },
+      { name: "count", type: "integer" },
+    ],
+    variables: {},
+  }).draft;
+  draft = addInlineSqlSource(draft, {
+    name: "Expenses",
+    sql: 'SELECT "amount" FROM "Expenses"',
+    formBindings: [],
+    expectedResult: [{ name: "amount", type: "float" }],
+  }).draft;
   const month = addVariable(draft, {
     id: "month",
-    label: "Month",
     type: "date",
-    required: true,
+    required: false,
   });
   if (!month.ok) throw new Error("expected month variable");
   draft = month.draft;
-  const region = addVariable(draft, {
-    id: "region",
-    label: "Region",
-    type: "string",
-    required: false,
-  });
-  if (!region.ok) throw new Error("expected region variable");
-  draft = region.draft;
-  const metric = addMetricDisplay(
-    draft,
-    "src-1",
-    "total",
-    "Total",
-  );
+  if (withStringVariable) {
+    const title = addVariable(draft, {
+      id: "report_title",
+      type: "string",
+      required: false,
+    });
+    if (!title.ok) throw new Error("expected string variable");
+    draft = title.draft;
+  }
+  const metric = addMetricDisplay(draft, "src-1", "total");
   if (!metric.ok) throw new Error("expected metric block");
   draft = metric.draft;
-  const table = addTableDisplay(draft, "src-2", "Details");
+  const table = addTableDisplay(draft, "src-2");
   if (!table.ok) throw new Error("expected table block");
   draft = table.draft;
   const text = addTextDisplay(draft, { text: "Summary", style: "heading" });
   if (!text.ok) throw new Error("expected text block");
   draft = text.draft;
-  const placed = addInputComponent(draft, "month");
-  if (!placed.ok) throw new Error("expected variable placement");
-  return placed.draft;
+  if (withSecondText) {
+    const secondText = addTextDisplay(draft, {
+      text: "Revenue",
+      style: "body",
+    });
+    if (!secondText.ok) throw new Error("expected second text block");
+    draft = secondText.draft;
+  }
+  const input = addInputComponent(draft, "month");
+  if (!input.ok) throw new Error("expected variable placement");
+  return input.draft;
 };
 
-const harnessCalls = vi.hoisted(() => ({
-  draft: [] as CompositionDraft[],
-  jump: [] as CompositionInspectorDataJump[],
-  remove: [] as (string | null)[],
-}));
-
-function Harness(
-  props: {
-    initial: CompositionDraft;
-    selectedId: string | null;
-  },
-) {
+function Harness(props: { initial: CompositionDraft; selectedId: string }) {
   const [draft, setDraft] = createSignal(props.initial);
   return (
     <CompositionInspector
@@ -105,463 +96,193 @@ function Harness(
         harnessCalls.draft.push(next);
         setDraft(next);
       }}
-      onRemove={() => harnessCalls.remove.push(props.selectedId)}
+      onRemove={() => harnessCalls.remove++}
       onDataJump={(jump) => harnessCalls.jump.push(jump)}
+      onChangeTableSource={(displayId) =>
+        harnessCalls.changeSource.push(displayId)}
     />
   );
 }
 
-const renderHarness = (
-  selectedId: string | null,
-  initial?: CompositionDraft,
-) =>
-  render(() => (
-    <Harness
-      initial={initial ?? seedDraft()}
-      selectedId={selectedId}
-    />
-  ));
-
-const documentSources = (draft: CompositionDraft): string =>
-  JSON.stringify(toStudioDocument(draft).spec.sources);
-
-const metricComponent = (draft: CompositionDraft, id: string) =>
-  toStudioDocument(draft).spec.components.find((component) =>
-    component.id === id
+function SelectableTextHarness(props: { initial: CompositionDraft }) {
+  const [draft, setDraft] = createSignal(props.initial);
+  const [selectedId, setSelectedId] = createSignal("disp-3");
+  return (
+    <>
+      <button type="button" onClick={() => setSelectedId("disp-4")}>
+        Select second Text
+      </button>
+      <button
+        type="button"
+        onClick={() => setSelectedId(props.initial.inputs[0].draftId)}
+      >
+        Select Input
+      </button>
+      <button type="button" onClick={() => setSelectedId("disp-3")}>
+        Select first Text
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          const result = setTextContent(draft(), "disp-3", "Updated summary");
+          if (result.ok) setDraft(result.draft);
+        }}
+      >
+        Update text externally
+      </button>
+      <CompositionInspector
+        draft={draft()}
+        selectedId={selectedId()}
+        onDraftChange={(next) => {
+          harnessCalls.draft.push(next);
+          setDraft(next);
+        }}
+        onRemove={() => harnessCalls.remove++}
+        onDataJump={(jump) => harnessCalls.jump.push(jump)}
+        onChangeTableSource={(displayId) =>
+          harnessCalls.changeSource.push(displayId)}
+      />
+    </>
   );
+}
 
-describe("CompositionInspector", () => {
+const renderInspector = (selectedId: string) =>
+  render(() => <Harness initial={seedDraft()} selectedId={selectedId} />);
+
+describe("CompositionInspector SQL-first fields", () => {
   beforeEach(() => {
     setLocale("en");
-    vi.clearAllMocks();
-    harnessCalls.draft.length = 0;
-    harnessCalls.jump.length = 0;
-    harnessCalls.remove.length = 0;
+    harnessCalls.draft = [];
+    harnessCalls.jump = [];
+    harnessCalls.changeSource = [];
+    harnessCalls.remove = 0;
   });
 
-  afterEach(() => {
-    cleanup();
-  });
+  afterEach(() => cleanup());
 
-  it("binds metric label edits to the draft display", () => {
-    const initial = seedDraft();
-    const before = documentSources(initial);
-    renderHarness("disp-1", initial);
-
-    fireEvent.input(screen.getByLabelText("Label"), {
-      target: { value: "Monthly total" },
-    });
-
-    expect(harnessCalls.draft).toHaveLength(1);
-    const next = harnessCalls.draft[0];
-    expect(metricComponent(next, "disp-1")).toMatchObject({
-      kind: "metric",
-      label: "Monthly total",
-    });
-    // Label edits never reshape sources, so they never refetch.
-    expect(documentSources(next)).toBe(before);
-    expect(harnessCalls.jump).toHaveLength(0);
-  });
-
-  it("exposes removal from the selected block Inspector with a human name", () => {
-    renderHarness("disp-3");
-
-    const remove = screen.getByRole("button", { name: "Remove Summary" });
-    expect(remove).toHaveAttribute("title", "Remove Summary");
-    fireEvent.click(remove);
-
-    expect(harnessCalls.remove).toEqual(["disp-3"]);
-  });
-
-  it("uses a localized variable name for variable-bound Text removal", () => {
-    const initial = seedDraft();
-    const bindingId = "private_binding_01";
-    const variableBound: CompositionDraft = {
-      ...initial,
-      variables: initial.variables.map((variable) => {
-        if (variable.id !== "region") return variable;
-        const { label: _label, ...unlabeled } = variable;
-        return { ...unlabeled, id: bindingId };
-      }),
-      displays: initial.displays.map((display) =>
-        display.kind === "text"
-          ? {
-            ...display,
-            content: { kind: "variable" as const, variable: bindingId },
-          }
-          : display
-      ),
-    };
-    renderHarness("disp-3", variableBound);
-
-    const remove = screen.getByRole("button", { name: "Remove Variable 2" });
-    expect(remove).toHaveAttribute("title", "Remove Variable 2");
-    expect(document.body).not.toHaveTextContent(bindingId);
-    expect(remove).toHaveAccessibleName("Remove Variable 2");
-  });
-
-  it("removes the selected Input component without removing its variable", () => {
-    renderHarness("input-4");
-
-    const remove = screen.getByRole("button", {
-      name: "Remove Input for Month",
-    });
-    expect(remove).toHaveAttribute("title", "Remove Input for Month");
-    fireEvent.click(remove);
-
-    expect(harnessCalls.remove).toEqual(["input-4"]);
-  });
-
-  it("targets the selected Input component when a variable has siblings", () => {
-    const initial = seedDraft();
-    const second = addInputComponent(initial, "month");
-    if (!second.ok) throw new Error("expected sibling Input");
-    const labeled = setInputLabel(
-      second.draft,
-      second.draftId!,
-      "Secondary month",
-    );
-    if (!labeled.ok) throw new Error("expected Input label");
-    renderHarness(second.draftId!, labeled.draft);
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Remove Input for Secondary month" }),
-    );
-
-    expect(harnessCalls.remove).toEqual([second.draftId]);
-  });
-
-  it("limits Metric source and column controls to Saved SQL names", () => {
-    renderHarness("disp-1");
-
-    const source = screen.getByLabelText("Source");
-    expect(
-      Array.from(source.querySelectorAll("option")).map((option) =>
-        option.textContent
-      ),
-    ).toEqual(["Monthly", "Backup"]);
-    expect(screen.queryByLabelText("Operation")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Field")).not.toBeInTheDocument();
-    expect(document.body).not.toHaveTextContent("src-1");
-    expect(document.body).not.toHaveTextContent("sql-1");
-    expect(document.body).not.toHaveTextContent("sql-rev-1");
-
-    fireEvent.change(screen.getByLabelText("Source"), {
-      target: { value: "src-3" },
-    });
-    expect(metricComponent(harnessCalls.draft.at(-1)!, "disp-1"))
-      .toMatchObject({ kind: "metric", source: "src-3" });
-    expect(metricComponent(harnessCalls.draft.at(-1)!, "disp-1"))
-      .toHaveProperty("column", "");
-    fireEvent.change(screen.getByLabelText("Column"), {
-      target: { value: "count" },
-    });
-    const last = harnessCalls.draft[harnessCalls.draft.length - 1];
-    expect(metricComponent(last, "disp-1")).toMatchObject({
-      kind: "metric",
-      source: "src-3",
-      column: "count",
-    });
-  });
-
-  it("maps Saved SQL column changes to a typed scalar definition", () => {
-    renderHarness("disp-1");
+  it("edits a Metric source column without a persisted display label", () => {
+    renderInspector("disp-1");
+    expect(screen.getByRole("heading", { name: "Metric" }))
+      .toBeInTheDocument();
+    expect(screen.getByLabelText("Column")).toHaveValue("total");
+    expect(screen.queryByLabelText("Label")).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Column"), {
       target: { value: "count" },
     });
-
-    expect(harnessCalls.draft).toHaveLength(1);
-    const next = harnessCalls.draft[0];
-    expect(metricComponent(next, "disp-1")).toMatchObject({
+    expect(harnessCalls.draft.at(-1)?.displays[0]).toMatchObject({
       kind: "metric",
-      source: "src-1",
       column: "count",
     });
   });
 
-  it("edits optional numeric presentation without changing source bindings", () => {
-    const initial = seedDraft();
-    const before = documentSources(initial);
-    renderHarness("disp-1", initial);
-
-    const unitInput = screen.getByLabelText("Unit");
-    fireEvent.input(unitInput, { target: { value: "US " } });
-    expect(unitInput).toHaveValue("US ");
-    fireEvent.input(unitInput, { target: { value: "US dollars" } });
-    fireEvent.blur(unitInput);
-    fireEvent.input(screen.getByLabelText("Minimum decimal places"), {
-      target: { value: "2" },
-    });
-
-    const formatted = harnessCalls.draft.at(-1)!;
-    expect(metricComponent(formatted, "disp-1")).toMatchObject({
-      kind: "metric",
-      source: "src-1",
-      column: "total",
-      presentation: {
-        kind: "number",
-        unit: "US dollars",
-        fraction_digits: 2,
-      },
-    });
-    expect(documentSources(formatted)).toBe(before);
-
-    fireEvent.input(screen.getByLabelText("Unit"), {
-      target: { value: "" },
-    });
-    fireEvent.input(screen.getByLabelText("Minimum decimal places"), {
-      target: { value: "" },
-    });
-    expect(metricComponent(harnessCalls.draft.at(-1)!, "disp-1"))
-      .not.toHaveProperty("presentation");
-  });
-
-  it("hides numeric presentation controls for date Metrics", () => {
-    const dateSource = addSavedSqlSource(createEmptyDraft("Studio"), {
-      entryId: "sql-date",
-      revisionId: "sql-date-rev",
-      name: "Calendar",
-      expectedResult: [{ name: "last_day", type: "date" }],
-      variables: {},
-    });
-    const added = addMetricDisplay(
-      dateSource.draft,
-      dateSource.draftId,
-      "last_day",
-    );
-    if (!added.ok || !added.draftId) throw new Error("expected Metric block");
-
-    renderHarness(added.draftId, added.draft);
-
-    expect(screen.queryByLabelText("Unit")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Minimum decimal places"))
-      .not.toBeInTheDocument();
-  });
-
-  it("localizes numeric presentation control names", () => {
-    setLocale("ja");
-    renderHarness("disp-1");
-
-    expect(screen.getByLabelText("単位")).toBeInTheDocument();
-    expect(screen.getByLabelText("小数部の最低桁数")).toBeInTheDocument();
-  });
-
-  it("binds table label and source edits to the draft display", () => {
-    renderHarness("disp-2");
-
-    fireEvent.input(screen.getByLabelText("Label"), {
-      target: { value: "Lines" },
-    });
-    fireEvent.change(screen.getByLabelText("Source"), {
-      target: { value: "src-1" },
-    });
-
-    expect(harnessCalls.draft).toHaveLength(2);
-    const last = harnessCalls.draft[harnessCalls.draft.length - 1];
-    const table = last.displays.find((display) => display.draftId === "disp-2");
-    expect(table).toMatchObject({
-      kind: "table",
-      label: "Lines",
-      sourceDraftId: "src-1",
-    });
-  });
-
-  it("binds text content and style edits without touching sources", () => {
-    const initial = seedDraft();
-    const before = documentSources(initial);
-    renderHarness("disp-3", initial);
-
-    fireEvent.input(screen.getByRole("textbox", { name: "Text" }), {
-      target: { value: "New heading" },
-    });
-    fireEvent.change(screen.getByLabelText("Style"), {
-      target: { value: "title" },
-    });
-
-    expect(harnessCalls.draft).toHaveLength(2);
-    const last = harnessCalls.draft[harnessCalls.draft.length - 1];
-    const text = last.displays.find((display) => display.draftId === "disp-3");
-    expect(text).toMatchObject({
-      kind: "text",
-      content: { kind: "literal", text: "New heading" },
-      style: "title",
-    });
-    // Text carries no source binding: sources stay stable, no refetch.
-    expect(documentSources(last)).toBe(before);
-    expect(harnessCalls.jump).toHaveLength(0);
-  });
-
-  it("localizes text-style labels without changing the stored style enum", () => {
-    const initial = seedDraft();
-    renderHarness("disp-3", initial);
-
-    const styleSelect = screen.getByLabelText("Style") as HTMLSelectElement;
-    const optionLabelsAndValues = () =>
-      Array.from(styleSelect.options).map((option) => ({
-        label: option.textContent,
-        value: option.value,
-      }));
-
-    expect(optionLabelsAndValues()).toEqual([
-      { label: "Title", value: "title" },
-      { label: "Heading", value: "heading" },
-      { label: "Body", value: "body" },
-      { label: "Caption", value: "caption" },
-    ]);
-
-    setLocale("ja");
-    expect(styleSelect.value).toBe("heading");
-    expect(optionLabelsAndValues()).toEqual([
-      { label: "タイトル", value: "title" },
-      { label: "見出し", value: "heading" },
-      { label: "本文", value: "body" },
-      { label: "キャプション", value: "caption" },
-    ]);
-
-    fireEvent.change(styleSelect, { target: { value: "caption" } });
-    expect(harnessCalls.draft).toHaveLength(1);
-    expect(
-      harnessCalls.draft[0].displays.find((display) =>
-        display.draftId === "disp-3"
-      ),
-    ).toMatchObject({ kind: "text", style: "caption" });
-  });
-
-  it("preserves variable-bound Text while editing its style", () => {
-    const initial = seedDraft();
-    const variableText: CompositionDraft = {
-      ...initial,
-      displays: initial.displays.map((display) =>
-        display.kind === "text"
-          ? {
-            ...display,
-            content: { kind: "variable" as const, variable: "region" },
-          }
-          : display
-      ),
-    };
-    renderHarness("disp-3", variableText);
-
-    expect(screen.getByLabelText("Content")).toHaveValue("variable:region");
-    expect(screen.queryByRole("textbox", { name: "Text" })).toBeNull();
-    fireEvent.change(screen.getByLabelText("Style"), {
-      target: { value: "caption" },
-    });
-
-    expect(harnessCalls.draft).toHaveLength(1);
-    expect(
-      harnessCalls.draft[0].displays.find((display) =>
-        display.draftId === "disp-3"
-      ),
-    ).toMatchObject({
-      kind: "text",
-      content: { kind: "variable", variable: "region" },
-      style: "caption",
-    });
-  });
-
-  it("changes the selected Input's variable binding", () => {
-    renderHarness("input-4");
-
-    // The owned variable label heads the panel; the optional Input label is
-    // blank until the author supplies an override.
-    expect(
-      screen.getByRole("heading", { name: "Month" }),
-    ).toBeInTheDocument();
-    expect(screen.getByLabelText("Input label for Month")).toHaveValue("");
-
-    fireEvent.change(screen.getByLabelText("Variables"), {
-      target: { value: "region" },
-    });
-
-    expect(harnessCalls.draft).toHaveLength(1);
-    const next = harnessCalls.draft[0];
-    const items = toStudioDocument(next).spec.layout.rows.flatMap((row) =>
-      row.items
-    );
-    expect(items).toContainEqual({
-      kind: "component",
-      component: "input-4",
-    });
-    expect(items).not.toContainEqual({
-      kind: "component",
-      component: "input-region",
-    });
-    expect(toStudioDocument(next).spec.components).toContainEqual({
-      kind: "input",
-      id: "input-4",
-      variable: "region",
-    });
-    // Both declarations stay owned by the Variables section.
-    expect(next.variables.map((variable) => variable.id).sort()).toEqual([
-      "month",
-      "region",
-    ]);
-  });
-
-  it("uses localized ordinal labels for unlabeled variable placement", () => {
-    const labeled = seedDraft();
-    const draft = {
-      ...labeled,
-      variables: labeled.variables.map(({ label: _label, ...variable }) =>
-        variable
-      ),
-    };
-    renderHarness("input-4", draft);
-
-    expect(screen.getByRole("heading", { name: "Variable 1" }))
-      .toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Remove Input for Variable 1" }),
-    )
-      .toBeInTheDocument();
-    const options = screen.getAllByRole("option").map((option) =>
-      option.textContent
-    );
-    expect(options).toEqual(["Variable 1", "Variable 2"]);
-    expect(screen.queryByText("month")).not.toBeInTheDocument();
-    expect(screen.queryByText("region")).not.toBeInTheDocument();
-
-    setLocale("ja");
-    expect(screen.getByRole("heading", { name: "変数1" }))
-      .toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "変数1の入力を削除" }))
-      .toBeInTheDocument();
-  });
-
-  it("exposes a data jump for the selected block source", () => {
-    renderHarness("disp-1");
-
+  it("keeps Table source identity and data navigation without a label editor", () => {
+    renderInspector("disp-2");
+    expect(screen.queryByLabelText("Source")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Label")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Change source" }));
+    expect(harnessCalls.changeSource).toEqual(["disp-2"]);
     fireEvent.click(screen.getByRole("button", { name: "Data" }));
-
-    expect(harnessCalls.jump).toEqual([{ sourceDraftId: "src-1" }]);
-    expect(harnessCalls.draft).toHaveLength(0);
+    expect(harnessCalls.jump).toEqual([{ sourceDraftId: "src-2" }]);
   });
 
-  it("renders nothing without a resolvable selection", () => {
-    const cleared = render(() => (
-      <Harness initial={seedDraft()} selectedId={null} />
-    ));
-    expect(cleared.container.querySelector("aside")).toBeNull();
-    expect(cleared.container.textContent).toBe("");
-    cleared.unmount();
+  it("shows a multiline Text body and Style without a content selector when no string variables exist", () => {
+    renderInspector("disp-3");
+    expect(screen.queryByLabelText("Content")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Text body", { selector: "textarea" }))
+      .toHaveValue("Summary");
+    expect(screen.getByLabelText("Style")).toHaveValue("heading");
+    expect(screen.queryByRole("button", { name: "Use variable" }))
+      .not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Label")).not.toBeInTheDocument();
 
-    const { container, unmount } = render(() => (
-      <Harness initial={seedDraft()} selectedId="disp-999" />
-    ));
-    expect(container.querySelector("aside")).toBeNull();
-    expect(container.textContent).toBe("");
-    unmount();
+    fireEvent.input(screen.getByLabelText("Text body"), {
+      target: { value: "Quarterly summary" },
+    });
+    expect(harnessCalls.draft.at(-1)?.displays[2]).toMatchObject({
+      kind: "text",
+      content: { kind: "literal", text: "Quarterly summary" },
+    });
+  });
 
-    // Unplaced variables have no canvas block either.
-    render(() => (
-      <Harness
-        initial={seedDraft()}
-        selectedId="input-region"
-      />
-    ));
-    expect(screen.queryByRole("complementary")).toBeNull();
-    expect(screen.queryByRole("heading")).toBeNull();
+  it("binds Text to a string variable only after explicit choice and returns to literal editing", () => {
+    render(() => <Harness initial={seedDraft(true)} selectedId="disp-3" />);
+    expect(screen.queryByLabelText("Content")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Text body")).toHaveValue("Summary");
+    expect(screen.queryByLabelText("Variable")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Use variable" }));
+    expect(screen.getByLabelText("Variable")).toHaveFocus();
+    fireEvent.change(screen.getByLabelText("Variable"), {
+      target: { value: "report_title" },
+    });
+
+    expect(harnessCalls.draft.at(-1)?.displays[2]).toMatchObject({
+      kind: "text",
+      content: { kind: "variable", variable: "report_title" },
+    });
+    expect(screen.getAllByText("report_title")).toHaveLength(1);
+    expect(screen.queryByLabelText("Text body")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit text" })).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "Edit text" }));
+
+    expect(screen.getByLabelText("Text body")).toHaveValue("Summary");
+    expect(screen.getByLabelText("Text body")).toHaveFocus();
+    expect(harnessCalls.draft.at(-1)?.displays[2]).toMatchObject({
+      kind: "text",
+      content: { kind: "literal", text: "Summary" },
+    });
+  });
+
+  it("restores the selected Text block's own literal after switching blocks", () => {
+    render(() => <SelectableTextHarness initial={seedDraft(true, true)} />);
+    fireEvent.click(screen.getByRole("button", { name: "Select second Text" }));
+    expect(screen.getByLabelText("Text body")).toHaveValue("Revenue");
+
+    fireEvent.click(screen.getByRole("button", { name: "Use variable" }));
+    fireEvent.change(screen.getByLabelText("Variable"), {
+      target: { value: "report_title" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Edit text" }));
+
+    expect(screen.getByLabelText("Text body")).toHaveValue("Revenue");
+  });
+
+  it("restores the literal after switching to another inspector type", () => {
+    render(() => <SelectableTextHarness initial={seedDraft(true)} />);
+    fireEvent.click(screen.getByRole("button", { name: "Use variable" }));
+    fireEvent.change(screen.getByLabelText("Variable"), {
+      target: { value: "report_title" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Select Input" }));
+    expect(screen.getByRole("heading", { name: "month" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Select first Text" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit text" }));
+
+    expect(screen.getByLabelText("Text body")).toHaveValue("Summary");
+  });
+
+  it("restores a literal updated outside the Text Inspector", () => {
+    render(() => <SelectableTextHarness initial={seedDraft(true)} />);
+    fireEvent.click(screen.getByRole("button", { name: "Update text externally" }));
+    expect(screen.getByLabelText("Text body"))
+      .toHaveValue("Updated summary");
+
+    fireEvent.click(screen.getByRole("button", { name: "Use variable" }));
+    fireEvent.change(screen.getByLabelText("Variable"), {
+      target: { value: "report_title" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Edit text" }));
+
+    expect(screen.getByLabelText("Text body")).toHaveValue("Updated summary");
+  });
+
+  it("presents the variable ID for an Input and does not persist an Input label", () => {
+    renderInspector(seedDraft().inputs[0].draftId);
+    expect(screen.getByRole("heading", { name: "month" }))
+      .toBeInTheDocument();
+    expect(screen.getByLabelText("Variables")).toHaveValue("month");
+    expect(screen.queryByLabelText("Input label for month"))
+      .not.toBeInTheDocument();
   });
 });

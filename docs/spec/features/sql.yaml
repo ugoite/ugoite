@@ -5,7 +5,7 @@ apis:
 - id: sql.query
   method: POST
   status: implemented
-  description: Execute one read-only SQL SELECT page without persistent SQL execution state. Stateless query admits only the COUNT, SUM, AVG, MIN, and MAX aggregate allowlist; window functions remain closed. Integer AVG returns Float64 and follows its precision boundary; Decimal AVG remains Decimal. Clients may opt in to exact base-10 integer cells alongside the unchanged JSON rows. REST and Browser Saved SQL may select an exact Saved SQL ID and revision; the stored SQL and Form-ID bindings are authoritative. CLI query accepts SQL text or a SQL file, while `sql saved run` selects a Saved SQL ID and revision through this same operation. An explicit ORDER BY is required when the result exceeds the requested page limit. Export is CLI orchestration, not a separate REST operation.
+  description: Execute one read-only SQL SELECT page without persistent SQL execution state. Stateless query admits only the COUNT, SUM, AVG, MIN, and MAX aggregate allowlist; window functions remain closed. Integer AVG returns Float64 and follows its precision boundary; Decimal AVG remains Decimal. Clients may opt in to exact base-10 integer cells alongside the unchanged JSON rows. REST and Browser Saved SQL may select an exact Saved SQL ID and revision; the stored SQL and Form-ID bindings are authoritative. Saved SQL variable defaults are metadata and are not supplied to this operation; every parameter value is explicit. CLI query accepts SQL text or a SQL file, while `sql saved run` selects a Saved SQL ID and revision through this same operation. An explicit ORDER BY is required when the result exceeds the requested page limit. Export is CLI orchestration, not a separate REST operation.
   backend:
     path: /spaces/{space_id}/sql/query
     file: crates/ugoite-server/src/lib.rs
@@ -54,7 +54,7 @@ apis:
 - id: sql.create
   method: POST
   status: implemented
-  description: Create a durable Saved SQL query. The name is optional; an unnamed query uses name null and metadata.generatedName untitled. The shared application boundary generates SQL identity.
+  description: Create a durable Saved SQL query. The name is optional; an unnamed query uses name null and metadata.generatedName untitled. The shared application boundary generates SQL identity. Each variable definition may include a non-null scalar default matching its declared ADR-023 type; defaults are stored with the revision and never implicitly bound during execution.
   backend:
     path: /spaces/{space_id}/sql
     file: crates/ugoite-server/src/lib.rs
@@ -73,7 +73,7 @@ apis:
 - id: sql.get
   method: GET
   status: implemented
-  description: Retrieve a Saved SQL query and its current revision.
+  description: Retrieve a Saved SQL query and its current revision, including any typed variable defaults.
   backend:
     path: /spaces/{space_id}/sql/{sql_id}
     file: crates/ugoite-server/src/lib.rs
@@ -92,7 +92,7 @@ apis:
 - id: sql.update
   method: PUT
   status: implemented
-  description: Update Saved SQL using the required parent revision. The CLI reads the current query and revision when no --parent-revision-id is given, merges supplied name, SQL, and variable edits, and keeps omitted fields.
+  description: Update Saved SQL using the required parent revision. The CLI reads the current query and revision when no --parent-revision-id is given, merges supplied name, SQL, and variable edits, and keeps omitted fields. Variable defaults are optional typed scalars persisted with the new revision; execution still requires explicit parameter values.
   backend:
     path: /spaces/{space_id}/sql/{sql_id}
     file: crates/ugoite-server/src/lib.rs

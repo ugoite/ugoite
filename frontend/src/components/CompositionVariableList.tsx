@@ -35,14 +35,20 @@ interface CompositionVariableListProps {
 }
 
 /**
- * Typed variable authoring for the Composition Studio. Rows carry the
- * declared label or localized ordinal and the type; labels, defaults, and
- * required flags edit inline. Binding keys stay internal. Variables
+ * Typed variable authoring for the Composition Studio. Variable IDs and
+ * types remain visible; defaults and required flags edit inline. Variables
  * bind by reference; type compatibility stays a Rust-owned resolve
  * diagnostic and is never decided here.
  */
 export function CompositionVariableList(props: CompositionVariableListProps) {
-  const [newLabel, setNewLabel] = createSignal("");
+  const nextVariableId = (variables: readonly DraftVariable[]) => {
+    let sequence = 1;
+    while (variables.some((variable) => variable.id === `variable_${sequence}`)) {
+      sequence += 1;
+    }
+    return `variable_${sequence}`;
+  };
+  const [newId, setNewId] = createSignal(nextVariableId(props.variables));
   const [newType, setNewType] = createSignal<CompositionVariableType>(
     "string",
   );
@@ -108,21 +114,19 @@ export function CompositionVariableList(props: CompositionVariableListProps) {
   };
 
   const addVariable = () => {
-    let sequence = 1;
-    let id = `variable_${sequence}`;
-    while (props.variables.some((item) => item.id === id)) {
-      sequence += 1;
-      id = `variable_${sequence}`;
-    }
-    const label = newLabel().trim();
+    const id = newId().trim();
+    if (!id || props.variables.some((variable) => variable.id === id)) return;
     props.onAdd({
       id,
       type: newType(),
       required: true,
-      ...(label ? { label } : {}),
     });
-    setNewLabel("");
+    setNewId(nextVariableId([...props.variables, { id, type: newType(), required: true }]));
   };
+
+  const duplicateNewId = () =>
+    props.variables.some((variable) => variable.id === newId().trim());
+  const canAddVariable = () => newId().trim().length > 0 && !duplicateNewId();
 
   return (
     <div class="ui-stack-sm">
@@ -177,26 +181,6 @@ export function CompositionVariableList(props: CompositionVariableListProps) {
       <For each={props.variables}>
         {(variable) => (
           <div class="ui-stack-sm">
-            <div class="ui-field">
-              <label>
-                <span>{t("composition.studioVariableLabel")}</span>
-                <input
-                  class="ui-input"
-                  value={variable.label ?? ""}
-                  aria-label={t("composition.studioVariableLabelName", {
-                    name: compositionVariableDisplayName(
-                      props.variables,
-                      variable.id,
-                    ),
-                  })}
-                  onChange={(event) =>
-                    props.onUpdate({
-                      ...variable,
-                      label: event.currentTarget.value.trim() || undefined,
-                    })}
-                />
-              </label>
-            </div>
             <div class="ui-field">
               <label>
                 <span>{t("composition.studioVariableType")}</span>
@@ -301,13 +285,16 @@ export function CompositionVariableList(props: CompositionVariableListProps) {
         )}
       </For>
       <div class="flex flex-wrap items-center gap-2">
-        <input
-          class="ui-input"
-          aria-label={t("composition.studioNewVariableLabel")}
-          placeholder={t("composition.studioVariableLabel")}
-          value={newLabel()}
-          onInput={(event) => setNewLabel(event.currentTarget.value)}
-        />
+        <label class="ui-field">
+          <span class="ui-label">{t("composition.studioVariableId")}</span>
+          <input
+            class="ui-input"
+            value={newId()}
+            aria-label={t("composition.studioNewVariableId")}
+            aria-invalid={!canAddVariable()}
+            onInput={(event) => setNewId(event.currentTarget.value)}
+          />
+        </label>
         <select
           class="ui-input"
           aria-label={t("composition.studioVariableType")}
@@ -322,6 +309,7 @@ export function CompositionVariableList(props: CompositionVariableListProps) {
         <button
           class="ui-button ui-button-secondary"
           type="button"
+          disabled={!canAddVariable()}
           aria-label={t("composition.studioAddVariable")}
           title={t("composition.studioAddVariable")}
           onClick={addVariable}

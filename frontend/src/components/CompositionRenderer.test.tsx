@@ -25,6 +25,7 @@ const plan: CompositionResolvePlan = {
     kind: "saved_sql",
     source_id: "summary",
     source_schema_fingerprint: "fingerprint",
+    expected_result: [{ name: "total", type: "integer" }],
     request: {
       sql: "SELECT total",
       limit: 1,
@@ -34,14 +35,12 @@ const plan: CompositionResolvePlan = {
   component_bindings: [{
     component_id: "total",
     kind: "metric",
-    label: "Total",
     source_id: "summary",
     result_property_key: "total",
     expected_result_type: "integer",
   }, {
     component_id: "rows",
     kind: "table",
-    label: "Details",
     source_id: "summary",
   }],
   dependencies: {
@@ -57,7 +56,7 @@ const sources = {
     status: "ready" as const,
     cursorStack: [undefined],
     page: {
-      kind: "saved_sql" as const,
+      kind: "sql" as const,
       page: {
         columns: ["total"],
         rows: [{ total: 42 }],
@@ -73,21 +72,19 @@ describe("CompositionRenderer", () => {
     setLocale("en");
   });
 
-  it("uses localized variable names instead of binding keys in diagnostics", () => {
+  it("keeps stable variable IDs in diagnostics in either locale", () => {
     const unknown = compositionDiagnosticMessage({
       code: "variable_unknown",
       variable_id: "internal_key",
     });
-    expect(unknown).toBe("Unknown variable: Variable.");
-    expect(unknown).not.toContain("internal_key");
+    expect(unknown).toBe("Unknown variable: internal_key.");
 
     setLocale("ja");
     const missing = compositionDiagnosticMessage(
       { code: "variable_missing", variable_id: "month" },
       [{ id: "month" }],
     );
-    expect(missing).toBe("変数1 の値を入力してください。");
-    expect(missing).not.toContain("month");
+    expect(missing).toBe("month の値を入力してください。");
   });
 
   it("queries an exact integer metric through the bounded server operation", async () => {
@@ -138,6 +135,94 @@ describe("CompositionRenderer", () => {
       expect.any(AbortSignal),
     );
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  it("keeps an unaffected metric ready and waits for changed inputs while another variable blocks resolution", async () => {
+    const [variables, setVariables] = createSignal({
+      month: "2026-03",
+      status: "active",
+    });
+    const [invalidVariables, setInvalidVariables] = createSignal<string[]>([]);
+    const query = vi.spyOn(compositionApi, "queryMetric").mockImplementation(
+      async (_spaceId, request) => ({
+        ok: true,
+        result: {
+          component_id: "total",
+          result_type: "integer",
+          value: request.variables.month === "2026-03" ? "42" : "84",
+        },
+      }),
+    );
+    const metricPlan = {
+      ...plan,
+      component_bindings: [plan.component_bindings[0]],
+    };
+    const dependencies = {
+      variable_consumers: {
+        month: { source_ids: ["summary"] },
+        status: { source_ids: ["other"] },
+      },
+    };
+    render(() => (
+      <CompositionRenderer
+        plan={metricPlan}
+        sources={{}}
+        metricQueryContext={{
+          spaceId: "space-1",
+          target: {
+            kind: "saved_revision",
+            composition_id: "tool-1",
+            revision_id: "revision-1",
+          },
+          variables: variables(),
+          invalidVariables: invalidVariables(),
+          dependencies,
+        }}
+        onNext={() => {}}
+        onPrevious={() => {}}
+        onRetry={() => {}}
+      />
+    ));
+
+    expect(await screen.findByText("42", { selector: "output" }))
+      .toBeInTheDocument();
+    setInvalidVariables(["status"]);
+    expect(screen.getByText("42", { selector: "output" })).toBeInTheDocument();
+    expect(query).toHaveBeenCalledOnce();
+
+    setVariables({ month: "2026-04", status: "active" });
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Waiting for input…",
+    );
+    expect(screen.queryByText("42", { selector: "output" }))
+      .not.toBeInTheDocument();
+    expect(query).toHaveBeenCalledOnce();
+
+    setInvalidVariables([]);
+    expect(await screen.findByText("84", { selector: "output" }))
+      .toBeInTheDocument();
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  it("renders an accessible waiting state for a blocked Saved SQL table", () => {
+    setLocale("ja");
+    const tablePlan = {
+      ...plan,
+      component_bindings: [plan.component_bindings[1]],
+    };
+    render(() => (
+      <CompositionRenderer
+        plan={tablePlan}
+        sources={{ summary: { status: "waiting", cursorStack: [undefined] } }}
+        onNext={() => {}}
+        onPrevious={() => {}}
+        onRetry={() => {}}
+      />
+    ));
+
+    expect(screen.getByRole("status")).toHaveTextContent("入力待ち…");
+    expect(screen.queryByText("結果を読み込み中…"))
+      .not.toBeInTheDocument();
   });
 
   it("invalidates a metric when an unset dependency becomes invalid without changing its null value", async () => {
@@ -838,8 +923,8 @@ describe("CompositionRenderer", () => {
       />
     ));
 
-    expect(screen.getByRole("heading", { name: "Total" })).toBeInTheDocument();
-    expect(screen.getByRole("table", { name: "Details" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "total" })).toBeInTheDocument();
+    expect(document.querySelector("table.result-table--sql")).not.toBeNull();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
     expect(document.querySelector("output.compositionMetric")).toBeNull();
   });
@@ -849,7 +934,7 @@ describe("CompositionRenderer", () => {
       summary: {
         ...sources.summary,
         page: {
-          kind: "saved_sql" as const,
+          kind: "sql" as const,
           page: {
             columns: ["total"],
             result_schema: [{ name: "total", type: "float" as const }],
@@ -869,11 +954,7 @@ describe("CompositionRenderer", () => {
       />
     ));
 
-    expect(screen.getByRole("table", { name: "Details" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Details" })).toHaveAttribute(
-      "tabindex",
-      "0",
-    );
+    expect(document.querySelector("table.result-table--sql")).not.toBeNull();
     expect(screen.getByRole("columnheader", { name: "total" })).toHaveClass(
       "result-table-header--numeric",
     );
@@ -932,7 +1013,6 @@ describe("CompositionRenderer", () => {
       component_bindings: [{
         component_id: "note",
         kind: "text",
-        label: "Note",
       }],
     };
     render(() => (
@@ -956,7 +1036,6 @@ describe("CompositionRenderer", () => {
       component_bindings: [{
         component_id: "note",
         kind: "text",
-        label: "Note",
       }],
     };
     const { container } = render(() => (
@@ -978,21 +1057,15 @@ describe("CompositionRenderer", () => {
       composition_revision: { entry_id: "tool-1", revision_id: "revision-1" },
       sources: [
         {
-          kind: "entry_query",
-          source_id: "entries",
+          kind: "inline_sql",
+          source_id: "expenses",
           source_schema_fingerprint: "fingerprint",
+          form_bindings: [{ relation: "expenses", form_id: "form-1" }],
+          expected_result: [{ name: "purpose", type: "string" }],
           request: {
-            query: {
-              scope: { kind: "form", form_id: "form-1" },
-              filters: [],
-              sort: [],
-            },
-            projection: {
-              kind: "fields",
-              fields: [{ kind: "property", field_id: 7 }, {
-                kind: "created_at",
-              }],
-            },
+            sql: 'SELECT "Purpose" AS purpose FROM "expenses"',
+            parameters: {},
+            parameter_types: {},
             limit: 100,
           },
         },
@@ -1000,6 +1073,7 @@ describe("CompositionRenderer", () => {
           kind: "saved_sql",
           source_id: "summary",
           source_schema_fingerprint: "fingerprint",
+          expected_result: [{ name: "total", type: "integer" }],
           request: {
             sql: "SELECT total",
             limit: 100,
@@ -1011,13 +1085,11 @@ describe("CompositionRenderer", () => {
         {
           component_id: "entry-table",
           kind: "table",
-          label: "Entries",
-          source_id: "entries",
+          source_id: "expenses",
         },
         {
           component_id: "sql-table",
           kind: "table",
-          label: "Totals",
           source_id: "summary",
         },
       ],
@@ -1026,21 +1098,15 @@ describe("CompositionRenderer", () => {
       <CompositionRenderer
         plan={delegatedPlan}
         sources={{
-          entries: {
+          expenses: {
             status: "ready",
             cursorStack: [undefined],
             page: {
-              kind: "entry_query",
+              kind: "sql",
               page: {
-                rows: [{
-                  id: "entry-1",
-                  form_id: "form-1",
-                  revision_id: "revision-1",
-                  created_at_micros: 1_772_960_000_000_000,
-                  updated_at_micros: 1_772_963_000_000_000,
-                  properties: { purpose: "Travel" },
-                  preview: "Travel entry",
-                }],
+                columns: ["purpose"],
+                result_schema: [{ name: "purpose", type: "string" }],
+                rows: [{ purpose: "Travel" }],
                 has_more: false,
               },
             },
@@ -1049,7 +1115,7 @@ describe("CompositionRenderer", () => {
             status: "ready",
             cursorStack: [undefined],
             page: {
-              kind: "saved_sql",
+              kind: "sql",
               page: {
                 columns: ["total"],
                 rows: [{ total: 42 }],
@@ -1058,36 +1124,26 @@ describe("CompositionRenderer", () => {
             },
           },
         }}
-        fieldNames={(_formId, fieldId) => fieldId === 7 ? "purpose" : undefined}
         onNext={() => {}}
         onPrevious={() => {}}
         onRetry={() => {}}
       />
     ));
 
-    const entryTable = document.querySelector("table.result-table--entry");
-    expect(entryTable).not.toBeNull();
+    const sqlTables = document.querySelectorAll("table.result-table--sql");
+    expect(sqlTables).toHaveLength(2);
     expect(
-      within(entryTable as HTMLElement).getAllByRole("columnheader").map((
-        header,
-      ) => header.textContent),
-    ).toEqual(["purpose", "Created"]);
-    expect(
-      within(entryTable as HTMLElement).getByText("Travel"),
+      within(sqlTables[0] as HTMLElement).getByRole("columnheader", {
+        name: "purpose",
+      }),
     ).toBeInTheDocument();
     expect(
-      entryTable?.querySelector('[data-entry-id="entry-1"]'),
-    ).not.toBeNull();
-
-    const sqlTable = document.querySelector("table.result-table--sql");
-    expect(sqlTable).not.toBeNull();
-    expect(
-      within(sqlTable as HTMLElement).getByRole("columnheader", {
+      within(sqlTables[1] as HTMLElement).getByRole("columnheader", {
         name: "total",
       }),
     ).toBeInTheDocument();
     expect(
-      within(sqlTable as HTMLElement).getByRole("cell", { name: "42" }),
+      within(sqlTables[1] as HTMLElement).getByRole("cell", { name: "42" }),
     ).toBeInTheDocument();
 
     expect(screen.queryByRole("button")).toBeNull();

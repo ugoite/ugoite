@@ -1,0 +1,378 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: sql
+category: SQL Document parsing foundation
+features:
+  - id: FEAT-SQL-001
+    title: Lossless SQL Document source view
+    summary: Preserve bounded SQL drafts as exact Rust-owned source with token ranges, syntax ranges, and distinct projection-item nodes while keeping syntax parsing separate from executor admission.
+    status: implemented
+    bindings:
+      - id: sql-document-core
+        role: implementation
+        facet: core
+        responsibility: Parse bounded SQL drafts into an exact-source document with lossless token ranges, usable parser-provided syntax-node ranges, distinct SELECT projection-item nodes with parent links, and distinct syntax or statement-shape diagnostics; provide token-scoped parameter renaming without granting runtime admission.
+        targets:
+          - id: parser
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: parse_sql_document }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.lossless-document-draft
+          - id: parameter-rename
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: rename_sql_document_parameter }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.source-aware-parameter-rename
+      - id: sql-document-verification
+        role: verification
+        facet: verification
+        responsibility: Verify exact source retention, projection-item ranges and nested SELECT parent links, typed frontend protocol coverage, syntax diagnostics, token-scoped parameter renaming, and the parser-versus-executor boundary with focused tests.
+        targets:
+          - id: lossless-document-source-and-ranges
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector:
+              kind: symbol
+              name: tests::lossless_document_retains_source_tokens_and_syntax_ranges_without_execution_admission
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.lossless-document-draft
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-core/target.parser
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-domain
+                    test: sql_document::tests::lossless_document_retains_source_tokens_and_syntax_ranges_without_execution_admission
+          - id: projection-item-ranges-and-nested-select-parents
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector:
+              kind: symbol
+              name: tests::exposes_projection_item_ranges_and_nested_select_parent_links
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.lossless-document-draft
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-core/target.parser
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-domain
+                    test: sql_document::tests::exposes_projection_item_ranges_and_nested_select_parent_links
+          - id: typed-projection-item-protocol-client
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.test.ts
+            selector:
+              kind: test
+              name: parses bounded SQL drafts through the typed Rust/WASM document contract
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parser-action
+                runner:
+                  runner: frontend-vitest-file
+                  arguments:
+                    file: src/lib/ugoite-client/protocol.test.ts
+                    test: parses bounded SQL drafts through the typed Rust/WASM document contract
+          - id: typed-parameter-rename-client
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.test.ts
+            selector:
+              kind: test
+              name: renames SQL Document parameters through the typed Rust/WASM client
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parameter-rename-action
+                runner:
+                  runner: frontend-vitest-file
+                  arguments:
+                    file: src/lib/ugoite-client/protocol.test.ts
+                    test: renames SQL Document parameters through the typed Rust/WASM client
+          - id: invalid-draft-diagnostics
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector:
+              kind: symbol
+              name: tests::invalid_and_unsupported_drafts_keep_the_original_source
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.lossless-document-draft
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-core/target.parser
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-domain
+                    test: sql_document::tests::invalid_and_unsupported_drafts_keep_the_original_source
+          - id: parameter-rename-references-and-lookalikes
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector:
+              kind: symbol
+              name: tests::renames_repeated_parameter_tokens_and_preserves_lookalikes
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.source-aware-parameter-rename
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-core/target.parameter-rename
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-domain
+                    test: sql_document::tests::renames_repeated_parameter_tokens_and_preserves_lookalikes
+          - id: parameter-rename-no-match
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector:
+              kind: symbol
+              name: tests::parameter_rename_without_a_match_preserves_source_and_diagnostics
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.source-aware-parameter-rename
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-core/target.parameter-rename
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-domain
+                    test: sql_document::tests::parameter_rename_without_a_match_preserves_source_and_diagnostics
+          - id: parameter-rename-invalid-names
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector:
+              kind: symbol
+              name: tests::parameter_rename_rejects_invalid_names
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.source-aware-parameter-rename
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-core/target.parameter-rename
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-domain
+                    test: sql_document::tests::parameter_rename_rejects_invalid_names
+          - id: parameter-rename-draft-diagnostics
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector:
+              kind: symbol
+              name: tests::parameter_rename_reparses_invalid_drafts_and_keeps_diagnostics
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.source-aware-parameter-rename
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-core/target.parameter-rename
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-domain
+                    test: sql_document::tests::parameter_rename_reparses_invalid_drafts_and_keeps_diagnostics
+      - id: sql-document-wasm-protocol
+        role: implementation
+        facet: wasm
+        responsibility: Expose the bounded Rust SQL Document parser and source-aware parameter rename through the portable WASM domain protocol without planning or executing the SQL.
+        targets:
+          - id: parser-action
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: symbol, name: invoke_sql_document }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+          - id: parameter-rename-action
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: symbol, name: invoke_sql_document_parameter_rename }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+      - id: sql-document-frontend-client
+        role: evidence
+        facet: protocol-client
+        responsibility: Expose the SQL Document response as typed frontend client data while keeping parsing in the shared Rust/WASM domain protocol.
+        targets:
+          - id: parser-client
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.ts
+            selector: { kind: symbol, name: parseSqlDocument }
+            claims:
+              - kind: evidences
+                anchor: REQ-SQL-001#criterion.portable-protocol
+          - id: parameter-rename-client
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.ts
+            selector: { kind: symbol, name: renameSqlDocumentParameter }
+            claims:
+              - kind: evidences
+                anchor: REQ-SQL-001#criterion.portable-protocol
+      - id: sql-document-wasm-verification
+        role: verification
+        facet: verification
+        responsibility: Verify native parity for representable protocol responses, maximum-size JSON-escaped requests, bounded serialization, and actual WASM runtime behavior through the root SQL structure parity task.
+        targets:
+          - id: protocol-matches-native-parser
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector:
+              kind: symbol
+              name: tests::sql_document_protocol_matches_native_parser_for_draft_states_and_ranges
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parser-action
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-wasm
+                    test: tests::sql_document_protocol_matches_native_parser_for_draft_states_and_ranges
+          - id: protocol-bounds-amplified-output
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector:
+              kind: symbol
+              name: tests::sql_document_protocol_bounds_amplified_parser_output
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parser-action
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-wasm
+                    test: tests::sql_document_protocol_bounds_amplified_parser_output
+          - id: actual-wasm-document-parity-and-resource-bounds
+            adapter: typescript
+            path: crates/ugoite-wasm/tests/sql_structure_parity.ts
+            selector: { kind: file }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parser-action
+                runner:
+                  runner: mise-task
+                  arguments:
+                    task: check:wasm:sql-structure-parity
+          - id: parser-accepts-maximum-escaped-source
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector:
+              kind: symbol
+              name: tests::sql_document_protocol_accepts_maximum_source_with_json_escaped_trivia
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parser-action
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-wasm
+                    test: tests::sql_document_protocol_accepts_maximum_source_with_json_escaped_trivia
+          - id: parameter-rename-matches-native-source-ranges
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector:
+              kind: symbol
+              name: tests::sql_document_parameter_rename_protocol_matches_native_tokens_and_ranges
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parameter-rename-action
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-wasm
+                    test: tests::sql_document_parameter_rename_protocol_matches_native_tokens_and_ranges
+          - id: parameter-rename-no-match
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector:
+              kind: symbol
+              name: tests::sql_document_parameter_rename_protocol_preserves_no_match_documents
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parameter-rename-action
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-wasm
+                    test: tests::sql_document_parameter_rename_protocol_preserves_no_match_documents
+          - id: parameter-rename-invalid-names
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector:
+              kind: symbol
+              name: tests::sql_document_parameter_rename_protocol_matches_native_invalid_name_errors
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parameter-rename-action
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-wasm
+                    test: tests::sql_document_parameter_rename_protocol_matches_native_invalid_name_errors
+          - id: parameter-rename-bounds-amplified-output
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector:
+              kind: symbol
+              name: tests::sql_document_parameter_rename_bounds_amplified_output
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parameter-rename-action
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-wasm
+                    test: tests::sql_document_parameter_rename_bounds_amplified_output
+          - id: parameter-rename-accepts-maximum-escaped-source
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector:
+              kind: symbol
+              name: tests::sql_document_parameter_rename_accepts_maximum_escaped_source
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parameter-rename-action
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-wasm
+                    test: tests::sql_document_parameter_rename_accepts_maximum_escaped_source
+          - id: parameter-rename-rejects-over-limit-request
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector:
+              kind: symbol
+              name: tests::sql_document_parameter_rename_rejects_request_over_limit
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parameter-rename-action
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-wasm
+                    test: tests::sql_document_parameter_rename_rejects_request_over_limit

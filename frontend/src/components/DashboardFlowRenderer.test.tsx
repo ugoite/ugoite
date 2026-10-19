@@ -17,7 +17,6 @@ const stylesheet = () => readFileSync(join(__dirname, "..", "app.css"), "utf8");
 const definitions: CompositionVariableDefinition[] = [
   {
     id: "month",
-    label: "Month",
     type: "date",
     required: true,
     default: "2026-10-01",
@@ -25,7 +24,6 @@ const definitions: CompositionVariableDefinition[] = [
   },
   {
     id: "region",
-    label: "Region",
     type: "string",
     required: false,
   },
@@ -52,12 +50,10 @@ const plan: CompositionResolvePlan = {
     {
       component_id: "summary_title",
       kind: "text",
-      label: "Summary",
     },
     {
       component_id: "total",
       kind: "metric",
-      label: "Total",
       source_id: "summary",
       result_property_key: "total",
       expected_result_type: "integer",
@@ -65,7 +61,6 @@ const plan: CompositionResolvePlan = {
     {
       component_id: "count",
       kind: "metric",
-      label: "Count",
       source_id: "summary",
       result_property_key: "count",
       expected_result_type: "integer",
@@ -73,7 +68,6 @@ const plan: CompositionResolvePlan = {
     {
       component_id: "rows",
       kind: "table",
-      label: "Details",
       source_id: "summary",
     },
   ],
@@ -94,10 +88,14 @@ const readySources = {
     status: "ready" as const,
     cursorStack: [undefined],
     page: {
-      kind: "saved_sql" as const,
+      kind: "sql" as const,
       page: {
         columns: ["total", "count"],
         rows: [{ total: 42, count: 7 }],
+        result_schema: [
+          { name: "total", type: "integer" as const },
+          { name: "count", type: "integer" as const },
+        ],
         has_more: false,
       },
     },
@@ -180,23 +178,23 @@ describe("DashboardFlowRenderer", () => {
       container.querySelectorAll(".compositionFlowRow"),
     ).map((row) => row.textContent);
     expect(rows).toHaveLength(4);
-    expect(rows[0]).toContain("Month");
+    expect(rows[0]).toContain("month");
     expect(rows[1]).toContain("Monthly summary");
-    expect(rows[2]).toContain("Total");
-    expect(rows[2]).toContain("Count");
-    expect(rows[3]).toContain("Details");
+    expect(rows[2]).toContain("total");
+    expect(rows[2]).toContain("count");
+    expect(rows[3]).toContain("total");
+    expect(rows[3]).toContain("count");
 
-    // The Input shows the declared human label, never the id.
-    const input = screen.getByLabelText("Month");
+    // The Input uses the stable Composition variable ID.
+    const input = screen.getByLabelText("month");
     expect(input).toHaveValue("2026-10-01");
     expect(input).not.toHaveAttribute("readonly");
     fireEvent.input(input, { target: { value: "2026-11-01" } });
     await waitFor(() => {
       expect(onVariableInput).toHaveBeenCalledWith("month", "2026-11-01");
     });
-    expect(screen.queryByLabelText("month")).toBeNull();
     // Unplaced optional variables render no in-flow control.
-    expect(screen.queryByLabelText("Region")).toBeNull();
+    expect(screen.queryByLabelText("region")).toBeNull();
 
     // Metrics query the bounded server operation; the table delegates to
     // the source-native presenter.
@@ -220,21 +218,60 @@ describe("DashboardFlowRenderer", () => {
     expect(screen.getByRole("table")).toBeInTheDocument();
   });
 
-  it("uses localized ordinal labels for unlabeled runtime variables", async () => {
+  it("uses stable variable IDs for runtime controls in every locale", async () => {
     setLocale("en");
-    const unlabeledDefinitions = definitions.map((
-      { label: _label, ...entry },
-    ) => entry);
-    renderFlow({ variableDefinitions: unlabeledDefinitions });
+    renderFlow({ variableDefinitions: definitions });
 
-    expect(await screen.findByLabelText("Variable 1")).toHaveValue(
+    expect(await screen.findByLabelText("month")).toHaveValue(
       "2026-10-01",
     );
-    expect(screen.queryByLabelText("month")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("region")).not.toBeInTheDocument();
 
     setLocale("ja");
-    expect(screen.getByLabelText("変数1")).toHaveValue("2026-10-01");
+    expect(screen.getByLabelText("month")).toHaveValue("2026-10-01");
+  });
+
+  it("renders an Input when its resolved definition arrives after its binding", async () => {
+    const [resolvedPlan, setResolvedPlan] = createSignal<CompositionResolvePlan>({
+      sources: [],
+      component_bindings: [],
+    });
+    const [resolvedDefinitions, setResolvedDefinitions] = createSignal<
+      CompositionVariableDefinition[]
+    >([]);
+
+    render(() => (
+      <DashboardFlowRenderer
+        layout={{
+          rows: [{
+            id: "controls",
+            items: [{ kind: "component", component: "input-month" }],
+          }],
+        }}
+        inputVariables={{ "input-month": "month" }}
+        plan={resolvedPlan()}
+        texts={{}}
+        variableDefinitions={resolvedDefinitions()}
+        variableValues={{ month: "2026-10-01" }}
+        sources={{}}
+        onNext={() => {}}
+        onPrevious={() => {}}
+        onRetry={() => {}}
+      />
+    ));
+
+    expect(screen.queryByLabelText("month")).not.toBeInTheDocument();
+    setResolvedPlan({
+      sources: [],
+      component_bindings: [{
+        component_id: "input-month",
+        kind: "input",
+        variable_id: "month",
+      }],
+    });
+    setResolvedDefinitions([definitions[0]]);
+
+    expect(await screen.findByLabelText("month")).toHaveValue("2026-10-01");
   });
 
   it("renders each text style without fetching sources", async () => {
@@ -285,7 +322,6 @@ describe("DashboardFlowRenderer", () => {
       onVariableInput,
       variableDefinitions: [{
         id: "include_archived",
-        label: "Include archived",
         type: "boolean",
         required: true,
       }],
@@ -307,12 +343,11 @@ describe("DashboardFlowRenderer", () => {
           component_id: "input-include-archived",
           kind: "input",
           variable_id: "include_archived",
-          label: "Include archived",
         }],
       },
     });
 
-    const input = screen.getByLabelText("Include archived");
+    const input = screen.getByLabelText("include_archived");
     expect(input).toHaveValue("");
     expect(input).not.toHaveAttribute("readonly");
     expect(input).toHaveAttribute("aria-required", "true");
@@ -428,10 +463,14 @@ describe("DashboardFlowRenderer", () => {
         status: "ready" as const,
         cursorStack: [undefined],
         page: {
-          kind: "saved_sql" as const,
+          kind: "sql" as const,
           page: {
             columns: ["total", "count"],
             rows: [{ total: 42, count: 7 }],
+            result_schema: [
+              { name: "total", type: "integer" as const },
+              { name: "count", type: "integer" as const },
+            ],
             has_more: true,
             next: "page-2",
           },
@@ -444,10 +483,14 @@ describe("DashboardFlowRenderer", () => {
         cursorStack: [undefined, "page-2"],
         cursor: "page-2",
         page: {
-          kind: "saved_sql" as const,
+          kind: "sql" as const,
           page: {
             columns: ["total", "count"],
             rows: [{ total: 84, count: 14 }],
+            result_schema: [
+              { name: "total", type: "integer" as const },
+              { name: "count", type: "integer" as const },
+            ],
             has_more: false,
           },
         },
@@ -498,22 +541,18 @@ describe("DashboardFlowRenderer", () => {
     expect(query).toHaveBeenCalledTimes(1);
   });
 
-  it("passes saved field types to an all-null Entry table in flow layout", () => {
-    const entrySource: CompositionResolvePlan["sources"][number] = {
-      kind: "entry_query",
+  it("passes saved SQL result types to an all-null table in flow layout", () => {
+    const sqlSource: CompositionResolvePlan["sources"][number] = {
+      kind: "saved_sql",
       source_id: "entries",
-      source_schema_fingerprint: "entry-fingerprint",
+      source_schema_fingerprint: "sql-fingerprint",
+      expected_result: [{ name: "amount", type: "float" }],
       request: {
-        query: {
-          scope: { kind: "form", form_id: "form-1" },
-          filters: [],
-          sort: [],
-        },
-        projection: {
-          kind: "fields",
-          fields: [{ kind: "property", field_id: 9 }],
-        },
+        sql: "SELECT amount FROM expenses",
+        parameters: {},
+        parameter_types: {},
         limit: 1,
+        saved_sql: { id: "sql-2", revision_id: "sql-revision-2" },
       },
     };
     renderFlow({
@@ -524,11 +563,10 @@ describe("DashboardFlowRenderer", () => {
         }],
       },
       plan: {
-        sources: [entrySource],
+        sources: [sqlSource],
         component_bindings: [{
           component_id: "entries",
           kind: "table",
-          label: "Entries",
           source_id: "entries",
         }],
       },
@@ -539,28 +577,19 @@ describe("DashboardFlowRenderer", () => {
           status: "ready",
           cursorStack: [undefined],
           page: {
-            kind: "entry_query",
+            kind: "sql",
             page: {
-              rows: [{
-                id: "entry-1",
-                form_id: "form-1",
-                revision_id: "revision-1",
-                created_at_micros: 1,
-                updated_at_micros: 1,
-                properties: { amount: null },
-              }],
+              columns: ["amount"],
+              rows: [[null]],
+              result_schema: [{ name: "amount", type: "float" }],
               has_more: false,
             },
           },
         },
       },
-      fieldNames: (_formId, fieldId) => fieldId === 9 ? "Amount" : undefined,
-      fieldKeys: (_formId, fieldId) => fieldId === 9 ? "amount" : undefined,
-      fieldTypes: (_formId, fieldId, sourceId) =>
-        sourceId === "entries" && fieldId === 9 ? "double" : undefined,
     });
 
-    expect(screen.getByRole("columnheader", { name: "Amount" })).toHaveClass(
+    expect(screen.getByRole("columnheader", { name: "amount" })).toHaveClass(
       "result-table-header--numeric",
     );
     expect(screen.getByRole("cell", { name: "—" })).toHaveClass(
