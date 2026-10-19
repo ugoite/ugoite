@@ -2,7 +2,7 @@ import { StandardSQL } from "@codemirror/lang-sql";
 import type { SQLConfig } from "@codemirror/lang-sql";
 import type { Diagnostic } from "@codemirror/lint";
 import sqlRules from "../../../shared/sql/ugoite-sql-rules.json";
-import { filterCreatableEntryForms } from "./metadata-forms";
+import { isReservedMetadataForm } from "./metadata-forms";
 import type { Form, SqlVariable, SqlVariableDefault } from "./types";
 import type {
   SqlStructureAggregateFunction,
@@ -120,7 +120,9 @@ export interface SqlStructureColumnCapabilities {
 export interface SqlStructureAdapterContext {
   /** Identity of the source and schema context that produced this adapter context. */
   identity: string;
-  /** Human-readable Form name for picker rows; SQL uses parser.relation. */
+  /** Whether the Form relation may be offered by the relation chooser. */
+  relationSelectable: boolean;
+  /** Human-readable Form name for eligible picker rows; SQL uses parser.relation. */
   label?: string;
   parser: SqlStructureContext;
   columnCapabilities: Readonly<Record<string, SqlStructureColumnCapabilities>>;
@@ -145,7 +147,7 @@ const queryOperators = (
   ];
 };
 
-/** Build Form-backed and relation-free parser contexts for SQL Workspace. */
+/** Build analysis contexts for every Form plus a relation-free SQL context. */
 export const buildSqlStructureContexts = (
   forms: readonly Form[],
   variables: readonly { name: string; type: string }[] = [],
@@ -156,7 +158,7 @@ export const buildSqlStructureContexts = (
     return type ? [{ name: variable.name, type }] : [];
   });
 
-  const formContexts = filterCreatableEntryForms(forms).flatMap((form) => {
+  const formContexts = forms.flatMap((form) => {
     const relation = form.sql_relation?.trim();
     if (!relation) return [];
     const columns = [
@@ -257,9 +259,11 @@ export const buildSqlStructureContexts = (
         formName: form.name,
         formVersion: form.version,
         relation,
+        relationSelectable: !isReservedMetadataForm(form.name),
         parser,
         columnCapabilities,
       }),
+      relationSelectable: !isReservedMetadataForm(form.name),
       label: form.name.trim() || relation,
       parser,
       columnCapabilities,
@@ -275,6 +279,7 @@ export const buildSqlStructureContexts = (
     ...formContexts,
     {
       identity: JSON.stringify({ sourceIdentity, relation: null, parser }),
+      relationSelectable: false,
       parser,
       columnCapabilities: {},
     },

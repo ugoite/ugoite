@@ -685,7 +685,7 @@ describe("SQL structure adapter context", () => {
     expect(context.identity).toContain('"formVersion":1');
   });
 
-  it("offers only user-creatable Forms as SQL relation candidates", () => {
+  it("keeps reserved Forms as analysis contexts but excludes them from SQL relation candidates", () => {
     const reservedForms: Form[] = [
       "SQL",
       "User",
@@ -712,12 +712,28 @@ describe("SQL structure adapter context", () => {
     );
 
     expect(contexts.map((context) => context.label)).toEqual([
+      "SQL",
+      "User",
+      "UserGroup",
+      "_ugoite_compositions",
       "Orders",
       undefined,
     ]);
     expect(contexts.map((context) => context.parser.relation)).toEqual([
+      "form_reserved_0",
+      "form_reserved_1",
+      "form_reserved_2",
+      "form_reserved_3",
       "form_orders",
       "",
+    ]);
+    expect(contexts.map((context) => context.relationSelectable)).toEqual([
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
     ]);
   });
 

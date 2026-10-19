@@ -231,7 +231,9 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     const seen = new Set<string>();
     return props.contexts().flatMap((context) => {
       const relation = context.parser.relation;
-      if (!relation || seen.has(relation)) return [];
+      if (!context.relationSelectable || !relation || seen.has(relation)) {
+        return [];
+      }
       seen.add(relation);
       return [context];
     });
