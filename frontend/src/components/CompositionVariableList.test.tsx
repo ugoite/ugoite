@@ -286,12 +286,15 @@ describe("composition variable list", () => {
     fireEvent.change(screen.getAllByLabelText("Type")[1], {
       target: { value: "integer" },
     });
-    fireEvent.input(screen.getByLabelText("Default for Variable 1"), {
+    fireEvent.input(screen.getByLabelText("Default for variable_1"), {
       target: { value: "42" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Remove Variable 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove variable_1" }));
     expect(variables()).toEqual([]);
 
+    fireEvent.input(screen.getByLabelText("Variable ID"), {
+      target: { value: "variable_1" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
     expect(onAdd).toHaveBeenCalledWith({
       id: "variable_1",
@@ -313,7 +316,7 @@ describe("composition variable list", () => {
       required: true,
     }]);
     expect(onUpdate).toHaveBeenCalledTimes(1);
-    expect(screen.getByLabelText("Default for Variable 1")).toHaveValue("");
+    expect(screen.getByLabelText("Default for variable_1")).toHaveValue("");
   });
 
   it("ignores a pending default parse after the variable type changes", async () => {
@@ -343,10 +346,10 @@ describe("composition variable list", () => {
       />
     ));
 
-    fireEvent.input(screen.getByLabelText("Default for Variable 1"), {
+    fireEvent.input(screen.getByLabelText("Default for limit"), {
       target: { value: "42" },
     });
-    fireEvent.change(screen.getByLabelText("Type for Variable 1"), {
+    fireEvent.change(screen.getByLabelText("Type for limit"), {
       target: { value: "float" },
     });
     expect(variables()).toEqual([{
@@ -364,7 +367,7 @@ describe("composition variable list", () => {
       default: undefined,
     }]);
     expect(onUpdate).toHaveBeenCalledTimes(2);
-    expect(screen.getByLabelText("Default for Variable 1")).toHaveValue("");
+    expect(screen.getByLabelText("Default for limit")).toHaveValue("");
   });
 
   it("keeps a pending default parse valid when removal is blocked", async () => {
@@ -395,10 +398,10 @@ describe("composition variable list", () => {
       />
     ));
 
-    fireEvent.input(screen.getByLabelText("Default for Variable 1"), {
+    fireEvent.input(screen.getByLabelText("Default for limit"), {
       target: { value: "42" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Remove Variable 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove limit" }));
     expect(screen.getByText("This variable is used by a data source."))
       .toBeInTheDocument();
     expect(variables()).toEqual([{ ...integer, default: "42" }]);
@@ -408,6 +411,6 @@ describe("composition variable list", () => {
 
     expect(variables()).toEqual([{ ...integer, default: 42 }]);
     expect(onUpdate).toHaveBeenCalledTimes(2);
-    expect(screen.getByLabelText("Default for Variable 1")).toHaveValue("42");
+    expect(screen.getByLabelText("Default for limit")).toHaveValue("42");
   });
 });
