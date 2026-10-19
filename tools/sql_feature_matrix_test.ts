@@ -114,7 +114,6 @@ Deno.test("SQL feature matrix binds the read-only gate and current UI actions", 
     constructs.every((construct) =>
       [
         "planner_decides",
-        "statement_gate_passes_but_authorized_physical_plan_rejects",
         "statement_gate_rejects",
       ].includes(
         construct.backend_admission,
