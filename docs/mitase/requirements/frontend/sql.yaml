@@ -496,6 +496,8 @@ requirements:
           parser/capability model can safely round-trip. Directly edited SQL
           remains authoritative; unsupported syntax stays editable in the code
           editor and a structured rewrite requires explicit diff confirmation.
+          The Form relation chooser applies the same user-creatable Form
+          eligibility rule as entry creation.
         governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
       - id: explicit-preview-count-and-paging
         kind: behavior
@@ -613,6 +615,15 @@ requirements:
                 criterion: REQ-FE-080#criterion.safe-structured-operations
                 covers: [FEAT-FE-008#binding.frontend/target.sql-structure-context]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: uses the server-derived Form relation and intersects typed column capabilities } }
+          - id: sql-form-eligibility
+            adapter: typescript
+            path: frontend/src/lib/sql.test.ts
+            selector: { kind: test, name: offers only user-creatable Forms as SQL relation candidates }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.safe-structured-operations
+                covers: [FEAT-FE-008#binding.frontend/target.sql-structure-context]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: offers only user-creatable Forms as SQL relation candidates } }
           - id: sql-structure-proposal
             adapter: typescript
             path: frontend/src/components/SqlStructureToolbar.test.tsx

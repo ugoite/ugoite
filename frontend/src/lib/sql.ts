@@ -2,6 +2,7 @@ import { StandardSQL } from "@codemirror/lang-sql";
 import type { SQLConfig } from "@codemirror/lang-sql";
 import type { Diagnostic } from "@codemirror/lint";
 import sqlRules from "../../../shared/sql/ugoite-sql-rules.json";
+import { filterCreatableEntryForms } from "./metadata-forms";
 import type { Form, SqlVariable, SqlVariableDefault } from "./types";
 import type {
   SqlStructureAggregateFunction,
@@ -155,7 +156,7 @@ export const buildSqlStructureContexts = (
     return type ? [{ name: variable.name, type }] : [];
   });
 
-  const formContexts = forms.flatMap((form) => {
+  const formContexts = filterCreatableEntryForms(forms).flatMap((form) => {
     const relation = form.sql_relation?.trim();
     if (!relation) return [];
     const columns = [
