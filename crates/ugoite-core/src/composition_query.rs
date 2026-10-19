@@ -2138,6 +2138,112 @@ mod tests {
     }
 
     #[test]
+    fn deferred_query_handoff_uses_fresh_value_and_preserves_snapshot_identity() {
+        let execution_id = test_execution_id();
+        let upstream = scalar_query_node("upstream", "SELECT 11", vec![]);
+        let downstream = scalar_query_node(
+            "downstream",
+            "SELECT $seed",
+            vec![argument(
+                "seed",
+                "upstream",
+                VariableGraphScalarType::Integer,
+                false,
+            )],
+        );
+        let graph = VariableGraph {
+            variables: vec![downstream, upstream],
+        };
+        let requested = ["upstream".to_owned(), "downstream".to_owned()];
+        let old_values =
+            BTreeMap::from([("upstream".to_owned(), VariableGraphLiteral::Integer(7))]);
+
+        let batch = compile_variable_graph_query_request_batch(
+            &graph,
+            &requested,
+            execution_id,
+            &old_values,
+        )
+        .expect("the selected dependency batch compiles");
+        let upstream_request = batch[0]
+            .request
+            .as_ref()
+            .expect("the upstream query is ready");
+        assert_eq!(upstream_request.execution_id, Some(execution_id));
+        assert_eq!(batch[1].variable_id, "downstream");
+        assert!(batch[1].request.is_none());
+        assert_eq!(
+            batch[1].deferred_arguments[0].variable_id, "upstream",
+            "a cached upstream value must not be embedded in the deferred request"
+        );
+
+        let old_downstream_request =
+            compile_variable_graph_query_request(&graph, "downstream", execution_id, &old_values)
+                .expect("the old request can be prepared for stale-page comparison");
+        assert_eq!(old_downstream_request.parameters["seed"], 7);
+
+        let upstream_page = result_page(
+            upstream_request,
+            &[("value", SqlResultColumnType::Integer)],
+            vec![json!({"value": 11})],
+        );
+        let VariableGraphValidatedResult::Scalar { value: fresh_value } =
+            validate_variable_graph_sql_page(&graph, "upstream", upstream_request, &upstream_page)
+                .expect("the upstream result is tied to its request")
+        else {
+            panic!("upstream query must resolve to a scalar")
+        };
+        assert_eq!(fresh_value, VariableGraphLiteral::Integer(11));
+
+        let fresh_values = BTreeMap::from([("upstream".to_owned(), fresh_value)]);
+        let downstream_request =
+            compile_variable_graph_query_request(&graph, "downstream", execution_id, &fresh_values)
+                .expect("the deferred query is recompiled after its dependency resolves");
+        assert_eq!(downstream_request.execution_id, Some(execution_id));
+        assert_eq!(downstream_request.parameters["seed"], 11);
+        assert_ne!(
+            downstream_request.execution_fingerprint().unwrap(),
+            old_downstream_request.execution_fingerprint().unwrap(),
+            "a fresh parameter value produces a distinct request fingerprint"
+        );
+
+        let fresh_downstream_page = result_page(
+            &downstream_request,
+            &[("value", SqlResultColumnType::Integer)],
+            vec![json!({"value": 11})],
+        );
+        assert_eq!(
+            validate_variable_graph_sql_page(
+                &graph,
+                "downstream",
+                &downstream_request,
+                &fresh_downstream_page,
+            )
+            .expect("the downstream page belongs to its fresh request"),
+            VariableGraphValidatedResult::Scalar {
+                value: VariableGraphLiteral::Integer(11),
+            }
+        );
+
+        let stale_downstream_page = result_page(
+            &old_downstream_request,
+            &[("value", SqlResultColumnType::Integer)],
+            vec![json!({"value": 7})],
+        );
+        assert_eq!(
+            validate_variable_graph_sql_page(
+                &graph,
+                "downstream",
+                &downstream_request,
+                &stale_downstream_page,
+            )
+            .expect_err("a page for the old parameter fingerprint is stale")[0]
+                .code,
+            VariableGraphQueryResultDiagnosticCode::ExecutionMismatch
+        );
+    }
+
+    #[test]
     fn batch_deduplicates_requested_ids_and_can_select_only_invalidated_queries() {
         let upstream = scalar_query_node("upstream", "SELECT 1", vec![]);
         let downstream = scalar_query_node(
