@@ -8,6 +8,7 @@ import type { SQLWorkspaceAction } from "~/components/SQLWorkspace";
 import { SqlStructureToolbar } from "~/components/SqlStructureToolbar";
 import { SqlVariableDefaultsEditor } from "~/components/SqlVariableDefaultsEditor";
 import { formApi, sqlApi } from "~/lib/ugoite-client";
+import type { SqlStructureVariableType } from "~/lib/ugoite-client";
 import {
   applySqlVariableDefaultDrafts,
   buildSqlSchema,
@@ -36,6 +37,9 @@ export default function SpaceQueryCreateRoute() {
   const [defaultDrafts, setDefaultDrafts] = createSignal<
     Record<string, SqlVariableDefaultDraft>
   >({});
+  const [createdVariableTypes, setCreatedVariableTypes] = createSignal<
+    Record<string, SqlStructureVariableType>
+  >({});
   const [structureActions, setStructureActions] = createSignal<
     readonly SQLWorkspaceAction[]
   >([]);
@@ -46,7 +50,14 @@ export default function SpaceQueryCreateRoute() {
 
   const schema = () => buildSqlSchema((forms() || []) as Form[]);
   const variables = createMemo(() =>
-    normalizeSqlVariables(sqlInput().trim()).variables
+    normalizeSqlVariables(
+      sqlInput().trim(),
+      Object.entries(createdVariableTypes()).map(([name, type]) => ({
+        name,
+        type,
+        description: "",
+      })),
+    ).variables
   );
   const workspaceVariables = createMemo(() => {
     const defaults = applySqlVariableDefaultDrafts(
@@ -60,6 +71,27 @@ export default function SpaceQueryCreateRoute() {
     sql: sqlInput,
     variables: workspaceVariables,
   });
+
+  const handleSqlChange = (sql: string) => {
+    setSqlInput(sql);
+    const referenced = new Set(
+      normalizeSqlVariables(sql).variables.map((variable) => variable.name),
+    );
+    setCreatedVariableTypes((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([name]) => referenced.has(name)),
+      )
+    );
+  };
+
+  const registerCreatedVariables = (
+    added: readonly { name: string; type: SqlStructureVariableType }[],
+  ) => {
+    setCreatedVariableTypes((current) => ({
+      ...current,
+      ...Object.fromEntries(added.map(({ name, type }) => [name, type])),
+    }));
+  };
 
   // Line/column rendering for editor diagnostics. Offsets come from the
   // CodeMirror lint gutter; the list mirrors them as text so the error
@@ -136,7 +168,7 @@ export default function SpaceQueryCreateRoute() {
         <SQLWorkspace
           id="new-sql-workspace"
           sql={sqlInput()}
-          onSqlChange={setSqlInput}
+          onSqlChange={handleSqlChange}
           actions={structureActions()}
           schema={schema()}
           variables={workspaceVariables()}
@@ -159,7 +191,8 @@ export default function SpaceQueryCreateRoute() {
               workspaceVariables(),
               `new-sql:${spaceId()}`,
             )}
-          onSqlChange={setSqlInput}
+          onSqlChange={handleSqlChange}
+          onVariablesAdded={registerCreatedVariables}
           onActionsChange={setStructureActions}
           disabled={isSaving}
         />

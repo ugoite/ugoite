@@ -41,6 +41,7 @@ type FilterDraft = {
   column: string;
   operator: SqlStructureFilterOperator;
   parameter: string;
+  createdVariable?: SqlStructureVariableType;
 };
 type SortDraft = { column: string; direction: "asc" | "desc" };
 type AnalyzedStructure = {
@@ -58,6 +59,9 @@ interface SqlStructureToolbarProps {
   sql: () => string;
   contexts: () => readonly SqlStructureAdapterContext[];
   onSqlChange?: (sql: string) => void;
+  onVariablesAdded?: (
+    variables: readonly { name: string; type: SqlStructureVariableType }[],
+  ) => void;
   onActionsChange: (actions: readonly SQLWorkspaceAction[]) => void;
   disabled?: () => boolean;
 }
@@ -388,7 +392,9 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
       return current.context.parser.columns.some((column) =>
         current.context.columnCapabilities[column.name]?.filterable &&
         operatorsForColumn(current.context, column.name).some((operator) =>
-          isNullOperator(operator) || variablesFor(column.name).length > 0
+          isNullOperator(operator) || variablesFor(column.name).length > 0 ||
+          (props.onVariablesAdded !== undefined &&
+            variableTypeForColumn(column.type) !== undefined)
         )
       );
     }
@@ -480,6 +486,41 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
       : [];
   };
 
+  const filterVariableType = (columnName: string) => {
+    const column = ready()?.context.parser.columns.find((item) =>
+      item.name === columnName
+    );
+    return column ? variableTypeForColumn(column.type) : undefined;
+  };
+
+  const uniqueFilterVariableName = (columnName: string) => {
+    const suffix = columnName.replace(/[^A-Za-z0-9_]/g, "_");
+    const base = `filter_${suffix || "value"}`;
+    const used = new Set([
+      ...(ready()?.context.parser.variables ?? []).map((variable) =>
+        variable.name
+      ),
+      ...filters().map((filter) => filter.parameter),
+    ]);
+    if (!used.has(base)) return base;
+    let index = 2;
+    while (used.has(`${base}_${index}`)) index += 1;
+    return `${base}_${index}`;
+  };
+
+  const variablesCreatedByFilters = (
+    existing: readonly { name: string; type: SqlStructureVariableType }[],
+  ) => {
+    const existingNames = new Set(existing.map((variable) => variable.name));
+    const byName = new Map<string, SqlStructureVariableType>();
+    for (const filter of filters()) {
+      if (
+        filter.createdVariable && !existingNames.has(filter.parameter)
+      ) byName.set(filter.parameter, filter.createdVariable);
+    }
+    return [...byName].map(([name, type]) => ({ name, type }));
+  };
+
   const filterableColumns = () =>
     (ready()?.context.parser.columns ?? []).filter((column) =>
       ready()?.context.columnCapabilities[column.name]?.filterable
@@ -490,17 +531,30 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
       const operators = operatorsForColumn(ready()?.context, column.name);
       const operator = operators.find((item) =>
         !isNullOperator(item) && variablesFor(column.name).length > 0
-      ) ?? operators.find(isNullOperator);
+      ) ?? (props.onVariablesAdded && filterVariableType(column.name)
+        ? operators.find((item) =>
+          !isNullOperator(item)
+        )
+        : undefined) ??
+        operators.find(isNullOperator);
       return operator ? [{ column, operator }] : [];
     })[0];
     if (!candidate) return;
     const compatibleVariables = variablesFor(candidate.column.name);
+    const createdVariable = !isNullOperator(candidate.operator) &&
+        compatibleVariables.length === 0 && props.onVariablesAdded
+      ? filterVariableType(candidate.column.name)
+      : undefined;
     setFilters((items) => [...items, {
       column: candidate.column.name,
       operator: candidate.operator,
       parameter: isNullOperator(candidate.operator)
         ? ""
-        : compatibleVariables[0]?.name ?? "",
+        : compatibleVariables[0]?.name ??
+          (createdVariable
+            ? uniqueFilterVariableName(candidate.column.name)
+            : ""),
+      ...(createdVariable ? { createdVariable } : {}),
     }]);
   };
 
@@ -521,13 +575,34 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
         }
         if (!isNullOperator(next.operator)) {
           const compatibleVariables = variablesFor(next.column);
-          if (
-            !compatibleVariables.some((variable) =>
-              variable.name === next.parameter
-            )
-          ) next.parameter = compatibleVariables[0]?.name ?? "";
+          const existingVariable = compatibleVariables.find((variable) =>
+            variable.name === next.parameter
+          );
+          if (existingVariable) {
+            delete next.createdVariable;
+          } else if (
+            next.createdVariable &&
+            next.createdVariable === filterVariableType(next.column) &&
+            next.parameter
+          ) {
+            // Keep the locally-created typed parameter while the user edits
+            // other parts of the same filter row.
+          } else if (compatibleVariables[0]) {
+            next.parameter = compatibleVariables[0].name;
+            delete next.createdVariable;
+          } else if (
+            props.onVariablesAdded &&
+            filterVariableType(next.column)
+          ) {
+            next.parameter = uniqueFilterVariableName(next.column);
+            next.createdVariable = filterVariableType(next.column);
+          } else {
+            next.parameter = "";
+            delete next.createdVariable;
+          }
         } else {
           next.parameter = "";
+          delete next.createdVariable;
         }
         return next;
       })
@@ -543,7 +618,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
       (isNullOperator(filter.operator) ||
         variablesFor(filter.column).some((variable) =>
           variable.name === filter.parameter
-        ))
+        ) || filter.createdVariable === filterVariableType(filter.column))
     );
 
   const sortableColumns = () =>
@@ -655,7 +730,10 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   const applyOperation = async () => {
     const current = ready();
     const action = activeAction();
-    if (!current || !action || action === "form" || actionDisabled(action) || busy()) return;
+    if (
+      !current || !action || action === "form" || actionDisabled(action) ||
+      busy()
+    ) return;
     const operation: SqlStructureOperation = action === "columns"
       ? { kind: "set_columns", columns: selectedColumns() }
       : action === "filter"
@@ -693,6 +771,15 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
 
     const baseSql = props.sql();
     const parserSql = normalizeSqlVariables(baseSql).sql;
+    const createdVariables = variablesCreatedByFilters(
+      current.context.parser.variables,
+    );
+    const proposalContext = createdVariables.length > 0
+      ? {
+        ...current.context.parser,
+        variables: [...current.context.parser.variables, ...createdVariables],
+      }
+      : current.context.parser;
     const contextIdentity = current.identity;
     const generation = ++proposalGeneration;
     setBusy(true);
@@ -700,7 +787,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     try {
       const result = await proposeSqlStructureOperation(
         parserSql,
-        current.context.parser,
+        proposalContext,
         operation,
       );
       if (
@@ -789,6 +876,12 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
       setProposal(undefined);
       setActiveAction(null);
       return;
+    }
+    const createdVariables = variablesCreatedByFilters(
+      ready()?.context.parser.variables ?? [],
+    );
+    if (createdVariables.length > 0) {
+      props.onVariablesAdded?.(createdVariables);
     }
     props.onSqlChange(current.proposed_sql);
     setProposal(undefined);
@@ -900,7 +993,9 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                             onClick={() => void selectForm(context)}
                           >
                             <UiIcon name="forms" />
-                            <span>{context.label ?? context.parser.relation}</span>
+                            <span>
+                              {context.label ?? context.parser.relation}
+                            </span>
                           </button>
                         )}
                       </For>
@@ -1065,8 +1160,11 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                         onClick={addFilter}
                         disabled={!filterableColumns().some((column) =>
                           operatorsForColumn(ready()?.context, column.name)
-                            .some((operator) => isNullOperator(operator) ||
-                              variablesFor(column.name).length > 0
+                            .some((operator) =>
+                              isNullOperator(operator) ||
+                              variablesFor(column.name).length > 0 ||
+                              (props.onVariablesAdded !== undefined &&
+                                filterVariableType(column.name) !== undefined)
                             )
                         )}
                       >
@@ -1380,11 +1478,13 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                       disabled={busy() || (
                         activeAction() === "columns" &&
                         selectedColumns().length === 0
-                      ) || (activeAction() === "filter" && !filterRowsValid()) ||
+                      ) ||
+                        (activeAction() === "filter" && !filterRowsValid()) ||
                         (activeAction() === "sort" && !sortRowsValid()) ||
                         (activeAction() === "aggregate" &&
                           !aggregateOperationValid()) ||
-                        (activeAction() === "group_by" && !groupByRowsValid()) ||
+                        (activeAction() === "group_by" &&
+                          !groupByRowsValid()) ||
                         (activeAction() === "distinct" &&
                           !distinctProjectionIsEditable())}
                       aria-label={operationBlockedReason()

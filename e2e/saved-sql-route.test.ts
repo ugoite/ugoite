@@ -177,6 +177,26 @@ test.describe("Saved SQL route", () => {
         `SELECT * FROM "${relation}"`,
       );
 
+      const filter = structureActions.getByRole("button", {
+        name: "Filter",
+        exact: true,
+      });
+      await expect(filter).toBeEnabled();
+      await filter.click();
+      const filterDialog = page.getByRole("dialog", { name: "Filter" });
+      await filterDialog.getByRole("button", { name: "Add filter" }).click();
+      await filterDialog.getByRole("button", { name: "Review change" }).click();
+      const filterReviewDialog = page.getByRole("dialog", {
+        name: "Review SQL change",
+      });
+      await expect(filterReviewDialog.getByText(/\$filter__ugoite_id/))
+        .toBeVisible();
+      await filterReviewDialog.getByRole("button", { name: "Apply change" })
+        .click();
+      const filterValue = page.getByLabel("filter__ugoite_id");
+      await expect(filterValue).toBeVisible();
+      await filterValue.fill("no-match");
+
       const aggregate = structureActions.getByRole("button", {
         name: "Aggregate",
         exact: true,
@@ -210,6 +230,7 @@ test.describe("Saved SQL route", () => {
       await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`), {
         waitUntil: "domcontentloaded",
       });
+      await page.getByLabel("filter__ugoite_id").fill("no-match");
       const queryResponsePromise = page.waitForResponse((response) => {
         const url = new URL(response.url());
         return response.request().method() === "POST" &&

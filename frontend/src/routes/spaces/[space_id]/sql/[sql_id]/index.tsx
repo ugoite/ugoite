@@ -26,6 +26,7 @@ import {
 } from "~/lib/sql";
 import { createSqlWorkspaceController } from "~/lib/sql-workspace";
 import { formApi, sqlApi } from "~/lib/ugoite-client";
+import type { SqlStructureVariableType } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
 import { displaySqlName } from "~/lib/sql-metadata";
@@ -119,6 +120,22 @@ export default function SpaceSqlDetailRoute() {
       };
     },
   });
+
+  const registerCreatedVariables = (
+    added: readonly { name: string; type: SqlStructureVariableType }[],
+  ) => {
+    setSavedVariables((current) => {
+      const byName = new Map(
+        current.map((variable) => [variable.name, variable]),
+      );
+      for (const { name, type } of added) {
+        if (!byName.has(name)) {
+          byName.set(name, { name, type, description: "" });
+        }
+      }
+      return [...byName.values()];
+    });
+  };
 
   const handleRun = () => {
     if (!entry() || isDirty() || variableCount() > 0) return;
@@ -383,6 +400,7 @@ export default function SpaceSqlDetailRoute() {
                         `saved-sql:${sqlId()}:${revisionId() ?? ""}`,
                       )}
                     onSqlChange={setSqlInput}
+                    onVariablesAdded={registerCreatedVariables}
                     onActionsChange={setStructureActions}
                     disabled={() => busy() !== null}
                   />
