@@ -13,6 +13,7 @@ import {
   buildSqlStructureContexts,
   type SqlStructureAdapterContext,
 } from "~/lib/sql";
+import type { Form } from "~/lib/types";
 import type { SQLWorkspaceAction } from "./SQLWorkspace";
 import type {
   SqlStructureAnalysis,
@@ -34,6 +35,7 @@ vi.mock("~/lib/ugoite-client", () => ({
 
 const context: SqlStructureAdapterContext = {
   identity: "inline:source-1:form-1:3",
+  relationSelectable: true,
   parser: {
     relation: "Orders",
     columns: [
@@ -319,6 +321,72 @@ describe("SqlStructureToolbar adapter", () => {
       within(dialog).getByRole("button", { name: "Apply change" }),
     );
     expect(onSqlChange).toHaveBeenCalledWith(proposedSql);
+  });
+
+  it("keeps directly authored reserved relations editable and hides them from the Form chooser", async () => {
+    const forms: Form[] = [
+      {
+        id: "reserved-sql",
+        name: "SQL",
+        sql_relation: "form_reserved_sql",
+        version: 1,
+        template: "",
+        fields: {},
+      },
+      {
+        id: "user-orders",
+        name: "Orders",
+        sql_relation: "form_orders",
+        version: 1,
+        template: "",
+        fields: {},
+      },
+    ];
+    const contexts = buildSqlStructureContexts(forms, [], "new-sql");
+    const sql = 'SELECT * FROM "form_reserved_sql"';
+    const reservedContext = contexts.find((item) =>
+      item.parser.relation === "form_reserved_sql"
+    )!;
+    analyzeMock.mockImplementation((
+      _query: string,
+      parser: { relation: string },
+    ) =>
+      Promise.resolve(
+        parser.relation === "form_reserved_sql" ? analysis : {
+          ...analysis,
+          status: "unsupported",
+          reason: "relation_unsupported",
+        },
+      )
+    );
+    let actions: readonly SQLWorkspaceAction[] = [];
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => contexts}
+        onSqlChange={vi.fn()}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "columns")?.disabled)
+        .toBe(false)
+    );
+    expect(analyzeMock).toHaveBeenCalledWith(sql, reservedContext.parser);
+    actions.find((action) => action.kind === "columns")!.onActivate();
+    const columnsDialog = screen.getByRole("dialog", { name: "Columns" });
+    expect(within(columnsDialog).getByLabelText("_ugoite_id")).toBeEnabled();
+
+    fireEvent.click(
+      within(columnsDialog).getByRole("button", { name: "Close" }),
+    );
+    actions.find((action) => action.kind === "form")!.onActivate();
+    const formDialog = screen.getByRole("dialog", { name: "Form" });
+    expect(within(formDialog).getByRole("button", { name: "Orders" }))
+      .toBeInTheDocument();
+    expect(within(formDialog).queryByRole("button", { name: "SQL" }))
+      .toBeNull();
   });
 
   it("waits for delayed parser initialization before allowing first Form selection", async () => {
