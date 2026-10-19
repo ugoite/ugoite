@@ -31,6 +31,15 @@ Browser flow:
 route/API module -> ugoite-client -> WASM JSON protocol -> JavaScript fetch -> WASM decode
 ```
 
+The WASM JSON protocol also exposes pure Rust Domain actions. The versioned
+`domain.compile_variable_graph.v1` action accepts a strict `VariableGraph` JSON
+object in `value` and returns `contract_version: 1`, a deterministic
+topological order, and a dependency map. Invalid graphs return the stable
+Domain diagnostic codes and context; malformed or unknown fields are rejected
+as `invalid_variable_graph_payload`. This action only validates and compiles
+the dependency plan. It does not execute SQL or access storage, authorization,
+or persistence.
+
 New portable REST operations should be added to the manifest, request
 preparation, decoding tests, native adapter, browser adapter, OpenAPI/feature
 registry, and end-to-end coverage as applicable.
