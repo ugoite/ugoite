@@ -653,6 +653,73 @@ describe("SqlStructureToolbar adapter", () => {
     );
   });
 
+  it("keeps SQL unchanged when the host rejects a typed filter argument", async () => {
+    const emptyContext: SqlStructureAdapterContext = {
+      ...context,
+      identity: "inline:source-1:form-1:rejected-variable",
+      parser: { ...context.parser, variables: [] },
+      columnCapabilities: {
+        ...context.columnCapabilities,
+        _ugoite_id: {
+          ...context.columnCapabilities._ugoite_id,
+          filterable: false,
+          supportedOperators: [],
+        },
+      },
+    };
+    let currentSql = 'SELECT * FROM "Orders"';
+    const onSqlChange = vi.fn((sql: string) => currentSql = sql);
+    const onVariablesAdded = vi.fn(() => false);
+    proposeMock.mockResolvedValue(
+      {
+        contract_version: 1,
+        status: "supported",
+        base_sql: currentSql,
+        proposed_sql: 'SELECT * FROM "Orders" WHERE "amount" = $filter_amount',
+        requires_confirmation: true,
+        added_stable_tie_breakers: [],
+      } satisfies SqlStructureProposal,
+    );
+    let actions: readonly SQLWorkspaceAction[] = [];
+
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => currentSql}
+        contexts={() => [emptyContext]}
+        onSqlChange={onSqlChange}
+        onVariablesAdded={onVariablesAdded}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "filter")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "filter")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Filter" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add filter" }),
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    const applyButton = await within(dialog).findByRole("button", {
+      name: "Apply change",
+    });
+    fireEvent.click(applyButton);
+
+    expect(onVariablesAdded).toHaveBeenCalledWith([{
+      name: "filter_amount",
+      type: "integer",
+    }]);
+    expect(onSqlChange).not.toHaveBeenCalled();
+    expect(currentSql).toBe('SELECT * FROM "Orders"');
+    expect(within(dialog).getByRole("alert")).toBeInTheDocument();
+  });
+
   it("avoids variable IDs already owned by the host", async () => {
     const emptyContext: SqlStructureAdapterContext = {
       ...context,
