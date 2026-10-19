@@ -39,12 +39,12 @@ requirements:
           - id: editor-updates
             adapter: typescript
             path: frontend/src/components/SqlQueryEditor.test.tsx
-            selector: { kind: test, name: "propagates editor updates through the change listener" }
+            selector: { kind: test, name: "distinguishes controlled SQL changes from user edits" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-036#criterion.editor-contract
                 covers: [FEAT-FE-006#binding.frontend/target.sql-editor]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlQueryEditor.test.tsx, test: "propagates editor updates through the change listener" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlQueryEditor.test.tsx, test: "distinguishes controlled SQL changes from user edits" } }
           - id: sql-diagnostics
             adapter: typescript
             path: frontend/src/lib/sql.test.ts
