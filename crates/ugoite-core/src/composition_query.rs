@@ -232,6 +232,393 @@ pub struct VariableGraphQueryRequestDeferredArgument {
     pub value_type: VariableGraphScalarDescriptor,
 }
 
+/// Stable failures while compiling and accepting one Composition query result
+/// into an evaluation snapshot.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+pub enum VariableGraphQueryEvaluationDiagnosticCode {
+    InvalidGraph,
+    UnexpectedInputValue,
+    MissingInputValue,
+    InvalidInputValue,
+    QueryVariableNotFound,
+    QueryNodeRequired,
+    QueryDependencyNotReady,
+    QueryAlreadyEvaluated,
+    RequestCompilationFailed,
+    RequestSnapshotMismatch,
+    RequestDoesNotMatchGraph,
+    MalformedPageContinuation,
+    RepeatedPageContinuation,
+    ResultValidationFailed,
+    QueryResultMissing,
+}
+
+impl VariableGraphQueryEvaluationDiagnosticCode {
+    /// Stable machine-readable spelling.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::InvalidGraph => "invalid_graph",
+            Self::UnexpectedInputValue => "unexpected_input_value",
+            Self::MissingInputValue => "missing_input_value",
+            Self::InvalidInputValue => "invalid_input_value",
+            Self::QueryVariableNotFound => "query_variable_not_found",
+            Self::QueryNodeRequired => "query_node_required",
+            Self::QueryDependencyNotReady => "query_dependency_not_ready",
+            Self::QueryAlreadyEvaluated => "query_already_evaluated",
+            Self::RequestCompilationFailed => "request_compilation_failed",
+            Self::RequestSnapshotMismatch => "request_snapshot_mismatch",
+            Self::RequestDoesNotMatchGraph => "request_does_not_match_graph",
+            Self::MalformedPageContinuation => "malformed_page_continuation",
+            Self::RepeatedPageContinuation => "repeated_page_continuation",
+            Self::ResultValidationFailed => "result_validation_failed",
+            Self::QueryResultMissing => "query_result_missing",
+        }
+    }
+}
+
+/// A query-evaluation diagnostic with the originating request or result error
+/// when one exists.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+pub struct VariableGraphQueryEvaluationDiagnostic {
+    pub code: VariableGraphQueryEvaluationDiagnosticCode,
+    pub variable_id: String,
+    pub request_diagnostic: Option<VariableGraphQueryRequestDiagnostic>,
+    pub result_diagnostic: Option<VariableGraphQueryResultDiagnostic>,
+}
+
+impl VariableGraphQueryEvaluationDiagnostic {
+    fn for_variable(code: VariableGraphQueryEvaluationDiagnosticCode, variable_id: &str) -> Self {
+        Self {
+            code,
+            variable_id: variable_id.to_owned(),
+            request_diagnostic: None,
+            result_diagnostic: None,
+        }
+    }
+
+    fn from_request(diagnostic: VariableGraphQueryRequestDiagnostic) -> Self {
+        Self {
+            code: VariableGraphQueryEvaluationDiagnosticCode::RequestCompilationFailed,
+            variable_id: diagnostic.variable_id.clone(),
+            request_diagnostic: Some(diagnostic),
+            result_diagnostic: None,
+        }
+    }
+
+    fn from_result(diagnostic: VariableGraphQueryResultDiagnostic) -> Self {
+        Self {
+            code: VariableGraphQueryEvaluationDiagnosticCode::ResultValidationFailed,
+            variable_id: diagnostic.variable_id.clone(),
+            request_diagnostic: None,
+            result_diagnostic: Some(diagnostic),
+        }
+    }
+}
+
+/// Transient Core state that accepts only query results validated against the
+/// graph's return descriptors. Raw SQL pages are never retained or exposed as
+/// preview values. The caller supplies one execution ID for the immutable
+/// evaluation snapshot and passes only the request actually sent to SQL.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VariableGraphQueryEvaluation {
+    graph: VariableGraph,
+    execution_id: Uuid,
+    topological_order: Vec<String>,
+    dependencies: BTreeMap<String, Vec<String>>,
+    resolved_scalar_values: BTreeMap<String, VariableGraphLiteral>,
+    validated_results: BTreeMap<String, VariableGraphQueryPreviewValue>,
+}
+
+/// Complete, transient query values eligible for a Composition preview.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VariableGraphQueryPreview {
+    pub execution_id: Uuid,
+    pub query_results: BTreeMap<String, VariableGraphQueryPreviewValue>,
+}
+
+/// One descriptor-validated SQL result page eligible for rendering.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VariableGraphQueryPreviewValue {
+    pub result: VariableGraphValidatedResult,
+    pub has_more: bool,
+    pub next: Option<String>,
+}
+
+impl VariableGraphQueryEvaluation {
+    /// Start an evaluation with the snapshot's input values. Constants and
+    /// declared input defaults are taken from the validated graph. Supplied
+    /// values may name input variables only; query values can enter the state
+    /// only after their SQL page has passed result validation.
+    pub fn new(
+        graph: &VariableGraph,
+        execution_id: Uuid,
+        input_values: &BTreeMap<String, VariableGraphLiteral>,
+    ) -> Result<Self, Vec<VariableGraphQueryEvaluationDiagnostic>> {
+        let compiled = compile_variable_graph(graph).map_err(|diagnostics| {
+            map_graph_diagnostics(diagnostics, "")
+                .into_iter()
+                .map(|diagnostic| VariableGraphQueryEvaluationDiagnostic {
+                    code: VariableGraphQueryEvaluationDiagnosticCode::InvalidGraph,
+                    variable_id: diagnostic.variable_id.clone(),
+                    request_diagnostic: Some(diagnostic),
+                    result_diagnostic: None,
+                })
+                .collect::<Vec<_>>()
+        })?;
+
+        let nodes = graph
+            .variables
+            .iter()
+            .map(|node| (node.id.as_str(), node))
+            .collect::<BTreeMap<_, _>>();
+        let mut diagnostics = Vec::new();
+        for variable_id in input_values.keys() {
+            if !matches!(
+                nodes.get(variable_id.as_str()).map(|node| &node.kind),
+                Some(VariableGraphNodeKind::Input { .. })
+            ) {
+                diagnostics.push(VariableGraphQueryEvaluationDiagnostic::for_variable(
+                    VariableGraphQueryEvaluationDiagnosticCode::UnexpectedInputValue,
+                    variable_id,
+                ));
+            }
+        }
+
+        let mut resolved_scalar_values = BTreeMap::new();
+        for node in &graph.variables {
+            let value = match &node.kind {
+                VariableGraphNodeKind::Constant { value, .. } => Some(value.clone()),
+                VariableGraphNodeKind::Input {
+                    required, default, ..
+                } => input_values
+                    .get(&node.id)
+                    .cloned()
+                    .or_else(|| default.clone())
+                    .or_else(|| {
+                        if *required {
+                            diagnostics.push(VariableGraphQueryEvaluationDiagnostic::for_variable(
+                                VariableGraphQueryEvaluationDiagnosticCode::MissingInputValue,
+                                &node.id,
+                            ));
+                        }
+                        None
+                    }),
+                VariableGraphNodeKind::Query { .. } => None,
+            };
+            if let Some(value) = value {
+                let descriptor = scalar_descriptor_of(&node.kind)
+                    .expect("constant and input variables have scalar descriptors");
+                if !literal_matches_descriptor(descriptor, &value) {
+                    diagnostics.push(VariableGraphQueryEvaluationDiagnostic::for_variable(
+                        VariableGraphQueryEvaluationDiagnosticCode::InvalidInputValue,
+                        &node.id,
+                    ));
+                } else {
+                    resolved_scalar_values.insert(node.id.clone(), value);
+                }
+            }
+        }
+        if !diagnostics.is_empty() {
+            diagnostics.sort();
+            diagnostics.dedup();
+            return Err(diagnostics);
+        }
+
+        Ok(Self {
+            graph: graph.clone(),
+            execution_id,
+            topological_order: compiled.topological_order,
+            dependencies: compiled.dependencies,
+            resolved_scalar_values,
+            validated_results: BTreeMap::new(),
+        })
+    }
+
+    /// Compile the next query request from this snapshot's validated inputs
+    /// and already accepted scalar dependencies.
+    pub fn compile_request(
+        &self,
+        query_variable_id: &str,
+    ) -> Result<SqlQueryRequest, Vec<VariableGraphQueryEvaluationDiagnostic>> {
+        let Some(node) = self
+            .graph
+            .variables
+            .iter()
+            .find(|node| node.id == query_variable_id)
+        else {
+            return Err(vec![VariableGraphQueryEvaluationDiagnostic::for_variable(
+                VariableGraphQueryEvaluationDiagnosticCode::QueryVariableNotFound,
+                query_variable_id,
+            )]);
+        };
+        if !matches!(node.kind, VariableGraphNodeKind::Query { .. }) {
+            return Err(vec![VariableGraphQueryEvaluationDiagnostic::for_variable(
+                VariableGraphQueryEvaluationDiagnosticCode::QueryNodeRequired,
+                query_variable_id,
+            )]);
+        }
+        let continuation = match self.validated_results.get(query_variable_id) {
+            Some(previous)
+                if matches!(&previous.result, VariableGraphValidatedResult::Table { .. })
+                    && previous.has_more =>
+            {
+                previous.next.clone()
+            }
+            Some(_) => {
+                return Err(vec![VariableGraphQueryEvaluationDiagnostic::for_variable(
+                    VariableGraphQueryEvaluationDiagnosticCode::QueryAlreadyEvaluated,
+                    query_variable_id,
+                )]);
+            }
+            None => {
+                if self
+                    .dependencies
+                    .get(query_variable_id)
+                    .into_iter()
+                    .flatten()
+                    .any(|dependency_id| {
+                        matches!(
+                            nodes_kind(&self.graph, dependency_id),
+                            Some(VariableGraphNodeKind::Query { .. })
+                        ) && !self.validated_results.contains_key(dependency_id)
+                    })
+                {
+                    return Err(vec![VariableGraphQueryEvaluationDiagnostic::for_variable(
+                        VariableGraphQueryEvaluationDiagnosticCode::QueryDependencyNotReady,
+                        query_variable_id,
+                    )]);
+                }
+                None
+            }
+        };
+
+        let mut request = compile_variable_graph_query_request(
+            &self.graph,
+            query_variable_id,
+            self.execution_id,
+            &self.resolved_scalar_values,
+        )
+        .map_err(|diagnostics| {
+            diagnostics
+                .into_iter()
+                .map(VariableGraphQueryEvaluationDiagnostic::from_request)
+                .collect::<Vec<_>>()
+        })?;
+        request.continuation = continuation;
+        request.validate().map_err(|_| {
+            vec![VariableGraphQueryEvaluationDiagnostic::for_variable(
+                VariableGraphQueryEvaluationDiagnosticCode::RequestCompilationFailed,
+                query_variable_id,
+            )]
+        })?;
+        Ok(request)
+    }
+
+    /// Accept one SQL page only when it was produced by this snapshot's exact
+    /// compiled request and its schema, nullability, values, and cardinality
+    /// satisfy the graph descriptor. A failed page leaves the state unchanged.
+    pub fn accept_page(
+        &mut self,
+        query_variable_id: &str,
+        request: &SqlQueryRequest,
+        page: &SqlQueryPage,
+    ) -> Result<(), Vec<VariableGraphQueryEvaluationDiagnostic>> {
+        let expected_request = self.compile_request(query_variable_id)?;
+        if request.execution_id != Some(self.execution_id) {
+            return Err(vec![VariableGraphQueryEvaluationDiagnostic::for_variable(
+                VariableGraphQueryEvaluationDiagnosticCode::RequestSnapshotMismatch,
+                query_variable_id,
+            )]);
+        }
+        if request != &expected_request {
+            return Err(vec![VariableGraphQueryEvaluationDiagnostic::for_variable(
+                VariableGraphQueryEvaluationDiagnosticCode::RequestDoesNotMatchGraph,
+                query_variable_id,
+            )]);
+        }
+
+        if page.has_more != page.next.is_some() {
+            return Err(vec![VariableGraphQueryEvaluationDiagnostic::for_variable(
+                VariableGraphQueryEvaluationDiagnosticCode::MalformedPageContinuation,
+                query_variable_id,
+            )]);
+        }
+        if request
+            .continuation
+            .as_ref()
+            .is_some_and(|continuation| page.next.as_ref().is_some_and(|next| next == continuation))
+        {
+            return Err(vec![VariableGraphQueryEvaluationDiagnostic::for_variable(
+                VariableGraphQueryEvaluationDiagnosticCode::RepeatedPageContinuation,
+                query_variable_id,
+            )]);
+        }
+
+        let result =
+            validate_variable_graph_sql_page(&self.graph, query_variable_id, request, page)
+                .map_err(|diagnostics| {
+                    diagnostics
+                        .into_iter()
+                        .map(VariableGraphQueryEvaluationDiagnostic::from_result)
+                        .collect::<Vec<_>>()
+                })?;
+        if let VariableGraphValidatedResult::Scalar { value } = &result {
+            self.resolved_scalar_values
+                .insert(query_variable_id.to_owned(), value.clone());
+        }
+        self.validated_results.insert(
+            query_variable_id.to_owned(),
+            VariableGraphQueryPreviewValue {
+                result,
+                has_more: page.has_more,
+                next: page.next.clone(),
+            },
+        );
+        Ok(())
+    }
+
+    /// Expose typed query values only after every query in the graph has
+    /// produced a validated result for this snapshot.
+    pub fn preview(
+        &self,
+    ) -> Result<VariableGraphQueryPreview, Vec<VariableGraphQueryEvaluationDiagnostic>> {
+        let missing = self
+            .topological_order
+            .iter()
+            .filter(|variable_id| {
+                matches!(
+                    nodes_kind(&self.graph, variable_id),
+                    Some(VariableGraphNodeKind::Query { .. })
+                ) && !self.validated_results.contains_key(variable_id.as_str())
+            })
+            .map(|variable_id| {
+                VariableGraphQueryEvaluationDiagnostic::for_variable(
+                    VariableGraphQueryEvaluationDiagnosticCode::QueryResultMissing,
+                    variable_id,
+                )
+            })
+            .collect::<Vec<_>>();
+        if !missing.is_empty() {
+            return Err(missing);
+        }
+        Ok(VariableGraphQueryPreview {
+            execution_id: self.execution_id,
+            query_results: self.validated_results.clone(),
+        })
+    }
+}
+
+fn nodes_kind<'a>(
+    graph: &'a VariableGraph,
+    variable_id: &str,
+) -> Option<&'a VariableGraphNodeKind> {
+    graph
+        .variables
+        .iter()
+        .find(|node| node.id == variable_id)
+        .map(|node| &node.kind)
+}
+
 /// Validate a graph, then compile one query variable and its resolved values.
 ///
 /// Argument names in `SqlQueryRequest` are the SQL parameter names from the
