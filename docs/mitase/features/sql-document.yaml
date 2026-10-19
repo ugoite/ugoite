@@ -502,7 +502,7 @@ features:
                   arguments:
                     file: src/lib/ugoite-client/protocol.test.ts
                     test: applies typed SQL Document edits atomically and returns a usable undo
-          - id: edit-protocol-actual-wasm-parity
+          - id: edit-protocol-wasm-fixtures
             adapter: typescript
             path: crates/ugoite-wasm/tests/sql_structure_wasm_fixtures.ts
             selector: { kind: file }
