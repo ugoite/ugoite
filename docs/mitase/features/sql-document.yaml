@@ -427,7 +427,7 @@ features:
       - id: sql-document-guarded-edit-verification
         role: verification
         facet: verification
-        responsibility: Verify atomic source-preserving edits, guarded undo, stable rejection diagnostics, native/WASM parity, request and output bounds, and typed frontend use.
+        responsibility: Verify transactional edits and guarded undo natively; verify bounded requests, output, and edit behavior through the compiled WASM smoke; verify typed frontend use.
         targets:
           - id: guarded-edit-undo
             adapter: rust
@@ -499,7 +499,7 @@ features:
                   arguments:
                     file: src/lib/ugoite-client/protocol.test.ts
                     test: applies typed SQL Document edits atomically and returns a usable undo
-          - id: edit-protocol-actual-wasm-parity
+          - id: edit-protocol-compiled-wasm-smoke
             adapter: typescript
             path: crates/ugoite-wasm/tests/sql_structure_parity.ts
             selector: { kind: file }
