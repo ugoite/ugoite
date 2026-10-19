@@ -13,8 +13,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 mod canonical;
 pub mod variable_graph;
-pub mod variable_invalidation;
 pub mod variable_graph_input;
+pub mod variable_invalidation;
 mod yaml;
 
 pub use variable_graph::{

@@ -607,6 +607,21 @@ pub(crate) fn literal_matches(
     }
 }
 
+/// Query results use the same scalar types and numeric/date constraints as
+/// declared values, but SQL output strings are not user-entered variables and
+/// therefore do not inherit the input size/control-character restrictions.
+fn query_result_literal_matches(
+    descriptor: &VariableGraphScalarDescriptor,
+    literal: &VariableGraphLiteral,
+) -> bool {
+    if matches!(literal, VariableGraphLiteral::String(_))
+        && descriptor.scalar_type == VariableGraphScalarType::String
+    {
+        return true;
+    }
+    literal_matches(descriptor, literal)
+}
+
 /// Stable diagnostics for a query result that violates its declared contract.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -827,8 +842,8 @@ pub fn validate_variable_graph_result(
                 } else if observed_columns
                     .first()
                     .is_some_and(|column| column.value_type.scalar_type == value_type.scalar_type)
-                    && (!literal_matches(&observed_columns[0].value_type, &row[0])
-                        || !literal_matches(value_type, &row[0]))
+                    && (!query_result_literal_matches(&observed_columns[0].value_type, &row[0])
+                        || !query_result_literal_matches(value_type, &row[0]))
                 {
                     diagnostics.push(value_diagnostic(
                         &row[0],
@@ -906,8 +921,8 @@ pub fn validate_variable_graph_result(
                     {
                         continue;
                     }
-                    if !literal_matches(&observed_column.value_type, value)
-                        || !literal_matches(&expected_column.value_type, value)
+                    if !query_result_literal_matches(&observed_column.value_type, value)
+                        || !query_result_literal_matches(&expected_column.value_type, value)
                     {
                         diagnostics.push(value_diagnostic(
                             value,
@@ -1846,6 +1861,61 @@ mod tests {
     }
 
     #[test]
+    fn query_string_results_are_not_limited_by_input_string_constraints() {
+        let expected_scalar = VariableGraphResultType::Scalar {
+            value_type: scalar(VariableGraphScalarType::String, false),
+        };
+        let scalar_column = [VariableGraphColumn {
+            name: "value".to_owned(),
+            value_type: scalar(VariableGraphScalarType::String, false),
+        }];
+        for value in [
+            "x".repeat(super::super::MAX_COMPOSITION_VARIABLE_STRING_BYTES + 1),
+            "line\0break".to_owned(),
+        ] {
+            let literal = VariableGraphLiteral::String(value);
+            assert_eq!(
+                validate_variable_graph_result(
+                    &expected_scalar,
+                    &scalar_column,
+                    &[vec![literal.clone()]],
+                )
+                .expect("SQL scalar string results are not input buffers"),
+                VariableGraphValidatedResult::Scalar { value: literal }
+            );
+        }
+
+        let expected_table = VariableGraphResultType::Table {
+            columns: vec![VariableGraphColumn {
+                name: "value".to_owned(),
+                value_type: scalar(VariableGraphScalarType::String, false),
+            }],
+        };
+        let table_column = [VariableGraphColumn {
+            name: "value".to_owned(),
+            value_type: scalar(VariableGraphScalarType::String, false),
+        }];
+        for value in [
+            "x".repeat(super::super::MAX_COMPOSITION_VARIABLE_STRING_BYTES + 1),
+            "line\0break".to_owned(),
+        ] {
+            let literal = VariableGraphLiteral::String(value);
+            assert_eq!(
+                validate_variable_graph_result(
+                    &expected_table,
+                    &table_column,
+                    &[vec![literal.clone()]],
+                )
+                .expect("SQL table string cells are not input buffers"),
+                VariableGraphValidatedResult::Table {
+                    columns: table_column.to_vec(),
+                    rows: vec![vec![literal]],
+                }
+            );
+        }
+    }
+
+    #[test]
     fn table_results_allow_empty_rows_and_validate_schema_and_cells() {
         let expected = VariableGraphResultType::Table {
             columns: vec![
@@ -1980,7 +2050,7 @@ mod tests {
                     .code,
                 VariableGraphDiagnosticCode::InvalidConstantValue
             );
-    }
+        }
     }
 
     #[test]
