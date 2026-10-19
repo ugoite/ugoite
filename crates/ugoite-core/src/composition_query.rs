@@ -213,9 +213,12 @@ impl VariableGraphQueryRequestDiagnostic {
 /// to a bounded first page and carries no continuation token.
 /// A Saved SQL output-column selection remains query-result metadata because
 /// `SqlQueryRequest` carries the pinned revision and parameters only.
+/// The caller owns the execution snapshot identity so this portable compiler
+/// does not depend on a platform-specific random-number provider.
 pub fn compile_variable_graph_query_request(
     graph: &VariableGraph,
     query_variable_id: &str,
+    execution_id: Uuid,
     resolved_values: &BTreeMap<String, VariableGraphLiteral>,
 ) -> Result<SqlQueryRequest, Vec<VariableGraphQueryRequestDiagnostic>> {
     if let Err(domain_diagnostics) = compile_variable_graph(graph) {
@@ -412,7 +415,7 @@ pub fn compile_variable_graph_query_request(
             VariableGraphResultType::Table { .. } => DEFAULT_VARIABLE_GRAPH_SQL_PAGE_LIMIT,
         },
         continuation: None,
-        execution_id: Some(Uuid::new_v4()),
+        execution_id: Some(execution_id),
         saved_sql,
     };
     request.validate().map_err(|_| {
@@ -969,7 +972,7 @@ mod tests {
         resolved_values: &BTreeMap<String, VariableGraphLiteral>,
     ) -> Result<SqlQueryRequest, Vec<VariableGraphQueryRequestDiagnostic>> {
         let graph = graph_for(node.clone());
-        compile_variable_graph_query_request(&graph, &node.id, resolved_values)
+        compile_variable_graph_query_request(&graph, &node.id, Uuid::from_u128(1), resolved_values)
     }
 
     fn argument_diagnostic(
@@ -1052,8 +1055,13 @@ mod tests {
             },
         );
         let graph = graph_for(node);
-        let request = compile_variable_graph_query_request(&graph, "result", &BTreeMap::new())
-            .expect("query request compiles");
+        let request = compile_variable_graph_query_request(
+            &graph,
+            "result",
+            Uuid::from_u128(1),
+            &BTreeMap::new(),
+        )
+        .expect("query request compiles");
         let mut page = result_page(
             &request,
             &[("maybe_total", SqlResultColumnType::Integer)],
@@ -1084,8 +1092,13 @@ mod tests {
             },
         );
         let graph = graph_for(node);
-        let request = compile_variable_graph_query_request(&graph, "result", &BTreeMap::new())
-            .expect("request compiles");
+        let request = compile_variable_graph_query_request(
+            &graph,
+            "result",
+            Uuid::from_u128(1),
+            &BTreeMap::new(),
+        )
+        .expect("request compiles");
         let page = result_page(
             &request,
             &[("total", SqlResultColumnType::Integer)],
@@ -1109,9 +1122,13 @@ mod tests {
             },
         );
         let wrong_type_graph = graph_for(wrong_type_node);
-        let mut wrong_type_request =
-            compile_variable_graph_query_request(&wrong_type_graph, "result", &BTreeMap::new())
-                .expect("query request compiles despite runtime result drift");
+        let mut wrong_type_request = compile_variable_graph_query_request(
+            &wrong_type_graph,
+            "result",
+            Uuid::from_u128(1),
+            &BTreeMap::new(),
+        )
+        .expect("query request compiles despite runtime result drift");
         wrong_type_request.execution_id = request.execution_id;
         let mismatch = validate_variable_graph_sql_page(
             &wrong_type_graph,
@@ -1147,8 +1164,13 @@ mod tests {
             },
         );
         let graph = graph_for(node);
-        let request = compile_variable_graph_query_request(&graph, "result", &BTreeMap::new())
-            .expect("request pins Saved SQL revision");
+        let request = compile_variable_graph_query_request(
+            &graph,
+            "result",
+            Uuid::from_u128(1),
+            &BTreeMap::new(),
+        )
+        .expect("request pins Saved SQL revision");
         let page = result_page(
             &request,
             &[
@@ -1221,8 +1243,13 @@ mod tests {
             },
         );
         let graph = graph_for(node);
-        let request = compile_variable_graph_query_request(&graph, "result", &BTreeMap::new())
-            .expect("query request compiles");
+        let request = compile_variable_graph_query_request(
+            &graph,
+            "result",
+            Uuid::from_u128(1),
+            &BTreeMap::new(),
+        )
+        .expect("query request compiles");
         let multiple_columns = result_page(
             &request,
             &[
@@ -1251,9 +1278,13 @@ mod tests {
             },
         );
         let selected_graph = graph_for(selected_node);
-        let selected_request =
-            compile_variable_graph_query_request(&selected_graph, "result", &BTreeMap::new())
-                .expect("query request compiles");
+        let selected_request = compile_variable_graph_query_request(
+            &selected_graph,
+            "result",
+            Uuid::from_u128(1),
+            &BTreeMap::new(),
+        )
+        .expect("query request compiles");
         let multiple_rows = result_page(
             &selected_request,
             &[("total", SqlResultColumnType::Integer)],
@@ -1284,8 +1315,13 @@ mod tests {
             },
         );
         let graph = graph_for(node);
-        let request = compile_variable_graph_query_request(&graph, "result", &BTreeMap::new())
-            .expect("query request compiles");
+        let request = compile_variable_graph_query_request(
+            &graph,
+            "result",
+            Uuid::from_u128(1),
+            &BTreeMap::new(),
+        )
+        .expect("query request compiles");
         let page = result_page(
             &request,
             &[("total", SqlResultColumnType::Integer)],
@@ -1293,7 +1329,7 @@ mod tests {
         );
 
         let mut stale_request = request.clone();
-        stale_request.execution_id = Some(Uuid::new_v4());
+        stale_request.execution_id = Some(Uuid::from_u128(2));
         assert_eq!(
             validate_variable_graph_sql_page(&graph, "result", &stale_request, &page)
                 .expect_err("a page from an older execution cannot bind to current inputs")[0]
@@ -1345,8 +1381,13 @@ mod tests {
             },
         );
         let graph = graph_for(node);
-        let request = compile_variable_graph_query_request(&graph, "result", &BTreeMap::new())
-            .expect("table request compiles");
+        let request = compile_variable_graph_query_request(
+            &graph,
+            "result",
+            Uuid::from_u128(1),
+            &BTreeMap::new(),
+        )
+        .expect("table request compiles");
         let page = result_page(
             &request,
             &[
@@ -1482,6 +1523,7 @@ mod tests {
         assert_eq!(request.parameter_types["created_at"], "timestamp");
         assert_eq!(request.limit, DEFAULT_VARIABLE_GRAPH_SQL_PAGE_LIMIT);
         assert_eq!(request.continuation, None);
+        assert_eq!(request.execution_id, Some(Uuid::from_u128(1)));
         assert_eq!(request.saved_sql, None);
         assert!(request.validate().is_ok());
     }
@@ -1793,8 +1835,13 @@ mod tests {
         let valid_node = inline_node(vec![]);
         let valid_graph = graph_for(valid_node);
         assert_eq!(
-            compile_variable_graph_query_request(&valid_graph, "absent", &BTreeMap::new())
-                .expect_err("unknown query reference"),
+            compile_variable_graph_query_request(
+                &valid_graph,
+                "absent",
+                Uuid::from_u128(1),
+                &BTreeMap::new(),
+            )
+            .expect_err("unknown query reference"),
             [VariableGraphQueryRequestDiagnostic::for_node(
                 VariableGraphQueryRequestDiagnosticCode::QueryVariableNotFound,
                 "absent",
@@ -1815,8 +1862,13 @@ mod tests {
             },
         });
         assert_eq!(
-            compile_variable_graph_query_request(&invalid_graph, "rows", &BTreeMap::new())
-                .expect_err("all graph query definitions must validate"),
+            compile_variable_graph_query_request(
+                &invalid_graph,
+                "rows",
+                Uuid::from_u128(1),
+                &BTreeMap::new(),
+            )
+            .expect_err("all graph query definitions must validate"),
             [VariableGraphQueryRequestDiagnostic {
                 code: VariableGraphQueryRequestDiagnosticCode::InvalidGraph,
                 variable_id: "bad".to_owned(),
