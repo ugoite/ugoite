@@ -102,4 +102,4 @@ implementation and verification gates pass.
 See [ADR-025](../../architecture/contracts/adr-025-composition-query-variable-graph.md)
 for the SQL editor matrix, Design picker behavior, interaction rules, and
 implementation gates. The target's traceable requirement is
-[`query-variable-graph-v2.yaml`](../../mitase/requirements/composition/query-variable-graph-v2.yaml).
+`docs/mitase/requirements/composition/query-variable-graph-v2.yaml`.
