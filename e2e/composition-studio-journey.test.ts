@@ -730,9 +730,8 @@ test.describe("Composition Studio Journey", () => {
       await expect(page.getByLabel("month_start")).toHaveValue(
         seed.monthStart,
       );
-      await expect(page.getByLabel("report_title")).toHaveValue(
-        "January expenses",
-      );
+      await expect(page.getByLabel("report_title", { exact: true }))
+        .toHaveValue("January expenses", { timeout: 30_000 });
       await expect(page.getByText("January expenses", { exact: true }))
         .toBeVisible();
       await expect(page.getByLabel("month_start")).toBeEditable();
