@@ -517,6 +517,10 @@ features:
         kind: custom
         source: FEAT-SQL-001#binding.sql-document-edit-protocol-contract/target.edit-request
         participants:
+          - target: FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parser-action
+            role: rust-wasm
+          - target: FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parameter-rename-action
+            role: rust-wasm
           - target: FEAT-SQL-001#binding.sql-document-guarded-edit-wasm-protocol/target.edit-transaction-action
             role: rust-wasm
           - target: FEAT-SQL-001#binding.sql-document-guarded-edit-frontend-client/target.edit-transaction-client
