@@ -841,6 +841,7 @@ pub async fn run(
                     include_exact_integer_values: false,
                     limit,
                     continuation,
+                    execution_id: None,
                     saved_sql: None,
                 },
             )
@@ -1012,6 +1013,7 @@ pub async fn run(
                     include_exact_integer_values: false,
                     limit,
                     continuation,
+                    execution_id: None,
                     saved_sql: Some(SavedSqlRevisionRef {
                         id: sql_id,
                         revision_id,
