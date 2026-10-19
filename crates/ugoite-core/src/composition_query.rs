@@ -122,8 +122,27 @@ impl VariableGraphQueryRequestDiagnostic {
 pub struct VariableGraphQueryRequestBatchItem {
     /// The query variable whose request is being prepared.
     pub variable_id: String,
-    /// The stateless request for this query variable.
-    pub request: SqlQueryRequest,
+    /// A ready stateless request, when all argument values are already resolved.
+    ///
+    /// This is `None` when a selected query variable supplies one of this
+    /// query's arguments. Compile it again with
+    /// [`compile_variable_graph_query_request`] after those dependencies have
+    /// produced their values. The batch never embeds their previous values.
+    pub request: Option<SqlQueryRequest>,
+    /// Selected query results that must be resolved before this request can be
+    /// compiled. These are listed in query argument binding order.
+    pub deferred_arguments: Vec<VariableGraphQueryRequestDeferredArgument>,
+}
+
+/// One SQL argument that waits for a selected query variable to be evaluated.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct VariableGraphQueryRequestDeferredArgument {
+    /// SQL parameter name declared by the dependent query.
+    pub argument_name: String,
+    /// Selected query variable whose fresh result supplies this argument.
+    pub variable_id: String,
+    /// Type expected by the dependent query's SQL parameter.
+    pub value_type: VariableGraphScalarDescriptor,
 }
 
 /// Validate a graph, then compile one query variable and its resolved values.
@@ -163,6 +182,27 @@ fn compile_validated_query_node(
     node: &VariableGraphNode,
     resolved_values: &BTreeMap<String, VariableGraphLiteral>,
 ) -> Result<SqlQueryRequest, Vec<VariableGraphQueryRequestDiagnostic>> {
+    compile_validated_query_node_with_deferred_dependencies(
+        graph,
+        node,
+        resolved_values,
+        &BTreeSet::new(),
+    )
+    .map(|(request, _)| request)
+}
+
+fn compile_validated_query_node_with_deferred_dependencies(
+    graph: &VariableGraph,
+    node: &VariableGraphNode,
+    resolved_values: &BTreeMap<String, VariableGraphLiteral>,
+    deferred_query_variable_ids: &BTreeSet<String>,
+) -> Result<
+    (
+        SqlQueryRequest,
+        Vec<VariableGraphQueryRequestDeferredArgument>,
+    ),
+    Vec<VariableGraphQueryRequestDiagnostic>,
+> {
     let VariableGraphNodeKind::Query {
         query,
         returns,
@@ -228,6 +268,7 @@ fn compile_validated_query_node(
     };
 
     let mut diagnostics = Vec::new();
+    let mut deferred_arguments = Vec::new();
     let mut seen_names = BTreeSet::new();
     let mut parameters = Map::new();
     let mut parameter_types = BTreeMap::new();
@@ -262,14 +303,6 @@ fn compile_validated_query_node(
             ));
             continue;
         };
-        let Some(value) = resolved_values.get(&argument.variable) else {
-            diagnostics.push(VariableGraphQueryRequestDiagnostic::for_argument(
-                VariableGraphQueryRequestDiagnosticCode::MissingArgumentValue,
-                &node.id,
-                argument,
-            ));
-            continue;
-        };
         let source_type = graph_nodes
             .get(argument.variable.as_str())
             .and_then(|source| scalar_descriptor_of(&source.kind));
@@ -291,6 +324,23 @@ fn compile_validated_query_node(
             ));
             continue;
         }
+        if deferred_query_variable_ids.contains(&argument.variable) {
+            deferred_arguments.push(VariableGraphQueryRequestDeferredArgument {
+                argument_name: argument.name.clone(),
+                variable_id: argument.variable.clone(),
+                value_type: argument.value_type,
+            });
+            parameter_types.insert(argument.name.clone(), sql_type.to_owned());
+            continue;
+        }
+        let Some(value) = resolved_values.get(&argument.variable) else {
+            diagnostics.push(VariableGraphQueryRequestDiagnostic::for_argument(
+                VariableGraphQueryRequestDiagnosticCode::MissingArgumentValue,
+                &node.id,
+                argument,
+            ));
+            continue;
+        };
         if !literal_kind_matches(source_type.scalar_type, value) {
             diagnostics.push(VariableGraphQueryRequestDiagnostic::for_argument(
                 VariableGraphQueryRequestDiagnosticCode::ArgumentTypeMismatch,
@@ -342,7 +392,7 @@ fn compile_validated_query_node(
             &node.id,
         )]
     })?;
-    Ok(request)
+    Ok((request, deferred_arguments))
 }
 
 /// Compile a selected set of query variables into one atomic request batch.
@@ -351,8 +401,12 @@ fn compile_validated_query_node(
 /// deterministic dependency order produced by [`compile_variable_graph`],
 /// independent of graph authoring order or requested-ID order. If any ID is
 /// unknown or not a query, or if any request cannot be compiled, no batch is
-/// returned. This helper only prepares requests; it does not authorize,
-/// execute, or validate query results.
+/// returned. Arguments sourced from other selected query variables are
+/// returned as deferred dependencies with `request: None`; callers must wait
+/// for those queries to produce fresh values and then compile the dependent
+/// request with [`compile_variable_graph_query_request`]. This helper only
+/// prepares requests; it does not authorize, execute, or validate query
+/// results.
 pub fn compile_variable_graph_query_request_batch(
     graph: &VariableGraph,
     requested_query_variable_ids: &[String],
@@ -365,10 +419,7 @@ pub fn compile_variable_graph_query_request_batch(
             .map_or("", String::as_str);
         map_graph_diagnostics(diagnostics, fallback_query_id)
     })?;
-    let requested_ids: BTreeSet<&str> = requested_query_variable_ids
-        .iter()
-        .map(String::as_str)
-        .collect();
+    let requested_ids: BTreeSet<String> = requested_query_variable_ids.iter().cloned().collect();
     let nodes: BTreeMap<&str, &VariableGraphNode> = graph
         .variables
         .iter()
@@ -377,7 +428,7 @@ pub fn compile_variable_graph_query_request_batch(
 
     let mut diagnostics = Vec::new();
     for query_id in &requested_ids {
-        match nodes.get(query_id) {
+        match nodes.get(query_id.as_str()) {
             None => diagnostics.push(VariableGraphQueryRequestDiagnostic::for_node(
                 VariableGraphQueryRequestDiagnosticCode::QueryVariableNotFound,
                 query_id,
@@ -398,10 +449,16 @@ pub fn compile_variable_graph_query_request_batch(
             continue;
         }
         let node = nodes[query_id.as_str()];
-        match compile_validated_query_node(graph, node, resolved_values) {
-            Ok(request) => batch.push(VariableGraphQueryRequestBatchItem {
+        match compile_validated_query_node_with_deferred_dependencies(
+            graph,
+            node,
+            resolved_values,
+            &requested_ids,
+        ) {
+            Ok((request, deferred_arguments)) => batch.push(VariableGraphQueryRequestBatchItem {
                 variable_id: query_id.clone(),
-                request,
+                request: deferred_arguments.is_empty().then_some(request),
+                deferred_arguments,
             }),
             Err(mut request_diagnostics) => diagnostics.append(&mut request_diagnostics),
         }
@@ -1242,8 +1299,24 @@ mod tests {
 
         let batch_ids: Vec<_> = first.iter().map(|item| item.variable_id.as_str()).collect();
         assert_eq!(batch_ids, ["upstream", "downstream"]);
+        assert!(first[0].deferred_arguments.is_empty());
+        assert!(first[0].request.is_some());
+        assert_eq!(
+            first[1].deferred_arguments,
+            [VariableGraphQueryRequestDeferredArgument {
+                argument_name: "seed".to_owned(),
+                variable_id: "upstream".to_owned(),
+                value_type: scalar(VariableGraphScalarType::Integer, false),
+            }]
+        );
+        assert!(first[1].request.is_none());
         assert_eq!(first, reordered);
         assert_eq!(first, reversed_request);
+
+        let no_previous_upstream_value =
+            compile_variable_graph_query_request_batch(&first_graph, &requested, &BTreeMap::new())
+                .expect("a deferred dependency does not require its previous value");
+        assert!(no_previous_upstream_value[1].request.is_none());
     }
 
     #[test]
@@ -1281,12 +1354,26 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["upstream", "downstream"]
         );
+        assert!(deduplicated[1].request.is_none());
+        assert_eq!(
+            deduplicated[1].deferred_arguments[0].variable_id,
+            "upstream"
+        );
 
         let selected =
             compile_variable_graph_query_request_batch(&graph, &["downstream".to_owned()], &values)
                 .expect("caller can compile only an invalidated query");
         assert_eq!(selected.len(), 1);
         assert_eq!(selected[0].variable_id, "downstream");
+        assert!(selected[0].deferred_arguments.is_empty());
+        assert_eq!(
+            selected[0]
+                .request
+                .as_ref()
+                .expect("unselected query dependencies are already resolved")
+                .parameters["seed"],
+            7
+        );
     }
 
     #[test]
@@ -1392,10 +1479,21 @@ mod tests {
         )
         .expect("both requests fit their existing bounds");
         assert_eq!(requests[0].variable_id, "scalar");
-        assert_eq!(requests[0].request.limit, MAX_SQL_SCALAR_PROBE_ROWS);
+        assert_eq!(
+            requests[0]
+                .request
+                .as_ref()
+                .expect("scalar request has no deferred dependencies")
+                .limit,
+            MAX_SQL_SCALAR_PROBE_ROWS
+        );
         assert_eq!(requests[1].variable_id, "table");
         assert_eq!(
-            requests[1].request.limit,
+            requests[1]
+                .request
+                .as_ref()
+                .expect("table request has no deferred dependencies")
+                .limit,
             DEFAULT_VARIABLE_GRAPH_SQL_PAGE_LIMIT
         );
     }
