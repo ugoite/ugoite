@@ -2389,8 +2389,11 @@ mod form_name_resolution_tests {
 
 #[cfg(test)]
 mod function_policy_tests {
-    use super::bounded_session_context;
+    use super::{bounded_session_context, AuthorizedQueryContext};
+    use std::collections::{BTreeMap, BTreeSet, HashMap};
+    use std::sync::Arc;
     use std::time::Duration;
+    use tokio::sync::{Mutex, Semaphore};
     use ugoite_core::query::{QueryLimits, SqlFunctionPolicy};
 
     fn limits(function_policy: SqlFunctionPolicy) -> QueryLimits {
@@ -2457,5 +2460,39 @@ mod function_policy_tests {
             .create_logical_plan("SELECT COUNT(*)")
             .await
             .is_err());
+    }
+
+    #[tokio::test]
+    async fn values_query_reaches_planner_but_fails_authorized_physical_plan_validation() {
+        let limits = limits(SqlFunctionPolicy::ReadOnlyAggregateV1);
+        let context =
+            bounded_session_context(&limits).expect("bounded DataFusion context should be created");
+        let query_context = AuthorizedQueryContext {
+            context,
+            permits: Arc::new(Semaphore::new(limits.max_concurrency)),
+            limits,
+            authorized_relations: BTreeSet::new(),
+            form_name_aliases: BTreeMap::new(),
+            authorized_scans: BTreeSet::new(),
+            duplicate_head_checks: Vec::new(),
+            duplicate_head_checks_validated: Arc::new(Mutex::new(BTreeSet::new())),
+        };
+
+        let error = match query_context
+            .execute_stateless_page("VALUES (1)", HashMap::new(), 0, 10)
+            .await
+        {
+            Err(error) => error,
+            Ok(_) => panic!("VALUES has no authorized physical data source"),
+        };
+        let unauthorized = error
+            .downcast_ref::<super::AuthorizedQueryError>()
+            .expect("the physical-plan policy rejection keeps its query error classification");
+        assert_eq!(
+            std::error::Error::source(unauthorized)
+                .expect("rejection has a source")
+                .to_string(),
+            "physical plan has an unauthorized data source"
+        );
     }
 }

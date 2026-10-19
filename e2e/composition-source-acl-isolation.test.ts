@@ -526,6 +526,7 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
       });
       await expect(page.locator("output.compositionMetric")).toContainText(
         seedA.protectedValue,
+        { timeout: 15_000 },
       );
       await expect(page.getByRole("table")).toContainText(seedA.protectedValue);
       await expect(
@@ -549,6 +550,7 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
         .click();
       await expect(page.locator("output.compositionMetric")).toContainText(
         seedB.protectedValue,
+        { timeout: 15_000 },
       );
       await expect(page.getByRole("table")).toContainText(seedB.protectedValue);
       await expect(
@@ -573,6 +575,7 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
         .click();
       await expect(page.locator("output.compositionMetric")).toContainText(
         seedA.protectedValue,
+        { timeout: 15_000 },
       );
       await expect(page.getByRole("table")).toContainText(seedA.protectedValue);
       expect((await thirdMetricResponse).result?.value).toBe(

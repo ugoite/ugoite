@@ -255,6 +255,7 @@ inventory:
         - tools/workspace_test.ts
         - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
         - crates/ugoite-wasm/tests/composition_parity.ts
+        - crates/ugoite-wasm/tests/sql_structure_parity.ts
         - frontend/src/lib/composition-api.ts
         - frontend/src/lib/composition-api.test.ts
         - frontend/src/lib/composition-draft.ts
@@ -605,6 +606,9 @@ verification:
     deno-test-file:
       executable: deno
       arguments: [test, -A, --filter, "{test}", "{file}"]
+    mise-task:
+      executable: mise
+      arguments: [run, "{task}"]
 review:
   # These are bounded, path-triggered review prompts. The PR-context report
   # keeps them separate from direct and reverse Binding context; they provide

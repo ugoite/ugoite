@@ -107,6 +107,12 @@ vi.mock("~/lib/ugoite-client", () => ({
 const stylesheet = () => readFileSync(join(__dirname, "..", "app.css"), "utf8");
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const flushStudioEffects = async () => {
+  // Let Solid's initial effects schedule their debounced work before fake time
+  // advances. Otherwise the debounce starts at the already-advanced clock.
+  await Promise.resolve();
+  await Promise.resolve();
+};
 const blockButton = (draftId: string): HTMLButtonElement | null =>
   document.querySelector(
     `[data-block-id="${draftId}"] button[aria-label^="Select "]`,
@@ -278,6 +284,10 @@ describe("CompositionStudioSync", () => {
   beforeEach(() => {
     setLocale("en");
     vi.clearAllMocks();
+    // clearAllMocks preserves queued mockImplementationOnce results. Reset the
+    // deferred sync mocks so an unconsumed result cannot leak into another test.
+    canonicalizeMock.mockReset();
+    previewMock.mockReset();
     canonicalizeMock.mockImplementation(
       async (document: {
         spec: { components: unknown[] };
@@ -760,8 +770,9 @@ describe("CompositionStudioSync", () => {
     );
     renderStudio(sqlMetricDraft());
 
-    // Wait for the rendered result instead of assuming when Solid effects
-    // schedule the debounced preview and Metric request.
+    // Flush Solid effects so vi.waitFor observes work scheduled for this render,
+    // then wait for the rendered result instead of assuming its timing.
+    await flushStudioEffects();
     await vi.waitFor(() => {
       expect(screen.getByText("128400", { selector: "output" }))
         .toBeInTheDocument();
@@ -793,8 +804,7 @@ describe("CompositionStudioSync", () => {
     );
     renderStudio(sqlMetricDraft());
 
-    await vi.advanceTimersByTimeAsync(401);
-    expect(canonicalizeMock).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(canonicalizeMock).toHaveBeenCalledTimes(1));
     expect(previewMock).not.toHaveBeenCalled();
 
     fireEvent.click(requireBlockButton("disp-1"));

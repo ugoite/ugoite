@@ -254,6 +254,61 @@ mod tests {
     }
 
     #[test]
+    fn shared_sql_feature_matrix_matches_read_only_runtime_function_policy() {
+        let matrix: serde_json::Value =
+            serde_json::from_str(include_str!("../../../shared/sql/ugoite-sql-rules.json"))
+                .expect("shared SQL rules must remain valid JSON");
+        let functions = &matrix["feature_matrix"]["backend"]["functions"];
+        let declared = |class: &str| {
+            functions[class]
+                .as_array()
+                .expect("function class must be an array")
+                .iter()
+                .map(|name| {
+                    name.as_str()
+                        .expect("function name must be a string")
+                        .to_owned()
+                })
+                .collect::<Vec<_>>()
+        };
+        let policy = SqlFunctionPolicy::ReadOnlyAggregateV1;
+        assert_eq!(declared("scalar"), policy.scalar_functions);
+        assert_eq!(
+            declared("aggregate"),
+            ugoite_domain::sql_functions::USER_SQL_AGGREGATES
+                .iter()
+                .map(|function| function.name.to_owned())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(declared("window"), policy.window_functions);
+
+        let declared_aliases = matrix["feature_matrix"]["backend"]["function_aliases"]["aggregate"]
+            .as_object()
+            .expect("aggregate aliases must be a map")
+            .iter()
+            .map(|(alias, canonical)| {
+                (
+                    alias.clone(),
+                    canonical
+                        .as_str()
+                        .expect("aggregate alias target must be a string")
+                        .to_owned(),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        let registry_aliases = ugoite_domain::sql_functions::USER_SQL_AGGREGATES
+            .iter()
+            .flat_map(|function| {
+                function
+                    .aliases
+                    .iter()
+                    .map(move |alias| ((*alias).to_owned(), function.name.to_owned()))
+            })
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(declared_aliases, registry_aliases);
+    }
+
+    #[test]
     fn empty_and_whitespace_queries_are_rejected_before_search() {
         for query in ["", "   ", "\n\t "] {
             let error = validate_keyword_query(query).expect_err("empty query must fail");

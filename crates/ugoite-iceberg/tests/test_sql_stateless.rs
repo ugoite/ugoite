@@ -103,6 +103,25 @@ async fn setup_sql_space_with_form_name(
 }
 
 #[tokio::test]
+async fn values_query_passes_statement_gate_but_is_rejected_by_production_execution() -> Result<()>
+{
+    let space = setup_sql_space("memory://sql-stateless-values-probe", "sqlvaluesprobe").await?;
+    let error = space
+        .service
+        .query_sql(&space.space_id, query_request("VALUES (1)".to_string(), 10))
+        .await
+        .expect_err("VALUES passes the statement gate but is rejected during authorized execution");
+    let app_error = error
+        .downcast_ref::<ugoite_core::error::AppError>()
+        .expect("the execution rejection maps to the public query error");
+    assert_eq!(
+        app_error.message(),
+        "SQL uses an unsupported or non-read-only relation, statement, or function"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn quoted_form_name_resolves_for_page_and_count() -> Result<()> {
     let space = setup_sql_space("memory://sql-stateless-form-name", "sqlformname").await?;
     let named_sql = format!(
@@ -704,6 +723,22 @@ async fn exact_integer_values_are_opt_in_and_preserve_the_legacy_sql_rows() -> R
         .query_sql(&space.space_id, text_request)
         .await?;
     assert_eq!(text_page.exact_integer_rows, Some(vec![vec![None]]));
+
+    let literal_page = space
+        .service
+        .query_sql(&space.space_id, query_request("SELECT 1".to_string(), 10))
+        .await?;
+    assert_eq!(literal_page.rows.len(), 1);
+    assert_eq!(
+        literal_page.rows[0].as_object().map(|row| row.len()),
+        Some(1)
+    );
+    assert_eq!(
+        literal_page.rows[0]
+            .as_object()
+            .and_then(|row| row.values().next()),
+        Some(&json!(1))
+    );
     Ok(())
 }
 
