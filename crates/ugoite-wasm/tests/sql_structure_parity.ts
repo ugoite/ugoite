@@ -318,6 +318,11 @@ async function main(): Promise<void> {
   });
   assertEqual(staleEditResponse.ok, false, "stale edit rejection");
   assertEqual(
+    (staleEditResponse.error as Record<string, unknown>).kind,
+    "sql_document_edit",
+    "stable stale edit error kind",
+  );
+  assertEqual(
     (staleEditResponse.error as Record<string, unknown>).code,
     "stale_source",
     "stable stale source error",
@@ -338,6 +343,11 @@ async function main(): Promise<void> {
     },
   });
   assertEqual(invalidRangeResponse.ok, false, "invalid range rejection");
+  assertEqual(
+    (invalidRangeResponse.error as Record<string, unknown>).kind,
+    "sql_document_edit",
+    "stable invalid range error kind",
+  );
   assertEqual(
     (invalidRangeResponse.error as Record<string, unknown>).code,
     "range_out_of_bounds",
@@ -609,7 +619,10 @@ async function main(): Promise<void> {
     true,
     "relation-free analysis protocol envelope",
   );
-  const scalarAnalysis = scalarAnalysisResponse.value as Record<string, unknown>;
+  const scalarAnalysis = scalarAnalysisResponse.value as Record<
+    string,
+    unknown
+  >;
   assertEqual(
     scalarAnalysis.status,
     "supported",
@@ -637,7 +650,10 @@ async function main(): Promise<void> {
       operation: { kind: "set_distinct", distinct: true },
     },
   });
-  const scalarProposal = scalarProposalResponse.value as Record<string, unknown>;
+  const scalarProposal = scalarProposalResponse.value as Record<
+    string,
+    unknown
+  >;
   assertEqual(
     scalarProposal.status,
     "supported",
