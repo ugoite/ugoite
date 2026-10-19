@@ -289,6 +289,7 @@ async fn historical_saved_sql_revisions_read_run_and_continue_without_space_muta
                 include_exact_integer_values: false,
                 limit: 1,
                 continuation: None,
+                execution_id: None,
                 saved_sql: Some(historical_ref.clone()),
             },
         )
@@ -307,6 +308,7 @@ async fn historical_saved_sql_revisions_read_run_and_continue_without_space_muta
                 include_exact_integer_values: false,
                 limit: 1,
                 continuation: first.next.clone(),
+                execution_id: None,
                 saved_sql: Some(historical_ref.clone()),
             },
         )
@@ -339,6 +341,7 @@ async fn historical_saved_sql_revisions_read_run_and_continue_without_space_muta
                 include_exact_integer_values: false,
                 limit: 10,
                 continuation: None,
+                execution_id: None,
                 saved_sql: Some(SavedSqlRevisionRef {
                     id: expected.saved_sql.id.clone(),
                     revision_id: latest.revision_id.clone(),
