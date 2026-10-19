@@ -685,6 +685,42 @@ describe("SQL structure adapter context", () => {
     expect(context.identity).toContain('"formVersion":1');
   });
 
+  it("offers only user-creatable Forms as SQL relation candidates", () => {
+    const reservedForms: Form[] = [
+      "SQL",
+      "User",
+      "UserGroup",
+      "_ugoite_compositions",
+    ].map((name, index) => ({
+      id: `reserved-${index}`,
+      name,
+      sql_relation: `form_reserved_${index}`,
+      version: 1,
+      template: "",
+      fields: {},
+    }));
+    const eligibleForm: Form = {
+      ...aggregateForm,
+      name: "Orders",
+      sql_relation: "form_orders",
+    };
+
+    const contexts = buildSqlStructureContexts(
+      [...reservedForms, eligibleForm],
+      [],
+      "new-sql",
+    );
+
+    expect(contexts.map((context) => context.label)).toEqual([
+      "Orders",
+      undefined,
+    ]);
+    expect(contexts.map((context) => context.parser.relation)).toEqual([
+      "form_orders",
+      "",
+    ]);
+  });
+
   it("changes its identity when the Form version changes", () => {
     const [current] = buildSqlStructureContexts([aggregateForm], [], "inline");
     const [updated] = buildSqlStructureContexts(
