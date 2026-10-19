@@ -159,20 +159,14 @@ test.describe("Saved SQL route", () => {
       expect(dimensions.documentWidth).toBeLessThanOrEqual(
         dimensions.viewportWidth + 1,
       );
-      expect(dimensions.buttons).toHaveLength(7);
+      expect(dimensions.buttons).toHaveLength(8);
       expect(
         Math.max(...dimensions.buttons.map((button) => button.top)) -
           Math.min(...dimensions.buttons.map((button) => button.top)),
       ).toBeLessThanOrEqual(1);
-      if (width === 320) {
-        expect(dimensions.toolbarScrollWidth).toBeGreaterThan(
-          dimensions.toolbarWidth,
-        );
-      } else {
-        expect(dimensions.toolbarScrollWidth).toBeLessThanOrEqual(
-          dimensions.toolbarWidth,
-        );
-      }
+      expect(dimensions.toolbarScrollWidth).toBeGreaterThan(
+        dimensions.toolbarWidth,
+      );
       for (const button of dimensions.buttons) {
         expect(button.width).toBeGreaterThanOrEqual(44);
         expect(button.height).toBeGreaterThanOrEqual(44);

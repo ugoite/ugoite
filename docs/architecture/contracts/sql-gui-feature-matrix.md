@@ -33,9 +33,10 @@ orders to the same left/right descriptor and emits the canonical left-alias to
 right-alias order when editing the join. This path is limited to wildcard
 projection and preserves SQL outside the relation or ON expression being edited.
 Other clauses that would make unqualified columns ambiguous remain unavailable
-in the joined query. LEFT/RIGHT/FULL/CROSS and NATURAL joins, USING, multiple
-joins, derived relations, and other ON expressions remain outside structured
-coverage and fail closed.
+in the joined query. Filter and sort edits fail closed when comments anywhere
+in the query could be lost by AST serialization. LEFT/RIGHT/FULL/CROSS and
+NATURAL joins, USING, multiple joins, derived relations, and other ON expressions
+remain outside structured coverage and fail closed.
 
 The bounded join is routed through the shared `Structure` toolbar action and
 uses the existing group-by icon; it is not a separate plus action. Aggregate,
