@@ -504,7 +504,7 @@ features:
                     test: applies typed SQL Document edits atomically and returns a usable undo
           - id: edit-protocol-actual-wasm-parity
             adapter: typescript
-            path: crates/ugoite-wasm/tests/sql_structure_parity.ts
+            path: crates/ugoite-wasm/tests/sql_structure_wasm_fixtures.ts
             selector: { kind: file }
             claims:
               - kind: verifies
