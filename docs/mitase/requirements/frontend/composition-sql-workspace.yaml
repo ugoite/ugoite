@@ -55,6 +55,15 @@ requirements:
           capability model can safely represent the operation; direct SQL
           remains available for other read-only SELECT syntax.
         governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+      - id: composition-filter-can-add-sql-arguments
+        kind: behavior
+        statement: >-
+          In the Composition SQL Filter flow, a user can add a typed SQL
+          argument even when the query has no existing arguments. The host
+          creates the required Composition variable and Input component in
+          one draft update, and rejects a conflicting existing variable type
+          without changing the SQL draft.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
       - id: design-components-use-semantic-values
         kind: behavior
         statement: >-
@@ -239,6 +248,24 @@ requirements:
                 criterion: REQ-FE-079#criterion.form-selection-creates-inline-sql
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "creates editable inline SQL when a Form is selected" } }
+          - id: composition-filter-adds-sql-arguments
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: "adds typed SQL arguments together with placed Input components" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-filter-can-add-sql-arguments
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-draft]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "adds typed SQL arguments together with placed Input components" } }
+          - id: composition-filter-hosts-sql-arguments
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: "passes SQL-created arguments to the Composition host and reserves existing variable IDs" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-filter-can-add-sql-arguments
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "passes SQL-created arguments to the Composition host and reserves existing variable IDs" } }
           - id: saved-sql-read-only-source
             adapter: typescript
             path: frontend/src/components/CompositionDataWorkspace.test.tsx

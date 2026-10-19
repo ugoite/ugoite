@@ -17,6 +17,7 @@ import {
 } from "~/lib/sql";
 import { t } from "~/lib/i18n";
 import type { Form } from "~/lib/types";
+import type { SqlStructureVariableType } from "~/lib/ugoite-client";
 
 export interface CompositionDataWorkspaceProps {
   draft: CompositionDraft;
@@ -34,6 +35,9 @@ export interface CompositionDataWorkspaceProps {
   onRemoveSource: (sourceDraftId: string) => void;
   onInlineSql: (sourceDraftId: string, sql: string) => boolean;
   onInlineSqlName: (sourceDraftId: string, name: string) => boolean;
+  onVariablesAdded: (
+    variables: readonly { name: string; type: SqlStructureVariableType }[],
+  ) => boolean | void;
   variables: readonly DraftVariable[];
   variableValues: Readonly<Record<string, unknown>>;
   savedSqlEditHref: (entryId: string) => string;
@@ -559,6 +563,9 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
                     sql={() => selected().sql}
                     contexts={structureContexts}
                     onSqlChange={(sql) => props.onInlineSql(sourceId(), sql)}
+                    onVariablesAdded={props.onVariablesAdded}
+                    reservedVariableNames={() =>
+                      props.variables.map((variable) => variable.id)}
                     onActionsChange={setStructureActions}
                   />
                 </Show>

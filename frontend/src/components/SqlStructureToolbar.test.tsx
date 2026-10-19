@@ -585,6 +585,89 @@ describe("SqlStructureToolbar adapter", () => {
     );
   });
 
+  it("avoids variable IDs already owned by the host", async () => {
+    const emptyContext: SqlStructureAdapterContext = {
+      ...context,
+      identity: "inline:source-1:form-1:reserved-variable",
+      parser: { ...context.parser, variables: [] },
+      columnCapabilities: {
+        ...context.columnCapabilities,
+        _ugoite_id: {
+          ...context.columnCapabilities._ugoite_id,
+          filterable: false,
+          supportedOperators: [],
+        },
+      },
+    };
+    const sql = 'SELECT * FROM "Orders"';
+    const onSqlChange = vi.fn();
+    const onVariablesAdded = vi.fn();
+    let actions: readonly SQLWorkspaceAction[] = [];
+    proposeMock.mockResolvedValue(
+      {
+        contract_version: 1,
+        status: "supported",
+        base_sql: sql,
+        proposed_sql:
+          'SELECT * FROM "Orders" WHERE "amount" = $filter_amount_2',
+        requires_confirmation: true,
+        added_stable_tie_breakers: [],
+      } satisfies SqlStructureProposal,
+    );
+
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [emptyContext]}
+        onSqlChange={onSqlChange}
+        onVariablesAdded={onVariablesAdded}
+        reservedVariableNames={() => ["filter_amount"]}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "filter")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "filter")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Filter" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add filter" }),
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(proposeMock).toHaveBeenCalledWith(
+      sql,
+      {
+        ...emptyContext.parser,
+        variables: [{ name: "filter_amount_2", type: "integer" }],
+      },
+      {
+        kind: "set_filters",
+        filters: [{
+          column: "amount",
+          operator: "eq",
+          parameter: "filter_amount_2",
+        }],
+      },
+    );
+
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Apply change" }),
+    );
+    expect(onVariablesAdded).toHaveBeenCalledWith([{
+      name: "filter_amount_2",
+      type: "integer",
+    }]);
+    expect(onSqlChange).toHaveBeenCalledWith(
+      'SELECT * FROM "Orders" WHERE "amount" = $filter_amount_2',
+    );
+  });
+
   it("locks filter drafts while a typed argument proposal is pending", async () => {
     const emptyContext: SqlStructureAdapterContext = {
       ...context,

@@ -359,11 +359,13 @@ export const createMetricPreviewDraft = (
   );
   if (!source) return null;
 
-  const variableIds = new Set(source.kind === "saved_sql"
-    ? Object.values(source.variables).map((binding) => binding.variable)
-    : normalizeSqlVariables(source.sql).variables.map((variable) =>
-      variable.name
-    ));
+  const variableIds = new Set(
+    source.kind === "saved_sql"
+      ? Object.values(source.variables).map((binding) => binding.variable)
+      : normalizeSqlVariables(source.sql).variables.map((variable) =>
+        variable.name
+      ),
+  );
   const inputs = snapshot.inputs.filter((input) =>
     variableIds.has(input.variable)
   ).map((input) => ({ ...input }));
@@ -428,9 +430,7 @@ export const addSavedSqlSource = (
       if (existing?.type === type) break;
       variableId = `${sqlName}_${suffix++}`;
     }
-    let variable = nextDraft.variables.find((entry) =>
-      entry.id === variableId
-    );
+    let variable = nextDraft.variables.find((entry) => entry.id === variableId);
     if (!variable) {
       const defaultValue = seed.variableDefaults?.[sqlName];
       variable = {
@@ -638,7 +638,9 @@ export const setInlineSql = (
   );
   if (index < 0) return { ok: false, error: "unknown-source" };
   const current = draft.sources[index];
-  if (current.kind !== "inline_sql") return { ok: false, error: "unknown-source" };
+  if (current.kind !== "inline_sql") {
+    return { ok: false, error: "unknown-source" };
+  }
   if (!sql.trim()) return { ok: false, error: "invalid-query" };
   const sources = [...draft.sources];
   sources[index] = {
@@ -1020,6 +1022,38 @@ export const addInputComponent = (
     target,
   );
   return placed.ok ? { ...placed, draftId } : placed;
+};
+
+/**
+ * Add typed inputs created by the shared SQL structure editor as one draft
+ * update. Inline SQL refers to these variables by the same parameter name.
+ */
+export const addSqlArgumentVariables = (
+  draft: CompositionDraft,
+  added: readonly { name: string; type: CompositionVariableType }[],
+): DraftResult => {
+  let next = draft;
+  for (const { name, type } of added) {
+    if (!name.trim() || name !== name.trim()) {
+      return { ok: false, error: "invalid-query" };
+    }
+    let variable = next.variables.find((item) => item.id === name);
+    if (variable && variable.type !== type) {
+      return { ok: false, error: "invalid-query" };
+    }
+    if (!variable) {
+      const created = addVariable(next, { id: name, type, required: true });
+      if (!created.ok) return created;
+      next = created.draft;
+      variable = next.variables.find((item) => item.id === name);
+    }
+    if (!variable || variable.default !== undefined) continue;
+    if (next.inputs.some((input) => input.variable === name)) continue;
+    const input = addInputComponent(next, name);
+    if (!input.ok) return input;
+    next = input.draft;
+  }
+  return { ok: true, draft: next };
 };
 
 /** Edit the variable binding of an existing Input component. */

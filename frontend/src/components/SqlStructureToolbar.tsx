@@ -61,7 +61,9 @@ interface SqlStructureToolbarProps {
   onSqlChange?: (sql: string) => void;
   onVariablesAdded?: (
     variables: readonly { name: string; type: SqlStructureVariableType }[],
-  ) => void;
+  ) => boolean | void;
+  /** Names already owned by the host, including variables not yet used in SQL. */
+  reservedVariableNames?: () => readonly string[];
   onActionsChange: (actions: readonly SQLWorkspaceAction[]) => void;
   disabled?: () => boolean;
 }
@@ -504,6 +506,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
       ...(ready()?.context.parser.variables ?? []).map((variable) =>
         variable.name
       ),
+      ...(props.reservedVariableNames?.() ?? []),
       ...filters().map((filter) => filter.parameter),
     ]);
     if (!used.has(base)) return base;
@@ -890,7 +893,10 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     }
     const createdVariables = proposalVariables();
     if (createdVariables.length > 0) {
-      props.onVariablesAdded?.(createdVariables);
+      if (props.onVariablesAdded?.(createdVariables) === false) {
+        setError(t("sqlPage.structureUnavailable"));
+        return;
+      }
     }
     props.onSqlChange(current.proposed_sql);
     setProposal(undefined);
