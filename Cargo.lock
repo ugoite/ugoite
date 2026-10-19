@@ -6791,6 +6791,7 @@ dependencies = [
 name = "ugoite-wasm"
 version = "0.2.1"
 dependencies = [
+ "serde",
  "serde_json",
  "ugoite-api-client",
  "ugoite-core",

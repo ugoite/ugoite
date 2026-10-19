@@ -69,13 +69,20 @@ separate from page retrieval. No total-cardinality ceiling or persistent SQL
 execution lifecycle is introduced.
 
 Every new SQL page carries a server-owned `result_schema` in column order,
-including for empty and all-`NULL` results. Decimal columns use the logical
-type `decimal`; their row values are strings containing the exact base-10
-value, with no exponent and with the planned fractional scale preserved. They
-are never converted through binary floating point. Integer and float columns
-retain their portable types. Clients may opt in to `exact_integer_rows` for
-column-aligned base-10 strings that preserve integer digits beyond JavaScript's
-safe integer range; this leaves `rows` and the `integer` schema unchanged.
+including for empty and all-`NULL` results. Each result column also reports
+whether the planned output can be SQL `NULL`. Readers of typed schemas that
+predate this additive field treat the column as nullable. Decimal columns use
+the logical type `decimal`; their row values are strings containing the exact
+base-10 value, with no exponent and with the planned fractional scale
+preserved. They are never converted through binary floating point. Integer and
+float columns retain their portable types. Clients may opt in to
+`exact_integer_rows` for column-aligned base-10 strings that preserve integer
+digits beyond JavaScript's safe integer range; this leaves `rows` and the
+`integer` schema unchanged.
+Composition may include an optional request `execution_id` to bind its
+server-side result to the exact request coordinate, including any continuation,
+and discard a delayed page after the inputs have changed. Ordinary SQL clients
+may omit it; the public page shape remains unchanged.
 Numeric overflow and non-finite-result failures use stable SQL aggregate error
 codes with safe messages.
 

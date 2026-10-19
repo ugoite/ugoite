@@ -21,6 +21,13 @@ const MAX_SQL_DOCUMENT_REQUEST_BYTES: usize =
 // combined JSON envelope to one ordinary protocol-sized request.
 const MAX_SQL_DOCUMENT_RENAME_REQUEST_BYTES: usize =
     ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES * 6 + MAX_PROTOCOL_REQUEST_BYTES;
+// Edit requests carry the current source, the transaction's expected source,
+// guarded preimages, and replacements. Each can be as large as the document
+// limit and JSON control-byte escaping expands each UTF-8 byte up to sixfold.
+const MAX_SQL_DOCUMENT_EDIT_REQUEST_BYTES: usize =
+    ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES * 24
+        + ugoite_domain::sql_document::MAX_SQL_DOCUMENT_EDITS * 128
+        + 4096;
 const MAX_SQL_DOCUMENT_RESPONSE_BYTES: usize =
     ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES * 4;
 const ENTRY_OPERATIONS: &[&str] = &["entry.validate_draft"];
@@ -64,23 +71,24 @@ fn sql_document_request_limit(action: &str) -> Option<usize> {
     match action {
         "domain.parse_sql_document" => Some(MAX_SQL_DOCUMENT_REQUEST_BYTES),
         "domain.rename_sql_document_parameter" => Some(MAX_SQL_DOCUMENT_RENAME_REQUEST_BYTES),
+        "domain.apply_sql_document_edit_transaction" => Some(MAX_SQL_DOCUMENT_EDIT_REQUEST_BYTES),
         _ => None,
     }
 }
 
 pub fn invoke_json(input: &str) -> String {
     if input.len() > MAX_PROTOCOL_REQUEST_BYTES {
-        // Bound JSON decoding before inspecting the action; the rename envelope
-        // is the largest SQL Document request this adapter will decode.
-        if input.len() <= MAX_SQL_DOCUMENT_RENAME_REQUEST_BYTES {
+        // Bound JSON decoding before inspecting the action. The edit
+        // transaction envelope is the largest SQL Document request.
+        let max_sql_document_request_bytes =
+            MAX_SQL_DOCUMENT_RENAME_REQUEST_BYTES.max(MAX_SQL_DOCUMENT_EDIT_REQUEST_BYTES);
+        if input.len() <= max_sql_document_request_bytes {
             if let Ok(request) = serde_json::from_str::<serde_json::Value>(input) {
-                if request
-                    .get("action")
-                    .and_then(serde_json::Value::as_str)
-                    .and_then(sql_document_request_limit)
-                    .is_some_and(|max_bytes| input.len() <= max_bytes)
-                {
-                    return invoke_domain(request);
+                if let Some(action) = request.get("action").and_then(serde_json::Value::as_str) {
+                    if sql_document_request_limit(action).is_some_and(|limit| input.len() <= limit)
+                    {
+                        return invoke_domain(request);
+                    }
                 }
             }
         }
@@ -224,6 +232,9 @@ fn invoke_domain(request: serde_json::Value) -> String {
         Some("domain.parse_sql_document") => return invoke_sql_document(request),
         Some("domain.rename_sql_document_parameter") => {
             return invoke_sql_document_parameter_rename(request)
+        }
+        Some("domain.apply_sql_document_edit_transaction") => {
+            return invoke_sql_document_edit_transaction(request)
         }
         _ => {}
     }
@@ -618,6 +629,80 @@ fn serialize_sql_document_response(
 
 fn sql_document_response_too_large() -> String {
     r#"{"ok":false,"error":{"kind":"domain_output_too_large","message":"SQL Document response exceeds the 1 MiB limit"}}"#.to_owned()
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SqlDocumentEditProtocolRequest {
+    current_source: String,
+    transaction: ugoite_domain::sql_document::SqlDocumentEditTransaction,
+}
+
+fn invoke_sql_document_edit_transaction(request: serde_json::Value) -> String {
+    let Some(payload) = request.get("value").cloned() else {
+        return sql_document_edit_invalid_request();
+    };
+    let Ok(protocol_request) = serde_json::from_value::<SqlDocumentEditProtocolRequest>(payload)
+    else {
+        return sql_document_edit_invalid_request();
+    };
+
+    match ugoite_domain::sql_document::apply_sql_document_edit_transaction(
+        &protocol_request.current_source,
+        &protocol_request.transaction,
+    ) {
+        Ok(result) => serialize_sql_document_edit_response(&result)
+            .unwrap_or_else(|()| sql_document_response_too_large()),
+        Err(error) => sql_document_edit_error(error),
+    }
+}
+
+fn sql_document_edit_invalid_request() -> String {
+    r#"{"ok":false,"error":{"kind":"sql_document_edit","code":"invalid_request","message":"SQL Document edit request is invalid"}}"#.to_owned()
+}
+
+fn serialize_sql_document_edit_response(
+    result: &ugoite_domain::sql_document::SqlDocumentEditResult,
+) -> Result<String, ()> {
+    let mut writer = BoundedJsonWriter::new(MAX_SQL_DOCUMENT_RESPONSE_BYTES);
+    writer
+        .write_all(b"{\"ok\":true,\"value\":")
+        .map_err(|_| ())?;
+    serde_json::to_writer(&mut writer, result).map_err(|_| ())?;
+    writer.write_all(b"}").map_err(|_| ())?;
+    String::from_utf8(writer.bytes).map_err(|_| ())
+}
+
+fn sql_document_edit_error(error: ugoite_domain::sql_document::SqlDocumentEditError) -> String {
+    let code = match error {
+        ugoite_domain::sql_document::SqlDocumentEditError::InvalidOldParameterName => {
+            "invalid_old_parameter_name"
+        }
+        ugoite_domain::sql_document::SqlDocumentEditError::InvalidNewParameterName => {
+            "invalid_new_parameter_name"
+        }
+        ugoite_domain::sql_document::SqlDocumentEditError::StaleSource => "stale_source",
+        ugoite_domain::sql_document::SqlDocumentEditError::SourceTooLarge => "source_too_large",
+        ugoite_domain::sql_document::SqlDocumentEditError::SourceTooComplex => "source_too_complex",
+        ugoite_domain::sql_document::SqlDocumentEditError::TooManyEdits => "too_many_edits",
+        ugoite_domain::sql_document::SqlDocumentEditError::InvalidRange => "invalid_range",
+        ugoite_domain::sql_document::SqlDocumentEditError::RangeOutOfBounds => {
+            "range_out_of_bounds"
+        }
+        ugoite_domain::sql_document::SqlDocumentEditError::NotUtf8Boundary => "not_utf8_boundary",
+        ugoite_domain::sql_document::SqlDocumentEditError::OverlappingEdits => "overlapping_edits",
+        ugoite_domain::sql_document::SqlDocumentEditError::PreimageMismatch => "preimage_mismatch",
+        ugoite_domain::sql_document::SqlDocumentEditError::OutputTooLarge => "output_too_large",
+    };
+    serde_json::json!({
+        "ok": false,
+        "error": {
+            "kind": "sql_document_edit",
+            "code": code,
+            "message": error.to_string(),
+        },
+    })
+    .to_string()
 }
 
 fn composition_canonicalization_error(
@@ -1217,6 +1302,42 @@ mod tests {
     }
 
     #[test]
+    fn sql_structure_protocol_proposes_form_relation_selection() {
+        let relation = "form_0123456789abcdef0123456789abcdef";
+        for (sql, expected) in [
+            ("SELECT 1", format!("SELECT * FROM \"{relation}\"")),
+            (
+                "SELECT \"_ugoite_id\" FROM \"old_relation\"",
+                format!("SELECT \"_ugoite_id\" FROM \"{relation}\""),
+            ),
+        ] {
+            let request = serde_json::json!({
+                "action": "domain.propose_sql_structure_operation",
+                "value": {
+                    "sql": sql,
+                    "context": {
+                        "relation": relation,
+                        "columns": [
+                            {"name": "_ugoite_id", "type": "string"}
+                        ],
+                        "variables": [],
+                        "stable_key": ["_ugoite_id"]
+                    },
+                    "operation": {
+                        "kind": "set_relation",
+                        "relation": relation
+                    }
+                }
+            })
+            .to_string();
+            let response: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
+            assert_eq!(response["ok"], true, "{response}");
+            assert_eq!(response["value"]["status"], "supported");
+            assert_eq!(response["value"]["proposed_sql"], expected);
+        }
+    }
+
+    #[test]
     fn sql_document_protocol_accepts_maximum_source_with_json_escaped_trivia() {
         let sql = format!(
             "SELECT 1 /*{}*/",
@@ -1308,6 +1429,187 @@ mod tests {
         assert_eq!(response["error"]["kind"], "domain_output_too_large");
     }
 
+    #[test]
+    fn sql_document_edit_protocol_matches_native_transaction_and_undo() {
+        let source = "-- 日本語\nSELECT 1 FROM \"G\" WHERE n = 2";
+        let first = source.find('1').unwrap();
+        let second = source.find('2').unwrap();
+        let transaction = ugoite_domain::sql_document::SqlDocumentEditTransaction {
+            expected_source: source.to_string(),
+            // Reverse source order to prove ranges are simultaneous, not sequential.
+            edits: vec![
+                ugoite_domain::sql_document::SqlDocumentEdit {
+                    range: ugoite_domain::sql_document::SqlSourceRange {
+                        start: second,
+                        end: second + 1,
+                    },
+                    expected_text: "2".to_string(),
+                    replacement: "3".to_string(),
+                },
+                ugoite_domain::sql_document::SqlDocumentEdit {
+                    range: ugoite_domain::sql_document::SqlSourceRange {
+                        start: first,
+                        end: first + 1,
+                    },
+                    expected_text: "1".to_string(),
+                    replacement: "10".to_string(),
+                },
+            ],
+        };
+        let native =
+            ugoite_domain::sql_document::apply_sql_document_edit_transaction(source, &transaction)
+                .unwrap();
+        let request = serde_json::json!({
+            "action": "domain.apply_sql_document_edit_transaction",
+            "value": {
+                "current_source": source,
+                "transaction": transaction,
+            },
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"], serde_json::to_value(&native).unwrap());
+        assert_eq!(
+            response["value"]["document"]["source"],
+            "-- 日本語\nSELECT 10 FROM \"G\" WHERE n = 3"
+        );
+
+        let undo_request = serde_json::json!({
+            "action": "domain.apply_sql_document_edit_transaction",
+            "value": {
+                "current_source": native.document.source,
+                "transaction": native.undo,
+            },
+        });
+        let undo_response: Value =
+            serde_json::from_str(&super::invoke_json(&undo_request.to_string())).unwrap();
+        assert_eq!(undo_response["ok"], true, "{undo_response}");
+        assert_eq!(undo_response["value"]["document"]["source"], source);
+    }
+
+    #[test]
+    fn sql_document_edit_protocol_reports_drafts_and_stable_atomic_errors() {
+        let incomplete = serde_json::json!({
+            "action": "domain.apply_sql_document_edit_transaction",
+            "value": {
+                "current_source": "SELECT 1",
+                "transaction": {
+                    "expected_source": "SELECT 1",
+                    "edits": [{
+                        "range": {"start": 7, "end": 8},
+                        "expected_text": "1",
+                        "replacement": "("
+                    }]
+                }
+            }
+        });
+        let draft: Value =
+            serde_json::from_str(&super::invoke_json(&incomplete.to_string())).unwrap();
+        assert_eq!(draft["ok"], true, "{draft}");
+        assert_eq!(draft["value"]["document"]["status"], "invalid_sql");
+        assert_eq!(
+            draft["value"]["document"]["diagnostics"][0]["code"],
+            "parse_failed"
+        );
+
+        let stale = serde_json::json!({
+            "action": "domain.apply_sql_document_edit_transaction",
+            "value": {
+                "current_source": "SELECT 2",
+                "transaction": {"expected_source": "SELECT 1", "edits": []}
+            }
+        });
+        let stale: Value = serde_json::from_str(&super::invoke_json(&stale.to_string())).unwrap();
+        assert_eq!(stale["ok"], false, "{stale}");
+        assert_eq!(stale["error"]["kind"], "sql_document_edit");
+        assert_eq!(stale["error"]["code"], "stale_source");
+
+        let out_of_bounds = serde_json::json!({
+            "action": "domain.apply_sql_document_edit_transaction",
+            "value": {
+                "current_source": "SELECT 1",
+                "transaction": {
+                    "expected_source": "SELECT 1",
+                    "edits": [{
+                        "range": {"start": 8, "end": 9},
+                        "expected_text": "1",
+                        "replacement": "2"
+                    }]
+                }
+            }
+        });
+        let out_of_bounds: Value =
+            serde_json::from_str(&super::invoke_json(&out_of_bounds.to_string())).unwrap();
+        assert_eq!(out_of_bounds["ok"], false, "{out_of_bounds}");
+        assert_eq!(out_of_bounds["error"]["code"], "range_out_of_bounds");
+
+        let invalid_request = serde_json::json!({
+            "action": "domain.apply_sql_document_edit_transaction",
+            "value": {"current_source": "SELECT 1", "transaction": {"edits": []}}
+        });
+        let invalid_request: Value =
+            serde_json::from_str(&super::invoke_json(&invalid_request.to_string())).unwrap();
+        assert_eq!(invalid_request["ok"], false, "{invalid_request}");
+        assert_eq!(invalid_request["error"]["code"], "invalid_request");
+    }
+
+    #[test]
+    fn sql_document_edit_protocol_bounds_amplified_result_and_oversized_requests() {
+        let source = format!("SELECT {}", vec!["1"; 20_000].join(","));
+        let request = serde_json::json!({
+            "action": "domain.apply_sql_document_edit_transaction",
+            "value": {
+                "current_source": source,
+                "transaction": {"expected_source": source, "edits": []}
+            }
+        })
+        .to_string();
+        let response_text = super::invoke_json(&request);
+        assert!(response_text.len() <= super::MAX_SQL_DOCUMENT_RESPONSE_BYTES);
+        let response: Value = serde_json::from_str(&response_text).unwrap();
+        assert_eq!(response["ok"], false, "{response}");
+        assert_eq!(response["error"]["kind"], "domain_output_too_large");
+
+        let oversized_request = serde_json::json!({
+            "action": "domain.apply_sql_document_edit_transaction",
+            "value": {
+                "current_source": "x".repeat(super::MAX_SQL_DOCUMENT_EDIT_REQUEST_BYTES),
+                "transaction": {"expected_source": "", "edits": []}
+            }
+        })
+        .to_string();
+        let rejected: Value =
+            serde_json::from_str(&super::invoke_json(&oversized_request)).unwrap();
+        assert_eq!(rejected["ok"], false, "{rejected}");
+        assert_eq!(rejected["error"]["kind"], "input_too_large");
+
+        let control_source = "\0".repeat(ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES);
+        let maximum_escaped_request = serde_json::json!({
+            "action": "domain.apply_sql_document_edit_transaction",
+            "value": {
+                "current_source": control_source,
+                "transaction": {
+                    "expected_source": control_source,
+                    "edits": [{
+                        "range": {
+                            "start": 0,
+                            "end": ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES,
+                        },
+                        "expected_text": control_source,
+                        "replacement": control_source,
+                    }],
+                },
+            },
+        })
+        .to_string();
+        assert!(maximum_escaped_request.len() > super::MAX_PROTOCOL_REQUEST_BYTES);
+        assert!(maximum_escaped_request.len() <= super::MAX_SQL_DOCUMENT_EDIT_REQUEST_BYTES);
+        let bounded_result: Value =
+            serde_json::from_str(&super::invoke_json(&maximum_escaped_request)).unwrap();
+        assert_eq!(bounded_result["ok"], false, "{bounded_result}");
+        assert_eq!(bounded_result["error"]["kind"], "domain_output_too_large");
+    }
     #[test]
     fn composition_canonicalization_matches_the_native_domain_contract() {
         let native =

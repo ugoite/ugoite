@@ -1696,6 +1696,7 @@ fn sql_output_shape(plan: &LogicalPlan) -> Result<(Vec<String>, Vec<SqlResultCol
         result_schema.push(SqlResultColumn {
             name: name.clone(),
             column_type: sql_result_column_type(field.data_type()),
+            nullable: field.is_nullable(),
         });
         columns.push(name);
     }
@@ -2249,10 +2250,29 @@ mod cancellation_tests {
 
 #[cfg(test)]
 mod result_schema_tests {
-    use super::sql_result_column_type;
+    use super::{sql_output_shape, sql_result_column_type};
     use datafusion::arrow::datatypes::{DataType, Field, TimeUnit};
+    use datafusion::logical_expr::{lit, LogicalPlanBuilder};
     use std::sync::Arc;
     use ugoite_core::sql_query::SqlResultColumnType;
+
+    #[test]
+    fn planner_nullability_is_preserved_in_portable_result_schema() {
+        let plan = LogicalPlanBuilder::values(vec![
+            vec![lit(7_i64)],
+            vec![lit(datafusion::common::ScalarValue::Int64(None))],
+        ])
+        .expect("values plan")
+        .build()
+        .expect("logical plan");
+
+        let (columns, result_schema) = sql_output_shape(&plan).expect("planned output shape");
+
+        assert_eq!(columns, ["column1"]);
+        assert_eq!(result_schema.len(), 1);
+        assert_eq!(result_schema[0].column_type, SqlResultColumnType::Integer);
+        assert!(result_schema[0].nullable);
+    }
 
     #[test]
     fn arrow_output_types_map_to_portable_result_types() {

@@ -569,9 +569,10 @@ fn contains_identifier(source: &str, identifier: &str) -> bool {
 fn contains_physical_table_type(source: &str) -> bool {
     source
         .replace("CompositionComponent::Table", "")
-        // This is also a portable Domain result-contract variant, not a
-        // storage/query adapter table type.
+        // These are portable Domain result-contract variants, not storage or
+        // query-adapter table types.
         .replace("VariableGraphResultType::Table", "")
+        .replace("VariableGraphValidatedResult::Table", "")
         .contains("Table")
 }
 

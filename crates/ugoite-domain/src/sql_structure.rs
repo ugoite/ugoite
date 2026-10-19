@@ -105,6 +105,9 @@ impl SqlStructureVariableType {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SqlStructureOperation {
+    SetRelation {
+        relation: String,
+    },
     SetColumns {
         columns: Vec<String>,
     },
@@ -331,6 +334,10 @@ pub fn propose_sql_structure_operation(
     context: &SqlStructureContext,
     operation: SqlStructureOperation,
 ) -> SqlStructureProposal {
+    if let SqlStructureOperation::SetRelation { relation } = &operation {
+        return propose_sql_relation_selection(sql, context, relation);
+    }
+
     let base_sql = sql.to_owned();
     let mut parsed = match parse_supported_sql(sql, context) {
         Ok(parsed) => parsed,
@@ -339,6 +346,9 @@ pub fn propose_sql_structure_operation(
 
     let mut added_stable_tie_breakers = Vec::new();
     let proposed_sql = match operation {
+        SqlStructureOperation::SetRelation { .. } => {
+            unreachable!("SetRelation is handled by the Rust relation selection proposal")
+        }
         SqlStructureOperation::SetColumns { columns } => {
             match rewrite_projection(&base_sql, &parsed.query, context, columns) {
                 Ok(sql) => sql,
@@ -347,6 +357,9 @@ pub fn propose_sql_structure_operation(
         }
         operation => {
             let mutation = match operation {
+                SqlStructureOperation::SetRelation { .. } => {
+                    unreachable!("SetRelation is handled by the Rust relation selection proposal")
+                }
                 SqlStructureOperation::SetFilters { filters } => {
                     set_filters(&mut parsed.query, context, filters)
                 }
@@ -388,6 +401,148 @@ pub fn propose_sql_structure_operation(
         proposed_sql: Some(proposed_sql),
         requires_confirmation,
         added_stable_tie_breakers,
+    }
+}
+
+/// Propose changing the single Form relation through the Rust SQL AST.
+///
+/// Server-derived Form SQL relation names are supplied by the owning adapter
+/// as `relation`; they are always quoted by this function. A relation-free
+/// `SELECT 1` draft is the empty-workspace seed and becomes `SELECT * FROM <Form>`. Existing simple
+/// relation queries retain their projection and clauses and are accepted only
+/// when the target Form schema validates the resulting SQL.
+fn propose_sql_relation_selection(
+    sql: &str,
+    context: &SqlStructureContext,
+    relation: &str,
+) -> SqlStructureProposal {
+    let base_sql = sql.to_owned();
+    if let Err(reason) = validate_context(context) {
+        return rejected_proposal(base_sql, reason);
+    }
+    if context.relation.is_empty() || relation != context.relation {
+        return rejected_proposal(base_sql, SqlStructureReason::InvalidContext);
+    }
+    if sql.len() > MAX_SQL_STRUCTURE_QUERY_BYTES {
+        return rejected_proposal(base_sql, SqlStructureReason::SqlTooLarge);
+    }
+
+    let mut statements = match Parser::parse_sql(&PostgreSqlDialect {}, sql) {
+        Ok(statements) => statements,
+        Err(_) => return rejected_proposal(base_sql, SqlStructureReason::ParseFailed),
+    };
+    if statements.len() != 1 {
+        return rejected_proposal(base_sql, SqlStructureReason::SingleStatementRequired);
+    }
+    let Statement::Query(mut query) = statements.remove(0) else {
+        return rejected_proposal(base_sql, SqlStructureReason::SelectRequired);
+    };
+    if let Err(reason) = validate_query_shape(&query) {
+        return rejected_proposal(base_sql, reason);
+    }
+    let SetExpr::Select(select) = query.body.as_mut() else {
+        return rejected_proposal(base_sql, SqlStructureReason::SetOperationUnsupported);
+    };
+    if let Err(reason) = validate_select_shape(select) {
+        return rejected_proposal(base_sql, reason);
+    }
+
+    let proposed_sql = if select.from.is_empty() {
+        let relation_free_context = SqlStructureContext {
+            relation: String::new(),
+            columns: Vec::new(),
+            variables: context.variables.clone(),
+            stable_key: Vec::new(),
+        };
+        if let Err(reason) = parse_supported_sql(sql, &relation_free_context) {
+            return rejected_proposal(base_sql, reason);
+        }
+        if select.projection.len() != 1
+            || !matches!(
+                &select.projection[0],
+                SelectItem::UnnamedExpr(Expr::Value(value))
+                    if matches!(&value.value, Value::Number(number, false) if number == "1")
+            )
+            || select.selection.is_some()
+            || !matches!(&select.group_by, GroupByExpr::Expressions(expressions, modifiers) if expressions.is_empty() && modifiers.is_empty())
+            || query.order_by.is_some()
+        {
+            return rejected_proposal(base_sql, SqlStructureReason::RelationUnsupported);
+        }
+        let Some(projection_range) = projection_source_range(sql, &query) else {
+            return rejected_proposal(base_sql, SqlStructureReason::ProjectionUnsupported);
+        };
+        let Some(before) = sql.get(..projection_range.start) else {
+            return rejected_proposal(base_sql, SqlStructureReason::ProjectionUnsupported);
+        };
+        let Some(after) = sql.get(projection_range.end..) else {
+            return rejected_proposal(base_sql, SqlStructureReason::ProjectionUnsupported);
+        };
+        let quoted_relation = Ident::with_quote('"', relation.to_owned()).to_string();
+        format!("{before}* FROM {quoted_relation}{after}")
+    } else {
+        if select.from.len() != 1 || !select.from[0].joins.is_empty() {
+            return rejected_proposal(base_sql, SqlStructureReason::RelationUnsupported);
+        }
+        let TableFactor::Table {
+            name,
+            alias,
+            args: None,
+            with_hints,
+            version: None,
+            with_ordinality: false,
+            partitions,
+            json_path: None,
+            sample: None,
+            index_hints,
+        } = &select.from[0].relation
+        else {
+            return rejected_proposal(base_sql, SqlStructureReason::RelationUnsupported);
+        };
+        if !with_hints.is_empty()
+            || !partitions.is_empty()
+            || !index_hints.is_empty()
+            || alias
+                .as_ref()
+                .is_some_and(|alias| !alias.columns.is_empty() || alias.at.is_some())
+        {
+            return rejected_proposal(base_sql, SqlStructureReason::RelationUnsupported);
+        }
+        let Some(ObjectNamePart::Identifier(_)) = name.0.first() else {
+            return rejected_proposal(base_sql, SqlStructureReason::RelationUnsupported);
+        };
+        if name.0.len() != 1 {
+            return rejected_proposal(base_sql, SqlStructureReason::RelationUnsupported);
+        }
+        // Replace only the relation identifier so a supported table alias and
+        // surrounding source text stay in place when the selected Form changes.
+        let relation_range = source_range_from_span(sql, name.span());
+        let Some(relation_range) = relation_range else {
+            return rejected_proposal(base_sql, SqlStructureReason::RelationUnsupported);
+        };
+        if has_comment_token_in_range(sql, relation_range) != Some(false) {
+            return rejected_proposal(base_sql, SqlStructureReason::RelationUnsupported);
+        }
+        let quoted_relation = Ident::with_quote('"', relation.to_owned()).to_string();
+        let Some(rewritten) = replace_sql_source_range(sql, relation_range, &quoted_relation)
+        else {
+            return rejected_proposal(base_sql, SqlStructureReason::RelationUnsupported);
+        };
+        rewritten
+    };
+
+    if let Err(reason) = parse_supported_sql(&proposed_sql, context) {
+        return rejected_proposal(base_sql, reason);
+    }
+    let requires_confirmation = proposed_sql != sql;
+    SqlStructureProposal {
+        contract_version: SQL_STRUCTURE_CONTRACT_VERSION,
+        status: SqlStructureStatus::Supported,
+        reason: None,
+        base_sql,
+        proposed_sql: Some(proposed_sql),
+        requires_confirmation,
+        added_stable_tie_breakers: Vec::new(),
     }
 }
 
@@ -622,7 +777,9 @@ fn validate_relation(
     else {
         return Err(SqlStructureReason::RelationUnsupported);
     };
-    if alias.is_some()
+    if alias
+        .as_ref()
+        .is_some_and(|alias| !alias.columns.is_empty() || alias.at.is_some())
         || args.is_some()
         || !with_hints.is_empty()
         || version.is_some()
@@ -1765,6 +1922,22 @@ mod tests {
             serde_json::from_str(include_str!("../../../shared/sql/ugoite-sql-rules.json"))
                 .expect("shared SQL rules must remain valid JSON");
         let editor = &matrix["feature_matrix"]["editor"];
+        let relation_limits = editor["constructs"]
+            .as_array()
+            .expect("editor constructs must be an array")
+            .iter()
+            .find(|construct| construct["id"] == "from_relation")
+            .expect("FROM relation coverage must be declared")["limits"]
+            .as_array()
+            .expect("FROM relation limits must be an array")
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .collect::<BTreeSet<_>>();
+        assert!(relation_limits.contains(
+            &"plain aliases on a single relation are supported and preserved; edited column references remain unqualified"
+        ));
+        assert!(relation_limits
+            .contains(&"joins, derived relations, and table alias column lists are not supported"));
         let declared_operations = editor["operations"]
             .as_array()
             .expect("feature matrix operations must be an array")
@@ -1777,6 +1950,9 @@ mod tests {
             })
             .collect::<BTreeSet<_>>();
         let protocol_operations = [
+            SqlStructureOperation::SetRelation {
+                relation: "Task".to_owned(),
+            },
             SqlStructureOperation::SetColumns { columns: vec![] },
             SqlStructureOperation::SetFilters { filters: vec![] },
             SqlStructureOperation::SetSort { order_by: vec![] },
@@ -1840,6 +2016,140 @@ mod tests {
             .collect::<BTreeSet<_>>();
         assert_eq!(backend_aggregates, aggregate_function_names);
         assert_eq!(editor_aggregates, aggregate_function_names);
+    }
+
+    #[test]
+    fn relation_selection_builds_a_form_query_and_preserves_source_trivia() {
+        let target = context();
+        let seed = "-- draft\nSELECT 1 -- keep this comment\n";
+        let proposal = propose_sql_structure_operation(
+            seed,
+            &target,
+            SqlStructureOperation::SetRelation {
+                relation: "Task".to_owned(),
+            },
+        );
+
+        assert_eq!(proposal.status, SqlStructureStatus::Supported);
+        assert!(proposal.requires_confirmation);
+        assert_eq!(
+            proposal.proposed_sql.as_deref(),
+            Some("-- draft\nSELECT * FROM \"Task\" -- keep this comment\n")
+        );
+        assert_eq!(
+            analyze_sql_structure(proposal.proposed_sql.as_deref().unwrap(), &target).status,
+            SqlStructureStatus::Supported
+        );
+    }
+
+    #[test]
+    fn relation_selection_replaces_only_a_simple_relation_and_checks_target_schema() {
+        let target = context();
+        let proposal = propose_sql_structure_operation(
+            "SELECT /* keep */ \"field_102\" FROM \"Old\"",
+            &target,
+            SqlStructureOperation::SetRelation {
+                relation: "Task".to_owned(),
+            },
+        );
+
+        assert_eq!(proposal.status, SqlStructureStatus::Supported);
+        assert_eq!(
+            proposal.proposed_sql.as_deref(),
+            Some("SELECT /* keep */ \"field_102\" FROM \"Task\"")
+        );
+
+        let invalid = propose_sql_structure_operation(
+            "SELECT missing FROM \"Old\"",
+            &target,
+            SqlStructureOperation::SetRelation {
+                relation: "Task".to_owned(),
+            },
+        );
+        assert_eq!(invalid.status, SqlStructureStatus::Unsupported);
+        assert_eq!(invalid.reason, Some(SqlStructureReason::UnknownColumn));
+    }
+
+    #[test]
+    fn single_relation_aliases_remain_editable_and_survive_structure_changes() {
+        let sql = "SELECT \"_ugoite_id\" FROM \"Task\" AS entries ORDER BY \"_ugoite_id\"";
+        let analysis = analyze_sql_structure(sql, &context());
+        assert_eq!(analysis.status, SqlStructureStatus::Supported);
+        assert!(analysis.capabilities.filter.enabled);
+        assert!(analysis.capabilities.aggregate.enabled);
+        assert!(analysis.capabilities.group_by.enabled);
+
+        let filter = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetFilters {
+                filters: vec![SqlStructureFilter {
+                    column: "field_101".to_owned(),
+                    operator: SqlStructureFilterOperator::Eq,
+                    parameter: Some("status".to_owned()),
+                }],
+            },
+        );
+        assert_eq!(filter.status, SqlStructureStatus::Supported);
+        let filter_sql = filter.proposed_sql.expect("filter proposal");
+        assert!(filter_sql.contains("FROM \"Task\" AS entries"));
+        assert!(filter_sql.contains("WHERE \"field_101\" = $status"));
+
+        let grouped = propose_sql_structure_operation(
+            &filter_sql,
+            &context(),
+            SqlStructureOperation::SetGroupBy {
+                columns: vec!["_ugoite_id".to_owned()],
+            },
+        );
+        assert_eq!(grouped.status, SqlStructureStatus::Supported);
+        let grouped_sql = grouped.proposed_sql.expect("grouping proposal");
+        assert!(grouped_sql.contains("FROM \"Task\" AS entries"));
+        assert!(grouped_sql.contains("GROUP BY \"_ugoite_id\""));
+
+        let aggregate = propose_sql_structure_operation(
+            &grouped_sql,
+            &context(),
+            SqlStructureOperation::SetAggregates {
+                aggregates: vec![SqlStructureAggregate {
+                    function: SqlStructureAggregateFunction::Count,
+                    column: None,
+                    distinct: false,
+                    alias: None,
+                }],
+            },
+        );
+        assert_eq!(aggregate.status, SqlStructureStatus::Supported);
+        let aggregate_sql = aggregate.proposed_sql.expect("aggregate proposal");
+        assert!(aggregate_sql.contains("FROM \"Task\" AS entries"));
+        assert!(aggregate_sql.contains("COUNT(*)"));
+        assert!(aggregate_sql.contains("GROUP BY \"_ugoite_id\""));
+    }
+
+    #[test]
+    fn changing_form_relation_preserves_a_plain_table_alias() {
+        let sql = "SELECT \"_ugoite_id\" FROM \"Old\" AS entries ORDER BY \"_ugoite_id\"";
+        let proposal = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetRelation {
+                relation: "Task".to_owned(),
+            },
+        );
+
+        assert_eq!(proposal.status, SqlStructureStatus::Supported);
+        assert_eq!(
+            proposal.proposed_sql.as_deref(),
+            Some("SELECT \"_ugoite_id\" FROM \"Task\" AS entries ORDER BY \"_ugoite_id\"")
+        );
+    }
+
+    #[test]
+    fn rejects_single_relation_aliases_that_rename_columns() {
+        let result =
+            analyze_sql_structure("SELECT * FROM \"Task\" AS entries (entry_id)", &context());
+        assert_eq!(result.status, SqlStructureStatus::Unsupported);
+        assert_eq!(result.reason, Some(SqlStructureReason::RelationUnsupported));
     }
 
     #[test]

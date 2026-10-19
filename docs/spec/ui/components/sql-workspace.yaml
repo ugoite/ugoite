@@ -27,8 +27,9 @@ query or persistence authority.
 The adapter-supplied action list is the only source of structured operations.
 `analyzeSqlStructure` and `proposeSqlStructureOperation` in the portable client
 use the Rust domain parser through WASM. The capability contract accepts one
-SELECT over the selected Form relation and literal-only scalar SELECT
-statements without a relation, such as `SELECT 1`. For a relation-free
+SELECT over the selected Form relation, including a plain alias on that single
+relation, and literal-only scalar SELECT statements without a relation, such
+as `SELECT 1`. For a relation-free
 statement, the adapter provides an empty relation context and the parser exposes
 only operations that do not need Form columns. Typed parameter comparisons,
 null checks, and column ordering remain bound to Form metadata. It reports
@@ -38,13 +39,22 @@ is recorded in the [SQL feature matrix contract](../../../architecture/contracts
 Sort proposals append adapter-supplied stable keys where needed. A proposal is
 non-mutating: the adapter must show its SQL diff and wait for explicit user
 confirmation before updating the controlled SQL value. `SqlStructureToolbar`
-renders columns, filter, and sort controls when a trusted single-Form context
-exists. It disables operations that the Rust parser cannot safely round-trip
-and includes the capability reason in each disabled action's accessible name.
-Its proposal view shows the existing and proposed SQL and applies the new SQL
-only after explicit confirmation. `/sql/new`, Saved SQL detail/edit, and
-Composition inline SQL supply their context from Form metadata together with a
-relation-free scalar context.
+offers a Form chooser from trusted, user-creatable Form metadata, using the
+same eligibility rule as entry creation, and passes the selected
+server-derived `sql_relation` to the Rust `set_relation` operation. Selecting a
+Form from the relation-free `SELECT 1` workspace seed proposes
+`SELECT * FROM <relation>`; replacing one simple relation preserves the other
+SQL clauses and is accepted only when the target Form schema validates them.
+For a single aliased relation, structure edits preserve the alias and emit
+unqualified column references. Joins, derived relations, and table alias column
+lists remain unsupported.
+The Form picker shows the Form name, while SQL generation uses its SQL relation.
+The proposal view shows the existing and proposed SQL and applies the new SQL
+only after explicit confirmation. Other structure controls remain limited to
+operations that the Rust parser can safely round-trip, with capability reasons
+in disabled actions' accessible names. `/sql/new`, Saved SQL detail/edit, and
+Composition inline SQL supply Form contexts together with a relation-free
+scalar context.
 
 ## Preview and results
 

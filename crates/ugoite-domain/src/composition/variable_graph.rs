@@ -1778,6 +1778,44 @@ mod tests {
     }
 
     #[test]
+    fn result_contract_reports_typed_schema_and_cardinality_drift_together() {
+        let expected = VariableGraphResultType::Scalar {
+            value_type: scalar(VariableGraphScalarType::Integer, false),
+        };
+        let observed = [VariableGraphColumn {
+            name: "total".to_owned(),
+            value_type: scalar(VariableGraphScalarType::Float, false),
+        }];
+
+        let diagnostics = validate_variable_graph_result(
+            &expected,
+            &observed,
+            &[
+                vec![VariableGraphLiteral::Float(2.5)],
+                vec![VariableGraphLiteral::Float(3.5)],
+            ],
+        )
+        .expect_err("type and scalar cardinality must both match the declaration");
+
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == VariableGraphResultDiagnosticCode::ColumnTypeMismatch
+        }));
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == VariableGraphResultDiagnosticCode::ScalarMultipleRows
+                && diagnostic.expected_count == Some(1)
+                && diagnostic.observed_count == Some(2)
+        }));
+        assert_eq!(
+            VariableGraphResultDiagnosticCode::ColumnTypeMismatch.as_str(),
+            "column_type_mismatch"
+        );
+        assert_eq!(
+            VariableGraphResultDiagnosticCode::ScalarMultipleRows.as_str(),
+            "scalar_multiple_rows"
+        );
+    }
+
+    #[test]
     fn scalar_result_requires_one_column_and_preserves_nullable_null() {
         let expected = VariableGraphResultType::Scalar {
             value_type: scalar(VariableGraphScalarType::Integer, true),

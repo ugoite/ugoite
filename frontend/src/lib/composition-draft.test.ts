@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  addInputComponent,
   addInlineSqlSource,
+  addInputComponent,
   addMetricDisplay,
   addSavedSqlSource,
+  addSqlArgumentVariables,
   addTableDisplay,
   addVariable,
   canonicalizeDraft,
@@ -47,11 +48,56 @@ const inlineSeed = () => ({
 });
 
 describe("SQL-first Composition draft", () => {
+  it("adds typed SQL arguments together with placed Input components", () => {
+    const result = addSqlArgumentVariables(createEmptyDraft("Report"), [
+      { name: "filter_amount", type: "integer" },
+      { name: "filter_active", type: "boolean" },
+    ]);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.draft.variables).toEqual([
+      { id: "filter_amount", type: "integer", required: true },
+      { id: "filter_active", type: "boolean", required: true },
+    ]);
+    expect(result.draft.inputs).toEqual([
+      { draftId: "input-1", variable: "filter_amount" },
+      { draftId: "input-2", variable: "filter_active" },
+    ]);
+    expect(result.draft.layoutRows[0]?.items).toEqual([
+      { kind: "component", draftId: "input-1" },
+      { kind: "component", draftId: "input-2" },
+    ]);
+  });
+
+  it("rejects SQL argument creation when a variable ID has a different type", () => {
+    const draft = {
+      ...createEmptyDraft("Report"),
+      variables: [{
+        id: "filter_amount",
+        type: "string" as const,
+        required: true,
+      }],
+    };
+
+    expect(addSqlArgumentVariables(draft, [
+      { name: "filter_new", type: "integer" },
+      { name: "filter_amount", type: "integer" },
+    ])).toEqual({ ok: false, error: "invalid-query" });
+    expect(draft.variables).toEqual([
+      { id: "filter_amount", type: "string", required: true },
+    ]);
+    expect(draft.inputs).toEqual([]);
+  });
+
   it("copies Saved SQL defaults into Composition-owned variables once", () => {
-    const added = addSavedSqlSource(createEmptyDraft("Report"), savedSqlSeed({
-      variableTypes: { start: "date", region: "string" },
-      variableDefaults: { start: "2026-10-01" },
-    }));
+    const added = addSavedSqlSource(
+      createEmptyDraft("Report"),
+      savedSqlSeed({
+        variableTypes: { start: "date", region: "string" },
+        variableDefaults: { start: "2026-10-01" },
+      }),
+    );
 
     expect(added.draft.variables).toEqual([
       { id: "start", type: "date", required: false, default: "2026-10-01" },
@@ -63,24 +109,30 @@ describe("SQL-first Composition draft", () => {
     expect(added.draft.sources[0]).toMatchObject({
       kind: "saved_sql",
       revisionId: "sql-rev-7",
-      variables: { start: { variable: "start" }, region: { variable: "region" } },
+      variables: {
+        start: { variable: "start" },
+        region: { variable: "region" },
+      },
     });
     expect(defaultVariableValues(added.draft)).toEqual({ start: "2026-10-01" });
   });
 
   it("keeps an existing Composition default when binding a Saved SQL variable", () => {
-    const added = addSavedSqlSource({
-      ...createEmptyDraft("Report"),
-      variables: [{
-        id: "region",
-        type: "string",
-        required: false,
-        default: "West",
-      }],
-    }, savedSqlSeed({
-      variableTypes: { region: "string" },
-      variableDefaults: { region: "East" },
-    }));
+    const added = addSavedSqlSource(
+      {
+        ...createEmptyDraft("Report"),
+        variables: [{
+          id: "region",
+          type: "string",
+          required: false,
+          default: "West",
+        }],
+      },
+      savedSqlSeed({
+        variableTypes: { region: "string" },
+        variableDefaults: { region: "East" },
+      }),
+    );
 
     expect(added.draft.variables).toEqual([{
       id: "region",
@@ -131,7 +183,11 @@ describe("SQL-first Composition draft", () => {
       ...descriptor,
     });
 
-    const edited = setInlineSql(renamed.draft, "src-1", 'SELECT "Amount" FROM "Expenses"');
+    const edited = setInlineSql(
+      renamed.draft,
+      "src-1",
+      'SELECT "Amount" FROM "Expenses"',
+    );
     if (!edited.ok) throw new Error("expected SQL edit");
     expect(edited.draft.sources[0]).toMatchObject({
       sql: 'SELECT "Amount" FROM "Expenses"',
@@ -204,9 +260,13 @@ describe("SQL-first Composition draft", () => {
     if (!metric.ok) throw new Error("expected metric component");
 
     const document = toStudioDocument(metric.draft);
-    const restored = draftFromDocument(document, { "src-2": "Monthly totals" }, {
-      "src-2": "SELECT SUM(amount) AS total FROM expenses",
-    });
+    const restored = draftFromDocument(
+      document,
+      { "src-2": "Monthly totals" },
+      {
+        "src-2": "SELECT SUM(amount) AS total FROM expenses",
+      },
+    );
     expect(restored.sources).toMatchObject([
       {
         kind: "inline_sql",
@@ -223,7 +283,9 @@ describe("SQL-first Composition draft", () => {
         sql: "SELECT SUM(amount) AS total FROM expenses",
       },
     ]);
-    expect(toStudioDocument(restored).spec.sources).toEqual(document.spec.sources);
+    expect(toStudioDocument(restored).spec.sources).toEqual(
+      document.spec.sources,
+    );
   });
 
   it("fails closed when asked to restore the replaced EntryQuery grammar", () => {
@@ -255,9 +317,12 @@ describe("SQL-first Composition draft", () => {
       ...inlineSeed(),
       expectedResult: [{ name: "total", type: "decimal" }],
     }).draft;
-    draft = addSavedSqlSource(draft, savedSqlSeed({
-      expectedResult: [{ name: "count", type: "integer" }],
-    })).draft;
+    draft = addSavedSqlSource(
+      draft,
+      savedSqlSeed({
+        expectedResult: [{ name: "count", type: "integer" }],
+      }),
+    ).draft;
     const metric = addMetricDisplay(draft, "src-1", "total");
     if (!metric.ok || !metric.draftId) throw new Error("expected metric");
     const changed = setMetricSource(metric.draft, metric.draftId, "src-2");
@@ -280,7 +345,8 @@ describe("SQL-first Composition draft", () => {
   });
 
   it("canonicalizes SQL-only source documents through the shared contract", async () => {
-    const draft = addInlineSqlSource(createEmptyDraft("Report"), inlineSeed()).draft;
+    const draft =
+      addInlineSqlSource(createEmptyDraft("Report"), inlineSeed()).draft;
     const result = await canonicalizeDraft(draft);
     expect(result.canonical_yaml).toBe("canonical");
     expect(canonicalizeDocumentMock).toHaveBeenCalledWith(

@@ -664,6 +664,7 @@ async fn source_resolution_and_continuation_recheck_current_authorization() -> R
             &[viewer],
             SqlQueryRequest {
                 continuation: Some(cursor),
+                execution_id: None,
                 ..compiled_request
             },
         )
@@ -719,6 +720,7 @@ async fn source_resolution_and_continuation_recheck_current_authorization() -> R
         include_exact_integer_values: false,
         limit: 2,
         continuation: None,
+        execution_id: None,
         saved_sql: Some(SavedSqlRevisionRef {
             id: "metric-scalar-source".to_string(),
             revision_id: saved_sql["revision_id"]

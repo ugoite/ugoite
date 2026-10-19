@@ -6864,6 +6864,15 @@ impl UgoiteService {
         const LOCAL_AUTHORIZATION_FINGERPRINT: &str = "local-operator";
 
         request.validate().map_err(sql_query_contract_error)?;
+        let request_fingerprint = if request.execution_id.is_some() {
+            Some(
+                request
+                    .execution_fingerprint()
+                    .map_err(sql_query_contract_error)?,
+            )
+        } else {
+            None
+        };
         let prepared = sql_execution::prepare_sql_request(self, space_id, &request, None).await?;
         self.validate_complete_space(space_id).await?;
         let signing_key = self.sql_query_signing_key(space_id).await?;
@@ -6986,6 +6995,8 @@ impl UgoiteService {
             rows,
             has_more,
             next,
+            execution_id: request.execution_id,
+            request_fingerprint,
             result_schema: Some(result_schema),
             exact_integer_rows,
         })
@@ -7072,6 +7083,15 @@ impl UgoiteService {
         request: SqlQueryRequest,
     ) -> Result<SqlQueryPage> {
         request.validate().map_err(sql_query_contract_error)?;
+        let request_fingerprint = if request.execution_id.is_some() {
+            Some(
+                request
+                    .execution_fingerprint()
+                    .map_err(sql_query_contract_error)?,
+            )
+        } else {
+            None
+        };
         require_nonempty_authorized_principals(principal_ids)?;
         self.validate_complete_space(space_id).await?;
         let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
@@ -7217,6 +7237,8 @@ impl UgoiteService {
             rows,
             has_more,
             next,
+            execution_id: request.execution_id,
+            request_fingerprint,
             result_schema: Some(result_schema),
             exact_integer_rows,
         })

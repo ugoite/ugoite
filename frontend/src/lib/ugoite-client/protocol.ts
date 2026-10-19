@@ -434,6 +434,37 @@ export type SqlDocument = {
   nodes: SqlDocumentNode[];
 };
 
+export type SqlDocumentEdit = {
+  range: SqlDocumentSourceRange;
+  expected_text: string;
+  replacement: string;
+};
+
+export type SqlDocumentEditTransaction = {
+  expected_source: string;
+  edits: SqlDocumentEdit[];
+};
+
+export type SqlDocumentEditResult = {
+  document: SqlDocument;
+  undo: SqlDocumentEditTransaction;
+};
+
+export type SqlDocumentEditErrorCode =
+  | "invalid_request"
+  | "invalid_old_parameter_name"
+  | "invalid_new_parameter_name"
+  | "stale_source"
+  | "source_too_large"
+  | "source_too_complex"
+  | "too_many_edits"
+  | "invalid_range"
+  | "range_out_of_bounds"
+  | "not_utf8_boundary"
+  | "overlapping_edits"
+  | "preimage_mismatch"
+  | "output_too_large";
+
 /** Parse one bounded SQL draft through the shared Rust/WASM domain parser. */
 export const parseSqlDocument = async (sql: string): Promise<SqlDocument> =>
   await invokeProtocol<SqlDocument>({
@@ -452,6 +483,16 @@ export const renameSqlDocumentParameter = async (
   await invokeProtocol<SqlDocument>({
     action: "domain.rename_sql_document_parameter",
     value: { sql, old_name: oldName, new_name: newName },
+  });
+
+/** Apply one guarded, atomic source edit and return its reparsed draft and undo. */
+export const applySqlDocumentEditTransaction = async (
+  currentSource: string,
+  transaction: SqlDocumentEditTransaction,
+): Promise<SqlDocumentEditResult> =>
+  await invokeProtocol<SqlDocumentEditResult>({
+    action: "domain.apply_sql_document_edit_transaction",
+    value: { current_source: currentSource, transaction },
   });
 
 export type SqlStructureColumnType =
@@ -522,6 +563,7 @@ export type SqlStructureAggregate = {
 };
 
 export type SqlStructureOperation =
+  | { kind: "set_relation"; relation: string }
   | { kind: "set_columns"; columns: string[] }
   | { kind: "set_filters"; filters: SqlStructureFilter[] }
   | { kind: "set_sort"; order_by: SqlStructureSort[] }

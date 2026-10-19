@@ -2,14 +2,12 @@
 title: SQL admission and structure editor coverage
 ---
 
-The current read-only SQL gate requires one DataFusion `Query` statement AST,
-but does not restrict the query body's form to `SELECT`. Both `SELECT 1` and
-`VALUES (1)` pass this gate. The production stateless query path accepts
-`VALUES` through request preparation and logical planning, then rejects it
-during authorized physical-plan validation because its plan has no approved data
-source. A focused `AuthorizedQueryContext::execute_stateless_page` test checks
-this rejection, and a `UgoiteService::query_sql` integration test checks the
-public error. The admission gate remains unchanged. The stateless
+The shared read-only SQL gate requires exactly one DataFusion `Query` whose
+query bodies are all SELECTs or set operations composed of SELECT bodies.
+`SELECT 1`, CTEs with SELECT bodies, nested SELECTs, and SELECT set operations
+remain admitted. `VALUES`, `TABLE`, and non-SELECT bodies nested in a CTE,
+subquery, or set operation are rejected with `READ_ONLY_SQL_REQUIRED` before
+planning or execution. The stateless
 `ReadOnlyAggregateV1` policy currently admits `COUNT`, `SUM`, `AVG`, `MIN`, and
 `MAX` as canonical aggregate names, with the `MEAN` alias resolving to `AVG`,
 and no user SQL scalar or window functions. The current structure editor does
@@ -26,13 +24,15 @@ constructs that are context supplied, preserved without an editor operation, or
 outside structured coverage. Its `keywords` list is not consumed by the SQL
 admission or lint paths and is not a closed grammar definition.
 
-The matrix records one contract gap: the backend statement gate is weaker than
-the documented SELECT-only boundary because the query AST body is not
-restricted; narrowing it is tracked by
-[issue #4383](https://github.com/ugoite/ugoite/issues/4383). `VALUES` is
-rejected downstream by physical-plan authorization. Relation-free scalar
-queries align with direct SQL lint and the structure editor; this inventory
-does not change backend admission behavior.
+A single trusted Form relation may use a plain table alias; structure edits and
+Form changes preserve that alias. The current editor generates unqualified
+column references for this one-relation context. Joins, derived relations, and
+table alias column lists remain outside structured coverage.
+
+The matrix records the same SELECT-only boundary as the runtime statement
+gate. Relation-free scalar queries align with direct SQL lint and the structure
+editor. The SQL executor remains responsible for planner, relation, function,
+type, authorization, and resource-limit decisions after admission.
 
 Aggregate parity is checked here only at the canonical function-name level and
 the runtime alias map is checked separately. Signatures,
