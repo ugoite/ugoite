@@ -379,6 +379,8 @@ export interface SqlQueryRequest {
   include_exact_integer_values?: boolean;
   limit: number;
   continuation?: string;
+  /** Optional nonce used internally to bind a Composition result to its request. */
+  execution_id?: string;
   saved_sql?: { id: string; revision_id: string };
 }
 

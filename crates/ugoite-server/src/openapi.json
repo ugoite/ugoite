@@ -14333,6 +14333,11 @@
           },
           "continuation": {
             "type": "string"
+          },
+          "execution_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Optional caller-generated nonce used internally to bind a Composition SQL result to its request; it is omitted from the public page response."
           }
         },
         "required": [

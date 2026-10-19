@@ -402,6 +402,8 @@ mod export_sink_tests {
             rows: vec![serde_json::json!({"row": 1})],
             has_more: true,
             next: Some(next.to_string()),
+            execution_id: None,
+            request_fingerprint: None,
             result_schema: None,
             exact_integer_rows: None,
         };
@@ -428,6 +430,8 @@ mod export_sink_tests {
             rows: vec![serde_json::json!({"row": 1})],
             has_more: true,
             next: None,
+            execution_id: None,
+            request_fingerprint: None,
             result_schema: None,
             exact_integer_rows: None,
         };
@@ -477,6 +481,7 @@ mod export_sink_tests {
             include_exact_integer_values: false,
             limit: 100,
             continuation: None,
+            execution_id: None,
             saved_sql: Some(SavedSqlRevisionRef {
                 id: "saved-sql".to_string(),
                 revision_id: "revision-1".to_string(),
@@ -905,6 +910,7 @@ pub async fn run(
                 include_exact_integer_values: false,
                 limit: page_size.min(max_rows),
                 continuation: None,
+                execution_id: None,
                 saved_sql: None,
             };
             let mut rows_exported = 0usize;

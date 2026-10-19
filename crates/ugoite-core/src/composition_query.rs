@@ -73,6 +73,7 @@ pub enum VariableGraphQueryResultDiagnosticCode {
     QueryVariableNotFound,
     QueryNodeRequired,
     RequestSourceMismatch,
+    ExecutionMismatch,
     ResultSchemaMissing,
     ResultSchemaMismatch,
     InvalidResultRow,
@@ -89,6 +90,7 @@ impl VariableGraphQueryResultDiagnosticCode {
             Self::QueryVariableNotFound => "query_variable_not_found",
             Self::QueryNodeRequired => "query_node_required",
             Self::RequestSourceMismatch => "request_source_mismatch",
+            Self::ExecutionMismatch => "execution_mismatch",
             Self::ResultSchemaMissing => "result_schema_missing",
             Self::ResultSchemaMismatch => "result_schema_mismatch",
             Self::InvalidResultRow => "invalid_result_row",
@@ -410,6 +412,7 @@ pub fn compile_variable_graph_query_request(
             VariableGraphResultType::Table { .. } => DEFAULT_VARIABLE_GRAPH_SQL_PAGE_LIMIT,
         },
         continuation: None,
+        execution_id: Some(Uuid::new_v4()),
         saved_sql,
     };
     request.validate().map_err(|_| {
@@ -479,6 +482,17 @@ pub fn validate_variable_graph_sql_page(
             )]);
         }
     };
+
+    let request_fingerprint = request.execution_fingerprint().ok();
+    if request.execution_id.is_none()
+        || request.execution_id != page.execution_id
+        || request_fingerprint.as_deref() != page.request_fingerprint.as_deref()
+    {
+        return Err(vec![VariableGraphQueryResultDiagnostic::for_node(
+            VariableGraphQueryResultDiagnosticCode::ExecutionMismatch,
+            &node.id,
+        )]);
+    }
 
     let Some(result_schema) = page.result_schema.as_deref() else {
         return Err(vec![VariableGraphQueryResultDiagnostic::for_node(
@@ -586,7 +600,10 @@ pub fn validate_variable_graph_sql_page(
         })?;
 
     if matches!(returns, VariableGraphResultType::Scalar { .. })
-        && (request.limit != MAX_SQL_SCALAR_PROBE_ROWS || page.has_more || page.next.is_some())
+        && (request.limit != MAX_SQL_SCALAR_PROBE_ROWS
+            || request.continuation.is_some()
+            || page.has_more
+            || page.next.is_some())
     {
         return Err(vec![VariableGraphQueryResultDiagnostic::for_node(
             VariableGraphQueryResultDiagnosticCode::ScalarResultIncomplete,
@@ -998,12 +1015,18 @@ mod tests {
         }
     }
 
-    fn result_page(columns: &[(&str, SqlResultColumnType)], rows: Vec<Value>) -> SqlQueryPage {
+    fn result_page(
+        request: &SqlQueryRequest,
+        columns: &[(&str, SqlResultColumnType)],
+        rows: Vec<Value>,
+    ) -> SqlQueryPage {
         SqlQueryPage {
             columns: columns.iter().map(|(name, _)| (*name).to_owned()).collect(),
             rows,
             has_more: false,
             next: None,
+            execution_id: request.execution_id,
+            request_fingerprint: request.execution_fingerprint().ok(),
             result_schema: Some(
                 columns
                     .iter()
@@ -1032,6 +1055,7 @@ mod tests {
         let request = compile_variable_graph_query_request(&graph, "result", &BTreeMap::new())
             .expect("query request compiles");
         let mut page = result_page(
+            &request,
             &[("maybe_total", SqlResultColumnType::Integer)],
             vec![json!({"maybe_total": 8})],
         );
@@ -1063,6 +1087,7 @@ mod tests {
         let request = compile_variable_graph_query_request(&graph, "result", &BTreeMap::new())
             .expect("request compiles");
         let page = result_page(
+            &request,
             &[("total", SqlResultColumnType::Integer)],
             vec![json!({"total": 3})],
         );
@@ -1084,9 +1109,10 @@ mod tests {
             },
         );
         let wrong_type_graph = graph_for(wrong_type_node);
-        let wrong_type_request =
+        let mut wrong_type_request =
             compile_variable_graph_query_request(&wrong_type_graph, "result", &BTreeMap::new())
                 .expect("query request compiles despite runtime result drift");
+        wrong_type_request.execution_id = request.execution_id;
         let mismatch = validate_variable_graph_sql_page(
             &wrong_type_graph,
             "result",
@@ -1124,6 +1150,7 @@ mod tests {
         let request = compile_variable_graph_query_request(&graph, "result", &BTreeMap::new())
             .expect("request pins Saved SQL revision");
         let page = result_page(
+            &request,
             &[
                 ("label", SqlResultColumnType::String),
                 ("total", SqlResultColumnType::Integer),
@@ -1139,6 +1166,7 @@ mod tests {
         );
 
         let missing = result_page(
+            &request,
             &[("label", SqlResultColumnType::String)],
             vec![json!({"label": "March"})],
         );
@@ -1152,6 +1180,7 @@ mod tests {
         assert_eq!(missing_diagnostic[0].column_name.as_deref(), Some("total"));
 
         let ambiguous = result_page(
+            &request,
             &[
                 ("total", SqlResultColumnType::Integer),
                 ("total", SqlResultColumnType::Integer),
@@ -1195,6 +1224,7 @@ mod tests {
         let request = compile_variable_graph_query_request(&graph, "result", &BTreeMap::new())
             .expect("query request compiles");
         let multiple_columns = result_page(
+            &request,
             &[
                 ("total", SqlResultColumnType::Integer),
                 ("other", SqlResultColumnType::Integer),
@@ -1225,6 +1255,7 @@ mod tests {
             compile_variable_graph_query_request(&selected_graph, "result", &BTreeMap::new())
                 .expect("query request compiles");
         let multiple_rows = result_page(
+            &selected_request,
             &[("total", SqlResultColumnType::Integer)],
             vec![json!({"total": 4}), json!({"total": 5})],
         );
@@ -1240,6 +1271,58 @@ mod tests {
                 result.code == VariableGraphResultDiagnosticCode::ScalarMultipleRows
             })
         }));
+    }
+
+    #[test]
+    fn scalar_probe_rejects_continuations_and_stale_execution_pages() {
+        let node = result_node(
+            VariableGraphQueryDefinition::InlineSql {
+                sql: "SELECT COUNT(*) AS total".to_owned(),
+            },
+            VariableGraphResultType::Scalar {
+                value_type: scalar(VariableGraphScalarType::Integer, false),
+            },
+        );
+        let graph = graph_for(node);
+        let request = compile_variable_graph_query_request(&graph, "result", &BTreeMap::new())
+            .expect("query request compiles");
+        let page = result_page(
+            &request,
+            &[("total", SqlResultColumnType::Integer)],
+            vec![json!({"total": 4})],
+        );
+
+        let mut stale_request = request.clone();
+        stale_request.execution_id = Some(Uuid::new_v4());
+        assert_eq!(
+            validate_variable_graph_sql_page(&graph, "result", &stale_request, &page)
+                .expect_err("a page from an older execution cannot bind to current inputs")[0]
+                .code,
+            VariableGraphQueryResultDiagnosticCode::ExecutionMismatch
+        );
+
+        let mut stale_continuation_request = request.clone();
+        stale_continuation_request.continuation = Some("opaque-next-page".to_owned());
+        assert_eq!(
+            validate_variable_graph_sql_page(&graph, "result", &stale_continuation_request, &page)
+                .expect_err("a page from a different continuation request cannot be reused")[0]
+                .code,
+            VariableGraphQueryResultDiagnosticCode::ExecutionMismatch
+        );
+
+        let mut continued_request = request;
+        continued_request.continuation = Some("opaque-next-page".to_owned());
+        let continued_page = result_page(
+            &continued_request,
+            &[("total", SqlResultColumnType::Integer)],
+            vec![json!({"total": 4})],
+        );
+        assert_eq!(
+            validate_variable_graph_sql_page(&graph, "result", &continued_request, &continued_page)
+                .expect_err("a later page cannot be accepted as a complete scalar probe")[0]
+                .code,
+            VariableGraphQueryResultDiagnosticCode::ScalarResultIncomplete
+        );
     }
 
     #[test]
@@ -1265,6 +1348,7 @@ mod tests {
         let request = compile_variable_graph_query_request(&graph, "result", &BTreeMap::new())
             .expect("table request compiles");
         let page = result_page(
+            &request,
             &[
                 ("day", SqlResultColumnType::Date),
                 ("amount", SqlResultColumnType::Decimal),
@@ -1293,6 +1377,7 @@ mod tests {
         );
 
         let mismatched_schema = result_page(
+            &request,
             &[
                 ("day", SqlResultColumnType::Date),
                 ("amount", SqlResultColumnType::Integer),
@@ -1310,6 +1395,7 @@ mod tests {
         }));
 
         let missing_cell = result_page(
+            &request,
             &[
                 ("day", SqlResultColumnType::Date),
                 ("amount", SqlResultColumnType::Decimal),

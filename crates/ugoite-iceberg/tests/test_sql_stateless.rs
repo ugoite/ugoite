@@ -181,23 +181,25 @@ async fn quoted_form_name_with_digits_hyphen_and_parameter_resolves() -> Result<
          AND '2026-Expense' = '2026-Expense' -- FROM \"missing\"\n         ORDER BY \"_ugoite_id\"",
         space.form_name, space.priority_column
     );
-    let page = space
-        .service
-        .query_sql(
-            &space.space_id,
-            SqlQueryRequest {
-                sql,
-                parameters: Map::from_iter([("priority".into(), json!(3))]),
-                parameter_types: BTreeMap::new(),
-                include_exact_integer_values: false,
-                limit: 10,
-                continuation: None,
-                saved_sql: None,
-            },
-        )
-        .await?;
+    let request = SqlQueryRequest {
+        sql,
+        parameters: Map::from_iter([("priority".into(), json!(3))]),
+        parameter_types: BTreeMap::new(),
+        include_exact_integer_values: false,
+        limit: 10,
+        continuation: None,
+        execution_id: Some(uuid::Uuid::from_u128(99)),
+        saved_sql: None,
+    };
+    let expected_fingerprint = request.execution_fingerprint()?;
+    let page = space.service.query_sql(&space.space_id, request).await?;
     assert_eq!(page.rows.len(), 1);
     assert_eq!(page.rows[0]["_ugoite_id"], "sql-02");
+    assert_eq!(page.execution_id, Some(uuid::Uuid::from_u128(99)));
+    assert_eq!(
+        page.request_fingerprint.as_deref(),
+        Some(expected_fingerprint.as_str())
+    );
     Ok(())
 }
 
@@ -317,6 +319,7 @@ async fn saved_sql_revision_uses_fixed_form_binding_and_continuation_identity() 
                 include_exact_integer_values: false,
                 limit: 2,
                 continuation: None,
+                execution_id: None,
                 saved_sql: Some(source.clone()),
             },
         )
@@ -361,6 +364,7 @@ async fn saved_sql_revision_uses_fixed_form_binding_and_continuation_identity() 
             &space.space_id,
             SqlQueryRequest {
                 continuation: Some(next),
+                execution_id: None,
                 ..query_request(String::new(), 2)
             },
         )
@@ -375,6 +379,7 @@ async fn saved_sql_revision_uses_fixed_form_binding_and_continuation_identity() 
             &space.space_id,
             SqlQueryRequest {
                 continuation: first.next.clone(),
+                execution_id: None,
                 saved_sql: Some(source.clone()),
                 ..query_request(String::new(), 2)
             },
@@ -501,6 +506,7 @@ async fn composition_scalar_probe_reads_at_most_two_rows_from_exact_saved_revisi
         include_exact_integer_values: false,
         limit: 2,
         continuation: None,
+        execution_id: None,
         saved_sql: Some(SavedSqlRevisionRef {
             id: id.to_string(),
             revision_id: saved["revision_id"]
@@ -544,6 +550,7 @@ async fn composition_scalar_probe_reads_at_most_two_rows_from_exact_saved_revisi
         include_exact_integer_values: false,
         limit: 2,
         continuation: None,
+        execution_id: None,
         saved_sql: Some(parameterized_revision.clone()),
     };
     let page = space
@@ -604,6 +611,7 @@ async fn saved_sql_variable_defaults_are_not_implicitly_applied_to_queries() -> 
                 include_exact_integer_values: false,
                 limit: 10,
                 continuation: None,
+                execution_id: None,
                 saved_sql: Some(saved_sql.clone()),
             },
         )
@@ -624,6 +632,7 @@ async fn saved_sql_variable_defaults_are_not_implicitly_applied_to_queries() -> 
                 include_exact_integer_values: false,
                 limit: 10,
                 continuation: None,
+                execution_id: None,
                 saved_sql: Some(saved_sql.clone()),
             },
         )
@@ -677,6 +686,7 @@ fn query_request(sql: String, limit: usize) -> SqlQueryRequest {
         include_exact_integer_values: false,
         limit,
         continuation: None,
+        execution_id: None,
         saved_sql: None,
     }
 }
@@ -1068,6 +1078,7 @@ async fn synthetic_prebinding_revision_reads_and_runs_without_rewrite() -> Resul
                 include_exact_integer_values: false,
                 limit: 2,
                 continuation: None,
+                execution_id: None,
                 saved_sql: Some(SavedSqlRevisionRef {
                     id: "synthetic_prebinding_revision".into(),
                     revision_id: saved_revision_id.into(),
@@ -1088,6 +1099,7 @@ async fn synthetic_prebinding_revision_reads_and_runs_without_rewrite() -> Resul
                 include_exact_integer_values: false,
                 limit: 2,
                 continuation: first.next,
+                execution_id: None,
                 saved_sql: Some(SavedSqlRevisionRef {
                     id: "synthetic_prebinding_revision".into(),
                     revision_id: saved_revision_id.into(),
@@ -1315,6 +1327,7 @@ async fn synthetic_prebinding_revision_rejections_fail_closed() -> Result<()> {
         include_exact_integer_values: false,
         limit: 10,
         continuation: None,
+        execution_id: None,
         saved_sql: Some(SavedSqlRevisionRef {
             id: id.into(),
             revision_id: revision_id.into(),
@@ -1391,6 +1404,7 @@ async fn stateless_first_page_and_continuation_cover_full_result() -> Result<()>
             &space.space_id,
             SqlQueryRequest {
                 continuation: Some(continuation),
+                execution_id: None,
                 ..query_request(base_sql(&space), 2)
             },
         )
@@ -1404,6 +1418,7 @@ async fn stateless_first_page_and_continuation_cover_full_result() -> Result<()>
             &space.space_id,
             SqlQueryRequest {
                 continuation: second.next.clone(),
+                execution_id: None,
                 ..query_request(base_sql(&space), 2)
             },
         )
@@ -1682,6 +1697,7 @@ async fn stateless_parameters_bind_with_types_and_typed_null() -> Result<()> {
             include_exact_integer_values: false,
                 limit: 1_000,
                 continuation: None,
+                execution_id: None,
             saved_sql: None,
             },
         )
@@ -1709,6 +1725,7 @@ async fn stateless_parameters_bind_with_types_and_typed_null() -> Result<()> {
             include_exact_integer_values: false,
                 limit: 1_000,
                 continuation: None,
+                execution_id: None,
             saved_sql: None,
             },
         )
@@ -1734,6 +1751,7 @@ async fn stateless_parameters_bind_with_types_and_typed_null() -> Result<()> {
             include_exact_integer_values: false,
                 limit: 1_000,
                 continuation: None,
+                execution_id: None,
             saved_sql: None,
             },
         )
@@ -1755,6 +1773,7 @@ async fn stateless_parameters_bind_with_types_and_typed_null() -> Result<()> {
             include_exact_integer_values: false,
                 limit: 1_000,
                 continuation: None,
+                execution_id: None,
             saved_sql: None,
             },
         )
@@ -1778,6 +1797,7 @@ async fn stateless_parameters_bind_with_types_and_typed_null() -> Result<()> {
             include_exact_integer_values: false,
                 limit: 1_000,
                 continuation: None,
+                execution_id: None,
             saved_sql: None,
             },
         )
@@ -1802,6 +1822,7 @@ async fn stateless_parameters_bind_with_types_and_typed_null() -> Result<()> {
             include_exact_integer_values: false,
                 limit: 1_000,
                 continuation: None,
+                execution_id: None,
             saved_sql: None,
             },
         )
@@ -1837,6 +1858,7 @@ async fn stateless_parameters_bind_declared_long_double_and_typed_nulls() -> Res
             include_exact_integer_values: false,
                 limit: 1_000,
                 continuation: None,
+                execution_id: None,
                 saved_sql: None,
             },
         )
@@ -1869,6 +1891,7 @@ async fn stateless_parameters_bind_declared_long_double_and_typed_nulls() -> Res
             include_exact_integer_values: false,
                     limit: 1_000,
                     continuation: None,
+                    execution_id: None,
                     saved_sql: None,
                 },
             )
@@ -1893,6 +1916,7 @@ async fn stateless_parameters_bind_declared_long_double_and_typed_nulls() -> Res
             include_exact_integer_values: false,
                     limit: 1_000,
                     continuation: None,
+                    execution_id: None,
                     saved_sql: None,
                 },
             )
@@ -1924,6 +1948,7 @@ async fn stateless_continuation_resets_on_parameter_type_change() -> Result<()> 
                 include_exact_integer_values: false,
                 limit: 2,
                 continuation: None,
+                execution_id: None,
                 saved_sql: None,
             },
         )
@@ -1946,6 +1971,7 @@ async fn stateless_continuation_resets_on_parameter_type_change() -> Result<()> 
                 include_exact_integer_values: false,
                 limit: 2,
                 continuation: Some(continuation.clone()),
+                execution_id: None,
                 saved_sql: None,
             },
         )
@@ -1971,6 +1997,7 @@ async fn stateless_continuation_resets_on_parameter_type_change() -> Result<()> 
                 include_exact_integer_values: false,
                 limit: 2,
                 continuation: Some(continuation),
+                execution_id: None,
                 saved_sql: None,
             },
         )
@@ -2009,6 +2036,7 @@ async fn stateless_continuation_resets_on_context_change() -> Result<()> {
                     space.relation, space.status_column
                 ),
                 continuation: Some(continuation.clone()),
+                execution_id: None,
                 ..query_request(base_sql(&space), 2)
             },
         )
@@ -2037,6 +2065,7 @@ async fn stateless_continuation_resets_on_context_change() -> Result<()> {
                 include_exact_integer_values: false,
                 limit: 2,
                 continuation: None,
+                execution_id: None,
                 saved_sql: None,
             },
         )
@@ -2059,6 +2088,7 @@ async fn stateless_continuation_resets_on_context_change() -> Result<()> {
                 include_exact_integer_values: false,
                 limit: 2,
                 continuation: Some(param_continuation),
+                execution_id: None,
                 saved_sql: None,
             },
         )
@@ -2081,6 +2111,7 @@ async fn stateless_continuation_resets_on_context_change() -> Result<()> {
             &space.space_id,
             SqlQueryRequest {
                 continuation: Some(tampered),
+                execution_id: None,
                 ..query_request(base_sql(&space), 2)
             },
         )
@@ -2211,6 +2242,7 @@ async fn stateless_continuation_reads_pinned_publication() -> Result<()> {
             &space.space_id,
             SqlQueryRequest {
                 continuation: Some(continuation),
+                execution_id: None,
                 ..query_request(base_sql(&space), 2)
             },
         )

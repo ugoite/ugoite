@@ -79,6 +79,10 @@ float columns retain their portable types. Clients may opt in to
 `exact_integer_rows` for column-aligned base-10 strings that preserve integer
 digits beyond JavaScript's safe integer range; this leaves `rows` and the
 `integer` schema unchanged.
+Composition may include an optional request `execution_id` to bind its
+server-side result to the exact request coordinate, including any continuation,
+and discard a delayed page after the inputs have changed. Ordinary SQL clients
+may omit it; the public page shape remains unchanged.
 Numeric overflow and non-finite-result failures use stable SQL aggregate error
 codes with safe messages.
 
