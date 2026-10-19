@@ -209,7 +209,8 @@ async function main(): Promise<void> {
 
   const editSource = '-- 日本語\nSELECT 1 FROM "G" WHERE n = 2';
   const editStart = (needle: string): number =>
-    new TextEncoder().encode(editSource.slice(0, editSource.indexOf(needle))).length;
+    new TextEncoder().encode(editSource.slice(0, editSource.indexOf(needle)))
+      .length;
   const editTransaction = {
     expected_source: editSource,
     edits: [
@@ -249,7 +250,10 @@ async function main(): Promise<void> {
   assertEqual(undoResponse.ok, true, "undo transaction envelope");
   assertEqual(
     (undoResponse.value as Record<string, unknown>).document &&
-      ((undoResponse.value as Record<string, unknown>).document as Record<string, unknown>).source,
+      ((undoResponse.value as Record<string, unknown>).document as Record<
+        string,
+        unknown
+      >).source,
     editSource,
     "undo restores exact source",
   );
