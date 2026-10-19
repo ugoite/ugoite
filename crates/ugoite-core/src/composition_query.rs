@@ -264,17 +264,19 @@ pub fn compile_variable_graph_query_request(
         )]);
     };
 
-    compile_validated_query_node(graph, node, resolved_values)
+    compile_validated_query_node(graph, node, execution_id, resolved_values)
 }
 
 fn compile_validated_query_node(
     graph: &VariableGraph,
     node: &VariableGraphNode,
+    execution_id: Uuid,
     resolved_values: &BTreeMap<String, VariableGraphLiteral>,
 ) -> Result<SqlQueryRequest, Vec<VariableGraphQueryRequestDiagnostic>> {
     compile_validated_query_node_with_deferred_dependencies(
         graph,
         node,
+        execution_id,
         resolved_values,
         &BTreeSet::new(),
     )
@@ -284,6 +286,7 @@ fn compile_validated_query_node(
 fn compile_validated_query_node_with_deferred_dependencies(
     graph: &VariableGraph,
     node: &VariableGraphNode,
+    execution_id: Uuid,
     resolved_values: &BTreeMap<String, VariableGraphLiteral>,
     deferred_query_variable_ids: &BTreeSet<String>,
 ) -> Result<
@@ -497,10 +500,13 @@ fn compile_validated_query_node_with_deferred_dependencies(
 /// for those queries to produce fresh values and then compile the dependent
 /// request with [`compile_variable_graph_query_request`]. This helper only
 /// prepares requests; it does not authorize, execute, or validate query
-/// results.
+/// results. `execution_id` is the immutable snapshot identity shared by the
+/// requests in this batch; each request fingerprint still distinguishes its
+/// own SQL and parameter subset.
 pub fn compile_variable_graph_query_request_batch(
     graph: &VariableGraph,
     requested_query_variable_ids: &[String],
+    execution_id: Uuid,
     resolved_values: &BTreeMap<String, VariableGraphLiteral>,
 ) -> Result<Vec<VariableGraphQueryRequestBatchItem>, Vec<VariableGraphQueryRequestDiagnostic>> {
     let compiled_graph = compile_variable_graph(graph).map_err(|diagnostics| {
@@ -543,6 +549,7 @@ pub fn compile_variable_graph_query_request_batch(
         match compile_validated_query_node_with_deferred_dependencies(
             graph,
             node,
+            execution_id,
             resolved_values,
             &requested_ids,
         ) {
@@ -1039,6 +1046,10 @@ mod tests {
             scalar_type: value_type,
             nullable,
         }
+    }
+
+    fn test_execution_id() -> Uuid {
+        Uuid::from_u128(1)
     }
 
     fn argument(
@@ -2071,14 +2082,24 @@ mod tests {
         let values = BTreeMap::from([("upstream".to_owned(), VariableGraphLiteral::Integer(7))]);
         let requested = vec!["downstream".to_owned(), "upstream".to_owned()];
 
-        let first = compile_variable_graph_query_request_batch(&first_graph, &requested, &values)
-            .expect("valid request batch");
-        let reordered =
-            compile_variable_graph_query_request_batch(&reordered_graph, &requested, &values)
-                .expect("reordered graph keeps deterministic batch order");
+        let first = compile_variable_graph_query_request_batch(
+            &first_graph,
+            &requested,
+            test_execution_id(),
+            &values,
+        )
+        .expect("valid request batch");
+        let reordered = compile_variable_graph_query_request_batch(
+            &reordered_graph,
+            &requested,
+            test_execution_id(),
+            &values,
+        )
+        .expect("reordered graph keeps deterministic batch order");
         let reversed_request = compile_variable_graph_query_request_batch(
             &first_graph,
             &["upstream".to_owned(), "downstream".to_owned()],
+            test_execution_id(),
             &values,
         )
         .expect("reordered request IDs keep deterministic batch order");
@@ -2086,7 +2107,14 @@ mod tests {
         let batch_ids: Vec<_> = first.iter().map(|item| item.variable_id.as_str()).collect();
         assert_eq!(batch_ids, ["upstream", "downstream"]);
         assert!(first[0].deferred_arguments.is_empty());
-        assert!(first[0].request.is_some());
+        assert_eq!(
+            first[0]
+                .request
+                .as_ref()
+                .expect("upstream request is ready")
+                .execution_id,
+            Some(test_execution_id())
+        );
         assert_eq!(
             first[1].deferred_arguments,
             [VariableGraphQueryRequestDeferredArgument {
@@ -2099,9 +2127,13 @@ mod tests {
         assert_eq!(first, reordered);
         assert_eq!(first, reversed_request);
 
-        let no_previous_upstream_value =
-            compile_variable_graph_query_request_batch(&first_graph, &requested, &BTreeMap::new())
-                .expect("a deferred dependency does not require its previous value");
+        let no_previous_upstream_value = compile_variable_graph_query_request_batch(
+            &first_graph,
+            &requested,
+            test_execution_id(),
+            &BTreeMap::new(),
+        )
+        .expect("a deferred dependency does not require its previous value");
         assert!(no_previous_upstream_value[1].request.is_none());
     }
 
@@ -2130,6 +2162,7 @@ mod tests {
                 "upstream".to_owned(),
                 "downstream".to_owned(),
             ],
+            test_execution_id(),
             &values,
         )
         .expect("duplicate IDs compile once");
@@ -2146,9 +2179,13 @@ mod tests {
             "upstream"
         );
 
-        let selected =
-            compile_variable_graph_query_request_batch(&graph, &["downstream".to_owned()], &values)
-                .expect("caller can compile only an invalidated query");
+        let selected = compile_variable_graph_query_request_batch(
+            &graph,
+            &["downstream".to_owned()],
+            test_execution_id(),
+            &values,
+        )
+        .expect("caller can compile only an invalidated query");
         assert_eq!(selected.len(), 1);
         assert_eq!(selected[0].variable_id, "downstream");
         assert!(selected[0].deferred_arguments.is_empty());
@@ -2180,6 +2217,7 @@ mod tests {
         let diagnostics = compile_variable_graph_query_request_batch(
             &graph,
             &["query".to_owned(), "missing".to_owned(), "input".to_owned()],
+            test_execution_id(),
             &BTreeMap::new(),
         )
         .expect_err("invalid requested IDs reject the entire batch");
@@ -2226,6 +2264,7 @@ mod tests {
             compile_variable_graph_query_request_batch(
                 &invalid_batch_graph,
                 &["query".to_owned(), "good".to_owned()],
+                test_execution_id(),
                 &BTreeMap::new(),
             )
             .expect_err("missing one request value rejects the batch"),
@@ -2261,9 +2300,15 @@ mod tests {
         let requests = compile_variable_graph_query_request_batch(
             &valid_batch_graph,
             &["table".to_owned(), "scalar".to_owned()],
+            test_execution_id(),
             &BTreeMap::new(),
         )
         .expect("both requests fit their existing bounds");
+        assert!(requests.iter().all(|item| {
+            item.request
+                .as_ref()
+                .is_some_and(|request| request.execution_id == Some(test_execution_id()))
+        }));
         assert_eq!(requests[0].variable_id, "scalar");
         assert_eq!(
             requests[0]
