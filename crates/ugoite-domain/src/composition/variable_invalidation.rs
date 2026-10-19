@@ -129,8 +129,9 @@ fn plan_compiled_variable_graph_invalidation(
 mod tests {
     use super::*;
     use crate::composition::variable_graph::{
-        VariableGraphArgumentBinding, VariableGraphNode, VariableGraphQueryDefinition,
-        VariableGraphResultType, VariableGraphScalarDescriptor, VariableGraphScalarType,
+        VariableGraphArgumentBinding, VariableGraphLiteral, VariableGraphNode,
+        VariableGraphQueryDefinition, VariableGraphResultType, VariableGraphScalarDescriptor,
+        VariableGraphScalarType,
     };
 
     fn scalar(scalar_type: VariableGraphScalarType) -> VariableGraphScalarDescriptor {
@@ -147,6 +148,16 @@ mod tests {
                 value_type: scalar(VariableGraphScalarType::Integer),
                 required: true,
                 default: None,
+            },
+        }
+    }
+
+    fn constant(id: &str, value: i64) -> VariableGraphNode {
+        VariableGraphNode {
+            id: id.to_owned(),
+            kind: VariableGraphNodeKind::Constant {
+                value_type: scalar(VariableGraphScalarType::Integer),
+                value: VariableGraphLiteral::Integer(value),
             },
         }
     }
@@ -213,6 +224,27 @@ mod tests {
         assert_eq!(plan.queries, ["independent", "total"]);
 
         let plan = plan_variable_graph_invalidation(&graph, &[]).expect("empty change set");
+        assert!(plan.queries.is_empty());
+    }
+
+    #[test]
+    fn changed_constant_invalidates_only_dependent_queries_in_topological_order() {
+        let graph = VariableGraph {
+            variables: vec![
+                constant("minimum", 100),
+                constant("unused", 7),
+                query("count", &[("minimum", "minimum")]),
+                query("label", &[("count", "count")]),
+                query("total", &[("minimum", "minimum")]),
+            ],
+        };
+
+        let plan = plan_variable_graph_invalidation(&graph, &changed(&["minimum"]))
+            .expect("known constant change");
+        assert_eq!(plan.queries, ["count", "label", "total"]);
+
+        let plan = plan_variable_graph_invalidation(&graph, &changed(&["unused"]))
+            .expect("known unrelated constant change");
         assert!(plan.queries.is_empty());
     }
 
