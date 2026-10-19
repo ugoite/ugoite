@@ -41,72 +41,77 @@ vi.mock("@solidjs/router", () => ({
   useParams: () => ({ space_id: "default" }),
 }));
 
-vi.mock("~/components/SQLWorkspace", async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import("~/components/SQLWorkspace")
-  >();
-  return {
-    ...actual,
-    SQLWorkspace: (props: {
-      id?: string;
-      sql: string;
-      onSqlChange?: (value: string) => void;
-      onPreview: () => void;
-      onDiagnostics?: (
-        diagnostics: Array<{
-          from: number;
-          to: number;
-          severity: "error";
-          message: string;
-        }>,
-      ) => void;
-      preview: { status: string };
-      hideActions?: boolean;
-    }) => {
-      const emitBackendDiagnostic = (value: string) => {
-        props.onDiagnostics?.(
-          value.includes("missing_relation")
-            ? [{
-              from: 0,
-              to: value.length,
-              severity: "error",
-              message: "Backend rejected the relation",
-            }]
-            : [],
-        );
-      };
-      return (
-        <div
-          data-testid="sql-workspace"
-          data-hide-actions={props.hideActions ? "true" : "false"}
-        >
-          <section class="sql-workspace__editor" aria-label="SQL">
-            <textarea
-              id={props.id}
-              aria-label="SQL"
-              value={props.sql}
-              onInput={(event) => {
-                const value = event.currentTarget.value;
-                props.onSqlChange?.(value);
-                emitBackendDiagnostic(value);
-              }}
-            />
-          </section>
-          <button type="button" onClick={props.onPreview}>Run Query</button>
-          <output>{props.preview.status}</output>
-          {props.preview.status === "success" && (
-            <section
-              class="sql-workspace__results"
-              aria-label="SQL results"
-            >
-              Rows
-            </section>
-          )}
-        </div>
+vi.mock("~/components/SQLWorkspace", () => ({
+  SQLWorkspaceActionBar: (props: {
+    actions?: readonly { label: string; onActivate: () => void }[];
+  }) => (
+    <div role="group" aria-label="SQL">
+      {props.actions?.map((action) => (
+        <button type="button" onClick={action.onActivate}>
+          {action.label}
+        </button>
+      ))}
+    </div>
+  ),
+  SQLWorkspace: (props: {
+    id?: string;
+    sql: string;
+    onSqlChange?: (value: string) => void;
+    onPreview: () => void;
+    onDiagnostics?: (
+      diagnostics: Array<{
+        from: number;
+        to: number;
+        severity: "error";
+        message: string;
+      }>,
+    ) => void;
+    preview: { status: string };
+    hideActions?: boolean;
+  }) => {
+    const emitBackendDiagnostic = (value: string) => {
+      props.onDiagnostics?.(
+        value.includes("missing_relation")
+          ? [{
+            from: 0,
+            to: value.length,
+            severity: "error",
+            message: "Backend rejected the relation",
+          }]
+          : [],
       );
-    },
-  };
-});
+    };
+    return (
+      <div
+        data-testid="sql-workspace"
+        data-hide-actions={props.hideActions ? "true" : "false"}
+      >
+        <section class="sql-workspace__editor" aria-label="SQL">
+          <textarea
+            id={props.id}
+            aria-label="SQL"
+            value={props.sql}
+            onInput={(event) => {
+              const value = event.currentTarget.value;
+              props.onSqlChange?.(value);
+              emitBackendDiagnostic(value);
+            }}
+          />
+        </section>
+        <button type="button" onClick={props.onPreview}>Run Query</button>
+        <output>{props.preview.status}</output>
+        {props.preview.status === "success" && (
+          <section
+            class="sql-workspace__results"
+            aria-label="SQL results"
+          >
+            Rows
+          </section>
+        )}
+      </div>
+    );
+  },
+}));
 
 vi.mock("~/components/SqlStructureToolbar", async () => {
   const { onMount } = await import("solid-js");
