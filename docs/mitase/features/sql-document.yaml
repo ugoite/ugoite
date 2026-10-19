@@ -80,6 +80,22 @@ features:
                   arguments:
                     file: src/lib/ugoite-client/protocol.test.ts
                     test: parses bounded SQL drafts through the typed Rust/WASM document contract
+          - id: typed-parameter-rename-client
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.test.ts
+            selector:
+              kind: test
+              name: renames SQL Document parameters through the typed Rust/WASM client
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers:
+                  - FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parameter-rename-action
+                runner:
+                  runner: frontend-vitest-file
+                  arguments:
+                    file: src/lib/ugoite-client/protocol.test.ts
+                    test: renames SQL Document parameters through the typed Rust/WASM client
           - id: invalid-draft-diagnostics
             adapter: rust
             path: crates/ugoite-domain/src/sql_document.rs
@@ -188,6 +204,13 @@ features:
             adapter: typescript
             path: frontend/src/lib/ugoite-client/protocol.ts
             selector: { kind: symbol, name: parseSqlDocument }
+            claims:
+              - kind: evidences
+                anchor: REQ-SQL-001#criterion.portable-protocol
+          - id: parameter-rename-client
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.ts
+            selector: { kind: symbol, name: renameSqlDocumentParameter }
             claims:
               - kind: evidences
                 anchor: REQ-SQL-001#criterion.portable-protocol

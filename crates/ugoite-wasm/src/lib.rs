@@ -1214,6 +1214,7 @@ mod tests {
             assert_eq!(response["error"]["kind"], "domain_validation");
             assert_eq!(response["error"]["message"], native_error.to_string());
         }
+    }
 
     #[test]
     fn sql_document_protocol_accepts_maximum_source_with_json_escaped_trivia() {

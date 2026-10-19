@@ -21,8 +21,8 @@ import {
   UGOITE_API_OPERATIONS,
   UGOITE_WASM_PROTOCOL_VERSION,
   UgoiteApiError,
-  type VariableGraph,
   validateAssetReference,
+  type VariableGraph,
 } from "./protocol";
 import { testApiUrl } from "~/test/http-origin";
 import { server } from "~/test/mocks/server";
@@ -183,11 +183,13 @@ describe("portable Ugoite API protocol WASM", () => {
         graph.variables[0],
       ],
     };
-    await expect(compileVariableGraph(invalidGraph)).rejects.toMatchObject({
-      kind: "variable_graph_diagnostics",
-      contract_version: 1,
-      diagnostics: [{ code: "variable_type_mismatch" }],
-    } satisfies Partial<UgoiteApiError>);
+    await expect(compileVariableGraph(invalidGraph)).rejects.toMatchObject(
+      {
+        kind: "variable_graph_diagnostics",
+        contract_version: 1,
+        diagnostics: [{ code: "variable_type_mismatch" }],
+      } satisfies Partial<UgoiteApiError>,
+    );
   });
 
   it("analyzes SQL structure and returns confirmation proposals through Rust/WASM", async () => {
