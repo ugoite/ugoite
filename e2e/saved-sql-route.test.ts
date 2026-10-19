@@ -130,32 +130,145 @@ test.describe("Saved SQL route", () => {
     }
   });
 
-  test("REQ-FE-063 @smoke: new saved SQL starts with a Form relation and runs through Saved SQL", async ({ page, request }) => {
-    await ensureDefaultForm(request, spaceId);
-    const queryName = `Runnable starter ${Date.now()}`;
+  test("@smoke keeps SQL actions in a horizontally scrollable row on narrow screens", async ({ page }) => {
+    await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/new`), {
+      waitUntil: "domcontentloaded",
+    });
+    const actions = page.getByRole("group", { name: "SQL" });
+    await expect(actions).toBeVisible();
+
+    for (const width of [320, 375, 390]) {
+      await page.setViewportSize({ width, height: 844 });
+      const dimensions = await page.evaluate(() => {
+        const toolbar = document.querySelector<HTMLElement>(
+          ".sql-workspace__actions",
+        );
+        if (!toolbar) throw new Error("SQL action toolbar is missing");
+        return {
+          documentWidth: document.documentElement.scrollWidth,
+          viewportWidth: document.documentElement.clientWidth,
+          toolbarWidth: toolbar.clientWidth,
+          toolbarScrollWidth: toolbar.scrollWidth,
+          buttons: Array.from(toolbar.querySelectorAll("button"), (button) => {
+            const rect = button.getBoundingClientRect();
+            return { width: rect.width, height: rect.height, top: rect.top };
+          }),
+        };
+      });
+
+      expect(dimensions.documentWidth).toBeLessThanOrEqual(
+        dimensions.viewportWidth + 1,
+      );
+      expect(dimensions.buttons).toHaveLength(7);
+      expect(
+        Math.max(...dimensions.buttons.map((button) => button.top)) -
+          Math.min(...dimensions.buttons.map((button) => button.top)),
+      ).toBeLessThanOrEqual(1);
+      if (width === 320) {
+        expect(dimensions.toolbarScrollWidth).toBeGreaterThan(
+          dimensions.toolbarWidth,
+        );
+      } else {
+        expect(dimensions.toolbarScrollWidth).toBeLessThanOrEqual(
+          dimensions.toolbarWidth,
+        );
+      }
+      for (const button of dimensions.buttons) {
+        expect(button.width).toBeGreaterThanOrEqual(44);
+        expect(button.height).toBeGreaterThanOrEqual(44);
+      }
+    }
+  });
+
+  test("REQ-FE-063 @smoke: new saved SQL uses the shared structure actions and runs through Saved SQL", async ({ page, request }) => {
+    const queryName = `Form-bound draft ${Date.now()}`;
     let savedSqlId: string | undefined;
+    await ensureDefaultForm(request, spaceId);
+    const relation = await getDefaultFormRelation(request, spaceId);
 
     try {
       await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/new`), {
         waitUntil: "domcontentloaded",
       });
 
-      await expect(page.locator(".ui-sql-editor")).toContainText(
-        /SELECT \* FROM "[^"]+" ORDER BY _ugoite_updated_at DESC, _ugoite_id/,
-      );
-      const structureActions = page.getByRole("group", { name: "SQL" });
-      await expect(structureActions.getByRole("button", { name: /^Columns/ }))
-        .toBeEnabled();
-      await expect(structureActions.getByRole("button", { name: /^Filter/ }))
-        .toBeEnabled();
-      await expect(structureActions.getByRole("button", { name: /^Sort/ }))
-        .toBeEnabled();
+      await expect(page.locator(".ui-sql-editor")).toContainText("SELECT 1");
+      await expect(page.getByLabel("Form for this query")).toHaveCount(0);
       await expect(
-        structureActions.getByRole("button", { name: /^Aggregate/ }),
-      ).toBeEnabled();
+        page.getByRole("button", { name: /^Aggregate(?:$|:)/ }),
+      ).toHaveCount(1);
+      await expect(page.getByLabel("Filter field")).toHaveCount(0);
+
+      const structureActions = page.getByRole("group", { name: "SQL" });
+      const formAction = structureActions.getByRole("button", {
+        name: "Form",
+        exact: true,
+      });
+      await expect(formAction).toBeEnabled();
+      await expect(
+        structureActions.getByRole("button", {
+          name: /^Aggregate(?:$|:)/,
+        }),
+      ).toBeDisabled();
       await expect(page.locator(".ui-sql-editor")).not.toContainText(
         /\b(?:LIMIT|OFFSET)\b/i,
       );
+      await expect(page.getByLabel("Filter field")).toHaveCount(0);
+
+      await formAction.click();
+      const formDialog = page.getByRole("dialog", { name: "Form" });
+      await formDialog.getByRole("button", { name: "Entry" }).click();
+      const reviewDialog = page.getByRole("dialog", {
+        name: "Review SQL change",
+      });
+      await expect(reviewDialog.getByText(`SELECT * FROM "${relation}"`))
+        .toBeVisible();
+      await reviewDialog.getByRole("button", { name: "Apply change" }).click();
+      await expect(page.locator(".ui-sql-editor")).toContainText(
+        `SELECT * FROM "${relation}"`,
+      );
+
+      const filter = structureActions.getByRole("button", {
+        name: "Filter",
+        exact: true,
+      });
+      await expect(filter).toBeEnabled();
+      await filter.click();
+      const filterDialog = page.getByRole("dialog", { name: "Filter" });
+      await filterDialog.getByRole("button", { name: "Add filter" }).click();
+      await filterDialog.getByRole("button", { name: "Review change" }).click();
+      const filterReviewDialog = page.getByRole("dialog", {
+        name: "Review SQL change",
+      });
+      await expect(filterReviewDialog.getByText(/\$filter__ugoite_id/))
+        .toBeVisible();
+      await filterReviewDialog.getByRole("button", { name: "Apply change" })
+        .click();
+      const filterValue = page.getByRole("textbox", {
+        name: "filter__ugoite_id",
+        exact: true,
+      });
+      await expect(filterValue).toBeVisible();
+      await filterValue.fill("no-match");
+
+      const aggregate = structureActions.getByRole("button", {
+        name: "Aggregate",
+        exact: true,
+      });
+      await expect(aggregate).toBeEnabled();
+      await aggregate.click();
+      const aggregateDialog = page.getByRole("dialog", { name: "Aggregate" });
+      await aggregateDialog.getByRole("button", { name: "Add aggregate" })
+        .click();
+      await aggregateDialog.getByRole("button", { name: "Review change" })
+        .click();
+      const aggregateReviewDialog = page.getByRole("dialog", {
+        name: "Review SQL change",
+      });
+      await expect(aggregateReviewDialog.getByText(/COUNT\(\*\)/))
+        .toBeVisible();
+      await aggregateReviewDialog.getByRole("button", { name: "Apply change" })
+        .click();
+      await expect(page.locator(".ui-sql-editor")).toContainText(/COUNT\(\*\)/);
       await page.getByLabel("Query name").fill(queryName);
       const createResponsePromise = page.waitForResponse((response) => {
         const url = new URL(response.url());
@@ -170,6 +283,10 @@ test.describe("Saved SQL route", () => {
       await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`), {
         waitUntil: "domcontentloaded",
       });
+      await page.getByRole("textbox", {
+        name: "filter__ugoite_id",
+        exact: true,
+      }).fill("no-match");
       const queryResponsePromise = page.waitForResponse((response) => {
         const url = new URL(response.url());
         return response.request().method() === "POST" &&
@@ -191,132 +308,6 @@ test.describe("Saved SQL route", () => {
       if (savedSqlId) {
         await request.delete(
           getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
-        );
-      }
-    }
-  });
-
-  test("REQ-FE-063 @smoke: aggregate builder saves a typed filter and runs through the ordinary Saved SQL route", async ({ page, request }) => {
-    const suffix = Date.now();
-    const formName = `Sales_${suffix}`;
-    const entryIds: string[] = [];
-    let savedSqlId: string | undefined;
-    try {
-      const createForm = await request.post(
-        getBackendUrl(`/spaces/${spaceId}/forms`),
-        {
-          data: {
-            name: formName,
-            version: 1,
-            template:
-              `# ${formName}\n\n## Quantity\n\n## Revenue\n\n## Category\n`,
-            fields: {
-              Quantity: { type: "integer", required: false, label: "Quantity" },
-              Revenue: { type: "integer", required: false, label: "Revenue" },
-              Category: { type: "string", required: false, label: "Category" },
-            },
-          },
-        },
-      );
-      expect([200, 201]).toContain(createForm.status());
-
-      const formsResponse = await request.get(
-        getBackendUrl(`/spaces/${spaceId}/forms`),
-      );
-      expect(formsResponse.ok()).toBe(true);
-      const forms = await formsResponse.json() as Array<{
-        id?: string;
-        name?: string;
-        fields?: Record<string, { sql_column?: string }>;
-      }>;
-      const form = forms.find((candidate) => candidate.name === formName);
-      expect(form?.id).toBeTruthy();
-      expect(form?.fields?.Quantity?.sql_column).toBeTruthy();
-      expect(form?.fields?.Category?.sql_column).toBeTruthy();
-
-      const createEntry = async (quantity: number, category: string) => {
-        const response = await request.post(
-          getBackendUrl(`/spaces/${spaceId}/entries`),
-          {
-            data: {
-              form: formName,
-              fields: { Quantity: quantity, Category: category },
-            },
-          },
-        );
-        expect(response.status()).toBe(201);
-        return (await response.json() as { id: string }).id;
-      };
-      entryIds.push(await createEntry(42, "food"));
-      entryIds.push(await createEntry(9, "travel"));
-
-      const queryName = `Form aggregate ${suffix}`;
-      await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/new`), {
-        waitUntil: "domcontentloaded",
-      });
-      await page.getByLabel("Form for this query").selectOption(form!.id!);
-      const aggregate = page.getByRole("combobox", { name: "Aggregate" });
-      await aggregate.selectOption("sum");
-      await expect(aggregate).toHaveValue("sum");
-      const aggregateField = page.getByLabel("Field", { exact: true });
-      await aggregateField.selectOption("Quantity");
-      await expect(aggregateField).toHaveValue("Quantity");
-      const filterField = page.getByLabel("Filter field");
-      await filterField.selectOption("Category");
-      await expect(filterField).toHaveValue("Category");
-      await page.getByRole("button", { name: "Generate aggregate SQL" })
-        .click();
-
-      const amountColumn = form!.fields!.Quantity!.sql_column!;
-      const categoryColumn = form!.fields!.Category!.sql_column!;
-      await expect(page.locator(".ui-sql-editor")).toContainText(
-        `SUM("${amountColumn}") AS "value" FROM "${formName}" WHERE "${categoryColumn}" = {{filter_value}}`,
-      );
-      await page.getByLabel("Query name").fill(queryName);
-      const createResponsePromise = page.waitForResponse((response) => {
-        const url = new URL(response.url());
-        return response.request().method() === "POST" &&
-          url.pathname === `/api/spaces/${spaceId}/sql`;
-      });
-      await page.getByRole("button", { name: "Save" }).click();
-      const createQueryResponse = await createResponsePromise;
-      expect([200, 201]).toContain(createQueryResponse.status());
-      const createPayload = createQueryResponse.request().postDataJSON() as {
-        kind: string;
-        sql: string;
-        variables: Array<{ name: string; type: string; description: string }>;
-      };
-      expect(createPayload.kind).toBe("user-query");
-      expect(createPayload.sql).toBe(
-        `SELECT SUM("${amountColumn}") AS "value" FROM "${formName}" WHERE "${categoryColumn}" = $filter_value`,
-      );
-      expect(createPayload.variables).toEqual([{
-        name: "filter_value",
-        type: "string",
-        description: "Category",
-      }]);
-      savedSqlId = (await createQueryResponse.json() as { id: string }).id;
-
-      await page.goto(
-        getFrontendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
-        { waitUntil: "domcontentloaded" },
-      );
-      await page.getByRole("link", { name: "Open Variables" }).click();
-      await page.getByLabel("filter_value").fill("food");
-      await page.getByRole("button", { name: "Run" }).click();
-      await expect(page).toHaveURL(
-        new RegExp(`/spaces/${spaceId}/sql/${savedSqlId}/run`),
-      );
-      await expect(page.getByText("42", { exact: true })).toBeVisible();
-    } finally {
-      if (savedSqlId) {
-        await request.delete(
-          getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
-        );
-      }
-      for (const entryId of entryIds) {
-        await request.delete(
-          getBackendUrl(`/spaces/${spaceId}/entries/${entryId}`),
         );
       }
     }

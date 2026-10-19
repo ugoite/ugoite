@@ -240,7 +240,11 @@ describe("CompositionDataWorkspace", () => {
   });
 
   it("resolves a single Form binding using its SQL relation", () => {
-    const draft = inlineDraft();
+    const relation = "form_00000000000070008000000000000001";
+    const draft = inlineDraft(
+      `SELECT "Amount" AS total FROM "${relation}"`,
+      [{ relation, form_id: "form-1" }],
+    );
     render(() => (
       <>
         <h2 id="data-heading">Data</h2>
@@ -249,6 +253,7 @@ describe("CompositionDataWorkspace", () => {
             forms: [{
               id: "form-1",
               name: "Renamed Expenses",
+              sql_relation: relation,
               version: 1,
               template: "",
               fields: {
@@ -268,21 +273,23 @@ describe("CompositionDataWorkspace", () => {
       screen.getByTestId("structure-contexts").textContent ?? "[]",
     ) as Array<{ relation: string; columns: string[] }>;
     expect(contexts.map((context) => context.relation)).toEqual([
-      "Expenses",
+      relation,
       "",
     ]);
     const expenseContext = contexts.find((context) =>
-      context.relation === "Expenses"
+      context.relation === relation
     );
     expect(expenseContext?.columns).toContain("Amount");
   });
 
   it("preserves every resolved Form context for multi-relation SQL", () => {
+    const expenseRelation = "form_00000000000070008000000000000001";
+    const budgetRelation = "form_00000000000070008000000000000002";
     const draft = inlineDraft(
-      'SELECT "Amount" FROM "Expenses" JOIN "Budgets" ON "Expenses"."Budget" = "Budgets"."_ugoite_id"',
+      `SELECT "Amount" FROM "${expenseRelation}" JOIN "${budgetRelation}" ON "${expenseRelation}"."Budget" = "${budgetRelation}"."_ugoite_id"`,
       [
-        { relation: "Expenses", form_id: "form-1" },
-        { relation: "Budgets", form_id: "form-2" },
+        { relation: expenseRelation, form_id: "form-1" },
+        { relation: budgetRelation, form_id: "form-2" },
       ],
     );
     render(() => (
@@ -294,6 +301,7 @@ describe("CompositionDataWorkspace", () => {
               {
                 id: "form-1",
                 name: "Expense records",
+                sql_relation: expenseRelation,
                 version: 1,
                 template: "",
                 fields: {},
@@ -301,6 +309,7 @@ describe("CompositionDataWorkspace", () => {
               {
                 id: "form-2",
                 name: "Budget records",
+                sql_relation: budgetRelation,
                 version: 3,
                 template: "",
                 fields: {},
@@ -315,10 +324,36 @@ describe("CompositionDataWorkspace", () => {
       screen.getByTestId("structure-contexts").textContent ?? "[]",
     ) as Array<{ relation: string }>;
     expect(contexts.map((context) => context.relation)).toEqual([
-      "Expenses",
-      "Budgets",
+      expenseRelation,
+      budgetRelation,
       "",
     ]);
+  });
+
+  it("does not expose a context for a stale server-derived Form relation", () => {
+    const draft = inlineDraft();
+    render(() => (
+      <>
+        <h2 id="data-heading">Data</h2>
+        <CompositionDataWorkspace
+          {...propsFor(draft, {
+            forms: [{
+              id: "form-1",
+              name: "Renamed Expenses",
+              sql_relation: "form_00000000000070008000000000000001",
+              version: 1,
+              template: "",
+              fields: {},
+            }],
+          })}
+        />
+      </>
+    ));
+
+    const contexts = JSON.parse(
+      screen.getByTestId("structure-contexts").textContent ?? "[]",
+    ) as Array<{ relation: string }>;
+    expect(contexts).toEqual([]);
   });
 
   it("does not create a partial context when any Form binding is unresolved", () => {

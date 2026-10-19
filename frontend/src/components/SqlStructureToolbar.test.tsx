@@ -20,14 +20,15 @@ import type {
 } from "~/lib/ugoite-client";
 import { SqlStructureToolbar } from "./SqlStructureToolbar";
 
-const { analyzeMock, proposeMock } = vi.hoisted(() => ({
+const { analyzeMock, prepareMock, proposeMock } = vi.hoisted(() => ({
   analyzeMock: vi.fn(),
+  prepareMock: vi.fn(),
   proposeMock: vi.fn(),
 }));
 
 vi.mock("~/lib/ugoite-client", () => ({
   analyzeSqlStructure: analyzeMock,
-  prepareSqlStructureParser: vi.fn(async () => undefined),
+  prepareSqlStructureParser: prepareMock,
   proposeSqlStructureOperation: proposeMock,
 }));
 
@@ -110,7 +111,9 @@ describe("SqlStructureToolbar adapter", () => {
   beforeEach(() => {
     setLocale("en");
     analyzeMock.mockReset();
+    prepareMock.mockReset();
     proposeMock.mockReset();
+    prepareMock.mockResolvedValue(undefined);
     analyzeMock.mockResolvedValue(analysis);
     proposeMock.mockImplementation(async (baseSql: string) => ({
       contract_version: 1,
@@ -135,7 +138,7 @@ describe("SqlStructureToolbar adapter", () => {
       />
     ));
 
-    await waitFor(() => expect(actions).toHaveLength(6));
+    await waitFor(() => expect(actions).toHaveLength(7));
     await waitFor(() =>
       expect(actions.find((action) => action.kind === "columns")?.disabled)
         .toBe(false)
@@ -252,6 +255,123 @@ describe("SqlStructureToolbar adapter", () => {
       within(dialog).getByRole("button", { name: "Apply change" }),
     );
     expect(onSqlChange).toHaveBeenCalledWith("SELECT DISTINCT 1");
+  });
+
+  it("routes Form selection through the Rust relation proposal", async () => {
+    const sql = "SELECT 1";
+    const targetContext: SqlStructureAdapterContext = {
+      ...context,
+      parser: { ...context.parser, relation: "Orders" },
+    };
+    const relationFreeContext = buildSqlStructureContexts([], [], "new-sql")[0];
+    const contexts = [targetContext, relationFreeContext];
+    const onSqlChange = vi.fn();
+    const proposedSql = 'SELECT * FROM "Orders"';
+    analyzeMock.mockImplementation((
+      _sql: string,
+      parser: { relation: string },
+    ) =>
+      Promise.resolve(
+        parser.relation
+          ? {
+            ...analysis,
+            status: "unsupported",
+            reason: "relation_unsupported",
+          }
+          : analysis,
+      )
+    );
+    proposeMock.mockResolvedValue({
+      contract_version: 1,
+      status: "supported",
+      base_sql: sql,
+      proposed_sql: proposedSql,
+      requires_confirmation: true,
+      added_stable_tie_breakers: [],
+    });
+    let actions: readonly SQLWorkspaceAction[] = [];
+
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => contexts}
+        onSqlChange={onSqlChange}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "form")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "form")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Form" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Orders" }));
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(proposeMock).toHaveBeenCalledWith(
+      sql,
+      targetContext.parser,
+      { kind: "set_relation", relation: "Orders" },
+    );
+    expect(onSqlChange).not.toHaveBeenCalled();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Apply change" }),
+    );
+    expect(onSqlChange).toHaveBeenCalledWith(proposedSql);
+  });
+
+  it("waits for delayed parser initialization before allowing first Form selection", async () => {
+    const sql = "SELECT 1";
+    const targetContext: SqlStructureAdapterContext = {
+      ...context,
+      parser: { ...context.parser, relation: "Orders" },
+    };
+    const contexts = [targetContext];
+    const onSqlChange = vi.fn();
+    let resolveParser: (() => void) | undefined;
+    prepareMock.mockImplementationOnce(() =>
+      new Promise<void>((resolve) => resolveParser = resolve)
+    );
+    proposeMock.mockResolvedValue({
+      contract_version: 1,
+      status: "supported",
+      base_sql: sql,
+      proposed_sql: 'SELECT * FROM "Orders"',
+      requires_confirmation: true,
+      added_stable_tie_breakers: [],
+    });
+    let actions: readonly SQLWorkspaceAction[] = [];
+
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => contexts}
+        onSqlChange={onSqlChange}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() => expect(prepareMock).toHaveBeenCalledOnce());
+    expect(actions.find((action) => action.kind === "form")?.disabled)
+      .toBe(true);
+    expect(screen.queryByRole("dialog", { name: "Form" })).toBeNull();
+
+    resolveParser?.();
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "form")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "form")!.onActivate();
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Form" })).getByRole(
+        "button",
+        { name: "Orders" },
+      ),
+    );
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(onSqlChange).not.toHaveBeenCalled();
   });
 
   it("discards a proposal and closes its dialog when SQL context changes", async () => {
@@ -381,6 +501,167 @@ describe("SqlStructureToolbar adapter", () => {
         kind: "set_filters",
         filters: [{ column: "amount", operator: "is_null" }],
       },
+    );
+  });
+
+  it("creates a typed argument when filtering a fresh Form query", async () => {
+    const emptyContext: SqlStructureAdapterContext = {
+      ...context,
+      identity: "inline:source-1:form-1:no-variables",
+      parser: { ...context.parser, variables: [] },
+      columnCapabilities: {
+        ...context.columnCapabilities,
+        _ugoite_id: {
+          ...context.columnCapabilities._ugoite_id,
+          filterable: false,
+          supportedOperators: [],
+        },
+      },
+    };
+    const sql = 'SELECT * FROM "Orders"';
+    const onSqlChange = vi.fn();
+    const onVariablesAdded = vi.fn();
+    proposeMock.mockResolvedValue(
+      {
+        contract_version: 1,
+        status: "supported",
+        base_sql: sql,
+        proposed_sql: 'SELECT * FROM "Orders" WHERE "amount" = $filter_amount',
+        requires_confirmation: true,
+        added_stable_tie_breakers: [],
+      } satisfies SqlStructureProposal,
+    );
+    let actions: readonly SQLWorkspaceAction[] = [];
+
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [emptyContext]}
+        onSqlChange={onSqlChange}
+        onVariablesAdded={onVariablesAdded}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "filter")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "filter")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Filter" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add filter" }),
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(proposeMock).toHaveBeenCalledWith(
+      sql,
+      {
+        ...emptyContext.parser,
+        variables: [{ name: "filter_amount", type: "integer" }],
+      },
+      {
+        kind: "set_filters",
+        filters: [{
+          column: "amount",
+          operator: "eq",
+          parameter: "filter_amount",
+        }],
+      },
+    );
+
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Apply change" }),
+    );
+    expect(onVariablesAdded).toHaveBeenCalledWith([{
+      name: "filter_amount",
+      type: "integer",
+    }]);
+    expect(onSqlChange).toHaveBeenCalledWith(
+      'SELECT * FROM "Orders" WHERE "amount" = $filter_amount',
+    );
+  });
+
+  it("locks filter drafts while a typed argument proposal is pending", async () => {
+    const emptyContext: SqlStructureAdapterContext = {
+      ...context,
+      identity: "inline:source-1:form-1:pending-filter-proposal",
+      parser: { ...context.parser, variables: [] },
+      columnCapabilities: {
+        ...context.columnCapabilities,
+        _ugoite_id: {
+          ...context.columnCapabilities._ugoite_id,
+          filterable: false,
+          supportedOperators: [],
+        },
+      },
+    };
+    const sql = 'SELECT * FROM "Orders"';
+    const onSqlChange = vi.fn();
+    const onVariablesAdded = vi.fn();
+    let resolveProposal: (value: SqlStructureProposal) => void = () => {};
+    proposeMock.mockImplementationOnce(() =>
+      new Promise<SqlStructureProposal>((resolve) => {
+        resolveProposal = resolve;
+      })
+    );
+    let actions: readonly SQLWorkspaceAction[] = [];
+
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [emptyContext]}
+        onSqlChange={onSqlChange}
+        onVariablesAdded={onVariablesAdded}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "filter")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "filter")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Filter" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add filter" }),
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(within(dialog).getByLabelText("Column")).toBeDisabled();
+    expect(within(dialog).getByLabelText("Operator")).toBeDisabled();
+    expect(within(dialog).getByLabelText("Variable")).toBeDisabled();
+    expect(
+      within(dialog).getByRole("button", { name: "Remove filter" }),
+    ).toBeDisabled();
+    expect(
+      within(dialog).getByRole("button", { name: "Add filter" }),
+    ).toBeDisabled();
+
+    resolveProposal({
+      contract_version: 1,
+      status: "supported",
+      base_sql: sql,
+      proposed_sql: 'SELECT * FROM "Orders" WHERE "amount" = $filter_amount',
+      requires_confirmation: true,
+      added_stable_tie_breakers: [],
+    });
+    fireEvent.click(
+      await within(dialog).findByRole("button", { name: "Apply change" }),
+    );
+
+    expect(onVariablesAdded).toHaveBeenCalledWith([{
+      name: "filter_amount",
+      type: "integer",
+    }]);
+    expect(onSqlChange).toHaveBeenCalledWith(
+      'SELECT * FROM "Orders" WHERE "amount" = $filter_amount',
     );
   });
 
@@ -576,7 +857,7 @@ describe("SqlStructureToolbar adapter", () => {
       expect(actions.find((action) => action.kind === "aggregate")?.disabled)
         .toBe(false)
     );
-    expect(actions).toHaveLength(6);
+    expect(actions).toHaveLength(7);
     for (const kind of ["group_by", "distinct"] as const) {
       expect(actions.find((action) => action.kind === kind)?.disabled).toBe(
         true,

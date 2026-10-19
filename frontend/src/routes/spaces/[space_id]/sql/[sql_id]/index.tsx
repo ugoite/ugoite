@@ -21,11 +21,13 @@ import {
   applySqlVariableDefaultDrafts,
   buildSqlSchema,
   buildSqlStructureContexts,
+  mergeSqlStructureVariables,
   normalizeSqlVariables,
   type SqlVariableDefaultDraft,
 } from "~/lib/sql";
 import { createSqlWorkspaceController } from "~/lib/sql-workspace";
 import { formApi, sqlApi } from "~/lib/ugoite-client";
+import type { SqlStructureVariableType } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
 import { displaySqlName } from "~/lib/sql-metadata";
@@ -119,6 +121,25 @@ export default function SpaceSqlDetailRoute() {
       };
     },
   });
+
+  const registerCreatedVariables = (
+    added: readonly { name: string; type: SqlStructureVariableType }[],
+  ) => {
+    const existingTypes = new Map(
+      savedVariables().map((variable) => [variable.name, variable.type]),
+    );
+    const replacedNames = added.filter(({ name, type }) =>
+      existingTypes.has(name) && existingTypes.get(name) !== type
+    ).map(({ name }) => name);
+    if (replacedNames.length > 0) {
+      setDefaultDrafts((current) => {
+        const next = { ...current };
+        for (const name of replacedNames) delete next[name];
+        return next;
+      });
+    }
+    setSavedVariables((current) => mergeSqlStructureVariables(current, added));
+  };
 
   const handleRun = () => {
     if (!entry() || isDirty() || variableCount() > 0) return;
@@ -383,6 +404,7 @@ export default function SpaceSqlDetailRoute() {
                         `saved-sql:${sqlId()}:${revisionId() ?? ""}`,
                       )}
                     onSqlChange={setSqlInput}
+                    onVariablesAdded={registerCreatedVariables}
                     onActionsChange={setStructureActions}
                     disabled={() => busy() !== null}
                   />

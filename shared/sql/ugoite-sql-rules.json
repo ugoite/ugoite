@@ -61,6 +61,12 @@
       },
       "operations": [
         {
+          "action": "form",
+          "protocol": "set_relation",
+          "sql": ["FROM"],
+          "coverage": "bounded"
+        },
+        {
           "action": "columns",
           "protocol": "set_columns",
           "sql": ["SELECT projection"],
@@ -103,12 +109,11 @@
           "id": "from_relation",
           "sql": "FROM",
           "backend_admission": "planner_decides",
-          "editor_coverage": "context_only",
+          "editor_coverage": "bounded",
           "limits": [
-            "one relation",
-            "matching context relation",
-            "no alias",
-            "no joins"
+            "one relation selected from trusted Form context",
+            "relation-free SELECT 1 draft can select a Form",
+            "no aliases or joins"
           ]
         },
         {

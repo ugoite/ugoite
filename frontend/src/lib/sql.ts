@@ -2,7 +2,7 @@ import { StandardSQL } from "@codemirror/lang-sql";
 import type { SQLConfig } from "@codemirror/lang-sql";
 import type { Diagnostic } from "@codemirror/lint";
 import sqlRules from "../../../shared/sql/ugoite-sql-rules.json";
-import type { Form, FormField, SqlVariable, SqlVariableDefault } from "./types";
+import type { Form, SqlVariable, SqlVariableDefault } from "./types";
 import type {
   SqlStructureAggregateFunction,
   SqlStructureColumnType,
@@ -12,6 +12,17 @@ import type {
 } from "./ugoite-client";
 
 export type SqlSchema = NonNullable<SQLConfig["schema"]>;
+
+const sqlSchemaFormLabels = new WeakMap<
+  object,
+  Readonly<Record<string, string>>
+>();
+
+export function sqlSchemaFormLabelsFor(
+  schema: SqlSchema,
+): Readonly<Record<string, string>> {
+  return sqlSchemaFormLabels.get(schema as object) ?? {};
+}
 
 const SQL_SYSTEM_COLUMNS = [
   "_ugoite_id",
@@ -108,6 +119,8 @@ export interface SqlStructureColumnCapabilities {
 export interface SqlStructureAdapterContext {
   /** Identity of the source and schema context that produced this adapter context. */
   identity: string;
+  /** Human-readable Form name for picker rows; SQL uses parser.relation. */
+  label?: string;
   parser: SqlStructureContext;
   columnCapabilities: Readonly<Record<string, SqlStructureColumnCapabilities>>;
 }
@@ -143,7 +156,7 @@ export const buildSqlStructureContexts = (
   });
 
   const formContexts = forms.flatMap((form) => {
-    const relation = form.name.trim();
+    const relation = form.sql_relation?.trim();
     if (!relation) return [];
     const columns = [
       { name: "_ugoite_id", type: "string" as const },
@@ -240,11 +253,13 @@ export const buildSqlStructureContexts = (
       identity: JSON.stringify({
         sourceIdentity,
         formId: form.id ?? null,
+        formName: form.name,
         formVersion: form.version,
         relation,
         parser,
         columnCapabilities,
       }),
+      label: form.name.trim() || relation,
       parser,
       columnCapabilities,
     }];
@@ -270,208 +285,21 @@ export function buildSqlSchema(forms: Form[]): SqlSchema {
   // plain object literal would swallow as a prototype assignment instead of
   // an ordinary table entry.
   const tables: Record<string, string[]> = Object.create(null);
+  const tableLabels: Record<string, string> = Object.create(null);
   for (const item of forms) {
-    const name = item.name.trim();
+    const name = item.sql_relation?.trim();
     if (!name) continue;
     const columns = Object.values(item.fields ?? {})
       .map((field) => field.sql_column?.trim())
       .filter((column): column is string => Boolean(column));
     tables[name] = [...SQL_SYSTEM_COLUMNS, ...columns];
+    tableLabels[name] = item.name.trim() || name;
   }
 
-  return { tables };
+  const schema = { tables };
+  sqlSchemaFormLabels.set(schema, tableLabels);
+  return schema;
 }
-
-function quoteSqlIdentifier(value: string): string {
-  return `"${value.replaceAll('"', '""')}"`;
-}
-
-/** Build an initial relation query with stable ordering and request paging. */
-export function buildSqlStarterQuery(sqlRelation: string): string {
-  return `SELECT * FROM ${
-    quoteSqlIdentifier(sqlRelation)
-  } ORDER BY _ugoite_updated_at DESC, _ugoite_id`;
-}
-
-export type SqlAggregateOperation =
-  | "count-rows"
-  | "count-values"
-  | "sum"
-  | "average"
-  | "minimum"
-  | "maximum";
-
-export type SqlBuilderField = {
-  key: string;
-  label: string;
-  column: string;
-  fieldType: string;
-  queryCapabilitySortable?: boolean;
-  queryCapabilitySupportedOperators?: string[];
-};
-
-export type SqlBuilderParameter = {
-  name: "filter_value";
-  type: string;
-  description: string;
-};
-
-export type SqlAggregateQuery = {
-  sql: string;
-  parameter?: SqlBuilderParameter;
-};
-
-const numericFieldTypes = new Set(["integer", "long", "float", "double"]);
-const orderableFieldTypes = new Set([
-  ...numericFieldTypes,
-  "date",
-  "timestamp",
-  "timestamp_tz",
-  "timestamp_ns",
-  "timestamp_tz_ns",
-]);
-
-// Keep filters on parameter types shared by ordinary Saved SQL and
-// Composition. long is omitted because its input currently passes through
-// JavaScript's imprecise Number type; zoned/nanosecond timestamps are omitted
-// because Composition parameters use the portable timestamp type.
-const sqlVariableTypes = new Map<string, string>([
-  ["string", "string"],
-  ["markdown", "string"],
-  ["sql", "string"],
-  ["boolean", "boolean"],
-  ["integer", "integer"],
-  ["float", "float"],
-  ["double", "float"],
-  ["date", "date"],
-  ["timestamp", "timestamp"],
-]);
-
-const generatedOrdinal = /^(?:field|フィールド|項目)[\s_-]*\d+$/iu;
-const opaqueIdentifier =
-  /^(?:\d+|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/iu;
-
-const displaySqlBuilderFieldName = (
-  key: string,
-  field: FormField,
-): string | undefined => {
-  const candidates = [field.label, field.query_capability?.name, key];
-  return candidates.map((value) => value?.trim()).find((value) =>
-    value && !generatedOrdinal.test(value) && !opaqueIdentifier.test(value)
-  );
-};
-
-const sqlBuilderFieldsFor = (form: Form | undefined): SqlBuilderField[] => {
-  if (!form) return [];
-  return Object.entries(form.fields ?? {}).flatMap(([key, field]) => {
-    const column = field.sql_column?.trim();
-    const label = displaySqlBuilderFieldName(key, field);
-    if (!column || !label || field.deprecated) return [];
-    if (field.query_capability?.projectable === false) return [];
-    return [{
-      key,
-      label,
-      column,
-      fieldType: field.query_capability?.field_type ?? field.type,
-      queryCapabilitySortable: field.query_capability?.sortable,
-      queryCapabilitySupportedOperators: field.query_capability
-        ?.supported_operators,
-    }];
-  });
-};
-
-/** Return the current Form fields compatible with the selected aggregate. */
-export const sqlAggregateFieldOptions = (
-  form: Form | undefined,
-  operation: SqlAggregateOperation,
-): SqlBuilderField[] => {
-  const fields = sqlBuilderFieldsFor(form);
-  if (operation === "count-rows") return [];
-  if (operation === "count-values") return fields;
-  if (operation === "sum" || operation === "average") {
-    return fields.filter((field) => numericFieldTypes.has(field.fieldType));
-  }
-  return fields.filter((field) =>
-    orderableFieldTypes.has(field.fieldType) &&
-    field.queryCapabilitySortable !== false
-  );
-};
-
-const queryableSqlBuilderFields = (
-  form: Form | undefined,
-): SqlBuilderField[] =>
-  sqlBuilderFieldsFor(form).filter((field) => {
-    if (!sqlVariableTypes.has(field.fieldType)) return false;
-    return !field.queryCapabilitySupportedOperators ||
-      field.queryCapabilitySupportedOperators.includes("equals");
-  });
-
-/** Return fields that support equality filters with ordinary typed SQL parameters. */
-export const sqlFilterFieldOptions = (
-  form: Form | undefined,
-): Array<SqlBuilderField & { parameterType: string }> =>
-  queryableSqlBuilderFields(form).flatMap((field) => {
-    const parameterType = sqlVariableTypes.get(field.fieldType);
-    return parameterType ? [{ ...field, parameterType }] : [];
-  });
-
-/** Generate one-column ordinary SQL and an optional typed filter parameter. */
-export const buildSqlAggregateQuery = (
-  form: Form,
-  operation: SqlAggregateOperation,
-  aggregateFieldKey = "",
-  filterFieldKey = "",
-): SqlAggregateQuery => {
-  const sourceName = form.name.trim();
-  if (!sourceName) throw new Error("A Form is required");
-
-  const aggregateField = operation === "count-rows"
-    ? undefined
-    : sqlAggregateFieldOptions(form, operation).find((field) =>
-      field.key === aggregateFieldKey
-    );
-  if (operation !== "count-rows" && !aggregateField) {
-    throw new Error("The aggregate field is unavailable");
-  }
-
-  const expression = operation === "count-rows"
-    ? "COUNT(*)"
-    : operation === "count-values"
-    ? `COUNT(${quoteSqlIdentifier(aggregateField!.column)})`
-    : operation === "sum"
-    ? `SUM(${quoteSqlIdentifier(aggregateField!.column)})`
-    : operation === "average"
-    ? `AVG(${quoteSqlIdentifier(aggregateField!.column)})`
-    : operation === "minimum"
-    ? `MIN(${quoteSqlIdentifier(aggregateField!.column)})`
-    : `MAX(${quoteSqlIdentifier(aggregateField!.column)})`;
-
-  const filterField = filterFieldKey
-    ? sqlFilterFieldOptions(form).find((field) => field.key === filterFieldKey)
-    : undefined;
-  if (filterFieldKey && !filterField) {
-    throw new Error("The filter field is unavailable");
-  }
-
-  return {
-    sql: `SELECT ${expression} AS "value" FROM ${
-      quoteSqlIdentifier(sourceName)
-    }${
-      filterField
-        ? ` WHERE ${quoteSqlIdentifier(filterField.column)} = {{filter_value}}`
-        : ""
-    }`,
-    ...(filterField
-      ? {
-        parameter: {
-          name: "filter_value",
-          type: filterField.parameterType,
-          description: filterField.label,
-        } satisfies SqlBuilderParameter,
-      }
-      : {}),
-  };
-};
 
 const SQL_LITERAL_OR_COMMENT_NODES = new Set([
   "BlockComment",
@@ -673,6 +501,20 @@ export function normalizeSqlVariables(
       }
     ),
   };
+}
+
+export function mergeSqlStructureVariables(
+  existing: readonly SqlVariable[],
+  added: readonly { name: string; type: SqlStructureVariableType }[],
+): SqlVariable[] {
+  const byName = new Map(existing.map((variable) => [variable.name, variable]));
+  for (const { name, type } of added) {
+    const current = byName.get(name);
+    if (!current || current.type !== type) {
+      byName.set(name, { name, type, description: "" });
+    }
+  }
+  return [...byName.values()];
 }
 
 export interface SqlVariableDefaultDraft {

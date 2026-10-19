@@ -60,10 +60,12 @@ describe("SQL Form completion", () => {
     });
   });
 
-  it("shows Form names and inserts them as quoted identifiers", () => {
+  it("shows Form names and inserts their server-owned SQL relations", () => {
+    const relation = "form_00000000000070008000000000000001";
     const schema = buildSqlSchema([
       {
         name: "1-Expense",
+        sql_relation: relation,
         version: 1,
         template: "",
         fields: {},
@@ -80,14 +82,16 @@ describe("SQL Form completion", () => {
     expect(result?.options).toContainEqual({
       label: "1-Expense",
       type: "type",
-      apply: '"1-Expense"',
+      apply: `"${relation}"`,
     });
   });
 
   it("completes __proto__ as an ordinary Form name", () => {
+    const relation = "form_00000000000070008000000000000002";
     const schema = buildSqlSchema([
       {
         name: "__proto__",
+        sql_relation: relation,
         version: 1,
         template: "",
         fields: {},
@@ -104,7 +108,7 @@ describe("SQL Form completion", () => {
     expect(result?.options).toContainEqual({
       label: "__proto__",
       type: "type",
-      apply: '"__proto__"',
+      apply: `"${relation}"`,
     });
   });
 });

@@ -522,6 +522,7 @@ export type SqlStructureAggregate = {
 };
 
 export type SqlStructureOperation =
+  | { kind: "set_relation"; relation: string }
   | { kind: "set_columns"; columns: string[] }
   | { kind: "set_filters"; filters: SqlStructureFilter[] }
   | { kind: "set_sort"; order_by: SqlStructureSort[] }

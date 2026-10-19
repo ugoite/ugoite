@@ -5316,10 +5316,23 @@ a.tool {
 
 .sql-workspace__actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 0.5rem;
+  overflow-x: auto;
+  overflow-y: hidden;
   max-width: 100%;
+}
+
+.sql-workspace__actions > .pill {
+  flex: 0 0 44px;
+  width: 44px;
+}
+
+@media (max-width: 390px) {
+  .sql-workspace__actions {
+    gap: 2px;
+  }
 }
 
 .sql-structure-dialog {
@@ -5360,6 +5373,42 @@ a.tool {
   width: 20px;
   height: 20px;
   flex: 0 0 auto;
+}
+
+.sql-structure-form-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(55dvh, 480px);
+  overflow: auto;
+}
+
+.sql-structure-form-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface-2);
+  color: var(--ui-foreground);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.sql-structure-form-option:hover:not(:disabled) {
+  background: var(--ui-surface-3);
+}
+
+.sql-structure-form-option:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.sql-structure-form-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .sql-structure-filter-row,

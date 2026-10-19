@@ -770,14 +770,16 @@ describe("CompositionStudioSync", () => {
     );
     renderStudio(sqlMetricDraft());
 
-    // The preview debounce is 400ms and the Metric request debounce is 120ms.
+    // Wait for the debounced preview by condition so Solid's effect scheduling
+    // does not depend on the test runner's load.
     await flushStudioEffects();
-    await vi.advanceTimersByTimeAsync(521);
-    expect(canonicalizeMock).toHaveBeenCalledTimes(1);
-    expect(previewMock).toHaveBeenCalledTimes(1);
-    expect(queryMetricMock).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("128400", { selector: "output" }))
-      .toBeInTheDocument();
+    await vi.waitFor(() => expect(canonicalizeMock).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(previewMock).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(queryMetricMock).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() =>
+      expect(screen.getByText("128400", { selector: "output" }))
+        .toBeInTheDocument()
+    );
 
     fireEvent.click(requireBlockButton("disp-1"));
     fireEvent.change(screen.getByRole("combobox", { name: "Source" }), {
@@ -786,7 +788,9 @@ describe("CompositionStudioSync", () => {
 
     // Include the post-effect scheduling margin used by the resolved-preview
     // case above, then leave canonicalization pending while the Metric changes.
+    await flushStudioEffects();
     await vi.advanceTimersByTimeAsync(521);
+    await flushStudioEffects();
     expect(canonicalizeMock).toHaveBeenCalledTimes(1);
     expect(previewMock).toHaveBeenCalledTimes(1);
     expect(queryMetricMock).toHaveBeenCalledTimes(1);
