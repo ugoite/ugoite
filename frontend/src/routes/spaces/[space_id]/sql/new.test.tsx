@@ -1,8 +1,18 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SpaceQueryCreateRoute from "./new";
 import { expectBackLinkAtHeaderStart } from "~/test/back-link-placement";
+import type { SQLWorkspaceAction } from "~/components/SQLWorkspace";
+import { setLocale, t } from "~/lib/i18n";
+import type { SqlStructureAnalysis } from "~/lib/ugoite-client";
+import type { Form } from "~/lib/types";
 
 const {
   navigateMock,
@@ -10,14 +20,18 @@ const {
   sqlCreateMock,
   sqlQueryMock,
   sqlCountMock,
-  structureActionMock,
+  analyzeSqlStructureMock,
+  prepareSqlStructureParserMock,
+  proposeSqlStructureOperationMock,
 } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
   formApiListMock: vi.fn(),
   sqlCreateMock: vi.fn(),
   sqlQueryMock: vi.fn(),
   sqlCountMock: vi.fn(),
-  structureActionMock: vi.fn(),
+  analyzeSqlStructureMock: vi.fn(),
+  prepareSqlStructureParserMock: vi.fn(),
+  proposeSqlStructureOperationMock: vi.fn(),
 }));
 
 vi.mock("@solidjs/router", () => ({
@@ -43,14 +57,25 @@ vi.mock("@solidjs/router", () => ({
 
 vi.mock("~/components/SQLWorkspace", () => ({
   SQLWorkspaceActionBar: (props: {
-    actions?: readonly { label: string; onActivate: () => void }[];
+    actions?: readonly SQLWorkspaceAction[];
   }) => (
     <div role="group" aria-label="SQL">
-      {props.actions?.map((action) => (
-        <button type="button" onClick={action.onActivate}>
-          {action.label}
-        </button>
-      ))}
+      {props.actions?.map((action) => {
+        const accessibleName = action.disabled && action.disabledReason
+          ? `${action.label}: ${action.disabledReason}`
+          : action.label;
+        return (
+          <button
+            type="button"
+            aria-label={accessibleName}
+            title={accessibleName}
+            disabled={action.disabled}
+            onClick={action.onActivate}
+          >
+            {action.label}
+          </button>
+        );
+      })}
     </div>
   ),
   SQLWorkspace: (props: {
@@ -113,32 +138,6 @@ vi.mock("~/components/SQLWorkspace", () => ({
   },
 }));
 
-vi.mock("~/components/SqlStructureToolbar", async () => {
-  const { onMount } = await import("solid-js");
-  return {
-    SqlStructureToolbar: (props: {
-      onActionsChange: (
-        actions: readonly {
-          kind: "form";
-          icon: "forms";
-          label: string;
-          onActivate: () => void;
-        }[],
-      ) => void;
-    }) => {
-      onMount(() =>
-        props.onActionsChange([{
-          kind: "form",
-          icon: "forms",
-          label: "Form",
-          onActivate: structureActionMock,
-        }])
-      );
-      return null;
-    },
-  };
-});
-
 vi.mock("~/lib/ugoite-client", () => ({
   formApi: { list: formApiListMock },
   sqlApi: {
@@ -146,10 +145,44 @@ vi.mock("~/lib/ugoite-client", () => ({
     query: sqlQueryMock,
     count: sqlCountMock,
   },
+  analyzeSqlStructure: analyzeSqlStructureMock,
+  prepareSqlStructureParser: prepareSqlStructureParserMock,
+  proposeSqlStructureOperation: proposeSqlStructureOperationMock,
 }));
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+const supportedAnalysis: SqlStructureAnalysis = {
+  contract_version: 1,
+  status: "supported",
+  projection: ["1"],
+  filters: [],
+  aggregates: [],
+  group_by: [],
+  distinct: false,
+  order_by: [],
+  referenced_variables: [],
+  stable_pagination: false,
+  capabilities: {
+    columns: { enabled: false },
+    filter: { enabled: false },
+    sort: { enabled: false },
+    aggregate: { enabled: false },
+    group_by: { enabled: false },
+    distinct: { enabled: false },
+    stable_pagination: { enabled: false },
+  },
+};
 
 describe("/spaces/:space_id/sql/new", () => {
   beforeEach(() => {
+    setLocale("en");
     navigateMock.mockReset();
     formApiListMock.mockResolvedValue([
       {
@@ -249,7 +282,105 @@ describe("/spaces/:space_id/sql/new", () => {
       result_schema: [{ name: "value", type: "integer" }],
     });
     sqlCountMock.mockReset().mockResolvedValue(1);
-    structureActionMock.mockReset();
+    analyzeSqlStructureMock.mockReset().mockImplementation(
+      async (_sql: string, context: { relation: string }) => ({
+        ...(context.relation
+          ? { ...supportedAnalysis, status: "unsupported" as const }
+          : supportedAnalysis),
+      }),
+    );
+    prepareSqlStructureParserMock.mockReset().mockResolvedValue(undefined);
+    proposeSqlStructureOperationMock.mockReset().mockImplementation(
+      async (
+        baseSql: string,
+        _context: { relation: string },
+        operation: { kind: string; relation?: string },
+      ) => ({
+        contract_version: 1,
+        status: "supported",
+        base_sql: baseSql,
+        proposed_sql: operation.kind === "set_relation"
+          ? `SELECT * FROM "${operation.relation}"`
+          : baseSql,
+        requires_confirmation: true,
+        added_stable_tie_breakers: [],
+      }),
+    );
+  });
+
+  it("keeps Form disabled after SQL analysis until Form options resolve", async () => {
+    const pendingForms = deferred<Form[]>();
+    const pendingAnalysis = deferred<SqlStructureAnalysis>();
+    let formsResolved = false;
+    let analysisResolved = false;
+    formApiListMock.mockReturnValue(pendingForms.promise);
+    analyzeSqlStructureMock.mockImplementationOnce(() =>
+      pendingAnalysis.promise.then((result) => {
+        analysisResolved = true;
+        return result;
+      })
+    );
+
+    render(() => <SpaceQueryCreateRoute />);
+
+    const editor = await screen.findByRole("textbox", { name: "SQL" });
+    const analyzingName = `Form: ${t("sqlPage.structureAnalyzing")}`;
+    const formAction = await screen.findByRole("button", {
+      name: analyzingName,
+    });
+    await waitFor(() => {
+      expect(analyzeSqlStructureMock).toHaveBeenCalledWith(
+        "SELECT 1",
+        expect.objectContaining({ relation: "" }),
+      );
+    });
+    expect(formApiListMock).toHaveBeenCalledOnce();
+    expect(formsResolved).toBe(false);
+    expect(formAction).toBeDisabled();
+
+    pendingAnalysis.resolve(supportedAnalysis);
+    const optionsUnavailableName = `Form: ${t("sqlPage.structureUnavailable")}`;
+    const disabledForMissingOptions = await screen.findByRole("button", {
+      name: optionsUnavailableName,
+    });
+    expect(analysisResolved).toBe(true);
+    expect(formsResolved).toBe(false);
+    expect(disabledForMissingOptions).toBeDisabled();
+
+    const forms = [{
+      id: "review-form",
+      name: "Review",
+      sql_relation: "form_review",
+      version: 1,
+      template: "# Review\n",
+      fields: {},
+    }];
+    formsResolved = true;
+    pendingForms.resolve(forms);
+    await waitFor(() =>
+      expect(analyzeSqlStructureMock).toHaveBeenCalledTimes(3)
+    );
+    const enabledFormAction = await screen.findByRole("button", {
+      name: "Form",
+    });
+    await waitFor(() => expect(enabledFormAction).toBeEnabled());
+    fireEvent.click(enabledFormAction);
+    const dialog = await screen.findByRole("dialog", { name: "Form" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Review" }));
+
+    await waitFor(() => {
+      expect(proposeSqlStructureOperationMock).toHaveBeenCalledWith(
+        "SELECT 1",
+        expect.objectContaining({ relation: "form_review" }),
+        { kind: "set_relation", relation: "form_review" },
+      );
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Apply change" }),
+    );
+    await waitFor(() =>
+      expect(editor).toHaveValue('SELECT * FROM "form_review"')
+    );
   });
 
   it("previews the current draft through stateless SQL without creating Saved SQL", async () => {
@@ -271,7 +402,7 @@ describe("/spaces/:space_id/sql/new", () => {
     expect(await screen.findByText("success")).toBeInTheDocument();
 
     const actionGroup = screen.getByRole("group", { name: "SQL" });
-    const formAction = screen.getByRole("button", { name: "Form" });
+    const formAction = await screen.findByRole("button", { name: "Form" });
     const results = screen.getByRole("region", { name: "SQL results" });
     expect(formAction).toBeInTheDocument();
     expect(
@@ -287,7 +418,8 @@ describe("/spaces/:space_id/sql/new", () => {
       "true",
     );
     fireEvent.click(formAction);
-    expect(structureActionMock).toHaveBeenCalledOnce();
+    expect(await screen.findByRole("dialog", { name: "Form" }))
+      .toBeInTheDocument();
   });
 
   it("REQ-FE-063: starts from a relation-free draft and saves through the shared SQL workspace", async () => {
@@ -305,7 +437,8 @@ describe("/spaces/:space_id/sql/new", () => {
     expect(screen.queryByRole("button", { name: "Generate aggregate SQL" }))
       .not.toBeInTheDocument();
     expect(screen.getByRole("group", { name: "SQL" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Form" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Form" }))
+      .toBeInTheDocument();
     fireEvent.input(editor, { target: { value: "SELECT 1" } });
     fireEvent.input(screen.getByLabelText("Query name"), {
       target: { value: "Relation-free draft" },
