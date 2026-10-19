@@ -364,13 +364,13 @@ describe("SqlStructureToolbar adapter", () => {
 
   it("edits a reversed JOIN equality through the shared structure toolbar", async () => {
     const sql =
-      'SELECT * FROM "Orders" AS LEFT_ROWS INNER JOIN "Orders" AS right_rows ON "right_rows"."private_note" = left_rows."category"';
+      'SELECT * FROM "Orders" AS LEFT_ROWS INNER JOIN "Orders" AS right_rows ON right_rows."private_note" = left_rows."category"';
     const normalizedAnalysis: SqlStructureAnalysis = {
       ...joinedAnalysis,
       joins: [{
         relation: "Orders",
         left_alias: { name: "LEFT_ROWS", quoted: false },
-        right_alias: { name: "right_rows", quoted: true },
+        right_alias: { name: "right_rows", quoted: false },
         left_column: "category",
         right_column: "private_note",
       }],

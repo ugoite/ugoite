@@ -1234,30 +1234,19 @@ fn parse_join_columns(
 ) -> Option<(String, String)> {
     let left = qualified_column(left)?;
     let right = qualified_column(right)?;
-<<<<<<< HEAD
-    if !identifier_matches_alias(left.0, left_alias)
-        || !identifier_matches_alias(right.0, right_alias)
-    {
-        return None;
-    }
     let left_column = find_column_by_ident(context, left.1)?;
     let right_column = find_column_by_ident(context, right.1)?;
-    Some((left_column.name.clone(), right_column.name.clone()))
-=======
-    let left_column = find_column_by_ident(context, &left.1)?;
-    let right_column = find_column_by_ident(context, &right.1)?;
-    if identifier_matches_alias(&left.0, left_alias)
-        && identifier_matches_alias(&right.0, right_alias)
+    if identifier_matches_alias(left.0, left_alias)
+        && identifier_matches_alias(right.0, right_alias)
     {
         Some((left_column.name.clone(), right_column.name.clone()))
-    } else if identifier_matches_alias(&left.0, right_alias)
-        && identifier_matches_alias(&right.0, left_alias)
+    } else if identifier_matches_alias(left.0, right_alias)
+        && identifier_matches_alias(right.0, left_alias)
     {
         Some((right_column.name.clone(), left_column.name.clone()))
     } else {
         None
     }
->>>>>>> d6ca7700a (feat(sql): normalize reversed join equality operands)
 }
 
 fn resolve_column_reference(
