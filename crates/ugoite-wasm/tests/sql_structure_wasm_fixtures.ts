@@ -776,6 +776,88 @@ async function main(): Promise<void> {
     "self-join descriptor",
   );
 
+  const joinedClausesSql =
+    'SELECT * FROM "Task" AS left_rows INNER JOIN "Task" AS right_rows ON left_rows.title = right_rows.title WHERE right_rows.title = $title ORDER BY left_rows._ugoite_id DESC LIMIT 8';
+  const joinedClauses = await invokeWasm(instance.exports, {
+    action: "domain.analyze_sql_structure",
+    value: { sql: joinedClausesSql, context },
+  });
+  const joinedClausesValue = joinedClauses.value as Record<string, unknown>;
+  assertEqual(joinedClausesValue.status, "supported", "joined clauses status");
+  assertEqual(
+    JSON.stringify(joinedClausesValue.filters),
+    JSON.stringify([{
+      column: "title",
+      operator: "eq",
+      parameter: "title",
+      qualifier: { name: "right_rows", quoted: false },
+    }]),
+    "qualified join filter descriptor",
+  );
+  assertEqual(
+    JSON.stringify(joinedClausesValue.order_by),
+    JSON.stringify([{
+      column: "_ugoite_id",
+      direction: "desc",
+      qualifier: { name: "left_rows", quoted: false },
+    }]),
+    "qualified join ordering descriptor",
+  );
+
+  const clausesToQualifySql =
+    'SELECT * FROM "Task" WHERE "title" = $title ORDER BY "_ugoite_id" DESC LIMIT 5';
+  const clausesToQualify = await invokeWasm(instance.exports, {
+    action: "domain.propose_sql_structure_operation",
+    value: {
+      sql: clausesToQualifySql,
+      context,
+      operation: {
+        kind: "set_join",
+        left_column: "title",
+        right_column: "title",
+      },
+    },
+  });
+  const qualifiedProposal = clausesToQualify.value as Record<string, unknown>;
+  assertEqual(
+    qualifiedProposal.status,
+    "supported",
+    "adding join to existing clauses status",
+  );
+  assertEqual(
+    qualifiedProposal.proposed_sql,
+    'SELECT * FROM "Task" AS "_ugoite_left" INNER JOIN "Task" AS "_ugoite_right" ON "_ugoite_left"."title" = "_ugoite_right"."title" WHERE "_ugoite_left"."title" = $title ORDER BY "_ugoite_left"."_ugoite_id" DESC LIMIT 5',
+    "adding join qualifies existing clauses and preserves their other source text",
+  );
+
+  const uppercaseIdentifiers = await invokeWasm(instance.exports, {
+    action: "domain.analyze_sql_structure",
+    value: {
+      sql:
+        'SELECT * FROM "Task" AS LEFT_ROWS INNER JOIN "Task" AS RIGHT_ROWS ON LEFT_ROWS.TITLE = RIGHT_ROWS.TITLE WHERE RIGHT_ROWS.TITLE = $title ORDER BY LEFT_ROWS._UGOITE_ID DESC',
+      context,
+    },
+  });
+  assertEqual(
+    (uppercaseIdentifiers.value as Record<string, unknown>).status,
+    "supported",
+    "unquoted uppercase join identifiers resolve using SQL case folding",
+  );
+
+  const unqualifiedJoinedClause = await invokeWasm(instance.exports, {
+    action: "domain.analyze_sql_structure",
+    value: {
+      sql:
+        'SELECT * FROM "Task" AS left_rows INNER JOIN "Task" AS right_rows ON left_rows.title = right_rows.title WHERE title = $title',
+      context,
+    },
+  });
+  assertEqual(
+    (unqualifiedJoinedClause.value as Record<string, unknown>).status,
+    "unsupported",
+    "ambiguous unqualified join filter fails closed",
+  );
+
   const unsupportedOuterJoin = await invokeWasm(instance.exports, {
     action: "domain.analyze_sql_structure",
     value: {

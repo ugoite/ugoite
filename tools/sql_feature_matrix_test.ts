@@ -212,6 +212,18 @@ Deno.test("JOIN editor coverage is bounded without changing runtime admission", 
     true,
   );
   assertEquals(
+    joinConstruct.limits.includes(
+      "WHERE supports AND trees of qualified parameter comparisons plus IS NULL/IS NOT NULL on qualified columns; ORDER BY supports simple qualified columns with ASC/DESC and no NULLS FIRST/LAST; unqualified references fail closed",
+    ),
+    true,
+  );
+  assertEquals(
+    joinConstruct.limits.includes(
+      "adding a join qualifies existing supported single-relation WHERE/ORDER BY columns with the left alias and preserves surrounding clause text",
+    ),
+    true,
+  );
+  assertEquals(
     matrix.editor.operations.some((operation: { action: string }) =>
       operation.action === "join"
     ),
@@ -230,6 +242,8 @@ Deno.test("JOIN editor coverage is bounded without changing runtime admission", 
   assertEquals(toolbarSource.includes('? "plus"'), false);
   assertEquals(toolbarSource.includes('"join"'), true);
   assertEquals(domainSource.includes("JoinOperator::Inner"), true);
+  assertEquals(domainSource.includes("resolve_column_reference"), true);
+  assertEquals(domainSource.includes("qualify_join_input_references"), true);
   assertEquals(
     domainSource.includes("SqlStructureReason::JoinUnsupported"),
     true,

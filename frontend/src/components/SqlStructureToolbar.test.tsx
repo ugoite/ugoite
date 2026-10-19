@@ -112,6 +112,37 @@ const analysis: SqlStructureAnalysis = {
   },
 };
 
+const joinedAnalysis: SqlStructureAnalysis = {
+  ...analysis,
+  filters: [{
+    column: "amount",
+    qualifier: { name: "left_rows", quoted: true },
+    operator: "gt",
+    parameter: "threshold",
+  }],
+  order_by: [{
+    column: "_ugoite_id",
+    qualifier: { name: "right_rows", quoted: true },
+    direction: "asc",
+  }],
+  joins: [{
+    relation: "Orders",
+    left_alias: { name: "left_rows", quoted: true },
+    right_alias: { name: "right_rows", quoted: true },
+    left_column: "category",
+    right_column: "category",
+  }],
+  stable_pagination: false,
+  capabilities: {
+    ...analysis.capabilities,
+    columns: { enabled: false, reason: "join_unsupported" },
+    aggregate: { enabled: false, reason: "join_unsupported" },
+    group_by: { enabled: false, reason: "join_unsupported" },
+    distinct: { enabled: false, reason: "join_unsupported" },
+    stable_pagination: { enabled: false, reason: "stable_order_required" },
+  },
+};
+
 describe("SqlStructureToolbar adapter", () => {
   beforeEach(() => {
     setLocale("en");
@@ -177,6 +208,97 @@ describe("SqlStructureToolbar adapter", () => {
     );
     expect(onSqlChange).toHaveBeenCalledWith(
       'SELECT "amount" FROM "Orders" ORDER BY "_ugoite_id" ASC',
+    );
+  });
+
+  it("edits qualified filters on either side of a supported join", async () => {
+    analyzeMock.mockResolvedValue(joinedAnalysis);
+    const sql =
+      'SELECT * FROM "Orders" AS "left_rows" INNER JOIN "Orders" AS "right_rows" ON "left_rows"."category" = "right_rows"."category" WHERE "left_rows"."amount" > $threshold ORDER BY "right_rows"."_ugoite_id"';
+    let actions: readonly SQLWorkspaceAction[] = [];
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [context]}
+        onSqlChange={vi.fn()}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "filter")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "filter")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Filter" });
+    const column = within(dialog).getByRole("combobox", { name: "Column" });
+    expect(within(column).getByRole("option", { name: "right_rows.amount" }))
+      .toBeInTheDocument();
+    fireEvent.change(column, {
+      target: { value: '["right_rows",true,"amount"]' },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(proposeMock).toHaveBeenCalledWith(
+      sql,
+      context.parser,
+      {
+        kind: "set_filters",
+        filters: [{
+          column: "amount",
+          qualifier: { name: "right_rows", quoted: true },
+          operator: "gt",
+          parameter: "threshold",
+        }],
+      },
+    );
+  });
+
+  it("edits qualified ORDER BY identifiers on either side of a supported join", async () => {
+    analyzeMock.mockResolvedValue(joinedAnalysis);
+    const sql =
+      'SELECT * FROM "Orders" AS "left_rows" INNER JOIN "Orders" AS "right_rows" ON "left_rows"."category" = "right_rows"."category" WHERE "left_rows"."amount" > $threshold ORDER BY "right_rows"."_ugoite_id"';
+    let actions: readonly SQLWorkspaceAction[] = [];
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [context]}
+        onSqlChange={vi.fn()}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "sort")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "sort")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Sort" });
+    const column = within(dialog).getByRole("combobox", { name: "Column" });
+    expect(within(column).getByRole("option", { name: "left_rows._ugoite_id" }))
+      .toBeInTheDocument();
+    fireEvent.change(column, {
+      target: { value: '["left_rows",true,"_ugoite_id"]' },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(proposeMock).toHaveBeenCalledWith(
+      sql,
+      context.parser,
+      {
+        kind: "set_sort",
+        order_by: [{
+          column: "_ugoite_id",
+          qualifier: { name: "left_rows", quoted: true },
+          direction: "asc",
+        }],
+      },
     );
   });
 

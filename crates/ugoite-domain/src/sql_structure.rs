@@ -187,6 +187,8 @@ pub struct SqlStructureAlias {
 #[serde(deny_unknown_fields)]
 pub struct SqlStructureFilter {
     pub column: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub qualifier: Option<SqlStructureAlias>,
     pub operator: SqlStructureFilterOperator,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parameter: Option<String>,
@@ -210,6 +212,8 @@ pub enum SqlStructureFilterOperator {
 #[serde(deny_unknown_fields)]
 pub struct SqlStructureSort {
     pub column: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub qualifier: Option<SqlStructureAlias>,
     pub direction: SqlStructureSortDirection,
 }
 
@@ -422,11 +426,12 @@ pub fn propose_sql_structure_operation(
                     unreachable!("JOIN edits are handled by the source-preserving proposal")
                 }
                 SqlStructureOperation::SetFilters { filters } => {
-                    set_filters(&mut parsed.query, context, filters)
+                    set_filters(&mut parsed.query, context, &parsed.joins, filters)
                 }
                 SqlStructureOperation::SetSort { order_by } => set_sort(
                     &mut parsed.query,
                     context,
+                    &parsed.joins,
                     order_by,
                     &mut added_stable_tie_breakers,
                 ),
@@ -569,7 +574,7 @@ fn propose_sql_relation_selection(
             };
             rewritten
         } else {
-            let Some(rewritten) = rewrite_join_relation(sql, table, relation) else {
+            let Some(rewritten) = rewrite_join_relation(sql, table, relation, context) else {
                 return rejected_proposal(base_sql, SqlStructureReason::RelationUnsupported);
             };
             rewritten
@@ -661,6 +666,7 @@ fn propose_sql_join_edit(
             name: right_name,
             quoted: true,
         };
+        let qualifying_alias = left_alias.clone();
         let left_source = if had_alias {
             source_relation.to_owned()
         } else {
@@ -682,7 +688,15 @@ fn propose_sql_join_edit(
                 right_column
             ),
         );
-        let Some(rewritten) = replace_sql_source_range(sql, range, &replacement) else {
+        let Some(rewritten) = qualify_join_input_references(
+            sql,
+            &parsed.query,
+            select,
+            context,
+            &qualifying_alias,
+            range,
+            &replacement,
+        ) else {
             return rejected_proposal(base_sql, SqlStructureReason::JoinUnsupported);
         };
         rewritten
@@ -716,15 +730,100 @@ fn finish_structure_proposal(
 fn join_equality_sql(join: &SqlStructureJoin, left_column: &str, right_column: &str) -> String {
     format!(
         "{}.{} = {}.{}",
-        quote_ident(&join.left_alias.name),
+        alias_ident(&join.left_alias),
         quote_ident(left_column),
-        quote_ident(&join.right_alias.name),
+        alias_ident(&join.right_alias),
         quote_ident(right_column),
     )
 }
 
+fn alias_ident(alias: &SqlStructureAlias) -> String {
+    if alias.quoted {
+        quote_ident(&alias.name)
+    } else {
+        Ident::new(alias.name.clone()).to_string()
+    }
+}
+
 fn quote_ident(value: &str) -> String {
     Ident::with_quote('"', value.to_owned()).to_string()
+}
+
+fn qualify_join_input_references(
+    sql: &str,
+    query: &Query,
+    select: &Select,
+    context: &SqlStructureContext,
+    alias: &SqlStructureAlias,
+    relation_range: SqlSourceRange,
+    relation_replacement: &str,
+) -> Option<String> {
+    let mut identifiers = Vec::new();
+    if let Some(selection) = &select.selection {
+        if !collect_filter_identifiers(selection, &mut identifiers) {
+            return None;
+        }
+    }
+    if let Some(order_by) = &query.order_by {
+        let OrderByKind::Expressions(expressions) = &order_by.kind else {
+            return None;
+        };
+        for expression in expressions {
+            let Expr::Identifier(identifier) = &expression.expr else {
+                return None;
+            };
+            identifiers.push(identifier.clone());
+        }
+    }
+
+    let mut replacements = vec![(relation_range, relation_replacement.to_owned())];
+    for identifier in identifiers {
+        let column = find_column_by_ident(context, &identifier)?;
+        let range = source_range_from_span(sql, identifier.span)?;
+        let replacement = format!("{}.{}", alias_ident(alias), quote_ident(&column.name));
+        replacements.push((range, replacement));
+    }
+    replacements.sort_by_key(|(range, _)| std::cmp::Reverse(range.start));
+
+    let mut rewritten = sql.to_owned();
+    let mut previous_start = sql.len();
+    for (range, replacement) in replacements {
+        if range.end > previous_start {
+            return None;
+        }
+        rewritten = replace_sql_source_range(&rewritten, range, &replacement)?;
+        previous_start = range.start;
+    }
+    Some(rewritten)
+}
+
+fn collect_filter_identifiers(expression: &Expr, identifiers: &mut Vec<Ident>) -> bool {
+    match expression {
+        Expr::Nested(inner) => collect_filter_identifiers(inner, identifiers),
+        Expr::BinaryOp {
+            left,
+            op: BinaryOperator::And,
+            right,
+        } => {
+            collect_filter_identifiers(left, identifiers)
+                && collect_filter_identifiers(right, identifiers)
+        }
+        Expr::BinaryOp { left, .. } => {
+            let Expr::Identifier(identifier) = left.as_ref() else {
+                return false;
+            };
+            identifiers.push(identifier.clone());
+            true
+        }
+        Expr::IsNull(inner) | Expr::IsNotNull(inner) => {
+            let Expr::Identifier(identifier) = inner.as_ref() else {
+                return false;
+            };
+            identifiers.push(identifier.clone());
+            true
+        }
+        _ => false,
+    }
 }
 
 fn parse_supported_sql(
@@ -751,9 +850,6 @@ fn parse_supported_sql(
     };
     validate_select_shape(select)?;
     let joins = validate_relation(select, context)?;
-    if !joins.is_empty() && query.order_by.is_some() {
-        return Err(SqlStructureReason::JoinUnsupported);
-    }
 
     let (projection, aggregates) = parse_projection(&select.projection, context)?;
     let group_by = parse_group_by(&select.group_by, context)?;
@@ -766,30 +862,30 @@ fn parse_supported_sql(
     let filters = select
         .selection
         .as_ref()
-        .map(|selection| parse_filters(selection, context))
+        .map(|selection| parse_filters(selection, context, &joins))
         .transpose()?
         .unwrap_or_default();
     let order_by = query
         .order_by
         .as_ref()
-        .map(|order_by| parse_order_by(order_by, context))
+        .map(|order_by| parse_order_by(order_by, context, &joins))
         .transpose()?
         .unwrap_or_default();
     let can_add_join = joins.is_empty()
         && is_wildcard_projection(&select.projection)
-        && select.selection.is_none()
         && matches!(&select.group_by, GroupByExpr::Expressions(expressions, modifiers) if expressions.is_empty() && modifiers.is_empty())
         && select.distinct.is_none()
-        && query.order_by.is_none()
         && select.from.len() == 1;
-    validate_order_by_semantics(
-        query.order_by.as_ref(),
-        select,
-        &aggregates,
-        &group_by,
-        distinct,
-        context,
-    )?;
+    if joins.is_empty() {
+        validate_order_by_semantics(
+            query.order_by.as_ref(),
+            select,
+            &aggregates,
+            &group_by,
+            distinct,
+            context,
+        )?;
+    }
 
     let literal_projection = if context.relation.is_empty() {
         parse_literal_projection(&select.projection)?
@@ -803,14 +899,33 @@ fn parse_supported_sql(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
+    let stable_key_ordered =
+        if let Some(join) = joins.first() {
+            context.stable_key.iter().all(|key| {
+                order_by.iter().any(|sort| {
+                    names_match(&sort.column, key)
+                        && sort.qualifier.as_ref().is_some_and(|qualifier| {
+                            aliases_resolve_same(qualifier, &join.left_alias)
+                        })
+                }) && order_by.iter().any(|sort| {
+                    names_match(&sort.column, key)
+                        && sort.qualifier.as_ref().is_some_and(|qualifier| {
+                            aliases_resolve_same(qualifier, &join.right_alias)
+                        })
+                })
+            })
+        } else {
+            context.stable_key.iter().all(|key| {
+                order_by
+                    .iter()
+                    .any(|term| term.qualifier.is_none() && names_match(&term.column, key))
+            })
+        };
     let stable_pagination = aggregates.is_empty()
         && group_by.is_empty()
         && !distinct
         && !context.stable_key.is_empty()
-        && context
-            .stable_key
-            .iter()
-            .all(|key| order_by.iter().any(|term| names_match(&term.column, key)));
+        && stable_key_ordered;
 
     Ok(ParsedSqlStructure {
         query,
@@ -999,8 +1114,8 @@ fn validate_relation(
     if table.joins.is_empty() {
         return Ok(Vec::new());
     }
-    if table.joins.len() != 1 || !select.projection.iter().all(|item| matches!(item, SelectItem::Wildcard(options) if options.opt_ilike.is_none() && options.opt_exclude.is_none() && options.opt_except.is_none() && options.opt_replace.is_none() && options.opt_rename.is_none() && options.opt_alias.is_none()))
-        || select.selection.is_some()
+    if table.joins.len() != 1
+        || !is_wildcard_projection(&select.projection)
         || !matches!(&select.group_by, GroupByExpr::Expressions(expressions, modifiers) if expressions.is_empty() && modifiers.is_empty())
         || select.distinct.is_some()
     {
@@ -1019,7 +1134,7 @@ fn validate_relation(
     };
     if !identifier_matches(left_relation, context.relation.as_str())
         || !identifier_matches(right_relation, context.relation.as_str())
-        || left_alias.name.eq_ignore_ascii_case(&right_alias.name)
+        || aliases_resolve_same(&left_alias, &right_alias)
     {
         return Err(SqlStructureReason::JoinUnsupported);
     }
@@ -1037,7 +1152,7 @@ fn validate_relation(
         return Err(SqlStructureReason::JoinUnsupported);
     };
     let Some((left_column, right_column)) =
-        parse_join_columns(left, right, &left_alias, &right_alias)
+        parse_join_columns(left, right, &left_alias, &right_alias, context)
     else {
         return Err(SqlStructureReason::JoinUnsupported);
     };
@@ -1107,7 +1222,12 @@ fn simple_table_name(factor: &TableFactor) -> Option<&Ident> {
     (name.0.len() == 1).then_some(relation)
 }
 
-fn rewrite_join_relation(sql: &str, table: &TableWithJoins, relation: &str) -> Option<String> {
+fn rewrite_join_relation(
+    sql: &str,
+    table: &TableWithJoins,
+    relation: &str,
+    context: &SqlStructureContext,
+) -> Option<String> {
     if table.joins.len() != 1 {
         return None;
     }
@@ -1153,7 +1273,9 @@ fn rewrite_join_relation(sql: &str, table: &TableWithJoins, relation: &str) -> O
     else {
         return None;
     };
-    parse_join_columns(left, right, &left_alias, &right_alias)?;
+    let (left_column, right_column) =
+        parse_join_columns(left, right, &left_alias, &right_alias, context)?;
+    validate_join_columns(context, &left_column, &right_column).ok()?;
 
     let left_range = source_range_from_span(sql, left_relation.span)?;
     let right_range = source_range_from_span(sql, right_relation.span)?;
@@ -1179,12 +1301,73 @@ fn parse_join_columns(
     right: &Expr,
     left_alias: &SqlStructureAlias,
     right_alias: &SqlStructureAlias,
+    context: &SqlStructureContext,
 ) -> Option<(String, String)> {
     let left = qualified_column(left)?;
     let right = qualified_column(right)?;
-    (identifier_matches_alias(&left.0, left_alias)
-        && identifier_matches_alias(&right.0, right_alias))
-    .then(|| (left.1.value.clone(), right.1.value.clone()))
+    if !identifier_matches_alias(&left.0, left_alias)
+        || !identifier_matches_alias(&right.0, right_alias)
+    {
+        return None;
+    }
+    let left_column = find_column_by_ident(context, &left.1)?;
+    let right_column = find_column_by_ident(context, &right.1)?;
+    Some((left_column.name.clone(), right_column.name.clone()))
+}
+
+fn resolve_column_reference(
+    expression: &Expr,
+    context: &SqlStructureContext,
+    joins: &[SqlStructureJoin],
+    unsupported_reason: SqlStructureReason,
+) -> Result<(String, Option<SqlStructureAlias>), SqlStructureReason> {
+    if joins.is_empty() {
+        let Expr::Identifier(identifier) = expression else {
+            return Err(unsupported_reason);
+        };
+        let column =
+            find_column_by_ident(context, identifier).ok_or(SqlStructureReason::UnknownColumn)?;
+        return Ok((column.name.clone(), None));
+    }
+
+    let [join] = joins else {
+        return Err(unsupported_reason);
+    };
+    let Expr::CompoundIdentifier(parts) = expression else {
+        return Err(unsupported_reason);
+    };
+    let [qualifier, identifier] = parts.as_slice() else {
+        return Err(unsupported_reason);
+    };
+    let qualifier = if identifier_matches_alias(qualifier, &join.left_alias) {
+        join.left_alias.clone()
+    } else if identifier_matches_alias(qualifier, &join.right_alias) {
+        join.right_alias.clone()
+    } else {
+        return Err(unsupported_reason);
+    };
+    let column =
+        find_column_by_ident(context, identifier).ok_or(SqlStructureReason::UnknownColumn)?;
+    Ok((column.name.clone(), Some(qualifier)))
+}
+
+fn alias_resolution_key(alias: &SqlStructureAlias) -> String {
+    if alias.quoted {
+        alias.name.clone()
+    } else {
+        alias.name.to_ascii_lowercase()
+    }
+}
+
+fn aliases_resolve_same(left: &SqlStructureAlias, right: &SqlStructureAlias) -> bool {
+    let to_ident = |alias: &SqlStructureAlias| {
+        if alias.quoted {
+            Ident::with_quote('"', alias.name.clone())
+        } else {
+            Ident::new(alias.name.clone())
+        }
+    };
+    identifiers_resolve_same(&to_ident(left), &to_ident(right))
 }
 
 fn qualified_column(expression: &Expr) -> Option<(&Ident, &Ident)> {
@@ -1434,39 +1617,43 @@ fn validate_grouped_projection(
 fn parse_filters(
     expression: &Expr,
     context: &SqlStructureContext,
+    joins: &[SqlStructureJoin],
 ) -> Result<Vec<SqlStructureFilter>, SqlStructureReason> {
     let mut filters = Vec::new();
-    flatten_filters(expression, context, &mut filters)?;
+    flatten_filters(expression, context, joins, &mut filters)?;
     Ok(filters)
 }
 
 fn flatten_filters(
     expression: &Expr,
     context: &SqlStructureContext,
+    joins: &[SqlStructureJoin],
     filters: &mut Vec<SqlStructureFilter>,
 ) -> Result<(), SqlStructureReason> {
     match expression {
-        Expr::Nested(inner) => flatten_filters(inner, context, filters),
+        Expr::Nested(inner) => flatten_filters(inner, context, joins, filters),
         Expr::BinaryOp {
             left,
             op: BinaryOperator::And,
             right,
         } => {
-            flatten_filters(left, context, filters)?;
-            flatten_filters(right, context, filters)
+            flatten_filters(left, context, joins, filters)?;
+            flatten_filters(right, context, joins, filters)
         }
         Expr::BinaryOp { left, op, right } => {
-            let Expr::Identifier(identifier) = left.as_ref() else {
-                return Err(SqlStructureReason::FilterUnsupported);
-            };
-            let column = find_column_by_ident(context, identifier)
-                .ok_or(SqlStructureReason::UnknownColumn)?;
+            let (column, qualifier) = resolve_column_reference(
+                left,
+                context,
+                joins,
+                SqlStructureReason::FilterUnsupported,
+            )?;
             let operator =
                 filter_operator_from_binary(op).ok_or(SqlStructureReason::FilterUnsupported)?;
             let parameter =
                 placeholder_name(right.as_ref()).ok_or(SqlStructureReason::FilterUnsupported)?;
             let filter = SqlStructureFilter {
-                column: column.name.clone(),
+                column,
+                qualifier,
                 operator,
                 parameter: Some(parameter),
             };
@@ -1475,18 +1662,20 @@ fn flatten_filters(
             Ok(())
         }
         Expr::IsNull(inner) | Expr::IsNotNull(inner) => {
-            let Expr::Identifier(identifier) = inner.as_ref() else {
-                return Err(SqlStructureReason::FilterUnsupported);
-            };
-            let column = find_column_by_ident(context, identifier)
-                .ok_or(SqlStructureReason::UnknownColumn)?;
+            let (column, qualifier) = resolve_column_reference(
+                inner,
+                context,
+                joins,
+                SqlStructureReason::FilterUnsupported,
+            )?;
             let operator = if matches!(expression, Expr::IsNull(_)) {
                 SqlStructureFilterOperator::IsNull
             } else {
                 SqlStructureFilterOperator::IsNotNull
             };
             filters.push(SqlStructureFilter {
-                column: column.name.clone(),
+                column,
+                qualifier,
                 operator,
                 parameter: None,
             });
@@ -1499,6 +1688,7 @@ fn flatten_filters(
 fn parse_order_by(
     order_by: &OrderBy,
     context: &SqlStructureContext,
+    joins: &[SqlStructureJoin],
 ) -> Result<Vec<SqlStructureSort>, SqlStructureReason> {
     let OrderByKind::Expressions(expressions) = &order_by.kind else {
         return Err(SqlStructureReason::SortUnsupported);
@@ -1510,22 +1700,26 @@ fn parse_order_by(
     expressions
         .iter()
         .map(|expression| {
-            let Expr::Identifier(identifier) = &expression.expr else {
-                return Err(SqlStructureReason::SortUnsupported);
-            };
             if expression.with_fill.is_some() || expression.options.nulls_first.is_some() {
                 return Err(SqlStructureReason::SortUnsupported);
             }
-            let column = find_column_by_ident(context, identifier)
-                .ok_or(SqlStructureReason::UnknownColumn)?;
+            let (column, qualifier) = resolve_column_reference(
+                &expression.expr,
+                context,
+                joins,
+                SqlStructureReason::SortUnsupported,
+            )?;
+            let key = (qualifier.as_ref().map(alias_resolution_key), column.clone());
+            if !seen.insert(key) {
+                return Err(SqlStructureReason::DuplicateColumn);
+            }
+            let column = find_column(context, &column).ok_or(SqlStructureReason::UnknownColumn)?;
             if !column_type_supports_sort(column.column_type) {
                 return Err(SqlStructureReason::SortUnsupported);
             }
-            if !seen.insert(column.name.as_str()) {
-                return Err(SqlStructureReason::DuplicateColumn);
-            }
             Ok(SqlStructureSort {
                 column: column.name.clone(),
+                qualifier,
                 direction: if expression.options.asc == Some(false) {
                     SqlStructureSortDirection::Desc
                 } else {
@@ -1879,9 +2073,42 @@ fn replace_sql_source_range(sql: &str, range: SqlSourceRange, replacement: &str)
     Some(format!("{before}{replacement}{after}"))
 }
 
+fn resolve_filter_qualifier(
+    qualifier: Option<&SqlStructureAlias>,
+    joins: &[SqlStructureJoin],
+) -> Result<Option<SqlStructureAlias>, SqlStructureReason> {
+    match (qualifier, joins) {
+        (None, []) => Ok(None),
+        (Some(qualifier), [join]) if aliases_resolve_same(qualifier, &join.left_alias) => {
+            Ok(Some(join.left_alias.clone()))
+        }
+        (Some(qualifier), [join]) if aliases_resolve_same(qualifier, &join.right_alias) => {
+            Ok(Some(join.right_alias.clone()))
+        }
+        _ => Err(SqlStructureReason::JoinUnsupported),
+    }
+}
+
+fn column_reference_expr(column: &str, qualifier: Option<&SqlStructureAlias>) -> Expr {
+    let column = Ident::with_quote('"', column.to_owned());
+    match qualifier {
+        Some(alias) => Expr::CompoundIdentifier(vec![alias_ast_ident(alias), column]),
+        None => Expr::Identifier(column),
+    }
+}
+
+fn alias_ast_ident(alias: &SqlStructureAlias) -> Ident {
+    if alias.quoted {
+        Ident::with_quote('"', alias.name.clone())
+    } else {
+        Ident::new(alias.name.clone())
+    }
+}
+
 fn set_filters(
     query: &mut Query,
     context: &SqlStructureContext,
+    joins: &[SqlStructureJoin],
     filters: Vec<SqlStructureFilter>,
 ) -> Result<(), SqlStructureReason> {
     if filters.len() > 128 {
@@ -1890,7 +2117,8 @@ fn set_filters(
     let mut expressions = Vec::with_capacity(filters.len());
     for filter in filters {
         validate_filter(context, &filter)?;
-        let column = Expr::Identifier(Ident::with_quote('"', filter.column));
+        let qualifier = resolve_filter_qualifier(filter.qualifier.as_ref(), joins)?;
+        let column = column_reference_expr(&filter.column, qualifier.as_ref());
         let expression = match filter.operator {
             SqlStructureFilterOperator::IsNull => Expr::IsNull(Box::new(column)),
             SqlStructureFilterOperator::IsNotNull => Expr::IsNotNull(Box::new(column)),
@@ -1924,6 +2152,7 @@ fn set_filters(
 fn set_sort(
     query: &mut Query,
     context: &SqlStructureContext,
+    joins: &[SqlStructureJoin],
     order_by: Vec<SqlStructureSort>,
     added_tie_breakers: &mut Vec<String>,
 ) -> Result<(), SqlStructureReason> {
@@ -1943,14 +2172,40 @@ fn set_sort(
     if order_by.len() > 256 {
         return Err(SqlStructureReason::SortUnsupported);
     }
-    let mut validated = validate_sort_columns(context, order_by)?;
-    for key in &context.stable_key {
-        if !validated.iter().any(|sort| names_match(&sort.column, key)) {
-            validated.push(SqlStructureSort {
-                column: key.clone(),
-                direction: SqlStructureSortDirection::Asc,
-            });
-            added_tie_breakers.push(key.clone());
+    let mut validated = validate_sort_columns(context, order_by, joins)?;
+    if let Some(join) = joins.first() {
+        for alias in [&join.left_alias, &join.right_alias] {
+            for key in &context.stable_key {
+                let exists = validated.iter().any(|sort| {
+                    names_match(&sort.column, key)
+                        && sort
+                            .qualifier
+                            .as_ref()
+                            .is_some_and(|qualifier| aliases_resolve_same(qualifier, alias))
+                });
+                if !exists {
+                    validated.push(SqlStructureSort {
+                        column: key.clone(),
+                        qualifier: Some(alias.clone()),
+                        direction: SqlStructureSortDirection::Asc,
+                    });
+                    added_tie_breakers.push(format!("{}.{}", alias.name, key));
+                }
+            }
+        }
+    } else {
+        for key in &context.stable_key {
+            if !validated
+                .iter()
+                .any(|sort| sort.qualifier.is_none() && names_match(&sort.column, key))
+            {
+                validated.push(SqlStructureSort {
+                    column: key.clone(),
+                    qualifier: None,
+                    direction: SqlStructureSortDirection::Asc,
+                });
+                added_tie_breakers.push(key.clone());
+            }
         }
     }
     query.order_by = Some(OrderBy {
@@ -1958,7 +2213,7 @@ fn set_sort(
             validated
                 .into_iter()
                 .map(|sort| OrderByExpr {
-                    expr: Expr::Identifier(Ident::with_quote('"', sort.column)),
+                    expr: column_reference_expr(&sort.column, sort.qualifier.as_ref()),
                     options: OrderByOptions {
                         asc: Some(sort.direction == SqlStructureSortDirection::Asc),
                         nulls_first: None,
@@ -2154,6 +2409,7 @@ fn select_item_alias(item: &SelectItem) -> Option<SqlStructureAlias> {
 fn validate_sort_columns(
     context: &SqlStructureContext,
     order_by: Vec<SqlStructureSort>,
+    joins: &[SqlStructureJoin],
 ) -> Result<Vec<SqlStructureSort>, SqlStructureReason> {
     let mut validated = Vec::with_capacity(order_by.len());
     let mut seen = BTreeSet::new();
@@ -2162,11 +2418,17 @@ fn validate_sort_columns(
         if !column_type_supports_sort(column.column_type) {
             return Err(SqlStructureReason::SortUnsupported);
         }
-        if !seen.insert(column.name.as_str()) {
+        let qualifier = resolve_filter_qualifier(sort.qualifier.as_ref(), joins)?;
+        let key = (
+            qualifier.as_ref().map(alias_resolution_key),
+            column.name.clone(),
+        );
+        if !seen.insert(key) {
             return Err(SqlStructureReason::DuplicateColumn);
         }
         validated.push(SqlStructureSort {
             column: column.name.clone(),
+            qualifier,
             direction: sort.direction,
         });
     }
@@ -2198,11 +2460,9 @@ fn supported_analysis(
         && parsed.group_by.is_empty();
     let distinct_enabled = columns_available || literal_projection;
     let sort_available =
-        structured_projection && !parsed.distinct && stable_key_is_orderable(context) && !has_join;
+        structured_projection && !parsed.distinct && stable_key_is_orderable(context);
     let pagination_reason = if parsed.stable_pagination {
         None
-    } else if has_join {
-        Some(SqlStructureReason::JoinUnsupported)
     } else if !structured_projection || parsed.distinct {
         Some(SqlStructureReason::SortUnsupported)
     } else if sort_available {
@@ -2243,18 +2503,12 @@ fn supported_analysis(
                 },
             ),
             filter: capability(
-                columns_available && !has_join,
-                if has_join {
-                    Some(SqlStructureReason::JoinUnsupported)
-                } else {
-                    (!columns_available).then_some(SqlStructureReason::InvalidContext)
-                },
+                columns_available,
+                (!columns_available).then_some(SqlStructureReason::InvalidContext),
             ),
             sort: capability(
                 sort_available,
-                (!sort_available).then_some(if has_join {
-                    SqlStructureReason::JoinUnsupported
-                } else if !structured_projection || parsed.distinct {
+                (!sort_available).then_some(if !structured_projection || parsed.distinct {
                     SqlStructureReason::SortUnsupported
                 } else if context.stable_key.is_empty() {
                     SqlStructureReason::StableKeyUnavailable
@@ -2481,6 +2735,9 @@ mod tests {
             .collect::<BTreeSet<_>>();
         assert!(join_limits
             .contains(&"one INNER self-join of the selected Form with explicit distinct aliases"));
+        assert!(join_limits.contains(
+            &"WHERE supports AND trees of qualified parameter comparisons plus IS NULL/IS NOT NULL on qualified columns; ORDER BY supports simple qualified columns with ASC/DESC and no NULLS FIRST/LAST; unqualified references fail closed"
+        ));
         let declared_operations = editor["operations"]
             .as_array()
             .expect("feature matrix operations must be an array")
@@ -2640,6 +2897,7 @@ mod tests {
             SqlStructureOperation::SetFilters {
                 filters: vec![SqlStructureFilter {
                     column: "field_101".to_owned(),
+                    qualifier: None,
                     operator: SqlStructureFilterOperator::Eq,
                     parameter: Some("status".to_owned()),
                 }],
@@ -2717,18 +2975,12 @@ mod tests {
             analysis.capabilities.columns.reason,
             Some(SqlStructureReason::JoinUnsupported)
         );
-        assert!(!analysis.capabilities.filter.enabled);
-        assert_eq!(
-            analysis.capabilities.filter.reason,
-            Some(SqlStructureReason::JoinUnsupported)
-        );
-        assert_eq!(
-            analysis.capabilities.sort.reason,
-            Some(SqlStructureReason::JoinUnsupported)
-        );
+        assert!(analysis.capabilities.filter.enabled);
+        assert!(analysis.capabilities.sort.enabled);
+        assert!(!analysis.capabilities.stable_pagination.enabled);
         assert_eq!(
             analysis.capabilities.stable_pagination.reason,
-            Some(SqlStructureReason::JoinUnsupported)
+            Some(SqlStructureReason::StableOrderRequired)
         );
         assert_eq!(
             analysis.capabilities.aggregate.reason,
@@ -2755,7 +3007,7 @@ mod tests {
         let proposed = proposal.proposed_sql.expect("join edit proposal");
         assert_eq!(
             proposed,
-            "-- query\nSELECT * FROM \"Task\" AS t INNER JOIN \"Task\" AS other ON \"t\".\"_ugoite_id\" = \"other\".\"_ugoite_id\" /* keep */ LIMIT 8"
+            "-- query\nSELECT * FROM \"Task\" AS t INNER JOIN \"Task\" AS other ON t.\"_ugoite_id\" = other.\"_ugoite_id\" /* keep */ LIMIT 8"
         );
         assert_eq!(
             analyze_sql_structure(&proposed, &context()).status,
@@ -2787,6 +3039,169 @@ mod tests {
         let parsed = analyze_sql_structure(&proposed, &context());
         assert_eq!(parsed.status, SqlStructureStatus::Supported);
         assert_eq!(parsed.joins.len(), 1);
+    }
+
+    #[test]
+    fn joined_qualified_filters_and_ordering_are_editable_and_preserved() {
+        let sql = "SELECT * FROM \"Task\" AS t INNER JOIN \"Task\" AS other ON t.field_101 = other.field_101 WHERE t.field_101 = $status AND other.field_102 IS NOT NULL ORDER BY other.field_101 DESC, t._ugoite_id ASC LIMIT 8";
+        let analysis = analyze_sql_structure(sql, &context());
+        assert_eq!(analysis.status, SqlStructureStatus::Supported);
+        assert_eq!(analysis.filters.len(), 2);
+        assert_eq!(analysis.filters[0].column, "field_101");
+        assert_eq!(analysis.filters[0].qualifier.as_ref().unwrap().name, "t");
+        assert_eq!(analysis.filters[1].column, "field_102");
+        assert_eq!(
+            analysis.filters[1].qualifier.as_ref().unwrap().name,
+            "other"
+        );
+        assert_eq!(analysis.order_by.len(), 2);
+        assert_eq!(analysis.order_by[0].column, "field_101");
+        assert_eq!(
+            analysis.order_by[0].qualifier.as_ref().unwrap().name,
+            "other"
+        );
+        assert_eq!(analysis.order_by[1].column, "_ugoite_id");
+        assert_eq!(analysis.order_by[1].qualifier.as_ref().unwrap().name, "t");
+        assert!(analysis.capabilities.filter.enabled);
+        assert!(analysis.capabilities.sort.enabled);
+
+        let where_and_order = sql.split_once(" WHERE ").unwrap().1;
+        let proposal = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetJoin {
+                left_column: "_ugoite_id".to_owned(),
+                right_column: "_ugoite_id".to_owned(),
+            },
+        );
+        assert_eq!(proposal.status, SqlStructureStatus::Supported);
+        let proposed = proposal.proposed_sql.expect("join edit proposal");
+        assert!(proposed.ends_with(&format!("WHERE {where_and_order}")));
+        assert_eq!(
+            analyze_sql_structure(&proposed, &context()).status,
+            SqlStructureStatus::Supported
+        );
+    }
+
+    #[test]
+    fn adding_join_qualifies_existing_single_relation_filters_and_ordering() {
+        let sql = "SELECT * FROM \"Task\" WHERE \"field_101\" = $status ORDER BY \"_ugoite_id\" DESC LIMIT 8";
+        let proposal = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetJoin {
+                left_column: "field_101".to_owned(),
+                right_column: "field_101".to_owned(),
+            },
+        );
+        assert_eq!(proposal.status, SqlStructureStatus::Supported);
+        let proposed = proposal.proposed_sql.expect("join proposal");
+        assert!(proposed.contains(
+            "WHERE \"_ugoite_left\".\"field_101\" = $status ORDER BY \"_ugoite_left\".\"_ugoite_id\" DESC LIMIT 8"
+        ));
+        assert_eq!(
+            analyze_sql_structure(&proposed, &context()).status,
+            SqlStructureStatus::Supported
+        );
+    }
+
+    #[test]
+    fn adding_join_preserves_existing_relation_alias_in_qualified_clauses() {
+        let sql = "SELECT * FROM \"Task\" AS task_rows WHERE field_101 = $status ORDER BY _ugoite_id DESC LIMIT 8";
+        let proposal = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetJoin {
+                left_column: "field_101".to_owned(),
+                right_column: "field_101".to_owned(),
+            },
+        );
+        assert_eq!(proposal.status, SqlStructureStatus::Supported);
+        let proposed = proposal.proposed_sql.expect("join proposal");
+        assert!(proposed.contains(
+            "WHERE task_rows.\"field_101\" = $status ORDER BY task_rows.\"_ugoite_id\" DESC LIMIT 8"
+        ));
+        assert_eq!(
+            analyze_sql_structure(&proposed, &context()).status,
+            SqlStructureStatus::Supported
+        );
+        assert!(proposed
+            .contains("FROM \"Task\" AS task_rows INNER JOIN \"Task\" AS \"_ugoite_right\""));
+    }
+
+    #[test]
+    fn resolves_unquoted_uppercase_join_identifiers_case_insensitively() {
+        let sql = "SELECT * FROM \"Task\" AS T INNER JOIN \"Task\" AS OTHER ON T.FIELD_101 = OTHER.FIELD_101 WHERE OTHER.FIELD_101 = $status ORDER BY T._UGOITE_ID DESC LIMIT 8";
+        let analysis = analyze_sql_structure(sql, &context());
+        assert_eq!(analysis.status, SqlStructureStatus::Supported);
+        assert_eq!(analysis.joins[0].left_alias.name, "T");
+        assert_eq!(analysis.joins[0].right_alias.name, "OTHER");
+        assert_eq!(analysis.joins[0].left_column, "field_101");
+        assert_eq!(analysis.filters[0].column, "field_101");
+        assert_eq!(
+            analysis.filters[0].qualifier.as_ref().unwrap().name,
+            "OTHER"
+        );
+        assert_eq!(analysis.order_by[0].column, "_ugoite_id");
+        assert_eq!(analysis.order_by[0].qualifier.as_ref().unwrap().name, "T");
+    }
+
+    #[test]
+    fn rejects_unqualified_filters_and_ordering_for_joined_relations() {
+        for sql in [
+            "SELECT * FROM \"Task\" AS t INNER JOIN \"Task\" AS other ON t.field_101 = other.field_101 WHERE field_101 = $status",
+            "SELECT * FROM \"Task\" AS t INNER JOIN \"Task\" AS other ON t.field_101 = other.field_101 ORDER BY _ugoite_id",
+        ] {
+            let analysis = analyze_sql_structure(sql, &context());
+            assert_eq!(analysis.status, SqlStructureStatus::Unsupported, "{sql}");
+        }
+    }
+
+    #[test]
+    fn joined_filter_and_sort_operations_keep_explicit_aliases() {
+        let sql = "SELECT * FROM \"Task\" AS t INNER JOIN \"Task\" AS other ON t.field_101 = other.field_101";
+        let join = analyze_sql_structure(sql, &context()).joins[0].clone();
+        let filter_proposal = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetFilters {
+                filters: vec![SqlStructureFilter {
+                    column: "field_101".to_owned(),
+                    qualifier: Some(join.right_alias.clone()),
+                    operator: SqlStructureFilterOperator::Eq,
+                    parameter: Some("status".to_owned()),
+                }],
+            },
+        );
+        assert_eq!(filter_proposal.status, SqlStructureStatus::Supported);
+        let filtered_sql = filter_proposal.proposed_sql.expect("filter proposal");
+        assert!(filtered_sql.contains("WHERE other.\"field_101\" = $status"));
+        let filtered = analyze_sql_structure(&filtered_sql, &context());
+        assert_eq!(filtered.status, SqlStructureStatus::Supported);
+        assert_eq!(
+            filtered.filters[0].qualifier,
+            Some(join.right_alias.clone())
+        );
+
+        let sort_proposal = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetSort {
+                order_by: vec![SqlStructureSort {
+                    column: "field_101".to_owned(),
+                    qualifier: Some(join.left_alias.clone()),
+                    direction: SqlStructureSortDirection::Desc,
+                }],
+            },
+        );
+        assert_eq!(sort_proposal.status, SqlStructureStatus::Supported);
+        let sorted_sql = sort_proposal.proposed_sql.expect("sort proposal");
+        assert!(sorted_sql.contains(
+            "ORDER BY t.\"field_101\" DESC, t.\"_ugoite_id\" ASC, other.\"_ugoite_id\" ASC"
+        ));
+        let sorted = analyze_sql_structure(&sorted_sql, &context());
+        assert_eq!(sorted.status, SqlStructureStatus::Supported);
+        assert!(sorted.stable_pagination);
     }
 
     #[test]
@@ -3060,6 +3475,7 @@ mod tests {
             SqlStructureOperation::SetFilters {
                 filters: vec![SqlStructureFilter {
                     column: "field_102".to_owned(),
+                    qualifier: None,
                     operator: SqlStructureFilterOperator::GtEq,
                     parameter: Some("priority".to_owned()),
                 }],
@@ -3076,6 +3492,7 @@ mod tests {
             SqlStructureOperation::SetSort {
                 order_by: vec![SqlStructureSort {
                     column: "field_102".to_owned(),
+                    qualifier: None,
                     direction: SqlStructureSortDirection::Desc,
                 }],
             },
@@ -3540,6 +3957,7 @@ mod tests {
             SqlStructureOperation::SetFilters {
                 filters: vec![SqlStructureFilter {
                     column: "field_102".to_owned(),
+                    qualifier: None,
                     operator: SqlStructureFilterOperator::Eq,
                     parameter: Some("status".to_owned()),
                 }],
@@ -3588,6 +4006,7 @@ mod tests {
             SqlStructureOperation::SetSort {
                 order_by: vec![SqlStructureSort {
                     column: "field_101".to_owned(),
+                    qualifier: None,
                     direction: SqlStructureSortDirection::Asc,
                 }],
             },
@@ -3639,6 +4058,7 @@ mod tests {
             SqlStructureOperation::SetSort {
                 order_by: vec![SqlStructureSort {
                     column: "field_102".to_owned(),
+                    qualifier: None,
                     direction: SqlStructureSortDirection::Desc,
                 }],
             },
