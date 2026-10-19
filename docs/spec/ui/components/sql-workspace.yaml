@@ -39,9 +39,12 @@ is recorded in the [SQL feature matrix contract](../../../architecture/contracts
 Sort proposals append adapter-supplied stable keys where needed. A proposal is
 non-mutating: the adapter must show its SQL diff and wait for explicit user
 confirmation before updating the controlled SQL value. `SqlStructureToolbar`
-offers a Form chooser from trusted, user-creatable Form metadata, using the
-same eligibility rule as entry creation, and passes the selected
-server-derived `sql_relation` to the Rust `set_relation` operation. Selecting a
+analyzes SQL against trusted metadata for every Form, including reserved
+metadata Forms, so directly authored SQL over those relations can retain
+structured editing when the Rust parser supports it. The Form chooser offers
+only user-creatable Forms, using the same eligibility rule as entry creation,
+and passes the selected server-derived `sql_relation` to the Rust
+`set_relation` operation. Selecting a
 Form from the relation-free `SELECT 1` workspace seed proposes
 `SELECT * FROM <relation>`; replacing one simple relation preserves the other
 SQL clauses and is accepted only when the target Form schema validates them.

@@ -318,6 +318,11 @@ async function main(): Promise<void> {
   });
   assertEqual(staleEditResponse.ok, false, "stale edit rejection");
   assertEqual(
+    (staleEditResponse.error as Record<string, unknown>).kind,
+    "sql_document_edit",
+    "stable stale edit error kind",
+  );
+  assertEqual(
     (staleEditResponse.error as Record<string, unknown>).code,
     "stale_source",
     "stable stale source error",
@@ -338,6 +343,11 @@ async function main(): Promise<void> {
     },
   });
   assertEqual(invalidRangeResponse.ok, false, "invalid range rejection");
+  assertEqual(
+    (invalidRangeResponse.error as Record<string, unknown>).kind,
+    "sql_document_edit",
+    "stable invalid range error kind",
+  );
   assertEqual(
     (invalidRangeResponse.error as Record<string, unknown>).code,
     "range_out_of_bounds",

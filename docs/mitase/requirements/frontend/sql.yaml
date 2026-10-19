@@ -500,8 +500,10 @@ requirements:
           parser/capability model can safely round-trip. Directly edited SQL
           remains authoritative; unsupported syntax stays editable in the code
           editor and a structured rewrite requires explicit diff confirmation.
-          The Form relation chooser applies the same user-creatable Form
-          eligibility rule as entry creation.
+          SQL analysis can use trusted metadata for reserved Forms already
+          referenced by directly authored SQL. The Form relation chooser
+          applies the same user-creatable Form eligibility rule as entry
+          creation.
         governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
       - id: explicit-preview-count-and-paging
         kind: behavior
@@ -622,12 +624,21 @@ requirements:
           - id: sql-form-eligibility
             adapter: typescript
             path: frontend/src/lib/sql.test.ts
-            selector: { kind: test, name: offers only user-creatable Forms as SQL relation candidates }
+            selector: { kind: test, name: keeps reserved Forms as analysis contexts but excludes them from SQL relation candidates }
             claims:
               - kind: verifies
                 criterion: REQ-FE-080#criterion.safe-structured-operations
                 covers: [FEAT-FE-008#binding.frontend/target.sql-structure-context]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: offers only user-creatable Forms as SQL relation candidates } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: keeps reserved Forms as analysis contexts but excludes them from SQL relation candidates } }
+          - id: sql-reserved-relation-toolbar
+            adapter: typescript
+            path: frontend/src/components/SqlStructureToolbar.test.tsx
+            selector: { kind: test, name: keeps directly authored reserved relations editable and hides them from the Form chooser }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.safe-structured-operations
+                covers: [FEAT-FE-008#binding.frontend/target.sql-structure-context, FEAT-FE-008#binding.frontend/target.sql-structure-toolbar]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlStructureToolbar.test.tsx, test: keeps directly authored reserved relations editable and hides them from the Form chooser } }
           - id: sql-structure-proposal
             adapter: typescript
             path: frontend/src/components/SqlStructureToolbar.test.tsx
