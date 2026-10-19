@@ -53,6 +53,17 @@ pub(crate) fn source_range_from_span(source: &str, span: Span) -> Option<SqlSour
     SqlSourceRange::from_span(source, &SqlSourceMap::new(source), span)
 }
 
+pub(crate) fn source_ranges_from_spans(
+    source: &str,
+    spans: impl IntoIterator<Item = Span>,
+) -> Option<Vec<SqlSourceRange>> {
+    let source_map = SqlSourceMap::new(source);
+    spans
+        .into_iter()
+        .map(|span| SqlSourceRange::from_span(source, &source_map, span))
+        .collect()
+}
+
 pub(crate) fn has_comment_token_in_range(source: &str, range: SqlSourceRange) -> Option<bool> {
     if range.start >= range.end || source.get(range.start..range.end).is_none() {
         return None;

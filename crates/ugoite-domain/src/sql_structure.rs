@@ -15,10 +15,12 @@ use sqlparser::ast::{
 };
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
-use sqlparser::tokenizer::Span;
+use sqlparser::tokenizer::{Span, Token, Tokenizer, Whitespace};
 use std::collections::BTreeSet;
 
-use crate::sql_document::{has_comment_token_in_range, source_range_from_span, SqlSourceRange};
+use crate::sql_document::{
+    has_comment_token_in_range, source_range_from_span, source_ranges_from_spans, SqlSourceRange,
+};
 
 /// The parser/capability contract version exposed through the WASM adapter.
 pub const SQL_STRUCTURE_CONTRACT_VERSION: u32 = 1;
@@ -392,6 +394,32 @@ pub fn propose_sql_structure_operation(
                 Err(reason) => return rejected_proposal(base_sql, reason),
             }
         }
+        SqlStructureOperation::SetFilters { filters } => {
+            let original_query = parsed.query.clone();
+            if let Err(reason) = set_filters(&mut parsed.query, context, &parsed.joins, filters) {
+                return rejected_proposal(base_sql, reason);
+            }
+            match rewrite_filter_clause_source(sql, &original_query, &parsed.query) {
+                Ok(sql) => sql,
+                Err(reason) => return rejected_proposal(base_sql, reason),
+            }
+        }
+        SqlStructureOperation::SetSort { order_by } => {
+            let original_query = parsed.query.clone();
+            if let Err(reason) = set_sort(
+                &mut parsed.query,
+                context,
+                &parsed.joins,
+                order_by,
+                &mut added_stable_tie_breakers,
+            ) {
+                return rejected_proposal(base_sql, reason);
+            }
+            match rewrite_sort_clause_source(sql, &original_query, &parsed.query) {
+                Ok(sql) => sql,
+                Err(reason) => return rejected_proposal(base_sql, reason),
+            }
+        }
         operation => {
             let mutation = match operation {
                 SqlStructureOperation::SetRelation { .. } => {
@@ -400,16 +428,10 @@ pub fn propose_sql_structure_operation(
                 SqlStructureOperation::SetJoin { .. } => {
                     unreachable!("JOIN edits are handled by the source-preserving proposal")
                 }
-                SqlStructureOperation::SetFilters { filters } => {
-                    set_filters(&mut parsed.query, context, &parsed.joins, filters)
+                SqlStructureOperation::SetFilters { .. }
+                | SqlStructureOperation::SetSort { .. } => {
+                    unreachable!("filters and sorting use source-preserving rewrites")
                 }
-                SqlStructureOperation::SetSort { order_by } => set_sort(
-                    &mut parsed.query,
-                    context,
-                    &parsed.joins,
-                    order_by,
-                    &mut added_stable_tie_breakers,
-                ),
                 SqlStructureOperation::SetAggregates { aggregates } => {
                     set_aggregates(&mut parsed.query, context, aggregates)
                 }
@@ -2084,6 +2106,254 @@ fn set_sort(
     Ok(())
 }
 
+fn rewrite_filter_clause_source(
+    sql: &str,
+    before: &Query,
+    after: &Query,
+) -> Result<String, SqlStructureReason> {
+    let before_select = select_from_query(before).ok_or(SqlStructureReason::FilterUnsupported)?;
+    let after_select = select_from_query(after).ok_or(SqlStructureReason::FilterUnsupported)?;
+    match (
+        before_select.selection.as_ref(),
+        after_select.selection.as_ref(),
+    ) {
+        (Some(before), Some(after)) => {
+            let range = source_range_from_span(sql, before.span())
+                .filter(|range| range.start < range.end)
+                .ok_or(SqlStructureReason::FilterUnsupported)?;
+            if has_comment_token_in_range(sql, range) != Some(false) {
+                return Err(SqlStructureReason::FilterUnsupported);
+            }
+            replace_sql_source_range(sql, range, &after.to_string())
+                .ok_or(SqlStructureReason::FilterUnsupported)
+        }
+        (Some(before), None) => {
+            let expression_range = source_range_from_span(sql, before.span())
+                .filter(|range| range.start < range.end)
+                .ok_or(SqlStructureReason::FilterUnsupported)?;
+            let keyword_range = find_top_level_keyword_before(sql, "WHERE", expression_range.start)
+                .ok_or(SqlStructureReason::FilterUnsupported)?;
+            if keyword_range.end > expression_range.start {
+                return Err(SqlStructureReason::FilterUnsupported);
+            }
+            replace_sql_source_range(
+                sql,
+                SqlSourceRange {
+                    start: keyword_range.start,
+                    end: expression_range.end,
+                },
+                "",
+            )
+            .ok_or(SqlStructureReason::FilterUnsupported)
+        }
+        (None, Some(after)) => {
+            let insertion = clause_insertion_offset(sql, before, ClauseInsertion::Filter)
+                .ok_or(SqlStructureReason::FilterUnsupported)?;
+            insert_sql_clause(sql, insertion, &format!("WHERE {}", after))
+                .ok_or(SqlStructureReason::FilterUnsupported)
+        }
+        (None, None) => Ok(sql.to_owned()),
+    }
+}
+
+fn rewrite_sort_clause_source(
+    sql: &str,
+    before: &Query,
+    after: &Query,
+) -> Result<String, SqlStructureReason> {
+    match (before.order_by.as_ref(), after.order_by.as_ref()) {
+        (Some(before), Some(after)) => {
+            let range = order_by_source_range(sql, before)
+                .filter(|range| range.start < range.end)
+                .ok_or(SqlStructureReason::SortUnsupported)?;
+            if has_comment_token_in_range(sql, range) != Some(false) {
+                return Err(SqlStructureReason::SortUnsupported);
+            }
+            replace_sql_source_range(
+                sql,
+                range,
+                &order_by_expressions_sql(after).ok_or(SqlStructureReason::SortUnsupported)?,
+            )
+            .ok_or(SqlStructureReason::SortUnsupported)
+        }
+        (Some(before), None) => {
+            let expression_range = order_by_source_range(sql, before)
+                .filter(|range| range.start < range.end)
+                .ok_or(SqlStructureReason::SortUnsupported)?;
+            let keyword_range = find_top_level_keyword_before(sql, "ORDER", expression_range.start)
+                .ok_or(SqlStructureReason::SortUnsupported)?;
+            if keyword_range.end > expression_range.start {
+                return Err(SqlStructureReason::SortUnsupported);
+            }
+            replace_sql_source_range(
+                sql,
+                SqlSourceRange {
+                    start: keyword_range.start,
+                    end: expression_range.end,
+                },
+                "",
+            )
+            .ok_or(SqlStructureReason::SortUnsupported)
+        }
+        (None, Some(after)) => {
+            let insertion = clause_insertion_offset(sql, before, ClauseInsertion::Sort)
+                .ok_or(SqlStructureReason::SortUnsupported)?;
+            insert_sql_clause(
+                sql,
+                insertion,
+                &format!(
+                    "ORDER BY {}",
+                    order_by_expressions_sql(after).ok_or(SqlStructureReason::SortUnsupported)?
+                ),
+            )
+            .ok_or(SqlStructureReason::SortUnsupported)
+        }
+        (None, None) => Ok(sql.to_owned()),
+    }
+}
+
+fn order_by_source_range(sql: &str, order_by: &OrderBy) -> Option<SqlSourceRange> {
+    // sqlparser's OrderBy span covers expressions only; include the final
+    // ASC/DESC token so replacing or removing a sort does not leave it behind.
+    let mut range = source_range_from_span(sql, order_by.span())?;
+    let tokens = top_level_tokens(sql)?;
+    if let Some((token, token_range)) = tokens
+        .iter()
+        .find(|(_, token_range)| token_range.start >= range.end)
+    {
+        if token_is_word(token, "ASC") || token_is_word(token, "DESC") {
+            range.end = token_range.end;
+        }
+    }
+    Some(range)
+}
+
+fn select_from_query(query: &Query) -> Option<&Select> {
+    match query.body.as_ref() {
+        SetExpr::Select(select) => Some(select),
+        _ => None,
+    }
+}
+
+fn order_by_expressions_sql(order_by: &OrderBy) -> Option<String> {
+    let OrderByKind::Expressions(expressions) = &order_by.kind else {
+        return None;
+    };
+    (!expressions.is_empty()).then(|| {
+        expressions
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
+    })
+}
+
+#[derive(Clone, Copy)]
+enum ClauseInsertion {
+    Filter,
+    Sort,
+}
+
+fn top_level_tokens(sql: &str) -> Option<Vec<(Token, SqlSourceRange)>> {
+    let dialect = PostgreSqlDialect {};
+    let tokens = Tokenizer::new(&dialect, sql)
+        .tokenize_with_location()
+        .ok()?;
+    let ranges = source_ranges_from_spans(sql, tokens.iter().map(|token| token.span))?;
+    let mut depth = 0usize;
+    let mut top_level = Vec::new();
+    for (token, range) in tokens.into_iter().zip(ranges) {
+        let token_value = token.token;
+        match &token_value {
+            Token::Whitespace(
+                Whitespace::Space
+                | Whitespace::Newline
+                | Whitespace::Tab
+                | Whitespace::SingleLineComment { .. }
+                | Whitespace::MultiLineComment(_),
+            ) => continue,
+            Token::LParen => {
+                depth = depth.checked_add(1)?;
+                continue;
+            }
+            Token::RParen => {
+                depth = depth.checked_sub(1)?;
+                continue;
+            }
+            _ if depth == 0 => top_level.push((token_value, range)),
+            _ => {}
+        }
+    }
+    (depth == 0).then_some(top_level)
+}
+
+fn token_is_word(token: &Token, expected: &str) -> bool {
+    matches!(token, Token::Word(word) if word.quote_style.is_none() && word.value.eq_ignore_ascii_case(expected))
+}
+
+fn find_top_level_keyword_before(
+    sql: &str,
+    keyword: &str,
+    before: usize,
+) -> Option<SqlSourceRange> {
+    top_level_tokens(sql)?
+        .into_iter()
+        .filter(|(token, range)| range.start < before && token_is_word(token, keyword))
+        .map(|(_, range)| range)
+        .last()
+}
+
+fn clause_insertion_offset(sql: &str, query: &Query, insertion: ClauseInsertion) -> Option<usize> {
+    let tokens = top_level_tokens(sql)?;
+    let mut candidates = Vec::new();
+    for (index, (token, range)) in tokens.iter().enumerate() {
+        let next_is_by = tokens
+            .get(index + 1)
+            .is_some_and(|(next, _)| token_is_word(next, "BY"));
+        let is_group_by = matches!(insertion, ClauseInsertion::Filter)
+            && token_is_word(token, "GROUP")
+            && next_is_by;
+        let is_order_by = token_is_word(token, "ORDER") && next_is_by;
+        let is_limit_or_offset = token_is_word(token, "LIMIT") || token_is_word(token, "OFFSET");
+        let is_statement_end = matches!(token, Token::SemiColon);
+        let is_insertion_point = match insertion {
+            ClauseInsertion::Filter => {
+                is_group_by || is_order_by || is_limit_or_offset || is_statement_end
+            }
+            ClauseInsertion::Sort => is_limit_or_offset || is_statement_end,
+        };
+        if is_insertion_point {
+            candidates.push(range.start);
+        }
+    }
+    candidates
+        .into_iter()
+        .min()
+        .or_else(|| source_range_from_span(sql, query.span()).map(|range| range.end))
+}
+
+fn insert_sql_clause(sql: &str, offset: usize, clause: &str) -> Option<String> {
+    let before = sql.get(..offset)?;
+    let after = sql.get(offset..)?;
+    let leading_space = if before.chars().last().is_some_and(char::is_whitespace) {
+        ""
+    } else {
+        " "
+    };
+    let trailing_space = if after
+        .chars()
+        .next()
+        .is_some_and(|character| character.is_whitespace() || character == ';')
+    {
+        ""
+    } else {
+        " "
+    };
+    Some(format!(
+        "{before}{leading_space}{clause}{trailing_space}{after}"
+    ))
+}
+
 fn set_aggregates(
     query: &mut Query,
     context: &SqlStructureContext,
@@ -3047,6 +3317,204 @@ mod tests {
         let sorted = analyze_sql_structure(&sorted_sql, &context());
         assert_eq!(sorted.status, SqlStructureStatus::Supported);
         assert!(sorted.stable_pagination);
+    }
+
+    #[test]
+    fn filter_and_sort_edits_preserve_trivia_outside_the_edited_clauses() {
+        let commented = "-- head\nSELECT /* projection */ * FROM \"Task\" AS t /* left */ INNER JOIN \"Task\" AS other ON t.\"field_101\" = other.\"field_101\" /* relation */ WHERE /* before filter */ other.\"field_101\" = $status /* after filter */ ORDER BY /* before sort */ t.\"_ugoite_id\" DESC, other.\"_ugoite_id\" DESC /* after sort */ LIMIT 50 /* tail */";
+        let filter = propose_sql_structure_operation(
+            commented,
+            &context(),
+            SqlStructureOperation::SetFilters {
+                filters: vec![SqlStructureFilter {
+                    column: "field_101".to_owned(),
+                    qualifier: Some(SqlStructureAlias {
+                        name: "other".to_owned(),
+                        quoted: false,
+                    }),
+                    operator: SqlStructureFilterOperator::NotEq,
+                    parameter: Some("status".to_owned()),
+                }],
+            },
+        );
+        assert_eq!(
+            filter.status,
+            SqlStructureStatus::Supported,
+            "{:?}",
+            filter.reason
+        );
+        let filtered = filter.proposed_sql.expect("filter edit");
+        for trivia in [
+            "-- head\n",
+            "/* projection */",
+            "/* left */",
+            "/* relation */",
+            "/* before filter */",
+            "/* after filter */",
+            "/* before sort */",
+            "/* after sort */",
+            "LIMIT 50 /* tail */",
+        ] {
+            assert!(filtered.contains(trivia), "missing {trivia} in {filtered}");
+        }
+        assert!(filtered.contains("other.\"field_101\" <> $status"));
+        assert_eq!(
+            analyze_sql_structure(&filtered, &context()).status,
+            SqlStructureStatus::Supported
+        );
+
+        let sort = propose_sql_structure_operation(
+            &filtered,
+            &context(),
+            SqlStructureOperation::SetSort {
+                order_by: vec![SqlStructureSort {
+                    column: "field_102".to_owned(),
+                    qualifier: Some(SqlStructureAlias {
+                        name: "t".to_owned(),
+                        quoted: false,
+                    }),
+                    direction: SqlStructureSortDirection::Asc,
+                }],
+            },
+        );
+        assert_eq!(sort.status, SqlStructureStatus::Supported);
+        let sorted = sort.proposed_sql.expect("sort edit");
+        for trivia in [
+            "-- head\n",
+            "/* projection */",
+            "/* left */",
+            "/* relation */",
+            "/* before filter */",
+            "/* after filter */",
+            "/* before sort */",
+            "/* after sort */",
+            "LIMIT 50 /* tail */",
+        ] {
+            assert!(sorted.contains(trivia), "missing {trivia} in {sorted}");
+        }
+        assert!(sorted.contains("t.\"field_102\" ASC, t.\"_ugoite_id\" ASC"));
+        assert_eq!(
+            analyze_sql_structure(&sorted, &context()).status,
+            SqlStructureStatus::Supported
+        );
+    }
+
+    #[test]
+    fn adding_and_removing_filter_and_sort_clauses_preserves_surrounding_trivia() {
+        let no_clauses =
+            "SELECT /* projection */ * FROM \"Task\" /* relation */ LIMIT 50 /* tail */";
+        let filtered = propose_sql_structure_operation(
+            no_clauses,
+            &context(),
+            SqlStructureOperation::SetFilters {
+                filters: vec![SqlStructureFilter {
+                    column: "field_102".to_owned(),
+                    qualifier: None,
+                    operator: SqlStructureFilterOperator::GtEq,
+                    parameter: Some("priority".to_owned()),
+                }],
+            },
+        );
+        assert_eq!(filtered.status, SqlStructureStatus::Supported);
+        let filtered_sql = filtered.proposed_sql.expect("filter clause insertion");
+        assert!(filtered_sql.contains("/* projection */"));
+        assert!(filtered_sql.contains("/* relation */"));
+        assert!(filtered_sql.contains("WHERE \"field_102\" >= $priority LIMIT 50 /* tail */"));
+
+        let sorted = propose_sql_structure_operation(
+            &filtered_sql,
+            &context(),
+            SqlStructureOperation::SetSort {
+                order_by: vec![SqlStructureSort {
+                    column: "field_102".to_owned(),
+                    qualifier: None,
+                    direction: SqlStructureSortDirection::Desc,
+                }],
+            },
+        );
+        assert_eq!(sorted.status, SqlStructureStatus::Supported);
+        let sorted_sql = sorted.proposed_sql.expect("sort clause insertion");
+        assert!(sorted_sql.contains("/* projection */"));
+        assert!(sorted_sql.contains("/* relation */"));
+        assert!(sorted_sql.contains("WHERE \"field_102\" >= $priority ORDER BY \"field_102\" DESC, \"_ugoite_id\" ASC LIMIT 50 /* tail */"));
+
+        let cleared_sort = propose_sql_structure_operation(
+            &sorted_sql,
+            &context(),
+            SqlStructureOperation::SetSort { order_by: vec![] },
+        );
+        assert_eq!(
+            cleared_sort.status,
+            SqlStructureStatus::Supported,
+            "{sorted_sql}: {:?}",
+            cleared_sort.reason
+        );
+        let without_sort = cleared_sort.proposed_sql.expect("sort clause replacement");
+        assert!(without_sort.contains("WHERE \"field_102\" >= $priority"));
+        assert!(without_sort.contains("LIMIT 50 /* tail */"));
+        assert!(without_sort.contains("ORDER BY \"_ugoite_id\" ASC"));
+        assert!(!without_sort.contains("\"field_102\" DESC"));
+
+        let no_filter = propose_sql_structure_operation(
+            &without_sort,
+            &context(),
+            SqlStructureOperation::SetFilters { filters: vec![] },
+        );
+        assert_eq!(no_filter.status, SqlStructureStatus::Supported);
+        let without_filter = no_filter.proposed_sql.expect("filter clause removal");
+        assert!(without_filter.contains("/* projection */"));
+        assert!(without_filter.contains("/* relation */"));
+        assert!(without_filter.contains("LIMIT 50 /* tail */"));
+        assert!(!without_filter.contains("WHERE"));
+        assert_eq!(
+            analyze_sql_structure(&without_filter, &context()).status,
+            SqlStructureStatus::Supported
+        );
+    }
+
+    #[test]
+    fn filter_and_sort_edits_reject_comment_tokens_inside_replaced_expressions() {
+        let filter_sql =
+            "SELECT * FROM \"Task\" WHERE \"field_101\" /* keep expression comment */ = $status";
+        let filter = propose_sql_structure_operation(
+            filter_sql,
+            &context(),
+            SqlStructureOperation::SetFilters {
+                filters: vec![SqlStructureFilter {
+                    column: "field_101".to_owned(),
+                    qualifier: None,
+                    operator: SqlStructureFilterOperator::NotEq,
+                    parameter: Some("status".to_owned()),
+                }],
+            },
+        );
+        assert_eq!(filter.status, SqlStructureStatus::Unsupported);
+        assert_eq!(filter.reason, Some(SqlStructureReason::FilterUnsupported));
+        assert_eq!(filter.base_sql, filter_sql);
+        assert!(filter.proposed_sql.is_none());
+
+        let sort_sql =
+            "SELECT * FROM \"Task\" ORDER BY \"field_102\" /* keep expression comment */ DESC";
+        let sort = propose_sql_structure_operation(
+            sort_sql,
+            &context(),
+            SqlStructureOperation::SetSort {
+                order_by: vec![SqlStructureSort {
+                    column: "field_101".to_owned(),
+                    qualifier: None,
+                    direction: SqlStructureSortDirection::Asc,
+                }],
+            },
+        );
+        assert_eq!(
+            sort.status,
+            SqlStructureStatus::Unsupported,
+            "{:?}",
+            sort.reason
+        );
+        assert_eq!(sort.reason, Some(SqlStructureReason::SortUnsupported));
+        assert_eq!(sort.base_sql, sort_sql);
+        assert!(sort.proposed_sql.is_none());
     }
 
     #[test]
