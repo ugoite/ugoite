@@ -352,6 +352,7 @@ async fn context_makes_unapproved_forms_entries_columns_and_system_objects_unres
     }
     for sql in [
         "SELECT * FROM tasks t JOIN tasks other ON t.field_100 = other.field_100",
+        "SELECT * FROM tasks AS \"_ugoite_left\" INNER JOIN tasks AS \"_ugoite_right\" ON \"_ugoite_left\".\"field_100\" = \"_ugoite_right\".\"field_100\"",
         "SELECT * FROM (SELECT * FROM tasks) nested",
         "SELECT t.field_100 FROM tasks AS t",
     ] {

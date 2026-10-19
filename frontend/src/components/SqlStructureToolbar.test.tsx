@@ -94,9 +94,11 @@ const analysis: SqlStructureAnalysis = {
   group_by: [],
   distinct: false,
   order_by: [{ column: "_ugoite_id", direction: "asc" }],
+  joins: [],
   referenced_variables: [],
   stable_pagination: true,
   capabilities: {
+    join: { enabled: true },
     columns: { enabled: true },
     filter: { enabled: true },
     sort: { enabled: true },
@@ -138,7 +140,7 @@ describe("SqlStructureToolbar adapter", () => {
       />
     ));
 
-    await waitFor(() => expect(actions).toHaveLength(7));
+    await waitFor(() => expect(actions).toHaveLength(8));
     await waitFor(() =>
       expect(actions.find((action) => action.kind === "columns")?.disabled)
         .toBe(false)
@@ -175,6 +177,69 @@ describe("SqlStructureToolbar adapter", () => {
     );
   });
 
+  it("adds a typed inner self-join through the shared toolbar", async () => {
+    const sql = 'SELECT * FROM "Orders"';
+    const proposedSql =
+      'SELECT * FROM "Orders" AS "_ugoite_left" INNER JOIN "Orders" AS "_ugoite_right" ON "_ugoite_left"."amount" = "_ugoite_right"."amount"';
+    proposeMock.mockResolvedValue({
+      contract_version: 1,
+      status: "supported",
+      base_sql: sql,
+      proposed_sql: proposedSql,
+      requires_confirmation: true,
+      added_stable_tie_breakers: [],
+    });
+    const onSqlChange = vi.fn();
+    let actions: readonly SQLWorkspaceAction[] = [];
+    let resolveStructureAction!: (action: SQLWorkspaceAction) => void;
+    const structureActionReady = new Promise<SQLWorkspaceAction>((resolve) => {
+      resolveStructureAction = resolve;
+    });
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [context]}
+        onSqlChange={onSqlChange}
+        onActionsChange={(next) => {
+          actions = next;
+          const structureAction = next.find((action) =>
+            action.kind === "structure"
+          );
+          if (structureAction && !structureAction.disabled) {
+            resolveStructureAction(structureAction);
+          }
+        }}
+      />
+    ));
+
+    const structureAction = await structureActionReady;
+    expect(actions).toHaveLength(8);
+    expect(actions.some((action) => action.kind === "join")).toBe(false);
+    expect(structureAction.disabled).toBe(false);
+    expect(structureAction.label).toBe("Structure");
+    expect(structureAction.icon).toBe("group-by");
+    structureAction.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Join" });
+    fireEvent.change(within(dialog).getByLabelText("Left column"), {
+      target: { value: "amount" },
+    });
+    expect(within(dialog).getByLabelText("Right column")).toHaveValue("amount");
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(proposeMock.mock.calls[0][2]).toEqual({
+      kind: "set_join",
+      left_column: "amount",
+      right_column: "amount",
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Apply change" }),
+    );
+    expect(onSqlChange).toHaveBeenCalledWith(proposedSql);
+  });
+
   it("offers a safe structure edit for scalar SELECT without a Form", async () => {
     const sql = "SELECT 1";
     const contexts = buildSqlStructureContexts([], [], "new-sql");
@@ -187,9 +252,11 @@ describe("SqlStructureToolbar adapter", () => {
       group_by: [],
       distinct: false,
       order_by: [],
+      joins: [],
       referenced_variables: [],
       stable_pagination: false,
       capabilities: {
+        join: { enabled: false, reason: "invalid_context" },
         columns: { enabled: false, reason: "invalid_context" },
         filter: { enabled: false, reason: "invalid_context" },
         sort: { enabled: false, reason: "stable_key_unavailable" },
@@ -857,7 +924,7 @@ describe("SqlStructureToolbar adapter", () => {
       expect(actions.find((action) => action.kind === "aggregate")?.disabled)
         .toBe(false)
     );
-    expect(actions).toHaveLength(7);
+    expect(actions).toHaveLength(8);
     for (const kind of ["group_by", "distinct"] as const) {
       expect(actions.find((action) => action.kind === kind)?.disabled).toBe(
         true,

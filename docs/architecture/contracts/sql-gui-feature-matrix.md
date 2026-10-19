@@ -25,9 +25,19 @@ outside structured coverage. Its `keywords` list is not consumed by the SQL
 admission or lint paths and is not a closed grammar definition.
 
 A single trusted Form relation may use a plain table alias; structure edits and
-Form changes preserve that alias. The current editor generates unqualified
-column references for this one-relation context. Joins, derived relations, and
-table alias column lists remain outside structured coverage.
+Form changes preserve that alias. The editor also supports one bounded same-Form
+INNER self-join: both tables need distinct aliases, and ON must be an equality
+between qualified columns with matching supported scalar types. This path is
+limited to wildcard projection and preserves SQL outside the relation or ON
+expression being edited. Other clauses that would make unqualified columns
+ambiguous remain unavailable in the joined query. LEFT/RIGHT/FULL/CROSS and
+NATURAL joins, USING, multiple joins, derived relations, and other ON
+expressions remain outside structured coverage and fail closed.
+
+The bounded join is routed through the shared `Structure` toolbar action and
+uses the existing group-by icon; it is not a separate plus action. Aggregate,
+group-by, and distinct controls remain separately surfaced during this
+transition, so the planned compact six-action toolbar is not complete.
 
 The matrix records the same SELECT-only boundary as the runtime statement
 gate. Relation-free scalar queries align with direct SQL lint and the structure

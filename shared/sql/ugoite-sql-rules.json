@@ -67,6 +67,13 @@
           "coverage": "bounded"
         },
         {
+          "action": "join",
+          "toolbar_category": "structure",
+          "protocol": "set_join",
+          "sql": ["JOIN", "ON"],
+          "coverage": "bounded"
+        },
+        {
           "action": "columns",
           "protocol": "set_columns",
           "sql": ["SELECT projection"],
@@ -114,7 +121,7 @@
             "one relation selected from trusted Form context",
             "relation-free SELECT 1 draft can select a Form",
             "plain aliases on a single relation are supported and preserved; edited column references remain unqualified",
-            "joins, derived relations, and table alias column lists are not supported"
+            "self-join relations are resolved from the same trusted Form context"
           ]
         },
         {
@@ -177,7 +184,13 @@
           "id": "joins",
           "sql": "JOIN",
           "backend_admission": "planner_decides",
-          "editor_coverage": "none"
+          "editor_coverage": "bounded",
+          "limits": [
+            "one INNER self-join of the selected Form with explicit distinct aliases",
+            "ON must be equality between qualified columns of matching supported scalar types",
+            "wildcard projection only; join edits preserve other SQL source text",
+            "LEFT/RIGHT/FULL/CROSS/NATURAL/USING, multiple joins, derived relations, and other ON expressions fail closed"
+          ]
         },
         {
           "id": "common_table_expressions",

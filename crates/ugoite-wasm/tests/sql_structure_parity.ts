@@ -451,7 +451,10 @@ async function main(): Promise<void> {
     true,
     "relation-free analysis protocol envelope",
   );
-  const scalarAnalysis = scalarAnalysisResponse.value as Record<string, unknown>;
+  const scalarAnalysis = scalarAnalysisResponse.value as Record<
+    string,
+    unknown
+  >;
   assertEqual(
     scalarAnalysis.status,
     "supported",
@@ -479,7 +482,10 @@ async function main(): Promise<void> {
       operation: { kind: "set_distinct", distinct: true },
     },
   });
-  const scalarProposal = scalarProposalResponse.value as Record<string, unknown>;
+  const scalarProposal = scalarProposalResponse.value as Record<
+    string,
+    unknown
+  >;
   assertEqual(
     scalarProposal.status,
     "supported",
@@ -501,6 +507,68 @@ async function main(): Promise<void> {
   const unsupportedValue = unsupported.value as Record<string, unknown>;
   assertEqual(unsupportedValue.status, "unsupported", "JOIN capability status");
   assertEqual(unsupportedValue.reason, "join_unsupported", "JOIN reason code");
+
+  const joinSql = 'SELECT * FROM "Task" LIMIT 5';
+  const joinProposal = await invokeWasm(instance.exports, {
+    action: "domain.propose_sql_structure_operation",
+    value: {
+      sql: joinSql,
+      context,
+      operation: {
+        kind: "set_join",
+        left_column: "title",
+        right_column: "title",
+      },
+    },
+  });
+  assertEqual(joinProposal.ok, true, "JOIN proposal protocol envelope");
+  const joined = joinProposal.value as Record<string, unknown>;
+  assertEqual(joined.status, "supported", "self-join proposal status");
+  assertEqual(
+    joined.proposed_sql,
+    'SELECT * FROM "Task" AS "_ugoite_left" INNER JOIN "Task" AS "_ugoite_right" ON "_ugoite_left"."title" = "_ugoite_right"."title" LIMIT 5',
+    "self-join SQL and preserved LIMIT",
+  );
+  const joinAnalysis = await invokeWasm(instance.exports, {
+    action: "domain.analyze_sql_structure",
+    value: { sql: joined.proposed_sql, context },
+  });
+  const analyzedJoin = joinAnalysis.value as Record<string, unknown>;
+  assertEqual(analyzedJoin.status, "supported", "self-join analysis status");
+  assertEqual(
+    JSON.stringify(analyzedJoin.joins),
+    JSON.stringify([{
+      left_alias: { name: "_ugoite_left", quoted: true },
+      left_column: "title",
+      relation: "Task",
+      right_alias: { name: "_ugoite_right", quoted: true },
+      right_column: "title",
+    }]),
+    "self-join descriptor",
+  );
+
+  const unsupportedOuterJoin = await invokeWasm(instance.exports, {
+    action: "domain.analyze_sql_structure",
+    value: {
+      sql:
+        'SELECT * FROM "Task" AS t LEFT JOIN "Task" AS other ON t.title = other.title',
+      context,
+    },
+  });
+  const unsupportedOuterValue = unsupportedOuterJoin.value as Record<
+    string,
+    unknown
+  >;
+  assertEqual(
+    unsupportedOuterValue.status,
+    "unsupported",
+    "outer join remains outside the editor contract",
+  );
+  assertEqual(
+    unsupportedOuterValue.reason,
+    "join_unsupported",
+    "outer join fail-closed reason",
+  );
 }
 
 if (import.meta.main) {
