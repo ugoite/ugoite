@@ -364,7 +364,9 @@ describe("SqlStructureToolbar adapter", () => {
 
   it("edits a reversed JOIN equality through the shared structure toolbar", async () => {
     const sql =
-      'SELECT * FROM "Orders" AS LEFT_ROWS INNER JOIN "Orders" AS right_rows ON right_rows."private_note" = left_rows."category"';
+      'SELECT * FROM "Orders" AS LEFT_ROWS INNER JOIN "Orders" AS right_rows ON right_rows."private_note" = left_rows."category" WHERE LEFT_ROWS."amount" > $threshold ORDER BY right_rows."created_at" DESC';
+    const proposedSql =
+      'SELECT * FROM "Orders" AS LEFT_ROWS INNER JOIN "Orders" AS right_rows ON LEFT_ROWS."_ugoite_id" = right_rows."category" WHERE LEFT_ROWS."amount" > $threshold ORDER BY right_rows."created_at" DESC';
     const normalizedAnalysis: SqlStructureAnalysis = {
       ...joinedAnalysis,
       joins: [{
@@ -380,17 +382,17 @@ describe("SqlStructureToolbar adapter", () => {
       contract_version: 1,
       status: "supported",
       base_sql: sql,
-      proposed_sql:
-        'SELECT * FROM "Orders" AS LEFT_ROWS INNER JOIN "Orders" AS right_rows ON LEFT_ROWS."_ugoite_id" = right_rows."category"',
+      proposed_sql: proposedSql,
       requires_confirmation: true,
       added_stable_tie_breakers: [],
     });
     let actions: readonly SQLWorkspaceAction[] = [];
+    const onSqlChange = vi.fn();
     render(() => (
       <SqlStructureToolbar
         sql={() => sql}
         contexts={() => [context]}
-        onSqlChange={vi.fn()}
+        onSqlChange={onSqlChange}
         onActionsChange={(next) => actions = next}
       />
     ));
@@ -427,6 +429,12 @@ describe("SqlStructureToolbar adapter", () => {
         right_column: "category",
       },
     );
+    const applyButton = within(dialog).getByRole("button", {
+      name: "Apply change",
+    });
+    await waitFor(() => expect(applyButton).toBeEnabled());
+    fireEvent.click(applyButton);
+    expect(onSqlChange).toHaveBeenCalledWith(proposedSql);
   });
 
   it("offers a safe structure edit for scalar SELECT without a Form", async () => {
