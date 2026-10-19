@@ -159,7 +159,7 @@ test.describe("Saved SQL route", () => {
       expect(dimensions.documentWidth).toBeLessThanOrEqual(
         dimensions.viewportWidth + 1,
       );
-      expect(dimensions.buttons).toHaveLength(7);
+      expect(dimensions.buttons).toHaveLength(8);
       expect(
         Math.max(...dimensions.buttons.map((button) => button.top)) -
           Math.min(...dimensions.buttons.map((button) => button.top)),
