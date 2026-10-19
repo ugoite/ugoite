@@ -213,6 +213,12 @@ Deno.test("JOIN editor coverage is bounded without changing runtime admission", 
   );
   assertEquals(
     joinConstruct.limits.includes(
+      "ON must be left_alias.column = right_alias.column with matching supported scalar types; reversed equality operands fail closed",
+    ),
+    true,
+  );
+  assertEquals(
+    joinConstruct.limits.includes(
       "WHERE supports AND trees of qualified parameter comparisons plus IS NULL/IS NOT NULL on qualified columns; ORDER BY supports simple qualified columns with ASC/DESC and no NULLS FIRST/LAST; unqualified references fail closed",
     ),
     true,

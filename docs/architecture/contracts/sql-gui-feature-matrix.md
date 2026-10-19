@@ -26,13 +26,14 @@ admission or lint paths and is not a closed grammar definition.
 
 A single trusted Form relation may use a plain table alias; structure edits and
 Form changes preserve that alias. The editor also supports one bounded same-Form
-INNER self-join: both tables need distinct aliases, and ON must be an equality
-between qualified columns with matching supported scalar types. This path is
-limited to wildcard projection and preserves SQL outside the relation or ON
-expression being edited. Other clauses that would make unqualified columns
-ambiguous remain unavailable in the joined query. LEFT/RIGHT/FULL/CROSS and
-NATURAL joins, USING, multiple joins, derived relations, and other ON
-expressions remain outside structured coverage and fail closed.
+INNER self-join: both tables need distinct aliases, and ON must place the
+left-alias column before `=` and the right-alias column after it, with matching
+supported scalar types. This path is limited to wildcard projection and
+preserves SQL outside the relation or ON expression being edited. Other clauses
+that would make unqualified columns ambiguous remain unavailable in the joined
+query. LEFT/RIGHT/FULL/CROSS and NATURAL joins, USING, multiple joins, derived
+relations, reversed equality operands, and other ON expressions remain outside
+structured coverage and fail closed.
 
 The bounded join is routed through the shared `Structure` toolbar action and
 uses the existing group-by icon; it is not a separate plus action. Aggregate,
