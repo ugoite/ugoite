@@ -10,12 +10,14 @@ const {
   sqlCreateMock,
   sqlQueryMock,
   sqlCountMock,
+  structureActionMock,
 } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
   formApiListMock: vi.fn(),
   sqlCreateMock: vi.fn(),
   sqlQueryMock: vi.fn(),
   sqlCountMock: vi.fn(),
+  structureActionMock: vi.fn(),
 }));
 
 vi.mock("@solidjs/router", () => ({
@@ -39,56 +41,98 @@ vi.mock("@solidjs/router", () => ({
   useParams: () => ({ space_id: "default" }),
 }));
 
-vi.mock("~/components/SQLWorkspace", () => ({
-  SQLWorkspace: (props: {
-    id?: string;
-    sql: string;
-    onSqlChange?: (value: string) => void;
-    onPreview: () => void;
-    onDiagnostics?: (
-      diagnostics: Array<{
-        from: number;
-        to: number;
-        severity: "error";
-        message: string;
-      }>,
-    ) => void;
-    preview: { status: string };
-  }) => {
-    const emitBackendDiagnostic = (value: string) => {
-      props.onDiagnostics?.(
-        value.includes("missing_relation")
-          ? [{
-            from: 0,
-            to: value.length,
-            severity: "error",
-            message: "Backend rejected the relation",
-          }]
-          : [],
+vi.mock("~/components/SQLWorkspace", async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import("~/components/SQLWorkspace")
+  >();
+  return {
+    ...actual,
+    SQLWorkspace: (props: {
+      id?: string;
+      sql: string;
+      onSqlChange?: (value: string) => void;
+      onPreview: () => void;
+      onDiagnostics?: (
+        diagnostics: Array<{
+          from: number;
+          to: number;
+          severity: "error";
+          message: string;
+        }>,
+      ) => void;
+      preview: { status: string };
+      hideActions?: boolean;
+    }) => {
+      const emitBackendDiagnostic = (value: string) => {
+        props.onDiagnostics?.(
+          value.includes("missing_relation")
+            ? [{
+              from: 0,
+              to: value.length,
+              severity: "error",
+              message: "Backend rejected the relation",
+            }]
+            : [],
+        );
+      };
+      return (
+        <div
+          data-testid="sql-workspace"
+          data-hide-actions={props.hideActions ? "true" : "false"}
+        >
+          <section class="sql-workspace__editor" aria-label="SQL">
+            <textarea
+              id={props.id}
+              aria-label="SQL"
+              value={props.sql}
+              onInput={(event) => {
+                const value = event.currentTarget.value;
+                props.onSqlChange?.(value);
+                emitBackendDiagnostic(value);
+              }}
+            />
+          </section>
+          <button type="button" onClick={props.onPreview}>Run Query</button>
+          <output>{props.preview.status}</output>
+          {props.preview.status === "success" && (
+            <section
+              class="sql-workspace__results"
+              aria-label="SQL results"
+            >
+              Rows
+            </section>
+          )}
+        </div>
       );
-    };
-    return (
-      <div data-testid="sql-workspace">
-        <textarea
-          id={props.id}
-          aria-label="SQL"
-          value={props.sql}
-          onInput={(event) => {
-            const value = event.currentTarget.value;
-            props.onSqlChange?.(value);
-            emitBackendDiagnostic(value);
-          }}
-        />
-        <button type="button" onClick={props.onPreview}>Run Query</button>
-        <output>{props.preview.status}</output>
-      </div>
-    );
-  },
-}));
+    },
+  };
+});
 
-vi.mock("~/components/SqlStructureToolbar", () => ({
-  SqlStructureToolbar: () => <div data-testid="shared-structure-toolbar" />,
-}));
+vi.mock("~/components/SqlStructureToolbar", async () => {
+  const { onMount } = await import("solid-js");
+  return {
+    SqlStructureToolbar: (props: {
+      onActionsChange: (
+        actions: readonly {
+          kind: "form";
+          icon: "forms";
+          label: string;
+          onActivate: () => void;
+        }[],
+      ) => void;
+    }) => {
+      onMount(() =>
+        props.onActionsChange([{
+          kind: "form",
+          icon: "forms",
+          label: "Form",
+          onActivate: structureActionMock,
+        }])
+      );
+      return null;
+    },
+  };
+});
 
 vi.mock("~/lib/ugoite-client", () => ({
   formApi: { list: formApiListMock },
@@ -200,22 +244,13 @@ describe("/spaces/:space_id/sql/new", () => {
       result_schema: [{ name: "value", type: "integer" }],
     });
     sqlCountMock.mockReset().mockResolvedValue(1);
+    structureActionMock.mockReset();
   });
 
   it("previews the current draft through stateless SQL without creating Saved SQL", async () => {
     render(() => <SpaceQueryCreateRoute />);
     const editor = await screen.findByRole("textbox", { name: "SQL" });
     await waitFor(() => expect(editor).toHaveValue("SELECT 1"));
-    const toolbar = screen.getByTestId("shared-structure-toolbar");
-    const workspace = screen.getByTestId("sql-workspace");
-    expect(toolbar).toBeInTheDocument();
-    expect(workspace).toBeInTheDocument();
-    expect(toolbar.parentElement).toBe(workspace.parentElement);
-    expect(
-      Array.from(toolbar.parentElement?.children ?? []).indexOf(toolbar),
-    ).toBeLessThan(
-      Array.from(workspace.parentElement?.children ?? []).indexOf(workspace),
-    );
     fireEvent.click(screen.getByRole("button", { name: "Run Query" }));
 
     await waitFor(() => {
@@ -229,6 +264,25 @@ describe("/spaces/:space_id/sql/new", () => {
     });
     expect(sqlCreateMock).not.toHaveBeenCalled();
     expect(await screen.findByText("success")).toBeInTheDocument();
+
+    const actionGroup = screen.getByRole("group", { name: "SQL" });
+    const formAction = screen.getByRole("button", { name: "Form" });
+    const results = screen.getByRole("region", { name: "SQL results" });
+    expect(formAction).toBeInTheDocument();
+    expect(
+      actionGroup.compareDocumentPosition(editor) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+    expect(
+      actionGroup.compareDocumentPosition(results) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+    expect(screen.getByTestId("sql-workspace")).toHaveAttribute(
+      "data-hide-actions",
+      "true",
+    );
+    fireEvent.click(formAction);
+    expect(structureActionMock).toHaveBeenCalledOnce();
   });
 
   it("REQ-FE-063: starts from a relation-free draft and saves through the shared SQL workspace", async () => {
@@ -245,7 +299,8 @@ describe("/spaces/:space_id/sql/new", () => {
       .not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Generate aggregate SQL" }))
       .not.toBeInTheDocument();
-    expect(screen.getByTestId("shared-structure-toolbar")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "SQL" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Form" })).toBeInTheDocument();
     fireEvent.input(editor, { target: { value: "SELECT 1" } });
     fireEvent.input(screen.getByLabelText("Query name"), {
       target: { value: "Relation-free draft" },

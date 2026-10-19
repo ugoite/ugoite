@@ -3,7 +3,7 @@ import type { Diagnostic } from "@codemirror/lint";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { BackLink } from "~/components/BackLink";
 import { ButtonSpinner } from "~/components/ButtonSpinner";
-import { SQLWorkspace } from "~/components/SQLWorkspace";
+import { SQLWorkspace, SQLWorkspaceActionBar } from "~/components/SQLWorkspace";
 import type { SQLWorkspaceAction } from "~/components/SQLWorkspace";
 import { SqlStructureToolbar } from "~/components/SqlStructureToolbar";
 import { SqlVariableDefaultsEditor } from "~/components/SqlVariableDefaultsEditor";
@@ -178,11 +178,13 @@ export default function SpaceQueryCreateRoute() {
           onActionsChange={setStructureActions}
           disabled={isSaving}
         />
+        <SQLWorkspaceActionBar actions={structureActions()} />
         <SQLWorkspace
           id="new-sql-workspace"
           sql={sqlInput()}
           onSqlChange={handleSqlChange}
           actions={structureActions()}
+          hideActions
           schema={schema()}
           variables={workspaceVariables()}
           parameterValues={workspace.parameterValues()}
