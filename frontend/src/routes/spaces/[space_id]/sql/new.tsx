@@ -165,6 +165,19 @@ export default function SpaceQueryCreateRoute() {
           onInput={(e) => setQueryName(e.currentTarget.value)}
         />
 
+        <SqlStructureToolbar
+          sql={sqlInput}
+          contexts={() =>
+            buildSqlStructureContexts(
+              (forms() || []) as Form[],
+              workspaceVariables(),
+              `new-sql:${spaceId()}`,
+            )}
+          onSqlChange={handleSqlChange}
+          onVariablesAdded={registerCreatedVariables}
+          onActionsChange={setStructureActions}
+          disabled={isSaving}
+        />
         <SQLWorkspace
           id="new-sql-workspace"
           sql={sqlInput()}
@@ -182,19 +195,6 @@ export default function SpaceQueryCreateRoute() {
           onPrevious={workspace.previous}
           onNext={workspace.next}
           preview={workspace.preview()}
-        />
-        <SqlStructureToolbar
-          sql={sqlInput}
-          contexts={() =>
-            buildSqlStructureContexts(
-              (forms() || []) as Form[],
-              workspaceVariables(),
-              `new-sql:${spaceId()}`,
-            )}
-          onSqlChange={handleSqlChange}
-          onVariablesAdded={registerCreatedVariables}
-          onActionsChange={setStructureActions}
-          disabled={isSaving}
         />
 
         <Show when={variables().length > 0}>

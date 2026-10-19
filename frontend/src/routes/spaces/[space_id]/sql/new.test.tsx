@@ -68,7 +68,7 @@ vi.mock("~/components/SQLWorkspace", () => ({
       );
     };
     return (
-      <div>
+      <div data-testid="sql-workspace">
         <textarea
           id={props.id}
           aria-label="SQL"
@@ -206,7 +206,16 @@ describe("/spaces/:space_id/sql/new", () => {
     render(() => <SpaceQueryCreateRoute />);
     const editor = await screen.findByRole("textbox", { name: "SQL" });
     await waitFor(() => expect(editor).toHaveValue("SELECT 1"));
-    expect(screen.getByTestId("shared-structure-toolbar")).toBeInTheDocument();
+    const toolbar = screen.getByTestId("shared-structure-toolbar");
+    const workspace = screen.getByTestId("sql-workspace");
+    expect(toolbar).toBeInTheDocument();
+    expect(workspace).toBeInTheDocument();
+    expect(toolbar.parentElement).toBe(workspace.parentElement);
+    expect(
+      Array.from(toolbar.parentElement?.children ?? []).indexOf(toolbar),
+    ).toBeLessThan(
+      Array.from(workspace.parentElement?.children ?? []).indexOf(workspace),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Run Query" }));
 
     await waitFor(() => {
