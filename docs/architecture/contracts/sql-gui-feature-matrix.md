@@ -31,7 +31,10 @@ left-alias column before `=` and the right-alias column after it, with matching
 supported scalar types. This path is limited to wildcard projection and
 preserves SQL outside the relation or ON expression being edited. Other clauses
 that would make unqualified columns ambiguous remain unavailable in the joined
-query. LEFT/RIGHT/FULL/CROSS and NATURAL joins, USING, multiple joins, derived
+query. Filter and sort edits replace only their source clause, preserving
+comments and other source text outside the edited range. They fail closed when
+comments occur inside a clause or expression that cannot be safely retained.
+LEFT/RIGHT/FULL/CROSS and NATURAL joins, USING, multiple joins, derived
 relations, reversed equality operands, and other ON expressions remain outside
 structured coverage and fail closed.
 

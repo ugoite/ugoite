@@ -1256,13 +1256,13 @@ fn parse_join_columns(
 ) -> Option<(String, String)> {
     let left = qualified_column(left)?;
     let right = qualified_column(right)?;
-    if !identifier_matches_alias(&left.0, left_alias)
-        || !identifier_matches_alias(&right.0, right_alias)
+    if !identifier_matches_alias(left.0, left_alias)
+        || !identifier_matches_alias(right.0, right_alias)
     {
         return None;
     }
-    let left_column = find_column_by_ident(context, &left.1)?;
-    let right_column = find_column_by_ident(context, &right.1)?;
+    let left_column = find_column_by_ident(context, left.1)?;
+    let right_column = find_column_by_ident(context, right.1)?;
     Some((left_column.name.clone(), right_column.name.clone()))
 }
 
