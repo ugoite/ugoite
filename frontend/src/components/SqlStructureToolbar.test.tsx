@@ -9,7 +9,10 @@ import {
 } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
-import type { SqlStructureAdapterContext } from "~/lib/sql";
+import {
+  buildSqlStructureContexts,
+  type SqlStructureAdapterContext,
+} from "~/lib/sql";
 import type { SQLWorkspaceAction } from "./SQLWorkspace";
 import type {
   SqlStructureAnalysis,
@@ -167,6 +170,88 @@ describe("SqlStructureToolbar adapter", () => {
     expect(onSqlChange).toHaveBeenCalledWith(
       'SELECT "amount" FROM "Orders" ORDER BY "_ugoite_id" ASC',
     );
+  });
+
+  it("offers a safe structure edit for scalar SELECT without a Form", async () => {
+    const sql = "SELECT 1";
+    const contexts = buildSqlStructureContexts([], [], "new-sql");
+    const scalarAnalysis: SqlStructureAnalysis = {
+      contract_version: 1,
+      status: "supported",
+      projection: ["1"],
+      filters: [],
+      aggregates: [],
+      group_by: [],
+      distinct: false,
+      order_by: [],
+      referenced_variables: [],
+      stable_pagination: false,
+      capabilities: {
+        columns: { enabled: false, reason: "invalid_context" },
+        filter: { enabled: false, reason: "invalid_context" },
+        sort: { enabled: false, reason: "stable_key_unavailable" },
+        aggregate: { enabled: false },
+        group_by: { enabled: false },
+        distinct: { enabled: true },
+        stable_pagination: {
+          enabled: false,
+          reason: "stable_key_unavailable",
+        },
+      },
+    };
+    analyzeMock.mockResolvedValue(scalarAnalysis);
+    proposeMock.mockResolvedValue({
+      contract_version: 1,
+      status: "supported",
+      base_sql: sql,
+      proposed_sql: "SELECT DISTINCT 1",
+      requires_confirmation: true,
+      added_stable_tie_breakers: [],
+    });
+    const onSqlChange = vi.fn();
+    let actions: readonly SQLWorkspaceAction[] = [];
+
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => contexts}
+        onSqlChange={onSqlChange}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "distinct")?.disabled)
+        .toBe(false)
+    );
+    expect(contexts).toHaveLength(1);
+    expect(contexts[0].parser).toEqual({
+      relation: "",
+      columns: [],
+      variables: [],
+      stable_key: [],
+    });
+    expect(analyzeMock).toHaveBeenCalledWith(sql, contexts[0].parser);
+
+    actions.find((action) => action.kind === "distinct")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Distinct" });
+    fireEvent.click(within(dialog).getByRole("checkbox"));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+    await waitFor(() =>
+      expect(within(dialog).getByText("SELECT DISTINCT 1")).toBeInTheDocument()
+    );
+    expect(proposeMock).toHaveBeenCalledWith(
+      sql,
+      contexts[0].parser,
+      { kind: "set_distinct", distinct: true },
+    );
+    expect(onSqlChange).not.toHaveBeenCalled();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Apply change" }),
+    );
+    expect(onSqlChange).toHaveBeenCalledWith("SELECT DISTINCT 1");
   });
 
   it("discards a proposal and closes its dialog when SQL context changes", async () => {

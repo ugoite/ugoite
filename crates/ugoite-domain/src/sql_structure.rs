@@ -25,7 +25,9 @@ pub const SQL_STRUCTURE_CONTRACT_VERSION: u32 = 1;
 /// Keep SQL parsing within the same bound as the stateless SQL request.
 pub const MAX_SQL_STRUCTURE_QUERY_BYTES: usize = 256 * 1024;
 
-/// Adapter-provided SQL schema information for the selected single Form.
+/// Adapter-provided SQL schema information for a selected Form, or for a
+/// relation-free scalar query when `relation`, `columns`, and `stable_key` are
+/// all empty.
 ///
 /// `stable_key` is supplied by the owning adapter from trusted Form metadata.
 /// It is used only to make a proposed sort deterministic; the SQL service
@@ -472,9 +474,11 @@ fn parse_supported_sql(
 }
 
 fn validate_context(context: &SqlStructureContext) -> Result<(), SqlStructureReason> {
-    if context.relation.trim().is_empty()
+    let relation_free = context.relation.is_empty();
+    if context.relation.trim() != context.relation
         || context.relation.chars().any(char::is_control)
-        || context.columns.is_empty()
+        || (!relation_free && context.columns.is_empty())
+        || (relation_free && (!context.columns.is_empty() || !context.stable_key.is_empty()))
     {
         return Err(SqlStructureReason::InvalidContext);
     }
@@ -549,6 +553,14 @@ fn is_nonnegative_integer_literal(expression: &Expr) -> bool {
     !long && !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
 }
 
+fn supported_projection_literal(value: &Value) -> bool {
+    match value {
+        Value::Number(number, long) => !long && number.parse::<i64>().is_ok(),
+        Value::SingleQuotedString(_) | Value::Boolean(_) | Value::Null => true,
+        _ => false,
+    }
+}
+
 fn validate_select_shape(select: &Select) -> Result<(), SqlStructureReason> {
     if select.select_modifiers.is_some()
         || select.top.is_some()
@@ -578,6 +590,16 @@ fn validate_relation(
     select: &Select,
     context: &SqlStructureContext,
 ) -> Result<(), SqlStructureReason> {
+    if select.from.is_empty() {
+        return if context.relation.is_empty() {
+            Ok(())
+        } else {
+            Err(SqlStructureReason::RelationUnsupported)
+        };
+    }
+    if context.relation.is_empty() {
+        return Err(SqlStructureReason::RelationUnsupported);
+    }
     if select.from.len() != 1 {
         return Err(SqlStructureReason::RelationUnsupported);
     }
@@ -638,6 +660,9 @@ fn parse_projection(
                 && options.opt_rename.is_none()
                 && options.opt_alias.is_none()
             {
+                if context.relation.is_empty() {
+                    return Err(SqlStructureReason::ProjectionUnsupported);
+                }
                 return Ok((vec!["*".to_owned()], Vec::new()));
             }
         }
@@ -652,13 +677,18 @@ fn parse_projection(
                     .ok_or(SqlStructureReason::UnknownColumn)?;
                 columns.push(column.name.clone());
             }
-            SelectItem::UnnamedExpr(Expr::Function(function)) => {
+            SelectItem::UnnamedExpr(Expr::Value(value))
+                if context.relation.is_empty() && supported_projection_literal(&value.value) =>
+            {
+                columns.push(value.value.to_string());
+            }
+            SelectItem::UnnamedExpr(Expr::Function(function)) if !context.relation.is_empty() => {
                 aggregates.push(parse_aggregate(function, None, context)?);
             }
             SelectItem::ExprWithAlias {
                 expr: Expr::Function(function),
                 alias,
-            } => {
+            } if !context.relation.is_empty() => {
                 aggregates.push(parse_aggregate(
                     function,
                     Some(SqlStructureAlias {
@@ -1501,6 +1531,11 @@ fn supported_analysis(
     let columns_available = !context.columns.is_empty();
     let structured_projection = parsed.aggregates.is_empty() && parsed.group_by.is_empty();
     let columns_enabled = columns_available && structured_projection;
+    let literal_projection = context.relation.is_empty()
+        && !parsed.projection.is_empty()
+        && parsed.aggregates.is_empty()
+        && parsed.group_by.is_empty();
+    let distinct_enabled = columns_available || literal_projection;
     let sort_available =
         structured_projection && !parsed.distinct && stable_key_is_orderable(context);
     let pagination_reason = if parsed.stable_pagination {
@@ -1552,7 +1587,7 @@ fn supported_analysis(
             ),
             aggregate: capability(columns_available, None),
             group_by: capability(columns_available, None),
-            distinct: capability(columns_available, None),
+            distinct: capability(distinct_enabled, None),
             stable_pagination: capability(parsed.stable_pagination, pagination_reason),
         },
     }
@@ -1725,6 +1760,89 @@ mod tests {
     }
 
     #[test]
+    fn shared_sql_feature_matrix_matches_structure_protocol_and_aggregate_types() {
+        let matrix: serde_json::Value =
+            serde_json::from_str(include_str!("../../../shared/sql/ugoite-sql-rules.json"))
+                .expect("shared SQL rules must remain valid JSON");
+        let editor = &matrix["feature_matrix"]["editor"];
+        let declared_operations = editor["operations"]
+            .as_array()
+            .expect("feature matrix operations must be an array")
+            .iter()
+            .map(|operation| {
+                operation["protocol"]
+                    .as_str()
+                    .expect("each operation must name its protocol kind")
+                    .to_owned()
+            })
+            .collect::<BTreeSet<_>>();
+        let protocol_operations = [
+            SqlStructureOperation::SetColumns { columns: vec![] },
+            SqlStructureOperation::SetFilters { filters: vec![] },
+            SqlStructureOperation::SetSort { order_by: vec![] },
+            SqlStructureOperation::SetAggregates { aggregates: vec![] },
+            SqlStructureOperation::SetGroupBy { columns: vec![] },
+            SqlStructureOperation::SetDistinct { distinct: false },
+        ]
+        .into_iter()
+        .map(|operation| {
+            serde_json::to_value(operation).expect("structure operation must serialize")["kind"]
+                .as_str()
+                .expect("structure operation must have a kind")
+                .to_owned()
+        })
+        .collect::<BTreeSet<_>>();
+        assert_eq!(declared_operations, protocol_operations);
+
+        let aggregate_function_names = [
+            SqlStructureAggregateFunction::Count,
+            SqlStructureAggregateFunction::Sum,
+            SqlStructureAggregateFunction::Avg,
+            SqlStructureAggregateFunction::Min,
+            SqlStructureAggregateFunction::Max,
+        ]
+        .into_iter()
+        .map(|function| {
+            serde_json::to_value(function)
+                .expect("aggregate function must serialize")
+                .as_str()
+                .expect("aggregate function must serialize as a name")
+                .to_owned()
+        })
+        .collect::<BTreeSet<_>>();
+        let backend_aggregates = matrix["feature_matrix"]["backend"]["functions"]["aggregate"]
+            .as_array()
+            .expect("backend aggregate function list must be an array")
+            .iter()
+            .map(|function| {
+                function
+                    .as_str()
+                    .expect("function name must be a string")
+                    .to_owned()
+            })
+            .collect::<BTreeSet<_>>();
+        let aggregate_operation = editor["operations"]
+            .as_array()
+            .expect("feature matrix operations must be an array")
+            .iter()
+            .find(|operation| operation["action"] == "aggregate")
+            .expect("aggregate operation must be present");
+        let editor_aggregates = aggregate_operation["functions"]
+            .as_array()
+            .expect("aggregate operation must list its functions")
+            .iter()
+            .map(|function| {
+                function
+                    .as_str()
+                    .expect("function name must be a string")
+                    .to_owned()
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(backend_aggregates, aggregate_function_names);
+        assert_eq!(editor_aggregates, aggregate_function_names);
+    }
+
+    #[test]
     fn analyzes_simple_select_filters_and_stable_order() {
         let result = analyze_sql_structure(
             "SELECT * FROM \"Task\" WHERE \"field_101\" = $status ORDER BY \"_ugoite_id\"",
@@ -1740,6 +1858,67 @@ mod tests {
         assert!(result.capabilities.columns.enabled);
         assert!(result.capabilities.filter.enabled);
         assert!(result.capabilities.sort.enabled);
+    }
+
+    #[test]
+    fn analyzes_and_proposes_distinct_for_a_relation_free_literal_select() {
+        let relation_free_context = SqlStructureContext {
+            relation: String::new(),
+            columns: Vec::new(),
+            variables: Vec::new(),
+            stable_key: Vec::new(),
+        };
+        let sql = "SELECT 1";
+        let analysis = analyze_sql_structure(sql, &relation_free_context);
+
+        assert_eq!(analysis.status, SqlStructureStatus::Supported);
+        assert_eq!(analysis.projection, vec!["1"]);
+        assert!(analysis.capabilities.distinct.enabled);
+        assert!(!analysis.capabilities.columns.enabled);
+        assert!(!analysis.capabilities.filter.enabled);
+        assert!(!analysis.capabilities.sort.enabled);
+        assert!(!analysis.capabilities.aggregate.enabled);
+        assert!(!analysis.capabilities.group_by.enabled);
+
+        let proposal = propose_sql_structure_operation(
+            sql,
+            &relation_free_context,
+            SqlStructureOperation::SetDistinct { distinct: true },
+        );
+        assert_eq!(proposal.status, SqlStructureStatus::Supported);
+        assert!(proposal.requires_confirmation);
+        assert_eq!(proposal.proposed_sql.as_deref(), Some("SELECT DISTINCT 1"));
+        assert_eq!(sql, "SELECT 1");
+    }
+
+    #[test]
+    fn relation_free_analysis_rejects_unmodeled_or_relation_dependent_projections() {
+        let relation_free_context = SqlStructureContext {
+            relation: String::new(),
+            columns: Vec::new(),
+            variables: Vec::new(),
+            stable_key: Vec::new(),
+        };
+
+        for sql in [
+            "SELECT *",
+            "SELECT $value",
+            "SELECT COUNT(*)",
+            "SELECT COUNT(*) AS n",
+            "SELECT 1 FROM \"Task\"",
+        ] {
+            let analysis = analyze_sql_structure(sql, &relation_free_context);
+            assert_eq!(analysis.status, SqlStructureStatus::Unsupported, "{sql}");
+        }
+
+        let mut form_context = context();
+        let analysis = analyze_sql_structure("SELECT 1", &form_context);
+        assert_eq!(analysis.status, SqlStructureStatus::Unsupported);
+        form_context.columns.clear();
+        assert_eq!(
+            analyze_sql_structure("SELECT 1", &form_context).reason,
+            Some(SqlStructureReason::InvalidContext)
+        );
     }
 
     #[test]

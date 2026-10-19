@@ -436,6 +436,61 @@ async function main(): Promise<void> {
     "incompatible SELECT DISTINCT proposal omission",
   );
 
+  const relationFreeContext = {
+    relation: "",
+    columns: [],
+    variables: [],
+    stable_key: [],
+  };
+  const scalarAnalysisResponse = await invokeWasm(instance.exports, {
+    action: "domain.analyze_sql_structure",
+    value: { sql: "SELECT 1", context: relationFreeContext },
+  });
+  assertEqual(
+    scalarAnalysisResponse.ok,
+    true,
+    "relation-free analysis protocol envelope",
+  );
+  const scalarAnalysis = scalarAnalysisResponse.value as Record<string, unknown>;
+  assertEqual(
+    scalarAnalysis.status,
+    "supported",
+    "relation-free scalar SELECT status",
+  );
+  const scalarCapabilities = scalarAnalysis.capabilities as Record<
+    string,
+    Record<string, unknown>
+  >;
+  assertEqual(
+    scalarCapabilities.distinct.enabled,
+    true,
+    "relation-free DISTINCT capability",
+  );
+  assertEqual(
+    scalarCapabilities.columns.enabled,
+    false,
+    "relation-free column capability",
+  );
+  const scalarProposalResponse = await invokeWasm(instance.exports, {
+    action: "domain.propose_sql_structure_operation",
+    value: {
+      sql: "SELECT 1",
+      context: relationFreeContext,
+      operation: { kind: "set_distinct", distinct: true },
+    },
+  });
+  const scalarProposal = scalarProposalResponse.value as Record<string, unknown>;
+  assertEqual(
+    scalarProposal.status,
+    "supported",
+    "relation-free DISTINCT proposal status",
+  );
+  assertEqual(
+    scalarProposal.proposed_sql,
+    "SELECT DISTINCT 1",
+    "relation-free DISTINCT proposal SQL",
+  );
+
   const unsupported = await invokeWasm(instance.exports, {
     action: "domain.analyze_sql_structure",
     value: {
