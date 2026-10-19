@@ -55,6 +55,19 @@ requirements:
           POL-000#rule.foundation-precedence,
           POL-004#rule.governance,
         ]
+      - id: query-results-validated-before-preview
+        kind: security
+        statement: >-
+          Core compiles each query request from its explicit variable bindings
+          and one evaluation snapshot. Before a SQL page becomes a preview
+          value, Core checks that exact request, pinned Saved SQL revision,
+          result schema, types, nullability, and scalar or table contract
+          against the query's declared return descriptor. A rejected page is
+          not retained or rendered, and accepted results remain transient Work.
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
       - id: snapshot-reactive-execution
         kind: security
         statement: >-
@@ -103,3 +116,57 @@ requirements:
           POL-000#rule.foundation-precedence,
           POL-004#rule.governance,
         ]
+    bindings:
+      - id: query-result-validation-verification
+        role: verification
+        facet: verification
+        responsibility: Verify that Core exposes only fully validated SQL query results to a complete Composition preview and rejects pages outside the graph's request bindings or evaluation snapshot.
+        targets:
+          - id: core-query-result-preview-boundary
+            adapter: rust
+            path: crates/ugoite-core/tests/composition_query_evaluation.rs
+            selector:
+              kind: test
+              name: only_descriptor_validated_query_values_reach_the_complete_preview
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.query-results-validated-before-preview
+                covers: [FEAT-COMP-011#binding.query-result-validation/target.composition-query-evaluation]
+                runner:
+                  runner: cargo-test-integration
+                  arguments:
+                    package: ugoite-core
+                    harness: composition_query_evaluation
+                    test: only_descriptor_validated_query_values_reach_the_complete_preview
+          - id: saved-sql-request-coordinates
+            adapter: rust
+            path: crates/ugoite-core/tests/composition_query_evaluation.rs
+            selector:
+              kind: test
+              name: evaluation_rejects_requests_with_unbound_parameters_or_stale_snapshot_ids
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.query-results-validated-before-preview
+                covers: [FEAT-COMP-011#binding.query-result-validation/target.composition-query-evaluation]
+                runner:
+                  runner: cargo-test-integration
+                  arguments:
+                    package: ugoite-core
+                    harness: composition_query_evaluation
+                    test: evaluation_rejects_requests_with_unbound_parameters_or_stale_snapshot_ids
+          - id: table-page-continuations
+            adapter: rust
+            path: crates/ugoite-core/tests/composition_query_evaluation.rs
+            selector:
+              kind: test
+              name: table_pages_are_validated_and_keep_bounded_continuation_metadata
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.query-results-validated-before-preview
+                covers: [FEAT-COMP-011#binding.query-result-validation/target.composition-query-evaluation]
+                runner:
+                  runner: cargo-test-integration
+                  arguments:
+                    package: ugoite-core
+                    harness: composition_query_evaluation
+                    test: table_pages_are_validated_and_keep_bounded_continuation_metadata

@@ -1,0 +1,24 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: composition
+category: Typed query variable graph evaluation
+features:
+  - id: FEAT-COMP-011
+    title: Validated Composition query results
+    summary: Keep SQL results transient and expose them to Composition preview only after Core validates them against the graph's explicit request bindings, evaluation snapshot, and declared return descriptors.
+    status: planned
+    bindings:
+      - id: query-result-validation
+        role: implementation
+        facet: core
+        responsibility: Compile each query request from graph-bound scalar values, validate its exact response before retaining a query result, and release preview values only when all graph query nodes validate.
+        targets:
+          - id: composition-query-evaluation
+            adapter: rust
+            path: crates/ugoite-core/src/composition_query.rs
+            selector:
+              kind: symbol
+              name: VariableGraphQueryEvaluation
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.query-results-validated-before-preview
