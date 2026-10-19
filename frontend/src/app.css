@@ -5345,6 +5345,7 @@ a.tool {
 }
 
 .sql-structure-dialog-content,
+.sql-structure-join-fields,
 .sql-structure-column-list,
 .sql-structure-filter-list,
 .sql-structure-sort-list,
