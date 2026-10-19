@@ -132,6 +132,9 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   const [groupByColumns, setGroupByColumns] = createSignal<string[]>([]);
   const [selectDistinct, setSelectDistinct] = createSignal(false);
   const [proposal, setProposal] = createSignal<SqlStructureProposal>();
+  const [proposalVariables, setProposalVariables] = createSignal<
+    { name: string; type: SqlStructureVariableType }[]
+  >([]);
   const [proposalContextIdentity, setProposalContextIdentity] = createSignal<
     string
   >();
@@ -151,6 +154,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     proposalGeneration += 1;
     setBusy(false);
     setProposal(undefined);
+    setProposalVariables([]);
     setProposalContextIdentity(undefined);
     setActiveAction(null);
     setSelectedColumns([]);
@@ -510,10 +514,11 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
 
   const variablesCreatedByFilters = (
     existing: readonly { name: string; type: SqlStructureVariableType }[],
+    drafts: readonly FilterDraft[] = filters(),
   ) => {
     const existingNames = new Set(existing.map((variable) => variable.name));
     const byName = new Map<string, SqlStructureVariableType>();
-    for (const filter of filters()) {
+    for (const filter of drafts) {
       if (
         filter.createdVariable && !existingNames.has(filter.parameter)
       ) byName.set(filter.parameter, filter.createdVariable);
@@ -527,6 +532,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     );
 
   const addFilter = () => {
+    if (busy() || proposal()) return;
     const candidate = filterableColumns().flatMap((column) => {
       const operators = operatorsForColumn(ready()?.context, column.name);
       const operator = operators.find((item) =>
@@ -559,6 +565,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   };
 
   const updateFilter = (index: number, update: Partial<FilterDraft>) => {
+    if (busy() || proposal()) return;
     setFilters((items) =>
       items.map((item, itemIndex) => {
         if (index !== itemIndex) return item;
@@ -771,8 +778,10 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
 
     const baseSql = props.sql();
     const parserSql = normalizeSqlVariables(baseSql).sql;
+    const filterDrafts = filters();
     const createdVariables = variablesCreatedByFilters(
       current.context.parser.variables,
+      filterDrafts,
     );
     const proposalContext = createdVariables.length > 0
       ? {
@@ -802,6 +811,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
         return;
       }
       setProposal({ ...result, base_sql: baseSql });
+      setProposalVariables(createdVariables);
       setProposalContextIdentity(contextIdentity);
     } catch {
       if (
@@ -825,6 +835,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     setBusy(true);
     setError(null);
     setProposal(undefined);
+    setProposalVariables([]);
     setProposalContextIdentity(undefined);
     try {
       await prepareSqlStructureParser();
@@ -877,14 +888,13 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
       setActiveAction(null);
       return;
     }
-    const createdVariables = variablesCreatedByFilters(
-      ready()?.context.parser.variables ?? [],
-    );
+    const createdVariables = proposalVariables();
     if (createdVariables.length > 0) {
       props.onVariablesAdded?.(createdVariables);
     }
     props.onSqlChange(current.proposed_sql);
     setProposal(undefined);
+    setProposalVariables([]);
     setProposalContextIdentity(undefined);
     setActiveAction(null);
   };
@@ -894,6 +904,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     setBusy(false);
     setError(null);
     setProposal(undefined);
+    setProposalVariables([]);
     setProposalContextIdentity(undefined);
     setActiveAction(null);
   };
@@ -1066,7 +1077,8 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                                 <select
                                   class="ui-input"
                                   value={filter.column}
-                                  disabled={!rowEditable()}
+                                  disabled={busy() || Boolean(proposal()) ||
+                                    !rowEditable()}
                                   onChange={(event) =>
                                     updateFilter(index(), {
                                       column: event.currentTarget.value,
@@ -1084,7 +1096,8 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                                 <select
                                   class="ui-input"
                                   value={filter.operator}
-                                  disabled={!rowEditable()}
+                                  disabled={busy() || Boolean(proposal()) ||
+                                    !rowEditable()}
                                   onChange={(event) =>
                                     updateFilter(index(), {
                                       operator: event.currentTarget
@@ -1117,7 +1130,8 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                                   <select
                                     class="ui-input"
                                     value={filter.parameter}
-                                    disabled={!rowEditable()}
+                                    disabled={busy() || Boolean(proposal()) ||
+                                      !rowEditable()}
                                     onChange={(event) =>
                                       updateFilter(index(), {
                                         parameter: event.currentTarget.value,
@@ -1145,6 +1159,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                               <IconButton
                                 icon="trash"
                                 label={t("sqlPage.structure.removeFilter")}
+                                disabled={busy() || Boolean(proposal())}
                                 onClick={() =>
                                   setFilters((items) =>
                                     items.filter((_, i) => i !== index())
@@ -1158,15 +1173,16 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                         type="button"
                         class="ui-button ui-button-secondary"
                         onClick={addFilter}
-                        disabled={!filterableColumns().some((column) =>
-                          operatorsForColumn(ready()?.context, column.name)
-                            .some((operator) =>
-                              isNullOperator(operator) ||
-                              variablesFor(column.name).length > 0 ||
-                              (props.onVariablesAdded !== undefined &&
-                                filterVariableType(column.name) !== undefined)
-                            )
-                        )}
+                        disabled={busy() || Boolean(proposal()) ||
+                          !filterableColumns().some((column) =>
+                            operatorsForColumn(ready()?.context, column.name)
+                              .some((operator) =>
+                                isNullOperator(operator) ||
+                                variablesFor(column.name).length > 0 ||
+                                (props.onVariablesAdded !== undefined &&
+                                  filterVariableType(column.name) !== undefined)
+                              )
+                          )}
                       >
                         {t("sqlPage.structure.addFilter")}
                       </button>

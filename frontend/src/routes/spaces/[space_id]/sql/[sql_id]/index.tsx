@@ -21,6 +21,7 @@ import {
   applySqlVariableDefaultDrafts,
   buildSqlSchema,
   buildSqlStructureContexts,
+  mergeSqlStructureVariables,
   normalizeSqlVariables,
   type SqlVariableDefaultDraft,
 } from "~/lib/sql";
@@ -124,17 +125,20 @@ export default function SpaceSqlDetailRoute() {
   const registerCreatedVariables = (
     added: readonly { name: string; type: SqlStructureVariableType }[],
   ) => {
-    setSavedVariables((current) => {
-      const byName = new Map(
-        current.map((variable) => [variable.name, variable]),
-      );
-      for (const { name, type } of added) {
-        if (!byName.has(name)) {
-          byName.set(name, { name, type, description: "" });
-        }
-      }
-      return [...byName.values()];
-    });
+    const existingTypes = new Map(
+      savedVariables().map((variable) => [variable.name, variable.type]),
+    );
+    const replacedNames = added.filter(({ name, type }) =>
+      existingTypes.has(name) && existingTypes.get(name) !== type
+    ).map(({ name }) => name);
+    if (replacedNames.length > 0) {
+      setDefaultDrafts((current) => {
+        const next = { ...current };
+        for (const name of replacedNames) delete next[name];
+        return next;
+      });
+    }
+    setSavedVariables((current) => mergeSqlStructureVariables(current, added));
   };
 
   const handleRun = () => {

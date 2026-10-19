@@ -488,6 +488,20 @@ export function normalizeSqlVariables(
   };
 }
 
+export function mergeSqlStructureVariables(
+  existing: readonly SqlVariable[],
+  added: readonly { name: string; type: SqlStructureVariableType }[],
+): SqlVariable[] {
+  const byName = new Map(existing.map((variable) => [variable.name, variable]));
+  for (const { name, type } of added) {
+    const current = byName.get(name);
+    if (!current || current.type !== type) {
+      byName.set(name, { name, type, description: "" });
+    }
+  }
+  return [...byName.values()];
+}
+
 export interface SqlVariableDefaultDraft {
   enabled: boolean;
   raw: string;

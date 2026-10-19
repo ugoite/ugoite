@@ -585,6 +585,86 @@ describe("SqlStructureToolbar adapter", () => {
     );
   });
 
+  it("locks filter drafts while a typed argument proposal is pending", async () => {
+    const emptyContext: SqlStructureAdapterContext = {
+      ...context,
+      identity: "inline:source-1:form-1:pending-filter-proposal",
+      parser: { ...context.parser, variables: [] },
+      columnCapabilities: {
+        ...context.columnCapabilities,
+        _ugoite_id: {
+          ...context.columnCapabilities._ugoite_id,
+          filterable: false,
+          supportedOperators: [],
+        },
+      },
+    };
+    const sql = 'SELECT * FROM "Orders"';
+    const onSqlChange = vi.fn();
+    const onVariablesAdded = vi.fn();
+    let resolveProposal: (value: SqlStructureProposal) => void = () => {};
+    proposeMock.mockImplementationOnce(() =>
+      new Promise<SqlStructureProposal>((resolve) => {
+        resolveProposal = resolve;
+      })
+    );
+    let actions: readonly SQLWorkspaceAction[] = [];
+
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [emptyContext]}
+        onSqlChange={onSqlChange}
+        onVariablesAdded={onVariablesAdded}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "filter")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "filter")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Filter" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add filter" }),
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(within(dialog).getByLabelText("Column")).toBeDisabled();
+    expect(within(dialog).getByLabelText("Operator")).toBeDisabled();
+    expect(within(dialog).getByLabelText("Variable")).toBeDisabled();
+    expect(
+      within(dialog).getByRole("button", { name: "Remove filter" }),
+    ).toBeDisabled();
+    expect(
+      within(dialog).getByRole("button", { name: "Add filter" }),
+    ).toBeDisabled();
+
+    resolveProposal({
+      contract_version: 1,
+      status: "supported",
+      base_sql: sql,
+      proposed_sql: 'SELECT * FROM "Orders" WHERE "amount" = $filter_amount',
+      requires_confirmation: true,
+      added_stable_tie_breakers: [],
+    });
+    fireEvent.click(
+      await within(dialog).findByRole("button", { name: "Apply change" }),
+    );
+
+    expect(onVariablesAdded).toHaveBeenCalledWith([{
+      name: "filter_amount",
+      type: "integer",
+    }]);
+    expect(onSqlChange).toHaveBeenCalledWith(
+      'SELECT * FROM "Orders" WHERE "amount" = $filter_amount',
+    );
+  });
+
   it("proposes a type-gated SUM DISTINCT and applies only after confirmation", async () => {
     const sql = 'SELECT * FROM "Orders"';
     const onSqlChange = vi.fn();

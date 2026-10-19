@@ -3,6 +3,7 @@ import {
   applySqlVariableDefaultDrafts,
   buildSqlSchema,
   buildSqlStructureContexts,
+  mergeSqlStructureVariables,
   normalizeSqlVariables,
   parseSqlVariableDefault,
   sqlLintDiagnostics,
@@ -237,8 +238,7 @@ describe("sql helpers", () => {
       },
     ];
     const schema = buildSqlSchema(forms);
-    const columns =
-      schema.tables?.form_00000000000000000000000000000001;
+    const columns = schema.tables?.form_00000000000000000000000000000001;
     expect(columns).toEqual([
       "_ugoite_id",
       "_ugoite_created_at",
@@ -388,6 +388,31 @@ describe("sql helpers", () => {
     ).toEqual([existing[1], existing[0]]);
     expect(normalizeSqlVariables("SELECT $title", existing).variables).toEqual([
       existing[1],
+    ]);
+  });
+
+  it("replaces a stale saved declaration when a structure action reuses its name", () => {
+    expect(mergeSqlStructureVariables([
+      {
+        type: "string",
+        name: "filter_amount",
+        description: "Old",
+        default: "x",
+      },
+      {
+        type: "integer",
+        name: "threshold",
+        description: "Threshold",
+        default: 4,
+      },
+    ], [{ name: "filter_amount", type: "integer" }])).toEqual([
+      { type: "integer", name: "filter_amount", description: "" },
+      {
+        type: "integer",
+        name: "threshold",
+        description: "Threshold",
+        default: 4,
+      },
     ]);
   });
 
