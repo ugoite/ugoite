@@ -91,6 +91,7 @@ const analysis: SqlStructureAnalysis = {
   contract_version: 1,
   status: "supported",
   projection: ["*"],
+  literal_projection: [],
   filters: [],
   aggregates: [],
   group_by: [],
@@ -184,6 +185,7 @@ describe("SqlStructureToolbar adapter", () => {
       contract_version: 1,
       status: "supported",
       projection: ["1"],
+      literal_projection: [{ kind: "integer", value: "1" }],
       filters: [],
       aggregates: [],
       group_by: [],
@@ -192,7 +194,7 @@ describe("SqlStructureToolbar adapter", () => {
       referenced_variables: [],
       stable_pagination: false,
       capabilities: {
-        columns: { enabled: false, reason: "invalid_context" },
+        columns: { enabled: true },
         filter: { enabled: false, reason: "invalid_context" },
         sort: { enabled: false, reason: "stable_key_unavailable" },
         aggregate: { enabled: false },
@@ -257,6 +259,77 @@ describe("SqlStructureToolbar adapter", () => {
       within(dialog).getByRole("button", { name: "Apply change" }),
     );
     expect(onSqlChange).toHaveBeenCalledWith("SELECT DISTINCT 1");
+  });
+
+  it("edits a relation-free literal projection through the Columns action", async () => {
+    const sql = "SELECT 1";
+    const relationFreeContext = buildSqlStructureContexts([], [], "new-sql")[0];
+    const scalarAnalysis: SqlStructureAnalysis = {
+      ...analysis,
+      projection: ["1"],
+      literal_projection: [{ kind: "integer", value: "1" }],
+      order_by: [],
+      stable_pagination: false,
+      capabilities: {
+        ...analysis.capabilities,
+        columns: { enabled: true },
+        filter: { enabled: false, reason: "invalid_context" },
+        sort: { enabled: false, reason: "stable_key_unavailable" },
+        aggregate: { enabled: false },
+        group_by: { enabled: false },
+        distinct: { enabled: true },
+        stable_pagination: {
+          enabled: false,
+          reason: "stable_key_unavailable",
+        },
+      },
+    };
+    analyzeMock.mockResolvedValue(scalarAnalysis);
+    proposeMock.mockResolvedValue({
+      contract_version: 1,
+      status: "supported",
+      base_sql: sql,
+      proposed_sql: "SELECT 2",
+      requires_confirmation: true,
+      added_stable_tie_breakers: [],
+    });
+    const onSqlChange = vi.fn();
+    let actions: readonly SQLWorkspaceAction[] = [];
+
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [relationFreeContext]}
+        onSqlChange={onSqlChange}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "columns")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "columns")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Columns" });
+    fireEvent.input(within(dialog).getByRole("textbox", { name: "Value 1" }), {
+      target: { value: "2" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+
+    await waitFor(() =>
+      expect(within(dialog).getByText("SELECT 2")).toBeInTheDocument()
+    );
+    expect(proposeMock).toHaveBeenCalledWith(sql, relationFreeContext.parser, {
+      kind: "set_literal_projection",
+      values: [{ kind: "integer", value: "2" }],
+    });
+    expect(onSqlChange).not.toHaveBeenCalled();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Apply change" }),
+    );
+    expect(onSqlChange).toHaveBeenCalledWith("SELECT 2");
   });
 
   it("routes Form selection through the Rust relation proposal", async () => {

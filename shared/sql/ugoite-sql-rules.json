@@ -104,6 +104,13 @@
           "coverage": "bounded"
         }
       ],
+      "literal_projection_operation": {
+        "action": "columns",
+        "protocol": "set_literal_projection",
+        "sql": ["relation-free SELECT literal projection"],
+        "coverage": "bounded",
+        "values": ["integer", "string", "boolean", "null"]
+      },
       "constructs": [
         {
           "id": "from_relation",
@@ -124,6 +131,7 @@
           "editor_coverage": "bounded",
           "limits": [
             "relation-free integer/string/boolean/NULL literal projections",
+            "typed literal projection edits are restricted to those relation-free literals",
             "wildcard or simple columns",
             "allowlisted aggregates over supported arguments"
           ]

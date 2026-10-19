@@ -23,6 +23,7 @@ import type {
   SqlStructureAnalysis,
   SqlStructureFilter,
   SqlStructureFilterOperator,
+  SqlStructureLiteral,
   SqlStructureOperation,
   SqlStructureProposal,
   SqlStructureSort,
@@ -128,6 +129,9 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     null,
   );
   const [selectedColumns, setSelectedColumns] = createSignal<string[]>([]);
+  const [literalProjection, setLiteralProjection] = createSignal<
+    SqlStructureLiteral[]
+  >([]);
   const [filters, setFilters] = createSignal<FilterDraft[]>([]);
   const [sorts, setSorts] = createSignal<SortDraft[]>([]);
   const [aggregates, setAggregates] = createSignal<SqlStructureAggregate[]>([]);
@@ -160,6 +164,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     setProposalContextIdentity(undefined);
     setActiveAction(null);
     setSelectedColumns([]);
+    setLiteralProjection([]);
     setFilters([]);
     setSorts([]);
     setAggregates([]);
@@ -388,13 +393,57 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     }) && existingGroupByIsEditable() && existingAggregatesAreEditable();
   };
 
+  const projectionEditValid = () => {
+    const current = ready();
+    if (!current) return false;
+    return current.context.parser.relation === ""
+      ? literalProjection().length > 0 && literalProjection().length <= 256
+      : selectedColumns().length > 0;
+  };
+
+  const updateLiteralKind = (
+    index: number,
+    kind: SqlStructureLiteral["kind"],
+  ) => {
+    setLiteralProjection((values) => values.map((value, itemIndex) => {
+      if (itemIndex !== index) return value;
+      switch (kind) {
+        case "integer":
+          return { kind, value: "0" };
+        case "string":
+          return { kind, value: "" };
+        case "boolean":
+          return { kind, value: false };
+        case "null":
+          return { kind };
+      }
+    }));
+  };
+
+  const updateLiteralValue = (index: number, value: string) => {
+    setLiteralProjection((values) => values.map((item, itemIndex) => {
+      if (itemIndex !== index ||
+        (item.kind !== "integer" && item.kind !== "string")) return item;
+      return { ...item, value };
+    }));
+  };
+
+  const updateLiteralBoolean = (index: number, value: boolean) => {
+    setLiteralProjection((values) => values.map((item, itemIndex) =>
+      itemIndex === index && item.kind === "boolean"
+        ? { kind: "boolean", value }
+        : item
+    ));
+  };
+
   const hasEditableCapabilities = (action: StructureAction): boolean => {
     const current = ready();
     if (!current) return false;
     if (action === "columns") {
       return current.context.parser.columns.some((column) =>
         current.context.columnCapabilities[column.name]?.projectable
-      );
+      ) || (current.context.parser.relation === "" &&
+        current.analysis.literal_projection.length > 0);
     }
     if (action === "filter") {
       return current.context.parser.columns.some((column) =>
@@ -459,8 +508,11 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
       column.name
     );
     const projection = current.analysis.projection;
+    setLiteralProjection([...current.analysis.literal_projection]);
     setSelectedColumns(
-      projection.includes("*")
+      current.context.parser.relation === ""
+        ? []
+        : projection.includes("*")
         ? allColumns.filter((column) =>
           current.context.columnCapabilities[column]?.projectable
         )
@@ -747,7 +799,9 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
       busy()
     ) return;
     const operation: SqlStructureOperation = action === "columns"
-      ? { kind: "set_columns", columns: selectedColumns() }
+      ? current.context.parser.relation === ""
+        ? { kind: "set_literal_projection", values: literalProjection() }
+        : { kind: "set_columns", columns: selectedColumns() }
       : action === "filter"
       ? {
         kind: "set_filters" as const,
@@ -773,7 +827,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
       ? { kind: "set_group_by", columns: groupByColumns() }
       : { kind: "set_distinct", distinct: selectDistinct() };
     if (
-      action === "columns" && selectedColumns().length === 0 ||
+      action === "columns" && !projectionEditValid() ||
       action === "filter" && !filterRowsValid() ||
       action === "sort" && !sortRowsValid() ||
       action === "aggregate" && !aggregateOperationValid() ||
@@ -1022,36 +1076,156 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                   </Show>
 
                   <Show when={activeAction() === "columns"}>
-                    <fieldset class="sql-structure-column-list">
-                      <legend class="ui-sr-only">
-                        {t("sqlPage.structure.columns")}
-                      </legend>
-                      <For each={ready()?.context.parser.columns ?? []}>
-                        {(column) => (
-                          <label class="sql-structure-option">
-                            <input
-                              type="checkbox"
-                              checked={selectedColumns().includes(column.name)}
-                              disabled={!ready()?.context.columnCapabilities[
-                                column.name
-                              ]?.projectable &&
-                                !selectedColumns().includes(column.name)}
-                              onChange={(event) => {
-                                const current = selectedColumns();
-                                setSelectedColumns(
-                                  event.currentTarget.checked
-                                    ? [...current, column.name]
-                                    : current.filter((name) =>
-                                      name !== column.name
-                                    ),
-                                );
-                              }}
-                            />
-                            <span>{column.name}</span>
-                          </label>
-                        )}
-                      </For>
-                    </fieldset>
+                    <Show
+                      when={ready()?.context.parser.relation === ""}
+                      fallback={
+                        <fieldset class="sql-structure-column-list">
+                          <legend class="ui-sr-only">
+                            {t("sqlPage.structure.columns")}
+                          </legend>
+                          <For each={ready()?.context.parser.columns ?? []}>
+                            {(column) => (
+                              <label class="sql-structure-option">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedColumns().includes(
+                                    column.name,
+                                  )}
+                                  disabled={!ready()?.context.columnCapabilities[
+                                    column.name
+                                  ]?.projectable &&
+                                    !selectedColumns().includes(column.name)}
+                                  onChange={(event) => {
+                                    const current = selectedColumns();
+                                    setSelectedColumns(
+                                      event.currentTarget.checked
+                                        ? [...current, column.name]
+                                        : current.filter((name) =>
+                                          name !== column.name
+                                        ),
+                                    );
+                                  }}
+                                />
+                                <span>{column.name}</span>
+                              </label>
+                            )}
+                          </For>
+                        </fieldset>
+                      }
+                    >
+                      <fieldset class="sql-structure-literal-list">
+                        <legend class="ui-sr-only">
+                          {t("sqlPage.structure.columns")}
+                        </legend>
+                        <For each={literalProjection()}>
+                          {(literal, index) => (
+                            <div class="sql-structure-literal-row">
+                              <select
+                                class="ui-input"
+                                aria-label={t(
+                                  "sqlPage.structure.literalType",
+                                  { index: index() + 1 },
+                                )}
+                                value={literal.kind}
+                                disabled={busy() || Boolean(proposal())}
+                                onChange={(event) =>
+                                  updateLiteralKind(
+                                    index(),
+                                    event.currentTarget.value as
+                                      SqlStructureLiteral["kind"],
+                                  )}
+                              >
+                                <option value="integer">
+                                  {t("sqlPage.structure.literal.integer")}
+                                </option>
+                                <option value="string">
+                                  {t("sqlPage.structure.literal.string")}
+                                </option>
+                                <option value="boolean">
+                                  {t("sqlPage.structure.literal.boolean")}
+                                </option>
+                                <option value="null">
+                                  {t("sqlPage.structure.literal.null")}
+                                </option>
+                              </select>
+                              <Show
+                                when={literal.kind === "integer" ||
+                                  literal.kind === "string"}
+                                fallback={
+                                  <Show when={literal.kind === "boolean"}>
+                                    <select
+                                      class="ui-input"
+                                      aria-label={t(
+                                        "sqlPage.structure.literalValue",
+                                        { index: index() + 1 },
+                                      )}
+                                      value={literal.kind === "boolean" &&
+                                          literal.value
+                                        ? "true"
+                                        : "false"}
+                                      disabled={busy() || Boolean(proposal())}
+                                      onChange={(event) =>
+                                        updateLiteralBoolean(
+                                          index(),
+                                          event.currentTarget.value === "true",
+                                        )}
+                                    >
+                                      <option value="true">true</option>
+                                      <option value="false">false</option>
+                                    </select>
+                                  </Show>
+                                }
+                              >
+                                <input
+                                  class="ui-input"
+                                  type="text"
+                                  aria-label={t(
+                                    "sqlPage.structure.literalValue",
+                                    { index: index() + 1 },
+                                  )}
+                                  value={literal.kind === "integer" ||
+                                      literal.kind === "string"
+                                    ? literal.value
+                                    : ""}
+                                  disabled={busy() || Boolean(proposal())}
+                                  onInput={(event) =>
+                                    updateLiteralValue(
+                                      index(),
+                                      event.currentTarget.value,
+                                    )}
+                                />
+                              </Show>
+                              <IconButton
+                                icon="close"
+                                label={t("sqlPage.structure.removeLiteral", {
+                                  index: index() + 1,
+                                })}
+                                disabled={busy() || Boolean(proposal())}
+                                onClick={() =>
+                                  setLiteralProjection((values) =>
+                                    values.filter((_, itemIndex) =>
+                                      itemIndex !== index()
+                                    )
+                                  )}
+                              />
+                            </div>
+                          )}
+                        </For>
+                        <button
+                          type="button"
+                          class="ui-button ui-button-secondary"
+                          disabled={busy() || Boolean(proposal()) ||
+                            literalProjection().length >= 256}
+                          onClick={() =>
+                            setLiteralProjection((values) => [
+                              ...values,
+                              { kind: "integer", value: "0" },
+                            ])}
+                        >
+                          {t("sqlPage.structure.addLiteral")}
+                        </button>
+                      </fieldset>
+                    </Show>
                   </Show>
 
                   <Show when={activeAction() === "filter"}>
@@ -1501,7 +1675,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                       onClick={() => void applyOperation()}
                       disabled={busy() || (
                         activeAction() === "columns" &&
-                        selectedColumns().length === 0
+                        !projectionEditValid()
                       ) ||
                         (activeAction() === "filter" && !filterRowsValid()) ||
                         (activeAction() === "sort" && !sortRowsValid()) ||

@@ -628,6 +628,11 @@ async function main(): Promise<void> {
     "supported",
     "relation-free scalar SELECT status",
   );
+  assertEqual(
+    JSON.stringify(scalarAnalysis.literal_projection),
+    JSON.stringify([{ kind: "integer", value: "1" }]),
+    "relation-free typed literal projection",
+  );
   const scalarCapabilities = scalarAnalysis.capabilities as Record<
     string,
     Record<string, unknown>
@@ -639,8 +644,64 @@ async function main(): Promise<void> {
   );
   assertEqual(
     scalarCapabilities.columns.enabled,
-    false,
+    true,
     "relation-free column capability",
+  );
+  const literalProjectionValues = [
+    { kind: "integer", value: "7" },
+    { kind: "string", value: "O'Reilly" },
+    { kind: "boolean", value: false },
+    { kind: "null" },
+  ];
+  const literalProjectionResponse = await invokeWasm(instance.exports, {
+    action: "domain.propose_sql_structure_operation",
+    value: {
+      sql: "SELECT 1",
+      context: relationFreeContext,
+      operation: {
+        kind: "set_literal_projection",
+        values: literalProjectionValues,
+      },
+    },
+  });
+  const literalProjectionProposal = literalProjectionResponse.value as Record<
+    string,
+    unknown
+  >;
+  assertEqual(
+    literalProjectionProposal.status,
+    "supported",
+    "relation-free typed projection proposal status",
+  );
+  assertEqual(
+    literalProjectionProposal.proposed_sql,
+    "SELECT 7, 'O''Reilly', false, NULL",
+    "relation-free typed projection proposal SQL",
+  );
+  const invalidLiteralResponse = await invokeWasm(instance.exports, {
+    action: "domain.propose_sql_structure_operation",
+    value: {
+      sql: "SELECT 1",
+      context: relationFreeContext,
+      operation: {
+        kind: "set_literal_projection",
+        values: [{ kind: "integer", value: "9223372036854775808" }],
+      },
+    },
+  });
+  const invalidLiteralProposal = invalidLiteralResponse.value as Record<
+    string,
+    unknown
+  >;
+  assertEqual(
+    invalidLiteralProposal.status,
+    "unsupported",
+    "invalid literal projection diagnostic status",
+  );
+  assertEqual(
+    invalidLiteralProposal.reason,
+    "projection_unsupported",
+    "invalid literal projection diagnostic code",
   );
   const scalarProposalResponse = await invokeWasm(instance.exports, {
     action: "domain.propose_sql_structure_operation",
