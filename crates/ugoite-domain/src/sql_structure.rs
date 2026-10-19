@@ -486,7 +486,7 @@ fn propose_sql_relation_selection(
         }
         let TableFactor::Table {
             name,
-            alias: None,
+            alias,
             args: None,
             with_hints,
             version: None,
@@ -499,7 +499,13 @@ fn propose_sql_relation_selection(
         else {
             return rejected_proposal(base_sql, SqlStructureReason::RelationUnsupported);
         };
-        if !with_hints.is_empty() || !partitions.is_empty() || !index_hints.is_empty() {
+        if !with_hints.is_empty()
+            || !partitions.is_empty()
+            || !index_hints.is_empty()
+            || alias
+                .as_ref()
+                .is_some_and(|alias| !alias.columns.is_empty() || alias.at.is_some())
+        {
             return rejected_proposal(base_sql, SqlStructureReason::RelationUnsupported);
         }
         let Some(ObjectNamePart::Identifier(_)) = name.0.first() else {
@@ -508,7 +514,9 @@ fn propose_sql_relation_selection(
         if name.0.len() != 1 {
             return rejected_proposal(base_sql, SqlStructureReason::RelationUnsupported);
         }
-        let relation_range = source_range_from_span(sql, select.from[0].relation.span());
+        // Replace only the relation identifier so a supported table alias and
+        // surrounding source text stay in place when the selected Form changes.
+        let relation_range = source_range_from_span(sql, name.span());
         let Some(relation_range) = relation_range else {
             return rejected_proposal(base_sql, SqlStructureReason::RelationUnsupported);
         };
@@ -769,7 +777,9 @@ fn validate_relation(
     else {
         return Err(SqlStructureReason::RelationUnsupported);
     };
-    if alias.is_some()
+    if alias
+        .as_ref()
+        .is_some_and(|alias| !alias.columns.is_empty() || alias.at.is_some())
         || args.is_some()
         || !with_hints.is_empty()
         || version.is_some()
@@ -1912,6 +1922,22 @@ mod tests {
             serde_json::from_str(include_str!("../../../shared/sql/ugoite-sql-rules.json"))
                 .expect("shared SQL rules must remain valid JSON");
         let editor = &matrix["feature_matrix"]["editor"];
+        let relation_limits = editor["constructs"]
+            .as_array()
+            .expect("editor constructs must be an array")
+            .iter()
+            .find(|construct| construct["id"] == "from_relation")
+            .expect("FROM relation coverage must be declared")["limits"]
+            .as_array()
+            .expect("FROM relation limits must be an array")
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .collect::<BTreeSet<_>>();
+        assert!(relation_limits.contains(
+            &"plain aliases on a single relation are supported and preserved; edited column references remain unqualified"
+        ));
+        assert!(relation_limits
+            .contains(&"joins, derived relations, and table alias column lists are not supported"));
         let declared_operations = editor["operations"]
             .as_array()
             .expect("feature matrix operations must be an array")
@@ -2042,6 +2068,88 @@ mod tests {
         );
         assert_eq!(invalid.status, SqlStructureStatus::Unsupported);
         assert_eq!(invalid.reason, Some(SqlStructureReason::UnknownColumn));
+    }
+
+    #[test]
+    fn single_relation_aliases_remain_editable_and_survive_structure_changes() {
+        let sql = "SELECT \"_ugoite_id\" FROM \"Task\" AS entries ORDER BY \"_ugoite_id\"";
+        let analysis = analyze_sql_structure(sql, &context());
+        assert_eq!(analysis.status, SqlStructureStatus::Supported);
+        assert!(analysis.capabilities.filter.enabled);
+        assert!(analysis.capabilities.aggregate.enabled);
+        assert!(analysis.capabilities.group_by.enabled);
+
+        let filter = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetFilters {
+                filters: vec![SqlStructureFilter {
+                    column: "field_101".to_owned(),
+                    operator: SqlStructureFilterOperator::Eq,
+                    parameter: Some("status".to_owned()),
+                }],
+            },
+        );
+        assert_eq!(filter.status, SqlStructureStatus::Supported);
+        let filter_sql = filter.proposed_sql.expect("filter proposal");
+        assert!(filter_sql.contains("FROM \"Task\" AS entries"));
+        assert!(filter_sql.contains("WHERE \"field_101\" = $status"));
+
+        let grouped = propose_sql_structure_operation(
+            &filter_sql,
+            &context(),
+            SqlStructureOperation::SetGroupBy {
+                columns: vec!["_ugoite_id".to_owned()],
+            },
+        );
+        assert_eq!(grouped.status, SqlStructureStatus::Supported);
+        let grouped_sql = grouped.proposed_sql.expect("grouping proposal");
+        assert!(grouped_sql.contains("FROM \"Task\" AS entries"));
+        assert!(grouped_sql.contains("GROUP BY \"_ugoite_id\""));
+
+        let aggregate = propose_sql_structure_operation(
+            &grouped_sql,
+            &context(),
+            SqlStructureOperation::SetAggregates {
+                aggregates: vec![SqlStructureAggregate {
+                    function: SqlStructureAggregateFunction::Count,
+                    column: None,
+                    distinct: false,
+                    alias: None,
+                }],
+            },
+        );
+        assert_eq!(aggregate.status, SqlStructureStatus::Supported);
+        let aggregate_sql = aggregate.proposed_sql.expect("aggregate proposal");
+        assert!(aggregate_sql.contains("FROM \"Task\" AS entries"));
+        assert!(aggregate_sql.contains("COUNT(*)"));
+        assert!(aggregate_sql.contains("GROUP BY \"_ugoite_id\""));
+    }
+
+    #[test]
+    fn changing_form_relation_preserves_a_plain_table_alias() {
+        let sql = "SELECT \"_ugoite_id\" FROM \"Old\" AS entries ORDER BY \"_ugoite_id\"";
+        let proposal = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetRelation {
+                relation: "Task".to_owned(),
+            },
+        );
+
+        assert_eq!(proposal.status, SqlStructureStatus::Supported);
+        assert_eq!(
+            proposal.proposed_sql.as_deref(),
+            Some("SELECT \"_ugoite_id\" FROM \"Task\" AS entries ORDER BY \"_ugoite_id\"")
+        );
+    }
+
+    #[test]
+    fn rejects_single_relation_aliases_that_rename_columns() {
+        let result =
+            analyze_sql_structure("SELECT * FROM \"Task\" AS entries (entry_id)", &context());
+        assert_eq!(result.status, SqlStructureStatus::Unsupported);
+        assert_eq!(result.reason, Some(SqlStructureReason::RelationUnsupported));
     }
 
     #[test]

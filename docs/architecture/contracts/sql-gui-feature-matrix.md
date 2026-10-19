@@ -24,6 +24,11 @@ constructs that are context supplied, preserved without an editor operation, or
 outside structured coverage. Its `keywords` list is not consumed by the SQL
 admission or lint paths and is not a closed grammar definition.
 
+A single trusted Form relation may use a plain table alias; structure edits and
+Form changes preserve that alias. The current editor generates unqualified
+column references for this one-relation context. Joins, derived relations, and
+table alias column lists remain outside structured coverage.
+
 The matrix records the same SELECT-only boundary as the runtime statement
 gate. Relation-free scalar queries align with direct SQL lint and the structure
 editor. The SQL executor remains responsible for planner, relation, function,

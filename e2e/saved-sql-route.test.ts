@@ -227,6 +227,14 @@ test.describe("Saved SQL route", () => {
         `SELECT * FROM "${relation}"`,
       );
 
+      const editor = page.getByRole("textbox", { name: "SQL", exact: true });
+      await editor.fill(
+        `SELECT "_ugoite_id" FROM "${relation}" AS entry_rows ORDER BY "_ugoite_id"`,
+      );
+      await expect(page.locator(".ui-sql-editor")).toContainText(
+        `FROM "${relation}" AS entry_rows`,
+      );
+
       const filter = structureActions.getByRole("button", {
         name: "Filter",
         exact: true,
@@ -250,6 +258,25 @@ test.describe("Saved SQL route", () => {
       await expect(filterValue).toBeVisible();
       await filterValue.fill("no-match");
 
+      const groupBy = structureActions.getByRole("button", {
+        name: "Group by",
+        exact: true,
+      });
+      await expect(groupBy).toBeEnabled();
+      await groupBy.click();
+      const groupByDialog = page.getByRole("dialog", { name: "Group by" });
+      await groupByDialog.getByLabel("_ugoite_id", { exact: true }).check();
+      await groupByDialog.getByRole("button", { name: "Review change" })
+        .click();
+      const groupByReviewDialog = page.getByRole("dialog", {
+        name: "Review SQL change",
+      });
+      await expect(
+        groupByReviewDialog.getByText(/GROUP BY "_ugoite_id"/),
+      ).toBeVisible();
+      await groupByReviewDialog.getByRole("button", { name: "Apply change" })
+        .click();
+
       const aggregate = structureActions.getByRole("button", {
         name: "Aggregate",
         exact: true,
@@ -269,6 +296,9 @@ test.describe("Saved SQL route", () => {
       await aggregateReviewDialog.getByRole("button", { name: "Apply change" })
         .click();
       await expect(page.locator(".ui-sql-editor")).toContainText(/COUNT\(\*\)/);
+      await expect(page.locator(".ui-sql-editor")).toContainText(
+        /GROUP BY "_ugoite_id"/,
+      );
       await page.getByLabel("Query name").fill(queryName);
       const createResponsePromise = page.waitForResponse((response) => {
         const url = new URL(response.url());
@@ -283,6 +313,12 @@ test.describe("Saved SQL route", () => {
       await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`), {
         waitUntil: "domcontentloaded",
       });
+      await expect(page.locator(".ui-sql-editor")).toContainText(
+        `FROM "${relation}" AS entry_rows`,
+      );
+      await expect(page.locator(".ui-sql-editor")).toContainText(
+        /GROUP BY "_ugoite_id"/,
+      );
       await page.getByRole("textbox", {
         name: "filter__ugoite_id",
         exact: true,
