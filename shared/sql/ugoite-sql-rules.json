@@ -23,7 +23,7 @@
   ],
   "lint": {
     "require_select": true,
-    "require_from": true,
+    "require_from": false,
     "single_statement_only": true,
     "limit_requires_number": true
   },
@@ -45,8 +45,8 @@
       }
     },
     "direct_sql_lint": {
-      "require_from": true,
-      "fromless_select_diagnostic": "error"
+      "require_from": false,
+      "fromless_select_diagnostic": "none"
     },
     "editor": {
       "aggregate_contract": {
@@ -117,6 +117,7 @@
           "backend_admission": "planner_decides",
           "editor_coverage": "bounded",
           "limits": [
+            "relation-free integer/string/boolean/NULL literal projections",
             "wildcard or simple columns",
             "allowlisted aggregates over supported arguments"
           ]
