@@ -576,7 +576,7 @@ fn scalar_type_assignable(
     expected.scalar_type == actual.scalar_type && (!actual.nullable || expected.nullable)
 }
 
-fn literal_matches(
+pub(crate) fn literal_matches(
     descriptor: &VariableGraphScalarDescriptor,
     literal: &VariableGraphLiteral,
 ) -> bool {
@@ -584,9 +584,14 @@ fn literal_matches(
         return descriptor.nullable;
     }
     match (descriptor.scalar_type, literal) {
-        (VariableGraphScalarType::String, VariableGraphLiteral::String(_))
-        | (VariableGraphScalarType::Boolean, VariableGraphLiteral::Boolean(_))
-        | (VariableGraphScalarType::Integer, VariableGraphLiteral::Integer(_)) => true,
+        (VariableGraphScalarType::String, VariableGraphLiteral::String(value)) => {
+            super::valid_variable_string(value)
+        }
+        (VariableGraphScalarType::Boolean, VariableGraphLiteral::Boolean(_)) => true,
+        (VariableGraphScalarType::Integer, VariableGraphLiteral::Integer(value)) => {
+            (-super::MAX_COMPOSITION_VARIABLE_INTEGER..=super::MAX_COMPOSITION_VARIABLE_INTEGER)
+                .contains(value)
+        }
         (VariableGraphScalarType::Float, VariableGraphLiteral::Float(value)) => value.is_finite(),
         (VariableGraphScalarType::Decimal, VariableGraphLiteral::Decimal(value)) => {
             decimal_text_is_valid(value)
@@ -600,6 +605,21 @@ fn literal_matches(
         (VariableGraphScalarType::Json, VariableGraphLiteral::Json(value)) => !value.is_null(),
         _ => false,
     }
+}
+
+/// Query results use the same scalar types and numeric/date constraints as
+/// declared values, but SQL output strings are not user-entered variables and
+/// therefore do not inherit the input size/control-character restrictions.
+fn query_result_literal_matches(
+    descriptor: &VariableGraphScalarDescriptor,
+    literal: &VariableGraphLiteral,
+) -> bool {
+    if matches!(literal, VariableGraphLiteral::String(_))
+        && descriptor.scalar_type == VariableGraphScalarType::String
+    {
+        return true;
+    }
+    literal_matches(descriptor, literal)
 }
 
 /// Stable diagnostics for a query result that violates its declared contract.
@@ -822,8 +842,8 @@ pub fn validate_variable_graph_result(
                 } else if observed_columns
                     .first()
                     .is_some_and(|column| column.value_type.scalar_type == value_type.scalar_type)
-                    && (!literal_matches(&observed_columns[0].value_type, &row[0])
-                        || !literal_matches(value_type, &row[0]))
+                    && (!query_result_literal_matches(&observed_columns[0].value_type, &row[0])
+                        || !query_result_literal_matches(value_type, &row[0]))
                 {
                     diagnostics.push(value_diagnostic(
                         &row[0],
@@ -901,8 +921,8 @@ pub fn validate_variable_graph_result(
                     {
                         continue;
                     }
-                    if !literal_matches(&observed_column.value_type, value)
-                        || !literal_matches(&expected_column.value_type, value)
+                    if !query_result_literal_matches(&observed_column.value_type, value)
+                        || !query_result_literal_matches(&expected_column.value_type, value)
                     {
                         diagnostics.push(value_diagnostic(
                             value,
@@ -1879,6 +1899,61 @@ mod tests {
     }
 
     #[test]
+    fn query_string_results_are_not_limited_by_input_string_constraints() {
+        let expected_scalar = VariableGraphResultType::Scalar {
+            value_type: scalar(VariableGraphScalarType::String, false),
+        };
+        let scalar_column = [VariableGraphColumn {
+            name: "value".to_owned(),
+            value_type: scalar(VariableGraphScalarType::String, false),
+        }];
+        for value in [
+            "x".repeat(super::super::MAX_COMPOSITION_VARIABLE_STRING_BYTES + 1),
+            "line\0break".to_owned(),
+        ] {
+            let literal = VariableGraphLiteral::String(value);
+            assert_eq!(
+                validate_variable_graph_result(
+                    &expected_scalar,
+                    &scalar_column,
+                    &[vec![literal.clone()]],
+                )
+                .expect("SQL scalar string results are not input buffers"),
+                VariableGraphValidatedResult::Scalar { value: literal }
+            );
+        }
+
+        let expected_table = VariableGraphResultType::Table {
+            columns: vec![VariableGraphColumn {
+                name: "value".to_owned(),
+                value_type: scalar(VariableGraphScalarType::String, false),
+            }],
+        };
+        let table_column = [VariableGraphColumn {
+            name: "value".to_owned(),
+            value_type: scalar(VariableGraphScalarType::String, false),
+        }];
+        for value in [
+            "x".repeat(super::super::MAX_COMPOSITION_VARIABLE_STRING_BYTES + 1),
+            "line\0break".to_owned(),
+        ] {
+            let literal = VariableGraphLiteral::String(value);
+            assert_eq!(
+                validate_variable_graph_result(
+                    &expected_table,
+                    &table_column,
+                    &[vec![literal.clone()]],
+                )
+                .expect("SQL table string cells are not input buffers"),
+                VariableGraphValidatedResult::Table {
+                    columns: table_column.to_vec(),
+                    rows: vec![vec![literal]],
+                }
+            );
+        }
+    }
+
+    #[test]
     fn table_results_allow_empty_rows_and_validate_schema_and_cells() {
         let expected = VariableGraphResultType::Table {
             columns: vec![
@@ -1991,6 +2066,84 @@ mod tests {
             VariableGraphResultDiagnosticCode::ScalarMultipleRows.as_str(),
             "scalar_multiple_rows"
         );
+    }
+
+    #[test]
+    fn rejects_string_literals_outside_the_portable_value_contract() {
+        let invalid_strings = vec![
+            "bad\0value".to_owned(),
+            "x".repeat(super::super::MAX_COMPOSITION_VARIABLE_STRING_BYTES + 1),
+        ];
+        for value in invalid_strings {
+            let constant = VariableGraphNode {
+                id: "value".to_owned(),
+                kind: VariableGraphNodeKind::Constant {
+                    value_type: scalar(VariableGraphScalarType::String, false),
+                    value: VariableGraphLiteral::String(value),
+                },
+            };
+            assert_eq!(
+                compile_variable_graph(&graph(vec![constant]))
+                    .expect_err("invalid portable string constant")[0]
+                    .code,
+                VariableGraphDiagnosticCode::InvalidConstantValue
+            );
+        }
+    }
+
+    #[test]
+    fn integer_constants_and_defaults_obey_the_portable_safe_range() {
+        let maximum = super::super::MAX_COMPOSITION_VARIABLE_INTEGER;
+        for value in [maximum, -maximum] {
+            let constant = VariableGraphNode {
+                id: "value".to_owned(),
+                kind: VariableGraphNodeKind::Constant {
+                    value_type: scalar(VariableGraphScalarType::Integer, false),
+                    value: VariableGraphLiteral::Integer(value),
+                },
+            };
+            assert!(compile_variable_graph(&graph(vec![constant])).is_ok());
+
+            let input = VariableGraphNode {
+                id: "value".to_owned(),
+                kind: VariableGraphNodeKind::Input {
+                    value_type: scalar(VariableGraphScalarType::Integer, false),
+                    required: false,
+                    default: Some(VariableGraphLiteral::Integer(value)),
+                },
+            };
+            assert!(compile_variable_graph(&graph(vec![input])).is_ok());
+        }
+
+        for value in [maximum + 1, -maximum - 1] {
+            let constant = VariableGraphNode {
+                id: "value".to_owned(),
+                kind: VariableGraphNodeKind::Constant {
+                    value_type: scalar(VariableGraphScalarType::Integer, false),
+                    value: VariableGraphLiteral::Integer(value),
+                },
+            };
+            assert_eq!(
+                compile_variable_graph(&graph(vec![constant]))
+                    .expect_err("unsafe integer constant")[0]
+                    .code,
+                VariableGraphDiagnosticCode::InvalidConstantValue
+            );
+
+            let input = VariableGraphNode {
+                id: "value".to_owned(),
+                kind: VariableGraphNodeKind::Input {
+                    value_type: scalar(VariableGraphScalarType::Integer, false),
+                    required: false,
+                    default: Some(VariableGraphLiteral::Integer(value)),
+                },
+            };
+            assert_eq!(
+                compile_variable_graph(&graph(vec![input])).expect_err("unsafe integer default")[0]
+                    .code,
+                VariableGraphDiagnosticCode::InvalidInputDefault
+            );
+        }
     }
 
     #[test]

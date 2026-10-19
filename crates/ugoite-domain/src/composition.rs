@@ -14,6 +14,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 mod canonical;
 pub mod variable_binding;
 pub mod variable_graph;
+pub mod variable_graph_input;
 pub mod variable_invalidation;
 mod yaml;
 
@@ -24,6 +25,10 @@ pub use variable_graph::{
     VariableGraphQueryDefinition, VariableGraphResultDiagnostic, VariableGraphResultDiagnosticCode,
     VariableGraphResultType, VariableGraphScalarDescriptor, VariableGraphScalarType,
     VariableGraphValidatedResult,
+};
+pub use variable_graph_input::{
+    resolve_variable_graph_inputs, ResolvedVariableGraphInputs, VariableGraphInputDiagnostic,
+    VariableGraphInputDiagnosticCode, VariableGraphInputError,
 };
 
 pub use canonical::{
@@ -246,6 +251,11 @@ impl CompositionSpec {
 
 /// Maximum UTF-8 byte length accepted for a typed Composition string value.
 pub const MAX_COMPOSITION_VARIABLE_STRING_BYTES: usize = 4 * 1024;
+/// Maximum magnitude accepted for a typed Composition integer value.
+///
+/// Keeping integers within JavaScript's safe range preserves exact values
+/// across portable JSON clients.
+pub const MAX_COMPOSITION_VARIABLE_INTEGER: i64 = 9_007_199_254_740_991;
 
 /// A typed value declared by a Composition and shared by its Inputs, Text,
 /// and data Sources.
@@ -317,7 +327,8 @@ impl CompositionVariableType {
             Self::String => value.as_str().is_some_and(valid_variable_string),
             Self::Boolean => value.is_boolean(),
             Self::Integer => value.as_i64().is_some_and(|value| {
-                (-(9_007_199_254_740_991_i64)..=9_007_199_254_740_991_i64).contains(&value)
+                (-MAX_COMPOSITION_VARIABLE_INTEGER..=MAX_COMPOSITION_VARIABLE_INTEGER)
+                    .contains(&value)
             }),
             Self::Float => value.as_f64().is_some_and(f64::is_finite),
             Self::Date => value.as_str().is_some_and(valid_variable_date),
