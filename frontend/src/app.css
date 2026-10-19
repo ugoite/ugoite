@@ -5316,10 +5316,23 @@ a.tool {
 
 .sql-workspace__actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 0.5rem;
+  overflow-x: auto;
+  overflow-y: hidden;
   max-width: 100%;
+}
+
+.sql-workspace__actions > .pill {
+  flex: 0 0 44px;
+  width: 44px;
+}
+
+@media (max-width: 390px) {
+  .sql-workspace__actions {
+    gap: 2px;
+  }
 }
 
 .sql-structure-dialog {

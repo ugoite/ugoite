@@ -405,14 +405,14 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
               const boundForms = bindings.map((binding) =>
                 props.forms.find((item) => item.id === binding.form_id)
               );
-              // Do not give the editor a partial schema: an unresolved
-              // relation must not lend a partial schema to structure editing.
-              if (boundForms.some((form) => !form)) return [];
+              // Do not give the editor a partial or incorrectly bound schema.
+              if (
+                boundForms.some((form, index) => !form ||
+                  form.sql_relation?.trim() !== bindings[index].relation
+                )
+              ) return [];
               return buildSqlStructureContexts(
-                boundForms.map((form, index) => ({
-                  ...form!,
-                  name: bindings[index].relation,
-                })),
+                boundForms as Form[],
                 variables(),
                 identity,
               );

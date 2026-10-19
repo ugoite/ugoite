@@ -32,7 +32,7 @@ components:
       type: shared-sql-workspace
       reference: ../components/sql-workspace.yaml
       initial_sql: SELECT 1
-      schema: current authorized Form names and public field columns
+      schema: current authorized Forms, server-owned SQL relations, and public field columns
       structured_actions: shared SQL structure toolbar only
       preview: stateless SQL request with request-owned paging
     - id: query-variable-default-editor

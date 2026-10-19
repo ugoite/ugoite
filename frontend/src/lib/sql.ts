@@ -13,6 +13,17 @@ import type {
 
 export type SqlSchema = NonNullable<SQLConfig["schema"]>;
 
+const sqlSchemaFormLabels = new WeakMap<
+  object,
+  Readonly<Record<string, string>>
+>();
+
+export function sqlSchemaFormLabelsFor(
+  schema: SqlSchema,
+): Readonly<Record<string, string>> {
+  return sqlSchemaFormLabels.get(schema as object) ?? {};
+}
+
 const SQL_SYSTEM_COLUMNS = [
   "_ugoite_id",
   "_ugoite_created_at",
@@ -274,6 +285,7 @@ export function buildSqlSchema(forms: Form[]): SqlSchema {
   // plain object literal would swallow as a prototype assignment instead of
   // an ordinary table entry.
   const tables: Record<string, string[]> = Object.create(null);
+  const tableLabels: Record<string, string> = Object.create(null);
   for (const item of forms) {
     const name = item.sql_relation?.trim();
     if (!name) continue;
@@ -281,9 +293,12 @@ export function buildSqlSchema(forms: Form[]): SqlSchema {
       .map((field) => field.sql_column?.trim())
       .filter((column): column is string => Boolean(column));
     tables[name] = [...SQL_SYSTEM_COLUMNS, ...columns];
+    tableLabels[name] = item.name.trim() || name;
   }
 
-  return { tables };
+  const schema = { tables };
+  sqlSchemaFormLabels.set(schema, tableLabels);
+  return schema;
 }
 
 const SQL_LITERAL_OR_COMMENT_NODES = new Set([

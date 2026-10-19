@@ -130,6 +130,56 @@ test.describe("Saved SQL route", () => {
     }
   });
 
+  test("@smoke keeps SQL actions in a horizontally scrollable row on narrow screens", async ({ page }) => {
+    await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/new`), {
+      waitUntil: "domcontentloaded",
+    });
+    const actions = page.getByRole("group", { name: "SQL" });
+    await expect(actions).toBeVisible();
+
+    for (const width of [320, 375, 390]) {
+      await page.setViewportSize({ width, height: 844 });
+      const dimensions = await page.evaluate(() => {
+        const toolbar = document.querySelector<HTMLElement>(
+          ".sql-workspace__actions",
+        );
+        if (!toolbar) throw new Error("SQL action toolbar is missing");
+        return {
+          documentWidth: document.documentElement.scrollWidth,
+          viewportWidth: document.documentElement.clientWidth,
+          toolbarWidth: toolbar.clientWidth,
+          toolbarScrollWidth: toolbar.scrollWidth,
+          buttons: Array.from(toolbar.querySelectorAll("button"), (button) => {
+            const rect = button.getBoundingClientRect();
+            return { width: rect.width, height: rect.height, top: rect.top };
+          }),
+        };
+      });
+
+      expect(dimensions.documentWidth).toBeLessThanOrEqual(
+        dimensions.viewportWidth + 1,
+      );
+      expect(dimensions.buttons).toHaveLength(7);
+      expect(
+        Math.max(...dimensions.buttons.map((button) => button.top)) -
+          Math.min(...dimensions.buttons.map((button) => button.top)),
+      ).toBeLessThanOrEqual(1);
+      if (width === 320) {
+        expect(dimensions.toolbarScrollWidth).toBeGreaterThan(
+          dimensions.toolbarWidth,
+        );
+      } else {
+        expect(dimensions.toolbarScrollWidth).toBeLessThanOrEqual(
+          dimensions.toolbarWidth,
+        );
+      }
+      for (const button of dimensions.buttons) {
+        expect(button.width).toBeGreaterThanOrEqual(44);
+        expect(button.height).toBeGreaterThanOrEqual(44);
+      }
+    }
+  });
+
   test("REQ-FE-063 @smoke: new saved SQL uses the shared structure actions and runs through Saved SQL", async ({ page, request }) => {
     const queryName = `Form-bound draft ${Date.now()}`;
     let savedSqlId: string | undefined;
