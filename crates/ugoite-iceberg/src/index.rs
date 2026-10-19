@@ -3036,8 +3036,8 @@ pub(crate) async fn execute_sql_query_authorized_by_form_count_at_checkpoint_sta
 
 /// Shared read-only SQL admission. This runs before any SQL planning,
 /// checkpoint resolution, or DataFusion execution so that write/DDL,
-/// multi-statement, and non-SELECT input is rejected with the same stable
-/// `READ_ONLY_SQL_REQUIRED` contract on every entry point.
+/// multi-statement, and non-SELECT query bodies are rejected with the same
+/// stable `READ_ONLY_SQL_REQUIRED` contract on every entry point.
 pub fn validate_read_only_sql(sql: &str) -> Result<()> {
     if sql.trim().is_empty() {
         return Err(AppError::invalid_input(ErrorCode::InvalidInput, "sql is required").into());
@@ -3057,10 +3057,12 @@ pub fn validate_read_only_sql(sql: &str) -> Result<()> {
     }
     let statement = parsed.front().expect("one statement was checked above");
     let is_select = match statement {
-        datafusion::sql::parser::Statement::Statement(inner) => matches!(
-            inner.as_ref(),
-            datafusion::sql::sqlparser::ast::Statement::Query(_)
-        ),
+        datafusion::sql::parser::Statement::Statement(inner) => match inner.as_ref() {
+            datafusion::sql::sqlparser::ast::Statement::Query(query) => {
+                query_contains_only_select_bodies(query)
+            }
+            _ => false,
+        },
         _ => false,
     };
     if !is_select {
@@ -3071,6 +3073,43 @@ pub fn validate_read_only_sql(sql: &str) -> Result<()> {
         .into());
     }
     Ok(())
+}
+
+fn query_contains_only_select_bodies(query: &datafusion::sql::sqlparser::ast::Query) -> bool {
+    use datafusion::sql::sqlparser::ast::{Query, SetExpr, Visit, Visitor};
+    use std::ops::ControlFlow;
+
+    fn set_expr_is_select_only(expression: &SetExpr) -> bool {
+        match expression {
+            SetExpr::Select(_) => true,
+            SetExpr::Query(query) => set_expr_is_select_only(query.body.as_ref()),
+            SetExpr::SetOperation { left, right, .. } => {
+                set_expr_is_select_only(left) && set_expr_is_select_only(right)
+            }
+            _ => false,
+        }
+    }
+
+    struct SelectBodyValidator {
+        valid: bool,
+    }
+
+    impl Visitor for SelectBodyValidator {
+        type Break = ();
+
+        fn pre_visit_query(&mut self, query: &Query) -> ControlFlow<Self::Break> {
+            if set_expr_is_select_only(query.body.as_ref()) {
+                ControlFlow::Continue(())
+            } else {
+                self.valid = false;
+                ControlFlow::Break(())
+            }
+        }
+    }
+
+    let mut validator = SelectBodyValidator { valid: true };
+    let _ = query.visit(&mut validator);
+    validator.valid
 }
 
 pub async fn query_index_authorized(
@@ -4772,7 +4811,80 @@ mod tests {
         }
         assert!(validate_read_only_sql("SELECT * FROM t").is_ok());
         assert!(validate_read_only_sql("SELECT 1").is_ok());
-        assert!(validate_read_only_sql("VALUES (1)").is_ok());
+    }
+
+    #[test]
+    fn read_only_admission_rejects_non_select_query_bodies_and_nested_values() {
+        for sql in [
+            "VALUES (1)",
+            "SELECT 1 UNION VALUES (2)",
+            "WITH items AS (VALUES (1)) SELECT * FROM items",
+            "SELECT * FROM (VALUES (1)) AS items(value)",
+            "TABLE items",
+        ] {
+            let error = match validate_read_only_sql(sql) {
+                Ok(()) => panic!("non-SELECT query body was admitted: {sql}"),
+                Err(error) => error,
+            };
+            let app = error
+                .downcast_ref::<ugoite_core::error::AppError>()
+                .expect("admission must be typed");
+            assert_eq!(
+                app.code(),
+                ugoite_core::error::ErrorCode::ReadOnlySqlRequired,
+                "{sql}"
+            );
+        }
+
+        for sql in [
+            "SELECT 1 UNION SELECT 2",
+            "WITH items AS (SELECT 1 AS value) SELECT value FROM items",
+            "SELECT * FROM (SELECT 1 AS value) AS items",
+            "SELECT (SELECT 1)",
+            "SELECT (SELECT (SELECT (SELECT 1)))",
+            "SELECT 1 WHERE EXISTS (SELECT 1)",
+            "SELECT 1 WHERE 1 IN (SELECT 1)",
+        ] {
+            validate_read_only_sql(sql)
+                .unwrap_or_else(|error| panic!("SELECT query body was rejected: {sql}: {error:#}"));
+        }
+    }
+
+    #[test]
+    fn read_only_admission_matches_shared_sql_feature_matrix() {
+        let matrix: Value =
+            serde_json::from_str(include_str!("../../../shared/sql/ugoite-sql-rules.json"))
+                .expect("shared SQL feature matrix must remain valid JSON");
+        let backend = &matrix["feature_matrix"]["backend"];
+        assert_eq!(
+            backend["statement_gate"],
+            "exactly_one_select_query_statement"
+        );
+        assert!(backend["query_body_form_restricted"]
+            .as_bool()
+            .unwrap_or(false));
+        let constructs = matrix["feature_matrix"]["editor"]["constructs"]
+            .as_array()
+            .expect("SQL constructs must be an array");
+        let values = constructs
+            .iter()
+            .find(|construct| construct["id"] == "values_query")
+            .expect("VALUES coverage must be explicit");
+        assert_eq!(values["backend_admission"], "statement_gate_rejects");
+        let table = constructs
+            .iter()
+            .find(|construct| construct["id"] == "table_query")
+            .expect("TABLE coverage must be explicit");
+        assert_eq!(table["backend_admission"], "statement_gate_rejects");
+        let set_operations = constructs
+            .iter()
+            .find(|construct| construct["id"] == "set_operations")
+            .expect("set-operation coverage must be explicit");
+        assert!(set_operations["limits"]
+            .as_array()
+            .is_some_and(|limits| limits.iter().any(|limit| {
+                limit == "every set-operation operand must be a SELECT query body"
+            })));
     }
 
     #[test]
