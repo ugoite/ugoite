@@ -193,7 +193,10 @@ test.describe("Saved SQL route", () => {
         .toBeVisible();
       await filterReviewDialog.getByRole("button", { name: "Apply change" })
         .click();
-      const filterValue = page.getByLabel("filter__ugoite_id");
+      const filterValue = page.getByRole("textbox", {
+        name: "filter__ugoite_id",
+        exact: true,
+      });
       await expect(filterValue).toBeVisible();
       await filterValue.fill("no-match");
 
@@ -230,7 +233,10 @@ test.describe("Saved SQL route", () => {
       await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`), {
         waitUntil: "domcontentloaded",
       });
-      await page.getByLabel("filter__ugoite_id").fill("no-match");
+      await page.getByRole("textbox", {
+        name: "filter__ugoite_id",
+        exact: true,
+      }).fill("no-match");
       const queryResponsePromise = page.waitForResponse((response) => {
         const url = new URL(response.url());
         return response.request().method() === "POST" &&
