@@ -51,13 +51,15 @@ SQL clauses and is accepted only when the target Form schema validates them.
 For a single aliased relation, structure edits preserve the alias and emit
 unqualified column references. Joins, derived relations, and table alias column
 lists remain unsupported.
-The Form picker shows the Form name, while SQL generation uses its SQL relation.
-The proposal view shows the existing and proposed SQL and applies the new SQL
-only after explicit confirmation. Other structure controls remain limited to
-operations that the Rust parser can safely round-trip, with capability reasons
-in disabled actions' accessible names. `/sql/new`, Saved SQL detail/edit, and
-Composition inline SQL supply Form contexts together with a relation-free
-scalar context.
+The Form picker shows the current Form name; SQL text uses the opaque,
+server-derived `form_<32-hex-ID>` relation for that Form ID. Renaming changes
+the picker label and schema context identity while leaving existing SQL bound
+to the same relation. A new Form with the same name receives its own relation.
+The proposal view shows before/after SQL and applies changes only after
+confirmation. Other structure controls stay limited to operations that the
+Rust parser can safely round-trip, with capability reasons in disabled
+actions' accessible names. `/sql/new`, Saved SQL detail/edit, and Composition
+inline SQL supply Form contexts together with a relation-free scalar context.
 
 ## Preview and results
 
