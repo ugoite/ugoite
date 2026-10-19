@@ -3,7 +3,7 @@ import type { Diagnostic } from "@codemirror/lint";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { BackLink } from "~/components/BackLink";
 import { ButtonSpinner } from "~/components/ButtonSpinner";
-import { SQLWorkspace } from "~/components/SQLWorkspace";
+import { SQLWorkspace, SQLWorkspaceActionBar } from "~/components/SQLWorkspace";
 import type { SQLWorkspaceAction } from "~/components/SQLWorkspace";
 import { SqlStructureToolbar } from "~/components/SqlStructureToolbar";
 import { SqlVariableDefaultsEditor } from "~/components/SqlVariableDefaultsEditor";
@@ -165,24 +165,6 @@ export default function SpaceQueryCreateRoute() {
           onInput={(e) => setQueryName(e.currentTarget.value)}
         />
 
-        <SQLWorkspace
-          id="new-sql-workspace"
-          sql={sqlInput()}
-          onSqlChange={handleSqlChange}
-          actions={structureActions()}
-          schema={schema()}
-          variables={workspaceVariables()}
-          parameterValues={workspace.parameterValues()}
-          onParameterChange={workspace.onParameterChange}
-          readOnly={isSaving()}
-          onDiagnostics={setDiagnostics}
-          previewDisabled={isSaving()}
-          onPreview={workspace.run}
-          onCount={workspace.count}
-          onPrevious={workspace.previous}
-          onNext={workspace.next}
-          preview={workspace.preview()}
-        />
         <SqlStructureToolbar
           sql={sqlInput}
           contexts={() =>
@@ -195,6 +177,26 @@ export default function SpaceQueryCreateRoute() {
           onVariablesAdded={registerCreatedVariables}
           onActionsChange={setStructureActions}
           disabled={isSaving}
+        />
+        <SQLWorkspaceActionBar actions={structureActions()} />
+        <SQLWorkspace
+          id="new-sql-workspace"
+          sql={sqlInput()}
+          onSqlChange={handleSqlChange}
+          actions={structureActions()}
+          hideActions
+          schema={schema()}
+          variables={workspaceVariables()}
+          parameterValues={workspace.parameterValues()}
+          onParameterChange={workspace.onParameterChange}
+          readOnly={isSaving()}
+          onDiagnostics={setDiagnostics}
+          previewDisabled={isSaving()}
+          onPreview={workspace.run}
+          onCount={workspace.count}
+          onPrevious={workspace.previous}
+          onNext={workspace.next}
+          preview={workspace.preview()}
         />
 
         <Show when={variables().length > 0}>

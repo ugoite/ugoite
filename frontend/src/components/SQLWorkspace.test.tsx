@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildSqlSchema } from "~/lib/sql";
 import type { SQLWorkspaceProps } from "./SQLWorkspace";
-import { SQLWorkspace } from "./SQLWorkspace";
+import { SQLWorkspace, SQLWorkspaceActionBar } from "./SQLWorkspace";
 
 vi.mock("./SqlQueryEditor", () => ({
   SqlQueryEditor: (props: {
@@ -164,6 +164,46 @@ describe("SQLWorkspace", () => {
       "title",
       "Filter: Unsupported SQL structure",
     );
+  });
+
+  it("renders one external action bar before the editor and results when requested", () => {
+    const onActivate = vi.fn();
+    const actions = [{
+      kind: "form" as const,
+      icon: "forms" as const,
+      label: "Form",
+      onActivate,
+    }];
+    const { container } = render(() => (
+      <>
+        <SQLWorkspaceActionBar actions={actions} />
+        <SQLWorkspace
+          {...defaultProps}
+          actions={actions}
+          hideActions
+          preview={{ status: "success", isCurrent: true, page }}
+        />
+      </>
+    ));
+
+    const group = screen.getByRole("group", { name: "SQL" });
+    const editor = screen.getByRole("textbox", { name: "SQL" });
+    const results = container.querySelector(".sql-workspace__results");
+    expect(results).not.toBeNull();
+    expect(
+      group.compareDocumentPosition(editor) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+    expect(
+      group.compareDocumentPosition(results!) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+    expect(container.querySelectorAll(".sql-workspace__actions")).toHaveLength(
+      1,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Form" }));
+    expect(onActivate).toHaveBeenCalledOnce();
   });
 
   it("REQ-FE-080: reports loading and errors without presenting a stale page", () => {

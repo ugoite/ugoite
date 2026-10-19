@@ -94,6 +94,8 @@ export interface SQLWorkspaceProps {
   onParameterChange?: (name: string, rawValue: string) => void;
   parametersReadOnly?: boolean;
   actions?: readonly SQLWorkspaceAction[];
+  /** Hide the default action bar when the host places it outside this workspace. */
+  hideActions?: boolean;
   onDiagnostics?: (diagnostics: Diagnostic[]) => void;
   previewDisabled?: boolean;
   onPreview: () => void;
@@ -105,6 +107,44 @@ export interface SQLWorkspaceProps {
 
 const formatValue = (value: SQLWorkspaceScalar | undefined): string =>
   value === undefined ? "" : String(value);
+
+export interface SQLWorkspaceActionBarProps {
+  actions?: readonly SQLWorkspaceAction[];
+}
+
+/** Render the workspace's host-supplied structure actions at the host's chosen position. */
+export function SQLWorkspaceActionBar(props: SQLWorkspaceActionBarProps) {
+  const actions = () => props.actions ?? [];
+
+  return (
+    <Show when={actions().length > 0}>
+      <div
+        class="sql-workspace__actions"
+        role="group"
+        aria-label={t("sqlPage.sql")}
+      >
+        <For each={actions()}>
+          {(action) => {
+            const accessibleName = () =>
+              action.disabled && action.disabledReason
+                ? `${action.label}: ${action.disabledReason}`
+                : action.label;
+            return (
+              <IconButton
+                icon={action.icon}
+                label={accessibleName()}
+                title={accessibleName()}
+                disabled={action.disabled}
+                active={action.active}
+                onClick={() => action.onActivate()}
+              />
+            );
+          }}
+        </For>
+      </div>
+    </Show>
+  );
+}
 
 /**
  * Shared SQL editing and preview presentation. The owning route or
@@ -133,31 +173,8 @@ export function SQLWorkspace(props: SQLWorkspaceProps) {
 
   return (
     <div class="sql-workspace">
-      <Show when={actions().length > 0}>
-        <div
-          class="sql-workspace__actions"
-          role="group"
-          aria-label={t("sqlPage.sql")}
-        >
-          <For each={actions()}>
-            {(action) => {
-              const accessibleName = () =>
-                action.disabled && action.disabledReason
-                  ? `${action.label}: ${action.disabledReason}`
-                  : action.label;
-              return (
-                <IconButton
-                  icon={action.icon}
-                  label={accessibleName()}
-                  title={accessibleName()}
-                  disabled={action.disabled}
-                  active={action.active}
-                  onClick={() => action.onActivate()}
-                />
-              );
-            }}
-          </For>
-        </div>
+      <Show when={!props.hideActions}>
+        <SQLWorkspaceActionBar actions={actions()} />
       </Show>
       <Show when={variables().length > 0}>
         <section
