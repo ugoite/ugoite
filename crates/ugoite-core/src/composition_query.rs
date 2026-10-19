@@ -2140,7 +2140,7 @@ mod tests {
     #[test]
     fn deferred_query_handoff_uses_fresh_value_and_preserves_snapshot_identity() {
         let execution_id = test_execution_id();
-        let upstream = scalar_query_node("upstream", "SELECT 1", vec![]);
+        let upstream = scalar_query_node("upstream", "SELECT 11", vec![]);
         let downstream = scalar_query_node(
             "downstream",
             "SELECT $seed",
