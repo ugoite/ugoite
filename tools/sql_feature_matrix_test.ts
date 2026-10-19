@@ -10,9 +10,9 @@ Deno.test("SQL feature matrix binds the read-only gate and current UI actions", 
   assertEquals(matrix.version, 1);
   assertEquals(
     matrix.backend.statement_gate,
-    "exactly_one_query_ast_statement",
+    "exactly_one_select_query_statement",
   );
-  assertEquals(matrix.backend.query_body_form_restricted, false);
+  assertEquals(matrix.backend.query_body_form_restricted, true);
   assertEquals(
     matrix.backend.clause_admission,
     "datafusion_parser_and_planner",
@@ -24,8 +24,6 @@ Deno.test("SQL feature matrix binds the read-only gate and current UI actions", 
     toolbarSource,
     frontendSqlSource,
     sharedRules,
-    queryContextSource,
-    statelessIntegrationSource,
   ] = await Promise.all([
     read("crates/ugoite-iceberg/src/index.rs"),
     read("frontend/src/components/SqlStructureToolbar.tsx"),
@@ -33,8 +31,6 @@ Deno.test("SQL feature matrix binds the read-only gate and current UI actions", 
     read("shared/sql/ugoite-sql-rules.json").then((contents) =>
       JSON.parse(contents)
     ),
-    read("crates/ugoite-iceberg/src/query_context.rs"),
-    read("crates/ugoite-iceberg/tests/test_sql_stateless.rs"),
   ]);
   const statementGate = backendSource.slice(
     backendSource.indexOf("pub fn validate_read_only_sql"),
@@ -44,7 +40,10 @@ Deno.test("SQL feature matrix binds the read-only gate and current UI actions", 
     ),
   );
   assertEquals(statementGate.includes("parsed.len() != 1"), true);
-  assertEquals(statementGate.includes("Statement::Query(_)"), true);
+  assertEquals(
+    statementGate.includes("query_contains_only_select_bodies(query)"),
+    true,
+  );
 
   assertEquals(
     matrix.direct_sql_lint.require_from,
@@ -92,6 +91,7 @@ Deno.test("SQL feature matrix binds the read-only gate and current UI actions", 
       "projection",
       "row_limit",
       "set_operations",
+      "table_query",
       "where_predicate",
       "values_query",
     ].sort(),
@@ -108,31 +108,14 @@ Deno.test("SQL feature matrix binds the read-only gate and current UI actions", 
   );
   assertEquals(
     valuesQuery?.backend_admission,
-    "statement_gate_passes_but_authorized_physical_plan_rejects",
-  );
-  assertEquals(
-    queryContextSource.includes(
-      'execute_stateless_page("VALUES (1)", HashMap::new(), 0, 10)',
-    ),
-    true,
-  );
-  assertEquals(
-    queryContextSource.includes(
-      '"physical plan has an unauthorized data source"',
-    ),
-    true,
-  );
-  assertEquals(
-    statelessIntegrationSource.includes(
-      "values_query_passes_statement_gate_but_is_rejected_by_production_execution",
-    ),
-    true,
+    "statement_gate_rejects",
   );
   assertEquals(
     constructs.every((construct) =>
       [
         "planner_decides",
         "statement_gate_passes_but_authorized_physical_plan_rejects",
+        "statement_gate_rejects",
       ].includes(
         construct.backend_admission,
       )
