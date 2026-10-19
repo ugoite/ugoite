@@ -607,12 +607,12 @@ requirements:
           - id: sql-structure-context
             adapter: typescript
             path: frontend/src/lib/sql.test.ts
-            selector: { kind: test, name: uses the written Form relation and intersects typed column capabilities }
+            selector: { kind: test, name: uses the server-derived Form relation and intersects typed column capabilities }
             claims:
               - kind: verifies
                 criterion: REQ-FE-080#criterion.safe-structured-operations
                 covers: [FEAT-FE-008#binding.frontend/target.sql-structure-context]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: uses the written Form relation and intersects typed column capabilities } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: uses the server-derived Form relation and intersects typed column capabilities } }
           - id: sql-structure-proposal
             adapter: typescript
             path: frontend/src/components/SqlStructureToolbar.test.tsx
