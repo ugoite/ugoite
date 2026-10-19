@@ -115,7 +115,7 @@ fn protocol_input_too_large_error() -> String {
         "ok": false,
         "error": {
             "kind": "input_too_large",
-            "message": "JSON protocol input exceeds the 256 KiB limit",
+            "message": "JSON protocol input exceeds the supported size limit",
         },
     })
     .to_string()
@@ -964,6 +964,57 @@ mod tests {
         let response: Value = serde_json::from_str(&response).unwrap();
         assert_eq!(response["ok"], true, "{response}");
         assert_eq!(response["value"]["protocol_version"], 1);
+    }
+
+    #[test]
+    fn oversized_protocol_requests_use_limit_neutral_diagnostic() {
+        let generic_request = serde_json::json!({
+            "action": "version",
+            "padding": "x".repeat(super::MAX_PROTOCOL_REQUEST_BYTES + 1),
+        })
+        .to_string();
+        assert!(generic_request.len() > super::MAX_PROTOCOL_REQUEST_BYTES);
+        assert!(generic_request.len() <= super::MAX_SQL_DOCUMENT_REQUEST_BYTES);
+
+        let sql_document_request = serde_json::json!({
+            "action": "domain.parse_sql_document",
+            "value": {
+                "sql": "x".repeat(super::MAX_SQL_DOCUMENT_REQUEST_BYTES + 1),
+            },
+        })
+        .to_string();
+        assert!(sql_document_request.len() > super::MAX_SQL_DOCUMENT_REQUEST_BYTES);
+
+        let sql_document_parameter_rename_request = serde_json::json!({
+            "action": "domain.rename_sql_document_parameter",
+            "value": {
+                "sql": "x".repeat(8 * 1024 * 1024),
+                "old_name": "old",
+                "new_name": "new",
+            },
+        })
+        .to_string();
+        assert!(
+            sql_document_parameter_rename_request.len() > super::MAX_SQL_DOCUMENT_REQUEST_BYTES
+        );
+
+        for (action, request) in [
+            ("generic", generic_request),
+            ("SQL Document", sql_document_request),
+            (
+                "SQL Document parameter rename",
+                sql_document_parameter_rename_request,
+            ),
+        ] {
+            let response: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
+            assert_eq!(response["ok"], false, "{action}: {response}");
+            assert_eq!(response["error"]["kind"], "input_too_large", "{action}");
+            assert_eq!(
+                response["error"]["message"],
+                "JSON protocol input exceeds the supported size limit",
+                "{action}"
+            );
+        }
     }
 
     #[test]
