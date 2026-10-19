@@ -514,7 +514,7 @@ features:
                 runner:
                   runner: mise-task
                   arguments:
-                    task: check:wasm:sql-structure-parity
+                    task: check:wasm:sql-structure-fixtures
     contracts:
       - id: guarded-edit-portable-protocol
         kind: custom
