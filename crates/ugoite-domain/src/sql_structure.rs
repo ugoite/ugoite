@@ -2136,15 +2136,14 @@ fn rewrite_filter_clause_source(
             if keyword_range.end > expression_range.start {
                 return Err(SqlStructureReason::FilterUnsupported);
             }
-            replace_sql_source_range(
-                sql,
-                SqlSourceRange {
-                    start: keyword_range.start,
-                    end: expression_range.end,
-                },
-                "",
-            )
-            .ok_or(SqlStructureReason::FilterUnsupported)
+            let range = SqlSourceRange {
+                start: keyword_range.start,
+                end: expression_range.end,
+            };
+            if has_comment_token_in_range(sql, range) != Some(false) {
+                return Err(SqlStructureReason::FilterUnsupported);
+            }
+            replace_sql_source_range(sql, range, "").ok_or(SqlStructureReason::FilterUnsupported)
         }
         (None, Some(after)) => {
             let insertion = clause_insertion_offset(sql, before, ClauseInsertion::Filter)
@@ -2185,15 +2184,14 @@ fn rewrite_sort_clause_source(
             if keyword_range.end > expression_range.start {
                 return Err(SqlStructureReason::SortUnsupported);
             }
-            replace_sql_source_range(
-                sql,
-                SqlSourceRange {
-                    start: keyword_range.start,
-                    end: expression_range.end,
-                },
-                "",
-            )
-            .ok_or(SqlStructureReason::SortUnsupported)
+            let range = SqlSourceRange {
+                start: keyword_range.start,
+                end: expression_range.end,
+            };
+            if has_comment_token_in_range(sql, range) != Some(false) {
+                return Err(SqlStructureReason::SortUnsupported);
+            }
+            replace_sql_source_range(sql, range, "").ok_or(SqlStructureReason::SortUnsupported)
         }
         (None, Some(after)) => {
             let insertion = clause_insertion_offset(sql, before, ClauseInsertion::Sort)
@@ -3321,7 +3319,7 @@ mod tests {
 
     #[test]
     fn filter_and_sort_edits_preserve_trivia_outside_the_edited_clauses() {
-        let commented = "-- head\nSELECT /* projection */ * FROM \"Task\" AS t /* left */ INNER JOIN \"Task\" AS other ON t.\"field_101\" = other.\"field_101\" /* relation */ WHERE /* before filter */ other.\"field_101\" = $status /* after filter */ ORDER BY /* before sort */ t.\"_ugoite_id\" DESC, other.\"_ugoite_id\" DESC /* after sort */ LIMIT 50 /* tail */";
+        let commented = "-- 東京\nSELECT /* projection */ * FROM \"Task\" AS t /* left */ INNER JOIN \"Task\" AS other ON t.\"field_101\" = other.\"field_101\" /* relation */ WHERE /* before filter */ other.\"field_101\" = $status /* after filter */ ORDER BY /* before sort */ t.\"_ugoite_id\" DESC, other.\"_ugoite_id\" DESC /* after sort */ LIMIT 50 /* tail */";
         let filter = propose_sql_structure_operation(
             commented,
             &context(),
@@ -3345,7 +3343,7 @@ mod tests {
         );
         let filtered = filter.proposed_sql.expect("filter edit");
         for trivia in [
-            "-- head\n",
+            "-- 東京\n",
             "/* projection */",
             "/* left */",
             "/* relation */",
@@ -3380,7 +3378,7 @@ mod tests {
         assert_eq!(sort.status, SqlStructureStatus::Supported);
         let sorted = sort.proposed_sql.expect("sort edit");
         for trivia in [
-            "-- head\n",
+            "-- 東京\n",
             "/* projection */",
             "/* left */",
             "/* relation */",
@@ -3515,6 +3513,36 @@ mod tests {
         assert_eq!(sort.reason, Some(SqlStructureReason::SortUnsupported));
         assert_eq!(sort.base_sql, sort_sql);
         assert!(sort.proposed_sql.is_none());
+
+        let clearing_filter_sql =
+            "SELECT * FROM \"Task\" WHERE /* keep clause comment */ \"field_101\" = $status";
+        let cleared_filter = propose_sql_structure_operation(
+            clearing_filter_sql,
+            &context(),
+            SqlStructureOperation::SetFilters { filters: vec![] },
+        );
+        assert_eq!(cleared_filter.status, SqlStructureStatus::Unsupported);
+        assert_eq!(
+            cleared_filter.reason,
+            Some(SqlStructureReason::FilterUnsupported)
+        );
+        assert_eq!(cleared_filter.base_sql, clearing_filter_sql);
+        assert!(cleared_filter.proposed_sql.is_none());
+
+        let clearing_sort_sql =
+            "SELECT * FROM \"Task\" ORDER BY \"field_102\" /* keep clause comment */ DESC";
+        let cleared_sort = propose_sql_structure_operation(
+            clearing_sort_sql,
+            &context(),
+            SqlStructureOperation::SetSort { order_by: vec![] },
+        );
+        assert_eq!(cleared_sort.status, SqlStructureStatus::Unsupported);
+        assert_eq!(
+            cleared_sort.reason,
+            Some(SqlStructureReason::SortUnsupported)
+        );
+        assert_eq!(cleared_sort.base_sql, clearing_sort_sql);
+        assert!(cleared_sort.proposed_sql.is_none());
     }
 
     #[test]
