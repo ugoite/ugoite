@@ -73,3 +73,27 @@ do not run implicitly on every page.
 The Composition source rail, source naming, pinned-revision lifecycle, and
 Composition-specific drawer behavior are defined in
 [`composition-studio.yaml`](composition-studio.yaml).
+
+## ADR-025 target: shared SQL document controls
+
+The accepted next target gives `/sql/new`, Saved SQL editing, and Composition
+query variables the same six icon actions in one row: Form/relation, columns,
+filter, sort, structure, and arguments. At widths up to 320px, only this row
+scrolls horizontally. The optional SQL argument-value row appears only when
+the host has declared arguments and supplied runtime values; its labels and
+inputs have one owner. The remaining order is SQL document, then result table.
+
+Each action edits the Rust-owned SQL document through typed operations. Text
+and structure edits synchronize through the same parser, diagnostics, and
+serializer; unsupported drafts cannot run or save, and no local generator
+replaces edited SQL. The available operations cover every SQL construct the
+authorized Rust executor admits. The Form/relation tree can start empty, so
+valid relation-free SELECT statements remain editable. Argument creation is
+available with zero existing arguments and from an expression that needs one.
+Parameter name/type errors stay local to the affected expression and do not
+disable unrelated actions.
+
+The shared controls keep icon accessible names, visible focus, 44px targets,
+Escape and focus restoration for dialogs, and text inputs of at least 16px.
+The host owns saving and execution; SQL remains one durable string, and result
+pages remain request state rather than generated `LIMIT` clauses.

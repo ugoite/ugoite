@@ -107,6 +107,12 @@ vi.mock("~/lib/ugoite-client", () => ({
 const stylesheet = () => readFileSync(join(__dirname, "..", "app.css"), "utf8");
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const flushStudioEffects = async () => {
+  // Let Solid's initial effects schedule their debounced work before fake time
+  // advances. Otherwise the debounce starts at the already-advanced clock.
+  await Promise.resolve();
+  await Promise.resolve();
+};
 const blockButton = (draftId: string): HTMLButtonElement | null =>
   document.querySelector(
     `[data-block-id="${draftId}"] button[aria-label^="Select "]`,
@@ -278,6 +284,10 @@ describe("CompositionStudioSync", () => {
   beforeEach(() => {
     setLocale("en");
     vi.clearAllMocks();
+    // clearAllMocks preserves queued mockImplementationOnce results. Reset the
+    // deferred sync mocks so an unconsumed result cannot leak into another test.
+    canonicalizeMock.mockReset();
+    previewMock.mockReset();
     canonicalizeMock.mockImplementation(
       async (document: {
         spec: { components: unknown[] };
@@ -760,13 +770,16 @@ describe("CompositionStudioSync", () => {
     );
     renderStudio(sqlMetricDraft());
 
-    // The preview debounce is 400ms and the Metric request debounce is 120ms.
-    await vi.advanceTimersByTimeAsync(521);
-    expect(canonicalizeMock).toHaveBeenCalledTimes(1);
-    expect(previewMock).toHaveBeenCalledTimes(1);
-    expect(queryMetricMock).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("128400", { selector: "output" }))
-      .toBeInTheDocument();
+    // Wait for the debounced preview by condition so Solid's effect scheduling
+    // does not depend on the test runner's load.
+    await flushStudioEffects();
+    await vi.waitFor(() => expect(canonicalizeMock).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(previewMock).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(queryMetricMock).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() =>
+      expect(screen.getByText("128400", { selector: "output" }))
+        .toBeInTheDocument()
+    );
 
     fireEvent.click(requireBlockButton("disp-1"));
     fireEvent.change(screen.getByRole("combobox", { name: "Source" }), {
@@ -775,7 +788,9 @@ describe("CompositionStudioSync", () => {
 
     // Include the post-effect scheduling margin used by the resolved-preview
     // case above, then leave canonicalization pending while the Metric changes.
+    await flushStudioEffects();
     await vi.advanceTimersByTimeAsync(521);
+    await flushStudioEffects();
     expect(canonicalizeMock).toHaveBeenCalledTimes(1);
     expect(previewMock).toHaveBeenCalledTimes(1);
     expect(queryMetricMock).toHaveBeenCalledTimes(1);
@@ -791,11 +806,7 @@ describe("CompositionStudioSync", () => {
     );
     renderStudio(sqlMetricDraft());
 
-    // Let the initial Solid effects schedule the debounce before asserting
-    // that canonicalization has started; this keeps the test independent of
-    // when the render's effects flush under CI load.
-    await vi.advanceTimersByTimeAsync(521);
-    expect(canonicalizeMock).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(canonicalizeMock).toHaveBeenCalledTimes(1));
     expect(previewMock).not.toHaveBeenCalled();
 
     fireEvent.click(requireBlockButton("disp-1"));
@@ -882,7 +893,9 @@ describe("CompositionStudioSync", () => {
         name: "Choose a Form or Saved SQL",
       }),
     );
-    const sourcePicker = screen.getByRole("dialog", { name: "Choose a source" });
+    const sourcePicker = screen.getByRole("dialog", {
+      name: "Choose a source",
+    });
     const currentSources = await within(sourcePicker).findByRole("list", {
       name: "In this composition",
     });

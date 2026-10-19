@@ -117,6 +117,34 @@ impl VariableGraphQueryRequestDiagnostic {
     }
 }
 
+/// One request in a deterministically ordered variable-graph query batch.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VariableGraphQueryRequestBatchItem {
+    /// The query variable whose request is being prepared.
+    pub variable_id: String,
+    /// A ready stateless request, when all argument values are already resolved.
+    ///
+    /// This is `None` when a selected query variable supplies one of this
+    /// query's arguments. Compile it again with
+    /// [`compile_variable_graph_query_request`] after those dependencies have
+    /// produced their values. The batch never embeds their previous values.
+    pub request: Option<SqlQueryRequest>,
+    /// Selected query results that must be resolved before this request can be
+    /// compiled. These are listed in query argument binding order.
+    pub deferred_arguments: Vec<VariableGraphQueryRequestDeferredArgument>,
+}
+
+/// One SQL argument that waits for a selected query variable to be evaluated.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct VariableGraphQueryRequestDeferredArgument {
+    /// SQL parameter name declared by the dependent query.
+    pub argument_name: String,
+    /// Selected query variable whose fresh result supplies this argument.
+    pub variable_id: String,
+    /// Type expected by the dependent query's SQL parameter.
+    pub value_type: VariableGraphScalarDescriptor,
+}
+
 /// Validate a graph, then compile one query variable and its resolved values.
 ///
 /// Argument names in `SqlQueryRequest` are the SQL parameter names from the
@@ -132,15 +160,7 @@ pub fn compile_variable_graph_query_request(
     resolved_values: &BTreeMap<String, VariableGraphLiteral>,
 ) -> Result<SqlQueryRequest, Vec<VariableGraphQueryRequestDiagnostic>> {
     if let Err(domain_diagnostics) = compile_variable_graph(graph) {
-        let mut diagnostics: Vec<_> = domain_diagnostics
-            .into_iter()
-            .map(|diagnostic| {
-                VariableGraphQueryRequestDiagnostic::from_domain(diagnostic, query_variable_id)
-            })
-            .collect();
-        diagnostics.sort();
-        diagnostics.dedup();
-        return Err(diagnostics);
+        return Err(map_graph_diagnostics(domain_diagnostics, query_variable_id));
     }
 
     let Some(node) = graph
@@ -154,6 +174,35 @@ pub fn compile_variable_graph_query_request(
         )]);
     };
 
+    compile_validated_query_node(graph, node, resolved_values)
+}
+
+fn compile_validated_query_node(
+    graph: &VariableGraph,
+    node: &VariableGraphNode,
+    resolved_values: &BTreeMap<String, VariableGraphLiteral>,
+) -> Result<SqlQueryRequest, Vec<VariableGraphQueryRequestDiagnostic>> {
+    compile_validated_query_node_with_deferred_dependencies(
+        graph,
+        node,
+        resolved_values,
+        &BTreeSet::new(),
+    )
+    .map(|(request, _)| request)
+}
+
+fn compile_validated_query_node_with_deferred_dependencies(
+    graph: &VariableGraph,
+    node: &VariableGraphNode,
+    resolved_values: &BTreeMap<String, VariableGraphLiteral>,
+    deferred_query_variable_ids: &BTreeSet<String>,
+) -> Result<
+    (
+        SqlQueryRequest,
+        Vec<VariableGraphQueryRequestDeferredArgument>,
+    ),
+    Vec<VariableGraphQueryRequestDiagnostic>,
+> {
     let VariableGraphNodeKind::Query {
         query,
         returns,
@@ -219,6 +268,7 @@ pub fn compile_variable_graph_query_request(
     };
 
     let mut diagnostics = Vec::new();
+    let mut deferred_arguments = Vec::new();
     let mut seen_names = BTreeSet::new();
     let mut parameters = Map::new();
     let mut parameter_types = BTreeMap::new();
@@ -253,14 +303,6 @@ pub fn compile_variable_graph_query_request(
             ));
             continue;
         };
-        let Some(value) = resolved_values.get(&argument.variable) else {
-            diagnostics.push(VariableGraphQueryRequestDiagnostic::for_argument(
-                VariableGraphQueryRequestDiagnosticCode::MissingArgumentValue,
-                &node.id,
-                argument,
-            ));
-            continue;
-        };
         let source_type = graph_nodes
             .get(argument.variable.as_str())
             .and_then(|source| scalar_descriptor_of(&source.kind));
@@ -282,6 +324,23 @@ pub fn compile_variable_graph_query_request(
             ));
             continue;
         }
+        if deferred_query_variable_ids.contains(&argument.variable) {
+            deferred_arguments.push(VariableGraphQueryRequestDeferredArgument {
+                argument_name: argument.name.clone(),
+                variable_id: argument.variable.clone(),
+                value_type: argument.value_type,
+            });
+            parameter_types.insert(argument.name.clone(), sql_type.to_owned());
+            continue;
+        }
+        let Some(value) = resolved_values.get(&argument.variable) else {
+            diagnostics.push(VariableGraphQueryRequestDiagnostic::for_argument(
+                VariableGraphQueryRequestDiagnosticCode::MissingArgumentValue,
+                &node.id,
+                argument,
+            ));
+            continue;
+        };
         if !literal_kind_matches(source_type.scalar_type, value) {
             diagnostics.push(VariableGraphQueryRequestDiagnostic::for_argument(
                 VariableGraphQueryRequestDiagnosticCode::ArgumentTypeMismatch,
@@ -333,7 +392,98 @@ pub fn compile_variable_graph_query_request(
             &node.id,
         )]
     })?;
-    Ok(request)
+    Ok((request, deferred_arguments))
+}
+
+/// Compile a selected set of query variables into one atomic request batch.
+///
+/// Duplicate requested IDs are collapsed. Requests are emitted once in the
+/// deterministic dependency order produced by [`compile_variable_graph`],
+/// independent of graph authoring order or requested-ID order. If any ID is
+/// unknown or not a query, or if any request cannot be compiled, no batch is
+/// returned. Arguments sourced from other selected query variables are
+/// returned as deferred dependencies with `request: None`; callers must wait
+/// for those queries to produce fresh values and then compile the dependent
+/// request with [`compile_variable_graph_query_request`]. This helper only
+/// prepares requests; it does not authorize, execute, or validate query
+/// results.
+pub fn compile_variable_graph_query_request_batch(
+    graph: &VariableGraph,
+    requested_query_variable_ids: &[String],
+    resolved_values: &BTreeMap<String, VariableGraphLiteral>,
+) -> Result<Vec<VariableGraphQueryRequestBatchItem>, Vec<VariableGraphQueryRequestDiagnostic>> {
+    let compiled_graph = compile_variable_graph(graph).map_err(|diagnostics| {
+        let fallback_query_id = requested_query_variable_ids
+            .iter()
+            .min()
+            .map_or("", String::as_str);
+        map_graph_diagnostics(diagnostics, fallback_query_id)
+    })?;
+    let requested_ids: BTreeSet<String> = requested_query_variable_ids.iter().cloned().collect();
+    let nodes: BTreeMap<&str, &VariableGraphNode> = graph
+        .variables
+        .iter()
+        .map(|node| (node.id.as_str(), node))
+        .collect();
+
+    let mut diagnostics = Vec::new();
+    for query_id in &requested_ids {
+        match nodes.get(query_id.as_str()) {
+            None => diagnostics.push(VariableGraphQueryRequestDiagnostic::for_node(
+                VariableGraphQueryRequestDiagnosticCode::QueryVariableNotFound,
+                query_id,
+            )),
+            Some(node) if !matches!(&node.kind, VariableGraphNodeKind::Query { .. }) => {
+                diagnostics.push(VariableGraphQueryRequestDiagnostic::for_node(
+                    VariableGraphQueryRequestDiagnosticCode::QueryNodeRequired,
+                    query_id,
+                ));
+            }
+            Some(_) => {}
+        }
+    }
+
+    let mut batch = Vec::new();
+    for query_id in &compiled_graph.topological_order {
+        if !requested_ids.contains(query_id.as_str()) {
+            continue;
+        }
+        let node = nodes[query_id.as_str()];
+        match compile_validated_query_node_with_deferred_dependencies(
+            graph,
+            node,
+            resolved_values,
+            &requested_ids,
+        ) {
+            Ok((request, deferred_arguments)) => batch.push(VariableGraphQueryRequestBatchItem {
+                variable_id: query_id.clone(),
+                request: deferred_arguments.is_empty().then_some(request),
+                deferred_arguments,
+            }),
+            Err(mut request_diagnostics) => diagnostics.append(&mut request_diagnostics),
+        }
+    }
+
+    if diagnostics.is_empty() {
+        Ok(batch)
+    } else {
+        diagnostics.sort();
+        diagnostics.dedup();
+        Err(diagnostics)
+    }
+}
+
+fn map_graph_diagnostics(
+    diagnostics: Vec<VariableGraphDiagnostic>,
+    query_id: &str,
+) -> Vec<VariableGraphQueryRequestDiagnostic> {
+    let mut mapped: Vec<_> = diagnostics
+        .into_iter()
+        .map(|diagnostic| VariableGraphQueryRequestDiagnostic::from_domain(diagnostic, query_id))
+        .collect();
+    mapped.sort();
+    mapped.dedup();
+    mapped
 }
 
 fn scalar_descriptor_of(kind: &VariableGraphNodeKind) -> Option<VariableGraphScalarDescriptor> {
@@ -614,6 +764,25 @@ mod tests {
             kind: VariableGraphNodeKind::Query {
                 returns,
                 query: VariableGraphQueryDefinition::InlineSql { sql },
+                arguments,
+            },
+        }
+    }
+
+    fn scalar_query_node(
+        id: &str,
+        sql: &str,
+        arguments: Vec<VariableGraphArgumentBinding>,
+    ) -> VariableGraphNode {
+        VariableGraphNode {
+            id: id.to_owned(),
+            kind: VariableGraphNodeKind::Query {
+                returns: VariableGraphResultType::Scalar {
+                    value_type: scalar(VariableGraphScalarType::Integer, false),
+                },
+                query: VariableGraphQueryDefinition::InlineSql {
+                    sql: sql.to_owned(),
+                },
                 arguments,
             },
         }
@@ -1091,6 +1260,241 @@ mod tests {
                 domain_code: Some("missing_argument_binding".to_owned()),
                 cycle: Vec::new(),
             }]
+        );
+    }
+
+    #[test]
+    fn batch_order_is_dependency_deterministic_and_independent_of_input_order() {
+        let upstream = scalar_query_node("upstream", "SELECT 1", vec![]);
+        let downstream = scalar_query_node(
+            "downstream",
+            "SELECT $seed",
+            vec![argument(
+                "seed",
+                "upstream",
+                VariableGraphScalarType::Integer,
+                false,
+            )],
+        );
+        let first_graph = VariableGraph {
+            variables: vec![downstream.clone(), upstream.clone()],
+        };
+        let reordered_graph = VariableGraph {
+            variables: vec![upstream, downstream],
+        };
+        let values = BTreeMap::from([("upstream".to_owned(), VariableGraphLiteral::Integer(7))]);
+        let requested = vec!["downstream".to_owned(), "upstream".to_owned()];
+
+        let first = compile_variable_graph_query_request_batch(&first_graph, &requested, &values)
+            .expect("valid request batch");
+        let reordered =
+            compile_variable_graph_query_request_batch(&reordered_graph, &requested, &values)
+                .expect("reordered graph keeps deterministic batch order");
+        let reversed_request = compile_variable_graph_query_request_batch(
+            &first_graph,
+            &["upstream".to_owned(), "downstream".to_owned()],
+            &values,
+        )
+        .expect("reordered request IDs keep deterministic batch order");
+
+        let batch_ids: Vec<_> = first.iter().map(|item| item.variable_id.as_str()).collect();
+        assert_eq!(batch_ids, ["upstream", "downstream"]);
+        assert!(first[0].deferred_arguments.is_empty());
+        assert!(first[0].request.is_some());
+        assert_eq!(
+            first[1].deferred_arguments,
+            [VariableGraphQueryRequestDeferredArgument {
+                argument_name: "seed".to_owned(),
+                variable_id: "upstream".to_owned(),
+                value_type: scalar(VariableGraphScalarType::Integer, false),
+            }]
+        );
+        assert!(first[1].request.is_none());
+        assert_eq!(first, reordered);
+        assert_eq!(first, reversed_request);
+
+        let no_previous_upstream_value =
+            compile_variable_graph_query_request_batch(&first_graph, &requested, &BTreeMap::new())
+                .expect("a deferred dependency does not require its previous value");
+        assert!(no_previous_upstream_value[1].request.is_none());
+    }
+
+    #[test]
+    fn batch_deduplicates_requested_ids_and_can_select_only_invalidated_queries() {
+        let upstream = scalar_query_node("upstream", "SELECT 1", vec![]);
+        let downstream = scalar_query_node(
+            "downstream",
+            "SELECT $seed",
+            vec![argument(
+                "seed",
+                "upstream",
+                VariableGraphScalarType::Integer,
+                false,
+            )],
+        );
+        let graph = VariableGraph {
+            variables: vec![downstream, upstream],
+        };
+        let values = BTreeMap::from([("upstream".to_owned(), VariableGraphLiteral::Integer(7))]);
+
+        let deduplicated = compile_variable_graph_query_request_batch(
+            &graph,
+            &[
+                "downstream".to_owned(),
+                "upstream".to_owned(),
+                "downstream".to_owned(),
+            ],
+            &values,
+        )
+        .expect("duplicate IDs compile once");
+        assert_eq!(
+            deduplicated
+                .iter()
+                .map(|item| item.variable_id.as_str())
+                .collect::<Vec<_>>(),
+            ["upstream", "downstream"]
+        );
+        assert!(deduplicated[1].request.is_none());
+        assert_eq!(
+            deduplicated[1].deferred_arguments[0].variable_id,
+            "upstream"
+        );
+
+        let selected =
+            compile_variable_graph_query_request_batch(&graph, &["downstream".to_owned()], &values)
+                .expect("caller can compile only an invalidated query");
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].variable_id, "downstream");
+        assert!(selected[0].deferred_arguments.is_empty());
+        assert_eq!(
+            selected[0]
+                .request
+                .as_ref()
+                .expect("unselected query dependencies are already resolved")
+                .parameters["seed"],
+            7
+        );
+    }
+
+    #[test]
+    fn batch_rejects_unknown_and_non_query_ids_without_partial_results() {
+        let graph = VariableGraph {
+            variables: vec![
+                scalar_query_node("query", "SELECT 1", vec![]),
+                VariableGraphNode {
+                    id: "input".to_owned(),
+                    kind: VariableGraphNodeKind::Input {
+                        value_type: scalar(VariableGraphScalarType::Integer, false),
+                        required: true,
+                        default: None,
+                    },
+                },
+            ],
+        };
+        let diagnostics = compile_variable_graph_query_request_batch(
+            &graph,
+            &["query".to_owned(), "missing".to_owned(), "input".to_owned()],
+            &BTreeMap::new(),
+        )
+        .expect_err("invalid requested IDs reject the entire batch");
+        assert_eq!(
+            diagnostics,
+            [
+                VariableGraphQueryRequestDiagnostic::for_node(
+                    VariableGraphQueryRequestDiagnosticCode::QueryVariableNotFound,
+                    "missing",
+                ),
+                VariableGraphQueryRequestDiagnostic::for_node(
+                    VariableGraphQueryRequestDiagnosticCode::QueryNodeRequired,
+                    "input",
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn batch_request_failures_are_atomic_and_preserve_scalar_table_bounds() {
+        let query = scalar_query_node(
+            "query",
+            "SELECT $amount",
+            vec![argument(
+                "amount",
+                "amount_input",
+                VariableGraphScalarType::Integer,
+                false,
+            )],
+        );
+        let input = VariableGraphNode {
+            id: "amount_input".to_owned(),
+            kind: VariableGraphNodeKind::Input {
+                value_type: scalar(VariableGraphScalarType::Integer, false),
+                required: true,
+                default: None,
+            },
+        };
+        let good_query = scalar_query_node("good", "SELECT 1", vec![]);
+        let invalid_batch_graph = VariableGraph {
+            variables: vec![query, input, good_query],
+        };
+        assert_eq!(
+            compile_variable_graph_query_request_batch(
+                &invalid_batch_graph,
+                &["query".to_owned(), "good".to_owned()],
+                &BTreeMap::new(),
+            )
+            .expect_err("missing one request value rejects the batch"),
+            [VariableGraphQueryRequestDiagnostic {
+                code: VariableGraphQueryRequestDiagnosticCode::MissingArgumentValue,
+                variable_id: "query".to_owned(),
+                argument_name: Some("amount".to_owned()),
+                reference_id: Some("amount_input".to_owned()),
+                domain_code: None,
+                cycle: Vec::new(),
+            }]
+        );
+
+        let table = VariableGraphNode {
+            id: "table".to_owned(),
+            kind: VariableGraphNodeKind::Query {
+                returns: VariableGraphResultType::Table {
+                    columns: vec![VariableGraphColumn {
+                        name: "value".to_owned(),
+                        value_type: scalar(VariableGraphScalarType::Integer, false),
+                    }],
+                },
+                query: VariableGraphQueryDefinition::InlineSql {
+                    sql: "SELECT 1 AS value".to_owned(),
+                },
+                arguments: vec![],
+            },
+        };
+        let scalar = scalar_query_node("scalar", "SELECT 1", vec![]);
+        let valid_batch_graph = VariableGraph {
+            variables: vec![table, scalar],
+        };
+        let requests = compile_variable_graph_query_request_batch(
+            &valid_batch_graph,
+            &["table".to_owned(), "scalar".to_owned()],
+            &BTreeMap::new(),
+        )
+        .expect("both requests fit their existing bounds");
+        assert_eq!(requests[0].variable_id, "scalar");
+        assert_eq!(
+            requests[0]
+                .request
+                .as_ref()
+                .expect("scalar request has no deferred dependencies")
+                .limit,
+            MAX_SQL_SCALAR_PROBE_ROWS
+        );
+        assert_eq!(requests[1].variable_id, "table");
+        assert_eq!(
+            requests[1]
+                .request
+                .as_ref()
+                .expect("table request has no deferred dependencies")
+                .limit,
+            DEFAULT_VARIABLE_GRAPH_SQL_PAGE_LIMIT
         );
     }
 }

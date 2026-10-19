@@ -38,10 +38,14 @@ requirements:
         kind: behavior
         statement: >-
           The portable WASM domain protocol exposes the bounded SQL Document
-          parser and returns the same document value and diagnostics as the
-          native Rust parser when the serialized response fits the protocol
+          parser and source-aware named-parameter rename operation, returning
+          the same document value and diagnostics as the corresponding native
+          Rust operation when the serialized response fits the protocol
           response limit. If the response would exceed that limit, the action
           returns a bounded domain_output_too_large error without first
-          materializing an unbounded JSON value. The protocol action does not
-          grant executor admission or execute the SQL.
+          materializing an unbounded JSON value. The protocol actions do not
+          grant executor admission or execute the SQL. JSON escaping does not
+          prevent a source at the SQL Document byte limit from reaching either
+          action when its request is within that action's bounded request
+          envelope; a larger request is rejected before JSON decoding.
         governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
