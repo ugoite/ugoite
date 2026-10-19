@@ -115,7 +115,7 @@ fn protocol_input_too_large_error() -> String {
         "ok": false,
         "error": {
             "kind": "input_too_large",
-            "message": "JSON protocol input exceeds the supported size limit",
+            "message": "JSON protocol input exceeds its size limit",
         },
     })
     .to_string()
@@ -1025,7 +1025,7 @@ mod tests {
             assert_eq!(response["error"]["kind"], "input_too_large", "{action}");
             assert_eq!(
                 response["error"]["message"],
-                "JSON protocol input exceeds the supported size limit",
+                "JSON protocol input exceeds its size limit",
                 "{action}"
             );
         }
@@ -1877,10 +1877,15 @@ mod tests {
             }
         })
         .to_string();
+        assert!(oversized_request.len() > super::MAX_SQL_DOCUMENT_EDIT_REQUEST_BYTES);
         let rejected: Value =
             serde_json::from_str(&super::invoke_json(&oversized_request)).unwrap();
         assert_eq!(rejected["ok"], false, "{rejected}");
         assert_eq!(rejected["error"]["kind"], "input_too_large");
+        assert_eq!(
+            rejected["error"]["message"],
+            "JSON protocol input exceeds its size limit"
+        );
 
         let control_source = "\0".repeat(ugoite_domain::sql_document::MAX_SQL_DOCUMENT_BYTES);
         let maximum_escaped_request = serde_json::json!({
