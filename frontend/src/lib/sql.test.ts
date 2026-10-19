@@ -7,8 +7,10 @@ import {
   normalizeSqlVariables,
   parseSqlVariableDefault,
   sqlLintDiagnostics,
+  sqlSchemaFormLabelsFor,
 } from "./sql";
 import type { Form } from "./types";
+import { analyzeSqlStructure } from "./ugoite-client";
 
 describe("sql helpers", () => {
   it("should flag missing select clause", () => {
@@ -733,5 +735,46 @@ describe("SQL structure adapter context", () => {
     );
 
     expect(updated.identity).not.toBe(current.identity);
+  });
+
+  it("keeps the Form-backed SQL relation stable when its display name changes", async () => {
+    const renamedForm: Form = {
+      ...aggregateForm,
+      name: "Archived orders",
+      version: aggregateForm.version + 1,
+    };
+    const [before] = buildSqlStructureContexts([aggregateForm], [], "new-sql");
+    const [after] = buildSqlStructureContexts([renamedForm], [], "new-sql");
+    const [sameNameNewForm] = buildSqlStructureContexts(
+      [{
+        ...aggregateForm,
+        id: "another-form-id",
+        sql_relation: "form_another_relation",
+      }],
+      [],
+      "new-sql",
+    );
+    const beforeSchema = buildSqlSchema([aggregateForm]);
+    const afterSchema = buildSqlSchema([renamedForm]);
+    const sql = `SELECT * FROM "${before.parser.relation}"`;
+
+    expect(after.parser.relation).toBe(before.parser.relation);
+    expect(after.label).toBe("Archived orders");
+    expect(after.identity).not.toBe(before.identity);
+    expect(sameNameNewForm.label).toBe("Orders");
+    expect(sameNameNewForm.parser.relation).not.toBe(before.parser.relation);
+    await expect(analyzeSqlStructure(sql, before.parser)).resolves
+      .toMatchObject({
+        status: "supported",
+      });
+    await expect(analyzeSqlStructure(sql, after.parser)).resolves.toMatchObject(
+      {
+        status: "supported",
+      },
+    );
+    expect(sqlSchemaFormLabelsFor(beforeSchema)[aggregateForm.sql_relation!])
+      .toBe("Orders");
+    expect(sqlSchemaFormLabelsFor(afterSchema)[renamedForm.sql_relation!])
+      .toBe("Archived orders");
   });
 });
