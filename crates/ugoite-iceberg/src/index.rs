@@ -5020,6 +5020,7 @@ mod tests {
             &[ugoite_core::sql_query::SqlResultColumn {
                 name: "amount".to_string(),
                 column_type: ugoite_core::sql_query::SqlResultColumnType::Decimal,
+                nullable: true,
             }],
             1024 * 1024,
         )

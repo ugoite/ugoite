@@ -402,6 +402,8 @@ export interface SqlQueryPage {
 export interface SqlResultColumn {
   name: string;
   type: SqlResultColumnType;
+  /** Whether the planned output can return SQL NULL; omitted by older servers. */
+  nullable?: boolean;
 }
 
 /** Portable logical type of a SQL output column (server-mapped). */

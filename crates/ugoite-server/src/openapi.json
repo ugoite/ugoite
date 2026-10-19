@@ -14410,6 +14410,11 @@
               "decimal",
               "json"
             ]
+          },
+          "nullable": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether the planned SQL output column can return SQL NULL. Older typed result schemas may omit this field; consumers should then treat the column as nullable."
           }
         },
         "required": [

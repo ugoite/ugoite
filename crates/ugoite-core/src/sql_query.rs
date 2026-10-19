@@ -171,6 +171,15 @@ pub struct SqlResultColumn {
     pub name: String,
     #[serde(rename = "type")]
     pub column_type: SqlResultColumnType,
+    /// Whether the planned SQL output can return SQL NULL. Older typed result
+    /// schemas omit this additive field; consumers conservatively treat those
+    /// columns as nullable when decoding them.
+    #[serde(default = "sql_result_column_nullable_by_default")]
+    pub nullable: bool,
+}
+
+fn sql_result_column_nullable_by_default() -> bool {
+    true
 }
 
 /// Portable logical type of a SQL output column.
@@ -409,6 +418,12 @@ mod tests {
         assert_eq!(legacy.result_schema, None);
         assert_eq!(legacy.exact_integer_rows, None);
 
+        let old_typed_schema: SqlQueryPage = serde_json::from_str(
+            r#"{"columns":["a"],"rows":[],"has_more":false,"result_schema":[{"name":"a","type":"integer"}]}"#,
+        )
+        .expect("older typed schema without nullability");
+        assert!(old_typed_schema.result_schema.expect("typed schema")[0].nullable);
+
         let typed = SqlQueryPage {
             columns: vec!["total".to_string(), "label".to_string()],
             rows: vec![],
@@ -419,15 +434,23 @@ mod tests {
                 SqlResultColumn {
                     name: "total".to_string(),
                     column_type: SqlResultColumnType::Float,
+                    nullable: true,
                 },
                 SqlResultColumn {
                     name: "label".to_string(),
                     column_type: SqlResultColumnType::String,
+                    nullable: false,
                 },
             ]),
         };
         let encoded = serde_json::to_value(&typed).expect("encode");
         assert_eq!(encoded["result_schema"][0]["type"], "float");
+        assert!(encoded["result_schema"][0]["nullable"]
+            .as_bool()
+            .expect("nullable metadata is boolean"));
+        assert!(!encoded["result_schema"][1]["nullable"]
+            .as_bool()
+            .expect("nullable metadata is boolean"));
         assert!(encoded.get("exact_integer_rows").is_none());
         assert_eq!(
             serde_json::from_value::<SqlQueryPage>(encoded).expect("decode"),
@@ -442,6 +465,7 @@ mod tests {
             result_schema: Some(vec![SqlResultColumn {
                 name: "total".to_string(),
                 column_type: SqlResultColumnType::Integer,
+                nullable: false,
             }]),
             exact_integer_rows: Some(vec![vec![Some(i64::MAX.to_string())]]),
         };

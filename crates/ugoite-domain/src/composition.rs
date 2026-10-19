@@ -17,10 +17,12 @@ pub mod variable_invalidation;
 mod yaml;
 
 pub use variable_graph::{
-    compile_variable_graph, CompiledVariableGraph, VariableGraph, VariableGraphArgumentBinding,
-    VariableGraphColumn, VariableGraphDiagnostic, VariableGraphDiagnosticCode,
-    VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind, VariableGraphQueryDefinition,
+    compile_variable_graph, validate_variable_graph_result, CompiledVariableGraph, VariableGraph,
+    VariableGraphArgumentBinding, VariableGraphColumn, VariableGraphDiagnostic,
+    VariableGraphDiagnosticCode, VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind,
+    VariableGraphQueryDefinition, VariableGraphResultDiagnostic, VariableGraphResultDiagnosticCode,
     VariableGraphResultType, VariableGraphScalarDescriptor, VariableGraphScalarType,
+    VariableGraphValidatedResult,
 };
 
 pub use canonical::{

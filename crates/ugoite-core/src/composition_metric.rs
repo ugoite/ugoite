@@ -247,6 +247,7 @@ mod tests {
                 .map(|column| SqlResultColumn {
                     name: (*column).to_owned(),
                     column_type: SqlResultColumnType::Integer,
+                    nullable: true,
                 })
                 .collect(),
         }
