@@ -27,8 +27,9 @@ query or persistence authority.
 The adapter-supplied action list is the only source of structured operations.
 `analyzeSqlStructure` and `proposeSqlStructureOperation` in the portable client
 use the Rust domain parser through WASM. The capability contract accepts one
-SELECT over the selected Form relation and literal-only scalar SELECT
-statements without a relation, such as `SELECT 1`. For a relation-free
+SELECT over the selected Form relation, including a plain alias on that single
+relation, and literal-only scalar SELECT statements without a relation, such
+as `SELECT 1`. For a relation-free
 statement, the adapter provides an empty relation context and the parser exposes
 only operations that do not need Form columns. Typed parameter comparisons,
 null checks, and column ordering remain bound to Form metadata. It reports
@@ -43,6 +44,9 @@ server-derived `sql_relation` to the Rust `set_relation` operation. Selecting a
 Form from the relation-free `SELECT 1` workspace seed proposes
 `SELECT * FROM <relation>`; replacing one simple relation preserves the other
 SQL clauses and is accepted only when the target Form schema validates them.
+For a single aliased relation, structure edits preserve the alias and emit
+unqualified column references. Joins, derived relations, and table alias column
+lists remain unsupported.
 The Form picker shows the Form name, while SQL generation uses its SQL relation.
 The proposal view shows the existing and proposed SQL and applies the new SQL
 only after explicit confirmation. Other structure controls remain limited to

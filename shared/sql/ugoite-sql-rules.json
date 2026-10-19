@@ -113,7 +113,8 @@
           "limits": [
             "one relation selected from trusted Form context",
             "relation-free SELECT 1 draft can select a Form",
-            "no aliases or joins"
+            "plain aliases on a single relation are supported and preserved; edited column references remain unqualified",
+            "joins, derived relations, and table alias column lists are not supported"
           ]
         },
         {
