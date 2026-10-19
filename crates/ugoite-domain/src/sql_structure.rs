@@ -378,6 +378,21 @@ pub fn propose_sql_structure_operation(
         Err(reason) => return rejected_proposal(base_sql, reason),
     };
 
+    let serialized_edit_reason = match &operation {
+        SqlStructureOperation::SetFilters { .. } => Some(SqlStructureReason::FilterUnsupported),
+        SqlStructureOperation::SetSort { .. } => Some(SqlStructureReason::SortUnsupported),
+        _ => None,
+    };
+    if let Some(reason) = serialized_edit_reason {
+        let source_range = SqlSourceRange {
+            start: 0,
+            end: sql.len(),
+        };
+        if has_comment_token_in_range(sql, source_range) != Some(false) {
+            return rejected_proposal(base_sql, reason);
+        }
+    }
+
     let mut added_stable_tie_breakers = Vec::new();
     let proposed_sql = match operation {
         SqlStructureOperation::SetRelation { .. } => {
@@ -3047,6 +3062,54 @@ mod tests {
         let sorted = analyze_sql_structure(&sorted_sql, &context());
         assert_eq!(sorted.status, SqlStructureStatus::Supported);
         assert!(sorted.stable_pagination);
+    }
+
+    #[test]
+    fn joined_filter_and_sort_edits_fail_closed_when_comments_are_outside_the_clause() {
+        let sql = "SELECT /* projection */ * FROM \"Task\" AS t INNER JOIN \"Task\" AS other ON t.field_101 = other.field_101 /* join */ WHERE other.field_101 = $status ORDER BY t._ugoite_id";
+        assert_eq!(
+            analyze_sql_structure(sql, &context()).status,
+            SqlStructureStatus::Supported
+        );
+
+        let filter = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetFilters {
+                filters: vec![SqlStructureFilter {
+                    column: "field_102".to_owned(),
+                    qualifier: Some(SqlStructureAlias {
+                        name: "other".to_owned(),
+                        quoted: false,
+                    }),
+                    operator: SqlStructureFilterOperator::GtEq,
+                    parameter: Some("priority".to_owned()),
+                }],
+            },
+        );
+        assert_eq!(filter.status, SqlStructureStatus::Unsupported);
+        assert_eq!(filter.reason, Some(SqlStructureReason::FilterUnsupported));
+        assert_eq!(filter.base_sql, sql);
+        assert!(filter.proposed_sql.is_none());
+
+        let sort = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetSort {
+                order_by: vec![SqlStructureSort {
+                    column: "field_102".to_owned(),
+                    qualifier: Some(SqlStructureAlias {
+                        name: "t".to_owned(),
+                        quoted: false,
+                    }),
+                    direction: SqlStructureSortDirection::Desc,
+                }],
+            },
+        );
+        assert_eq!(sort.status, SqlStructureStatus::Unsupported);
+        assert_eq!(sort.reason, Some(SqlStructureReason::SortUnsupported));
+        assert_eq!(sort.base_sql, sql);
+        assert!(sort.proposed_sql.is_none());
     }
 
     #[test]

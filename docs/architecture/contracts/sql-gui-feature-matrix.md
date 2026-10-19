@@ -31,9 +31,10 @@ left-alias column before `=` and the right-alias column after it, with matching
 supported scalar types. This path is limited to wildcard projection and
 preserves SQL outside the relation or ON expression being edited. Other clauses
 that would make unqualified columns ambiguous remain unavailable in the joined
-query. LEFT/RIGHT/FULL/CROSS and NATURAL joins, USING, multiple joins, derived
-relations, reversed equality operands, and other ON expressions remain outside
-structured coverage and fail closed.
+query. Filter and sort edits fail closed when comments anywhere in the query
+could be lost by AST serialization. LEFT/RIGHT/FULL/CROSS and NATURAL joins,
+USING, multiple joins, derived relations, reversed equality operands, and other
+ON expressions remain outside structured coverage and fail closed.
 
 The bounded join is routed through the shared `Structure` toolbar action and
 uses the existing group-by icon; it is not a separate plus action. Aggregate,
