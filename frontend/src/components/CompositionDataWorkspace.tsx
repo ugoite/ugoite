@@ -407,9 +407,7 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
               );
               // Do not give the editor a partial schema: an unresolved
               // relation must not lend a partial schema to structure editing.
-              if (boundForms.some((form) => !form)) {
-                return buildSqlStructureContexts([], variables(), identity);
-              }
+              if (boundForms.some((form) => !form)) return [];
               return buildSqlStructureContexts(
                 boundForms.map((form, index) => ({
                   ...form!,
