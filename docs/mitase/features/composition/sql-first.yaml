@@ -178,6 +178,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-079#criterion.composition-no-label-or-tag-fields
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-filter-can-add-sql-arguments
           - id: composition-data-workspace
             adapter: typescript
             path: frontend/src/components/CompositionDataWorkspace.tsx
@@ -185,6 +187,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-079#criterion.composition-uses-shared-workspace
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-filter-can-add-sql-arguments
               - kind: satisfies
                 criterion: REQ-FE-079#criterion.form-selection-creates-inline-sql
               - kind: satisfies

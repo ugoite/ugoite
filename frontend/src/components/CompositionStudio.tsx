@@ -38,6 +38,7 @@ import {
   addInlineSqlSource,
   addMetricDisplay,
   addSavedSqlSource,
+  addSqlArgumentVariables as addSqlArgumentVariablesToDraft,
   addTableDisplay,
   addVariable,
   canonicalizeDraft,
@@ -95,6 +96,7 @@ import { t } from "~/lib/i18n";
 import { compositionFormFieldName } from "~/lib/composition-field-name";
 import { spaceCompositionRevisionPath } from "~/lib/space-path";
 import { entryApi, formApi } from "~/lib/ugoite-client";
+import type { SqlStructureVariableType } from "~/lib/ugoite-client";
 
 export type CompositionStudioSaveMode =
   | { kind: "create" }
@@ -238,9 +240,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
     target: DraftInsertTarget | undefined,
   ): HTMLElement | null => {
     if (!target || typeof document === "undefined") return null;
-    for (const control of document.querySelectorAll<HTMLElement>(
-      ".designAdd[data-insert-row-id]",
-    )) {
+    for (
+      const control of document.querySelectorAll<HTMLElement>(
+        ".designAdd[data-insert-row-id]",
+      )
+    ) {
       if (
         control.dataset.insertRowId === (target.rowId ?? "") &&
         control.dataset.insertRowIndex === String(target.rowIndex) &&
@@ -334,12 +338,13 @@ export function CompositionStudio(props: CompositionStudioProps) {
     setSourcePickerReturnFocus(undefined);
     queueMicrotask(() => focusBlockSelect(componentId));
   };
-  const previewBase = () => props.saveMode.kind === "update"
-    ? {
-      entryId: props.saveMode.compositionId,
-      revisionId: props.saveMode.baseRevisionId,
-    }
-    : undefined;
+  const previewBase = () =>
+    props.saveMode.kind === "update"
+      ? {
+        entryId: props.saveMode.compositionId,
+        revisionId: props.saveMode.baseRevisionId,
+      }
+      : undefined;
 
   // Saved composition documents pin revisions and bindings, while the
   // variable type schema remains owned by that Saved SQL revision. Hydrate
@@ -537,7 +542,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const openTableSourcePicker = (componentId: string) => {
     setSourcePickerReturnFocus(() => () => blockSelectControl(componentId));
     setSelectedId(null);
-    setOverlay({ kind: "source-picker", intent: "change-table-source", componentId });
+    setOverlay({
+      kind: "source-picker",
+      intent: "change-table-source",
+      componentId,
+    });
   };
 
   const addDataSource = (seed: CompositionSourceSeed) => {
@@ -646,7 +655,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const chooseSourceForDisplay = (kind: "table" | "metric") => {
     const activeOverlay = overlay();
     if (activeOverlay.kind !== "display-picker") return;
-    setSourcePickerReturnFocus(() => () => insertPositionControl(activeOverlay.target));
+    setSourcePickerReturnFocus(() => () =>
+      insertPositionControl(activeOverlay.target)
+    );
     setOverlay({
       kind: "source-picker",
       intent: "insert",
@@ -726,7 +737,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
       queueMicrotask(() => focusBlockSelect(activeOverlay.componentId));
       return;
     }
-    if (activeOverlay.intent === "insert" && activeOverlay.componentKind === "metric") {
+    if (
+      activeOverlay.intent === "insert" &&
+      activeOverlay.componentKind === "metric"
+    ) {
       setOverlay({
         kind: "display-picker",
         componentKind: "metric",
@@ -755,7 +769,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
     return result.ok;
   };
 
-  const updateInlineSqlName = (sourceDraftId: string, name: string): boolean => {
+  const updateInlineSqlName = (
+    sourceDraftId: string,
+    name: string,
+  ): boolean => {
     const result = setInlineSqlName(draft(), sourceDraftId, name);
     if (result.ok) setDraft(result.draft);
     return result.ok;
@@ -844,6 +861,16 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const addDraftVariable = (variable: DraftVariable) => {
     const result = addVariable(draft(), variable);
     if (result.ok) setDraft(result.draft);
+  };
+
+  const addSqlArgumentVariables = (
+    added: readonly { name: string; type: SqlStructureVariableType }[],
+  ): boolean => {
+    const current = draft();
+    const result = addSqlArgumentVariablesToDraft(current, added);
+    if (!result.ok) return false;
+    if (result.draft !== current) setDraft(result.draft);
+    return true;
   };
 
   const updateDraftVariable = (variable: DraftVariable) => {
@@ -1128,6 +1155,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
       onRemoveSource={removeDraftSource}
       onInlineSql={updateInlineSql}
       onInlineSqlName={updateInlineSqlName}
+      onVariablesAdded={addSqlArgumentVariables}
       variables={draft().variables}
       variableValues={previewHandle.variables()}
       savedSqlEditHref={savedSqlEditHref}

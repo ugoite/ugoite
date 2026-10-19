@@ -18,6 +18,10 @@ import type { CompositionResolvedSource } from "~/lib/composition-api";
 import type { CompositionSourcePageState } from "~/lib/composition-query-handle";
 import { setLocale } from "~/lib/i18n";
 
+const { captureToolbarProps } = vi.hoisted(() => ({
+  captureToolbarProps: vi.fn(),
+}));
+
 vi.mock("~/components/SQLWorkspace", () => ({
   SQLWorkspace: (
     props: Record<string, unknown> & {
@@ -48,20 +52,27 @@ vi.mock("~/components/SQLWorkspace", () => ({
 
 vi.mock("~/components/SqlStructureToolbar", () => ({
   SqlStructureToolbar: (props: {
+    onVariablesAdded?: (
+      variables: readonly { name: string; type: string }[],
+    ) => boolean | void;
+    reservedVariableNames?: () => readonly string[];
     contexts: () => Array<{
       identity: string;
       parser: { relation: string; columns: Array<{ name: string }> };
     }>;
-  }) => (
-    <output data-testid="structure-contexts">
-      {JSON.stringify(
-        props.contexts().map((context) => ({
-          relation: context.parser.relation,
-          columns: context.parser.columns.map((column) => column.name),
-        })),
-      )}
-    </output>
-  ),
+  }) => {
+    captureToolbarProps(props);
+    return (
+      <output data-testid="structure-contexts">
+        {JSON.stringify(
+          props.contexts().map((context) => ({
+            relation: context.parser.relation,
+            columns: context.parser.columns.map((column) => column.name),
+          })),
+        )}
+      </output>
+    );
+  },
 }));
 
 vi.mock("@solidjs/router", () => ({
@@ -125,6 +136,7 @@ const propsFor = (
   onRemoveSource: vi.fn(),
   onInlineSql: vi.fn(() => true),
   onInlineSqlName: vi.fn(() => true),
+  onVariablesAdded: vi.fn(() => true),
   variables: [],
   variableValues: {},
   savedSqlEditHref: (entryId) => `/spaces/space-1/sql/${entryId}`,
@@ -221,6 +233,39 @@ describe("CompositionDataWorkspace", () => {
       JSON.parse(screen.getByTestId("structure-contexts").textContent ?? "[]"),
     )
       .toEqual([{ relation: "", columns: [] }]);
+  });
+
+  it("passes SQL-created arguments to the Composition host and reserves existing variable IDs", () => {
+    captureToolbarProps.mockClear();
+    const onVariablesAdded = vi.fn(() => true);
+    render(() => (
+      <>
+        <h2 id="data-heading">Data</h2>
+        <CompositionDataWorkspace
+          {...propsFor(inlineDraft(), {
+            variables: [{
+              id: "filter_amount",
+              type: "string",
+              required: true,
+            }],
+            onVariablesAdded,
+          })}
+        />
+      </>
+    ));
+
+    const toolbar = captureToolbarProps.mock.calls.at(-1)?.[0] as {
+      onVariablesAdded?: (
+        variables: readonly { name: string; type: string }[],
+      ) => boolean | void;
+      reservedVariableNames?: () => readonly string[];
+    };
+    expect(toolbar.reservedVariableNames?.()).toEqual(["filter_amount"]);
+    toolbar.onVariablesAdded?.([{ name: "filter_amount_2", type: "integer" }]);
+    expect(onVariablesAdded).toHaveBeenCalledWith([{
+      name: "filter_amount_2",
+      type: "integer",
+    }]);
   });
 
   it("does not infer a Form context from relation-bearing SQL", () => {
