@@ -344,6 +344,39 @@ async function main(): Promise<void> {
     "stable range error",
   );
 
+  const overlappingEditResponse = await invokeWasm(instance.exports, {
+    action: "domain.apply_sql_document_edit_transaction",
+    value: {
+      current_source: "SELECT 12",
+      transaction: {
+        expected_source: "SELECT 12",
+        edits: [
+          {
+            range: { start: 7, end: 9 },
+            expected_text: "12",
+            replacement: "34",
+          },
+          {
+            range: { start: 8, end: 9 },
+            expected_text: "2",
+            replacement: "3",
+          },
+        ],
+      },
+    },
+  });
+  assertEqual(overlappingEditResponse.ok, false, "overlapping edit rejection");
+  assertEqual(
+    (overlappingEditResponse.error as Record<string, unknown>).code,
+    "overlapping_edits",
+    "stable overlap error",
+  );
+  assertEqual(
+    Object.hasOwn(overlappingEditResponse, "value"),
+    false,
+    "overlapping edits do not return a partial document or undo transaction",
+  );
+
   const amplifiedEditSource = `SELECT ${Array(20_000).fill("1").join(",")}`;
   const amplifiedEditResponse = await invokeWasm(instance.exports, {
     action: "domain.apply_sql_document_edit_transaction",
@@ -609,7 +642,10 @@ async function main(): Promise<void> {
     true,
     "relation-free analysis protocol envelope",
   );
-  const scalarAnalysis = scalarAnalysisResponse.value as Record<string, unknown>;
+  const scalarAnalysis = scalarAnalysisResponse.value as Record<
+    string,
+    unknown
+  >;
   assertEqual(
     scalarAnalysis.status,
     "supported",
@@ -637,7 +673,10 @@ async function main(): Promise<void> {
       operation: { kind: "set_distinct", distinct: true },
     },
   });
-  const scalarProposal = scalarProposalResponse.value as Record<string, unknown>;
+  const scalarProposal = scalarProposalResponse.value as Record<
+    string,
+    unknown
+  >;
   assertEqual(
     scalarProposal.status,
     "supported",
