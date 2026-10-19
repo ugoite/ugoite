@@ -770,27 +770,25 @@ describe("CompositionStudioSync", () => {
     );
     renderStudio(sqlMetricDraft());
 
-    // Wait for the debounced preview by condition so Solid's effect scheduling
-    // does not depend on the test runner's load.
+    // Flush Solid effects so vi.waitFor observes work scheduled for this render,
+    // then wait for the rendered result instead of assuming its timing.
     await flushStudioEffects();
-    await vi.waitFor(() => expect(canonicalizeMock).toHaveBeenCalledTimes(1));
-    await vi.waitFor(() => expect(previewMock).toHaveBeenCalledTimes(1));
-    await vi.waitFor(() => expect(queryMetricMock).toHaveBeenCalledTimes(1));
-    await vi.waitFor(() =>
+    await vi.waitFor(() => {
       expect(screen.getByText("128400", { selector: "output" }))
-        .toBeInTheDocument()
-    );
+        .toBeInTheDocument();
+    }, { timeout: 5_000 });
+    expect(canonicalizeMock).toHaveBeenCalledTimes(1);
+    expect(previewMock).toHaveBeenCalledTimes(1);
+    expect(queryMetricMock).toHaveBeenCalledTimes(1);
 
     fireEvent.click(requireBlockButton("disp-1"));
     fireEvent.change(screen.getByRole("combobox", { name: "Source" }), {
       target: { value: "src-2" },
     });
 
-    // Include the post-effect scheduling margin used by the resolved-preview
-    // case above, then leave canonicalization pending while the Metric changes.
-    await flushStudioEffects();
-    await vi.advanceTimersByTimeAsync(521);
-    await flushStudioEffects();
+    // Flush work scheduled by the change before asserting that an incomplete
+    // Metric does not start another canonicalization or query.
+    await vi.runAllTimersAsync();
     expect(canonicalizeMock).toHaveBeenCalledTimes(1);
     expect(previewMock).toHaveBeenCalledTimes(1);
     expect(queryMetricMock).toHaveBeenCalledTimes(1);
