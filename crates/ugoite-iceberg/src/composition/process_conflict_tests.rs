@@ -20,11 +20,10 @@ use ugoite_domain::composition::{canonicalize_composition, parse_composition_yam
 use ugoite_domain::id::{EntryId, RevisionId};
 use uuid::Uuid;
 
-const MONTHLY_EXPENSE: &str =
-    include_str!("../../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml");
+const SQL_FIRST_COMPOSITION: &str =
+    include_str!("../../tests/fixtures/composition-sql-first.ugcomp.yaml");
 const CHILD_MODE_ENV: &str = "UGOITE_COMPOSITION_CONFLICT_CHILD";
-const TEST_NAME: &str =
-    "composition::authorized_raw_read_tests::process_conflict_tests::composition_stale_base_conflicts_across_processes";
+const TEST_NAME: &str = "composition::authorized_raw_read_tests::process_conflict_tests::composition_stale_base_conflicts_across_processes";
 const IDEMPOTENT_TEST_NAME: &str = "composition::authorized_raw_read_tests::process_conflict_tests::composition_identical_save_retries_share_one_publication_across_processes";
 const CHILD_WAIT: Duration = Duration::from_secs(45);
 
@@ -57,9 +56,9 @@ async fn composition_stale_base_conflicts_across_processes() -> anyhow::Result<(
         .create_space_for_principal("composition-process-conflict", owner, "Owner")
         .await?
         .to_string();
-    let mut document = parse_composition_yaml(MONTHLY_EXPENSE)
+    let mut document = parse_composition_yaml(SQL_FIRST_COMPOSITION)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
-    document.tags = vec!["composition-process-conflict".to_string()];
+    document.name = "Composition process conflict base".to_string();
     let initial = service
         .save_composition_authorized_for_principals(
             &space_id,
@@ -202,9 +201,9 @@ async fn composition_identical_save_retries_share_one_publication_across_process
         .create_space_for_principal("composition-identical-process-save", owner, "Owner")
         .await?
         .to_string();
-    let mut document = parse_composition_yaml(MONTHLY_EXPENSE)
+    let mut document = parse_composition_yaml(SQL_FIRST_COMPOSITION)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
-    document.tags = vec!["composition-identical-process-save".to_string()];
+    document.name = "Composition identical process base".to_string();
     let initial = service
         .save_composition_authorized_for_principals(
             &space_id,
@@ -353,7 +352,7 @@ async fn run_writer_child() -> anyhow::Result<()> {
     let name = required_env("UGOITE_COMPOSITION_CONFLICT_NAME")?;
 
     let service = UgoiteService::new_without_background_refresh(&root_uri)?;
-    let mut document = parse_composition_yaml(MONTHLY_EXPENSE)
+    let mut document = parse_composition_yaml(SQL_FIRST_COMPOSITION)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
     document.name = name.clone();
     let canonical = canonicalize_composition(&document)

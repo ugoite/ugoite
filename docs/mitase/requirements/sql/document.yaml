@@ -1,0 +1,51 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: sql
+category: Bounded SQL Document source preservation
+requirements:
+  - id: REQ-SQL-001
+    title: SQL Document source and syntax view
+    description: Keep one bounded Rust-owned source document for SQL editor syntax inspection without conflating parser success with executor admission.
+    priority: high
+    status: implemented
+    criteria:
+      - id: lossless-document-draft
+        kind: behavior
+        statement: >-
+          The bounded Rust SQL Document parser retains the exact SQL source and
+          source ranges for tokenized trivia, comments, identifiers, and
+          literals, plus parser-provided source ranges where usable spans are
+          available for syntax nodes. Each parsed SELECT projection item,
+          including wildcard and expression items, is a distinct node linked
+          to its SELECT, with a source range covering the item. Nested SELECT
+          nodes retain their query and enclosing syntax parent links. It
+          preserves invalid drafts for correction, rejects inputs above the
+          source-byte or syntax-token limits before AST construction, and
+          distinguishes syntax or statement-shape diagnostics. A parsed syntax
+          tree alone never means that the SQL executor admits the query.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: source-aware-parameter-rename
+        kind: behavior
+        statement: >-
+          The Rust SQL Document can rename valid named parameter placeholder
+          tokens in a supplied draft while preserving every unrelated source
+          byte, including strings, comments, and quoted identifiers. Invalid
+          names are rejected, no-match input remains unchanged, and edited
+          drafts are reparsed so syntax diagnostics remain current; this edit
+          does not authorize parameter binding or query execution.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: portable-protocol
+        kind: behavior
+        statement: >-
+          The portable WASM domain protocol exposes the bounded SQL Document
+          parser and source-aware named-parameter rename operation, returning
+          the same document value and diagnostics as the corresponding native
+          Rust operation when the serialized response fits the protocol
+          response limit. If the response would exceed that limit, the action
+          returns a bounded domain_output_too_large error without first
+          materializing an unbounded JSON value. The protocol actions do not
+          grant executor admission or execute the SQL. JSON escaping does not
+          prevent a source at the SQL Document byte limit from reaching either
+          action when its request is within that action's bounded request
+          envelope; a larger request is rejected before JSON decoding.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]

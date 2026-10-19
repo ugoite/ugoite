@@ -715,7 +715,7 @@ features:
       - id: frontend
         role: implementation
         facet: frontend
-        responsibility: Keep shared result pagination, FormTable paging, and Space History detail cursors connected to the compact pagination criteria.
+        responsibility: Keep shared result pagination, Saved SQL result paging, FormTable paging, and Space History detail cursors connected to the compact pagination criteria.
         targets:
           - id: shared-pagination
             adapter: typescript
@@ -726,16 +726,9 @@ features:
                 criterion: REQ-UX-PAGINATION-001#criterion.directional-control-presentation
               - kind: satisfies
                 criterion: REQ-UX-PAGINATION-001#criterion.paging-state
-          - id: composition-revision-pagination-spec
+          - id: sql-results-pagination-spec
             adapter: declared
-            path: docs/spec/ui/pages/space-composition-revision.yaml
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-UX-PAGINATION-001#criterion.directional-control-presentation
-          - id: composition-studio-pagination-spec
-            adapter: declared
-            path: docs/spec/ui/components/composition-studio.yaml
+            path: docs/spec/ui/pages/space-sql-results.yaml
             selector: { kind: file }
             claims:
               - kind: satisfies

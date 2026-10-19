@@ -859,7 +859,10 @@ pub(crate) async fn read_sql_revision(
         .and_then(Value::as_str)
         .context("SQL revision text is missing")?
         .to_owned();
-    let variables = normalize_sql_variables(fields.get("variables"))?;
+    let variables = sql_variables_with_defaults(
+        fields.get("variables"),
+        extra.get(SQL_VARIABLE_DEFAULTS_KEY),
+    )?;
     let metadata = extra
         .get("metadata")
         .filter(|value| !value.is_null())
@@ -1269,6 +1272,59 @@ mod name_field_tests {
     use crate::integrity::FakeIntegrityProvider;
 
     #[test]
+    fn saved_sql_variable_defaults_preserve_only_typed_scalars() {
+        let legacy = serde_json::json!([{
+            "type": "string",
+            "name": "legacy",
+            "description": "No default",
+        }]);
+        assert_eq!(
+            normalize_sql_variables(Some(&legacy)).unwrap(),
+            legacy,
+            "revisions without a default remain readable"
+        );
+
+        let variables = serde_json::json!([
+            {"type": "string", "name": "text", "description": "", "default": "hello"},
+            {"type": "boolean", "name": "enabled", "description": "", "default": false},
+            {"type": "integer", "name": "count", "description": "", "default": -3},
+            {"type": "float", "name": "ratio", "description": "", "default": 1.25},
+            {"type": "timestamp", "name": "at", "description": "", "default": "2026-10-15T09:00:00Z"},
+            {"type": "date", "name": "on", "description": "", "default": "2026-10-15"},
+        ]);
+        assert_eq!(
+            normalize_sql_variables(Some(&variables)).unwrap(),
+            variables
+        );
+    }
+
+    #[test]
+    fn saved_sql_variable_defaults_reject_null_compounds_and_type_mismatches() {
+        for (var_type, default) in [
+            ("string", serde_json::Value::Null),
+            ("string", serde_json::json!(["text"])),
+            ("string", serde_json::json!({"text": "value"})),
+            ("string", serde_json::json!(true)),
+            ("boolean", serde_json::json!("true")),
+            ("integer", serde_json::json!(1.5)),
+            ("float", serde_json::json!("1.5")),
+            ("timestamp", serde_json::json!(123)),
+            ("date", serde_json::json!("not-a-date")),
+        ] {
+            let variables = serde_json::json!([{
+                "type": var_type,
+                "name": "value",
+                "description": "",
+                "default": default,
+            }]);
+            assert!(
+                normalize_sql_variables(Some(&variables)).is_err(),
+                "accepted invalid {var_type} default {default}"
+            );
+        }
+    }
+
+    #[test]
     fn saved_sql_metadata_reader_accepts_versioned_form_bindings() {
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -1544,6 +1600,74 @@ mod name_field_tests {
         row.state.as_mut().unwrap().fields["sql"] =
             Value::String("SELECT 200 AS recovery_check".into());
         assert!(verify_revision_integrity(&row, &provider).is_err());
+    }
+
+    #[test]
+    fn sidecar_defaults_are_returned_and_verified_for_exact_revisions() {
+        let provider = FakeIntegrityProvider;
+        let definitions = serde_json::json!([{
+            "type": "string",
+            "name": "month_start",
+            "description": "Start date",
+        }]);
+        let variables = serde_json::json!([{
+            "type": "string",
+            "name": "month_start",
+            "description": "Start date",
+            "default": "2026-10-01",
+        }]);
+        let sidecar = serde_json::json!({"month_start": "2026-10-01"});
+        let payload = SqlPayload {
+            name: Some("sidecar-default".into()),
+            kind: SqlKind::UserQuery,
+            metadata: None,
+            sql: "SELECT $month_start".into(),
+            variables: variables.clone(),
+        };
+        let integrity = sql_integrity_payload(&provider, &payload, &variables);
+        let fields = serde_json::json!({
+            "name": "sidecar-default",
+            "sql": payload.sql,
+            "variables": definitions,
+        });
+        let extra_attributes = serde_json::json!({
+            "kind": "user-query",
+            "metadata": null,
+            "sql_variable_defaults": sidecar,
+        });
+        let revision = entry::RevisionRow {
+            revision_id: "revision-sidecar-default".into(),
+            change_id: "change-sidecar-default".into(),
+            entry_id: "saved-sql-sidecar-default".into(),
+            parent_revision_id: None,
+            timestamp: 1.0,
+            author: "test".into(),
+            updated_by: "test".into(),
+            deleted_by: None,
+            fields: fields.clone(),
+            extra_attributes: extra_attributes.clone(),
+            markdown_checksum: integrity.checksum.clone(),
+            integrity,
+            restored_from: None,
+            form_version: 1,
+            state: None,
+            entry_version: 1,
+            operation: "upsert".into(),
+            source_kind: "test".into(),
+            source_id: None,
+            extension_metadata: Value::Object(Map::new()),
+        };
+
+        verify_revision_integrity(&revision, &provider)
+            .expect("sidecar defaults are part of the verified Saved SQL payload");
+
+        let mut row = row_with_saved_query_name("", fields);
+        row.extra_attributes = extra_attributes;
+        assert_eq!(
+            sql_entry_from_row(&row).unwrap()["variables"],
+            variables,
+            "get/list rows expose defaults stored in the earlier sidecar"
+        );
     }
 
     #[test]

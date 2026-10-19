@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  addEntryQuerySource,
+  addInlineSqlSource,
   addInputComponent,
   addMetricDisplay,
   addSavedSqlSource,
@@ -26,25 +26,22 @@ const sqlSeed = (name: string) => ({
   variables: {},
 });
 
-const entrySeed = (name: string) => ({
-  formId: "11111111-1111-4111-8111-111111111111",
+const inlineSqlSeed = (name: string) => ({
   name,
-  fieldSchema: [{ field_id: 1, field_type: "string" }],
-  query: {
-    filters: [],
-    sort: [],
-    projection: { kind: "preview" as const },
-  },
+  sql: `SELECT * FROM "${name}"`,
+  formBindings: [{
+    relation: name,
+    form_id: "11111111-1111-4111-8111-111111111111",
+  }],
 });
 
 /** Metric on src-1, table on src-2, text, placed month variable. */
 const seedDraft = (): CompositionDraft => {
   let draft = createEmptyDraft("Studio");
   draft = addSavedSqlSource(draft, sqlSeed("Monthly")).draft;
-  draft = addEntryQuerySource(draft, entrySeed("Expenses")).draft;
+  draft = addInlineSqlSource(draft, inlineSqlSeed("Expenses")).draft;
   const month = addVariable(draft, {
     id: "month",
-    label: "Month",
     type: "date",
     required: true,
   });
@@ -54,11 +51,10 @@ const seedDraft = (): CompositionDraft => {
     draft,
     "src-1",
     "total",
-    "Total",
   );
   if (!metric.ok) throw new Error("expected metric block");
   draft = metric.draft;
-  const table = addTableDisplay(draft, "src-2", "Details");
+  const table = addTableDisplay(draft, "src-2");
   if (!table.ok) throw new Error("expected table block");
   draft = table.draft;
   const text = addTextDisplay(draft, { text: "Summary", style: "heading" });

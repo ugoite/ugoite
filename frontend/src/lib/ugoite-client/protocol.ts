@@ -111,6 +111,8 @@ type ProtocolErrorPayload = {
   kind: string;
   message: string;
   code?: string;
+  contract_version?: number;
+  diagnostics?: VariableGraphDiagnostic[];
   operation?: string;
   status?: number;
   detail?: unknown;
@@ -231,6 +233,226 @@ export type CompositionDocumentCanonicalization = {
   canonical_yaml: string;
   fingerprint: string;
 };
+
+export type VariableGraphScalarType =
+  | "string"
+  | "boolean"
+  | "integer"
+  | "float"
+  | "decimal"
+  | "date"
+  | "timestamp"
+  | "json";
+
+export type VariableGraphScalarDescriptor = {
+  scalar_type: VariableGraphScalarType;
+  nullable: boolean;
+};
+
+export type VariableGraphLiteral =
+  | { kind: "string" | "decimal" | "date" | "timestamp"; value: string }
+  | { kind: "boolean"; value: boolean }
+  | { kind: "integer"; value: number }
+  | { kind: "float"; value: number }
+  | { kind: "json"; value: unknown }
+  | { kind: "null" };
+
+export type VariableGraphArgumentBinding = {
+  name: string;
+  value_type: VariableGraphScalarDescriptor;
+  variable: string;
+};
+
+export type VariableGraphQueryDefinition =
+  | { kind: "inline_sql"; sql: string }
+  | {
+    kind: "saved_sql";
+    entry_id?: string | null;
+    revision_id?: string | null;
+    column?: string | null;
+  };
+
+export type VariableGraphResultType =
+  | { kind: "scalar"; value_type: VariableGraphScalarDescriptor }
+  | {
+    kind: "table";
+    columns: {
+      name: string;
+      value_type: VariableGraphScalarDescriptor;
+    }[];
+  };
+
+export type VariableGraphNodeKind =
+  | {
+    kind: "constant";
+    value_type: VariableGraphScalarDescriptor;
+    value: VariableGraphLiteral;
+  }
+  | {
+    kind: "input";
+    value_type: VariableGraphScalarDescriptor;
+    required: boolean;
+    default?: VariableGraphLiteral | null;
+  }
+  | {
+    kind: "query";
+    returns: VariableGraphResultType;
+    query: VariableGraphQueryDefinition;
+    arguments?: VariableGraphArgumentBinding[];
+  };
+
+export type VariableGraphNode = {
+  id: string;
+  kind: VariableGraphNodeKind;
+};
+
+/** Strict v1 graph payload accepted by the pure WASM Domain compiler. */
+export type VariableGraph = {
+  variables: VariableGraphNode[];
+};
+
+export type VariableGraphDiagnosticCode =
+  | "invalid_variable_id"
+  | "duplicate_variable_id"
+  | "invalid_argument_name"
+  | "duplicate_argument_name"
+  | "invalid_constant_value"
+  | "invalid_input_default"
+  | "invalid_result_descriptor"
+  | "invalid_inline_sql"
+  | "invalid_saved_sql_identity"
+  | "invalid_saved_sql_column"
+  | "missing_argument_binding"
+  | "unused_argument_binding"
+  | "missing_variable_reference"
+  | "variable_type_mismatch"
+  | "dependency_cycle";
+
+export type VariableGraphDiagnostic = {
+  code: VariableGraphDiagnosticCode;
+  variable_id?: string;
+  argument_name?: string;
+  reference_id?: string;
+  cycle?: string[];
+};
+
+export type CompiledVariableGraph = {
+  contract_version: 1;
+  topological_order: string[];
+  dependencies: Record<string, string[]>;
+};
+
+/** Validate a strict typed graph and derive its deterministic dependency plan. */
+export const compileVariableGraph = async (
+  graph: VariableGraph,
+): Promise<CompiledVariableGraph> =>
+  await invokeProtocol<CompiledVariableGraph>({
+    action: "domain.compile_variable_graph.v1",
+    value: graph,
+  });
+
+/** Half-open UTF-8 byte offsets into the UTF-8 encoding of SqlDocument.source. */
+export type SqlDocumentSourceRange = {
+  start: number;
+  end: number;
+};
+
+export type SqlDocumentTokenKind =
+  | "trivia"
+  | "comment"
+  | "word"
+  | "quoted_identifier"
+  | "literal"
+  | "placeholder"
+  | "punctuation"
+  | "operator";
+
+export type SqlDocumentToken = {
+  kind: SqlDocumentTokenKind;
+  range: SqlDocumentSourceRange;
+};
+
+export type SqlDocumentNodeKind =
+  | "query_statement"
+  | "other_statement"
+  | "query"
+  | "select"
+  | "select_item"
+  | "relation"
+  | "table_factor"
+  | "identifier_expression"
+  | "compound_identifier_expression"
+  | "literal_expression"
+  | "binary_expression"
+  | "unary_expression"
+  | "function_expression"
+  | "case_expression"
+  | "cast_expression"
+  | "subquery_expression"
+  | "predicate_expression"
+  | "nested_expression"
+  | "other_expression"
+  | "value";
+
+export type SqlDocumentNode = {
+  id: number;
+  parent: number | null;
+  kind: SqlDocumentNodeKind;
+  range: SqlDocumentSourceRange | null;
+};
+
+export type SqlDocumentStatus =
+  | "parsed"
+  | "empty"
+  | "invalid_sql"
+  | "multiple_statements"
+  | "select_required"
+  | "too_complex"
+  | "too_large";
+
+export type SqlDocumentDiagnosticCode =
+  | "sql_too_large"
+  | "sql_too_complex"
+  | "parse_failed"
+  | "empty_document"
+  | "single_statement_required"
+  | "select_required";
+
+export type SqlDocumentDiagnostic = {
+  code: SqlDocumentDiagnosticCode;
+  message: string;
+  range: SqlDocumentSourceRange | null;
+};
+
+/** Parser view only; a parsed document has not passed executor admission. */
+export type SqlDocument = {
+  contract_version: number;
+  source: string;
+  status: SqlDocumentStatus;
+  diagnostics: SqlDocumentDiagnostic[];
+  tokens: SqlDocumentToken[];
+  nodes: SqlDocumentNode[];
+};
+
+/** Parse one bounded SQL draft through the shared Rust/WASM domain parser. */
+export const parseSqlDocument = async (sql: string): Promise<SqlDocument> =>
+  await invokeProtocol<SqlDocument>({
+    action: "domain.parse_sql_document",
+    value: { sql },
+  });
+
+/** Rename a SQL parameter through the shared Rust/WASM document contract.
+ * Parameter names omit the $ prefix.
+ */
+export const renameSqlDocumentParameter = async (
+  sql: string,
+  oldName: string,
+  newName: string,
+): Promise<SqlDocument> =>
+  await invokeProtocol<SqlDocument>({
+    action: "domain.rename_sql_document_parameter",
+    value: { sql, old_name: oldName, new_name: newName },
+  });
 
 export type SqlStructureColumnType =
   | "string"
@@ -509,6 +731,8 @@ export const validateEntryDraft = async (
 export class UgoiteApiError extends Error {
   readonly kind: string;
   readonly code?: string;
+  readonly contract_version?: number;
+  readonly diagnostics?: VariableGraphDiagnostic[];
   readonly operation?: string;
   readonly status?: number;
   readonly detail?: unknown;
@@ -522,6 +746,8 @@ export class UgoiteApiError extends Error {
     this.kind = error.kind;
     this.code = error.code ?? readErrorCode(error.detail) ??
       readErrorCode(error.payload);
+    this.contract_version = error.contract_version;
+    this.diagnostics = error.diagnostics;
     this.operation = error.operation;
     this.status = error.status;
     this.detail = error.detail;

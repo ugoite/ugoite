@@ -30,6 +30,10 @@ describe("sql helpers", () => {
     expect(diagnostics).toHaveLength(0);
   });
 
+  it("accepts a read-only scalar SELECT without a FROM clause", () => {
+    expect(sqlLintDiagnostics("SELECT 1")).toEqual([]);
+  });
+
   it("accepts read-only SQL with numeric aggregate expressions", () => {
     const diagnostics = sqlLintDiagnostics(
       'SELECT COUNT(*) AS total, SUM(amount) AS sum, AVG(amount) AS average, MIN(amount) AS minimum, MAX(amount) AS maximum FROM "Expenses" WHERE amount IS NOT NULL',
@@ -49,10 +53,7 @@ describe("sql helpers", () => {
 
   it("reports the read-only policy separately from server syntax lint", () => {
     expect(sqlLintDiagnostics("DROP TABLE entries").map((diag) => diag.message))
-      .toEqual([
-        "Read-only query must start with SELECT",
-        "Read-only query must include FROM",
-      ]);
+      .toEqual(["Read-only query must start with SELECT"]);
   });
 
   it("classifies read-only policy from the top-level statement form", () => {
@@ -81,12 +82,8 @@ describe("sql helpers", () => {
     }
   });
 
-  it("does not treat nested FROM clauses as the outer query's FROM", () => {
-    expect(
-      sqlLintDiagnostics("SELECT (SELECT 1 FROM entries)").some((diagnostic) =>
-        diagnostic.message === "Read-only query must include FROM"
-      ),
-    ).toBe(true);
+  it("accepts a scalar SELECT with a nested relation-free query", () => {
+    expect(sqlLintDiagnostics("SELECT (SELECT 1)")).toEqual([]);
   });
 
   it("accepts a SELECT whose top-level form is introduced by a CTE", () => {
@@ -193,6 +190,86 @@ describe("sql helpers", () => {
     ]);
   });
 
+  it("builds SQL structure capabilities from trusted Form columns and typed variables", () => {
+    const [context] = buildSqlStructureContexts([{
+      id: "form-1",
+      name: "Tasks",
+      version: 1,
+      template: "task",
+      fields: {
+        title: { type: "string", required: false, sql_column: "field_title" },
+        amount: {
+          type: "float",
+          required: false,
+          sql_column: "field_amount",
+          query_capability: {
+            field: { kind: "property", field_id: 1 },
+            name: "Amount",
+            field_type: "float",
+            filterable: true,
+            sortable: true,
+            projectable: true,
+            supported_operators: ["equals"],
+          },
+        },
+        hidden: {
+          type: "string",
+          required: false,
+          sql_column: "field_hidden",
+          query_capability: {
+            field: { kind: "property", field_id: 2 },
+            name: "Hidden",
+            field_type: "string",
+            filterable: false,
+            sortable: false,
+            projectable: false,
+            supported_operators: [],
+          },
+        },
+      },
+    }], [
+      { name: "month", type: "date" },
+      { name: "complex", type: "json" },
+    ], "composition:source-1");
+
+    expect(context).toMatchObject({
+      identity: expect.stringContaining("composition:source-1"),
+      parser: {
+        relation: "Tasks",
+        columns: [
+        { name: "_ugoite_id", type: "string" },
+        { name: "_ugoite_created_at", type: "timestamp" },
+        { name: "_ugoite_updated_at", type: "timestamp" },
+        { name: "field_title", type: "string" },
+        { name: "field_amount", type: "float" },
+        { name: "field_hidden", type: "string" },
+      ],
+        variables: [{ name: "month", type: "date" }],
+        stable_key: ["_ugoite_id"],
+      },
+      columnCapabilities: {
+        field_amount: {
+          projectable: true,
+          filterable: true,
+          sortable: true,
+          supportedOperators: ["eq", "is_null", "is_not_null"],
+          aggregateFunctions: expect.any(Array),
+          groupable: true,
+          distinctable: true,
+        },
+        field_hidden: {
+          projectable: false,
+          filterable: false,
+          sortable: false,
+          supportedOperators: [],
+          aggregateFunctions: [],
+          groupable: false,
+          distinctable: false,
+        },
+      },
+    });
+  });
+
   it("rejects aggregate and filter fields unavailable in the current Form", () => {
     expect(() => buildSqlAggregateQuery(aggregateForm, "sum", "Category"))
       .toThrow("The aggregate field is unavailable");
@@ -277,11 +354,6 @@ describe("sql helpers", () => {
   it("should flag empty query", () => {
     const diagnostics = sqlLintDiagnostics("");
     expect(diagnostics.some((d) => d.message.includes("required"))).toBe(true);
-  });
-
-  it("should flag missing FROM clause", () => {
-    const diagnostics = sqlLintDiagnostics("SELECT 1");
-    expect(diagnostics.some((d) => d.message.includes("FROM"))).toBe(true);
   });
 
   it("should warn about multiple statements", () => {
@@ -561,9 +633,34 @@ const aggregateForm: Form = {
 };
 
 describe("SQL structure adapter context", () => {
+  it("provides a relation-free context when no Form is selected", () => {
+    const [context] = buildSqlStructureContexts([], [], "new-sql");
+
+    expect(context.parser).toEqual({
+      relation: "",
+      columns: [],
+      variables: [],
+      stable_key: [],
+    });
+    expect(context.columnCapabilities).toEqual({});
+  });
+
   it("uses the written Form relation and intersects typed column capabilities", () => {
+    const formWithUntrustedType: Form = {
+      ...aggregateForm,
+      fields: {
+        ...aggregateForm.fields,
+        UntrustedType: {
+          id: 8,
+          type: "integer",
+          required: false,
+          label: "Untrusted type",
+          sql_column: "field_untrusted",
+        },
+      },
+    };
     const [context] = buildSqlStructureContexts(
-      [aggregateForm],
+      [formWithUntrustedType],
       [
         { name: "amount", type: "integer" },
         { name: "unsafe_long", type: "long" },
@@ -600,14 +697,42 @@ describe("SQL structure adapter context", () => {
       filterable: true,
       sortable: true,
       supportedOperators: ["eq", "gt", "is_null", "is_not_null"],
+      aggregateFunctions: ["count", "sum", "avg", "min", "max"],
+      groupable: true,
+      distinctable: true,
     });
     expect(context.columnCapabilities.field_category.supportedOperators)
       .toEqual(["eq", "is_null", "is_not_null"]);
+    expect(context.columnCapabilities.field_category.aggregateFunctions)
+      .toEqual(["count", "min", "max"]);
+    expect(context.columnCapabilities.field_category.groupable).toBe(true);
+    expect(context.columnCapabilities.field_category.distinctable).toBe(true);
+    expect(context.columnCapabilities.field_long.aggregateFunctions).toEqual(
+      [],
+    );
+    expect(context.columnCapabilities.field_long.groupable).toBe(false);
+    expect(context.columnCapabilities.field_long.distinctable).toBe(false);
     expect(context.columnCapabilities.field_unavailable).toEqual({
       projectable: false,
       filterable: false,
       sortable: false,
       supportedOperators: [],
+      aggregateFunctions: [],
+      groupable: false,
+      distinctable: false,
+    });
+    expect(context.parser.columns).toContainEqual({
+      name: "field_untrusted",
+      type: "integer",
+    });
+    expect(context.columnCapabilities.field_untrusted).toEqual({
+      projectable: false,
+      filterable: false,
+      sortable: false,
+      supportedOperators: [],
+      aggregateFunctions: [],
+      groupable: false,
+      distinctable: false,
     });
     expect(context.identity).toContain("composition:inline-1");
     expect(context.identity).toContain('"formVersion":1');

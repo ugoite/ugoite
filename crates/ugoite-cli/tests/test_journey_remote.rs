@@ -24,6 +24,29 @@ use ugoite_cli::cli_config::{ConfigFile, ConnectionConfig, ContextConfig};
 use ugoite_cli::config::AuthSession;
 use ugoite_server::{app, AppState};
 
+const BASIC_COMPOSITION_FIXTURE: &str = r#"format: ugoite.composition
+format_version: 1
+kind: dashboard
+name: Basic Composition
+spec:
+  variables: []
+  sources: []
+  components:
+    - id: note
+      kind: text
+      content:
+        kind: literal
+        text: metadata
+      style: body
+  layout:
+    kind: flow
+    rows:
+      - id: main
+        items:
+          - kind: component
+            component: note
+"#;
+
 #[derive(Default)]
 struct SqlExportGate {
     enabled: std::sync::atomic::AtomicBool,
@@ -1301,12 +1324,11 @@ async fn test_cli_remote_composition_restore_receipt_replay_and_stale_base() {
     use ugoite_iceberg::composition::CompositionSaveRequest;
     use ugoite_iceberg::service::UgoiteService;
 
-    const FIXTURE: &str =
-        include_str!("../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml");
     let fixture = setup_remote().await;
     let service = UgoiteService::new_without_background_refresh(fixture.storage_root.clone())
         .expect("open remote fixture Space service");
-    let original = parse_composition_yaml(FIXTURE).expect("parse source fixture");
+    let original =
+        parse_composition_yaml(BASIC_COMPOSITION_FIXTURE).expect("parse basic Composition fixture");
     let source = service
         .save_composition_local_with_operation_id(
             &fixture.space_id,
@@ -1321,7 +1343,7 @@ async fn test_cli_remote_composition_restore_receipt_replay_and_stale_base() {
         .await
         .expect("seed source Composition revision");
     let mut updated_document = original;
-    updated_document.name = "Updated monthly expenses".to_string();
+    updated_document.name = "Updated basic Composition".to_string();
     let updated = service
         .save_composition_local_with_operation_id(
             &fixture.space_id,
@@ -1513,28 +1535,14 @@ async fn test_cli_composition_inspect_query_export_match_core_remote() {
                 "version": 1,
                 "template": format!("# {form_name}\n\n## Date\n\n## Merchant\n\n## Amount\n"),
                 "fields": {
-                    "Date": {"type": "date", "required": true},
-                    "Merchant": {"type": "string", "required": true},
-                    "Amount": {"type": "double", "required": true}
+                    "Date": {"id": 101, "type": "date", "required": true},
+                    "Merchant": {"id": 102, "type": "string", "required": true},
+                    "Amount": {"id": 103, "type": "double", "required": true}
                 }
             }),
         )
         .await
         .expect("seed query Form");
-
-    let form = service
-        .get_form(&fixture.space_id, &form_name)
-        .await
-        .expect("read query Form");
-    let form_id = form["id"].as_str().expect("Form ID");
-    let field_id = |name: &str| -> i64 {
-        form.pointer(&format!("/fields/{name}/id"))
-            .and_then(serde_json::Value::as_i64)
-            .unwrap_or_else(|| panic!("Form field {name} has no numeric ID: {form}"))
-    };
-    let date_id = field_id("Date");
-    let merchant_id = field_id("Merchant");
-    let amount_id = field_id("Amount");
 
     let entry_prefix = format!("composition-cli-parity-{}", uuid::Uuid::now_v7());
     for (index, date, merchant, amount) in [
@@ -1565,7 +1573,6 @@ async fn test_cli_composition_inspect_query_export_match_core_remote() {
 format_version: 1
 name: CLI parity
 kind: dashboard
-tags: []
 spec:
   variables:
     - id: month_start
@@ -1577,31 +1584,16 @@ spec:
       required: true
   sources:
     - id: expense_rows
-      kind: entry_query
-      form_id: "{form_id}"
-      field_schema:
-        - field_id: {date_id}
-          field_type: date
-        - field_id: {merchant_id}
-          field_type: string
-        - field_id: {amount_id}
-          field_type: double
-      query:
-        filters:
-          - field_id: {date_id}
-            operator: gte
-            value:
-              variable: month_start
-          - field_id: {date_id}
-            operator: lt
-            value:
-              variable: month_end
-        sort:
-          - field_id: {date_id}
-            direction: asc
-        projection:
-          kind: fields
-          fields: [{date_id}, {merchant_id}, {amount_id}]
+      kind: inline_sql
+      name: Expense rows
+      sql: |
+        SELECT "field_101" AS "Date", "field_102" AS "Merchant", "field_103" AS "Amount"
+        FROM "{form_name}"
+        WHERE "field_101" >= $month_start AND "field_101" < $month_end
+        ORDER BY "field_101" ASC, "_ugoite_id"
+      form_bindings: []
+      expected_result: []
+      schema_fingerprint: ""
   components:
     - id: month_start_input
       kind: input
@@ -1627,7 +1619,7 @@ spec:
     );
     let document = parse_composition_yaml(&yaml).expect("parse seeded Composition");
     let saved = service
-        .save_composition_local_with_operation_id(
+        .save_composition_authorized_for_principals(
             &fixture.space_id,
             CompositionSaveRequest {
                 entry_id: None,
@@ -1635,7 +1627,7 @@ spec:
                 document,
             },
             &fixture.owner_principal_id.to_string(),
-            &format!("cli-parity-seed-{}", uuid::Uuid::now_v7()),
+            &[fixture.owner_principal_id],
         )
         .await
         .expect("seed Composition");
@@ -1648,17 +1640,15 @@ spec:
     let revised_yaml = yaml
         .replacen("name: CLI parity", "name: CLI parity revised", 1)
         .replacen(
-            "              variable: month_end\n        sort:\n",
-            &format!(
-                "              variable: month_end\n          - field_id: {merchant_id}\n            operator: equals\n            value: January-10\n        sort:\n"
-            ),
+            "WHERE \"field_101\" >= $month_start AND \"field_101\" < $month_end\n        ORDER BY",
+            "WHERE \"field_101\" >= $month_start AND \"field_101\" < $month_end AND \"field_102\" = 'January-10'\n        ORDER BY",
             1,
         );
     assert_ne!(revised_yaml, yaml, "the newer document must be distinct");
     let revised_document =
         parse_composition_yaml(&revised_yaml).expect("parse newer Composition revision");
     let latest = service
-        .save_composition_local_with_operation_id(
+        .save_composition_authorized_for_principals(
             &fixture.space_id,
             CompositionSaveRequest {
                 entry_id: Some(saved.entry_id),
@@ -1666,7 +1656,7 @@ spec:
                 document: revised_document,
             },
             &fixture.owner_principal_id.to_string(),
-            &format!("cli-parity-update-{}", uuid::Uuid::now_v7()),
+            &[fixture.owner_principal_id],
         )
         .await
         .expect("publish newer Composition revision");
@@ -1750,7 +1740,7 @@ spec:
         &run_cli(&fixture.config_path, &query_args).await,
         "Remote parameterized Composition query",
     );
-    assert_eq!(core_query["ok"], true);
+    assert_eq!(core_query["ok"], true, "Core query response: {core_query}");
     assert_eq!(core_query, remote_query);
     assert_eq!(
         core_query["sources"][0]["page"]["rows"]
@@ -1923,10 +1913,10 @@ spec:
     assert_eq!(remote_history_after, history_before);
 }
 
-/// A broken source reference keeps raw recovery identical through Core and
-/// Remote CLI transports while query reports the same stable diagnostic.
+/// A stale inline SQL result descriptor keeps raw recovery identical through
+/// Core and Remote CLI transports while query reports the same stable diagnostic.
 #[tokio::test]
-async fn test_cli_composition_broken_reference_recovery_matches_core_remote() {
+async fn test_cli_composition_schema_drift_recovery_matches_core_remote() {
     use ugoite_domain::composition::parse_composition_yaml;
     use ugoite_iceberg::composition::CompositionSaveRequest;
     use ugoite_iceberg::service::UgoiteService;
@@ -1934,41 +1924,50 @@ async fn test_cli_composition_broken_reference_recovery_matches_core_remote() {
     let fixture = setup_remote_with_filesystem_storage().await;
     let service = UgoiteService::new_without_background_refresh(&fixture.storage_root)
         .expect("open shared Space service");
-    // A Form ID that was never created: the persisted document stays valid
-    // while resolution must conceal the missing source as unavailable.
-    let missing_form_id = uuid::Uuid::now_v7().to_string();
+    let form_name = format!("CliDrift{}", uuid::Uuid::now_v7().simple());
+    service
+        .upsert_form(
+            &fixture.space_id,
+            &json!({
+                "name": form_name,
+                "version": 1,
+                "template": format!("# {form_name}\n\n## Salary amount\n"),
+                "fields": {
+                    "Salary amount": {"type": "integer", "required": true}
+                }
+            }),
+        )
+        .await
+        .expect("seed inline SQL source Form");
     let yaml = format!(
         r#"format: ugoite.composition
 format_version: 1
-name: CLI broken reference
+name: CLI schema drift
 kind: dashboard
-tags: []
 spec:
   variables: []
   sources:
-    - id: missing_rows
-      kind: entry_query
-      form_id: "{missing_form_id}"
-      field_schema: []
-      query:
-        filters: []
-        sort: []
-        projection:
-          kind: preview
+    - id: rows
+      kind: inline_sql
+      name: Salary rows
+      sql: SELECT * FROM "{form_name}"
+      form_bindings: []
+      expected_result: []
+      schema_fingerprint: ""
   components:
-    - id: missing_table
+    - id: salary_table
       kind: table
-      source: missing_rows
+      source: rows
   layout:
     kind: flow
     rows:
       - id: main
         items:
           - kind: component
-            component: missing_table
+            component: salary_table
 "#
     );
-    let document = parse_composition_yaml(&yaml).expect("parse broken Composition");
+    let document = parse_composition_yaml(&yaml).expect("parse schema-drift Composition");
     let saved = service
         .save_composition_local_with_operation_id(
             &fixture.space_id,
@@ -1981,15 +1980,31 @@ spec:
             &format!("cli-broken-ref-seed-{}", uuid::Uuid::now_v7()),
         )
         .await
-        .expect("seed broken Composition");
+        .expect("seed inline SQL Composition");
     let composition_id = saved.entry_id.to_string();
     let revision_id = saved.revision_id.to_string();
+
+    service
+        .upsert_form(
+            &fixture.space_id,
+            &json!({
+                "name": form_name,
+                "version": 2,
+                "template": format!("# {form_name}\n\n## Salary amount\n\n## Bonus\n"),
+                "fields": {
+                    "Salary amount": {"type": "integer", "required": true},
+                    "Bonus": {"type": "string", "required": false}
+                }
+            }),
+        )
+        .await
+        .expect("change the source result type after Composition save");
 
     let core_config_path = fixture
         .config_path
         .parent()
         .expect("fixture config parent")
-        .join("core-broken-ref-config.toml");
+        .join("core-schema-drift-config.toml");
     let mut core_config = ConfigFile::empty();
     core_config.connections.insert(
         "local".to_string(),
@@ -2015,12 +2030,12 @@ spec:
     let history_args = ["composition", "history", composition_id.as_str()];
     let history_before = stdout_json(
         &run_cli(&core_config_path, &history_args).await,
-        "Core broken Composition history before read journey",
+        "Core schema-drift Composition history before read journey",
     );
     assert_eq!(history_before["total"], 1);
     let remote_history_before = stdout_json(
         &run_cli(&fixture.config_path, &history_args).await,
-        "Remote broken Composition history before read journey",
+        "Remote schema-drift Composition history before read journey",
     );
     assert_eq!(remote_history_before, history_before);
 
@@ -2033,11 +2048,11 @@ spec:
     ];
     let core_inspect = stdout_json(
         &run_cli(&core_config_path, &inspect_args).await,
-        "Core broken Composition inspect",
+        "Core schema-drift Composition inspect",
     );
     let remote_inspect = stdout_json(
         &run_cli(&fixture.config_path, &inspect_args).await,
-        "Remote broken Composition inspect",
+        "Remote schema-drift Composition inspect",
     );
     assert_eq!(core_inspect, remote_inspect);
     assert_eq!(core_inspect["revision"]["revision_id"], revision_id);
@@ -2065,8 +2080,8 @@ spec:
     assert_eq!(core_raw.stdout, saved.canonical_yaml.as_bytes());
 
     let output_dir = fixture.config_path.parent().expect("fixture config parent");
-    let core_export_path = output_dir.join("core-broken-composition-export.ugcomp.yaml");
-    let remote_export_path = output_dir.join("remote-broken-composition-export.ugcomp.yaml");
+    let core_export_path = output_dir.join("core-schema-drift-composition-export.ugcomp.yaml");
+    let remote_export_path = output_dir.join("remote-schema-drift-composition-export.ugcomp.yaml");
     let core_export_args = [
         "composition",
         "export",
@@ -2087,11 +2102,11 @@ spec:
     ];
     let mut core_export = stdout_json(
         &run_cli(&core_config_path, &core_export_args).await,
-        "Core broken Composition export",
+        "Core schema-drift Composition export",
     );
     let mut remote_export = stdout_json(
         &run_cli(&fixture.config_path, &remote_export_args).await,
-        "Remote broken Composition export",
+        "Remote schema-drift Composition export",
     );
     core_export
         .as_object_mut()
@@ -2120,27 +2135,27 @@ spec:
     ];
     let core_query = stdout_json(
         &run_cli(&core_config_path, &query_args).await,
-        "Core broken Composition query",
+        "Core schema-drift Composition query",
     );
     let remote_query = stdout_json(
         &run_cli(&fixture.config_path, &query_args).await,
-        "Remote broken Composition query",
+        "Remote schema-drift Composition query",
     );
     assert_eq!(core_query, remote_query);
     assert_eq!(core_query["ok"], false);
     assert_eq!(
         core_query["diagnostics"],
-        json!([{"code": "source_unavailable"}]),
-        "missing sources must be concealed without source metadata"
+        json!([{"code": "source_schema_changed"}]),
+        "changed source schemas must retain the stable drift diagnostic"
     );
 
     let history_after = stdout_json(
         &run_cli(&core_config_path, &history_args).await,
-        "Core broken Composition history after read journey",
+        "Core schema-drift Composition history after read journey",
     );
     let remote_history_after = stdout_json(
         &run_cli(&fixture.config_path, &history_args).await,
-        "Remote broken Composition history after read journey",
+        "Remote schema-drift Composition history after read journey",
     );
     assert_eq!(history_after, history_before);
     assert_eq!(remote_history_after, history_before);
@@ -2160,7 +2175,7 @@ async fn test_cli_composition_unsupported_version_recovery_matches_core_remote()
     // Exact raw carrier bytes for a future document version. The typed
     // parser must reject this revision while raw recovery preserves it
     // byte for byte.
-    let future_yaml = "format: ugoite.composition\nformat_version: 99\nname: CLI future tool\nkind: dashboard\ntags: []\nspec:\n  variables: []\n  sources:\n    - id: future_rows\n      kind: entry_query\n      form_id: \"00000000-0000-7000-8000-000000000099\"\n      field_schema: []\n      query:\n        filters: []\n        sort: []\n        projection:\n          kind: preview\n  components:\n    - id: future_table\n      kind: table\n      source: future_rows\n  layout:\n    kind: flow\n    rows:\n      - id: detail\n        items:\n          - kind: component\n            component: future_table\n";
+    let future_yaml = "format: ugoite.composition\nformat_version: 99\nname: CLI future tool\nkind: dashboard\nspec: {}\n";
     let seeded = seed_raw_composition_revision(
         service.operator(),
         &service.workspace_path(&fixture.space_id),
@@ -2344,8 +2359,6 @@ async fn test_cli_composition_unsupported_version_recovery_matches_core_remote()
 async fn test_cli_remote_composition_import_save_receipts_and_prevalidation() {
     use ugoite_iceberg::service::UgoiteService;
 
-    const FIXTURE: &str =
-        include_str!("../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml");
     let fixture = setup_remote().await;
     let service = UgoiteService::new_without_background_refresh(&fixture.storage_root)
         .expect("open remote fixture Space service");
@@ -2362,7 +2375,8 @@ async fn test_cli_remote_composition_import_save_receipts_and_prevalidation() {
         ._config_dir
         .path()
         .join("valid-composition.ugcomp.yaml");
-    std::fs::write(&valid_file, FIXTURE).expect("write valid Composition fixture");
+    std::fs::write(&valid_file, BASIC_COMPOSITION_FIXTURE)
+        .expect("write valid Composition fixture");
     let writes_before = fixture
         .sql_export_gate
         .composition_write_requests
@@ -2416,7 +2430,7 @@ async fn test_cli_remote_composition_import_save_receipts_and_prevalidation() {
     let invalid_file = fixture._config_dir.path().join("unsupported.ugcomp.yaml");
     std::fs::write(
         &invalid_file,
-        FIXTURE.replacen("format_version: 1", "format_version: 2", 1),
+        BASIC_COMPOSITION_FIXTURE.replacen("format_version: 1", "format_version: 2", 1),
     )
     .expect("write unsupported Composition");
     let invalid = run_cli(
@@ -2455,8 +2469,8 @@ async fn test_cli_remote_composition_import_save_receipts_and_prevalidation() {
     let file = fixture
         ._config_dir
         .path()
-        .join("monthly-expense.ugcomp.yaml");
-    std::fs::write(&file, FIXTURE).expect("write Composition fixture");
+        .join("basic-composition.ugcomp.yaml");
+    std::fs::write(&file, BASIC_COMPOSITION_FIXTURE).expect("write Composition fixture");
     let imported = stdout_json(
         &run_cli(
             &fixture.config_path,
@@ -2514,10 +2528,14 @@ async fn test_cli_remote_composition_import_save_receipts_and_prevalidation() {
     let updated_file = fixture
         ._config_dir
         .path()
-        .join("updated-monthly-expense.ugcomp.yaml");
+        .join("updated-basic-composition.ugcomp.yaml");
     std::fs::write(
         &updated_file,
-        FIXTURE.replacen("name: Monthly expenses", "name: Monthly expense report", 1),
+        BASIC_COMPOSITION_FIXTURE.replacen(
+            "name: Basic Composition",
+            "name: Updated basic Composition",
+            1,
+        ),
     )
     .expect("write updated Composition fixture");
     let composition_id = saved["composition_id"].as_str().unwrap();

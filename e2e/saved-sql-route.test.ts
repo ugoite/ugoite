@@ -86,6 +86,50 @@ test.describe("Saved SQL route", () => {
     }
   });
 
+  test("REQ-FE-063 @smoke: scalar SELECT without a Form can use SQL structure editing", async ({ page, request }) => {
+    const name = `Scalar SQL ${Date.now()}`;
+    const createResponse = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/sql`),
+      {
+        data: {
+          name,
+          kind: "user-query",
+          sql: "SELECT 1",
+          variables: [],
+        },
+      },
+    );
+    expect([200, 201]).toContain(createResponse.status());
+    const savedSqlId = (await createResponse.json() as { id: string }).id;
+
+    try {
+      await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`), {
+        waitUntil: "domcontentloaded",
+      });
+      await expect(page.locator(".ui-sql-editor")).toContainText("SELECT 1");
+
+      const distinctAction = page.getByRole("button", { name: "Distinct" });
+      await expect(distinctAction).toBeEnabled();
+      await distinctAction.click();
+      const dialog = page.getByRole("dialog", { name: "Distinct" });
+      await dialog.getByRole("checkbox").check();
+      await dialog.getByRole("button", { name: "Review change" }).click();
+      const reviewDialog = page.getByRole("dialog", {
+        name: "Review SQL change",
+      });
+      await expect(reviewDialog.getByText("SELECT DISTINCT 1")).toBeVisible();
+      await reviewDialog.getByRole("button", { name: "Apply change" }).click();
+
+      await expect(page.locator(".ui-sql-editor")).toContainText(
+        "SELECT DISTINCT 1",
+      );
+    } finally {
+      await request.delete(
+        getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
+      );
+    }
+  });
+
   test("REQ-FE-063 @smoke: new saved SQL starts with a Form relation and runs through Saved SQL", async ({ page, request }) => {
     await ensureDefaultForm(request, spaceId);
     const queryName = `Runnable starter ${Date.now()}`;
@@ -99,6 +143,16 @@ test.describe("Saved SQL route", () => {
       await expect(page.locator(".ui-sql-editor")).toContainText(
         /SELECT \* FROM "[^"]+" ORDER BY _ugoite_updated_at DESC, _ugoite_id/,
       );
+      const structureActions = page.getByRole("group", { name: "SQL" });
+      await expect(structureActions.getByRole("button", { name: /^Columns/ }))
+        .toBeEnabled();
+      await expect(structureActions.getByRole("button", { name: /^Filter/ }))
+        .toBeEnabled();
+      await expect(structureActions.getByRole("button", { name: /^Sort/ }))
+        .toBeEnabled();
+      await expect(
+        structureActions.getByRole("button", { name: /^Aggregate/ }),
+      ).toBeEnabled();
       await expect(page.locator(".ui-sql-editor")).not.toContainText(
         /\b(?:LIMIT|OFFSET)\b/i,
       );
@@ -201,7 +255,7 @@ test.describe("Saved SQL route", () => {
         waitUntil: "domcontentloaded",
       });
       await page.getByLabel("Form for this query").selectOption(form!.id!);
-      const aggregate = page.getByLabel("Aggregate");
+      const aggregate = page.getByRole("combobox", { name: "Aggregate" });
       await aggregate.selectOption("sum");
       await expect(aggregate).toHaveValue("sum");
       const aggregateField = page.getByLabel("Field", { exact: true });

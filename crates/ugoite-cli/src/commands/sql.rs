@@ -438,6 +438,61 @@ mod export_sink_tests {
             .to_string()
             .contains("inconsistent continuation metadata"));
     }
+
+    #[test]
+    fn saved_sql_defaults_round_trip_as_metadata_and_run_params_stay_explicit() {
+        let variables = serde_json::json!([{
+            "type": "boolean",
+            "name": "enabled",
+            "description": "",
+            "default": false,
+        }]);
+        let payload = SqlPayload {
+            name: Some("defaulted query".to_string()),
+            kind: SqlKind::UserQuery,
+            metadata: None,
+            sql: "SELECT $enabled".to_string(),
+            variables: variables.clone(),
+        };
+        let payload_json = serde_json::to_value(payload).expect("Saved SQL payload serializes");
+        assert_eq!(payload_json["variables"], variables);
+
+        let (parameters, parameter_types) =
+            parse_sql_bindings(&[], &[]).expect("no CLI parameters means no execution values");
+        assert!(parameters.is_empty());
+        assert!(parameter_types.is_empty());
+
+        let (parameters, parameter_types) = parse_sql_bindings(
+            &["enabled=false".to_string()],
+            &["enabled=boolean".to_string()],
+        )
+        .expect("explicit CLI parameters parse");
+        assert_eq!(parameters["enabled"], serde_json::json!(false));
+        assert_eq!(parameter_types["enabled"], "boolean");
+
+        let run_request = SqlQueryRequest {
+            sql: String::new(),
+            parameters,
+            parameter_types,
+            include_exact_integer_values: false,
+            limit: 100,
+            continuation: None,
+            saved_sql: Some(SavedSqlRevisionRef {
+                id: "saved-sql".to_string(),
+                revision_id: "revision-1".to_string(),
+            }),
+        };
+        let request_json =
+            serde_json::to_value(run_request).expect("saved SQL run request serializes");
+        assert_eq!(
+            request_json["parameters"],
+            serde_json::json!({"enabled": false})
+        );
+        assert_eq!(
+            request_json["parameter_types"],
+            serde_json::json!({"enabled": "boolean"})
+        );
+    }
 }
 
 #[derive(Subcommand)]
@@ -480,7 +535,9 @@ pub enum SavedSqlSubCmd {
         format: Format,
     },
     /// Create a saved SQL query
-    #[command(long_about = "Use the selected context or --context NAME for this command.")]
+    #[command(
+        long_about = "Use the selected context or --context NAME for this command. Optional defaults must be scalar values matching their declared types and remain metadata; execution values still come from explicit --param inputs."
+    )]
     Create {
         #[arg(long)]
         name: Option<String>,
@@ -488,12 +545,15 @@ pub enum SavedSqlSubCmd {
         sql: String,
         #[arg(
             long,
-            help = "JSON array of typed variable definitions and optional defaults"
+            value_name = "JSON_ARRAY",
+            help = "Typed variable definitions with optional scalar defaults matching their declared types"
         )]
         variables: Option<String>,
     },
     /// Update a saved SQL query
-    #[command(long_about = "Use the selected context or --context NAME for this command.")]
+    #[command(
+        long_about = "Use the selected context or --context NAME for this command. Optional defaults must be scalar values matching their declared types and remain metadata; execution values still come from explicit --param inputs."
+    )]
     Update {
         #[arg(value_name = "SQL_ID")]
         sql_id: String,
@@ -505,7 +565,8 @@ pub enum SavedSqlSubCmd {
         sql: Option<String>,
         #[arg(
             long,
-            help = "JSON array of typed variable definitions and optional defaults"
+            value_name = "JSON_ARRAY",
+            help = "Typed variable definitions with optional scalar defaults matching their declared types"
         )]
         variables: Option<String>,
         #[arg(long)]

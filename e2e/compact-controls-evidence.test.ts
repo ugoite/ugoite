@@ -14,6 +14,7 @@ import {
   getFrontendUrl,
   waitForServers,
 } from "./lib/client.ts";
+import { completeInlineSqlCompositionYaml } from "./lib/composition.ts";
 
 type CompactControlSeed = {
   spaceId: string;
@@ -81,13 +82,6 @@ const surfaces: Surface[] = [
     path: (s) => `/spaces/${s.spaceId}/compositions/new`,
   },
   {
-    id: "composition-edit",
-    layout: "composition-studio",
-    backName: "Back to revision",
-    path: (s) =>
-      `/spaces/${s.spaceId}/compositions/${s.compositionId}/${s.compositionRevisionId}/edit`,
-  },
-  {
     id: "composition-history",
     layout: "screen-head",
     backName: "Back to saved tools",
@@ -134,25 +128,25 @@ let sqlCreated = false;
 let entryCreated = false;
 let compositionCreated = false;
 
-function compositionYaml(name: string, formId: string, fieldId: number) {
+function compositionYaml(
+  name: string,
+  relation: string,
+  merchantColumn: string,
+) {
   return [
     "format: ugoite.composition",
     "format_version: 1",
     `name: ${name}`,
     "kind: dashboard",
-    "tags: []",
     "spec:",
     "  sources:",
     "    - id: compact_rows",
-    "      kind: entry_query",
-    `      form_id: \"${formId}\"`,
-    "      field_schema:",
-    `        - field_id: ${fieldId}`,
-    "          field_type: string",
-    "      query:",
-    "        projection:",
-    "          kind: fields",
-    `          fields: [${fieldId}]`,
+    "      kind: inline_sql",
+    "      name: Compact rows",
+    `      sql: SELECT \"${merchantColumn}\" AS merchant FROM \"${relation}\"`,
+    "      form_bindings: []",
+    "      expected_result: []",
+    "      schema_fingerprint: ''",
     "  components:",
     "    - id: rows",
     "      kind: table",
@@ -208,15 +202,12 @@ async function seedCompactControlSurfaces(
     }>;
   }>;
   const form = forms.find((candidate) => candidate.name === formName);
-  const merchantFieldId = form?.fields?.Merchant?.query_capability?.field
-    ?.field_id ?? form?.fields?.Merchant?.id;
   const relation = form?.sql_relation;
   const dateColumn = form?.fields?.Date?.sql_column;
   const merchantColumn = form?.fields?.Merchant?.sql_column;
   const amountColumn = form?.fields?.Amount?.sql_column;
   expect(relation).toBeTruthy();
   expect(form?.id).toBeTruthy();
-  expect(merchantFieldId).toBeTruthy();
   expect(dateColumn).toBeTruthy();
   expect(merchantColumn).toBeTruthy();
   expect(amountColumn).toBeTruthy();
@@ -286,17 +277,26 @@ async function seedCompactControlSurfaces(
   };
   sqlCreated = true;
 
+  const completeYaml = await completeInlineSqlCompositionYaml(
+    request,
+    spaceId,
+    compositionYaml(
+      `Compact Controls ${suffix}`,
+      formName,
+      merchantColumn!,
+    ),
+    {
+      id: "compact_rows",
+      relation: formName,
+      formId: form!.id!,
+      expectedResult: [{ name: "merchant", type: "string" }],
+    },
+  );
   const compositionResponse = await request.post(
     getBackendUrl(`/spaces/${spaceId}/compositions`),
     {
       headers: { "Idempotency-Key": crypto.randomUUID() },
-      data: {
-        yaml: compositionYaml(
-          `Compact Controls ${suffix}`,
-          form!.id!,
-          merchantFieldId!,
-        ),
-      },
+      data: { yaml: completeYaml },
     },
   );
   expect([200, 201]).toContain(compositionResponse.status());

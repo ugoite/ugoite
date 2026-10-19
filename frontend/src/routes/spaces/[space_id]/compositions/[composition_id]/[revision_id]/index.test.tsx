@@ -9,11 +9,7 @@ import type {
 } from "~/lib/composition-api";
 import { setLocale } from "~/lib/i18n";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
-import CompositionRevisionRoute, {
-  resolveCompositionFieldKey,
-  resolveCompositionFieldName,
-} from "./index";
-import type { Form } from "~/lib/types";
+import CompositionRevisionRoute from "./index";
 
 const navigateMock = vi.hoisted(() => vi.fn());
 
@@ -76,17 +72,12 @@ describe("Composition exact-revision route", () => {
       ok: true,
       variable_definitions: [{
         id: "month_start",
-        label: "Month",
         type: "date",
         required: true,
         default: "2026-01-01",
         format: "year-month",
       }],
       plan,
-    });
-    vi.spyOn(compositionApi, "querySource").mockResolvedValue({
-      kind: "entry_query",
-      page: { rows: [], has_more: false },
     });
     vi.spyOn(compositionApi, "list").mockResolvedValue({
       items: [{
@@ -95,7 +86,6 @@ describe("Composition exact-revision route", () => {
         updated_at: 1767312000,
         name: "Monthly expenses",
         kind: "dashboard",
-        tags: [],
       }],
       offset: 0,
       limit: 100,
@@ -135,7 +125,7 @@ describe("Composition exact-revision route", () => {
       {},
       expect.any(AbortSignal),
     );
-    const input = await screen.findByLabelText("Month");
+    const input = await screen.findByLabelText("month_start");
     expect(input).toHaveValue("2026-01-01");
     expect(input).not.toHaveAttribute("readonly");
     expect(input).toHaveAttribute("aria-required", "true");
@@ -170,7 +160,6 @@ describe("Composition exact-revision route", () => {
       ok: false,
       variable_definitions: [{
         id: "month_start",
-        label: "Month",
         type: "date",
         required: true,
       }],
@@ -182,13 +171,13 @@ describe("Composition exact-revision route", () => {
     render(() => <CompositionRevisionRoute />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Enter a value for Month.",
+      "Enter a value for month_start.",
     );
-    expect(screen.getByLabelText("Month")).toHaveAttribute(
+    expect(screen.getByLabelText("month_start")).toHaveAttribute(
       "aria-required",
       "true",
     );
-    expect(screen.getByLabelText("Month")).toHaveAttribute(
+    expect(screen.getByLabelText("month_start")).toHaveAttribute(
       "aria-invalid",
       "true",
     );
@@ -199,7 +188,6 @@ describe("Composition exact-revision route", () => {
       ok: true,
       variable_definitions: [{
         id: "include_archived",
-        label: "Include archived",
         type: "boolean",
         required: true,
         default: false,
@@ -208,7 +196,7 @@ describe("Composition exact-revision route", () => {
     });
     render(() => <CompositionRevisionRoute />);
 
-    const input = await screen.findByLabelText("Include archived");
+    const input = await screen.findByLabelText("include_archived");
     expect(input).toHaveValue("false");
     expect(input).not.toHaveAttribute("readonly");
     expect(input).toHaveAttribute("aria-required", "true");
@@ -262,7 +250,6 @@ describe("Composition exact-revision route", () => {
         revision_id: "revision-3",
         updated_at: 1767398400,
         name: "Monthly expenses",
-        tags: [],
       }],
       offset: 0,
       limit: 100,
@@ -341,7 +328,6 @@ describe("Composition exact-revision route", () => {
         revision_id: "revision-3",
         updated_at: 1767398400,
         name: "Monthly expenses",
-        tags: [],
       }],
       offset: 0,
       limit: 100,
@@ -385,20 +371,26 @@ describe("Composition revision flow layout", () => {
     format_version: 1,
     kind: "dashboard",
     name: "Monthly expenses",
-    tags: [],
     spec: {
       variables: [
         {
           id: "month",
-          label: "Month",
           type: "date",
           required: true,
           default: "2026-10-01",
           format: "year-month",
         },
-        { id: "region", label: "Region", type: "string", required: false },
+        { id: "region", type: "string", required: false },
       ],
-      sources: [{ kind: "entry_query", id: "entries", form_id: "form-1" }],
+      sources: [{
+        kind: "inline_sql",
+        id: "entries",
+        name: "Entries",
+        sql: "SELECT purpose FROM entries",
+        form_bindings: [],
+        expected_result: [{ name: "purpose", type: "string" }],
+        schema_fingerprint: "fingerprint",
+      }],
       components: [
         { kind: "input", id: "input-month", variable: "month" },
         {
@@ -407,7 +399,7 @@ describe("Composition revision flow layout", () => {
           content: { kind: "literal", text: "Monthly summary" },
           style: "heading",
         },
-        { kind: "table", id: "rows", label: "Details", source: "entries" },
+        { kind: "table", id: "rows", source: "entries" },
       ],
       layout: {
         kind: "flow",
@@ -429,21 +421,12 @@ describe("Composition revision flow layout", () => {
   const flowPlan: CompositionResolvePlan = {
     composition_revision: { entry_id: "tool-1", revision_id: "revision-2" },
     sources: [{
-      kind: "entry_query",
+      kind: "inline_sql",
       source_id: "entries",
       source_schema_fingerprint: "fingerprint",
-      request: {
-        query: {
-          scope: { kind: "form", form_id: "form-1" },
-          filters: [],
-          sort: [],
-        },
-        projection: {
-          kind: "fields",
-          fields: [{ kind: "property", field_id: 7 }],
-        },
-        limit: 100,
-      },
+      request: { sql: "SELECT purpose FROM entries", limit: 100 },
+      form_bindings: [],
+      expected_result: [{ name: "purpose", type: "string" }],
     }],
     component_bindings: [
       {
@@ -455,7 +438,6 @@ describe("Composition revision flow layout", () => {
       {
         component_id: "rows",
         kind: "table",
-        label: "Details",
         source_id: "entries",
       },
     ],
@@ -468,18 +450,12 @@ describe("Composition revision flow layout", () => {
   };
 
   const entryPage: CompositionSourcePage = {
-    kind: "entry_query",
+    kind: "sql",
     page: {
-      rows: [{
-        id: "entry-1",
-        form_id: "form-1",
-        revision_id: "revision-1",
-        created_at_micros: 1_772_960_000_000_000,
-        updated_at_micros: 1_772_963_000_000_000,
-        properties: { purpose: "Travel" },
-        preview: "Travel entry",
-      }],
+      columns: ["purpose"],
+      rows: [["Travel"]],
       has_more: false,
+      result_schema: [{ name: "purpose", type: "string" }],
     },
   };
 
@@ -504,13 +480,12 @@ describe("Composition revision flow layout", () => {
       variable_definitions: [
         {
           id: "month",
-          label: "Month",
           type: "date",
           required: true,
           default: "2026-10-01",
           format: "year-month",
         },
-        { id: "region", label: "Region", type: "string", required: false },
+        { id: "region", type: "string", required: false },
       ],
       plan: flowPlan,
     });
@@ -522,7 +497,6 @@ describe("Composition revision flow layout", () => {
         updated_at: 1767312000,
         name: "Monthly expenses",
         kind: "dashboard",
-        tags: [],
       }],
       offset: 0,
       limit: 100,
@@ -535,19 +509,19 @@ describe("Composition revision flow layout", () => {
 
     expect(await screen.findByRole("heading", { name: "Monthly expenses" }))
       .toBeInTheDocument();
-    // The placed control lives in the flow with its human label and value.
-    const month = await screen.findByLabelText("Month");
+    // The stable variable ID is the control name and follows it into the flow.
+    const month = await screen.findByLabelText("month");
     expect(month).toHaveValue("2026-10-01");
     // Rows render top to bottom: controls, heading text, then the table.
-    const rows = await screen.findAllByText(/Month|Monthly summary|Details/);
+    const rows = await screen.findAllByText(/month|Monthly summary|purpose/);
     expect(rows.length).toBeGreaterThan(0);
     const flowRows = container.querySelectorAll(".compositionFlowRow");
     expect(flowRows).toHaveLength(3);
-    expect(flowRows[0].textContent).toContain("Month");
+    expect(flowRows[0].textContent).toContain("month");
     expect(flowRows[1].textContent).toContain("Monthly summary");
-    expect(flowRows[2].textContent).toContain("Details");
-    expect(screen.getByRole("table", { name: "Details" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Details" })).toHaveAttribute(
+    expect(flowRows[2].textContent).toContain("purpose");
+    expect(screen.getByRole("table", { name: "Result pages" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Result pages" })).toHaveAttribute(
       "tabindex",
       "0",
     );
@@ -558,7 +532,6 @@ describe("Composition revision flow layout", () => {
     const dynamicDocument = structuredClone(lintDocument);
     dynamicDocument.spec.variables.push({
       id: "title",
-      label: "Title",
       type: "string",
       required: true,
       default: "Initial title",
@@ -617,19 +590,16 @@ describe("Composition revision flow layout", () => {
       ok: true,
       variable_definitions: [{
         id: "month",
-        label: "Month",
         type: "date",
         required: true,
         default: "2026-10-01",
         format: "year-month",
       }, {
         id: "region",
-        label: "Region",
         type: "string",
         required: false,
       }, {
         id: "title",
-        label: "Title",
         type: "string",
         required: true,
         default: "Initial title",
@@ -641,7 +611,7 @@ describe("Composition revision flow layout", () => {
     expect(await screen.findByRole("heading", { name: "Initial title" }))
       .toBeInTheDocument();
     expect(compositionApi.querySource).toHaveBeenCalledOnce();
-    fireEvent.input(screen.getByLabelText("Title"), {
+    fireEvent.input(screen.getByLabelText("title"), {
       target: { value: "Changed title" },
     });
 
@@ -658,7 +628,6 @@ describe("Composition revision flow layout", () => {
     const repeatedInputDocument = structuredClone(lintDocument);
     repeatedInputDocument.spec.variables.push({
       id: "minimum",
-      label: "Minimum",
       type: "integer",
       required: true,
       default: 0,
@@ -666,12 +635,10 @@ describe("Composition revision flow layout", () => {
     repeatedInputDocument.spec.components.push({
       kind: "input",
       id: "input-minimum",
-      label: "Minimum",
       variable: "minimum",
     }, {
       kind: "input",
       id: "input-minimum-copy",
-      label: "Minimum mirror",
       variable: "minimum",
     });
     if (repeatedInputDocument.spec.layout?.kind !== "flow") {
@@ -717,19 +684,16 @@ describe("Composition revision flow layout", () => {
       ok: true,
       variable_definitions: [{
         id: "month",
-        label: "Month",
         type: "date",
         required: true,
         default: "2026-10-01",
         format: "year-month",
       }, {
         id: "region",
-        label: "Region",
         type: "string",
         required: false,
       }, {
         id: "minimum",
-        label: "Minimum",
         type: "integer",
         required: true,
         default: 0,
@@ -738,8 +702,9 @@ describe("Composition revision flow layout", () => {
     });
     render(() => <CompositionRevisionRoute />);
 
-    const minimum = await screen.findByLabelText("Minimum");
-    const minimumMirror = await screen.findByLabelText("Minimum mirror");
+    const minimumInputs = await screen.findAllByLabelText("minimum");
+    const minimum = minimumInputs[0];
+    const minimumMirror = minimumInputs[1];
     expect(minimum).toHaveValue("0");
     expect(minimumMirror).toHaveValue("0");
     expect(compositionApi.querySource).toHaveBeenCalledOnce();
@@ -761,11 +726,8 @@ describe("Composition revision flow layout", () => {
     expect(compositionApi.querySource).toHaveBeenCalledOnce();
   });
 
-  it("uses declaration order for localized ordinals when placement order differs", async () => {
-    const variables = (lintDocument.spec.variables ?? []).map(({
-      label: _label,
-      ...variable
-    }) => variable);
+  it("uses stable variable IDs when placement and declaration order differ", async () => {
+    const variables = lintDocument.spec.variables ?? [];
     const layout = lintDocument.spec.layout;
     const controls = layout.rows.find((row) => row.id === "controls");
     const regionInput = {
@@ -806,38 +768,36 @@ describe("Composition revision flow layout", () => {
     });
     const { container } = render(() => <CompositionRevisionRoute />);
 
-    expect(await screen.findByLabelText("Variable 1")).toHaveValue(
+    expect(await screen.findByLabelText("month")).toHaveValue(
       "2026-10-01",
     );
-    expect(await screen.findByLabelText("Variable 2")).toBeInTheDocument();
+    expect(await screen.findByLabelText("region")).toBeInTheDocument();
     expect(container.querySelector(".compositionFlowRow")).toHaveTextContent(
-      "Variable 2",
+      "region",
     );
     expect(container.querySelector(".compositionFlowRow")).not
-      .toHaveTextContent("Variable 1");
-    expect(screen.queryByLabelText("month")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("region")).not.toBeInTheDocument();
+      .toHaveTextContent("month");
 
     setLocale("ja");
-    expect(screen.getByLabelText("変数1")).toHaveValue("2026-10-01");
-    expect(screen.getByLabelText("変数2")).toBeInTheDocument();
+    expect(screen.getByLabelText("month")).toHaveValue("2026-10-01");
+    expect(screen.getByLabelText("region")).toBeInTheDocument();
   });
 
   it("shows unplaced variables outside the flow without duplication", async () => {
     render(() => <CompositionRevisionRoute />);
 
-    expect(await screen.findByLabelText("Region")).toBeInTheDocument();
-    expect(screen.getByLabelText("Region")).not.toHaveAttribute("readonly");
+    expect(await screen.findByLabelText("region")).toBeInTheDocument();
+    expect(screen.getByLabelText("region")).not.toHaveAttribute("readonly");
     // The placed control renders once, inside the flow only.
-    expect(screen.getAllByLabelText("Month")).toHaveLength(1);
-    expect(screen.getByLabelText("Month")).not.toHaveAttribute("readonly");
-    expect(screen.getAllByLabelText("Region")).toHaveLength(1);
+    expect(screen.getAllByLabelText("month")).toHaveLength(1);
+    expect(screen.getByLabelText("month")).not.toHaveAttribute("readonly");
+    expect(screen.getAllByLabelText("region")).toHaveLength(1);
   });
 
   it("re-resolves the exact revision when a placed Input changes", async () => {
     render(() => <CompositionRevisionRoute />);
 
-    const month = await screen.findByLabelText("Month");
+    const month = await screen.findByLabelText("month");
     fireEvent.input(month, { target: { value: "2026-02-01" } });
 
     await waitFor(() =>
@@ -858,80 +818,9 @@ describe("Composition revision flow layout", () => {
     );
     render(() => <CompositionRevisionRoute />);
 
-    expect(await screen.findByLabelText("Month")).toBeInTheDocument();
-    expect(screen.getByLabelText("Region")).toBeInTheDocument();
+    expect(await screen.findByLabelText("month")).toBeInTheDocument();
+    expect(screen.getByLabelText("region")).toBeInTheDocument();
     expect(screen.getByRole("table")).toBeInTheDocument();
     expect(document.querySelector(".compositionFlow")).toBeNull();
-  });
-});
-
-describe("resolveCompositionFieldName", () => {
-  const forms = (): Form[] => [
-    {
-      id: "form-1",
-      name: "Expenses",
-      version: 1,
-      template: "entry",
-      fields: {
-        amount: {
-          id: 101,
-          type: "number",
-          required: true,
-          label: "Amount spent",
-        },
-        visits: { id: 102, type: "number", required: false },
-      },
-    },
-  ];
-
-  it("resolves a field label by stable form id", () => {
-    expect(resolveCompositionFieldName(forms(), "form-1", 101)).toBe(
-      "Amount spent",
-    );
-  });
-
-  it("keeps the Form field key separate from its display label", () => {
-    expect(resolveCompositionFieldKey(forms(), "form-1", 101)).toBe("amount");
-    expect(resolveCompositionFieldName(forms(), "form-1", 101)).toBe(
-      "Amount spent",
-    );
-  });
-
-  it("uses Form field keys and leaves fields without Form metadata unnamed", () => {
-    expect(
-      resolveCompositionFieldName(forms(), "form-1", 102),
-    ).toBe("visits");
-  });
-
-  it("does not invent a field label when Form metadata is unavailable", () => {
-    expect(
-      resolveCompositionFieldName(undefined, "form-1", 102),
-    ).toBeUndefined();
-  });
-
-  it("does not resolve by display name", () => {
-    expect(resolveCompositionFieldName(forms(), "Expenses", 101))
-      .toBeUndefined();
-  });
-
-  it("is rename-stable and display-only", () => {
-    const renamed = forms();
-    renamed[0].name = "Renamed expenses";
-    // Display metadata renames never change id-based resolution.
-    expect(resolveCompositionFieldName(renamed, "form-1", 101)).toBe(
-      "Amount spent",
-    );
-    expect(resolveCompositionFieldName(renamed, "Renamed expenses", 101))
-      .toBeUndefined();
-    // Unknown forms and fields stay unresolved so the table falls back
-    // to the current row key order; the lookup never mutates its input.
-    expect(resolveCompositionFieldName(renamed, "missing-form", 101))
-      .toBeUndefined();
-    expect(resolveCompositionFieldName(renamed, "form-1", 999)).toBeUndefined();
-    expect(renamed).toEqual(
-      forms().map((form) =>
-        form.id === "form-1" ? { ...form, name: "Renamed expenses" } : form
-      ),
-    );
   });
 });

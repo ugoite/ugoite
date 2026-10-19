@@ -53,6 +53,48 @@ features:
                 criterion: REQ-FE-073#criterion.saved-tools-destination
               - kind: satisfies
                 criterion: REQ-FE-073#criterion.composition-space-switch
+          - id: composition-list-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/index.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-073#criterion.composition-route-context
+          - id: composition-new-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/new.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-073#criterion.composition-route-context
+          - id: composition-revision-layout-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id].tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-073#criterion.composition-route-context
+          - id: composition-revision-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-073#criterion.composition-route-context
+          - id: composition-edit-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-073#criterion.composition-route-context
+          - id: composition-history-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-073#criterion.composition-route-context
       - id: global-shell-contract
         role: contract-source
         facet: frontend

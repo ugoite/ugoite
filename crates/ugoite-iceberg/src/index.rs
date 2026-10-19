@@ -1865,7 +1865,6 @@ pub(crate) struct AuthorizedProjectedEntryRow {
     pub entry_id: String,
     pub revision_id: RevisionId,
     pub updated_at: f64,
-    pub tags: Vec<String>,
     pub fields: BTreeMap<String, Value>,
 }
 
@@ -1940,7 +1939,6 @@ pub(crate) async fn query_form_projected_page_authorized(
         "_ugoite_id".to_string(),
         "_ugoite_revision_id".to_string(),
         "_ugoite_updated_at".to_string(),
-        "_ugoite_tags".to_string(),
     ];
     columns.extend(
         selected_fields
@@ -2005,7 +2003,6 @@ pub(crate) async fn query_form_projected_page_authorized(
                     "_ugoite_updated_at",
                     "updated_at",
                 )?,
-                tags: required_string_list_column(batch, row, "_ugoite_tags", "tags")?,
                 fields,
             });
         }
@@ -3000,6 +2997,10 @@ pub(crate) fn resolve_saved_sql_bindings(
 
 pub(crate) fn quoted_form_name_references(sql: &str) -> Result<BTreeSet<String>> {
     crate::query_context::collect_quoted_form_name_references(sql)
+}
+
+pub(crate) fn quoted_form_relation_names(sql: &str) -> Result<BTreeSet<String>> {
+    crate::query_context::collect_quoted_form_relation_names(sql)
 }
 
 /// Executes the explicit count operation against the same kind of
@@ -4770,6 +4771,8 @@ mod tests {
             );
         }
         assert!(validate_read_only_sql("SELECT * FROM t").is_ok());
+        assert!(validate_read_only_sql("SELECT 1").is_ok());
+        assert!(validate_read_only_sql("VALUES (1)").is_ok());
     }
 
     #[test]

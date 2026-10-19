@@ -19,5 +19,7 @@ pub mod search;
 pub mod space;
 pub mod space_key;
 pub mod spreadsheet;
+pub mod sql_document;
+pub mod sql_functions;
 pub mod sql_structure;
 pub mod text;

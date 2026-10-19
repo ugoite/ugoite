@@ -1,11 +1,4 @@
-import type { EntryPage, EntryPageRequest } from "./entry-query";
 import type { CompositionStudioDocument } from "./composition-draft";
-import type {
-  EntryQueryCompositionDocument,
-  EntryQueryCompositionFilter,
-  EntryQueryCompositionProjection,
-  EntryQueryCompositionSort,
-} from "./entry-query-composition";
 import type {
   SqlQueryPage,
   SqlQueryRequest,
@@ -15,7 +8,6 @@ import type {
 import {
   canonicalizeCompositionDocument,
   type CompositionDocumentCanonicalization,
-  entryApi,
   protocolFetch,
   sqlApi,
 } from "./ugoite-client";
@@ -28,7 +20,6 @@ export interface CompositionListItem {
   name?: unknown;
   kind?: unknown;
   format_version?: unknown;
-  tags: string[];
 }
 
 export interface CompositionListPage {
@@ -73,51 +64,24 @@ export interface CompositionLintDocument {
   format_version: number;
   kind: string;
   name: string;
-  tags: string[];
   spec: {
     variables?: Array<{
       id: string;
-      label?: string;
       type: CompositionVariableType;
       required: boolean;
       default?: unknown;
       format?: "year-month";
     }>;
-    sources: Array<{
-      kind: string;
-      id: string;
-      entry_id?: string;
-      revision_id?: string;
-      form_id?: string;
-      field_schema?: Array<{
-        field_id: number;
-        field_type: string;
-        reference_form?: string;
-        items?: { type: string; target_form?: string };
-      }>;
-      expected_result?: Array<{ name: string; type: CompositionResultType }>;
-      variables?: Record<string, { variable: string }>;
-      query?: {
-        text?: unknown;
-        // Canonical documents omit empty filters/sort; readers default
-        // them like the domain does.
-        filters?: EntryQueryCompositionFilter[];
-        sort?: EntryQueryCompositionSort[];
-        page_limit?: number;
-        projection: EntryQueryCompositionProjection;
-      };
-    }>;
+    sources: CompositionStudioDocument["spec"]["sources"];
     components: Array<
       | {
         kind: "input";
         id: string;
-        label?: string;
         variable: string;
       }
       | {
         kind: "metric";
         id: string;
-        label?: string;
         source: string;
         column: string;
         presentation?: CompositionMetricPresentation;
@@ -125,13 +89,11 @@ export interface CompositionLintDocument {
       | {
         kind: "table";
         id: string;
-        label?: string;
         source: string;
       }
       | {
         kind: "text";
         id: string;
-        label?: string;
         content:
           | { kind: "literal"; text: string }
           | { kind: "variable"; variable: string };
@@ -194,7 +156,6 @@ export interface SavedSqlCompositionDocument {
   format_version: 1;
   kind: "dashboard";
   name: string;
-  tags: string[];
   spec: {
     variables: Array<{
       id: string;
@@ -224,9 +185,7 @@ export interface SavedSqlCompositionDocument {
   };
 }
 
-export type CompositionSaveDocument =
-  | SavedSqlCompositionDocument
-  | EntryQueryCompositionDocument;
+export type CompositionSaveDocument = CompositionStudioDocument;
 
 export type CompositionVariableType =
   | "string"
@@ -238,7 +197,6 @@ export type CompositionVariableType =
 
 export interface CompositionVariableDefinition {
   id: string;
-  label?: string;
   type: CompositionVariableType;
   required: boolean;
   default?: unknown;
@@ -312,22 +270,23 @@ export interface CompositionResolvePlan {
 
 export type CompositionResolvedSource =
   | {
-    kind: "entry_query";
+    kind: "inline_sql";
     source_id: string;
-    request: EntryPageRequest;
-    display_system_fields?: Array<"created_at" | "updated_at">;
+    request: SqlQueryRequest;
     source_schema_fingerprint: string;
+    form_bindings: Array<{ relation: string; form_id: string }>;
+    expected_result: Array<{ name: string; type: CompositionResultType }>;
   }
   | {
     kind: "saved_sql";
     source_id: string;
     request: SqlQueryRequest;
     source_schema_fingerprint: string;
+    expected_result: Array<{ name: string; type: CompositionResultType }>;
   };
 
 interface CompositionResolvedComponentBase {
   component_id: string;
-  label?: string;
   source_id?: string;
   variable_id?: string;
 }
@@ -383,6 +342,11 @@ export interface CompositionPreviewResponse {
   diagnostics?: CompositionResolveDiagnostic[];
 }
 
+export interface CompositionRevisionBase {
+  entryId: string;
+  revisionId: string;
+}
+
 export type CompositionMetricQueryTarget =
   | {
     kind: "saved_revision";
@@ -393,6 +357,8 @@ export type CompositionMetricQueryTarget =
 
 export interface CompositionMetricQueryRequest {
   target: CompositionMetricQueryTarget;
+  base_entry_id?: string;
+  base_revision_id?: string;
   component_id: string;
   variables: Record<string, unknown>;
   unset_variables?: string[];
@@ -430,8 +396,7 @@ const splitVariableSnapshot = (
 };
 
 export type CompositionSourcePage =
-  | { kind: "entry_query"; page: EntryPage }
-  | { kind: "saved_sql"; page: SqlQueryPage };
+  | { kind: "sql"; page: SqlQueryPage };
 
 const compositionVariableTypes = new Set<CompositionVariableType>([
   "string",
@@ -474,7 +439,6 @@ export const buildSavedSqlCompositionDocument = (
     format_version: 1,
     kind: "dashboard",
     name: name.trim(),
-    tags: [],
     spec: {
       variables: [],
       sources: [{
@@ -654,6 +618,7 @@ export const compositionApi = {
     yaml: string,
     variables: Record<string, unknown>,
     signal?: AbortSignal,
+    base?: CompositionRevisionBase,
   ): Promise<CompositionPreviewResponse> {
     const snapshot = splitVariableSnapshot(variables);
     return await protocolFetch<CompositionPreviewResponse>(
@@ -661,6 +626,12 @@ export const compositionApi = {
       { space_id: spaceId },
       {
         yaml,
+        ...(base
+          ? {
+            base_entry_id: base.entryId,
+            base_revision_id: base.revisionId,
+          }
+          : {}),
         variables: snapshot.variables,
         ...(snapshot.unset_variables.length > 0
           ? { unset_variables: snapshot.unset_variables }
@@ -700,22 +671,27 @@ export const compositionApi = {
     cursor: string | undefined,
     signal: AbortSignal,
   ): Promise<CompositionSourcePage> {
-    if (source.kind === "entry_query") {
-      const { after: _resolvedCursor, ...request } = source.request;
-      const page = await entryApi.query(spaceId, {
-        ...request,
-        ...(cursor === undefined ? {} : { after: cursor }),
-      }, signal);
-      return { kind: "entry_query", page };
-    }
-
     const { continuation: _resolvedCursor, ...request } = source.request;
     const page = await sqlApi.query(spaceId, {
       ...request,
       include_exact_integer_values: true,
       ...(cursor === undefined ? {} : { continuation: cursor }),
     }, signal);
-    return { kind: "saved_sql", page };
+    return { kind: "sql", page };
+  },
+
+  async countSource(
+    spaceId: string,
+    source: CompositionResolvedSource,
+    signal?: AbortSignal,
+  ): Promise<number> {
+    const { continuation: _continuation, ...request } = source.request;
+    return await sqlApi.count(spaceId, {
+      sql: request.sql,
+      parameters: request.parameters,
+      parameter_types: request.parameter_types,
+      ...(request.saved_sql ? { saved_sql: request.saved_sql } : {}),
+    }, signal);
   },
 };
 

@@ -16,7 +16,10 @@ import {
   type CompositionResultType,
   type CompositionVariableType,
 } from "~/lib/composition-api";
-import type { CompositionStudioSeed } from "~/lib/composition-draft";
+import {
+  compositionResultSchemaFingerprint,
+  type CompositionStudioSeed,
+} from "~/lib/composition-draft";
 import { spaceCompositionNewPath } from "~/lib/space-path";
 import { t } from "~/lib/i18n";
 import { normalizeSqlVariables } from "~/lib/sql";
@@ -283,7 +286,7 @@ export default function SpaceSqlRunRoute() {
       new Set(result.columns).size === result.columns.length;
   };
 
-  const openInStudio = () => {
+  const openInStudio = async () => {
     if (!canSaveAsTool()) return;
     const current = entry();
     const result = visiblePage();
@@ -306,16 +309,20 @@ export default function SpaceSqlRunRoute() {
           column.type,
         ]),
       );
+      const expectedResult = columns.map((column) => ({
+        name: column,
+        type: (schemaByName.get(column) ?? "json") as CompositionResultType,
+      }));
       const seed: CompositionStudioSeed = {
         kind: "saved_sql",
         seed: {
           entryId: current.id,
           revisionId: current.revision_id,
           name: displaySqlName(current),
-          expectedResult: columns.map((column) => ({
-            name: column,
-            type: (schemaByName.get(column) ?? "json") as CompositionResultType,
-          })),
+          expectedResult,
+          schemaFingerprint: await compositionResultSchemaFingerprint(
+            expectedResult,
+          ),
           variables: {},
           variableTypes: Object.fromEntries(
             current.variables.map((variable) => [

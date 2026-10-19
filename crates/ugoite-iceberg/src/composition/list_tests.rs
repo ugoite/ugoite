@@ -56,7 +56,6 @@ async fn seed_raw_compositions(
             source_id: None,
             entry: EntryMetadata {
                 external_id: entry_uuid.to_string(),
-                tags: vec![format!("tag-{index}")],
                 created_at_micros: committed_at_micros,
                 updated_at_micros: committed_at_micros + index as i64,
                 updated_by: author.clone(),
@@ -146,7 +145,6 @@ async fn composition_list_is_bounded_ordered_raw_and_authorized() -> anyhow::Res
     assert_eq!(first.items[0].name, Some(json!("Raw 0")));
     assert_eq!(first.items[0].kind, Some(json!("dashboard")));
     assert_eq!(first.items[0].format_version, Some(json!(99)));
-    assert_eq!(first.items[0].tags, ["tag-0"]);
     assert!(first.items.iter().all(|item| {
         !serde_json::to_value(item)
             .expect("list item serializes")

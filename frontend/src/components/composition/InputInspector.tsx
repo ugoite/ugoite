@@ -6,7 +6,6 @@ import {
 } from "~/components/composition/InspectorFields";
 import {
   type CompositionDraft,
-  setInputLabel,
   setInputVariable,
 } from "~/lib/composition-draft";
 import { compositionVariableDisplayName } from "~/lib/composition-variable-name";
@@ -22,9 +21,6 @@ export function InputInspector(props: {
     props.draft.inputs.find((item) => item.draftId === props.inputId);
   const currentVariable = () =>
     props.draft.variables.find((variable) => variable.id === input()?.variable);
-  const apply = (result: ReturnType<typeof setInputLabel>) => {
-    if (result.ok) props.apply(result);
-  };
 
   return (
     <InspectorShell
@@ -48,7 +44,7 @@ export function InputInspector(props: {
                   value={entry().variable}
                   aria-label={t("composition.studioVariables")}
                   onChange={(event) =>
-                    apply(
+                    props.apply(
                       setInputVariable(
                         props.draft,
                         entry().draftId,
@@ -67,31 +63,6 @@ export function InputInspector(props: {
                     )}
                   </For>
                 </select>
-              </label>
-            </div>
-            <div class="ui-field">
-              <label>
-                <span>{t("composition.studioInputLabel")}</span>
-                <input
-                  class="ui-input"
-                  value={entry().label ?? ""}
-                  aria-label={t("composition.studioInputLabelName", {
-                    name: currentVariable()
-                      ? compositionVariableDisplayName(
-                        props.draft.variables,
-                        currentVariable()!.id,
-                      )
-                      : t("composition.studioAddInput"),
-                  })}
-                  onInput={(event) =>
-                    apply(
-                      setInputLabel(
-                        props.draft,
-                        entry().draftId,
-                        event.currentTarget.value,
-                      ),
-                    )}
-                />
               </label>
             </div>
           </>

@@ -6,11 +6,11 @@ import {
   test,
 } from "@playwright/test";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
+import { completeSavedSqlCompositionYaml } from "./lib/composition.ts";
 
 const METRIC_SCALAR = 40;
 const SECOND_AMOUNT = 2;
-const MULTIPLE_ROWS_DIAGNOSTIC =
-  "The metric returned more than one row.";
+const MULTIPLE_ROWS_DIAGNOSTIC = "The metric returned more than one row.";
 
 type SeedState = {
   spaceId: string;
@@ -120,23 +120,19 @@ async function seedMetricComposition(
   expect(savedSql.id).toBeTruthy();
   expect(savedSql.revision_id).toBeTruthy();
 
-  const yaml = [
+  let yaml = [
     "format: ugoite.composition",
     "format_version: 1",
     `name: ${compositionName}`,
     "kind: dashboard",
-    "tags: []",
     "spec:",
     "  sources:",
     "    - id: metric_rows",
     "      kind: saved_sql",
     `      entry_id: "${savedSql.id}"`,
     `      revision_id: "${savedSql.revision_id}"`,
-    "      expected_result:",
-    "        - name: total",
-    "          type: float",
-    "        - name: merchant",
-    "          type: string",
+    "      expected_result: []",
+    "      schema_fingerprint: ''",
     "  components:",
     "    - id: total",
     "      kind: metric",
@@ -156,6 +152,11 @@ async function seedMetricComposition(
     "            component: rows",
     "",
   ].join("\n");
+  yaml = await completeSavedSqlCompositionYaml(request, spaceId, yaml, [{
+    id: "metric_rows",
+    savedSqlId: savedSql.id!,
+    savedSqlRevisionId: savedSql.revision_id!,
+  }]);
   const saveResponse = await request.post(
     getBackendUrl(`/spaces/${spaceId}/compositions`),
     {

@@ -80,7 +80,6 @@ pub struct RawCompositionListItem {
     pub name: Option<Value>,
     pub kind: Option<Value>,
     pub format_version: Option<Value>,
-    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -336,7 +335,7 @@ pub(crate) fn validate_composition_revision(
         || canonical.document.name != *name
         || expected_kind.as_str() != Some(kind.as_str())
         || i64::from(canonical.document.format_version) != format_version
-        || canonical.document.tags != revision.entry.tags
+        || !revision.entry.tags.is_empty()
     {
         return Err(registry_conflict(
             "Composition carrier fields do not match canonical spec",
@@ -505,7 +504,7 @@ pub(crate) async fn save_composition(
         source_id: None,
         entry: EntryMetadata {
             external_id: entry_id.to_string(),
-            tags: canonical.document.tags.clone(),
+            tags: Vec::new(),
             created_at_micros: current
                 .as_ref()
                 .map(|revision| revision.entry.created_at_micros)
@@ -697,7 +696,7 @@ fn validate_saved_composition_revision(
         || raw.revision.parent_revision_id != base_revision_id
         || raw.revision.operation != EntryOperation::Upsert
         || raw.revision.entry.updated_by != author
-        || raw.revision.entry.tags != canonical.document.tags
+        || !raw.revision.entry.tags.is_empty()
         || canonical.yaml != canonical_yaml
         || raw.fields.get("name").and_then(Value::as_str) != Some(canonical.document.name.as_str())
         || raw.fields.get("format_version").and_then(Value::as_i64)
@@ -1018,7 +1017,7 @@ fn validate_restored_composition_revision(
         || raw.revision.entry.deleted
         || raw.revision.entry.restored_from != Some(source_revision_id)
         || raw.revision.source_id.as_deref() != Some(restored_from.as_str())
-        || raw.revision.entry.tags != canonical.document.tags
+        || !raw.revision.entry.tags.is_empty()
         || raw.fields.len() != 4
         || !raw.unmapped_field_values.is_empty()
         || !raw.revision.extra_attributes.is_empty()
@@ -1140,7 +1139,6 @@ pub(crate) async fn read_composition_page(
             name: row.fields.get("name").cloned(),
             kind: row.fields.get("kind").cloned(),
             format_version: row.fields.get("format_version").cloned(),
-            tags: row.tags,
         })
         .collect();
     Ok(RawCompositionListPage {

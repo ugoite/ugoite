@@ -61,6 +61,12 @@ The shared Entry read contract is documented in
 [`entry-query.md`](entry-query.md). Its Rust domain types are the semantic
 source used by REST, CLI, WASM, frontend, and MCP adapters.
 
+The accepted but unimplemented Composition query-variable graph target is
+documented in
+[`composition-query-variables.md`](composition-query-variables.md). Its
+prerelease replacement remains distinct from the current Composition reader
+until implementation and verification gates pass.
+
 The stateless SQL read contract is documented in
 [`sql-query.md`](sql-query.md). SQL execution is separate from Saved SQL
 Knowledge and uses a fixed publication without persistent query state.

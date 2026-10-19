@@ -1,10 +1,12 @@
-//! Composition Metric query contracts and bounded Saved SQL scalar handling.
+//! Composition Metric query contracts and bounded SQL scalar handling.
 //!
 //! Query execution and current authorization remain in the storage-backed
 //! service. This module selects the requested resolved metric and validates a
 //! two-row probe without treating it as a paged table result.
 
-use crate::composition::{CompositionDiagnostic, ResolvedComponentBinding, ResolvedComponentKind};
+use crate::composition::{
+    CompositionDiagnostic, CompositionRevisionRef, ResolvedComponentBinding, ResolvedComponentKind,
+};
 use crate::sql_query::SqlScalarProbeResult;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -30,6 +32,10 @@ pub enum CompositionMetricQueryTarget {
 #[serde(deny_unknown_fields)]
 pub struct CompositionMetricQueryRequest {
     pub target: CompositionMetricQueryTarget,
+    /// Exact saved base used only to preserve stable Form bindings while
+    /// previewing an edited draft.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft_base: Option<CompositionRevisionRef>,
     pub component_id: String,
     #[serde(default)]
     pub variables: BTreeMap<String, Value>,
@@ -132,8 +138,8 @@ impl CompositionMetricQueryResponse {
     }
 }
 
-/// Evaluate an exact Saved SQL column from a bounded two-row probe.
-pub fn evaluate_saved_sql_metric_probe(
+/// Evaluate one SQL result column from a bounded two-row probe.
+pub fn evaluate_sql_metric_probe(
     binding: &ResolvedComponentBinding,
     probe: &SqlScalarProbeResult,
 ) -> Result<Value, CompositionDiagnostic> {
@@ -224,7 +230,6 @@ mod tests {
         ResolvedComponentBinding {
             component_id: "total".to_owned(),
             kind: ResolvedComponentKind::Metric,
-            label: Some("合計".to_owned()),
             source_id: Some("monthly_sql".to_owned()),
             variable_id: None,
             result_property_key: Some("total".to_owned()),
@@ -249,7 +254,7 @@ mod tests {
 
     #[test]
     fn sql_scalar_probe_returns_one_typed_column_from_one_row() {
-        let result = evaluate_saved_sql_metric_probe(
+        let result = evaluate_sql_metric_probe(
             &binding(CompositionResultFieldType::Integer),
             &probe(vec![json!({"total": 42, "other": 9})], &["total", "other"]),
         )
@@ -268,14 +273,14 @@ mod tests {
 
     #[test]
     fn sql_scalar_probe_preserves_null_as_a_present_scalar_value() {
-        let result = evaluate_saved_sql_metric_probe(
+        let result = evaluate_sql_metric_probe(
             &binding(CompositionResultFieldType::Integer),
             &probe(vec![json!({"total": null})], &["total"]),
         )
         .unwrap();
         assert!(result.is_null());
 
-        let omitted_null = evaluate_saved_sql_metric_probe(
+        let omitted_null = evaluate_sql_metric_probe(
             &binding(CompositionResultFieldType::Integer),
             &probe(vec![json!({})], &["total"]),
         )
@@ -286,7 +291,7 @@ mod tests {
     #[test]
     fn sql_scalar_probe_distinguishes_zero_and_multiple_result_rows() {
         assert_eq!(
-            evaluate_saved_sql_metric_probe(
+            evaluate_sql_metric_probe(
                 &binding(CompositionResultFieldType::Integer),
                 &probe(Vec::new(), &["total"]),
             )
@@ -295,7 +300,7 @@ mod tests {
             CompositionDiagnosticCode::MetricScalarNoRows
         );
         assert_eq!(
-            evaluate_saved_sql_metric_probe(
+            evaluate_sql_metric_probe(
                 &binding(CompositionResultFieldType::Integer),
                 &probe(vec![json!({"total": 1}), json!({"total": 2})], &["total"]),
             )
@@ -308,7 +313,7 @@ mod tests {
     #[test]
     fn sql_scalar_probe_rejects_ambiguous_columns_and_type_drift() {
         assert_eq!(
-            evaluate_saved_sql_metric_probe(
+            evaluate_sql_metric_probe(
                 &binding(CompositionResultFieldType::Integer),
                 &probe(vec![json!({"total": 1})], &["total", "total"]),
             )
@@ -318,7 +323,7 @@ mod tests {
         );
 
         assert_eq!(
-            evaluate_saved_sql_metric_probe(
+            evaluate_sql_metric_probe(
                 &binding(CompositionResultFieldType::Float),
                 &probe(vec![json!({"total": 1})], &["total"]),
             )

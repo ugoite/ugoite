@@ -1,4 +1,5 @@
 const workspaceRoot = new URL("../../..", import.meta.url).pathname;
+const MAX_SQL_DOCUMENT_BYTES = 256 * 1024;
 
 async function runCommand(command: string, args: string[]): Promise<string> {
   const result = await new Deno.Command(command, {
@@ -21,6 +22,56 @@ function assertEqual(actual: unknown, expected: unknown, label: string): void {
     throw new Error(
       `${label}: expected ${String(expected)}, got ${String(actual)}`,
     );
+  }
+}
+
+function sourceSliceByByteRange(
+  source: string,
+  range: { start: number; end: number },
+): string {
+  const bytes = new TextEncoder().encode(source);
+  if (
+    !Number.isInteger(range.start) || !Number.isInteger(range.end) ||
+    range.start < 0 || range.end < range.start || range.end > bytes.length
+  ) {
+    throw new Error(`Invalid SQL source range ${JSON.stringify(range)}`);
+  }
+  return new TextDecoder("utf-8", { fatal: true }).decode(
+    bytes.subarray(range.start, range.end),
+  );
+}
+
+function assertDocumentRanges(
+  document: Record<string, unknown>,
+  source: string,
+  label: string,
+): void {
+  assertEqual(document.source, source, `${label} exact source`);
+  const tokens = document.tokens as Record<string, unknown>[];
+  const nodes = document.nodes as Record<string, unknown>[];
+  const sourceBytes = new TextEncoder().encode(source);
+  if (sourceBytes.length > MAX_SQL_DOCUMENT_BYTES) {
+    assertEqual(tokens.length, 0, `${label} oversized token list`);
+    assertEqual(nodes.length, 0, `${label} oversized node list`);
+    return;
+  }
+
+  let nextByte = 0;
+  for (const [index, token] of tokens.entries()) {
+    const range = token.range as { start: number; end: number };
+    assertEqual(range.start, nextByte, `${label} token ${index} start`);
+    sourceSliceByByteRange(source, range);
+    nextByte = range.end;
+  }
+  assertEqual(
+    nextByte,
+    sourceBytes.length,
+    `${label} token coverage in UTF-8 bytes`,
+  );
+  for (const [index, node] of nodes.entries()) {
+    const range = node.range as { start: number; end: number } | null;
+    if (range !== null) sourceSliceByByteRange(source, range);
+    assertEqual(node.id, index, `${label} node index`);
   }
 }
 
@@ -81,6 +132,116 @@ async function main(): Promise<void> {
     `${metadata.target_directory}/wasm32-unknown-unknown/debug/ugoite_wasm.wasm`;
   const wasmBytes = await Deno.readFile(wasmPath);
   const { instance } = await WebAssembly.instantiate(wasmBytes, {});
+
+  const documentCases = [
+    {
+      label: "parsed",
+      sql: '-- 日付\nSELECT "日付", $day FROM "G" WHERE note = \'$day\'',
+      status: "parsed",
+    },
+    { label: "invalid", sql: "SELECT (", status: "invalid_sql" },
+    {
+      label: "multiple statements",
+      sql: "SELECT 1; SELECT 2",
+      status: "multiple_statements",
+    },
+    {
+      label: "maximum source with escaped trivia",
+      sql: `SELECT 1 /*${"\n".repeat(MAX_SQL_DOCUMENT_BYTES - 13)}*/`,
+      status: "parsed",
+    },
+    {
+      label: "oversized",
+      sql: "x".repeat(MAX_SQL_DOCUMENT_BYTES + 1),
+      status: "too_large",
+    },
+  ];
+  for (const testCase of documentCases) {
+    const response = await invokeWasm(instance.exports, {
+      action: "domain.parse_sql_document",
+      value: { sql: testCase.sql },
+    });
+    assertEqual(response.ok, true, `${testCase.label} document envelope`);
+    const document = response.value as Record<string, unknown>;
+    assertEqual(document.status, testCase.status, `${testCase.label} status`);
+    assertDocumentRanges(document, testCase.sql, testCase.label);
+  }
+  const parsedDocumentResponse = await invokeWasm(instance.exports, {
+    action: "domain.parse_sql_document",
+    value: {
+      sql: documentCases[0].sql,
+    },
+  });
+  const parsedDocument = parsedDocumentResponse.value as Record<
+    string,
+    unknown
+  >;
+  const parsedTokens = parsedDocument.tokens as Record<string, unknown>[];
+  const placeholder = parsedTokens.find((token) =>
+    sourceSliceByByteRange(
+      documentCases[0].sql,
+      token.range as { start: number; end: number },
+    ) === "$day"
+  );
+  if (!placeholder) throw new Error("Parsed SQL placeholder token is missing");
+  const placeholderRange = placeholder.range as { start: number; end: number };
+  assertEqual(placeholderRange.start, 27, "placeholder UTF-8 byte start");
+  assertEqual(placeholderRange.end, 31, "placeholder UTF-8 byte end");
+
+  const amplifiedSql = `SELECT ${Array(20_000).fill("1").join(",")}`;
+  const amplifiedResponse = await invokeWasm(instance.exports, {
+    action: "domain.parse_sql_document",
+    value: { sql: amplifiedSql },
+  });
+  assertEqual(amplifiedResponse.ok, false, "amplified document response");
+  const amplifiedError = amplifiedResponse.error as Record<string, unknown>;
+  assertEqual(
+    amplifiedError.kind,
+    "domain_output_too_large",
+    "amplified document output bound",
+  );
+  if (
+    new TextEncoder().encode(JSON.stringify(amplifiedResponse)).length >
+      1024 * 1024
+  ) {
+    throw new Error("Oversized SQL Document output was not bounded");
+  }
+
+  const { instance: memoryGuardInstance } = await WebAssembly.instantiate(
+    wasmBytes,
+    {},
+  );
+  const memoryGuard = memoryGuardInstance.exports.memory as WebAssembly.Memory;
+  const initialMemoryBytes = memoryGuard.buffer.byteLength;
+  const nearLimitMalformedSql = "(".repeat(MAX_SQL_DOCUMENT_BYTES);
+  const nearLimitMalformedResponse = await invokeWasm(
+    memoryGuardInstance.exports,
+    {
+      action: "domain.parse_sql_document",
+      value: { sql: nearLimitMalformedSql },
+    },
+  );
+  assertEqual(
+    nearLimitMalformedResponse.ok,
+    true,
+    "near-limit malformed SQL response envelope",
+  );
+  const nearLimitMalformedDocument = nearLimitMalformedResponse.value as Record<
+    string,
+    unknown
+  >;
+  assertEqual(
+    nearLimitMalformedDocument.status,
+    "too_complex",
+    "near-limit malformed SQL complexity limit",
+  );
+  const memoryGrowthBytes = memoryGuard.buffer.byteLength - initialMemoryBytes;
+  if (memoryGrowthBytes > 64 * 1024 * 1024) {
+    throw new Error(
+      `Near-limit malformed SQL grew WASM memory by ${memoryGrowthBytes} bytes`,
+    );
+  }
+
   const context = {
     relation: "Task",
     columns: [
@@ -273,6 +434,61 @@ async function main(): Promise<void> {
     rejectedDistinct.proposed_sql,
     undefined,
     "incompatible SELECT DISTINCT proposal omission",
+  );
+
+  const relationFreeContext = {
+    relation: "",
+    columns: [],
+    variables: [],
+    stable_key: [],
+  };
+  const scalarAnalysisResponse = await invokeWasm(instance.exports, {
+    action: "domain.analyze_sql_structure",
+    value: { sql: "SELECT 1", context: relationFreeContext },
+  });
+  assertEqual(
+    scalarAnalysisResponse.ok,
+    true,
+    "relation-free analysis protocol envelope",
+  );
+  const scalarAnalysis = scalarAnalysisResponse.value as Record<string, unknown>;
+  assertEqual(
+    scalarAnalysis.status,
+    "supported",
+    "relation-free scalar SELECT status",
+  );
+  const scalarCapabilities = scalarAnalysis.capabilities as Record<
+    string,
+    Record<string, unknown>
+  >;
+  assertEqual(
+    scalarCapabilities.distinct.enabled,
+    true,
+    "relation-free DISTINCT capability",
+  );
+  assertEqual(
+    scalarCapabilities.columns.enabled,
+    false,
+    "relation-free column capability",
+  );
+  const scalarProposalResponse = await invokeWasm(instance.exports, {
+    action: "domain.propose_sql_structure_operation",
+    value: {
+      sql: "SELECT 1",
+      context: relationFreeContext,
+      operation: { kind: "set_distinct", distinct: true },
+    },
+  });
+  const scalarProposal = scalarProposalResponse.value as Record<string, unknown>;
+  assertEqual(
+    scalarProposal.status,
+    "supported",
+    "relation-free DISTINCT proposal status",
+  );
+  assertEqual(
+    scalarProposal.proposed_sql,
+    "SELECT DISTINCT 1",
+    "relation-free DISTINCT proposal SQL",
   );
 
   const unsupported = await invokeWasm(instance.exports, {

@@ -3,313 +3,163 @@ title: Composition contract
 description: The portable document and semantic boundaries for Composition v1.
 ---
 
-**Status:** frozen as Composition v1 (`implementation_contract_frozen = true`).
-This page records the current implementation contract. The accepted target for
-the prerelease SQL-first replacement is [ADR-024](./adr-024-composition-sql-first.md);
-that decision is not implemented by this page and does not change current
-behavior until the replacement is merged.
-The v1 domain model, restricted parser, canonicalization, fingerprinting,
-native/WASM parity, Rust Core source resolver, the portable
-`composition.save`/`composition.restore` persistence operations, the nine CLI
-commands, and the Browser save/list/resolve/query paths have focused
-implementation and test evidence. The full end-to-end runtime journey and
-release acceptance remain incomplete; see the
-[acceptance plan](../testing/composition-acceptance.md). Post-freeze semantic
-changes require a v1 compatibility ruling recorded against this contract.
-[ADR-023](./adr-023-composition-reactive-variables.md) supersedes ADR-019 for
-typed variables, Input components, and variable references. Its §2.1 is the
-normative source for typed Input lexical/value constraints and typed defaults;
-this contract describes how those values move through the Composition schema
-and runtime. ADR-023 authorizes the prerelease grammar without a compatibility
-reader or migration. ADR-019 still governs the flow `layout` AST, component
-placement, and presentation order. `format_version` stays 1.
+**Status:** The SQL-first Composition model in
+[ADR-024](./adr-024-composition-sql-first.md) is implemented in the current
+prerelease candidate. [ADR-025](./adr-025-composition-query-variable-graph.md)
+defines its accepted next target; the unified query-variable graph and complete
+SQL GUI coverage are not implemented yet. This document describes ADR-024's
+current implementation contract until its replacement gates are complete. The
+prereplacement implementation is not a compatibility contract, and its
+document grammar is not supported by the replacement reader. This status does
+not authorize release preparation or publication.
 
-Frozen v1 pin (see `composition_v1_freeze_pins_portable_contract` in
-`ugoite-domain` and `composition_v1_freeze_pins_operation_inventory` in
-`ugoite-api-client`):
+ADR-024 documents the source and presentation schema implemented by the
+current prerelease candidate. ADR-025 is the normative target for the next
+schema; its graph and editor are not implemented yet. [ADR-023](./adr-023-composition-reactive-variables.md)
+records the preceding prerelease grammar, not a compatibility contract.
+[ADR-019](./decisions.md) continues to govern the flow `layout` AST,
+exactly-once component placement, and presentation order. General REST
+behavior remains implemented by `ugoite-server` and specified by
+`/openapi.json`; this document does not create a second API contract.
 
-| Item | Frozen value |
-| ---- | ------------ |
-| Envelope | `format: ugoite.composition`, `format_version: 1`, `kind: dashboard` only |
-| Parser limits | 64 KiB YAML bytes, nesting depth 64, 4,096 nodes, 8,192 parser events, 32 KiB total scalar bytes, 256 items per collection |
-| Tags | document tags are the sole semantic value and equal stored Entry tags |
-| Source grammar | `entry_query` (Form scope, six filter operators, two sort directions, fields/preview projection, optional Created/Updated display columns) and exact `saved_sql` (EntryId + RevisionId, ordered unique `expected_result`, eight logical types) |
-| Metric identity | one Saved SQL source ID and one declared output-column name; optional label and display-only presentation |
-| Components | `input` / `text` / `metric` / `table`; `flow` layout rows/items, unique row and component IDs, exactly-once component placement, input components for required variables without defaults, empty layouts and empty rows invalid; text styles `title` / `heading` / `body` / `caption` |
-| Fingerprints | document SHA-256 over normalized value; per-source schema fingerprints over FormId + used-field snapshot |
-| Diagnostics | 15 caller-visible codes; missing/denied sources conceal as `source_unavailable` |
-| Operations | `lint`, `list`, `get`, `history`, `resolve`, `save`, `restore` (export stays a CLI file operation) |
-| Idempotency | `Idempotency-Key` required on save/restore; same key + same payload replays, differing payload conflicts |
-| Raw recovery | unsupported versions and broken references keep raw inspect, export, and history |
-| Save-as-tool scope | Form-scoped EntryQuery views and exact Saved SQL revisions save as tools; All-Forms Search (`/search`, All scope, no `form_id`) is inexpressible in v1 and stays disabled fail-closed rather than approximated |
+## Canonical document
 
-### Compatibility ruling: optional EntryQuery display timestamps
+A Composition is one Space-owned Knowledge document stored in an Entry
+revision. The Space remains authoritative. Save and restore use the existing
+append-only Entry history, receipt, idempotency, and stale-write conflict
+contracts; no separate database or hidden catalog becomes authoritative.
 
-This pre-release extension adds the optional `display_system_fields` selection
-to EntryQuery sources and keeps `format_version` at `1`. Missing selections
-default to empty and empty selections are omitted from canonical documents, so
-existing saved Composition documents remain readable without migration. The
-selection does not change query projection, filtering, sorting, or authorization.
+The restricted `.ugcomp.yaml` document keeps `format_version: 1`. Its ordered
+envelope is `format: ugoite.composition`, `format_version: 1`,
+`kind: dashboard`, Composition `name`, and `spec`. `spec` contains typed
+`variables`, SQL `sources`, `components`, and a flow `layout`. It has no root
+`tags` field. Unknown fields are rejected by the canonical reader.
 
-## Portable document
+The source variants are:
 
-A Composition is a user-owned Knowledge document represented as one Entry
-revision in its Space. The Space remains its authority. History, restore,
-receipts, and stale-write conflicts use the existing Entry revision contract;
-no separate database or hidden catalog becomes authoritative.
+| Variant | Canonical fields | Contract |
+| --- | --- | --- |
+| `inline_sql` | `id`, `name`, `sql`, `form_bindings`, `expected_result`, `schema_fingerprint` | `id` is stable within the Composition. `name` names the SQL object and may be changed without changing its ID. `form_bindings` maps each SQL relation name to a server-derived Form ID. |
+| `saved_sql` | `id`, `entry_id`, `revision_id`, `variables?`, `expected_result`, `schema_fingerprint` | Pins one exact Saved SQL Entry revision. `variables` maps SQL parameter names to a scalar literal or `{variable: <id>}`. SQL text and a second source name are not copied into Composition. |
 
-The exchange format is a restricted `.ugcomp.yaml` document at format version
-`1`. Its envelope is ordered as `format`, `format_version`, `kind`, `name`,
-`tags`, and `spec`. `format` is the fixed value `ugoite.composition`, and
-`kind` is `dashboard`. `tags` are the Composition Entry's tags and
-are saved and read as the same ordered list as `EntryMetadata.tags`; a save
-request has no second tag value. The `spec` contains typed variables, sources,
-components, and a first-class dashboard flow `layout`. A source identifies either an Entry query template
-or an exact Saved SQL revision. Components refer to named sources, and layout
-rows carry ordered component items, including inputs bound to variables.
-Variables keep their semantic definition under `spec.variables`; each input
-component references a variable ID. An `entry_query` source carries a
-sorted `field_schema` snapshot for property fields used by that query. It defines
-the Table query only; Metrics bind a Saved SQL source and never consume
-EntryQuery fields. A preview projection uses all current property fields; an
-explicit projection, filter, sort, or text search adds the fields it uses. When
-text search is present, the snapshot includes every text-searchable property
-field under existing EntryQuery semantics. The text-search expansion excludes `binary`, `list`, `object_list`, and
-`asset_reference` fields. A field of those types still appears when the query
-otherwise uses it, such as in a projection. Each snapshot row contains
-`field_id` and `field_type`, plus `reference_form` for a RowReference or
-`items` for a typed List when those type details are present.
+Each source carries a server-confirmed ordered `expected_result` descriptor.
+Each column has a unique `name` and portable `type`: `string`, `boolean`,
+`integer`, `float`, `decimal`, `date`, `timestamp`, or `json`. Its lowercase
+SHA-256 `schema_fingerprint` covers the canonical ordered descriptor. SQL
+types and descriptors are determined by the shared Rust query path; the
+Browser does not infer a schema from empty results. A transient SQL draft may
+use the empty descriptor tuple while the server plans it, but an incomplete
+descriptor is not persisted as a Composition revision.
 
-The complete illustrative document is maintained in
-`crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml`.
-It is a contract fixture for domain, parser, canonicalization, and WASM parity
-tests; by itself, it does not cover the persistence and Browser rendering paths.
-The `saved-sql-metric-columns.ugcomp.yaml` fixture covers several Metrics
-selecting different columns from one Saved SQL source while a Table uses an
-independent EntryQuery source. A Metric stores only its Saved SQL source ID,
-one declared output column, and optional presentation metadata. SQL performs
-COUNT, SUM, AVG, MIN, MAX, and any later-supported calculation. A Metric
-does not store an operation, Form FieldId, expression, or client aggregation
-configuration. The shared Rust/WASM model validates the column against the
-source's ordered result descriptor; the seven scalar logical types are
-Metric-selectable, while `json` remains available to Tables. The source
-pins one Saved SQL Entry and exact revision and can be shared by Metrics and
-Tables. The query adapter consumes at most two rows and succeeds only for
-exactly one row; it never chooses a prefix row or rewrites SQL to add
-`LIMIT 1`. Empty and multi-row results remain diagnostics, while a single
-SQL NULL remains a successful present scalar value.
+Variables contain `id`, `type`, `required`, optional typed `default`, and an
+optional `format` hint. The supported types are `string`, `boolean`, `integer`,
+`float`, `date`, and `timestamp`; `year-month` is the date presentation hint.
+Defaults must match the declared type. ADR-023 defines accepted raw Input
+syntax, bounds, explicit unset behavior, and typed SQL binding. Composition
+values are bound as SQL parameters; SQL text is never interpolated.
 
-The typed v1 model supports `string`, `boolean`, `integer`, `float`, `date`, and
-`timestamp` variables. A variable may carry a typed default and a display
-format hint; the current `year-month` hint is valid only for `date` variables,
-does not evaluate an expression, and does not change the variable value. The
-accepted Input spellings, bounds, and value rules are defined in
-[ADR-023 §2.1](./adr-023-composition-reactive-variables.md#21-typed-input-values-are-bounded-and-locale-independent).
-Variables and `input`/`text`/`metric`/`table` components may
-also carry optional display `label` text. A label is emitted in canonical YAML
-and included in the document fingerprint when present, and omitted when
-absent. Labels do not replace stable variable, component, source, or field IDs
-and do not change source or query binding semantics. Source values are literals
-or named variable references. An `entry_query` template scopes property
-`FieldId`s to its `FormId`, snapshots query-used field types, and carries the
-existing query filters, sort, text, projection, and page-size semantics. Text may be a literal
-or variable reference; a variable used for text is bound as a string. Its
-projection is either preview or an ordered list of property `FieldId`s. The
-optional `page_limit` defaults to 100 and is still bounded by the existing
-EntryQuery maximum. Optional `display_system_fields` independently selects
-Created and Updated table columns and defaults to empty when omitted; these
-columns do not widen the EntryQuery projection. A `saved_sql` source carries an
-`EntryId`, an exact `RevisionId`, literal values or Composition variable
-references, and an ordered `expected_result` descriptor. Composition variables
-bind to the Saved SQL revision's existing named SQL parameters; SQL request
-fields `parameters` and `parameter_types` keep their meanings. Each expected
-result field has a unique non-empty output name and
-one portable logical type: `string`, `boolean`, `integer`, `float`, `decimal`,
-`date`, `timestamp`, or `json`. Metric integer values are JSON strings in the
-canonical base-10 form `0`, `[1-9][0-9]*`, or `-[1-9][0-9]*`, preserving exact
-precision and rejecting leading plus signs, leading zeroes, and negative zero.
-Float values are finite JSON numbers. Decimal values are JSON strings in plain
-notation with no exponent, no leading integer zeros, and no negative zero;
-fractional scale, including trailing zeroes, is preserved. SQL `NULL` is
-returned as JSON `null` for every supported scalar result type. The descriptor
-describes the exact revision's expected result shape; it does not claim that a
-SQL backend can statically infer the shape. Backend SQL type names are not part
-of the portable contract.
-Dashboard components are
-`input`, `text`, `metric`, or `table`. An `input` component binds a variable.
-A `text` component carries inline `text` and one
-fixed `style` (`title`, `heading`, `body`, or `caption`); it emits no source
-request and its resolve binding carries layout position with no source. `metric` and `table` components refer to
-named sources. The flow layout defines component render order by row-array
-order and item order. Every row ID and component ID is unique; every component
-is placed by exactly one layout item and every input references one declared
-variable. Multiple Inputs may reference the same variable. Unknown variable
-references, duplicate variable declarations, unknown or duplicate component
-references, unreferenced components, empty layouts, empty rows, and duplicate
-row IDs make the document invalid, as does a required variable without a
-default and without a layout input. Component
-declaration order does not supply a fallback render order. Pixel coordinates,
-CSS, and canvas state are never layout content.
+The component shapes are deliberately small:
 
-Decimal metric values must be plain JSON strings with an optional minus sign,
-an integer part, and an optional non-empty fractional part. Exponents, leading
-integer zeros, and negative zero are rejected; fractional scale is preserved.
-Runtime metric values declared as `date` must be JSON strings containing a
-valid Gregorian date in normalized `YYYY-MM-DD` form. `timestamp` values may be
-normalized local timestamps at minute precision (`YYYY-MM-DDTHH:MM`) or at
-seconds precision with an optional normalized fractional part
-(`YYYY-MM-DDTHH:MM:SS[.fraction]`), or valid RFC 3339 timestamps with an
-explicit `Z` or numeric `±HH:MM` offset. Fractional seconds have one to nine
-digits; normalized local timestamps omit trailing zeroes. The shared domain
-evaluator rejects malformed values with `metric_result_type_mismatch`; query
-adapters do not implement a second date/time parser.
+- `input` contains an ID and a reference to one declared variable.
+- `text` contains an ID, literal text or a direct reference to a string
+  variable, and one fixed typography style.
+- `table` contains an ID and a source reference; it displays the source's
+  bounded paged result.
+- `metric` contains an ID, source reference, result `column`, and optional
+  numeric presentation (`unit` and `fraction_digits`). A Metric has no title or
+  display label of its own.
 
-The Core resolver binds each Metric to a shared Saved SQL source and declared
-output column, and verifies the exact current authorized revision. SQL owns all
-calculation; the Metric query adapter only validates the result's one-row
-cardinality and selected scalar type, then returns that value. It does not
-choose a prefix row or fetch and aggregate pages in the Browser. The shared
-Domain validator preserves exact Decimal scale and normalized date and
-timestamp forms, and rejects malformed scalar values with
-`metric_result_type_mismatch`.
+The Composition has no user-editable tag or `label` field on a source, variable,
+or component. The root Composition `name`, inline SQL object's `name`, SQL
+output aliases, variable IDs, Text content, Form field names, and accessibility
+names have separate semantic roles and remain available. Numeric presentation
+is formatting metadata, not a replacement display label.
 
-The shared Rust and portable API diagnostic vocabulary includes
-`unsupported_format_version`, `invalid_composition`, `variable_unknown`,
-`variable_missing`, `variable_type_mismatch`, `source_unavailable`,
-`missing_field`,
-`field_type_changed`, `source_schema_changed`, `metric_result_not_scalar`,
-`metric_result_type_mismatch`, `metric_scalar_no_rows`,
-`metric_scalar_multiple_rows`, `metric_result_column_missing`, and
-`metric_result_column_ambiguous`. Audit note: `missing_form`,
-`saved_sql_revision_missing`, and `not_authorized` were removed from the
-portable vocabulary as unreachable. The current resolver projects a missing,
-denied, or mismatched source descriptor to `source_unavailable`; it does not
-fall back from a missing exact Saved SQL revision to latest. A missing or denied
-Composition read uses the existing generic 404/error response shape, so its
-existence is not disclosed. After Composition access is authorized, source
-availability does not disclose Form or Saved SQL identifiers or metadata.
-Field-level diagnostics are returned only after the source Form is authorized.
-UI messages are supplied by the consuming surface and are not part of this
-domain contract.
+`layout` is the ADR-019 flow layout. Row order and item order define
+presentation only. Every component has one placement; Inputs reference declared
+variables; rows and component IDs are unique. Pixel coordinates, CSS, runtime
+input, preview pages, result data, loading state, errors, and drawer state are
+Work and are not persisted.
 
-## Semantic authority
+## SQL source resolution and results
 
-Rust typed domain values are the semantic authority. Native and WASM callers
-use the same parser, validator, canonicalizer, fingerprint, and diagnostic code
-definitions. Browser TypeScript does not implement a second Composition
-parser, resolver, query engine, or semantic validator.
+When Core lints or saves inline SQL, it parses the SQL and derives the Form IDs
+behind its relation names. The client cannot supply trusted bindings. The
+server persists the relation-to-Form-ID mapping and result descriptor; resolve
+uses the exact bindings and rechecks current ACL and Publication access. A
+renamed Form remains the same bound Form. A deleted or replaced Form, changed
+descriptor, or revoked access fails closed instead of silently binding a new
+Form with the same name. General `sql.query` does not accept client-authored
+Form bindings.
 
-Browser Inputs send the raw text and declared variable type to the stateless
-WASM action `domain.parse_composition_variable_input`. It returns `unset`,
-`valid` with the exact typed JSON scalar, or `invalid` by delegating to the
-Domain parser. The Browser keeps raw text and validation state as transient
-Work; only a valid typed scalar may enter the Composition query snapshot.
-Empty Input is unset and explicitly overrides a default; omission selects the
-default. Invalid raw text remains visible without being coerced or sent to a
-query.
+A Saved SQL source pins its exact Entry and revision. It never follows the
+latest revision, silently rebinds, or stores a copied SQL body. The Saved SQL
+entry's existing name, or its existing localized untitled representation, is
+used when naming the source in the UI. Editing is an explicit inline copy or
+an explicit Saved SQL revision update.
 
-The v1 syntax rejects duplicate mapping keys, multiple documents, anchors and
-aliases, merge keys, unsupported/custom tags, implicit timestamp
-interpretation, and unknown fields. Date-like plain scalars remain strings;
-ambiguous string values that look like booleans or numbers must be quoted.
+SQL remains the only Composition data calculation boundary. Table and Metric
+consume one shared source result. A Metric selects a declared scalar output
+column and succeeds only for exactly one row; no rows, one-row `NULL`, numeric
+zero, multiple rows, type mismatch, and access denial remain distinct. It does
+not select the first row, append `LIMIT 1`, or aggregate fetched pages in the
+Browser.
 
-COMP-011 evaluated `serde-saphyr` 1.3.0 and `yaml-rust2` 0.13.0. Both parsed
-the shared fixture and compiled for `wasm32-unknown-unknown`. `yaml-rust2`
-exposes useful parser events, but requires a Ugoite-owned layer for typed value
-construction, duplicate-key detection, and collection budgets. `serde-saphyr`
-was selected because it deserializes directly into the shared Serde model and
-exposes explicit duplicate-key, syntax, and resource-budget controls. The
-domain parser first performs bounded format-marker and version inspection,
-then strictly parses supported v1 input; both passes use `serde-saphyr`.
+Composition uses the existing read-only stateless SQL query path, including
+typed parameters, publication pinning, current authorization, explicit count,
+bounded paging, continuations, cancellation, and resource limits. Query page
+limits and continuation state stay request state, not SQL text or persisted
+Composition fields. Changes to a source or one of its SQL variables invalidate
+its dependent Table and Metric results; changes to layout do not alter query
+semantics.
 
-The parser accepts at most 65,536 input bytes, 64 levels of nesting, 4,096
-nodes, 8,192 parser events, 32,768 total scalar bytes, and 256 items in any one
-Composition collection. The version probe accepts at most two documents and
-limits anchors, aliases, merge keys, and retained anchor data; strict v1 parse
-rejects those constructs outright. The shared monthly-expense fixture measured
-1,617 input bytes, 159 nodes, 200 events, depth 8, and 921 scalar bytes. The
-ignored profile test parsed 1,000 full documents in about 1.25 seconds in a
-debug build on the implementation host. Reproduce it with
-`mise run profile:composition:parser`. This is a reproducibility sample, not a
-performance threshold.
+Saved SQL variable definitions may have an optional typed default for ordinary
+Saved SQL authoring and preview. That default is additive to the Saved SQL
+contract. SQL query requests continue to require explicit `parameters` and
+`parameter_types`; query request defaults are not introduced. Copying a Saved
+SQL default into a Composition variable is an explicit one-time user action,
+after which the Composition variable owns its default.
 
-Canonical YAML uses schema field order, block collections, two-space
-indentation, LF line endings, and no BOM. Canonical output is derived from the
-normalized typed value; comments are not preserved.
+## Parsing, canonicalization, and identity
 
-Composition has three distinct fingerprint scopes. The document-level semantic
-Composition fingerprint is lowercase hexadecimal SHA-256 over the complete
-normalized `CompositionDocument` serialized as compact JSON. It represents the
-portable document identity, so any semantic change to the envelope or spec
-changes this fingerprint while formatting changes do not. It is not a source
-schema fingerprint.
+Rust Domain is authoritative for document parsing, typed values,
+canonicalization, fingerprints, and diagnostics. Native and WASM surfaces share
+that contract. Adapters do not implement a second Composition parser, resolver,
+SQL query engine, or semantic validator.
 
-Each `entry_query` source has a narrower source-schema fingerprint. The core
-resolver computes it from only the source `FormId` and the normalized schema
-snapshot for fields that the resolved EntryQuery uses. This includes
-projection fields (all property fields for preview), filter and sort fields,
-and fields searched under existing EntryQuery text-search semantics. Metrics
-bind Saved SQL columns and do not consume EntryQuery fields, so they never add
-fields to this query snapshot or its fingerprint. The snapshot is unique and
-normalized by `FieldId`; each field contributes its
-logical type, List item metadata, and RowReference target metadata. Unrelated
-Form fields, labels, and the rest of the Composition document do not affect
-this fingerprint. In particular, text search alone does not make List fields
-used because existing EntryQuery semantics exclude them from text-search
-expansion. The query-template contribution is implemented in
-`compile_entry_query_source` and covered by the focused resolver fingerprint
-tests in `crates/ugoite-core/src/composition.rs`.
+The strict parser rejects duplicate mapping keys, multiple documents, anchors
+and aliases, merge keys, custom tags, implicit timestamp conversion, unknown
+fields, and malformed source references. Resource limits remain 65,536 input
+bytes, nesting depth 64, 4,096 nodes, 8,192 parser events, 32,768 total scalar
+bytes, and 256 items in any one Composition collection. Canonical YAML uses
+the typed field order, block collections, two-space indentation, LF line
+endings, and no BOM.
 
-Each `saved_sql` result fingerprint includes its exact Saved SQL Entry and
-Revision, the normalized ordered `expected_result` descriptor, the used
-variable schema. It is independent of display components and selected Metric
-columns so multiple displays can share one source fingerprint. Changing the
-declared output names, logical types, order, used variables, or exact revision
-changes this fingerprint; selecting another column changes the Composition
-document fingerprint but not the source fingerprint. Saved SQL revision
-selection remains exact and does not fall back to a newer revision.
+The document fingerprint is lowercase hexadecimal SHA-256 over the normalized
+Composition value serialized as compact JSON. A SQL source fingerprint is
+separate: it hashes the server-confirmed ordered result descriptor. It detects
+changes in the result contract; it does not replace the document fingerprint
+or exact Saved SQL revision identity.
 
-The shared native/WASM fixture can be executed with
-`deno run -A crates/ugoite-wasm/tests/composition_parity.ts`.
+The replacement reader has one canonical Composition v1 grammar. It does not
+read the prereplacement `entry_query` source, root `tags`, or persisted display
+labels; it adds no alias, fallback, dual-write, deprecation window, or
+Composition migration. This does not affect ordinary Entry history, raw
+inspection, export, or append-only restore. Those recovery paths preserve the
+stored bytes and do not make a replaced Composition executable.
 
 ## Failure and recovery boundary
 
-Unsupported format versions and invalid documents return stable diagnostic
-codes. They do not make raw inspection, export, or revision history unavailable.
-The parser identifies the format marker and `format_version` before strict v1
-typed deserialization; only a supported v1 document is deserialized as
-`CompositionDocument`. Raw
-inspection, export, and history use the stored revision independently, so an
-unsupported or malformed document remains recoverable. Broken source
-references are execution failures; they do not erase the stored document.
+Unsupported versions and malformed documents return stable Composition
+diagnostics. Raw Entry inspection, export, and history do not require successful
+Composition parsing, so unsupported content remains inspectable and
+recoverable. Broken or unavailable source references do not erase the stored
+document. Missing or denied Composition reads preserve the existing generic
+error behavior; after a Composition read is authorized, unavailable sources
+do not disclose Form or Saved SQL identifiers or metadata.
 
-Entry query templates resolve to the existing bounded EntryQuery contract.
-Composition resolution reads and authorizes the caller-selected Entry ID and
-exact Revision ID before parsing. Its typed spec and reported Composition
-revision reference come from that same revision; a missing selected revision
-does not fall back to latest. Saved SQL references independently identify an
-exact Entry and Revision and never fall back to the latest revision. Current
-authorization is re-evaluated by the existing query paths.
-
-Browser page, scroll, result, and cache state are transient Work. They are not
-fields of a Composition and do not become Space Knowledge.
-
-### Restore retry identity
-
-`restore_composition_local` and
-`restore_composition_authorized_for_principals` are one-shot convenience
-methods. Each call creates a fresh operation ID; if a response is lost after a
-restore commits, calling either convenience method again can append another
-restore. A caller that may retry an uncertain outcome uses the corresponding
-`_with_operation_id` method and retains the operation ID and publication-
-defining values for that logical restore.
-
-Callers assign one operation ID to one logical restore and must not reuse it
-for a different restore. Publication identities are scoped by Space; within a
-Space, an ID is bound to its Composition Entry, source revision, exact base
-revision, and author. Reuse in that Space with different publication-defining
-values returns an idempotency conflict. Authorized calls also recheck the
-caller's current Entry and Form permissions on every attempt, including a
-replay, before resolving the durable publication. An authorization denial can
-therefore precede an idempotency conflict on a mismatched retry. These service
-methods do not change the REST API or storage contract.
+A Composition resolve selects one exact Composition revision. A missing
+revision does not fall back to the latest; a Saved SQL source independently
+selects its exact Entry and revision. Current source authorization is checked
+by the existing query paths. Browser page, scroll, result, and cache state are
+transient Work and never become Space Knowledge.

@@ -11,7 +11,6 @@ import {
 import { BackLink } from "~/components/BackLink";
 import {
   CompositionDiagnostics,
-  type CompositionFieldNames,
   type CompositionMetricQueryContext,
 } from "~/components/CompositionRenderer";
 import {
@@ -36,7 +35,7 @@ import {
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { UiIcon } from "~/components/UiIcon";
 import {
-  addEntryQuerySource,
+  addInlineSqlSource,
   addMetricDisplay,
   addSavedSqlSource,
   addTableDisplay,
@@ -44,6 +43,7 @@ import {
   canonicalizeDraft,
   type CompositionDraft,
   createEmptyDraft,
+  createMetricPreviewDraft,
   defaultVariableValues,
   type DraftInsertTarget,
   draftMetricsReady,
@@ -55,29 +55,21 @@ import {
   removeInputComponent,
   removeSource,
   removeVariable,
-  type SavedSqlRevisionUpdate,
   savedSqlVariableTypesFromFields,
   setDraftName,
-  setDraftTags,
-  setEntryQueryDisplaySystemFields,
-  setEntryQueryFilters,
-  setEntryQueryProjection,
-  setEntryQuerySort,
-  setSavedSqlRevision,
-  setSavedSqlVariableBinding,
+  setInlineSql,
+  setInlineSqlDescriptor,
+  setInlineSqlName,
   setSavedSqlVariableTypes,
+  setTableSource,
   upsertVariable,
 } from "~/lib/composition-draft";
 import {
   compositionApi,
   type CompositionVariableType,
 } from "~/lib/composition-api";
-import type {
-  EntryQueryCompositionFilter,
-  EntryQueryCompositionProjection,
-  EntryQueryCompositionSort,
-  EntryQueryCompositionSystemField,
-} from "~/lib/entry-query-composition";
+import { buildSqlSchema } from "~/lib/sql";
+import type { Form } from "~/lib/types";
 import { createCompositionPreviewHandle } from "~/lib/composition-preview-handle";
 import {
   blockIdsUsingSource,
@@ -118,38 +110,45 @@ export interface CompositionStudioProps {
 
 const PREVIEW_DEBOUNCE_MS = 400;
 
-const parseTags = (value: string): string[] => {
-  const seen = new Set<string>();
-  for (const tag of value.split(/[,\s]+/)) {
-    const trimmed = tag.trim();
-    if (trimmed && !seen.has(trimmed)) seen.add(trimmed);
+type StudioOverlay =
+  | { kind: "none" }
+  | { kind: "source-drawer" }
+  | { kind: "source-picker"; intent: "data" }
+  | {
+    kind: "source-picker";
+    intent: "insert";
+    componentKind: "table" | "metric";
+    target?: DraftInsertTarget;
   }
-  return [...seen];
-};
+  | {
+    kind: "source-picker";
+    intent: "change-table-source";
+    componentId: string;
+  }
+  | {
+    kind: "display-picker";
+    componentKind: "table" | "metric";
+    sourceDraftId: string | null;
+    target?: DraftInsertTarget;
+  }
+  | { kind: "block-inspector"; componentId: string };
 
 export function CompositionStudio(props: CompositionStudioProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const spaceId = () => props.spaceId;
+  const textLiteralCache = new Map<string, string>();
 
   const [draft, setDraft] = createSignal<CompositionDraft>(
     props.initialDraft ?? createEmptyDraft(),
   );
-  const [pickerOpen, setPickerOpen] = createSignal(false);
-  const [dataSourcePickerOpen, setDataSourcePickerOpen] = createSignal(false);
-  const [displayPickerOpen, setDisplayPickerOpen] = createSignal(false);
-  const [displayPickerKind, setDisplayPickerKind] = createSignal<
-    "table" | "metric"
-  >("table");
-  const [displayPickerSourceId, setDisplayPickerSourceId] = createSignal<
-    string | null
-  >(null);
-  const [sourcePickerKind, setSourcePickerKind] = createSignal<
-    "table" | "metric" | null
-  >(null);
-  const [dataPanel, setDataPanel] = createSignal<
-    "sources" | "variables" | "tags"
-  >("sources");
+  const [overlay, setOverlay] = createSignal<StudioOverlay>({ kind: "none" });
+  const [sourcePickerReturnFocus, setSourcePickerReturnFocus] = createSignal<
+    (() => HTMLElement | null) | undefined
+  >();
+  const [dataPanel, setDataPanel] = createSignal<"sources" | "variables">(
+    "sources",
+  );
   const [expandedId, setExpandedId] = createSignal<string | null>(null);
   // Transient canvas Work: selected block identity for the inspector and
   // the pending insertion target for the display picker.
@@ -160,11 +159,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const [mode, setMode] = createSignal<StudioMode>("design");
   // Transient viewport Work: narrow flags mirror the Studio CSS gates so no
   // JS path can leave a narrow viewport stuck in Split or rendering the
-  // wrong inspector container. `sheetOpen` tracks the bottom-sheet dismissal
-  // only; the selection owner stays `selectedId`.
+  // wrong inspector container. The overlay union owns sheet visibility while
+  // `selectedId` remains the canvas selection owner.
   const [belowSplitGate, setBelowSplitGate] = createSignal(false);
   const [sheetViewport, setSheetViewport] = createSignal(false);
-  const [sheetOpen, setSheetOpen] = createSignal(false);
 
   // RA9 mobile: the Split option hides below the Split gate in CSS, and the
   // same gate is enforced here so resizing into a narrow viewport while in
@@ -206,28 +204,57 @@ export function CompositionStudio(props: CompositionStudioProps) {
   createEffect(() => {
     if (belowSplitGate() && mode() === "split") setMode("design");
   });
+  createEffect(() => {
+    if (
+      overlay().kind === "source-drawer" &&
+      (mode() !== "data" || dataPanel() !== "sources")
+    ) {
+      setOverlay({ kind: "none" });
+    }
+  });
 
   // A dismissed or viewport-orphaned sheet returns focus to the invoking
   // block's select control. Block identities are compared literally so
   // Component ids are compared literally, never parsed as selectors.
-  const focusBlockSelect = (blockId: string | null): boolean => {
-    if (!blockId || typeof document === "undefined") return false;
+  const blockSelectControl = (blockId: string | null): HTMLElement | null => {
+    if (!blockId || typeof document === "undefined") return null;
     const blocks = document.querySelectorAll("[data-block-id]");
     for (const block of blocks) {
       if (block.getAttribute("data-block-id") !== blockId) continue;
       const control = block.querySelector("button");
-      if (control instanceof HTMLElement) {
-        control.focus();
-        return true;
-      }
+      if (control instanceof HTMLElement) return control;
     }
-    return false;
+    return null;
+  };
+
+  const focusBlockSelect = (blockId: string | null): boolean => {
+    const control = blockSelectControl(blockId);
+    if (!control) return false;
+    control.focus();
+    return true;
+  };
+
+  const insertPositionControl = (
+    target: DraftInsertTarget | undefined,
+  ): HTMLElement | null => {
+    if (!target || typeof document === "undefined") return null;
+    for (const control of document.querySelectorAll<HTMLElement>(
+      ".designAdd[data-insert-row-id]",
+    )) {
+      if (
+        control.dataset.insertRowId === (target.rowId ?? "") &&
+        control.dataset.insertRowIndex === String(target.rowIndex) &&
+        control.dataset.insertItemIndex === String(target.itemIndex)
+      ) return control;
+    }
+    return null;
   };
 
   const closeSheetKeepSelection = () => {
-    if (!sheetOpen()) return;
-    const invoking = selectedId();
-    setSheetOpen(false);
+    const current = overlay();
+    if (current.kind !== "block-inspector") return;
+    const invoking = current.componentId;
+    setOverlay({ kind: "none" });
     // Focus after disposal: the sheet lifts `inert` in its own cleanup, so
     // returning focus in a microtask never races the inert removal.
     queueMicrotask(() => focusBlockSelect(invoking));
@@ -237,9 +264,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
   // too, so reopening the inspector for the same block stays a single tap.
   // The Data selection is kept: only the canvas selection clears.
   const dismissSheet = () => {
-    if (!sheetOpen()) return;
-    const invoking = selectedId();
-    setSheetOpen(false);
+    const current = overlay();
+    if (current.kind !== "block-inspector") return;
+    const invoking = current.componentId;
+    setOverlay({ kind: "none" });
     setSelectedId(null);
     queueMicrotask(() => focusBlockSelect(invoking));
   };
@@ -254,7 +282,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
 
     setDraft(result.draft);
     setSelectedId(null);
-    setSheetOpen(false);
+    setOverlay({ kind: "none" });
     queueMicrotask(() => {
       const canvas = document.querySelector(".designCanvas");
       const firstBlock = canvas?.querySelector<HTMLElement>(
@@ -271,32 +299,47 @@ export function CompositionStudio(props: CompositionStudioProps) {
   // Leaving the sheet viewport unmounts the sheet; an orphaned open sheet
   // returns focus to its invoking block, which stays selected inline.
   createEffect(() => {
-    if (!sheetViewport() && sheetOpen()) closeSheetKeepSelection();
+    if (!sheetViewport() && overlay().kind === "block-inspector") {
+      closeSheetKeepSelection();
+    }
   });
   const [paletteTarget, setPaletteTarget] = createSignal<
-    DraftInsertTarget | null
-  >(null);
-  const [pendingInsert, setPendingInsert] = createSignal<
     DraftInsertTarget | null
   >(null);
   const [saving, setSaving] = createSignal(false);
   const [saveError, setSaveError] = createSignal<string | null>(null);
   const [saveRetryAvailable, setSaveRetryAvailable] = createSignal(false);
 
-  // Form labels are display metadata only. Composition fields keep their
-  // stable field IDs, while the editor shows the authorized Form labels.
+  // SQL schema completion uses authorized Form metadata.
   const [forms] = createResource(
     () =>
-      draft().sources.some((source) => source.kind === "entry_query")
+      draft().sources.some((source) => source.kind === "inline_sql")
         ? props.spaceId
         : undefined,
     (spaceId) => formApi.list(spaceId).catch(() => []),
   );
-  const fieldNames: CompositionFieldNames = (formId, fieldId) => {
-    return compositionFormFieldName(forms(), formId, fieldId);
-  };
   const previewHandle = createCompositionPreviewHandle();
   onCleanup(previewHandle.dispose);
+
+  const completeDisplayInsert = (
+    nextDraft: CompositionDraft,
+    componentId: string,
+    sourceDraftId: string,
+  ) => {
+    setDraft(nextDraft);
+    setExpandedId(sourceDraftId);
+    previewHandle.ensureSource(sourceDraftId);
+    setSelectedId(null);
+    setOverlay({ kind: "none" });
+    setSourcePickerReturnFocus(undefined);
+    queueMicrotask(() => focusBlockSelect(componentId));
+  };
+  const previewBase = () => props.saveMode.kind === "update"
+    ? {
+      entryId: props.saveMode.compositionId,
+      revisionId: props.saveMode.baseRevisionId,
+    }
+    : undefined;
 
   // Saved composition documents pin revisions and bindings, while the
   // variable type schema remains owned by that Saved SQL revision. Hydrate
@@ -364,8 +407,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const saveBlockedReason = (): DraftSaveBlockedReason | undefined =>
     readiness().reason;
   // A disabled Save carries its reason in the accessible name and title,
-  // mirroring the EntryQuery seed-navigation button pattern. No prose
-  // paragraphs explain steady-state blocks.
+  // mirroring the source-picker navigation pattern. No prose paragraphs
+  // explain steady-state blocks.
   const saveReasonText = (): string | undefined => {
     switch (saveBlockedReason()) {
       case "name":
@@ -394,6 +437,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
     if (previewTimer !== undefined) clearTimeout(previewTimer);
   });
 
+  // Keep the exact draft object that produced the current preview. The
+  // resolver's server-owned SQL descriptors are copied back only when this
+  // same snapshot is still current; the preview's own canonicalization is
+  // enough to establish that correspondence.
+  let previewSnapshot: CompositionDraft | undefined;
   const schedulePreview = (snapshot: CompositionDraft) => {
     const generation = ++previewGeneration;
     if (previewTimer !== undefined) clearTimeout(previewTimer);
@@ -417,6 +465,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
           // source, and mode changes during an in-flight preview never
           // resurrect a stale fetch set; the generation guard drops the
           // stale response itself.
+          previewSnapshot = snapshot;
           await previewHandle.preview(
             spaceId(),
             canonical.canonical_yaml,
@@ -425,6 +474,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
               visibleSourceIds: visibleComponentSourceIds(draft()),
               selectedSourceId: expandedId(),
             },
+            previewBase(),
           );
         } catch {
           // canonicalizeDraft rejects only on WASM transport failure;
@@ -446,6 +496,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
     previewGeneration += 1;
     if (previewTimer !== undefined) clearTimeout(previewTimer);
     previewTimer = undefined;
+    previewSnapshot = draft();
     void previewHandle.preview(current.spaceId, current.yaml, {
       ...previewHandle.variables(),
     }, previewScope());
@@ -471,25 +522,22 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const addSourceSeed = (seed: CompositionSourceSeed) => {
     const added = seed.kind === "saved_sql"
       ? addSavedSqlSource(draft(), seed.seed)
-      : addEntryQuerySource(draft(), seed.seed);
+      : addInlineSqlSource(draft(), seed.seed);
     return { draft: added.draft, draftId: added.draftId };
   };
 
-  const addSeed = (seed: CompositionSourceSeed) => {
-    const { draft: provisioned, draftId } = addSourceSeed(seed);
-    const table = addTableDisplay(provisioned, draftId);
-    if (!table.ok || !table.draftId) return;
-    setDraft(table.draft);
-    setExpandedId(draftId);
-    setSelectedId(designBlockIdForComponent(table.draftId));
-    if (sheetViewport()) setSheetOpen(true);
-    setPickerOpen(false);
+  const openDataSourcePicker = (returnFocus?: () => HTMLElement | null) => {
+    setSelectedId(null);
+    setSourcePickerReturnFocus(() =>
+      typeof returnFocus === "function" ? returnFocus : undefined
+    );
+    setOverlay({ kind: "source-picker", intent: "data" });
   };
 
-  const openDataSourcePicker = () => {
-    setSourcePickerKind(null);
-    setDataSourcePickerOpen(true);
-    setPickerOpen(true);
+  const openTableSourcePicker = (componentId: string) => {
+    setSourcePickerReturnFocus(() => () => blockSelectControl(componentId));
+    setSelectedId(null);
+    setOverlay({ kind: "source-picker", intent: "change-table-source", componentId });
   };
 
   const addDataSource = (seed: CompositionSourceSeed) => {
@@ -497,16 +545,12 @@ export function CompositionStudio(props: CompositionStudioProps) {
     setDraft(sourceDraft);
     setExpandedId(draftId);
     previewHandle.ensureSource(draftId);
-    setDataSourcePickerOpen(false);
-    setPickerOpen(false);
+    setOverlay({ kind: "none" });
   };
 
-  const toggleExpanded = (sourceDraftId: string) => {
-    const selecting = expandedId() !== sourceDraftId;
-    setExpandedId(selecting ? sourceDraftId : null);
-    // Selecting a source outside the scoped fetch set pages it on demand
-    // through the existing path; deselecting never refetches.
-    if (selecting) previewHandle.ensureSource(sourceDraftId);
+  const selectSource = (sourceDraftId: string) => {
+    setExpandedId(sourceDraftId);
+    previewHandle.ensureSource(sourceDraftId);
   };
 
   const moveDraftSource = (sourceDraftId: string, direction: "up" | "down") => {
@@ -525,28 +569,22 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const addDisplaySeed = (seed: CompositionDisplaySeed) => {
     // The display picker survives only as the canvas insertion delegate and
     // lands at the recorded canvas target.
-    const target = pendingInsert() ?? undefined;
+    const activeOverlay = overlay();
+    if (activeOverlay.kind !== "display-picker") return;
+    const target = activeOverlay.target;
     const added = seed.kind === "table"
-      ? addTableDisplay(draft(), seed.sourceDraftId, seed.label, target)
+      ? addTableDisplay(draft(), seed.sourceDraftId, target)
       : addMetricDisplay(
         draft(),
         seed.sourceDraftId,
         seed.column,
-        seed.label,
         target,
       );
-    if (added.ok) {
-      setDraft(added.draft);
-      if (added.draftId) {
-        setSelectedId(designBlockIdForComponent(added.draftId));
-        // The fresh block owns the inspector, matching canvas insertion:
-        // on narrow viewports that means opening the bottom sheet.
-        if (sheetViewport()) setSheetOpen(true);
-      }
+    if (added.ok && added.draftId) {
+      completeDisplayInsert(added.draft, added.draftId, seed.sourceDraftId);
+    } else {
+      setOverlay({ kind: "none" });
     }
-    setPendingInsert(null);
-    setDisplayPickerOpen(false);
-    setDisplayPickerSourceId(null);
   };
 
   const previewMetric = async (seed: {
@@ -555,24 +593,16 @@ export function CompositionStudio(props: CompositionStudioProps) {
   }) => {
     try {
       const snapshot = draft();
-      const source = snapshot.sources.find((entry) =>
-        entry.draftId === seed.sourceDraftId
-      );
-      if (!source) {
+      const scratch = createMetricPreviewDraft(snapshot, seed.sourceDraftId);
+      if (!scratch) {
         return { ok: false, error: t("composition.metricUnavailable") };
       }
 
       // Canonicalize an isolated one-metric draft so unfinished inspector
       // edits elsewhere cannot block the explicit picker preview.
-      const scratch: CompositionDraft = {
-        ...createEmptyDraft("Metric preview"),
-        sources: [source],
-        variables: snapshot.variables.map((variable) => ({ ...variable })),
-        nextSourceSeq: snapshot.nextSourceSeq,
-      };
       const metric = addMetricDisplay(
         scratch,
-        source.draftId,
+        seed.sourceDraftId,
         seed.column,
       );
       if (!metric.ok || !metric.draftId) {
@@ -592,6 +622,12 @@ export function CompositionStudio(props: CompositionStudioProps) {
       );
       const response = await compositionApi.queryMetric(spaceId(), {
         target: { kind: "draft", yaml: canonical.canonical_yaml },
+        ...(previewBase()
+          ? {
+            base_entry_id: previewBase()!.entryId,
+            base_revision_id: previewBase()!.revisionId,
+          }
+          : {}),
         component_id: metric.draftId,
         variables,
       });
@@ -608,135 +644,119 @@ export function CompositionStudio(props: CompositionStudioProps) {
   };
 
   const chooseSourceForDisplay = (kind: "table" | "metric") => {
-    setDataSourcePickerOpen(false);
-    setSourcePickerKind(kind);
-    setDisplayPickerKind(kind);
-    setDisplayPickerOpen(false);
-    setPickerOpen(true);
+    const activeOverlay = overlay();
+    if (activeOverlay.kind !== "display-picker") return;
+    setSourcePickerReturnFocus(() => () => insertPositionControl(activeOverlay.target));
+    setOverlay({
+      kind: "source-picker",
+      intent: "insert",
+      componentKind: kind,
+      target: activeOverlay.target,
+    });
   };
 
   const addSourceForDisplay = (seed: CompositionSourceSeed) => {
-    const kind = sourcePickerKind();
-    if (!kind) {
-      addSeed(seed);
+    const activeOverlay = overlay();
+    if (activeOverlay.kind !== "source-picker") return;
+    if (activeOverlay.intent === "data") {
+      addDataSource(seed);
       return;
     }
-    if (kind === "metric" && seed.kind !== "saved_sql") return;
+    if (activeOverlay.intent === "change-table-source") {
+      const { draft: sourceDraft, draftId } = addSourceSeed(seed);
+      const changed = setTableSource(
+        sourceDraft,
+        activeOverlay.componentId,
+        draftId,
+      );
+      if (!changed.ok) return;
+      setDraft(changed.draft);
+      setExpandedId(draftId);
+      previewHandle.ensureSource(draftId);
+      setSelectedId(null);
+      setSourcePickerReturnFocus(undefined);
+      setOverlay({ kind: "none" });
+      queueMicrotask(() => focusBlockSelect(activeOverlay.componentId));
+      return;
+    }
     const { draft: sourceDraft, draftId } = addSourceSeed(seed);
-    if (kind === "table") {
+    if (activeOverlay.componentKind === "table") {
       const table = addTableDisplay(
         sourceDraft,
         draftId,
-        undefined,
-        pendingInsert() ?? undefined,
+        activeOverlay.target,
       );
       if (!table.ok || !table.draftId) return;
-      setDraft(table.draft);
-      setExpandedId(draftId);
-      setSelectedId(designBlockIdForComponent(table.draftId));
-      if (sheetViewport()) setSheetOpen(true);
-      setPendingInsert(null);
-      setPickerOpen(false);
-      setSourcePickerKind(null);
+      completeDisplayInsert(table.draft, table.draftId, draftId);
       return;
     }
-    // Add the Saved SQL source, then choose and preview a result column before it
+    // Add the SQL source, then choose and preview a result column before it
     // enters the canvas layout.
     setDraft(sourceDraft);
-    setDisplayPickerSourceId(draftId);
-    setPickerOpen(false);
-    setSourcePickerKind(null);
-    setDisplayPickerKind("metric");
-    setDisplayPickerOpen(true);
+    setOverlay({
+      kind: "display-picker",
+      componentKind: "metric",
+      sourceDraftId: draftId,
+      target: activeOverlay.target,
+    });
+  };
+
+  const selectExistingSource = (sourceDraftId: string) => {
+    const activeOverlay = overlay();
+    if (activeOverlay.kind !== "source-picker") return;
+    if (activeOverlay.intent === "data") {
+      setExpandedId(sourceDraftId);
+      previewHandle.ensureSource(sourceDraftId);
+      setOverlay({ kind: "none" });
+      return;
+    }
+    if (activeOverlay.intent === "change-table-source") {
+      const changed = setTableSource(
+        draft(),
+        activeOverlay.componentId,
+        sourceDraftId,
+      );
+      if (!changed.ok) return;
+      setDraft(changed.draft);
+      setExpandedId(sourceDraftId);
+      previewHandle.ensureSource(sourceDraftId);
+      setSelectedId(null);
+      setSourcePickerReturnFocus(undefined);
+      setOverlay({ kind: "none" });
+      queueMicrotask(() => focusBlockSelect(activeOverlay.componentId));
+      return;
+    }
+    if (activeOverlay.intent === "insert" && activeOverlay.componentKind === "metric") {
+      setOverlay({
+        kind: "display-picker",
+        componentKind: "metric",
+        sourceDraftId,
+        target: activeOverlay.target,
+      });
+      return;
+    }
+    const table = addTableDisplay(
+      draft(),
+      sourceDraftId,
+      activeOverlay.target,
+    );
+    if (table.ok && table.draftId) {
+      completeDisplayInsert(table.draft, table.draftId, sourceDraftId);
+      return;
+    }
   };
 
   // Data workspace edits flow through narrow draft updaters into the shared
   // debounced preview. Each returns whether the edit was accepted so the
   // editor can surface a rejection without inventing query grammar.
-  const updateEntryQueryFilters = (
-    sourceDraftId: string,
-    filters: EntryQueryCompositionFilter[],
-  ): boolean => {
-    const result = setEntryQueryFilters(draft(), sourceDraftId, filters);
+  const updateInlineSql = (sourceDraftId: string, sql: string): boolean => {
+    const result = setInlineSql(draft(), sourceDraftId, sql);
     if (result.ok) setDraft(result.draft);
     return result.ok;
   };
 
-  const updateEntryQuerySort = (
-    sourceDraftId: string,
-    sort: EntryQueryCompositionSort[],
-  ): boolean => {
-    const result = setEntryQuerySort(draft(), sourceDraftId, sort);
-    if (result.ok) setDraft(result.draft);
-    return result.ok;
-  };
-
-  const updateEntryQueryProjection = (
-    sourceDraftId: string,
-    projection: EntryQueryCompositionProjection,
-  ): boolean => {
-    const result = setEntryQueryProjection(draft(), sourceDraftId, projection);
-    if (result.ok) setDraft(result.draft);
-    return result.ok;
-  };
-
-  const updateEntryQueryDisplaySystemFields = (
-    sourceDraftId: string,
-    fields: EntryQueryCompositionSystemField[],
-  ): boolean => {
-    const result = setEntryQueryDisplaySystemFields(
-      draft(),
-      sourceDraftId,
-      fields,
-    );
-    if (result.ok) setDraft(result.draft);
-    return result.ok;
-  };
-
-  // Exact-revision update after the Saved SQL editor publishes a new
-  // revision. Compatible bindings survive; every new SQL variable is
-  // mapped explicitly in the Variables workspace.
-  const updateSavedSqlRevision = (
-    sourceDraftId: string,
-    revision: SavedSqlRevisionUpdate,
-  ): boolean => {
-    const result = setSavedSqlRevision(draft(), sourceDraftId, revision);
-    if (!result.ok) return false;
-    setDraft(result.draft);
-    return true;
-  };
-
-  const updateSavedSqlVariableTypes = (
-    sourceDraftId: string,
-    variableTypes: Record<string, CompositionVariableType>,
-  ): void => {
-    const current = draft().sources.find((source) =>
-      source.draftId === sourceDraftId
-    );
-    if (current?.kind !== "saved_sql") return;
-    if (
-      JSON.stringify(current.variableTypes ?? {}) ===
-        JSON.stringify(variableTypes)
-    ) return;
-    const result = setSavedSqlVariableTypes(
-      draft(),
-      sourceDraftId,
-      variableTypes,
-    );
-    if (result.ok) setDraft(result.draft);
-  };
-
-  const updateSavedSqlVariableBinding = (
-    sourceDraftId: string,
-    sqlVariable: string,
-    variableId: string | undefined,
-  ): boolean => {
-    const result = setSavedSqlVariableBinding(
-      draft(),
-      sourceDraftId,
-      sqlVariable,
-      variableId,
-    );
+  const updateInlineSqlName = (sourceDraftId: string, name: string): boolean => {
+    const result = setInlineSqlName(draft(), sourceDraftId, name);
     if (result.ok) setDraft(result.draft);
     return result.ok;
   };
@@ -777,8 +797,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
     // From the narrow bottom sheet dismiss the sheet and show the Data
     // workspace. Its mobile navigator closes around the selected detail and
     // moves focus to the control that can reopen the source list.
-    if (sheetViewport() && sheetOpen()) {
-      setSheetOpen(false);
+    if (sheetViewport() && overlay().kind === "block-inspector") {
+      setOverlay({ kind: "none" });
       setSelectedId(null);
       setMode("data");
       return;
@@ -797,15 +817,23 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const handleSelectBlock = (blockId: string | null) => {
     setSelectedId(blockId);
     if (!blockId) {
-      setSheetOpen(false);
+      setOverlay({ kind: "none" });
     } else if (sheetViewport()) {
-      setSheetOpen(true);
+      setOverlay({ kind: "block-inspector", componentId: blockId });
+    } else if (overlay().kind === "block-inspector") {
+      setOverlay({ kind: "none" });
     }
     const sourceDraftId = sourceDraftIdForBlock(draft(), blockId);
     if (!sourceDraftId) return;
     setExpandedId(sourceDraftId);
     previewHandle.ensureSource(sourceDraftId);
     focusSourceRow(sourceDraftId);
+  };
+
+  const handleInsertBlock = (blockId: string) => {
+    setSelectedId(null);
+    if (overlay().kind === "block-inspector") setOverlay({ kind: "none" });
+    queueMicrotask(() => focusBlockSelect(blockId));
   };
 
   // Data source selection soft-highlights the Design blocks that use it.
@@ -961,6 +989,35 @@ export function CompositionStudio(props: CompositionStudioProps) {
       component_bindings: current.preview.plan?.component_bindings ?? [],
     };
   };
+  let descriptorSyncGeneration = 0;
+  createEffect(() => {
+    const snapshot = draft();
+    const current = previewState();
+    const preview = current.preview;
+    if (
+      !preview?.ok || !preview.plan || !current.yaml ||
+      previewSnapshot !== snapshot
+    ) return;
+    const generation = ++descriptorSyncGeneration;
+    if (generation !== descriptorSyncGeneration || draft() !== snapshot) return;
+    const latest = previewState();
+    if (latest.yaml !== current.yaml || latest.preview !== preview) return;
+    let next = snapshot;
+    let changed = false;
+    for (const source of preview.plan.sources) {
+      if (source.kind !== "inline_sql") continue;
+      const updated = setInlineSqlDescriptor(next, source.source_id, {
+        formBindings: source.form_bindings,
+        expectedResult: source.expected_result,
+        schemaFingerprint: source.source_schema_fingerprint,
+      });
+      if (updated.ok && updated.draft !== next) {
+        next = updated.draft;
+        changed = true;
+      }
+    }
+    if (changed) setDraft(next);
+  });
   const metricQueryContext = (): CompositionMetricQueryContext | undefined => {
     const current = previewState();
     if (
@@ -971,6 +1028,12 @@ export function CompositionStudio(props: CompositionStudioProps) {
       spaceId: current.spaceId,
       target: { kind: "draft", yaml: current.yaml },
       draftFingerprint: current.identity.fingerprint,
+      ...(previewBase()
+        ? {
+          base_entry_id: previewBase()!.entryId,
+          base_revision_id: previewBase()!.revisionId,
+        }
+        : {}),
       variables: { ...previewHandle.variables() },
       dependencies: current.preview.plan?.dependencies,
     };
@@ -1004,7 +1067,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
         component_id: input.draftId,
         kind: "input" as const,
         variable_id: input.variable,
-        ...(input.label ? { label: input.label } : {}),
       }));
     return {
       sources: plan?.sources ?? [],
@@ -1017,10 +1079,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
     previewState().previewError !== undefined &&
     previewState().preview === undefined;
 
-  const dataHeadingId = "studio-data-heading";
-  const designHeadingId = "studio-design-heading";
-  const variablesHeadingId = "studio-variables-heading";
-  const tagsHeadingId = "studio-tags-heading";
+  const designHeadingId = "studio-mode-design";
+  const variablesHeadingId = "studio-data-variables-tab";
+  const sourceTabId = "studio-data-sources-tab";
   const nameInputId = "studio-name";
 
   const modeIcon = (entry: StudioMode): "canvas-table" | "sql" | "columns" =>
@@ -1038,38 +1099,48 @@ export function CompositionStudio(props: CompositionStudioProps) {
   // The bottom sheet owns the selected block identity on narrow viewports;
   // clearing the selection (or leaving the sheet viewport) dismisses it.
   const sheetSelection = (): string | null =>
-    sheetViewport() && sheetOpen() ? selectedId() : null;
+    sheetViewport() && overlay().kind === "block-inspector"
+      ? overlay().componentId
+      : null;
+  const sourcePickerOverlay = () =>
+    overlay().kind === "source-picker" ? overlay() : undefined;
+  const displayPickerOverlay = () =>
+    overlay().kind === "display-picker" ? overlay() : undefined;
+  const mobileDrawerOpen = () => overlay().kind === "source-drawer";
+  const onMobileDrawerOpenChange = (open: boolean) => {
+    if (open) setOverlay({ kind: "source-drawer" });
+    else if (overlay().kind === "source-drawer") setOverlay({ kind: "none" });
+  };
   const renderDataWorkspace = (
-    headingId = dataHeadingId,
+    headingId = "studio-mode-data",
     collapsible = false,
   ) => (
     <CompositionDataWorkspace
-      spaceId={spaceId()}
       draft={draft()}
       headingId={headingId}
       selectedSourceId={expandedId()}
       collapsible={collapsible}
-      onSelectSource={toggleExpanded}
+      mobileDrawerOpen={mobileDrawerOpen()}
+      onMobileDrawerOpenChange={onMobileDrawerOpenChange}
+      onSelectSource={selectSource}
       onAddSource={openDataSourcePicker}
       onMoveSource={moveDraftSource}
       onRemoveSource={removeDraftSource}
-      onEntryQueryFilters={updateEntryQueryFilters}
-      onEntryQuerySort={updateEntryQuerySort}
-      onEntryQueryProjection={updateEntryQueryProjection}
-      onEntryQueryDisplaySystemFields={updateEntryQueryDisplaySystemFields}
-      onSavedSqlRevision={updateSavedSqlRevision}
-      onSavedSqlVariableTypes={updateSavedSqlVariableTypes}
-      onSavedSqlVariableBinding={updateSavedSqlVariableBinding}
+      onInlineSql={updateInlineSql}
+      onInlineSqlName={updateInlineSqlName}
       variables={draft().variables}
-      onEditVariables={() => setDataPanel("variables")}
+      variableValues={previewHandle.variables()}
       savedSqlEditHref={savedSqlEditHref}
+      sqlSchema={buildSqlSchema((forms() || []) as Form[])}
+      forms={(forms() || []) as Form[]}
       planSources={readyPlan()?.sources ?? []}
       sourceStates={readySources()}
-      diagnostics={previewDiagnostics() ?? []}
+      sourceCounts={previewState().counts}
       previewActive={isPreviewing()}
       onNext={(sourceId) => previewHandle.next(sourceId)}
       onPrevious={(sourceId) => previewHandle.previous(sourceId)}
       onRetry={(sourceId) => previewHandle.retry(sourceId)}
+      onCount={(sourceId) => void previewHandle.count(sourceId)}
       registerSourceRow={registerSourceRow}
     />
   );
@@ -1128,16 +1199,19 @@ export function CompositionStudio(props: CompositionStudioProps) {
             ...previewHandle.variables(),
           }}
           sources={readySources()}
-          fieldNames={fieldNames}
           selectedId={selectedId()}
           highlightedIds={highlightedBlockIds()}
           onSelect={handleSelectBlock}
+          onInsert={handleInsertBlock}
           onDraftChange={setDraft}
           onRequestDisplayPicker={(target) => {
-            setPendingInsert(target);
-            setDisplayPickerKind("table");
-            setDisplayPickerSourceId(null);
-            setDisplayPickerOpen(true);
+            setSelectedId(null);
+            setOverlay({
+              kind: "display-picker",
+              componentKind: "table",
+              sourceDraftId: null,
+              target,
+            });
           }}
           onNext={(sourceId) => previewHandle.next(sourceId)}
           onPrevious={(sourceId) => previewHandle.previous(sourceId)}
@@ -1152,10 +1226,12 @@ export function CompositionStudio(props: CompositionStudioProps) {
         <Show when={!sheetViewport()}>
           <CompositionInspector
             draft={draft()}
+            textLiteralCache={textLiteralCache}
             selectedId={selectedId()}
             onDraftChange={setDraft}
             onRemove={removeSelectedBlock}
             onDataJump={jumpToSource}
+            onChangeTableSource={openTableSourcePicker}
           />
         </Show>
       </div>
@@ -1163,10 +1239,12 @@ export function CompositionStudio(props: CompositionStudioProps) {
         {(activeId) => (
           <CompositionInspectorSheet
             draft={draft()}
+            textLiteralCache={textLiteralCache}
             selectedId={activeId()}
             onDraftChange={setDraft}
             onRemove={removeSelectedBlock}
             onDataJump={jumpToSource}
+            onChangeTableSource={openTableSourcePicker}
             onClose={dismissSheet}
           />
         )}
@@ -1179,7 +1257,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
       <h1 class="ui-sr-only">
         {draft().name.trim() || t("composition.name")}
       </h1>
-      <header class="flex items-center gap-2">
+      <header class="flex items-center gap-2" inert={mobileDrawerOpen()}>
         <BackLink
           href={props.backHref}
           label={props.backLabel}
@@ -1208,6 +1286,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
         class="studioMode"
         role="radiogroup"
         aria-label={t("composition.studioMode")}
+        inert={mobileDrawerOpen()}
       >
         <For each={STUDIO_MODES}>
           {(entry) => (
@@ -1215,6 +1294,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
               type="button"
               role="radio"
               aria-checked={mode() === entry}
+              id={entry === "design"
+                ? designHeadingId
+                : entry === "data"
+                ? "studio-mode-data"
+                : "studio-mode-split"}
               class="studioModeOption"
               classList={{
                 "studioModeOption--active": mode() === entry,
@@ -1228,38 +1312,45 @@ export function CompositionStudio(props: CompositionStudioProps) {
           )}
         </For>
       </div>
-      <Show when={saveError()}>
-        <p class="ui-text-danger" role="alert">{saveError()}</p>
-      </Show>
-      <Show when={saveRetryAvailable() && !saving()}>
-        <button
-          class="ui-button ui-button-secondary"
-          type="button"
-          onClick={() => void handleRetrySave()}
-        >
-          {t("composition.retry")}
-        </button>
-      </Show>
+      <div inert={mobileDrawerOpen()}>
+        <Show when={saveError()}>
+          <p class="ui-text-danger" role="alert">{saveError()}</p>
+        </Show>
+        <Show when={saveRetryAvailable() && !saving()}>
+          <button
+            class="ui-button ui-button-secondary"
+            type="button"
+            onClick={() => void handleRetrySave()}
+          >
+            {t("composition.retry")}
+          </button>
+        </Show>
+      </div>
 
-      {renderDiagnosticsStrip()}
+      <div inert={mobileDrawerOpen()}>{renderDiagnosticsStrip()}</div>
 
       <Show when={mode() === "data"}>
-        <section class="section" aria-labelledby={dataHeadingId}>
-          <h2 id={dataHeadingId}>{t("composition.studioData")}</h2>
+        <section class="section" aria-labelledby="studio-mode-data">
           <div
             class="tabs studioDataTabs"
             role="tablist"
-            aria-labelledby={dataHeadingId}
+            aria-label={t("composition.studioData")}
+            inert={mobileDrawerOpen()}
           >
             <button
               type="button"
-              id="studio-data-sources-tab"
+              id={sourceTabId}
               role="tab"
               aria-selected={dataPanel() === "sources"}
               aria-controls="studio-data-sources-panel"
               class="tab"
               classList={{ active: dataPanel() === "sources" }}
-              onClick={() => setDataPanel("sources")}
+              onClick={() => {
+                setDataPanel("sources");
+                if (overlay().kind === "source-drawer") {
+                  setOverlay({ kind: "none" });
+                }
+              }}
             >
               {t("composition.studioSources")}
             </button>
@@ -1271,30 +1362,23 @@ export function CompositionStudio(props: CompositionStudioProps) {
               aria-controls="studio-data-variables-panel"
               class="tab"
               classList={{ active: dataPanel() === "variables" }}
-              onClick={() => setDataPanel("variables")}
+              onClick={() => {
+                setDataPanel("variables");
+                if (overlay().kind === "source-drawer") {
+                  setOverlay({ kind: "none" });
+                }
+              }}
             >
               {t("composition.studioVariables")}
-            </button>
-            <button
-              type="button"
-              id="studio-data-tags-tab"
-              role="tab"
-              aria-selected={dataPanel() === "tags"}
-              aria-controls="studio-data-tags-panel"
-              class="tab"
-              classList={{ active: dataPanel() === "tags" }}
-              onClick={() => setDataPanel("tags")}
-            >
-              {t("composition.studioTags")}
             </button>
           </div>
           <div
             id="studio-data-sources-panel"
             role="tabpanel"
-            aria-labelledby="studio-data-sources-tab"
+            aria-labelledby={sourceTabId}
             hidden={dataPanel() !== "sources"}
           >
-            {renderDataWorkspace("studio-data-sources-tab")}
+            {renderDataWorkspace(sourceTabId)}
           </div>
           <section
             id="studio-data-variables-panel"
@@ -1302,10 +1386,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
             aria-labelledby="studio-data-variables-tab"
             hidden={dataPanel() !== "variables"}
             class="section"
+            inert={mobileDrawerOpen()}
           >
-            <h2 id={variablesHeadingId}>
-              {t("composition.studioVariables")}
-            </h2>
             <CompositionVariableList
               variables={draft().variables}
               headingId={variablesHeadingId}
@@ -1314,30 +1396,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
               onRemove={removeDraftVariable}
             />
           </section>
-          <section
-            id="studio-data-tags-panel"
-            role="tabpanel"
-            aria-labelledby="studio-data-tags-tab"
-            hidden={dataPanel() !== "tags"}
-            class="section"
-          >
-            <h2 id={tagsHeadingId}>{t("composition.studioTags")}</h2>
-            <input
-              class="ui-input"
-              aria-label={t("composition.studioTags")}
-              value={draft().tags.join(", ")}
-              onInput={(event) =>
-                setDraft(
-                  setDraftTags(draft(), parseTags(event.currentTarget.value)),
-                )}
-            />
-          </section>
         </section>
       </Show>
 
       <Show when={mode() === "design"}>
         <section class="section" aria-labelledby={designHeadingId}>
-          <h2 id={designHeadingId}>{t("composition.studioDesign")}</h2>
           {renderDesignWorkspace()}
         </section>
       </Show>
@@ -1345,13 +1408,15 @@ export function CompositionStudio(props: CompositionStudioProps) {
       <Show when={mode() === "split"}>
         <section class="section" aria-label={t("composition.studioMode")}>
           <div class="studioSplit">
-            <div aria-labelledby={designHeadingId}>
-              <h2 id={designHeadingId}>{t("composition.studioDesign")}</h2>
+            <div role="region" aria-label={t("composition.studioDesign")}>
               {renderDesignWorkspace()}
             </div>
-            <div class="studioSplitPane" aria-labelledby={dataHeadingId}>
-              <h2 id={dataHeadingId}>{t("composition.studioData")}</h2>
-              {renderDataWorkspace(dataHeadingId, true)}
+            <div
+              class="studioSplitPane"
+              role="region"
+              aria-label={t("composition.studioData")}
+            >
+              {renderDataWorkspace("studio-mode-data", true)}
             </div>
           </div>
         </section>
@@ -1364,39 +1429,36 @@ export function CompositionStudio(props: CompositionStudioProps) {
           legacy Preview section is gone too: the canvas previews blocks
           inline through the shared debounced handle, per-source results page
           inside the Data workspace, and resolve diagnostics render in the
-          strip above. Variables and Tags edit in Data mode only. */
+          strip above. Variables edit in Data mode only. */
       }
 
-      <Show when={pickerOpen()}>
+      <Show when={sourcePickerOverlay()}>
         <CompositionSourcePicker
           spaceId={spaceId()}
-          sourcePurpose={sourcePickerKind() ?? "data"}
-          onSelect={(seed) =>
-            dataSourcePickerOpen()
-              ? addDataSource(seed)
-              : addSourceForDisplay(seed)}
+          returnFocus={sourcePickerReturnFocus()}
+          existingSources={draft().sources}
+          onSelectExisting={selectExistingSource}
+          onSelect={addSourceForDisplay}
           onClose={() => {
-            setPickerOpen(false);
-            setDataSourcePickerOpen(false);
-            setSourcePickerKind(null);
+            setOverlay({ kind: "none" });
+            setSourcePickerReturnFocus(undefined);
           }}
         />
       </Show>
 
-      <Show when={displayPickerOpen()}>
-        <CompositionDisplayPicker
-          draft={draft()}
-          initialKind={displayPickerKind()}
-          initialSourceDraftId={displayPickerSourceId()}
-          onAdd={addDisplaySeed}
-          onPreview={previewMetric}
-          onChooseSource={chooseSourceForDisplay}
-          onClose={() => {
-            setPendingInsert(null);
-            setDisplayPickerSourceId(null);
-            setDisplayPickerOpen(false);
-          }}
-        />
+      <Show when={displayPickerOverlay()}>
+        {(activePicker) => (
+          <CompositionDisplayPicker
+            draft={draft()}
+            initialKind={activePicker().componentKind}
+            initialSourceDraftId={activePicker().sourceDraftId}
+            returnFocus={() => insertPositionControl(activePicker().target)}
+            onAdd={addDisplaySeed}
+            onPreview={previewMetric}
+            onChooseSource={chooseSourceForDisplay}
+            onClose={() => setOverlay({ kind: "none" })}
+          />
+        )}
       </Show>
     </div>
   );

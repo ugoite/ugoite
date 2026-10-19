@@ -4,6 +4,7 @@ import type { Diagnostic } from "@codemirror/lint";
 import sqlRules from "../../../shared/sql/ugoite-sql-rules.json";
 import type { Form, FormField, SqlVariable, SqlVariableDefault } from "./types";
 import type {
+  SqlStructureAggregateFunction,
   SqlStructureColumnType,
   SqlStructureContext,
   SqlStructureFilterOperator,
@@ -65,16 +66,47 @@ const sqlStructureVariableType = (
   }
 };
 
+const aggregateFunctionsForType = (
+  type: SqlStructureColumnType,
+): SqlStructureAggregateFunction[] => {
+  switch (type) {
+    case "integer":
+    case "float":
+    case "decimal":
+      return ["count", "sum", "avg", "min", "max"];
+    case "string":
+    case "boolean":
+    case "date":
+    case "timestamp":
+      return ["count", "min", "max"];
+    case "json":
+      return ["count"];
+    case "other":
+      return [];
+  }
+};
+
+const sqlStructureTypeSupportsGrouping = (
+  type: SqlStructureColumnType,
+): boolean => type !== "json" && type !== "other";
+
+const sqlStructureTypeSupportsDistinct = (
+  type: SqlStructureColumnType,
+): boolean => type !== "json" && type !== "other";
+
 export interface SqlStructureColumnCapabilities {
   projectable: boolean;
   filterable: boolean;
   sortable: boolean;
   supportedOperators: readonly SqlStructureFilterOperator[];
+  aggregateFunctions: readonly SqlStructureAggregateFunction[];
+  groupable: boolean;
+  distinctable: boolean;
 }
 
 /** Typed parser input plus the server-derived per-column action contract. */
 export interface SqlStructureAdapterContext {
-  /** Identity of the source/Form pair that produced this adapter context. */
+  /** Identity of the source and schema context that produced this adapter context. */
   identity: string;
   parser: SqlStructureContext;
   columnCapabilities: Readonly<Record<string, SqlStructureColumnCapabilities>>;
@@ -99,7 +131,7 @@ const queryOperators = (
   ];
 };
 
-/** Build parser inputs and action limits from adapter-owned Form metadata. */
+/** Build Form-backed and relation-free parser contexts for SQL Workspace. */
 export const buildSqlStructureContexts = (
   forms: readonly Form[],
   variables: readonly { name: string; type: string }[] = [],
@@ -110,7 +142,7 @@ export const buildSqlStructureContexts = (
     return type ? [{ name: variable.name, type }] : [];
   });
 
-  return forms.flatMap((form) => {
+  const formContexts = forms.flatMap((form) => {
     const relation = form.name.trim();
     if (!relation) return [];
     const columns = [
@@ -132,6 +164,9 @@ export const buildSqlStructureContexts = (
         filterable: true,
         sortable: true,
         supportedOperators: ["eq", "not_eq", "is_null", "is_not_null"],
+        aggregateFunctions: aggregateFunctionsForType("string"),
+        groupable: true,
+        distinctable: true,
       },
       _ugoite_created_at: {
         projectable: true,
@@ -147,6 +182,9 @@ export const buildSqlStructureContexts = (
           "is_null",
           "is_not_null",
         ],
+        aggregateFunctions: aggregateFunctionsForType("timestamp"),
+        groupable: true,
+        distinctable: true,
       },
       _ugoite_updated_at: {
         projectable: true,
@@ -162,20 +200,34 @@ export const buildSqlStructureContexts = (
           "is_null",
           "is_not_null",
         ],
+        aggregateFunctions: aggregateFunctionsForType("timestamp"),
+        groupable: true,
+        distinctable: true,
       },
     };
     for (const field of Object.values(form.fields ?? {})) {
       const name = field.sql_column?.trim();
       if (!name) continue;
       const capability = field.query_capability;
+      const queryType = capability
+        ? sqlStructureColumnType(capability.field_type)
+        : undefined;
+      const projectable = capability?.projectable === true;
       columnCapabilities[name] = {
-        projectable: capability?.projectable === true,
+        projectable,
         filterable: capability?.filterable === true,
         sortable: capability?.sortable === true,
         supportedOperators: queryOperators(
           capability?.supported_operators,
           capability?.filterable === true,
         ),
+        aggregateFunctions: projectable && queryType
+          ? aggregateFunctionsForType(queryType)
+          : [],
+        groupable: projectable && queryType !== undefined &&
+          sqlStructureTypeSupportsGrouping(queryType),
+        distinctable: projectable && queryType !== undefined &&
+          sqlStructureTypeSupportsDistinct(queryType),
       };
     }
     const parser: SqlStructureContext = {
@@ -197,6 +249,20 @@ export const buildSqlStructureContexts = (
       columnCapabilities,
     }];
   });
+  const parser: SqlStructureContext = {
+    relation: "",
+    columns: [],
+    variables: structureVariables,
+    stable_key: [],
+  };
+  return [
+    ...formContexts,
+    {
+      identity: JSON.stringify({ sourceIdentity, relation: null, parser }),
+      parser,
+      columnCapabilities: {},
+    },
+  ];
 };
 
 export function buildSqlSchema(forms: Form[]): SqlSchema {
@@ -790,18 +856,6 @@ export function sqlLintDiagnostics(query: string): Diagnostic[] {
       to: leadingWhitespace + Math.min(trimmed.length, 6),
       severity: "error",
       message: "Read-only query must start with SELECT",
-    });
-  }
-
-  if (
-    lintRules.require_from !== false &&
-    !parsedQuery.statementKeywords.has("from")
-  ) {
-    diagnostics.push({
-      from: Math.max(0, query.length - 1),
-      to: query.length,
-      severity: "error",
-      message: "Read-only query must include FROM",
     });
   }
 

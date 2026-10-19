@@ -403,12 +403,12 @@ requirements:
               - kind: verifies
                 criterion: REQ-FE-073#criterion.composition-route-context
                 covers:
-                  - FEAT-COMP-004#binding.browser-query-runtime/target.browser-composition-list-route
-                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-create-route
-                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-revision-layout
-                  - FEAT-COMP-004#binding.browser-query-runtime/target.browser-exact-revision-route
-                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-route
-                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-history-route
+                  - FEAT-FE-009#binding.frontend/target.composition-list-route
+                  - FEAT-FE-009#binding.frontend/target.composition-new-route
+                  - FEAT-FE-009#binding.frontend/target.composition-revision-layout-route
+                  - FEAT-FE-009#binding.frontend/target.composition-revision-route
+                  - FEAT-FE-009#binding.frontend/target.composition-edit-route
+                  - FEAT-FE-009#binding.frontend/target.composition-history-route
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/lib/composition-space-navigation.test.ts", test: "REQ-FE-073: assigns all Composition routes to Saved tools navigation" } }
           - id: composition-space-switch
             adapter: typescript

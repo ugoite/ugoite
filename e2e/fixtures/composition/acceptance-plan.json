@@ -1,531 +1,130 @@
 {
   "schema": "ugoite/composition-acceptance-plan/v1",
-  "implementation_contract_frozen": true,
-  "fixture_layout": {
-    "root": "e2e/fixtures/composition",
-    "payload_note": "The E2E seed manifest is created and drives the Browser journey. The raw recovery candidates remain fixture-only; recovery and release evidence selectors are still unverified.",
-    "shared_document_fixtures": [
-      {
-        "path": "crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml",
-        "owner": "ugoite-domain"
-      }
-    ],
-    "recovery_fixture_candidates": [
-      {
-        "path": "e2e/fixtures/composition/unknown-format-version.ugcomp.yaml",
-        "scenario": "unsupported_format_version"
-      },
-      {
-        "path": "e2e/fixtures/composition/broken-source-reference.ugcomp.yaml",
-        "scenario": "missing_form"
-      }
-    ],
-    "integration_payloads": {
-      "created_files": [
-        "e2e/fixtures/composition/space-seed/manifest.json"
-      ]
-    }
-  },
-  "operation_inventory": [
-    "composition.list",
-    "composition.get",
-    "composition.lint",
-    "composition.resolve",
-    "composition.preview",
-    "composition.save",
-    "composition.history",
-    "composition.restore"
-  ],
-  "cli_commands": [
-    "ugoite composition list",
-    "ugoite composition inspect <id> [--revision] [--raw]",
-    "ugoite composition history <id>",
-    "ugoite composition restore <id> --revision <revision>",
-    "ugoite composition lint <file>",
-    "ugoite composition save <file>",
-    "ugoite composition query <id> --param k=v",
-    "ugoite composition export <id> --output <path>",
-    "ugoite composition import <file>"
-  ],
-  "browser_golden_journey": {
-    "model_connection": "disabled",
-    "steps": [
-      "Open a parameterized Saved SQL result, declare typed Composition Variables, bind the SQL variable names explicitly, and place labeled Input components before saving the tool through Studio.",
-      "Delay and interrupt the first save response after commit, then retry with the same Idempotency-Key and verify one history publication and the original receipt revision.",
-      "Close the browser context, rediscover the saved tool from Space Home, and open the exact revision named by the receipt.",
-      "Use the labeled Inputs to change declared Variable values, advance a result page, and confirm the displayed rows come from the existing query response without Browser aggregation.",
-      "Change a Variable or Space, switch a source, or navigate through Composition History to another exact revision while a request is delayed; confirm stale success, error, finalization, and loading updates are discarded.",
-      "Confirm page, scroll, result, continuation, and cache state are absent from the saved Composition."
-    ]
-  },
-  "reactive_variable_studio_journey": {
-    "model_connection": "disabled",
-    "selector": {
-      "path": "e2e/composition-studio-journey.test.ts",
-      "kind": "test",
-      "name": "Composition Studio builds a reusable tool from existing knowledge"
-    },
-    "steps": [
-      "In Studio, declare a string variable with a default, bind an Input and Text to it, and bind date variables to the pinned Saved SQL revision before saving once.",
-      "Read the exact saved revision and verify its pinned Saved SQL revision and the SQL-name-to-variable bindings.",
-      "Reopen the exact saved revision and verify its declared defaults and variable-backed Text are restored.",
-      "Change only the string Input and verify Text updates in the same UI cycle without reissuing either the Saved SQL Table or Composition Metric query that already ran.",
-      "Reload the exact saved revision and verify the declared default returns while Composition history remains at one revision."
-    ]
-  },
-  "reactive_variable_metric_journey": {
-    "model_connection": "disabled",
-    "selector": {
-      "path": "e2e/composition-studio-journey.test.ts",
-      "kind": "test",
-      "name": "Composition Studio saves and reopens a filtered SQL metric"
-    },
-    "steps": [
-      "Seed one Space Form with Amount values 10, 20, and 30, then create a normal Saved SQL query that returns COUNT(*) and SUM(Amount) for Amount >= the typed minimum variable.",
-      "In Studio, declare an integer variable with default 0, bind the exact Saved SQL revision, place a labeled Input and two Metrics for the count and sum columns, and save once.",
-      "Read the exact Composition revision and verify it pins the Saved SQL revision used by both Metric displays.",
-      "Rediscover and reopen the saved tool from Space Home; minimum 0 displays count 3 and sum 60.",
-      "Change the Input to minimum 20 and verify the authorized server SQL result updates the Metrics to count 2 and sum 50.",
-      "Reload the exact Composition revision; the declared default 0 and values 3 / 60 return while history remains at one revision."
-    ]
-  },
-  "reactive_variable_latest_generation_journey": {
-    "model_connection": "disabled",
-    "selector": {
-      "path": "e2e/composition-latest-variable-generation.test.ts",
-      "kind": "test",
-      "name": "Rapid typed-variable edits keep only the latest Metric and Table result"
-    },
-    "steps": [
-      "Seed Amount values 1, 2, and 3, then create a saved Composition whose typed minimum variable drives one Saved SQL Source used by both Metric and Table.",
-      "Edit the required minimum Input through 1, 2, and 3 while preserving each prior Metric and Table response unresolved; the test removes transport abort signals so response-generation checks are exercised independently of cancellation.",
-      "Resolve the responses in reverse order, 3 then 2 then 1, and verify only minimum 3 remains visible in both Metric and Table with no alert or stale state change."
-    ]
-  },
-  "reactive_variable_invalid_input_journey": {
-    "model_connection": "disabled",
-    "selector": {
-      "path": "e2e/composition-invalid-variable-input.test.ts",
-      "kind": "test",
-      "name": "invalid_raw_input_blocks_query_and_stale_result"
-    },
-    "steps": [
-      "Open a saved Composition with a defaulted required integer variable, two Input components bound to that variable, and a Metric backed by a filtered Saved SQL Source.",
-      "Confirm the default yields a successful Metric result, then enter an incomplete integer token in the first Input and verify both Inputs synchronize while the prior result disappears without another Metric query.",
-      "Clear the second Input and verify both Inputs remain empty, the resolver reports the required variable as missing instead of applying its default, and no Metric query runs.",
-      "Enter a valid value in either Input and verify both controls synchronize and the Metric recovers from a new server result."
-    ]
-  },
-  "evidence_record_fields": [
-    "source_sha",
-    "candidate_sha",
-    "command",
-    "selector",
-    "surface",
-    "fixture",
-    "environment",
-    "result",
-    "artifact",
-    "artifact_digest",
-    "gap"
-  ],
-  "recovery_and_authorization": {
-    "save_enablement": {
-      "scope": "cross_surface_recovery_and_receipt_acceptance",
-      "prerequisites": [
-        "Generic Entry create, update, bulk, import, and restore paths cannot bypass Composition validation.",
-        "Generic restore of the reserved Composition Form is denied while Composition-scoped restore validates.",
-        "A successful save is confirmed by the canonical receipt identifying the published revision.",
-        "A lost save response remains outcome-unknown until receipt reconciliation confirms the exact revision; retry does not publish a duplicate."
-      ]
-    },
-    "cases": [
-      {
-        "id": "concealed_composition_reads",
-        "surface": "API, CLI, Browser",
-        "boundary": "Composition-scoped authorized get and history service",
-        "expectation": "Missing and denied Composition reads have the same existing caller-visible generic 404/error shape and do not reveal existence."
-      },
-      {
-        "id": "source_unavailable_projection",
-        "surface": "Resolver and query",
-        "boundary": "Authorized Composition read followed by current source authorization",
-        "expectation": "After Composition access is authorized, missing and denied sources produce the same source_unavailable diagnostic without source IDs or metadata; field diagnostics require an authorized Form read."
-      },
-      {
-        "id": "current_acl_after_resolve_and_each_page",
-        "surface": "Query",
-        "boundary": "Existing EntryQuery and exact-revision Saved SQL execution paths",
-        "expectation": "Resolve does not grant access; execution and every continuation page recheck current authorization, including revocation after resolve and during paging."
-      },
-      {
-        "id": "raw_unknown_version_and_broken_reference_recovery",
-        "surface": "Server, CLI core/remote, Browser",
-        "boundary": "Composition-scoped exact raw revision reader",
-        "expectation": "Raw inspect, export, and history preserve the exact stored spec and revision metadata for unsupported format versions, malformed documents, and broken references; version is identified before strict v1 typed deserialization."
-      },
-      {
-        "id": "append_only_history_and_restore",
-        "surface": "API, CLI core/remote, Browser",
-        "boundary": "Composition-scoped authorized Entry history and restore service",
-        "expectation": "History reads exact revisions; restore publishes a new revision and returns its receipt identity without rewriting prior history."
-      },
-      {
-        "id": "generic_entry_write_guard",
-        "surface": "Storage and API",
-        "boundary": "Every generic Entry mutation route and Composition-scoped validation",
-        "expectation": "Public generic create, update, bulk, import, and restore cannot bypass Composition validation; reserved-Form generic restore is denied."
-      },
-      {
-        "id": "save_receipt_reconciliation",
-        "surface": "API, CLI core/remote, Browser",
-        "boundary": "Composition save and existing publication receipt reconciliation",
-        "expectation": "Save reports success only when the receipt identifies the published revision; a lost response remains unknown until the exact revision is reconciled, and retry does not create a second revision."
-      },
-      {
-        "id": "stale_browser_request_state",
-        "surface": "Browser",
-        "boundary": "Transient Composition query generation state",
-        "expectation": "Variable, Space, source, and exact Composition revision changes suppress stale success, error, finalization, and loading-state updates."
-      },
-      {
-        "id": "revoked_source_read_clears_browser_outputs",
-        "surface": "Browser and Server",
-        "boundary": "Viewer-visible exact Composition revision with independently controlled Form and Saved SQL Read policies",
-        "expectation": "After either Form Read or Saved SQL Read is revoked while Composition access remains, Metric and Table clear prior data before reload and replaying the formerly authorized SQL request cannot return data. Form Read revocation produces a generic execution error while Saved SQL Read revocation returns source_unavailable. Form identity is concealed when Form Read is revoked; Saved SQL identity and details are concealed when Saved SQL Read is revoked. SQL text and protected result text remain concealed in both cases."
-      },
-      {
-        "id": "composition_runtime_results_are_space_isolated",
-        "surface": "Browser and Server",
-        "boundary": "One live browser session switching between Space-owned exact Composition revisions",
-        "expectation": "Identical variable, source, and component identifiers with identical typed inputs show only the current Space's authorized Metric and Table results."
-      },
-      {
-        "id": "portable_surface_contract_parity",
-        "surface": "Rust API client, TypeScript protocol, Server OpenAPI, CLI core/remote",
-        "boundary": "Shared operation inventory and transport adapters",
-        "expectation": "Operations, prepare/decode behavior, HTTP routes, CLI output meaning, and diagnostic codes agree against the same frozen contracts."
-      },
-      {
-        "id": "exact_candidate_release_evidence",
-        "surface": "Release verification",
-        "boundary": "Exact candidate source and artifact manifest",
-        "expectation": "Evidence records source and candidate SHA, artifact digest, actual command, selector, surface, fixture, environment, result, artifact, and gap; planned or unexecuted selectors remain unverified."
-      }
-    ]
-  },
-  "milestones": [
+  "source": "attached SQL-first implementation plan, section 7",
+  "criteria": [
     {
-      "id": "B0",
-      "outcome": "Contract, storage, query/ACL, and surface harness establish the Composition boundaries before persisted schema and DTO freeze.",
-      "reserved_selectors": [
-        {
-          "path": "crates/ugoite-domain/src/composition.rs",
-          "selector": {
-            "kind": "test",
-            "name": "restricted_yaml_rejects_unsupported_syntax_with_stable_diagnostics"
-          }
-        },
-        {
-          "path": "crates/ugoite-iceberg/tests/test_composition.rs",
-          "selector": {
-            "kind": "test",
-            "name": "composition_registry_round_trip_is_one_space_entry"
-          }
-        },
-        {
-          "path": "crates/ugoite-core/src/composition.rs",
-          "selector": {
-            "kind": "test",
-            "name": "composition_resolves_through_existing_query_contracts"
-          }
-        }
+      "id": "A01",
+      "requirement": "Composition schema: entry_query, tags, and every label field make YAML invalid; there is no compatibility parser.",
+      "selectors": [
+        { "path": "crates/ugoite-domain/src/composition.rs", "kind": "test", "name": "old_composition_v1_grammar_and_display_fields_fail_closed" }
       ]
     },
     {
-      "id": "B1",
-      "outcome": "Typed format, deterministic canonical output, semantic fingerprint, and native/WASM diagnostics agree.",
-      "reserved_selectors": [
-        {
-          "path": "crates/ugoite-domain/src/composition.rs",
-          "selector": {
-            "kind": "test",
-            "name": "composition_canonicalization_is_semantic_and_deterministic"
-          }
-        },
-        {
-          "path": "crates/ugoite-wasm/src/lib.rs",
-          "selector": {
-            "kind": "test",
-            "name": "composition_wasm_matches_native_canonical_output_and_diagnostics"
-          }
-        }
+      "id": "A02",
+      "requirement": "Form to SQL: selecting Form G generates SELECT * FROM \"G\"; SQL query limit=50 is separate from SQL text LIMIT.",
+      "selectors": [
+        { "path": "frontend/src/components/CompositionSourcePicker.test.tsx", "kind": "file" },
+        { "path": "frontend/src/lib/composition-api.test.ts", "kind": "file" },
+        { "path": "crates/ugoite-domain/src/sql_structure.rs", "kind": "file" }
       ]
     },
     {
-      "id": "B2",
-      "outcome": "Save, get, list, history, restore, stale-base conflict, receipt, raw read, and generic-write guard use Space Entry contracts.",
-      "reserved_selectors": [
-        {
-          "path": "crates/ugoite-iceberg/tests/test_composition.rs",
-          "selector": {
-            "kind": "test",
-            "name": "composition_save_get_list_history_restore_and_conflict_use_entry_revisions"
-          }
-        },
-        {
-          "path": "crates/ugoite-iceberg/tests/test_composition.rs",
-          "selector": {
-            "kind": "test",
-            "name": "unknown_version_and_broken_reference_remain_raw_inspectable"
-          }
-        },
-        {
-          "path": "crates/ugoite-iceberg/tests/test_composition.rs",
-          "selector": {
-            "kind": "test",
-            "name": "generic_entry_write_cannot_bypass_composition_validation"
-          }
-        },
-        {
-          "path": "crates/ugoite-iceberg/tests/test_composition.rs",
-          "selector": {
-            "kind": "test",
-            "name": "read_raw_composition_preserves_unknown_version_and_malformed_spec"
-          }
-        },
-        {
-          "path": "crates/ugoite-iceberg/tests/test_composition.rs",
-          "selector": {
-            "kind": "test",
-            "name": "read_exact_composition_revision_does_not_fallback_to_latest"
-          }
-        },
-        {
-          "path": "crates/ugoite-iceberg/tests/test_composition.rs",
-          "selector": {
-            "kind": "test",
-            "name": "authorized_composition_raw_read_conceals_missing_and_denied_ids"
-          }
-        }
+      "id": "A03",
+      "requirement": "Source binding: Form rename follows immutable identity; same-name Form replacement fails; ACL revocation or a missing Form stops with source_unavailable.",
+      "selectors": [
+        { "path": "crates/ugoite-iceberg/src/service/composition_resolver.rs", "kind": "test", "name": "same_name_form_replacement_does_not_replace_exact_base_binding" },
+        { "path": "crates/ugoite-iceberg/src/service/composition_resolver.rs", "kind": "test", "name": "exact_base_preview_retains_form_id_after_rename" },
+        { "path": "e2e/composition-source-acl-isolation.test.ts", "kind": "test", "name": "Viewer Metric and Table clear after Form or Saved SQL Read is revoked" }
       ]
     },
     {
-      "id": "B3",
-      "outcome": "Typed Variables bind deterministically and sources compile to existing EntryQuery or exact-revision Saved SQL requests under current authorization.",
-      "reserved_selectors": [
-        {
-          "path": "crates/ugoite-core/src/composition.rs",
-          "selector": {
-            "kind": "test",
-            "name": "entry_query_template_compiles_to_bounded_entry_query"
-          }
-        },
-        {
-          "path": "crates/ugoite-core/src/composition.rs",
-          "selector": {
-            "kind": "test",
-            "name": "saved_sql_source_requires_the_exact_revision"
-          }
-        },
-        {
-          "path": "crates/ugoite-core/src/composition.rs",
-          "selector": {
-            "kind": "test",
-            "name": "source_resolution_and_continuation_recheck_current_authorization"
-          }
-        }
+      "id": "A04",
+      "requirement": "Saved SQL: pin an exact revision with no latest fallback, silent rebind, or mutation; duplication creates inline SQL.",
+      "selectors": [
+        { "path": "crates/ugoite-core/src/composition.rs", "kind": "test", "name": "saved_sql_uses_exact_revision_and_keeps_parameters_stateless" },
+        { "path": "crates/ugoite-core/src/composition.rs", "kind": "test", "name": "saved_sql_rejects_changed_schema_and_non_exact_revision" },
+        { "path": "frontend/src/components/CompositionSourcePicker.test.tsx", "kind": "file" }
       ]
     },
     {
-      "id": "B4",
-      "outcome": "Portable operations, authorized Server handlers, and CLI core/remote commands expose the same Composition results and diagnostics.",
-      "reserved_selectors": [
-        {
-          "path": "crates/ugoite-api-client/src/lib.rs",
-          "selector": {
-            "kind": "test",
-            "name": "composition_operations_prepare_and_decode_through_the_portable_protocol"
-          }
-        },
-        {
-          "path": "crates/ugoite-server/src/lib.rs",
-          "selector": {
-            "kind": "test",
-            "name": "composition_handlers_use_authorized_service_boundaries"
-          }
-        },
-        {
-          "path": "crates/ugoite-server/src/lib.rs",
-          "selector": {
-            "kind": "test",
-            "name": "composition_resolve_conceals_missing_and_denied_forms"
-          }
-        },
-        {
-          "path": "crates/ugoite-server/src/lib.rs",
-          "selector": {
-            "kind": "test",
-            "name": "composition_resolve_requires_exact_saved_sql_revision_and_conceals_denial"
-          }
-        },
-        {
-          "path": "crates/ugoite-server/src/lib.rs",
-          "selector": {
-            "kind": "test",
-            "name": "composition_resolve_uses_exact_requested_revision_with_newer_revision_available"
-          }
-        },
-        {
-          "path": "crates/ugoite-cli/src/commands/composition.rs",
-          "selector": {
-            "kind": "test",
-            "name": "composition_core_and_remote_outputs_preserve_diagnostic_codes"
-          }
-        },
-        {
-          "path": "crates/ugoite-cli/src/commands/composition.rs",
-          "selector": {
-            "kind": "test",
-            "name": "list_reads_bounded_local_pages_without_loading_specs"
-          }
-        },
-        {
-          "path": "crates/ugoite-cli/src/commands/composition.rs",
-          "selector": {
-            "kind": "test",
-            "name": "list_remote_request_decodes_and_returns_the_portable_page"
-          }
-        },
-        {
-          "path": "crates/ugoite-cli/src/commands/composition.rs",
-          "selector": {
-            "kind": "test",
-            "name": "history_reads_bounded_local_pages_with_raw_revision_data"
-          }
-        },
-        {
-          "path": "crates/ugoite-cli/src/commands/composition.rs",
-          "selector": {
-            "kind": "test",
-            "name": "history_prepares_a_bounded_page_request_through_the_portable_protocol"
-          }
-        },
-        {
-          "path": "crates/ugoite-cli/src/commands/composition.rs",
-          "selector": {
-            "kind": "test",
-            "name": "history_remote_request_decodes_and_returns_the_portable_page"
-          }
-        },
-        {
-          "path": "crates/ugoite-cli/src/main.rs",
-          "selector": {
-            "kind": "test",
-            "name": "composition_history_accepts_bounded_page_options_without_becoming_a_write"
-          }
-        }
+      "id": "A05",
+      "requirement": "Variables: Composition defaults match their type; required, unset, and invalid values remain distinct; SQL is never interpolated. Saved SQL defaults are typed in standalone preview.",
+      "selectors": [
+        { "path": "crates/ugoite-core/src/composition.rs", "kind": "test", "name": "inline_sql_reports_unknown_and_missing_typed_parameters" },
+        { "path": "crates/ugoite-domain/src/composition.rs", "kind": "test", "name": "typed_input_parser_enforces_the_pinned_lexical_contract" },
+        { "path": "e2e/composition-invalid-variable-input.test.ts", "kind": "test", "name": "invalid_raw_input_blocks_query_and_stale_result" }
       ]
     },
     {
-      "id": "B5",
-      "outcome": "Browser reopens saved Compositions, uses transient query state, delegates table presentation to source-native presenters, and never aggregates result rows locally.",
-      "reserved_selectors": [
-        {
-          "path": "frontend/src/lib/composition-api.ts",
-          "selector": {
-            "kind": "test",
-            "name": "composition_query_handle_discards_stale_response_state_updates"
-          }
-        },
-        {
-          "path": "frontend/src/components/CompositionRenderer.test.tsx",
-          "selector": {
-            "kind": "test",
-            "name": "composition_renderer_delegates_to_source_native_presenters_without_client_aggregation"
-          }
-        },
-        {
-          "path": "e2e/composition-golden-journey.test.ts",
-          "selector": {
-            "kind": "test",
-            "name": "Browser saves a tool once, reopens its exact revision from Home, and pages parameterized results with model connection disabled"
-          }
-        },
-        {
-          "path": "e2e/composition-table-metric-pagination.test.ts",
-          "selector": {
-            "kind": "test",
-            "name": "Table pagination leaves the SQL Metric and typed Input unchanged"
-          }
-        },
-        {
-          "path": "e2e/composition-revision-stale-response.test.ts",
-          "selector": {
-            "kind": "test",
-            "name": "discard a delayed metric response after navigating to another exact revision"
-          }
-        }
+      "id": "A06",
+      "requirement": "SQL functions: read-only SQL supports COUNT, SUM, AVG, MIN, MAX and existing join/group/distinct parsing; the UI does not unconditionally generate disallowed scalar or window functions.",
+      "selectors": [
+        { "path": "crates/ugoite-domain/src/sql_structure.rs", "kind": "file" },
+        { "path": "frontend/src/components/SqlStructureToolbar.test.tsx", "kind": "file" },
+        { "path": "crates/ugoite-iceberg/src/service/composition_metric_query.rs", "kind": "file" }
       ]
     },
     {
-      "id": "B6",
-      "outcome": "Portable reopen, unknown/broken raw recovery, CLI transport parity, and release-candidate exact-byte evidence are recorded without promoting or publishing a release.",
-      "reserved_selectors": [
-        {
-          "path": "e2e/composition-golden-journey.test.ts",
-          "selector": {
-            "kind": "test",
-            "name": "Browser saves a tool once, reopens its exact revision from Home, and pages parameterized results with model connection disabled"
-          }
-        },
-        {
-          "path": "crates/ugoite-cli/tests/test_journey_remote.rs",
-          "selector": {
-            "kind": "test",
-            "name": "test_cli_composition_inspect_query_export_match_core_remote"
-          }
-        },
-        {
-          "path": "e2e/composition-recovery-authorization.test.ts",
-          "selector": {
-            "kind": "test",
-            "name": "Composition raw recovery and ACL denial preserve caller-visible contracts"
-          }
-        },
-        {
-          "path": "e2e/composition-save-receipt.test.ts",
-          "selector": {
-            "kind": "test",
-            "name": "Composition save reconciles a lost response without duplicate publication"
-          }
-        },
-        {
-          "path": "docs/architecture/testing/composition-acceptance.md",
-          "selector": {
-            "kind": "file"
-          }
-        }
+      "id": "A07",
+      "requirement": "SQL editing: GUI actions never overwrite hand-edited SQL without consent; unsupported complex SQL remains editable, saveable, and validatable in the code editor.",
+      "selectors": [
+        { "path": "frontend/src/components/SqlStructureToolbar.test.tsx", "kind": "file" },
+        { "path": "frontend/src/components/SQLWorkspace.test.tsx", "kind": "file" }
       ]
     },
     {
-      "id": "B7",
-      "outcome": "Current Form or Saved SQL Read revocation clears previously visible Metric and Table data, and live Browser navigation keeps Composition results isolated by Space.",
-      "reserved_selectors": [
-        {
-          "path": "e2e/composition-source-acl-isolation.test.ts",
-          "selector": {
-            "kind": "test",
-            "name": "Viewer Metric and Table clear after Form or Saved SQL Read is revoked"
-          }
-        },
-        {
-          "path": "e2e/composition-source-acl-isolation.test.ts",
-          "selector": {
-            "kind": "test",
-            "name": "Space switching shows only the selected Metric result"
-          }
-        }
+      "id": "A08",
+      "requirement": "Query paging: only explicit sql.query.count counts; continuations recheck authorization; stale query/result is suppressed; the client does not aggregate all pages.",
+      "selectors": [
+        { "path": "e2e/composition-golden-journey.test.ts", "kind": "test", "name": "Browser saves a tool once, reopens its exact revision from Home, and pages parameterized results with model connection disabled" },
+        { "path": "frontend/src/lib/composition-api.test.ts", "kind": "file" },
+        { "path": "crates/ugoite-iceberg/src/service/composition_resolver.rs", "kind": "file" }
+      ]
+    },
+    {
+      "id": "A09",
+      "requirement": "Metric: distinguish zero rows, one NULL row, zero, multiple rows, and type mismatch; derive headings from SQL result aliases; persist no label.",
+      "selectors": [
+        { "path": "e2e/composition-scalar-state-journey.test.ts", "kind": "file" },
+        { "path": "e2e/composition-metric-journey.test.ts", "kind": "file" },
+        { "path": "frontend/src/components/CompositionRenderer.test.tsx", "kind": "file" }
+      ]
+    },
+    {
+      "id": "A10",
+      "requirement": "Composition Studio: test 320, 375, 390, 760, and 1280px across available modes; no page horizontal overflow; mode targets are at least 44px; keyboard focus remains visible at every tested width; touch selection, light/dark mode, and 16px input text work. Verify actual 200% browser zoom and iPhone Safari separately.",
+      "selectors": [
+        { "path": "e2e/composition-studio-journey.test.ts", "kind": "test", "name": "Composition Studio responsive modes fit target viewports and support keyboard and touch" },
+        { "path": "frontend/src/components/CompositionStudioMobile.test.tsx", "kind": "file" },
+        { "path": "frontend/src/app.css", "kind": "file" }
+      ],
+      "manual_evidence_gaps": ["Actual browser 200% zoom and iPhone Safari device verification"]
+    },
+    {
+      "id": "A11",
+      "requirement": "UI: no persistent explanatory paragraphs, decorative cards, or tag/label editors; exactly one Back and one Save action; selecting a row selects the whole row.",
+      "selectors": [
+        { "path": "docs/spec/ui/components/composition-studio.yaml", "kind": "file" },
+        { "path": "docs/spec/ui/components/sql-workspace.yaml", "kind": "file" },
+        { "path": "frontend/src/components/CompositionStudioSync.test.tsx", "kind": "file" }
+      ]
+    },
+    {
+      "id": "A12",
+      "requirement": "Accessibility: every icon-only control has aria-label/title and visible focus, targets are at least 44px, drawers trap and restore focus, and dialogs support keyboard and Escape. Verify VoiceOver/NVDA separately.",
+      "selectors": [
+        { "path": "frontend/src/components/SqlStructureToolbar.test.tsx", "kind": "file" },
+        { "path": "frontend/src/components/CompositionStudioMobile.test.tsx", "kind": "file" },
+        { "path": "frontend/src/app.css", "kind": "file" }
+      ],
+      "manual_evidence_gaps": ["VoiceOver and NVDA device verification"]
+    },
+    {
+      "id": "A13",
+      "requirement": "Recovery: one Composition Entry revision per save; return receipts; stale base revisions conflict; distinguish unknown outcomes. Undo appends a publication and never rewinds the head destructively.",
+      "selectors": [
+        { "path": "e2e/composition-save-receipt.test.ts", "kind": "test", "name": "Composition save reconciles a lost response without duplicate publication" },
+        { "path": "crates/ugoite-iceberg/tests/test_composition.rs", "kind": "file" },
+        { "path": "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx", "kind": "file" }
+      ]
+    },
+    {
+      "id": "A14",
+      "requirement": "CLI and WASM: share the Composition schema, resolution, diagnostics, and SQL preview semantics; raw export/history remain usable with no legacy executable decoder.",
+      "selectors": [
+        { "path": "crates/ugoite-wasm/src/lib.rs", "kind": "file" },
+        { "path": "crates/ugoite-cli/src/commands/composition.rs", "kind": "file" },
+        { "path": "crates/ugoite-cli/tests/test_journey_remote.rs", "kind": "file" }
       ]
     }
   ]
