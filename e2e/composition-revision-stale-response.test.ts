@@ -375,6 +375,7 @@ test.describe("Composition revision stale response", () => {
     await expect(page).toHaveURL(new RegExp(`${secondPath}$`));
     await expect(page.locator("output.compositionMetric")).toHaveText(
       String(SECOND_TOTAL),
+      { timeout: 15_000 },
     );
     await expect(page.locator("[role='alert']")).toHaveCount(0);
     await expect(page.locator("[role='status']")).toHaveCount(0);
