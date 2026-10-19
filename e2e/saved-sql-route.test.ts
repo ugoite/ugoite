@@ -171,6 +171,37 @@ test.describe("Saved SQL route", () => {
         expect(button.width).toBeGreaterThanOrEqual(44);
         expect(button.height).toBeGreaterThanOrEqual(44);
       }
+
+      const scrolled = await page.evaluate(() => {
+        const toolbar = document.querySelector<HTMLElement>(
+          ".sql-workspace__actions",
+        );
+        const lastButton = toolbar?.querySelector<HTMLButtonElement>(
+          "button:last-of-type",
+        );
+        if (!toolbar || !lastButton) {
+          throw new Error("SQL action toolbar is missing its final action");
+        }
+        toolbar.scrollLeft = 0;
+        const initialScrollLeft = toolbar.scrollLeft;
+        toolbar.scrollLeft = toolbar.scrollWidth;
+        const toolbarRect = toolbar.getBoundingClientRect();
+        const lastButtonRect = lastButton.getBoundingClientRect();
+        return {
+          documentWidth: document.documentElement.scrollWidth,
+          viewportWidth: document.documentElement.clientWidth,
+          initialScrollLeft,
+          scrollLeft: toolbar.scrollLeft,
+          finalActionVisible: lastButtonRect.left >= toolbarRect.left - 1 &&
+            lastButtonRect.right <= toolbarRect.right + 1,
+        };
+      });
+
+      expect(scrolled.scrollLeft).toBeGreaterThan(scrolled.initialScrollLeft);
+      expect(scrolled.finalActionVisible).toBe(true);
+      expect(scrolled.documentWidth).toBeLessThanOrEqual(
+        scrolled.viewportWidth + 1,
+      );
     }
   });
 
