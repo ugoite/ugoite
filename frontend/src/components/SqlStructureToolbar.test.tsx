@@ -362,6 +362,73 @@ describe("SqlStructureToolbar adapter", () => {
     expect(onSqlChange).toHaveBeenCalledWith(proposedSql);
   });
 
+  it("edits a reversed JOIN equality through the shared structure toolbar", async () => {
+    const sql =
+      'SELECT * FROM "Orders" AS LEFT_ROWS INNER JOIN "Orders" AS right_rows ON "right_rows"."private_note" = left_rows."category"';
+    const normalizedAnalysis: SqlStructureAnalysis = {
+      ...joinedAnalysis,
+      joins: [{
+        relation: "Orders",
+        left_alias: { name: "LEFT_ROWS", quoted: false },
+        right_alias: { name: "right_rows", quoted: true },
+        left_column: "category",
+        right_column: "private_note",
+      }],
+    };
+    analyzeMock.mockResolvedValue(normalizedAnalysis);
+    proposeMock.mockResolvedValue({
+      contract_version: 1,
+      status: "supported",
+      base_sql: sql,
+      proposed_sql:
+        'SELECT * FROM "Orders" AS LEFT_ROWS INNER JOIN "Orders" AS right_rows ON LEFT_ROWS."_ugoite_id" = right_rows."category"',
+      requires_confirmation: true,
+      added_stable_tie_breakers: [],
+    });
+    let actions: readonly SQLWorkspaceAction[] = [];
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [context]}
+        onSqlChange={vi.fn()}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "structure")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "structure")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Join" });
+    expect(within(dialog).getByLabelText("Left column")).toHaveValue(
+      "category",
+    );
+    expect(within(dialog).getByLabelText("Right column")).toHaveValue(
+      "private_note",
+    );
+    fireEvent.change(within(dialog).getByLabelText("Left column"), {
+      target: { value: "_ugoite_id" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Right column"), {
+      target: { value: "category" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(proposeMock).toHaveBeenCalledWith(
+      sql,
+      context.parser,
+      {
+        kind: "set_join",
+        left_column: "_ugoite_id",
+        right_column: "category",
+      },
+    );
+  });
+
   it("offers a safe structure edit for scalar SELECT without a Form", async () => {
     const sql = "SELECT 1";
     const contexts = buildSqlStructureContexts([], [], "new-sql");

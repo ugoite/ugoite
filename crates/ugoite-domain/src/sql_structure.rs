@@ -1234,6 +1234,7 @@ fn parse_join_columns(
 ) -> Option<(String, String)> {
     let left = qualified_column(left)?;
     let right = qualified_column(right)?;
+<<<<<<< HEAD
     if !identifier_matches_alias(left.0, left_alias)
         || !identifier_matches_alias(right.0, right_alias)
     {
@@ -1242,6 +1243,21 @@ fn parse_join_columns(
     let left_column = find_column_by_ident(context, left.1)?;
     let right_column = find_column_by_ident(context, right.1)?;
     Some((left_column.name.clone(), right_column.name.clone()))
+=======
+    let left_column = find_column_by_ident(context, &left.1)?;
+    let right_column = find_column_by_ident(context, &right.1)?;
+    if identifier_matches_alias(&left.0, left_alias)
+        && identifier_matches_alias(&right.0, right_alias)
+    {
+        Some((left_column.name.clone(), right_column.name.clone()))
+    } else if identifier_matches_alias(&left.0, right_alias)
+        && identifier_matches_alias(&right.0, left_alias)
+    {
+        Some((right_column.name.clone(), left_column.name.clone()))
+    } else {
+        None
+    }
+>>>>>>> d6ca7700a (feat(sql): normalize reversed join equality operands)
 }
 
 fn resolve_column_reference(
@@ -2858,6 +2874,41 @@ mod tests {
             analyze_sql_structure(&proposed, &context()).status,
             SqlStructureStatus::Supported
         );
+    }
+
+    #[test]
+    fn reversed_join_equality_normalizes_aliases_and_keeps_join_identity_on_edit() {
+        let sql = "SELECT * FROM \"Task\" AS T INNER JOIN \"Task\" AS other ON \"other\".FIELD_101 = t.\"_ugoite_id\" LIMIT 8";
+        let analysis = analyze_sql_structure(sql, &context());
+        assert_eq!(analysis.status, SqlStructureStatus::Supported);
+        assert_eq!(analysis.joins.len(), 1);
+        let join = &analysis.joins[0];
+        assert_eq!(join.left_alias.name, "T");
+        assert!(!join.left_alias.quoted);
+        assert_eq!(join.right_alias.name, "other");
+        assert_eq!(join.left_column, "_ugoite_id");
+        assert_eq!(join.right_column, "field_101");
+
+        let proposal = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetJoin {
+                left_column: "field_101".to_owned(),
+                right_column: "_ugoite_id".to_owned(),
+            },
+        );
+        assert_eq!(proposal.status, SqlStructureStatus::Supported);
+        let proposed = proposal.proposed_sql.expect("reversed JOIN edit proposal");
+        assert_eq!(
+            proposed,
+            "SELECT * FROM \"Task\" AS T INNER JOIN \"Task\" AS other ON T.\"field_101\" = other.\"_ugoite_id\" LIMIT 8"
+        );
+        let edited = analyze_sql_structure(&proposed, &context());
+        assert_eq!(edited.status, SqlStructureStatus::Supported);
+        assert_eq!(edited.joins[0].left_alias, join.left_alias);
+        assert_eq!(edited.joins[0].right_alias, join.right_alias);
+        assert_eq!(edited.joins[0].left_column, "field_101");
+        assert_eq!(edited.joins[0].right_column, "_ugoite_id");
     }
 
     #[test]

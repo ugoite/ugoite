@@ -547,6 +547,47 @@ async function main(): Promise<void> {
     "self-join descriptor",
   );
 
+  const reversedJoinSql =
+    'SELECT * FROM "Task" AS T INNER JOIN "Task" AS other ON "other".TITLE = t."_ugoite_id" LIMIT 8';
+  const reversedJoinAnalysis = await invokeWasm(instance.exports, {
+    action: "domain.analyze_sql_structure",
+    value: { sql: reversedJoinSql, context },
+  });
+  const reversedJoin = reversedJoinAnalysis.value as Record<string, unknown>;
+  assertEqual(
+    reversedJoin.status,
+    "supported",
+    "reversed and mixed-quoted JOIN equality is supported",
+  );
+  assertEqual(
+    JSON.stringify(reversedJoin.joins),
+    JSON.stringify([{
+      left_alias: { name: "T", quoted: false },
+      left_column: "_ugoite_id",
+      relation: "Task",
+      right_alias: { name: "other", quoted: false },
+      right_column: "title",
+    }]),
+    "reversed equality preserves the declared left/right descriptor",
+  );
+  const reversedJoinProposal = await invokeWasm(instance.exports, {
+    action: "domain.propose_sql_structure_operation",
+    value: {
+      sql: reversedJoinSql,
+      context,
+      operation: {
+        kind: "set_join",
+        left_column: "title",
+        right_column: "_ugoite_id",
+      },
+    },
+  });
+  assertEqual(
+    (reversedJoinProposal.value as Record<string, unknown>).proposed_sql,
+    'SELECT * FROM "Task" AS T INNER JOIN "Task" AS other ON T."title" = other."_ugoite_id" LIMIT 8',
+    "editing reversed equality preserves aliases and emits canonical orientation",
+  );
+
   const joinedClausesSql =
     'SELECT * FROM "Task" AS left_rows INNER JOIN "Task" AS right_rows ON left_rows.title = right_rows.title WHERE right_rows.title = $title ORDER BY left_rows._ugoite_id DESC LIMIT 8';
   const joinedClauses = await invokeWasm(instance.exports, {

@@ -206,7 +206,7 @@ Deno.test("JOIN editor coverage is bounded without changing runtime admission", 
   );
   assertEquals(
     joinConstruct.limits.includes(
-      "ON must be left_alias.column = right_alias.column with matching supported scalar types; reversed equality operands fail closed",
+      "ON must compare the left_alias and right_alias columns with matching supported scalar types; either equality operand order normalizes to the same descriptor",
     ),
     true,
   );
