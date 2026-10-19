@@ -405,35 +405,43 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     index: number,
     kind: SqlStructureLiteral["kind"],
   ) => {
-    setLiteralProjection((values) => values.map((value, itemIndex) => {
-      if (itemIndex !== index) return value;
-      switch (kind) {
-        case "integer":
-          return { kind, value: "0" };
-        case "string":
-          return { kind, value: "" };
-        case "boolean":
-          return { kind, value: false };
-        case "null":
-          return { kind };
-      }
-    }));
+    setLiteralProjection((values) =>
+      values.map((value, itemIndex) => {
+        if (itemIndex !== index) return value;
+        switch (kind) {
+          case "integer":
+            return { kind, value: "0" };
+          case "string":
+            return { kind, value: "" };
+          case "boolean":
+            return { kind, value: false };
+          case "null":
+            return { kind };
+        }
+      })
+    );
   };
 
   const updateLiteralValue = (index: number, value: string) => {
-    setLiteralProjection((values) => values.map((item, itemIndex) => {
-      if (itemIndex !== index ||
-        (item.kind !== "integer" && item.kind !== "string")) return item;
-      return { ...item, value };
-    }));
+    setLiteralProjection((values) =>
+      values.map((item, itemIndex) => {
+        if (
+          itemIndex !== index ||
+          (item.kind !== "integer" && item.kind !== "string")
+        ) return item;
+        return { ...item, value };
+      })
+    );
   };
 
   const updateLiteralBoolean = (index: number, value: boolean) => {
-    setLiteralProjection((values) => values.map((item, itemIndex) =>
-      itemIndex === index && item.kind === "boolean"
-        ? { kind: "boolean", value }
-        : item
-    ));
+    setLiteralProjection((values) =>
+      values.map((item, itemIndex) =>
+        itemIndex === index && item.kind === "boolean"
+          ? { kind: "boolean", value }
+          : item
+      )
+    );
   };
 
   const hasEditableCapabilities = (action: StructureAction): boolean => {
@@ -1091,9 +1099,10 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                                   checked={selectedColumns().includes(
                                     column.name,
                                   )}
-                                  disabled={!ready()?.context.columnCapabilities[
-                                    column.name
-                                  ]?.projectable &&
+                                  disabled={!ready()?.context
+                                    .columnCapabilities[
+                                      column.name
+                                    ]?.projectable &&
                                     !selectedColumns().includes(column.name)}
                                   onChange={(event) => {
                                     const current = selectedColumns();
@@ -1131,8 +1140,8 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                                 onChange={(event) =>
                                   updateLiteralKind(
                                     index(),
-                                    event.currentTarget.value as
-                                      SqlStructureLiteral["kind"],
+                                    event.currentTarget
+                                      .value as SqlStructureLiteral["kind"],
                                   )}
                               >
                                 <option value="integer">
