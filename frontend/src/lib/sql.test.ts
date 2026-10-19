@@ -30,6 +30,10 @@ describe("sql helpers", () => {
     expect(diagnostics).toHaveLength(0);
   });
 
+  it("accepts a read-only scalar SELECT without a FROM clause", () => {
+    expect(sqlLintDiagnostics("SELECT 1")).toEqual([]);
+  });
+
   it("accepts read-only SQL with numeric aggregate expressions", () => {
     const diagnostics = sqlLintDiagnostics(
       'SELECT COUNT(*) AS total, SUM(amount) AS sum, AVG(amount) AS average, MIN(amount) AS minimum, MAX(amount) AS maximum FROM "Expenses" WHERE amount IS NOT NULL',
@@ -49,10 +53,7 @@ describe("sql helpers", () => {
 
   it("reports the read-only policy separately from server syntax lint", () => {
     expect(sqlLintDiagnostics("DROP TABLE entries").map((diag) => diag.message))
-      .toEqual([
-        "Read-only query must start with SELECT",
-        "Read-only query must include FROM",
-      ]);
+      .toEqual(["Read-only query must start with SELECT"]);
   });
 
   it("classifies read-only policy from the top-level statement form", () => {
@@ -81,12 +82,8 @@ describe("sql helpers", () => {
     }
   });
 
-  it("does not treat nested FROM clauses as the outer query's FROM", () => {
-    expect(
-      sqlLintDiagnostics("SELECT (SELECT 1 FROM entries)").some((diagnostic) =>
-        diagnostic.message === "Read-only query must include FROM"
-      ),
-    ).toBe(true);
+  it("accepts a scalar SELECT with a nested relation-free query", () => {
+    expect(sqlLintDiagnostics("SELECT (SELECT 1)")).toEqual([]);
   });
 
   it("accepts a SELECT whose top-level form is introduced by a CTE", () => {
@@ -357,11 +354,6 @@ describe("sql helpers", () => {
   it("should flag empty query", () => {
     const diagnostics = sqlLintDiagnostics("");
     expect(diagnostics.some((d) => d.message.includes("required"))).toBe(true);
-  });
-
-  it("should flag missing FROM clause", () => {
-    const diagnostics = sqlLintDiagnostics("SELECT 1");
-    expect(diagnostics.some((d) => d.message.includes("FROM"))).toBe(true);
   });
 
   it("should warn about multiple statements", () => {
@@ -641,6 +633,18 @@ const aggregateForm: Form = {
 };
 
 describe("SQL structure adapter context", () => {
+  it("provides a relation-free context when no Form is selected", () => {
+    const [context] = buildSqlStructureContexts([], [], "new-sql");
+
+    expect(context.parser).toEqual({
+      relation: "",
+      columns: [],
+      variables: [],
+      stable_key: [],
+    });
+    expect(context.columnCapabilities).toEqual({});
+  });
+
   it("uses the written Form relation and intersects typed column capabilities", () => {
     const formWithUntrustedType: Form = {
       ...aggregateForm,

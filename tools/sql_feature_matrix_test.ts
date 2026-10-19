@@ -50,20 +50,15 @@ Deno.test("SQL feature matrix binds the read-only gate and current UI actions", 
     matrix.direct_sql_lint.require_from,
     sharedRules.lint.require_from,
   );
-  assertEquals(matrix.direct_sql_lint.require_from, true);
-  assertEquals(matrix.direct_sql_lint.fromless_select_diagnostic, "error");
+  assertEquals(matrix.direct_sql_lint.require_from, false);
+  assertEquals(matrix.direct_sql_lint.fromless_select_diagnostic, "none");
   const sqlLint = frontendSqlSource.slice(
     frontendSqlSource.indexOf("export function sqlLintDiagnostics"),
   );
-  const fromRule = sqlLint.slice(
-    sqlLint.indexOf("lintRules.require_from"),
-    sqlLint.indexOf("const semicolonIndex"),
-  );
-  assertEquals(fromRule.includes("lintRules.require_from !== false"), true);
-  assertEquals(fromRule.includes('severity: "error"'), true);
+  assertEquals(sqlLint.includes("lintRules.require_from"), false);
   assertEquals(
-    fromRule.includes('message: "Read-only query must include FROM"'),
-    true,
+    sqlLint.includes('message: "Read-only query must include FROM"'),
+    false,
   );
 
   const toolbarActions = toolbarSource.match(
@@ -78,6 +73,7 @@ Deno.test("SQL feature matrix binds the read-only gate and current UI actions", 
     id: string;
     backend_admission: string;
     editor_coverage: string;
+    limits: string[];
   }>;
   assertEquals(
     new Set(constructs.map((construct) => construct.id)).size,
@@ -99,6 +95,13 @@ Deno.test("SQL feature matrix binds the read-only gate and current UI actions", 
       "where_predicate",
       "values_query",
     ].sort(),
+  );
+  assertEquals(
+    constructs.find((construct) => construct.id === "projection")?.limits
+      .includes(
+        "relation-free integer/string/boolean/NULL literal projections",
+      ),
+    true,
   );
   const valuesQuery = constructs.find((construct) =>
     construct.id === "values_query"

@@ -209,7 +209,7 @@ describe("CompositionDataWorkspace", () => {
     expect(props.onRetry).toHaveBeenCalledWith("src-1");
   });
 
-  it("keeps relation-free SQL on the empty Form-binding path", () => {
+  it("provides a relation-free context when SQL has no Form binding", () => {
     render(() => (
       <>
         <h2 id="data-heading">Data</h2>
@@ -217,10 +217,13 @@ describe("CompositionDataWorkspace", () => {
       </>
     ));
 
-    expect(screen.getByTestId("structure-contexts")).toHaveTextContent("[]");
+    expect(
+      JSON.parse(screen.getByTestId("structure-contexts").textContent ?? "[]"),
+    )
+      .toEqual([{ relation: "", columns: [] }]);
   });
 
-  it("does not infer a relation context from relation-bearing SQL", () => {
+  it("does not infer a Form context from relation-bearing SQL", () => {
     render(() => (
       <>
         <h2 id="data-heading">Data</h2>
@@ -230,7 +233,10 @@ describe("CompositionDataWorkspace", () => {
       </>
     ));
 
-    expect(screen.getByTestId("structure-contexts")).toHaveTextContent("[]");
+    expect(
+      JSON.parse(screen.getByTestId("structure-contexts").textContent ?? "[]"),
+    )
+      .toEqual([{ relation: "", columns: [] }]);
   });
 
   it("resolves a single Form binding using its SQL relation", () => {
@@ -261,9 +267,14 @@ describe("CompositionDataWorkspace", () => {
     const contexts = JSON.parse(
       screen.getByTestId("structure-contexts").textContent ?? "[]",
     ) as Array<{ relation: string; columns: string[] }>;
-    expect(contexts).toHaveLength(1);
-    expect(contexts[0].relation).toBe("Expenses");
-    expect(contexts[0].columns).toContain("Amount");
+    expect(contexts.map((context) => context.relation)).toEqual([
+      "Expenses",
+      "",
+    ]);
+    const expenseContext = contexts.find((context) =>
+      context.relation === "Expenses"
+    );
+    expect(expenseContext?.columns).toContain("Amount");
   });
 
   it("preserves every resolved Form context for multi-relation SQL", () => {
@@ -306,6 +317,7 @@ describe("CompositionDataWorkspace", () => {
     expect(contexts.map((context) => context.relation)).toEqual([
       "Expenses",
       "Budgets",
+      "",
     ]);
   });
 

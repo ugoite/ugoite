@@ -128,3 +128,60 @@ share one Studio overlay state. Opening the source picker from the drawer
 closes the drawer in the same transition. Escape and Cancel close the picker
 without reopening the drawer, remove modal `inert` state, and restore focus to
 a visible control. Selecting a source from the drawer always closes it.
+
+## ADR-025 target: Design and Variables
+
+This section specifies the accepted next interaction contract. It is not a
+claim that the current Studio implements the variable graph or binding picker.
+When this target is implemented, the mode control is `Design | Variables`.
+The selected mode owns its name; its content does not repeat that name as a
+heading. The Variables view shows one typed graph: constants edit a typed
+value, inputs edit type and default, and query variables edit one SQL document
+in the shared Workspace. The variable rail shows the name and its kind icon.
+Creating a variable starts with `+` and a choice of value, input, or SQL; a
+new variable becomes the editing focus. On desktop, the rail stays to the left
+of the editor; on mobile it is a drawer that closes after selection. A query
+row may show a table/scalar shape icon when the distinction is unambiguous, but
+does not repeat a `SQL` subtitle or type label.
+
+The Design `+` menu offers Table, Value, Input, and Text. Table and Value use
+the same binding picker with `Variables | Forms | Saved SQL` entry points.
+Variables is the default tab, and no previous selection is applied implicitly.
+The Variables tab lists only table results for Table and only compatible
+scalar results for Value. Form and Saved SQL choices create or exactly reuse a
+typed query variable, then insert the display component in one transaction.
+Selecting a Form for Table creates the equivalent of `SELECT * FROM "G"` and
+inserts the Table immediately. Its Form ID binding and result descriptor are
+derived by the server. Selecting a Form for Value requires an explicit
+aggregate, column where applicable, and any filter before insertion; the UI
+does not assume `COUNT(*)`. Saved SQL choices pin one exact Entry revision and
+validate the result shape. A scalar choice requires exactly one row and one
+selected column; if a descriptor offers multiple candidate columns, the user
+selects one in the same picker. A multi-row or multi-column result is never
+treated as a scalar by picking its first row or column.
+
+Reuse compares semantic identity, not display names or similar SQL text. A
+Form query requires the same Form ID, canonical SQL meaning, explicit argument
+bindings, result descriptor, and authorized context. A Saved SQL query requires
+the same Entry ID, exact revision, explicit argument bindings, and output
+contract. A query variable edited after creation is not reused just because its
+name matches. Resolver, descriptor, permission, type, or revision failure
+leaves no query variable or component behind. Picker responses are accepted
+only for the active picker session, Space, document revision, and principal.
+
+The persisted Table and Value component references contain only `variable`.
+Form IDs, SQL text, Saved SQL revision, query arguments, and result schema
+belong to the query variable. The Inspector exposes one variable reference
+control and opens the same picker when the user changes it. Insertion closes
+the picker and leaves the canvas visible; it does not open an Inspector or a
+second source dialog. Changing a component reference does not edit a shared
+query variable. Removing a component does not remove its variable.
+
+The Domain validates Table-to-table, Value-to-compatible-scalar, Input-to-input,
+and Text-to-string-or-literal bindings on save as well as in the picker. An
+unavailable candidate remains unavailable and exposes a local reason. The
+single modal owner manages tab changes, selection, loading, failure, Escape,
+and focus restoration. Rows use full-width selection. The picker and drawer
+fit 320px layouts, use accessible names and 44px targets, and never layer a
+second navigation surface over the canvas. The steady state uses placement and
+icons; explanatory text appears only to resolve a local ambiguity or error.
