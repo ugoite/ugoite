@@ -679,5 +679,5 @@ async function main(): Promise<void> {
 
 if (import.meta.main) {
   await main();
-  console.log("SQL structure Rust/WASM parity fixtures passed");
+  console.log("SQL structure WASM fixtures passed");
 }

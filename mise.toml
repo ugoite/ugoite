@@ -275,9 +275,9 @@ run = [
 description = "Verify Composition canonicalization, diagnostics, and typed Input parsing in the actual WASM runtime"
 run = "deno run -A crates/ugoite-wasm/tests/composition_parity.ts"
 
-[tasks."check:wasm:sql-structure-parity"]
-description = "Verify parser-backed SQL Workspace capabilities and proposals in the actual WASM runtime"
-run = "deno run -A crates/ugoite-wasm/tests/sql_structure_parity.ts"
+[tasks."check:wasm:sql-structure-fixtures"]
+description = "Check representative SQL structure fixtures and protocol bounds in WASM; native response equality is covered by Rust tests"
+run = "deno run -A crates/ugoite-wasm/tests/sql_structure_wasm_fixtures.ts"
 
 [tasks."profile:composition:parser"]
 description = "Measure the Composition YAML fixture parser budget and local throughput"
@@ -315,7 +315,7 @@ description = "Run all repository checks"
 run = [
   { task = "check:rust" },
   { task = "check:wasm:composition-parity" },
-  { task = "check:wasm:sql-structure-parity" },
+  { task = "check:wasm:sql-structure-fixtures" },
   { task = "check:deno" },
   { task = "check:repo" },
 ]

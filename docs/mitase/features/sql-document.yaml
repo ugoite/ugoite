@@ -191,7 +191,10 @@ features:
           - id: parameter-rename-action
             adapter: rust
             path: crates/ugoite-wasm/src/lib.rs
-            selector: { kind: symbol, name: invoke_sql_document_parameter_rename }
+            selector: {
+              kind: symbol,
+              name: invoke_sql_document_parameter_rename,
+            }
             claims:
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.portable-protocol
@@ -217,7 +220,7 @@ features:
       - id: sql-document-wasm-verification
         role: verification
         facet: verification
-        responsibility: Verify native parity for representable protocol responses, maximum-size JSON-escaped requests, bounded serialization, and actual WASM runtime behavior through the root SQL structure parity task.
+        responsibility: Verify native response equality with Rust unit tests, and separately exercise representative SQL Document parsing and protocol bounds in the actual WASM runtime. The Deno fixture task does not compare complete WASM responses with the native parser.
         targets:
           - id: protocol-matches-native-parser
             adapter: rust
@@ -251,9 +254,9 @@ features:
                   arguments:
                     package: ugoite-wasm
                     test: tests::sql_document_protocol_bounds_amplified_parser_output
-          - id: actual-wasm-document-parity-and-resource-bounds
+          - id: actual-wasm-document-fixtures-and-resource-bounds
             adapter: typescript
-            path: crates/ugoite-wasm/tests/sql_structure_parity.ts
+            path: crates/ugoite-wasm/tests/sql_structure_wasm_fixtures.ts
             selector: { kind: file }
             claims:
               - kind: verifies
@@ -263,7 +266,7 @@ features:
                 runner:
                   runner: mise-task
                   arguments:
-                    task: check:wasm:sql-structure-parity
+                    task: check:wasm:sql-structure-fixtures
           - id: parser-accepts-maximum-escaped-source
             adapter: rust
             path: crates/ugoite-wasm/src/lib.rs
@@ -499,9 +502,9 @@ features:
                   arguments:
                     file: src/lib/ugoite-client/protocol.test.ts
                     test: applies typed SQL Document edits atomically and returns a usable undo
-          - id: edit-protocol-actual-wasm-parity
+          - id: edit-protocol-wasm-fixtures
             adapter: typescript
-            path: crates/ugoite-wasm/tests/sql_structure_parity.ts
+            path: crates/ugoite-wasm/tests/sql_structure_wasm_fixtures.ts
             selector: { kind: file }
             claims:
               - kind: verifies
@@ -511,7 +514,7 @@ features:
                 runner:
                   runner: mise-task
                   arguments:
-                    task: check:wasm:sql-structure-parity
+                    task: check:wasm:sql-structure-fixtures
     contracts:
       - id: guarded-edit-portable-protocol
         kind: custom
