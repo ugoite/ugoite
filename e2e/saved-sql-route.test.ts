@@ -354,6 +354,47 @@ test.describe("Saved SQL route", () => {
         `SELECT * FROM "${relation}"`,
       );
 
+      for (
+        const actionName of [
+          "Columns",
+          "Filter",
+          "Sort",
+          "Structure",
+          "Aggregate",
+          "Group by",
+          "Distinct",
+        ]
+      ) {
+        await expect(
+          structureActions.getByRole("button", {
+            name: actionName,
+            exact: true,
+          }),
+        ).toBeEnabled();
+      }
+
+      const columns = structureActions.getByRole("button", {
+        name: "Columns",
+        exact: true,
+      });
+      await columns.click();
+      const columnsDialog = page.getByRole("dialog", { name: "Columns" });
+      await columnsDialog.getByLabel("Column 1", { exact: true })
+        .selectOption("_ugoite_id");
+      await columnsDialog.getByRole("button", { name: "Review change" })
+        .click();
+      const columnsReviewDialog = page.getByRole("dialog", {
+        name: "Review SQL change",
+      });
+      await expect(
+        columnsReviewDialog.getByText(/SELECT "_ugoite_id" FROM/),
+      ).toBeVisible();
+      await columnsReviewDialog.getByRole("button", { name: "Apply change" })
+        .click();
+      await expect(page.locator(".ui-sql-editor")).toContainText(
+        `SELECT "_ugoite_id" FROM "${relation}"`,
+      );
+
       const editor = page.getByRole("textbox", { name: "SQL", exact: true });
       await editor.fill(
         `SELECT "_ugoite_id" FROM "${relation}" AS entry_rows ORDER BY "_ugoite_id"`,
