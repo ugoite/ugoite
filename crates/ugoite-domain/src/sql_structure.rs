@@ -2322,6 +2322,13 @@ fn rewrite_projection(
     let SetExpr::Select(select) = query.body.as_ref() else {
         return Err(SqlStructureReason::SetOperationUnsupported);
     };
+    if select
+        .from
+        .iter()
+        .any(|relation| !relation.joins.is_empty())
+    {
+        return Err(SqlStructureReason::JoinUnsupported);
+    }
     if select.projection.iter().any(select_item_is_aggregate) {
         return Err(SqlStructureReason::ProjectionUnsupported);
     }
@@ -2475,6 +2482,13 @@ fn rewrite_projection_slots(
     let SetExpr::Select(select) = query.body.as_ref() else {
         return Err(SqlStructureReason::SetOperationUnsupported);
     };
+    if select
+        .from
+        .iter()
+        .any(|relation| !relation.joins.is_empty())
+    {
+        return Err(SqlStructureReason::JoinUnsupported);
+    }
     let wildcard_projection = select.projection.len() == 1
         && matches!(
             &select.projection[0],
@@ -2521,6 +2535,14 @@ fn rewrite_projection_slots(
         columns.push(column.name.clone());
         aliases.push(slot.alias);
     }
+
+    ensure_projection_alias_sort_binding_is_preserved(
+        query,
+        context,
+        &select.projection,
+        &columns,
+        &aliases,
+    )?;
 
     if preserves_order
         && existing_slots
@@ -3998,6 +4020,43 @@ mod tests {
     }
 
     #[test]
+    fn direct_projection_slot_proposal_rejects_same_form_self_join() {
+        let sql = "SELECT * FROM \"Task\" AS t INNER JOIN \"Task\" AS other ON t.field_101 = other.field_101";
+        let proposal = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetProjectionSlots {
+                slots: vec![SqlStructureProjectionSlotEdit {
+                    id: None,
+                    column: "field_101".to_owned(),
+                    alias: None,
+                }],
+            },
+        );
+
+        assert_eq!(proposal.status, SqlStructureStatus::Unsupported);
+        assert_eq!(proposal.reason, Some(SqlStructureReason::JoinUnsupported));
+        assert_eq!(proposal.base_sql, sql);
+        assert_eq!(proposal.proposed_sql, None);
+
+        let legacy_proposal = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetColumns {
+                columns: vec!["field_101".to_owned()],
+                aliases: vec![],
+            },
+        );
+        assert_eq!(legacy_proposal.status, SqlStructureStatus::Unsupported);
+        assert_eq!(
+            legacy_proposal.reason,
+            Some(SqlStructureReason::JoinUnsupported)
+        );
+        assert_eq!(legacy_proposal.base_sql, sql);
+        assert_eq!(legacy_proposal.proposed_sql, None);
+    }
+
+    #[test]
     fn adds_a_bounded_self_join_and_preserves_trailing_clauses() {
         let sql = "SELECT * FROM \"Task\" LIMIT 20";
         let analysis = analyze_sql_structure(sql, &context());
@@ -4456,6 +4515,49 @@ mod tests {
             updated.projection_aliases[1].alias.as_ref().unwrap().name,
             "first_copy"
         );
+    }
+
+    #[test]
+    fn projection_slot_edits_reject_alias_rename_that_changes_order_by_resolution() {
+        let sql = "SELECT field_101 AS field_102 FROM \"Task\" ORDER BY field_102";
+        let proposal = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetProjectionSlots {
+                slots: vec![SqlStructureProjectionSlotEdit {
+                    id: Some("projection-0".to_owned()),
+                    column: "field_101".to_owned(),
+                    alias: Some(SqlStructureAlias {
+                        name: "renamed".to_owned(),
+                        quoted: false,
+                    }),
+                }],
+            },
+        );
+
+        assert_eq!(proposal.status, SqlStructureStatus::Unsupported);
+        assert_eq!(proposal.reason, Some(SqlStructureReason::SortUnsupported));
+        assert_eq!(proposal.base_sql, sql);
+        assert_eq!(proposal.proposed_sql, None);
+
+        let legacy_proposal = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetColumns {
+                columns: vec!["field_101".to_owned()],
+                aliases: vec![Some(SqlStructureAlias {
+                    name: "renamed".to_owned(),
+                    quoted: false,
+                })],
+            },
+        );
+        assert_eq!(legacy_proposal.status, SqlStructureStatus::Unsupported);
+        assert_eq!(
+            legacy_proposal.reason,
+            Some(SqlStructureReason::SortUnsupported)
+        );
+        assert_eq!(legacy_proposal.base_sql, sql);
+        assert_eq!(legacy_proposal.proposed_sql, None);
     }
 
     #[test]
