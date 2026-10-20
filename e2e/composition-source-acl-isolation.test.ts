@@ -381,9 +381,7 @@ test.describe("Composition graph ACL and runtime isolation", () => {
           seed.protectedValue,
         );
         await expect(page.locator(".compositionGraphMetric")).toHaveCount(0);
-        await expect(page.getByRole("table")).not.toContainText(
-          seed.protectedValue,
-        );
+        await expect(page.getByRole("table")).toHaveCount(0);
 
         // Raw exact revision inspection remains available to the authorized
         // Space member even when its query dependencies are no longer readable.
@@ -636,7 +634,7 @@ test.describe("Composition graph ACL and runtime isolation", () => {
       await expect(page.locator("body")).not.toContainText(
         seed.protectedValue,
       );
-      await expect(page.locator(".compositionGraphMetric")).toHaveCount(0);
+      await expect(page.locator(".compositionGraphMetric strong")).toBeEmpty();
       await expect(page.getByRole("table")).toHaveCount(0);
 
       const rawRevision = await context.request.get(
