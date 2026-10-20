@@ -23,7 +23,7 @@
       "id": "A03",
       "requirement": "Source binding: Form rename follows immutable identity; same-name Form replacement fails; ACL revocation or a missing Form stops with source_unavailable.",
       "selectors": [
-        { "path": "crates/ugoite-iceberg/tests/test_composition_preview.rs", "kind": "test", "name": "preview_ignores_yaml_form_binding_spoof_and_keeps_exact_base_form" },
+        { "path": "crates/ugoite-iceberg/tests/test_composition_preview.rs", "kind": "test", "name": "preview_ignores_yaml_form_binding_spoof_with_or_without_exact_base" },
         { "path": "crates/ugoite-iceberg/tests/test_composition_query_authorization.rs", "kind": "test", "name": "authorized_composition_metrics_recheck_current_entry_and_saved_sql_access" },
         { "path": "e2e/composition-source-acl-isolation.test.ts", "kind": "test", "name": "Viewer Metric and Table clear after Form or Saved SQL Read is revoked" }
       ],

@@ -13,9 +13,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::Duration;
 use ugoite_core::composition::{
     bind_variables_with_unset, resolve_composition_preview_with_unset,
-    resolve_composition_with_unset, CompositionDiagnostic, CompositionRevisionRef,
-    CurrentQueryDescriptor, InlineSqlQueryMetadata, PreviewCompositionPlan, ResolveInput,
-    ResolvedCompositionPlan, SavedSqlRevisionMetadata,
+    resolve_composition_with_unset, returns_from_schema, CompositionDiagnostic,
+    CompositionRevisionRef, CurrentQueryDescriptor, InlineSqlQueryMetadata, PreviewCompositionPlan,
+    ResolveInput, ResolvedCompositionPlan, SavedSqlRevisionMetadata,
 };
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::{
@@ -26,10 +26,11 @@ use ugoite_core::sql_query::{
     SavedSqlRevisionRef, SqlResultColumnType, MAX_SQL_COLUMN_NAME_BYTES, MAX_SQL_OUTPUT_COLUMNS,
 };
 use ugoite_domain::composition::{
-    canonicalize_composition, parse_composition_yaml, CompositionDiagnosticCode,
-    CompositionDocument, VariableGraphColumn, VariableGraphFormBinding, VariableGraphNode,
-    VariableGraphNodeKind, VariableGraphQueryDefinition, VariableGraphResultType,
-    VariableGraphScalarDescriptor, VariableGraphScalarType,
+    canonicalize_composition, parse_composition_yaml, variable_graph_dependency_order,
+    CompositionDiagnosticCode, CompositionDocument, VariableGraph, VariableGraphColumn,
+    VariableGraphFormBinding, VariableGraphNode, VariableGraphNodeKind,
+    VariableGraphQueryDefinition, VariableGraphResultType, VariableGraphScalarDescriptor,
+    VariableGraphScalarType,
 };
 use ugoite_domain::form::{sql_column_name, sql_relation_name, FormDefinition};
 use ugoite_domain::id::{validate_revision_id, validate_sql_id, FormId};
@@ -78,6 +79,17 @@ enum OwnedCurrentQueryDescriptor {
         variable_id: String,
         revision: Option<SavedSqlRevisionMetadata>,
     },
+}
+
+/// Return a deterministic order that derives every upstream query result
+/// contract before planning a query that binds to it. Invalid drafts retain
+/// their original order and will be rejected by the canonical graph resolver.
+pub(crate) fn variable_graph_topological_order(
+    variables: &[VariableGraphNode],
+) -> Result<Vec<String>, Vec<ugoite_domain::composition::VariableGraphDiagnostic>> {
+    variable_graph_dependency_order(&VariableGraph {
+        variables: variables.to_vec(),
+    })
 }
 
 impl OwnedCurrentQueryDescriptor {
@@ -973,7 +985,18 @@ impl UgoiteService {
         allow_unbound_draft: bool,
     ) -> Result<Vec<OwnedCurrentQueryDescriptor>> {
         let mut owned = Vec::new();
-        for node in variables {
+        let mut planning_variables = variables.to_vec();
+        let Ok(query_order) = variable_graph_topological_order(&planning_variables) else {
+            return Ok(Vec::new());
+        };
+        for variable_id in query_order {
+            let Some(node_index) = planning_variables
+                .iter()
+                .position(|node| node.id == variable_id)
+            else {
+                continue;
+            };
+            let node = planning_variables[node_index].clone();
             let VariableGraphNodeKind::Query { query, .. } = &node.kind else {
                 continue;
             };
@@ -995,9 +1018,9 @@ impl UgoiteService {
                     let schema = if let Some(trusted_bindings) = trusted_bindings {
                         self.derive_inline_sql_query_metadata(
                             space_id,
-                            node,
+                            &node,
                             Some(&trusted_bindings),
-                            variables,
+                            &planning_variables,
                             principal_ids,
                             None,
                         )
@@ -1007,8 +1030,21 @@ impl UgoiteService {
                     };
                     owned.push(OwnedCurrentQueryDescriptor::InlineSql {
                         variable_id: node.id.clone(),
-                        schema,
+                        schema: schema.clone(),
                     });
+                    if let Some(metadata) = schema.as_ref() {
+                        if let VariableGraphNodeKind::Query { returns, query } =
+                            &mut planning_variables[node_index].kind
+                        {
+                            if let Some(inferred) =
+                                returns_from_schema(returns, &metadata.result_columns)
+                            {
+                                *returns = inferred;
+                            }
+                            query.form_bindings = metadata.form_bindings.clone();
+                            query.schema_fingerprint = metadata.schema_fingerprint.clone();
+                        }
+                    }
                 }
                 VariableGraphQueryDefinition::SavedSql {
                     entry_id: Some(entry_id),
@@ -1016,7 +1052,7 @@ impl UgoiteService {
                     ..
                 } => {
                     let revision = self
-                        .derive_saved_sql_query_metadata(space_id, node, principal_ids, None)
+                        .derive_saved_sql_query_metadata(space_id, &node, principal_ids, None)
                         .await?;
                     // The query node carries the exact immutable revision.
                     // No latest-revision lookup is available on this path.
@@ -1030,8 +1066,21 @@ impl UgoiteService {
                     } else {
                         owned.push(OwnedCurrentQueryDescriptor::SavedSql {
                             variable_id: node.id.clone(),
-                            revision,
+                            revision: revision.clone(),
                         });
+                        if let Some(metadata) = revision.as_ref() {
+                            if let VariableGraphNodeKind::Query { returns, query } =
+                                &mut planning_variables[node_index].kind
+                            {
+                                if let Some(inferred) =
+                                    returns_from_schema(returns, &metadata.result_columns)
+                                {
+                                    *returns = inferred;
+                                }
+                                query.form_bindings = metadata.form_bindings.clone();
+                                query.schema_fingerprint = metadata.schema_fingerprint.clone();
+                            }
+                        }
                     }
                 }
                 VariableGraphQueryDefinition::SavedSql { .. } => {

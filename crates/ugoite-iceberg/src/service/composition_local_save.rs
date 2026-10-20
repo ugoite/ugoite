@@ -101,9 +101,22 @@ impl UgoiteService {
                 MAX_AUTHORIZED_SCOPE_FORM_DEFINITION_BYTES,
             )
             .await?;
-        let variables = request.document.spec.variables.clone();
-        for node in &mut request.document.spec.variables {
-            let source_for_planning = node.clone();
+        let query_order = super::composition_resolver::variable_graph_topological_order(
+            &request.document.spec.variables,
+        )
+        .map_err(|_| {
+            AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "Composition query dependencies are invalid",
+            )
+        })?;
+        for variable_id in query_order {
+            let variables = request.document.spec.variables.clone();
+            let Some(node_index) = variables.iter().position(|node| node.id == variable_id) else {
+                continue;
+            };
+            let source_for_planning = variables[node_index].clone();
+            let node = &mut request.document.spec.variables[node_index];
             let ugoite_domain::composition::VariableGraphNodeKind::Query { query, returns } =
                 &mut node.kind
             else {

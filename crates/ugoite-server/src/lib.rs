@@ -5870,7 +5870,7 @@ async fn bind_invited_account(
         .await
     {
         Ok(result) => result,
-        Err(()) => Err(recovery_fence_unavailable()),
+        Err(error) => Err(recovery_aware_auth_error(error)),
     };
     let release = lease.release().await;
     match (result, release) {
@@ -7250,11 +7250,7 @@ async fn issue_agent_token(
             .await
         {
             Ok(access_token) => access_token?,
-            Err(()) => {
-                return Err(ApiError::from_core(anyhow::anyhow!(
-                    "Space authorization mutation lease was lost"
-                )))
-            }
+            Err(error) => return Err(ApiError::from_core(error)),
         };
         authorizer
             .mark_agent_used_with_lease(space_id, agent_id, &lease)
@@ -7640,9 +7636,7 @@ where
         .await
     {
         Ok(result) => result,
-        Err(()) => Err(ApiError::from_core(anyhow::anyhow!(
-            "Space authorization mutation lease was lost"
-        ))),
+        Err(error) => Err(ApiError::from_core(error)),
     };
     if let Err(error) = lease.release().await {
         return Err(ApiError::from_core(error));
@@ -7771,9 +7765,7 @@ where
         .await
     {
         Ok(result) => result,
-        Err(()) => Err(ApiError::from_core(anyhow::anyhow!(
-            "Space authorization mutation lease was lost"
-        ))),
+        Err(error) => Err(ApiError::from_core(error)),
     };
     if let Err(error) = lease.release().await {
         return Err(ApiError::from_core(error));
@@ -7808,9 +7800,7 @@ where
         .await
     {
         Ok(result) => result,
-        Err(()) => Err(ApiError::from_core(anyhow::anyhow!(
-            "Space authorization mutation lease was lost"
-        ))),
+        Err(error) => Err(ApiError::from_core(error)),
     };
     if let Err(error) = lease.release().await {
         return Err(ApiError::from_core(error));
@@ -7912,9 +7902,7 @@ where
         .await
     {
         Ok(result) => result,
-        Err(()) => Err(ApiError::from_core(anyhow::anyhow!(
-            "Space authorization mutation lease was lost"
-        ))),
+        Err(error) => Err(ApiError::from_core(error)),
     };
     if let Err(error) = lease.release().await {
         return Err(ApiError::from_core(error));

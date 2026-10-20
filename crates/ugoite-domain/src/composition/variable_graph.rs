@@ -297,6 +297,84 @@ pub struct CompiledVariableGraph {
     pub dependencies: BTreeMap<String, Vec<String>>,
 }
 
+/// Derive the graph's dependency order without trusting query return
+/// descriptors. Planning uses this structural order to derive upstream SQL
+/// result types before validating the complete graph against planner output.
+/// Missing references and cycles remain fail-closed diagnostics.
+pub fn variable_graph_dependency_order(
+    graph: &VariableGraph,
+) -> Result<Vec<String>, Vec<VariableGraphDiagnostic>> {
+    let mut id_counts = BTreeMap::<String, usize>::new();
+    let mut diagnostics = Vec::new();
+    for node in &graph.variables {
+        if node.id.trim().is_empty() {
+            diagnostics.push(VariableGraphDiagnostic::for_variable(
+                VariableGraphDiagnosticCode::InvalidVariableId,
+                &node.id,
+            ));
+        } else {
+            *id_counts.entry(node.id.clone()).or_default() += 1;
+        }
+    }
+    diagnostics.extend(
+        id_counts
+            .iter()
+            .filter(|(_, count)| **count > 1)
+            .map(|(id, _)| {
+                VariableGraphDiagnostic::for_variable(
+                    VariableGraphDiagnosticCode::DuplicateVariableId,
+                    id,
+                )
+            }),
+    );
+    if !diagnostics.is_empty() {
+        diagnostics.sort();
+        diagnostics.dedup();
+        return Err(diagnostics);
+    }
+
+    let nodes: BTreeMap<&str, &VariableGraphNode> = graph
+        .variables
+        .iter()
+        .map(|node| (node.id.as_str(), node))
+        .collect();
+    let mut dependencies = BTreeMap::<String, Vec<String>>::new();
+    for node in nodes.values().copied() {
+        let mut node_dependencies = BTreeSet::new();
+        if let VariableGraphNodeKind::Query { query, .. } = &node.kind {
+            for argument in &query.arguments {
+                if nodes.contains_key(argument.variable.as_str()) {
+                    node_dependencies.insert(argument.variable.clone());
+                } else {
+                    diagnostics.push(VariableGraphDiagnostic::for_argument(
+                        VariableGraphDiagnosticCode::MissingVariableReference,
+                        &node.id,
+                        &argument.name,
+                        Some(&argument.variable),
+                    ));
+                }
+            }
+        }
+        dependencies.insert(node.id.clone(), node_dependencies.into_iter().collect());
+    }
+    if !diagnostics.is_empty() {
+        diagnostics.sort();
+        diagnostics.dedup();
+        return Err(diagnostics);
+    }
+
+    topological_order(&dependencies).ok_or_else(|| {
+        let cycle = find_dependency_cycle(&dependencies).unwrap_or_default();
+        vec![VariableGraphDiagnostic {
+            code: VariableGraphDiagnosticCode::DependencyCycle,
+            variable_id: cycle.first().cloned(),
+            argument_name: None,
+            reference_id: None,
+            cycle,
+        }]
+    })
+}
+
 /// Validate a graph and derive its deterministic dependency order.
 pub fn compile_variable_graph(
     graph: &VariableGraph,
@@ -1602,6 +1680,55 @@ mod tests {
                 "value",
                 Some("rows"),
             )]
+        );
+    }
+
+    #[test]
+    fn dependency_order_ignores_untrusted_result_shape_and_rejects_bad_edges() {
+        let table = VariableGraphNode {
+            id: "rows".to_owned(),
+            kind: VariableGraphNodeKind::Query {
+                returns: VariableGraphResultType::Table {
+                    columns: vec![VariableGraphColumn {
+                        name: "id".to_owned(),
+                        value_type: scalar(VariableGraphScalarType::Integer, false),
+                    }],
+                },
+                query: VariableGraphQuery {
+                    definition: VariableGraphQueryDefinition::InlineSql {
+                        sql: "SELECT id FROM \"G\"".to_owned(),
+                    },
+                    arguments: Vec::new(),
+                    form_bindings: Vec::new(),
+                    schema_fingerprint: String::new(),
+                },
+            },
+        };
+        let dependent = query("result", vec![binding("value", "rows")]);
+        let table_graph = graph(vec![dependent, table]);
+
+        assert_eq!(
+            variable_graph_dependency_order(&table_graph)
+                .expect("structural order ignores result type"),
+            ["rows", "result"]
+        );
+        assert!(compile_variable_graph(&table_graph).is_err());
+
+        let missing = graph(vec![query("result", vec![binding("value", "absent")])]);
+        assert_eq!(
+            variable_graph_dependency_order(&missing).expect_err("missing edges must fail closed")
+                [0]
+            .code,
+            VariableGraphDiagnosticCode::MissingVariableReference
+        );
+
+        let cyclic = graph(vec![
+            query("a", vec![binding("b", "b")]),
+            query("b", vec![binding("a", "a")]),
+        ]);
+        assert_eq!(
+            variable_graph_dependency_order(&cyclic).expect_err("cycles must fail closed")[0].code,
+            VariableGraphDiagnosticCode::DependencyCycle
         );
     }
 
