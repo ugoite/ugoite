@@ -1752,8 +1752,8 @@ mod tests {
         else {
             panic!("expense_rows should be a query variable");
         };
-        assert_eq!(query.form_bindings[0].relation, "Other");
-        assert_eq!(query.form_bindings[1].relation, "Expense");
+        assert_eq!(query.form_bindings[0].relation, "Expense");
+        assert_eq!(query.form_bindings[1].relation, "Other");
         let typed_request = serde_json::json!({
             "action": "domain.canonicalize_composition_document",
             "value": {"document": unnormalized_document},
