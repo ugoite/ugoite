@@ -1,8 +1,8 @@
 import { http, HttpResponse } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  applySqlDocumentEditTransaction,
   analyzeSqlStructure,
+  applySqlDocumentEditTransaction,
   buildSpreadsheetCsvRequest,
   canonicalizeCompositionDocument,
   compileVariableGraph,
@@ -233,6 +233,44 @@ describe("portable Ugoite API protocol WASM", () => {
     expect(proposal.proposed_sql).toContain('"field_101", "field_102"');
     expect(sql).toContain('SELECT * FROM "Task"');
 
+    const repeatedProjectionSql =
+      'SELECT "field_101" AS first, "field_101" AS second FROM "Task"';
+    const repeatedProjection = await analyzeSqlStructure(
+      repeatedProjectionSql,
+      context,
+    );
+    expect(repeatedProjection.projection_aliases).toEqual([
+      { column: "field_101", alias: { name: "first", quoted: false } },
+      { column: "field_101", alias: { name: "second", quoted: false } },
+    ]);
+    const slotProposal = await proposeSqlStructureOperation(
+      repeatedProjectionSql,
+      context,
+      {
+        kind: "set_projection_slots",
+        slots: [
+          {
+            id: "projection-1",
+            column: "field_101",
+            alias: { name: "second_copy", quoted: false },
+          },
+          {
+            id: "projection-0",
+            column: "field_101",
+            alias: { name: "first_copy", quoted: false },
+          },
+        ],
+      },
+    );
+    expect(slotProposal).toMatchObject({
+      status: "supported",
+      base_sql: repeatedProjectionSql,
+      requires_confirmation: true,
+    });
+    expect(slotProposal.proposed_sql).toContain(
+      '"field_101" AS second_copy, "field_101" AS first_copy',
+    );
+
     const aggregateSql =
       'SELECT DISTINCT "field_101", COUNT(DISTINCT "field_102") AS unique_count FROM "Task" GROUP BY "field_101"';
     const aggregateAnalysis = await analyzeSqlStructure(aggregateSql, context);
@@ -307,7 +345,7 @@ describe("portable Ugoite API protocol WASM", () => {
   });
 
   it("applies typed SQL Document edits atomically and returns a usable undo", async () => {
-    const source = "-- 日本語\nSELECT 1 FROM \"G\"";
+    const source = '-- 日本語\nSELECT 1 FROM "G"';
     const start = new TextEncoder().encode(source.slice(0, source.indexOf("1")))
       .length;
     const transaction = {
@@ -351,7 +389,10 @@ describe("portable Ugoite API protocol WASM", () => {
         expected_source: source,
         edits: [],
       }),
-    ).rejects.toMatchObject({ kind: "sql_document_edit", code: "stale_source" });
+    ).rejects.toMatchObject({
+      kind: "sql_document_edit",
+      code: "stale_source",
+    });
 
     await expect(
       applySqlDocumentEditTransaction(source, {

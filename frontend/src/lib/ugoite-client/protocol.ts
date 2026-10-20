@@ -580,6 +580,14 @@ export type SqlStructureProjectionAlias = {
   alias?: SqlStructureAlias;
 };
 
+export type SqlStructureProjectionSlotInput = {
+  /** Preserve the analyzed slot identity; omit for a newly added projection. */
+  id?: string;
+  column: string;
+  /** Null explicitly clears an alias. */
+  alias?: SqlStructureAlias | null;
+};
+
 export type SqlStructureAggregate = {
   function: SqlStructureAggregateFunction;
   /** Omitted only for COUNT(*). */
@@ -602,6 +610,10 @@ export type SqlStructureOperation =
     columns: string[];
     /** Aligned aliases. Omitted to retain aliases on selected columns. */
     aliases?: (SqlStructureAlias | null)[];
+  }
+  | {
+    kind: "set_projection_slots";
+    slots: SqlStructureProjectionSlotInput[];
   }
   | { kind: "set_filters"; filters: SqlStructureFilter[] }
   | {

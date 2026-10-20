@@ -24,7 +24,7 @@ use crate::sql_document::{
 };
 
 /// The parser/capability contract version exposed through the WASM adapter.
-pub const SQL_STRUCTURE_CONTRACT_VERSION: u32 = 1;
+pub const SQL_STRUCTURE_CONTRACT_VERSION: u32 = 2;
 
 /// Keep SQL parsing within the same bound as the stateless SQL request.
 pub const MAX_SQL_STRUCTURE_QUERY_BYTES: usize = 256 * 1024;
@@ -133,6 +133,9 @@ pub enum SqlStructureOperation {
     SetLiteralProjection {
         values: Vec<SqlStructureLiteral>,
     },
+    SetProjectionSlots {
+        slots: Vec<SqlStructureProjectionSlotEdit>,
+    },
     SetFilters {
         filters: Vec<SqlStructureFilter>,
     },
@@ -216,6 +219,18 @@ pub struct SqlStructureAlias {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SqlStructureProjectionAlias {
+    pub column: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alias: Option<SqlStructureAlias>,
+}
+
+/// Requested projection state. `id` refers to an existing slot in the exact
+/// base SQL snapshot; omitting it creates a new slot.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SqlStructureProjectionSlotEdit {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     pub column: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alias: Option<SqlStructureAlias>,
@@ -526,6 +541,16 @@ pub fn propose_sql_structure_operation(
                 Err(reason) => return rejected_proposal(base_sql, reason),
             }
         }
+        SqlStructureOperation::SetProjectionSlots { slots } => match rewrite_projection_slots(
+            &base_sql,
+            &parsed.query,
+            context,
+            slots,
+            &parsed.projection_aliases,
+        ) {
+            Ok(sql) => sql,
+            Err(reason) => return rejected_proposal(base_sql, reason),
+        },
         operation => {
             let mutation = match operation {
                 SqlStructureOperation::SetRelation { .. } => {
@@ -561,6 +586,9 @@ pub fn propose_sql_structure_operation(
                 ),
                 SqlStructureOperation::SetLiteralProjection { .. } => unreachable!(
                     "SetLiteralProjection is handled by the source-preserving projection rewrite"
+                ),
+                SqlStructureOperation::SetProjectionSlots { .. } => unreachable!(
+                    "SetProjectionSlots is handled by the source-preserving projection rewrite"
                 ),
             };
             if let Err(reason) = mutation {
@@ -2431,6 +2459,100 @@ fn literal_projection_source_range(sql: &str, query: &Query) -> Option<SqlSource
     Some(range)
 }
 
+fn rewrite_projection_slots(
+    sql: &str,
+    query: &Query,
+    context: &SqlStructureContext,
+    slots: Vec<SqlStructureProjectionSlotEdit>,
+    existing_slots: &[SqlStructureProjectionAlias],
+) -> Result<String, SqlStructureReason> {
+    if slots.is_empty() {
+        return Err(SqlStructureReason::EmptyProjection);
+    }
+    if slots.len() > 256 {
+        return Err(SqlStructureReason::ProjectionUnsupported);
+    }
+    let SetExpr::Select(select) = query.body.as_ref() else {
+        return Err(SqlStructureReason::SetOperationUnsupported);
+    };
+    let wildcard_projection = select.projection.len() == 1
+        && matches!(
+            &select.projection[0],
+            SelectItem::Wildcard(_) | SelectItem::QualifiedWildcard(_, _)
+        );
+    if select.projection.iter().any(select_item_is_aggregate)
+        || (!wildcard_projection && select.projection.len() != existing_slots.len())
+        || (wildcard_projection && !existing_slots.is_empty())
+    {
+        return Err(SqlStructureReason::ProjectionUnsupported);
+    }
+
+    let mut used_source_ids = BTreeSet::new();
+    let mut columns = Vec::with_capacity(slots.len());
+    let mut aliases = Vec::with_capacity(slots.len());
+    let mut preserves_order = slots.len() == existing_slots.len();
+    for (output_index, slot) in slots.into_iter().enumerate() {
+        if let Some(id) = &slot.id {
+            if wildcard_projection {
+                return Err(SqlStructureReason::ProjectionUnsupported);
+            }
+            let Some(source_index) = existing_slots
+                .iter()
+                .enumerate()
+                .find_map(|(index, _)| (projection_slot_id(index) == *id).then_some(index))
+            else {
+                return Err(SqlStructureReason::ProjectionUnsupported);
+            };
+            if !used_source_ids.insert(source_index) {
+                return Err(SqlStructureReason::ProjectionUnsupported);
+            }
+            preserves_order &= source_index == output_index;
+        } else {
+            preserves_order = false;
+        }
+        let column = find_column(context, &slot.column).ok_or(SqlStructureReason::UnknownColumn)?;
+        if slot
+            .alias
+            .as_ref()
+            .is_some_and(|alias| !valid_projection_alias(alias))
+        {
+            return Err(SqlStructureReason::ProjectionUnsupported);
+        }
+        columns.push(column.name.clone());
+        aliases.push(slot.alias);
+    }
+
+    if preserves_order
+        && existing_slots
+            .iter()
+            .zip(&columns)
+            .all(|(existing, column)| existing.column == *column)
+    {
+        return rewrite_projection_aliases(sql, &select.projection, &aliases);
+    }
+
+    let source_range =
+        projection_source_range(sql, query).ok_or(SqlStructureReason::ProjectionUnsupported)?;
+    let replacement = columns
+        .into_iter()
+        .zip(aliases)
+        .map(|(column, alias)| {
+            let column = Ident::with_quote('"', column).to_string();
+            match alias {
+                Some(alias) => format!("{column} AS {}", sql_alias_to_string(alias)),
+                None => column,
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    replace_sql_source_range(sql, source_range, &replacement)
+        .ok_or(SqlStructureReason::ProjectionUnsupported)
+}
+
+fn projection_slot_id(index: usize) -> String {
+    format!("projection-{index}")
+}
+
 fn rewrite_projection_aliases(
     sql: &str,
     projection: &[SelectItem],
@@ -3259,12 +3381,8 @@ fn supported_analysis(
     let literal_projection_enabled = context.relation.is_empty()
         && !parsed.literal_projection.is_empty()
         && structured_projection;
-    let unique_projection_sources =
-        context.relation.is_empty() || projection_sources_are_unique(&parsed.projection);
-    let columns_enabled = (columns_available || literal_projection_enabled)
-        && structured_projection
-        && !has_join
-        && unique_projection_sources;
+    let columns_enabled =
+        (columns_available || literal_projection_enabled) && structured_projection && !has_join;
     let literal_projection = context.relation.is_empty()
         && !parsed.projection.is_empty()
         && parsed.aggregates.is_empty()
@@ -3315,8 +3433,12 @@ fn supported_analysis(
                 } else if !columns_available && !literal_projection_enabled {
                     Some(SqlStructureReason::InvalidContext)
                 } else {
-                    (!structured_projection || !unique_projection_sources)
+                    (!structured_projection)
                         .then_some(SqlStructureReason::ProjectionUnsupported)
+                        .or_else(|| {
+                            (!columns_available && !literal_projection_enabled)
+                                .then_some(SqlStructureReason::InvalidContext)
+                        })
                 },
             ),
             filter: capability(
@@ -3582,12 +3704,12 @@ mod tests {
             .filter_map(serde_json::Value::as_str)
             .collect::<BTreeSet<_>>();
         assert!(projection_limits.contains(
-            &"simple Form-column projection aliases are inspected and editable with quoted semantics preserved when each source column occurs once"
+            &"simple Form-column projection aliases are inspected and edited independently by SQL-document-scoped projection slot identity"
         ));
         assert!(projection_limits
             .contains(&"alias edits that would change ORDER BY output-name binding fail closed"));
         assert!(projection_limits.contains(
-            &"repeated source columns keep the query editable but disable the Columns rewrite to avoid projection-slot ambiguity"
+            &"repeated source columns remain editable, reorderable, and independently aliasable as projection slots"
         ));
         let declared_operations = editor["operations"]
             .as_array()
@@ -3622,10 +3744,9 @@ mod tests {
                 right_column: "field_101".to_owned(),
             },
             SqlStructureOperation::SetLiteralProjection { values: vec![] },
-            SqlStructureOperation::SetColumns {
-                columns: vec![],
-                aliases: vec![],
-            },
+            SqlStructureOperation::SetProjectionSlots { slots: vec![] },
+            // SetColumns remains a narrower low-level operation; the GUI uses
+            // the slot-addressed projection operation listed in the matrix.
             SqlStructureOperation::SetFilters { filters: vec![] },
             SqlStructureOperation::SetFilterExpression { expression: None },
             SqlStructureOperation::SetSort { order_by: vec![] },
@@ -4242,7 +4363,7 @@ mod tests {
     }
 
     #[test]
-    fn repeated_projection_sources_keep_sql_editable_but_disable_column_rewrites() {
+    fn repeated_projection_sources_are_editable_by_distinct_projection_slots() {
         let result = analyze_sql_structure(
             "SELECT \"field_101\" AS first, \"field_101\" AS second FROM \"Task\" WHERE \"field_101\" = $status ORDER BY \"_ugoite_id\"",
             &context(),
@@ -4250,10 +4371,17 @@ mod tests {
 
         assert_eq!(result.status, SqlStructureStatus::Supported);
         assert_eq!(result.projection, vec!["field_101", "field_101"]);
-        assert!(!result.capabilities.columns.enabled);
+        assert!(result.capabilities.columns.enabled);
+        assert_eq!(result.projection_aliases.len(), 2);
+        assert_eq!(result.projection_aliases[0].column, "field_101");
         assert_eq!(
-            result.capabilities.columns.reason,
-            Some(SqlStructureReason::ProjectionUnsupported)
+            result.projection_aliases[0].alias.as_ref().unwrap().name,
+            "first"
+        );
+        assert_eq!(result.projection_aliases[1].column, "field_101");
+        assert_eq!(
+            result.projection_aliases[1].alias.as_ref().unwrap().name,
+            "second"
         );
         assert!(result.capabilities.filter.enabled);
         assert!(result.capabilities.sort.enabled);
@@ -4278,6 +4406,153 @@ mod tests {
         );
         assert_eq!(proposal.base_sql, sql);
         assert_eq!(proposal.proposed_sql, None);
+    }
+
+    #[test]
+    fn projection_slot_edits_reorder_and_rename_repeated_sources_independently() {
+        let sql = "SELECT \"field_101\" AS first, \"field_101\" AS second FROM \"Task\" WHERE \"field_102\" > $priority ORDER BY \"_ugoite_id\"";
+        let analysis = analyze_sql_structure(sql, &context());
+        let proposal = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetProjectionSlots {
+                slots: vec![
+                    SqlStructureProjectionSlotEdit {
+                        id: Some("projection-1".to_owned()),
+                        column: "field_101".to_owned(),
+                        alias: Some(SqlStructureAlias {
+                            name: "second_copy".to_owned(),
+                            quoted: true,
+                        }),
+                    },
+                    SqlStructureProjectionSlotEdit {
+                        id: Some("projection-0".to_owned()),
+                        column: "field_101".to_owned(),
+                        alias: Some(SqlStructureAlias {
+                            name: "first_copy".to_owned(),
+                            quoted: false,
+                        }),
+                    },
+                ],
+            },
+        );
+
+        assert_eq!(analysis.projection_aliases[0].column, "field_101");
+        assert_eq!(analysis.projection_aliases[1].column, "field_101");
+        assert_eq!(proposal.status, SqlStructureStatus::Supported);
+        let proposed_sql = proposal.proposed_sql.expect("slot proposal");
+        assert!(proposed_sql.starts_with(
+            "SELECT \"field_101\" AS \"second_copy\", \"field_101\" AS first_copy FROM \"Task\""
+        ));
+        assert!(proposed_sql.ends_with("WHERE \"field_102\" > $priority ORDER BY \"_ugoite_id\""));
+        let updated = analyze_sql_structure(&proposed_sql, &context());
+        assert!(updated.capabilities.columns.enabled);
+        assert_eq!(updated.projection, vec!["field_101", "field_101"]);
+        assert_eq!(
+            updated.projection_aliases[0].alias.as_ref().unwrap().name,
+            "second_copy"
+        );
+        assert_eq!(
+            updated.projection_aliases[1].alias.as_ref().unwrap().name,
+            "first_copy"
+        );
+    }
+
+    #[test]
+    fn projection_slot_edits_can_add_a_second_occurrence_and_expand_wildcard() {
+        let sql = "SELECT \"field_101\" AS source FROM \"Task\"";
+        let proposal = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetProjectionSlots {
+                slots: vec![
+                    SqlStructureProjectionSlotEdit {
+                        id: Some("projection-0".to_owned()),
+                        column: "field_101".to_owned(),
+                        alias: Some(SqlStructureAlias {
+                            name: "source".to_owned(),
+                            quoted: false,
+                        }),
+                    },
+                    SqlStructureProjectionSlotEdit {
+                        id: None,
+                        column: "field_101".to_owned(),
+                        alias: Some(SqlStructureAlias {
+                            name: "copy".to_owned(),
+                            quoted: false,
+                        }),
+                    },
+                ],
+            },
+        );
+        assert_eq!(proposal.status, SqlStructureStatus::Supported);
+        let proposed_sql = proposal.proposed_sql.expect("duplicate slot proposal");
+        let updated = analyze_sql_structure(&proposed_sql, &context());
+        assert_eq!(updated.projection, vec!["field_101", "field_101"]);
+        assert_eq!(
+            updated.projection_aliases[0].alias.as_ref().unwrap().name,
+            "source"
+        );
+        assert_eq!(
+            updated.projection_aliases[1].alias.as_ref().unwrap().name,
+            "copy"
+        );
+
+        let wildcard = "SELECT * FROM \"Task\"";
+        let expanded = propose_sql_structure_operation(
+            wildcard,
+            &context(),
+            SqlStructureOperation::SetProjectionSlots {
+                slots: vec![
+                    SqlStructureProjectionSlotEdit {
+                        id: None,
+                        column: "field_101".to_owned(),
+                        alias: None,
+                    },
+                    SqlStructureProjectionSlotEdit {
+                        id: None,
+                        column: "field_102".to_owned(),
+                        alias: None,
+                    },
+                ],
+            },
+        );
+        assert_eq!(expanded.status, SqlStructureStatus::Supported);
+        assert!(expanded
+            .proposed_sql
+            .expect("wildcard expansion")
+            .starts_with("SELECT \"field_101\", \"field_102\" FROM \"Task\""));
+    }
+
+    #[test]
+    fn projection_slot_edits_reject_unknown_or_reused_source_ids() {
+        let sql = "SELECT \"field_101\" AS first, \"field_101\" AS second FROM \"Task\"";
+        for ids in [
+            vec![Some("projection-0"), Some("projection-0")],
+            vec![Some("projection-7")],
+        ] {
+            let proposal = propose_sql_structure_operation(
+                sql,
+                &context(),
+                SqlStructureOperation::SetProjectionSlots {
+                    slots: ids
+                        .into_iter()
+                        .map(|id| SqlStructureProjectionSlotEdit {
+                            id: id.map(str::to_owned),
+                            column: "field_101".to_owned(),
+                            alias: None,
+                        })
+                        .collect(),
+                },
+            );
+            assert_eq!(proposal.status, SqlStructureStatus::Unsupported);
+            assert_eq!(
+                proposal.reason,
+                Some(SqlStructureReason::ProjectionUnsupported)
+            );
+            assert_eq!(proposal.base_sql, sql);
+            assert_eq!(proposal.proposed_sql, None);
+        }
     }
 
     #[test]

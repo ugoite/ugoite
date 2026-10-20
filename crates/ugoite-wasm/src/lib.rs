@@ -1526,6 +1526,76 @@ mod tests {
     }
 
     #[test]
+    fn sql_structure_projection_slots_are_proposed_through_the_wasm_protocol() {
+        let sql = "SELECT \"field_102\" AS first, \"field_102\" AS second FROM \"Task\"";
+        let context = ugoite_domain::sql_structure::SqlStructureContext {
+            relation: "Task".to_owned(),
+            columns: vec![ugoite_domain::sql_structure::SqlStructureColumn {
+                name: "field_102".to_owned(),
+                column_type: ugoite_domain::sql_structure::SqlStructureColumnType::Integer,
+            }],
+            variables: vec![],
+            stable_key: vec![],
+        };
+        let analysis_request = serde_json::json!({
+            "action": "domain.analyze_sql_structure",
+            "value": {"sql": sql, "context": context.clone()},
+        })
+        .to_string();
+        let analysis: Value = serde_json::from_str(&super::invoke_json(&analysis_request)).unwrap();
+        assert_eq!(analysis["ok"], true, "{analysis}");
+        assert_eq!(analysis["value"]["contract_version"], 2);
+        assert_eq!(
+            analysis["value"]["projection_aliases"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+
+        let operation = ugoite_domain::sql_structure::SqlStructureOperation::SetProjectionSlots {
+            slots: vec![
+                ugoite_domain::sql_structure::SqlStructureProjectionSlotEdit {
+                    id: Some("projection-1".to_owned()),
+                    column: "field_102".to_owned(),
+                    alias: Some(ugoite_domain::sql_structure::SqlStructureAlias {
+                        name: "second_copy".to_owned(),
+                        quoted: false,
+                    }),
+                },
+                ugoite_domain::sql_structure::SqlStructureProjectionSlotEdit {
+                    id: Some("projection-0".to_owned()),
+                    column: "field_102".to_owned(),
+                    alias: Some(ugoite_domain::sql_structure::SqlStructureAlias {
+                        name: "first_copy".to_owned(),
+                        quoted: false,
+                    }),
+                },
+            ],
+        };
+        let expected = serde_json::to_value(
+            ugoite_domain::sql_structure::propose_sql_structure_operation(
+                sql,
+                &context,
+                operation.clone(),
+            ),
+        )
+        .expect("Domain proposal serializes");
+        let request = serde_json::json!({
+            "action": "domain.propose_sql_structure_operation",
+            "value": {"sql": sql, "context": context, "operation": operation},
+        })
+        .to_string();
+        let proposal: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
+        assert_eq!(proposal["ok"], true, "{proposal}");
+        assert_eq!(proposal["value"], expected);
+        assert!(proposal["value"]["proposed_sql"]
+            .as_str()
+            .unwrap()
+            .contains("AS second_copy, \"field_102\" AS first_copy"));
+    }
+
+    #[test]
     fn sql_document_protocol_accepts_maximum_source_with_json_escaped_trivia() {
         let sql = format!(
             "SELECT 1 /*{}*/",

@@ -3,6 +3,7 @@ import {
   createSignal,
   createUniqueId,
   For,
+  Index,
   Show,
 } from "solid-js";
 import { IconButton } from "~/components/IconButton";
@@ -26,6 +27,7 @@ import type {
   SqlStructureFilterOperator,
   SqlStructureLiteral,
   SqlStructureOperation,
+  SqlStructureProjectionSlotInput,
   SqlStructureProposal,
   SqlStructureSort,
   SqlStructureVariableType,
@@ -58,7 +60,13 @@ type ColumnChoice = {
   value: string;
   label: string;
 };
-type ColumnAliasDraft = { name: string; quoted: boolean };
+type ProjectionSlotDraft = {
+  /** Stable Solid key, separate from the server slot identity. */
+  key: string;
+  id?: string;
+  column: string;
+  alias: ColumnAliasDraft;
+};
 type AnalyzedStructure = {
   context: SqlStructureAdapterContext;
   analysis: SqlStructureAnalysis;
@@ -142,13 +150,12 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   const [activeAction, setActiveAction] = createSignal<StructureAction | null>(
     null,
   );
-  const [selectedColumns, setSelectedColumns] = createSignal<string[]>([]);
   const [literalProjection, setLiteralProjection] = createSignal<
     SqlStructureLiteral[]
   >([]);
-  const [columnAliases, setColumnAliases] = createSignal<
-    Record<string, ColumnAliasDraft>
-  >({});
+  const [projectionSlots, setProjectionSlots] = createSignal<
+    ProjectionSlotDraft[]
+  >([]);
   const [filters, setFilters] = createSignal<FilterDraft[]>([]);
   const [sorts, setSorts] = createSignal<SortDraft[]>([]);
   const [aggregates, setAggregates] = createSignal<SqlStructureAggregate[]>([]);
@@ -182,9 +189,8 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     setProposalVariables([]);
     setProposalContextIdentity(undefined);
     setActiveAction(null);
-    setSelectedColumns([]);
     setLiteralProjection([]);
-    setColumnAliases({});
+    setProjectionSlots([]);
     setFilters([]);
     setSorts([]);
     setAggregates([]);
@@ -310,6 +316,50 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
 
   const columnCapability = (columnName: string) =>
     ready()?.context.columnCapabilities[columnName];
+
+  const projectableColumns = () =>
+    (ready()?.context.parser.columns ?? []).filter((column) =>
+      columnCapability(column.name)?.projectable
+    );
+
+  const projectionSlotsValid = () =>
+    projectionSlots().length > 0 &&
+    projectionSlots().every((slot) =>
+      Boolean(slot.column) &&
+      Boolean(columnCapability(slot.column)?.projectable)
+    );
+
+  const updateProjectionSlot = (
+    index: number,
+    update: Partial<Pick<ProjectionSlotDraft, "column" | "alias">>,
+  ) => {
+    setProjectionSlots((slots) =>
+      slots.map((slot, slotIndex) =>
+        slotIndex === index ? { ...slot, ...update } : slot
+      )
+    );
+  };
+
+  const addProjectionSlot = () => {
+    const column = projectableColumns()[0];
+    if (!column || busy() || proposal()) return;
+    setProjectionSlots((slots) => [...slots, {
+      key: `projection-new-${createUniqueId()}`,
+      column: column.name,
+      alias: { name: "", quoted: false },
+    }]);
+  };
+
+  const moveProjectionSlot = (index: number, direction: -1 | 1) => {
+    if (busy() || proposal()) return;
+    setProjectionSlots((slots) => {
+      const target = index + direction;
+      if (target < 0 || target >= slots.length) return slots;
+      const next = [...slots];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  };
 
   const activeJoin = () => ready()?.analysis.joins[0];
 
@@ -476,7 +526,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     if (!current) return false;
     return current.context.parser.relation === ""
       ? literalProjection().length > 0 && literalProjection().length <= 256
-      : selectedColumns().length > 0;
+      : projectionSlotsValid();
   };
 
   const updateLiteralKind = (
@@ -596,32 +646,26 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     setError(null);
     setProposal(undefined);
     setProposalContextIdentity(undefined);
-    const allColumns = current.context.parser.columns.map((column) =>
-      column.name
-    );
     const projection = current.analysis.projection;
     setLiteralProjection([...current.analysis.literal_projection]);
-    setSelectedColumns(
-      current.context.parser.relation === ""
-        ? []
-        : projection.includes("*")
-        ? allColumns.filter((column) =>
-          current.context.columnCapabilities[column]?.projectable
-        )
-        : [...projection],
-    );
-    const aliasesByColumn = Object.fromEntries(
-      current.analysis.projection_aliases.map(({ column, alias }) => [
-        column,
-        { name: alias?.name ?? "", quoted: alias?.quoted ?? false },
-      ]),
-    );
-    setColumnAliases(Object.fromEntries(
-      allColumns.map((column) => [
-        column,
-        aliasesByColumn[column] ?? { name: "", quoted: false },
-      ]),
-    ));
+    const slots = current.context.parser.relation === ""
+      ? []
+      : projection.includes("*")
+      ? projectableColumns().map((column) => ({ column: column.name }))
+      : current.analysis.projection_aliases.map((slot, index) => ({
+        id: `projection-${index}`,
+        column: slot.column,
+        alias: slot.alias,
+      }));
+    setProjectionSlots(slots.map((slot, index) => ({
+      key: slot.id ?? `projection-draft-${index}-${createUniqueId()}`,
+      ...(slot.id ? { id: slot.id } : {}),
+      column: slot.column,
+      alias: {
+        name: slot.alias?.name ?? "",
+        quoted: slot.alias?.quoted ?? false,
+      },
+    })));
     setFilters(current.analysis.filters.map((filter) => ({
       column: filter.column,
       ...(filter.qualifier ? { qualifier: { ...filter.qualifier } } : {}),
@@ -933,17 +977,16 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
       ? current.context.parser.relation === ""
         ? { kind: "set_literal_projection", values: literalProjection() }
         : {
-          kind: "set_columns",
-          columns: selectedColumns(),
-          aliases: selectedColumns().map((column) => {
-            const alias = columnAliases()[column];
-            return alias?.name.length
-              ? {
-                name: alias.name,
-                quoted: alias.quoted,
-              } satisfies SqlStructureAlias
-              : null;
-          }),
+          kind: "set_projection_slots",
+          slots: projectionSlots().map((
+            slot,
+          ): SqlStructureProjectionSlotInput => ({
+            ...(slot.id ? { id: slot.id } : {}),
+            column: slot.column,
+            alias: slot.alias.name.length
+              ? { name: slot.alias.name, quoted: slot.alias.quoted }
+              : null,
+          })),
         }
       : action === "join"
       ? {
@@ -1236,108 +1279,156 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                       when={ready()?.context.parser.relation === ""}
                       fallback={
                         <div class="sql-structure-columns-editor">
-                          <fieldset class="sql-structure-column-list">
-                            <legend class="ui-sr-only">
-                              {t("sqlPage.structure.columns")}
-                            </legend>
-                            <For each={ready()?.context.parser.columns ?? []}>
-                              {(column) => (
-                                <label class="sql-structure-option">
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedColumns().includes(
-                                      column.name,
-                                    )}
-                                    disabled={!ready()?.context
-                                      .columnCapabilities[
-                                        column.name
-                                      ]?.projectable &&
-                                      !selectedColumns().includes(column.name)}
-                                    onChange={(event) => {
-                                      const current = selectedColumns();
-                                      setSelectedColumns(
-                                        event.currentTarget.checked
-                                          ? [...current, column.name]
-                                          : current.filter((name) =>
-                                            name !== column.name
-                                          ),
-                                      );
-                                    }}
-                                  />
-                                  <span>{column.name}</span>
-                                </label>
-                              )}
-                            </For>
-                          </fieldset>
-                          <Show
-                            when={ready()?.analysis.projection_aliases.length ||
-                              ready()?.analysis.projection.includes("*")}
-                          >
-                            <fieldset class="sql-structure-column-alias-list">
-                              <legend class="ui-sr-only">
-                                {t("sqlPage.structure.aliases")}
-                              </legend>
-                              <For each={selectedColumns()}>
-                                {(column) => (
-                                  <div class="sql-structure-column-alias-row">
-                                    <span class="sql-structure-column-alias-name">
-                                      {column}
+                          <div class="sql-structure-projection-slot-list">
+                            <Index each={projectionSlots()}>
+                              {(slot, index) => (
+                                <div
+                                  class="sql-structure-projection-slot"
+                                  data-slot-key={slot().key}
+                                >
+                                  <label class="ui-field">
+                                    <span class="ui-sr-only">
+                                      {t("sqlPage.structure.projectionColumn", {
+                                        position: index + 1,
+                                      })}
                                     </span>
-                                    <label class="ui-field">
-                                      <span class="ui-sr-only">
-                                        {t("sqlPage.structure.aliasFor", {
-                                          column,
+                                    <select
+                                      class="ui-input"
+                                      value={slot().column}
+                                      disabled={busy() || Boolean(proposal())}
+                                      aria-label={t(
+                                        "sqlPage.structure.projectionColumn",
+                                        { position: index + 1 },
+                                      )}
+                                      onChange={(event) =>
+                                        updateProjectionSlot(index, {
+                                          column: event.currentTarget.value,
                                         })}
-                                      </span>
-                                      <input
-                                        class="ui-input"
-                                        type="text"
-                                        value={columnAliases()[column]?.name ??
-                                          ""}
-                                        aria-label={t(
-                                          "sqlPage.structure.aliasFor",
-                                          { column },
+                                    >
+                                      <Show
+                                        when={!projectableColumns().some((
+                                          column,
+                                        ) => column.name === slot().column)}
+                                      >
+                                        <option value={slot().column}>
+                                          {slot().column}
+                                        </option>
+                                      </Show>
+                                      <For each={projectableColumns()}>
+                                        {(column) => (
+                                          <option value={column.name}>
+                                            {column.name}
+                                          </option>
                                         )}
-                                        onInput={(event) =>
-                                          setColumnAliases((current) => ({
-                                            ...current,
-                                            [column]: {
-                                              name: event.currentTarget.value,
-                                              quoted: current[column]?.quoted ??
-                                                false,
-                                            },
-                                          }))}
-                                      />
-                                    </label>
-                                    <label class="sql-structure-option sql-structure-column-alias-quoted">
-                                      <input
-                                        type="checkbox"
-                                        checked={columnAliases()[column]
-                                          ?.quoted ??
-                                          false}
-                                        aria-label={t(
-                                          "sqlPage.structure.quoteAliasFor",
-                                          { column },
+                                      </For>
+                                    </select>
+                                  </label>
+                                  <label class="ui-field">
+                                    <span class="ui-sr-only">
+                                      {t("sqlPage.structure.aliasForSlot", {
+                                        column: slot().column,
+                                        position: index + 1,
+                                      })}
+                                    </span>
+                                    <input
+                                      class="ui-input"
+                                      type="text"
+                                      placeholder={t(
+                                        "sqlPage.structure.aliasPlaceholder",
+                                      )}
+                                      value={slot().alias.name}
+                                      aria-label={t(
+                                        "sqlPage.structure.aliasForSlot",
+                                        {
+                                          column: slot().column,
+                                          position: index + 1,
+                                        },
+                                      )}
+                                      disabled={busy() || Boolean(proposal())}
+                                      onInput={(event) =>
+                                        updateProjectionSlot(index, {
+                                          alias: {
+                                            ...slot().alias,
+                                            name: event.currentTarget.value,
+                                          },
+                                        })}
+                                    />
+                                  </label>
+                                  <label class="sql-structure-option sql-structure-column-alias-quoted">
+                                    <input
+                                      type="checkbox"
+                                      checked={slot().alias.quoted}
+                                      disabled={busy() || Boolean(proposal())}
+                                      aria-label={t(
+                                        "sqlPage.structure.quoteAliasForSlot",
+                                        {
+                                          column: slot().column,
+                                          position: index + 1,
+                                        },
+                                      )}
+                                      onChange={(event) =>
+                                        updateProjectionSlot(index, {
+                                          alias: {
+                                            ...slot().alias,
+                                            quoted: event.currentTarget.checked,
+                                          },
+                                        })}
+                                    />
+                                    <span>
+                                      {t("sqlPage.structure.quotedAlias")}
+                                    </span>
+                                  </label>
+                                  <div class="sql-structure-projection-slot-actions">
+                                    <IconButton
+                                      icon="arrow-up"
+                                      label={t(
+                                        "sqlPage.structure.moveProjectionUp",
+                                        { position: index + 1 },
+                                      )}
+                                      disabled={busy() || Boolean(proposal()) ||
+                                        index === 0}
+                                      onClick={() =>
+                                        moveProjectionSlot(index, -1)}
+                                    />
+                                    <IconButton
+                                      icon="arrow-down"
+                                      label={t(
+                                        "sqlPage.structure.moveProjectionDown",
+                                        { position: index + 1 },
+                                      )}
+                                      disabled={busy() || Boolean(proposal()) ||
+                                        index === projectionSlots().length - 1}
+                                      onClick={() =>
+                                        moveProjectionSlot(index, 1)}
+                                    />
+                                    <IconButton
+                                      icon="trash"
+                                      label={t(
+                                        "sqlPage.structure.removeProjectionSlot",
+                                        { position: index + 1 },
+                                      )}
+                                      disabled={busy() || Boolean(proposal())}
+                                      onClick={() =>
+                                        setProjectionSlots((slots) =>
+                                          slots.filter((_, slotIndex) =>
+                                            slotIndex !== index
+                                          )
                                         )}
-                                        onChange={(event) =>
-                                          setColumnAliases((current) => ({
-                                            ...current,
-                                            [column]: {
-                                              name: current[column]?.name ?? "",
-                                              quoted:
-                                                event.currentTarget.checked,
-                                            },
-                                          }))}
-                                      />
-                                      <span>
-                                        {t("sqlPage.structure.quotedAlias")}
-                                      </span>
-                                    </label>
+                                    />
                                   </div>
-                                )}
-                              </For>
-                            </fieldset>
-                          </Show>
+                                </div>
+                              )}
+                            </Index>
+                          </div>
+                          <button
+                            type="button"
+                            class="ui-button ui-button-secondary"
+                            disabled={busy() || Boolean(proposal()) ||
+                              projectableColumns().length === 0}
+                            onClick={addProjectionSlot}
+                          >
+                            {t("sqlPage.structure.addProjectionSlot")}
+                          </button>
                         </div>
                       }
                     >

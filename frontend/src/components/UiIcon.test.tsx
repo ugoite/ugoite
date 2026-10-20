@@ -27,6 +27,8 @@ const allNames: UiIconName[] = [
   "preview",
   "download",
   "close",
+  "arrow-up",
+  "arrow-down",
 ];
 
 describe("UiIcon", () => {

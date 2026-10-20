@@ -106,14 +106,14 @@ Deno.test("SQL feature matrix binds the read-only gate and current UI actions", 
   assertEquals(
     constructs.find((construct) => construct.id === "projection")?.limits
       .includes(
-        "simple Form-column projection aliases are inspected and editable with quoted semantics preserved when each source column occurs once",
+        "simple Form-column projection aliases are inspected and edited independently by SQL-document-scoped projection slot identity",
       ),
     true,
   );
   assertEquals(
     constructs.find((construct) => construct.id === "projection")?.limits
       .includes(
-        "repeated source columns keep the query editable but disable the Columns rewrite to avoid projection-slot ambiguity",
+        "repeated source columns remain editable, reorderable, and independently aliasable as projection slots",
       ),
     true,
   );
@@ -164,7 +164,10 @@ Deno.test("SQL projection alias editing stays in the Rust-backed Columns contrac
   );
   assertEquals(domainSql.includes("fn rewrite_projection_aliases("), true);
   assertEquals(toolbarSource.includes("projection_aliases"), true);
-  assertEquals(toolbarSource.includes('"sqlPage.structure.aliasFor"'), true);
+  assertEquals(
+    toolbarSource.includes('"sqlPage.structure.aliasForSlot"'),
+    true,
+  );
   assertEquals(
     protocolSource.includes("aliases?: (SqlStructureAlias | null)[]"),
     true,
