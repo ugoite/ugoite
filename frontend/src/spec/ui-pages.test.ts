@@ -205,9 +205,7 @@ describe("UI spec YAML registry", () => {
       components?: Array<Record<string, unknown>>;
     };
     const components = selection.components ?? [];
-    const spaces = components.find(({ id }) =>
-      id === "authorized-space-list"
-    );
+    const spaces = components.find(({ id }) => id === "authorized-space-list");
     const create = components.find(({ id }) => id === "create-space-form");
     const actions = components.find(({ id }) => id === "global-space-actions");
 
@@ -222,6 +220,7 @@ describe("UI spec YAML registry", () => {
         activation: "full-row-link",
         primary_label: "name-then-slug-then-localized-untitled",
         secondary_action: "settings-icon-only-with-localized-accessible-name",
+        secondary_action_destination: "/spaces/{space_uid}/settings",
       },
       identity: {
         displays_space_uid: false,
@@ -512,7 +511,10 @@ describe("UI spec YAML registry", () => {
       "utf8",
     );
     const dataWorkspaceSource = readFileSync(
-      path.join(repoRoot, "frontend/src/components/CompositionDataWorkspace.tsx"),
+      path.join(
+        repoRoot,
+        "frontend/src/components/CompositionDataWorkspace.tsx",
+      ),
       "utf8",
     );
 
@@ -1262,9 +1264,9 @@ describe("UI spec YAML registry", () => {
     const resultTable = parse(readFileSync(resultTablePath, "utf8")) as {
       components?: Array<Record<string, unknown>>;
     };
-    expect(resultTable.components?.find(({ id }) =>
-      id === "result-table-viewport"
-    )).toMatchObject({
+    expect(
+      resultTable.components?.find(({ id }) => id === "result-table-viewport"),
+    ).toMatchObject({
       implementations: {
         entry_query: "frontend/src/components/EntryResultTable.tsx",
         saved_sql: "frontend/src/components/SqlResultTable.tsx",
@@ -1314,17 +1316,21 @@ describe("UI spec YAML registry", () => {
     const sqlResults = loadPages().find(({ spec }) =>
       spec.page?.id === "space-sql-results"
     );
-    expect(sqlResults?.spec.components?.body?.find(({ id }) =>
-      id === "sql-results-table"
-    )).toMatchObject({
+    expect(
+      sqlResults?.spec.components?.body?.find(({ id }) =>
+        id === "sql-results-table"
+      ),
+    ).toMatchObject({
       result_presentation_reference: "../components/result-table.yaml",
     });
     const compositionRevision = loadPages().find(({ spec }) =>
       spec.page?.id === "space-composition-revision"
     );
-    expect(compositionRevision?.spec.components?.body?.find(({ id }) =>
-      id === "composition-components"
-    )?.table_presentation).toMatchObject({
+    expect(
+      compositionRevision?.spec.components?.body?.find(({ id }) =>
+        id === "composition-components"
+      )?.table_presentation,
+    ).toMatchObject({
       result_presentation_reference: "../components/result-table.yaml",
     });
     expect(readFileSync(path.join(repoRoot, "docs/spec/ui/index.md"), "utf8"))

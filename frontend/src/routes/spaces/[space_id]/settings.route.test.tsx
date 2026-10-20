@@ -340,7 +340,12 @@ describe("SpaceSettingsRoute", () => {
     // the advanced disclosure only.
     for (const id of ["principal-1", "principal-2"]) {
       const node = screen.getByText(id);
-      expect(node.closest("details")).not.toBeNull();
+      const details = node.closest<HTMLDetailsElement>("details");
+      expect(details).not.toBeNull();
+      expect(details?.open).toBe(false);
+      expect(details?.querySelector("summary")).toHaveTextContent(
+        "Advanced details",
+      );
       expect(node.closest("tr")).toBeNull();
     }
     expect(container.querySelector(".membersSecondary")).toBeNull();
