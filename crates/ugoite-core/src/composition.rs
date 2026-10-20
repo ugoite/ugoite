@@ -704,6 +704,19 @@ fn resolve_parts(
     >::new();
     let mut diagnostics = Vec::new();
     for variable_id in query_order {
+        // Earlier query nodes may have had their draft return descriptor
+        // replaced with planner-derived metadata. Snapshot the current scalar
+        // types before mutably borrowing the node being resolved so downstream
+        // Saved SQL argument bindings can be checked against the actual graph.
+        let variable_scalar_types = execution_graph
+            .variables
+            .iter()
+            .filter_map(|variable| {
+                scalar_descriptor(&variable.kind)
+                    .or_else(|| query_scalar_descriptor(&variable.kind))
+                    .map(|descriptor| (variable.id.clone(), descriptor))
+            })
+            .collect::<BTreeMap<_, _>>();
         let Some(node) = execution_graph
             .variables
             .iter_mut()
@@ -847,7 +860,11 @@ fn resolve_parts(
                 }
                 let draft_returns = options.allow_draft_descriptors;
                 if (!returns_match_schema(returns, &metadata.result_columns) && !draft_returns)
-                    || !saved_arguments_match(&query.arguments, &metadata.parameter_types)
+                    || !saved_arguments_match(
+                        &query.arguments,
+                        &metadata.parameter_types,
+                        &variable_scalar_types,
+                    )
                 {
                     diagnostics.push(CompositionDiagnostic::for_variable(
                         CompositionDiagnosticCode::QuerySchemaChanged,
@@ -1154,11 +1171,25 @@ fn result_field_type(value_type: VariableGraphScalarType) -> CompositionResultFi
 fn saved_arguments_match(
     arguments: &[ugoite_domain::composition::VariableGraphArgumentBinding],
     parameter_types: &BTreeMap<String, VariableGraphScalarDescriptor>,
+    variable_types: &BTreeMap<String, VariableGraphScalarDescriptor>,
 ) -> bool {
-    arguments.len() == parameter_types.len()
-        && arguments
-            .iter()
-            .all(|argument| parameter_types.contains_key(&argument.name))
+    if arguments.len() != parameter_types.len() {
+        return false;
+    }
+
+    let mut seen = BTreeSet::new();
+    arguments.iter().all(|argument| {
+        if !seen.insert(argument.name.as_str()) {
+            return false;
+        }
+        let Some(expected_type) = parameter_types.get(&argument.name) else {
+            return false;
+        };
+        let Some(actual_type) = variable_types.get(&argument.variable) else {
+            return false;
+        };
+        actual_type.scalar_type == expected_type.scalar_type
+    })
 }
 
 /// Check whether a declared query result contract exactly matches planner
@@ -1237,6 +1268,10 @@ fn schema_is_well_formed(columns: &[VariableGraphColumn], fingerprint: &str) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ugoite_domain::composition::{
+        CompositionComponent, DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow,
+        VariableGraphArgumentBinding, VariableGraphQuery,
+    };
 
     #[test]
     fn query_semantic_fingerprint_includes_scalar_or_table_return_shape() {
@@ -1281,5 +1316,110 @@ mod tests {
         .expect("table semantic fingerprint");
 
         assert_ne!(scalar_fingerprint, table_fingerprint);
+    }
+
+    #[test]
+    fn saved_sql_preview_rejects_mismatched_argument_type_and_accepts_matching_type() {
+        let integer = VariableGraphScalarDescriptor {
+            scalar_type: VariableGraphScalarType::Integer,
+            nullable: false,
+        };
+        let string = VariableGraphScalarDescriptor {
+            scalar_type: VariableGraphScalarType::String,
+            nullable: false,
+        };
+        let spec = CompositionSpec {
+            variables: vec![
+                VariableGraphNode {
+                    id: "minimum".to_owned(),
+                    kind: VariableGraphNodeKind::Constant {
+                        value_type: string,
+                        value: VariableGraphLiteral::String("10".to_owned()),
+                    },
+                },
+                VariableGraphNode {
+                    id: "count".to_owned(),
+                    kind: VariableGraphNodeKind::Query {
+                        returns: VariableGraphResultType::Scalar {
+                            value_type: integer,
+                        },
+                        query: VariableGraphQuery {
+                            definition: VariableGraphQueryDefinition::SavedSql {
+                                entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
+                                revision_id: Some(
+                                    "00000000-0000-0000-0000-000000000002".to_owned(),
+                                ),
+                                column: None,
+                            },
+                            arguments: vec![VariableGraphArgumentBinding {
+                                name: "minimum".to_owned(),
+                                variable: "minimum".to_owned(),
+                            }],
+                            form_bindings: Vec::new(),
+                            schema_fingerprint: String::new(),
+                        },
+                    },
+                },
+            ],
+            components: vec![CompositionComponent::Metric {
+                id: "count_metric".to_owned(),
+                variable: "count".to_owned(),
+                presentation: None,
+            }],
+            layout: DashboardFlowLayout {
+                kind: FlowLayoutKind::Flow,
+                rows: vec![FlowRow {
+                    id: "row".to_owned(),
+                    items: vec![FlowItem::Component {
+                        component: "count_metric".to_owned(),
+                    }],
+                }],
+            },
+        };
+        let metadata = SavedSqlRevisionMetadata {
+            entry_id: "00000000-0000-0000-0000-000000000001".to_owned(),
+            revision_id: "00000000-0000-0000-0000-000000000002".to_owned(),
+            parameter_types: BTreeMap::from([("minimum".to_owned(), integer)]),
+            form_bindings: Vec::new(),
+            result_columns: vec![VariableGraphColumn {
+                name: "value".to_owned(),
+                value_type: integer,
+            }],
+            schema_fingerprint: "0".repeat(64),
+        };
+        let current_queries = [CurrentQueryDescriptor::SavedSql {
+            variable_id: "count",
+            metadata: Some(&metadata),
+        }];
+
+        let mismatched = resolve_composition_preview(
+            Uuid::nil(),
+            &spec,
+            &BTreeMap::new(),
+            &current_queries,
+            "draft".to_owned(),
+        )
+        .expect_err("a string binding must not satisfy the pinned integer parameter");
+        assert_eq!(
+            mismatched,
+            vec![CompositionDiagnostic::for_variable(
+                CompositionDiagnosticCode::QuerySchemaChanged,
+                "count",
+            )]
+        );
+
+        let mut matching_spec = spec;
+        matching_spec.variables[0].kind = VariableGraphNodeKind::Constant {
+            value_type: integer,
+            value: VariableGraphLiteral::Integer(10),
+        };
+        assert!(resolve_composition_preview(
+            Uuid::nil(),
+            &matching_spec,
+            &BTreeMap::new(),
+            &current_queries,
+            "draft".to_owned(),
+        )
+        .is_ok());
     }
 }
