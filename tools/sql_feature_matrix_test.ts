@@ -113,7 +113,7 @@ Deno.test("SQL feature matrix binds the read-only gate and current UI actions", 
   assertEquals(
     constructs.find((construct) => construct.id === "projection")?.limits
       .includes(
-        "repeated source columns remain editable, reorderable, and independently aliasable as projection slots",
+        "repeated source columns remain editable, reorderable, and independently aliasable by projection slot",
       ),
     true,
   );
