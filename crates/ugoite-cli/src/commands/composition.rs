@@ -20,7 +20,9 @@ use ugoite_api_client::{
     CompositionResultFieldType as ApiCompositionResultFieldType, CompositionRevisionMetadata,
     CompositionSaveRequest as ApiCompositionSaveRequest, CompositionSaveResponse,
 };
-use ugoite_core::composition::{ResolvedComponentKind, ResolvedCompositionPlan};
+use ugoite_core::composition::{
+    bind_variables_with_unset, ResolvedComponentKind, ResolvedCompositionPlan,
+};
 use ugoite_core::composition_metric::{
     CompositionMetricQueryRequest as CoreCompositionMetricQueryRequest,
     CompositionMetricQueryTarget as CoreCompositionMetricQueryTarget,
@@ -719,13 +721,23 @@ async fn query_composition(
     raw_variables: &[String],
 ) -> Result<()> {
     let composition = read_composition(target, composition_id, requested_revision).await?;
-    let (variable_values, unset_variables) =
+    let (variable_definitions, variable_values, unset_variables) =
         match composition.fields.get("spec").and_then(Value::as_str) {
             Some(yaml) => match parse_composition_yaml(yaml) {
-                Ok(document) => parse_cli_variables(&document.spec.variables, raw_variables)?,
-                Err(_) => parse_cli_variables(&[], raw_variables)?,
+                Ok(document) => {
+                    let definitions = document.spec.variables;
+                    let (values, unset) = parse_cli_variables(&definitions, raw_variables)?;
+                    (definitions, values, unset)
+                }
+                Err(_) => {
+                    let (values, unset) = parse_cli_variables(&[], raw_variables)?;
+                    (Vec::new(), values, unset)
+                }
             },
-            None => parse_cli_variables(&[], raw_variables)?,
+            None => {
+                let (values, unset) = parse_cli_variables(&[], raw_variables)?;
+                (Vec::new(), values, unset)
+            }
         };
     let local_service = match target {
         SpaceTarget::Core { root, .. } => {
@@ -739,6 +751,7 @@ async fn query_composition(
         target_space_id(target),
         composition_id,
         &composition.revision.revision_id,
+        &variable_definitions,
         variable_values.clone(),
         unset_variables.clone(),
         local_service.as_ref(),
@@ -816,6 +829,7 @@ async fn resolve_composition(
     space_id: &str,
     composition_id: &str,
     revision_id: &str,
+    variable_definitions: &[VariableGraphNode],
     variables: BTreeMap<String, Value>,
     unset_variables: Vec<String>,
     local_service: Option<&UgoiteService>,
@@ -855,7 +869,8 @@ async fn resolve_composition(
                 "space_id": space_id,
                 "composition_id": composition_id,
             });
-            let body = composition_resolve_body(revision_id, variables, unset_variables);
+            let body =
+                composition_resolve_body(revision_id, variables.clone(), unset_variables.clone());
             let response =
                 http::execute_for_target(target, "composition.resolve", arguments, Some(body))
                     .await?;
@@ -866,7 +881,12 @@ async fn resolve_composition(
                     .plan
                     .context("Composition resolve succeeded without a plan")?;
                 Ok(CompositionQueryResolution::Plan(Box::new(
-                    composition_query_plan_from_portable(plan)?,
+                    composition_query_plan_from_portable(
+                        plan,
+                        variable_definitions,
+                        &variables,
+                        &unset_variables,
+                    )?,
                 )))
             } else {
                 let diagnostics = response
@@ -904,14 +924,29 @@ fn composition_query_plan_from_core(plan: ResolvedCompositionPlan) -> Result<Com
 fn portable_plan_from_core_composition_plan(
     plan: &ResolvedCompositionPlan,
 ) -> Result<CompositionResolvePlan> {
-    serde_json::from_value(serde_json::to_value(plan)?)
+    let mut portable_value = serde_json::to_value(plan)?;
+    portable_value["variable_values"] = serde_json::to_value(
+        plan.variable_values
+            .iter()
+            .map(|(id, value)| (id.clone(), value.to_json_value()))
+            .collect::<BTreeMap<_, _>>(),
+    )?;
+    serde_json::from_value(portable_value)
         .context("encode local Composition resolve plan through the portable DTO")
 }
 
 fn composition_query_plan_from_portable(
     plan: CompositionResolvePlan,
+    variable_definitions: &[VariableGraphNode],
+    supplied_variables: &BTreeMap<String, Value>,
+    unset_variables: &[String],
 ) -> Result<CompositionQueryPlan> {
-    let core = core_plan_from_portable_composition_plan(&plan)?;
+    let core = core_plan_from_portable_composition_plan(
+        &plan,
+        variable_definitions,
+        supplied_variables,
+        unset_variables,
+    )?;
     Ok(CompositionQueryPlan {
         portable: plan,
         core,
@@ -920,8 +955,30 @@ fn composition_query_plan_from_portable(
 
 fn core_plan_from_portable_composition_plan(
     plan: &CompositionResolvePlan,
+    variable_definitions: &[VariableGraphNode],
+    supplied_variables: &BTreeMap<String, Value>,
+    unset_variables: &[String],
 ) -> Result<ResolvedCompositionPlan> {
-    serde_json::from_value(serde_json::to_value(plan)?)
+    let bindings =
+        bind_variables_with_unset(variable_definitions, supplied_variables, unset_variables);
+    anyhow::ensure!(
+        bindings.diagnostics.is_empty(),
+        "portable Composition resolve plan has invalid typed variable bindings: {:?}",
+        bindings.diagnostics
+    );
+    let portable_values = bindings
+        .values
+        .iter()
+        .map(|(id, value)| (id.clone(), value.to_json_value()))
+        .collect::<BTreeMap<_, _>>();
+    anyhow::ensure!(
+        portable_values == plan.variable_values,
+        "portable Composition resolve plan variable values differ from the typed graph binding"
+    );
+
+    let mut core_value = serde_json::to_value(plan)?;
+    core_value["variable_values"] = serde_json::to_value(&bindings.values)?;
+    serde_json::from_value(core_value)
         .context("decode portable Composition resolve plan for shared Core evaluation")
 }
 
@@ -1386,8 +1443,9 @@ mod tests {
     use ugoite_core::composition::ResolvedCompositionPlan;
     use ugoite_core::error::{AppError, ErrorCode};
     use ugoite_domain::composition::{
-        VariableGraphNode, VariableGraphNodeKind, VariableGraphScalarDescriptor,
-        VariableGraphScalarType, MAX_COMPOSITION_VARIABLE_STRING_BYTES, MAX_COMPOSITION_YAML_BYTES,
+        VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind,
+        VariableGraphScalarDescriptor, VariableGraphScalarType,
+        MAX_COMPOSITION_VARIABLE_STRING_BYTES, MAX_COMPOSITION_YAML_BYTES,
     };
     use ugoite_domain::entry::{EntryMetadata, EntryOperation, EntryRevision, FieldValue};
     use ugoite_domain::form::FormVersion;
@@ -1650,7 +1708,7 @@ mod tests {
                 "entry_id": "00000000-0000-0000-0000-000000000001",
                 "revision_id": "00000000-0000-0000-0000-000000000002"
             },
-            "variable_values": {},
+            "variable_values": {"as_of":"2026-02-01"},
             "queries": [{
                 "variable_id": "summary",
                 "request": {
@@ -1681,10 +1739,18 @@ mod tests {
         }))
         .expect("portable resolve plan");
 
-        let core = core_plan_from_portable_composition_plan(&portable)
-            .expect("portable graph plan maps to Core's graph plan");
+        let definitions = vec![input_node("as_of", VariableGraphScalarType::Date, true)];
+        let supplied = BTreeMap::from([("as_of".to_string(), json!("2026-02-01"))]);
+        let unset = Vec::new();
+        let core =
+            core_plan_from_portable_composition_plan(&portable, &definitions, &supplied, &unset)
+                .expect("portable graph plan maps to Core's graph plan");
         let request = core.queries[0].request.as_ref().expect("SQL request");
         assert_eq!(request.sql, "SELECT 42 AS total");
+        assert_eq!(
+            core.variable_values.get("as_of"),
+            Some(&VariableGraphLiteral::Date("2026-02-01".to_string()))
+        );
         let saved_sql = request
             .saved_sql
             .as_ref()
@@ -1692,8 +1758,9 @@ mod tests {
         assert_eq!(saved_sql.id, "sql-entry-1");
         assert_eq!(saved_sql.revision_id, "sql-revision-7");
 
-        let resolved = composition_query_plan_from_portable(portable.clone())
-            .expect("portable plan adapts to the shared Core types");
+        let resolved =
+            composition_query_plan_from_portable(portable.clone(), &definitions, &supplied, &unset)
+                .expect("portable plan adapts to the shared Core types");
         assert_eq!(resolved.portable, portable);
         assert_eq!(
             resolved.portable.component_bindings[0]

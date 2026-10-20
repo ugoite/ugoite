@@ -1642,8 +1642,8 @@ spec:
     let revised_yaml = yaml
         .replacen("name: CLI parity", "name: CLI parity revised", 1)
         .replacen(
-            "WHERE \"field_101\" >= $month_start AND \"field_101\" < $month_end\n        ORDER BY",
-            "WHERE \"field_101\" >= $month_start AND \"field_101\" < $month_end AND \"field_102\" = 'January-10'\n        ORDER BY",
+            "AND \"field_101\" < $month_end",
+            "AND \"field_101\" < $month_end AND \"field_102\" = 'January-10'",
             1,
         );
     assert_ne!(revised_yaml, yaml, "the newer document must be distinct");
@@ -1734,18 +1734,26 @@ spec:
         "--var",
         "month_end=2026-02-01",
     ];
-    let core_query = stdout_json(
+    let mut core_query = stdout_json(
         &run_cli(&core_config_path, &query_args).await,
         "Core parameterized Composition query",
     );
-    let remote_query = stdout_json(
+    let mut remote_query = stdout_json(
         &run_cli(&fixture.config_path, &query_args).await,
         "Remote parameterized Composition query",
     );
     assert_eq!(core_query["ok"], true, "Core query response: {core_query}");
+    for response in [&mut core_query, &mut remote_query] {
+        for query in response["plan"]["queries"]
+            .as_array_mut()
+            .expect("Composition query plan")
+        {
+            query["request"]["execution_id"] = serde_json::Value::Null;
+        }
+    }
     assert_eq!(core_query, remote_query);
     assert_eq!(
-        core_query["sources"][0]["page"]["rows"]
+        core_query["queries"][0]["page"]["rows"]
             .as_array()
             .map(Vec::len),
         Some(2),
@@ -1763,17 +1771,25 @@ spec:
         "--var",
         "month_end=2026-02-01",
     ];
-    let core_latest_query = stdout_json(
+    let mut core_latest_query = stdout_json(
         &run_cli(&core_config_path, &latest_query_args).await,
         "Core latest-revision Composition query",
     );
-    let remote_latest_query = stdout_json(
+    let mut remote_latest_query = stdout_json(
         &run_cli(&fixture.config_path, &latest_query_args).await,
         "Remote latest-revision Composition query",
     );
+    for response in [&mut core_latest_query, &mut remote_latest_query] {
+        for query in response["plan"]["queries"]
+            .as_array_mut()
+            .expect("latest Composition query plan")
+        {
+            query["request"]["execution_id"] = serde_json::Value::Null;
+        }
+    }
     assert_eq!(core_latest_query, remote_latest_query);
     assert_eq!(
-        core_latest_query["sources"][0]["page"]["rows"]
+        core_latest_query["queries"][0]["page"]["rows"]
             .as_array()
             .map(Vec::len),
         Some(1),
@@ -2145,8 +2161,8 @@ spec:
     assert_eq!(core_query["ok"], false);
     assert_eq!(
         core_query["diagnostics"],
-        json!([{"code": "query_schema_changed"}]),
-        "changed source schemas must retain the stable drift diagnostic"
+        json!([{"code": "query_schema_changed", "variable_id": "rows"}]),
+        "changed query schemas must retain the stable variable-scoped drift diagnostic"
     );
 
     let history_after = stdout_json(

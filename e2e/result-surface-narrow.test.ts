@@ -43,7 +43,6 @@ function sqlIdentifier(value: string): string {
 
 function buildInlineSqlYaml(
   name: string,
-  sourceName: string,
   sql: string,
 ): string {
   const lines = [
@@ -52,18 +51,19 @@ function buildInlineSqlYaml(
     `name: ${name}`,
     "kind: dashboard",
     "spec:",
-    "  sources:",
+    "  variables:",
     "    - id: narrow_rows",
-    "      kind: inline_sql",
-    `      name: ${sourceName}`,
-    `      sql: ${sql}`,
-    "      form_bindings: []",
-    "      expected_result: []",
-    "      schema_fingerprint: ''",
+    "      kind: query",
+    "      returns: { kind: table, columns: [] }",
+    "      query:",
+    "        kind: inline_sql",
+    `        sql: ${sql}`,
+    "        form_bindings: []",
+    "        schema_fingerprint: ''",
     "  components:",
     "    - id: narrow_table",
     "      kind: table",
-    "      source: narrow_rows",
+    "      variable: narrow_rows",
     "  layout:",
     "    kind: flow",
     "    rows:",
@@ -208,7 +208,6 @@ async function seedNarrowSurfaces(
     spaceId,
     buildInlineSqlYaml(
       `Narrow one column ${suffix}`,
-      `Narrow one column ${suffix} rows`,
       `SELECT ${alphaColumn} AS label FROM ${sqlIdentifier(formName)}`,
     ),
     {
@@ -224,7 +223,6 @@ async function seedNarrowSurfaces(
     spaceId,
     buildInlineSqlYaml(
       `Narrow two column ${suffix}`,
-      `Narrow two column ${suffix} rows`,
       `SELECT ${alphaColumn} AS alpha, ${betaColumn} AS beta FROM ${
         sqlIdentifier(formName)
       } LIMIT 2`,
