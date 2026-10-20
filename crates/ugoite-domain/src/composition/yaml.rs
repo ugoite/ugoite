@@ -106,9 +106,7 @@ fn version_probe_options() -> serde_saphyr::Options {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        parse_composition_yaml, MAX_COMPOSITION_COLLECTION_ITEMS, MAX_COMPOSITION_YAML_BYTES,
-    };
+    use super::{parse_composition_yaml, MAX_COMPOSITION_YAML_BYTES};
     use crate::composition::{
         CompositionDiagnosticCode, VariableGraphNodeKind, VariableGraphQueryDefinition,
     };
@@ -238,6 +236,5 @@ mod tests {
             parse_composition_yaml(&over),
             Err(CompositionDiagnosticCode::InvalidComposition)
         );
-        assert!(MAX_COMPOSITION_COLLECTION_ITEMS >= 1);
     }
 }

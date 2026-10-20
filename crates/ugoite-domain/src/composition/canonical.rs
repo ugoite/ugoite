@@ -203,7 +203,7 @@ mod tests {
         };
         query.form_bindings.push(VariableGraphFormBinding {
             relation: "Expense".to_owned(),
-            form_id: query.form_bindings[0].form_id.clone(),
+            form_id: query.form_bindings[0].form_id,
         });
         assert_eq!(
             canonicalize_composition(&document),

@@ -37,8 +37,8 @@ pub fn parse_variable_graph_input(
             Err(_) => return VariableGraphInputValue::Invalid,
         },
         Type::Float => match raw.parse::<f64>() {
-            Ok(value) => Literal::Float(value),
-            Err(_) => return VariableGraphInputValue::Invalid,
+            Ok(value) if !float_underflowed_to_zero(raw, value) => Literal::Float(value),
+            Ok(_) | Err(_) => return VariableGraphInputValue::Invalid,
         },
         Type::Decimal => Literal::Decimal(raw.to_owned()),
         Type::Date => Literal::Date(raw.to_owned()),
@@ -53,6 +53,15 @@ pub fn parse_variable_graph_input(
     } else {
         VariableGraphInputValue::Invalid
     }
+}
+
+fn float_underflowed_to_zero(raw: &str, value: f64) -> bool {
+    value == 0.0
+        && raw.split(['e', 'E']).next().is_some_and(|significand| {
+            significand
+                .bytes()
+                .any(|byte| (b'1'..=b'9').contains(&byte))
+        })
 }
 
 /// Stable diagnostics for input values supplied to a variable graph.
@@ -192,6 +201,19 @@ mod tests {
             scalar_type,
             nullable,
         }
+    }
+
+    #[test]
+    fn float_input_rejects_nonzero_values_that_underflow_to_zero() {
+        let value_type = descriptor(VariableGraphScalarType::Float, false);
+        assert_eq!(
+            parse_variable_graph_input(value_type, "1e-4000"),
+            VariableGraphInputValue::Invalid
+        );
+        assert_eq!(
+            parse_variable_graph_input(value_type, "0e-4000"),
+            VariableGraphInputValue::Valid(VariableGraphLiteral::Float(0.0))
+        );
     }
 
     fn input(id: &str, required: bool, default: Option<VariableGraphLiteral>) -> VariableGraphNode {

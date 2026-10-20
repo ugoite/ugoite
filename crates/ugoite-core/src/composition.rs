@@ -259,6 +259,8 @@ pub struct CompositionRevisionRef {
 /// Inputs for one pure graph resolution pass.
 pub struct ResolveInput<'a> {
     pub composition_revision: CompositionRevisionRef,
+    /// The caller-owned identity for this immutable query plan snapshot.
+    pub execution_id: Uuid,
     pub spec: &'a CompositionSpec,
     pub variables: &'a BTreeMap<String, Value>,
     pub current_queries: &'a [CurrentQueryDescriptor<'a>],
@@ -368,6 +370,7 @@ pub fn resolve_composition_with_unset(
     unset: &[String],
 ) -> Result<ResolvedCompositionPlan, Vec<CompositionDiagnostic>> {
     let (variable_values, queries, component_bindings, dependencies) = resolve_parts(
+        input.execution_id,
         input.spec,
         input.variables,
         unset,
@@ -384,15 +387,24 @@ pub fn resolve_composition_with_unset(
 }
 
 pub fn resolve_composition_preview(
+    execution_id: Uuid,
     spec: &CompositionSpec,
     variables: &BTreeMap<String, Value>,
     current_queries: &[CurrentQueryDescriptor<'_>],
     draft_fingerprint: String,
 ) -> Result<PreviewCompositionPlan, Vec<CompositionDiagnostic>> {
-    resolve_composition_preview_with_unset(spec, variables, &[], current_queries, draft_fingerprint)
+    resolve_composition_preview_with_unset(
+        execution_id,
+        spec,
+        variables,
+        &[],
+        current_queries,
+        draft_fingerprint,
+    )
 }
 
 pub fn resolve_composition_preview_with_unset(
+    execution_id: Uuid,
     spec: &CompositionSpec,
     variables: &BTreeMap<String, Value>,
     unset: &[String],
@@ -400,7 +412,7 @@ pub fn resolve_composition_preview_with_unset(
     draft_fingerprint: String,
 ) -> Result<PreviewCompositionPlan, Vec<CompositionDiagnostic>> {
     let (variable_values, queries, component_bindings, dependencies) =
-        resolve_parts(spec, variables, unset, current_queries, true)?;
+        resolve_parts(execution_id, spec, variables, unset, current_queries, true)?;
     Ok(PreviewCompositionPlan {
         draft_fingerprint,
         variable_values,
@@ -418,6 +430,7 @@ type ResolvedCompositionParts = (
 );
 
 fn resolve_parts(
+    execution_id: Uuid,
     spec: &CompositionSpec,
     variables: &BTreeMap<String, Value>,
     unset: &[String],
@@ -498,8 +511,10 @@ fn resolve_parts(
                     ));
                     continue;
                 }
-                let draft = query.form_bindings.is_empty() && query.schema_fingerprint.is_empty();
-                if !(allow_draft_descriptors && draft)
+                // Preview is an authorized planner boundary. Treat every
+                // client-supplied descriptor as untrusted, including nonempty
+                // or forged values, and replace it with planner output.
+                if !allow_draft_descriptors
                     && (query.form_bindings != metadata.form_bindings
                         || query.schema_fingerprint != metadata.schema_fingerprint)
                 {
@@ -509,7 +524,7 @@ fn resolve_parts(
                     ));
                     continue;
                 }
-                let draft_returns = allow_draft_descriptors && draft;
+                let draft_returns = allow_draft_descriptors;
                 if !returns_match_schema(returns, &metadata.result_columns) && !draft_returns {
                     diagnostics.push(CompositionDiagnostic::for_variable(
                         CompositionDiagnosticCode::QuerySchemaChanged,
@@ -582,8 +597,9 @@ fn resolve_parts(
                     ));
                     continue;
                 }
-                let draft = query.form_bindings.is_empty() && query.schema_fingerprint.is_empty();
-                if !(allow_draft_descriptors && draft)
+                // Saved SQL metadata is also re-derived for each preview;
+                // client descriptors never establish a result contract.
+                if !allow_draft_descriptors
                     && (query.form_bindings != metadata.form_bindings
                         || query.schema_fingerprint != metadata.schema_fingerprint)
                 {
@@ -593,7 +609,7 @@ fn resolve_parts(
                     ));
                     continue;
                 }
-                let draft_returns = allow_draft_descriptors && draft;
+                let draft_returns = allow_draft_descriptors;
                 if (!returns_match_schema(returns, &metadata.result_columns) && !draft_returns)
                     || !saved_arguments_match(&query.arguments, &metadata.parameter_types)
                 {
@@ -658,7 +674,7 @@ fn resolve_parts(
     let request_batch = crate::composition_query::compile_variable_graph_query_request_batch(
         &execution_graph,
         &requested,
-        Uuid::new_v4(),
+        execution_id,
         &bindings.values,
     )
     .map_err(|errors| {
@@ -886,7 +902,9 @@ fn saved_arguments_match(
             .all(|argument| parameter_types.contains_key(&argument.name))
 }
 
-fn returns_match_schema(
+/// Check whether a declared query result contract exactly matches planner
+/// output columns, including scalar nullability and table column order.
+pub fn returns_match_schema(
     returns: &VariableGraphResultType,
     columns: &[VariableGraphColumn],
 ) -> bool {
@@ -898,7 +916,10 @@ fn returns_match_schema(
     }
 }
 
-fn returns_from_schema(
+/// Derive a query result contract from planner output while preserving the
+/// selected scalar or table result shape. Scalar queries require exactly one
+/// planner column.
+pub fn returns_from_schema(
     intent: &VariableGraphResultType,
     columns: &[VariableGraphColumn],
 ) -> Option<VariableGraphResultType> {

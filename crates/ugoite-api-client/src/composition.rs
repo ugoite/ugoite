@@ -541,7 +541,7 @@ pub struct CompositionResolvedQuery {
     pub variable_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request: Option<Value>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub deferred_arguments: Vec<CompositionDeferredArgument>,
     pub returns: CompositionQueryResultType,
     pub result_columns: Vec<CompositionResolvedResultColumn>,
