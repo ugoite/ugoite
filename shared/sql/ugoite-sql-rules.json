@@ -184,6 +184,7 @@
           "editor_coverage": "bounded",
           "limits": [
             "simple columns only",
+            "unqualified identifiers resolve explicit projection aliases before same-named Form columns; the editor retains the typed source binding",
             "ASC or DESC",
             "no NULLS FIRST/LAST"
           ]

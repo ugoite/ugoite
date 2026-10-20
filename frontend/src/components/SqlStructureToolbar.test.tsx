@@ -88,7 +88,7 @@ const context: SqlStructureAdapterContext = {
 };
 
 const analysis: SqlStructureAnalysis = {
-  contract_version: 2,
+  contract_version: 3,
   status: "supported",
   projection: ["*"],
   literal_projection: [],
@@ -153,7 +153,7 @@ describe("SqlStructureToolbar adapter", () => {
     prepareMock.mockResolvedValue(undefined);
     analyzeMock.mockResolvedValue(analysis);
     proposeMock.mockImplementation(async (baseSql: string) => ({
-      contract_version: 2,
+      contract_version: 3,
       status: "supported",
       base_sql: baseSql,
       proposed_sql: 'SELECT "amount" FROM "Orders" ORDER BY "_ugoite_id" ASC',
@@ -306,12 +306,89 @@ describe("SqlStructureToolbar adapter", () => {
     );
   });
 
+  it("shows and rewrites ORDER BY projection aliases as aliases", async () => {
+    const alias = { name: "field_101", quoted: true };
+    const collisionContext: SqlStructureAdapterContext = {
+      ...context,
+      parser: {
+        ...context.parser,
+        columns: [
+          ...context.parser.columns,
+          { name: "field_101", type: "string" },
+          { name: "field_102", type: "integer" },
+        ],
+      },
+      columnCapabilities: {
+        ...context.columnCapabilities,
+        field_101: context.columnCapabilities.category,
+        field_102: context.columnCapabilities.amount,
+      },
+    };
+    analyzeMock.mockResolvedValue({
+      ...analysis,
+      projection: ["field_102"],
+      projection_aliases: [{ column: "field_102", alias }],
+      order_by: [{
+        column: "field_102",
+        projection_alias: alias,
+        direction: "asc",
+      }],
+    });
+    const sql =
+      'SELECT "field_102" AS "field_101" FROM "Orders" ORDER BY "field_101"';
+    let actions: readonly SQLWorkspaceAction[] = [];
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [collisionContext]}
+        onSqlChange={vi.fn()}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "sort")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "sort")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Sort" });
+    const column = within(dialog).getByRole("combobox", { name: "Column" });
+    const aliasValue = JSON.stringify([
+      "projection_alias",
+      alias.name,
+      alias.quoted,
+    ]);
+    expect(column).toHaveValue(aliasValue);
+    expect(
+      within(column).getByRole("option", {
+        name: "alias field_101 (field_102)",
+      }),
+    ).toBeInTheDocument();
+    fireEvent.change(
+      within(dialog).getByRole("combobox", { name: "Direction" }),
+      { target: { value: "desc" } },
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(proposeMock).toHaveBeenCalledWith(sql, collisionContext.parser, {
+      kind: "set_sort",
+      order_by: [{
+        column: "field_102",
+        projection_alias: alias,
+        direction: "desc",
+      }],
+    });
+  });
+
   it("adds a typed inner self-join through the shared toolbar", async () => {
     const sql = 'SELECT * FROM "Orders"';
     const proposedSql =
       'SELECT * FROM "Orders" AS "_ugoite_left" INNER JOIN "Orders" AS "_ugoite_right" ON "_ugoite_left"."amount" = "_ugoite_right"."amount"';
     proposeMock.mockResolvedValue({
-      contract_version: 2,
+      contract_version: 3,
       status: "supported",
       base_sql: sql,
       proposed_sql: proposedSql,
@@ -381,7 +458,7 @@ describe("SqlStructureToolbar adapter", () => {
       }],
     });
     proposeMock.mockResolvedValue({
-      contract_version: 2,
+      contract_version: 3,
       status: "supported",
       base_sql: sql,
       proposed_sql:
@@ -448,7 +525,7 @@ describe("SqlStructureToolbar adapter", () => {
       projection_aliases: [],
     });
     proposeMock.mockResolvedValue({
-      contract_version: 2,
+      contract_version: 3,
       status: "supported",
       base_sql: sql,
       proposed_sql:
@@ -521,7 +598,7 @@ describe("SqlStructureToolbar adapter", () => {
       ],
     });
     proposeMock.mockResolvedValue({
-      contract_version: 2,
+      contract_version: 3,
       status: "supported",
       base_sql: sql,
       proposed_sql:
@@ -585,7 +662,7 @@ describe("SqlStructureToolbar adapter", () => {
     const sql = "SELECT 1";
     const contexts = buildSqlStructureContexts([], [], "new-sql");
     const scalarAnalysis: SqlStructureAnalysis = {
-      contract_version: 2,
+      contract_version: 3,
       status: "supported",
       projection: ["1"],
       literal_projection: [{ kind: "integer", value: "1" }],
@@ -614,7 +691,7 @@ describe("SqlStructureToolbar adapter", () => {
     };
     analyzeMock.mockResolvedValue(scalarAnalysis);
     proposeMock.mockResolvedValue({
-      contract_version: 2,
+      contract_version: 3,
       status: "supported",
       base_sql: sql,
       proposed_sql: "SELECT DISTINCT 1",
@@ -763,7 +840,7 @@ describe("SqlStructureToolbar adapter", () => {
       )
     );
     proposeMock.mockResolvedValue({
-      contract_version: 2,
+      contract_version: 3,
       status: "supported",
       base_sql: sql,
       proposed_sql: proposedSql,
@@ -883,7 +960,7 @@ describe("SqlStructureToolbar adapter", () => {
       new Promise<void>((resolve) => resolveParser = resolve)
     );
     proposeMock.mockResolvedValue({
-      contract_version: 2,
+      contract_version: 3,
       status: "supported",
       base_sql: sql,
       proposed_sql: 'SELECT * FROM "Orders"',
@@ -958,7 +1035,7 @@ describe("SqlStructureToolbar adapter", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
     resolveProposal?.({
-      contract_version: 2,
+      contract_version: 3,
       status: "supported",
       base_sql: initialSql,
       proposed_sql: 'SELECT "amount" FROM "Orders"',
@@ -1072,7 +1149,7 @@ describe("SqlStructureToolbar adapter", () => {
     const onVariablesAdded = vi.fn();
     proposeMock.mockResolvedValue(
       {
-        contract_version: 2,
+        contract_version: 3,
         status: "supported",
         base_sql: sql,
         proposed_sql: 'SELECT * FROM "Orders" WHERE "amount" = $filter_amount',
@@ -1153,7 +1230,7 @@ describe("SqlStructureToolbar adapter", () => {
     const onVariablesAdded = vi.fn(() => false);
     proposeMock.mockResolvedValue(
       {
-        contract_version: 2,
+        contract_version: 3,
         status: "supported",
         base_sql: currentSql,
         proposed_sql: 'SELECT * FROM "Orders" WHERE "amount" = $filter_amount',
@@ -1221,7 +1298,7 @@ describe("SqlStructureToolbar adapter", () => {
     let actions: readonly SQLWorkspaceAction[] = [];
     proposeMock.mockResolvedValue(
       {
-        contract_version: 2,
+        contract_version: 3,
         status: "supported",
         base_sql: sql,
         proposed_sql:
@@ -1344,7 +1421,7 @@ describe("SqlStructureToolbar adapter", () => {
     ).toBeDisabled();
 
     resolveProposal({
-      contract_version: 2,
+      contract_version: 3,
       status: "supported",
       base_sql: sql,
       proposed_sql: 'SELECT * FROM "Orders" WHERE "amount" = $filter_amount',

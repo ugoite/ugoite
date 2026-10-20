@@ -49,6 +49,12 @@ rows add new slots. The identity is not persisted beside SQL. The legacy
 with unsupported expressions or unsafe comment/source spans also remain
 unavailable to structured edits.
 
+For unqualified `ORDER BY` identifiers, explicit simple projection aliases take
+precedence over same-named Form columns. The editor records the alias and its
+typed source column separately, so sorting and direction edits preserve SQL's
+output-name binding. If a rewrite would resolve a requested Form column through
+a colliding output alias, the operation fails closed.
+
 The matrix records the same SELECT-only boundary as the runtime statement gate.
 Relation-free scalar queries align with direct SQL lint and the structure
 editor. The SQL executor remains responsible for planner, relation, function,
