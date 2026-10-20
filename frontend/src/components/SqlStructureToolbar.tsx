@@ -65,7 +65,7 @@ type ProjectionSlotDraft = {
   key: string;
   id?: string;
   column: string;
-  alias: ColumnAliasDraft;
+  alias: SqlStructureAlias;
 };
 type AnalyzedStructure = {
   context: SqlStructureAdapterContext;
