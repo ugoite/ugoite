@@ -678,11 +678,41 @@ impl UgoiteService {
         variables: &BTreeMap<String, Value>,
         unset_variables: &[String],
     ) -> Result<CompositionResolution> {
+        self.resolve_composition_local_for_query_selection(
+            space_id,
+            composition_id,
+            revision_id,
+            variables,
+            unset_variables,
+            None,
+        )
+        .await
+    }
+
+    /// Resolve an exact Composition revision in the local operator path while
+    /// deriving query metadata only for the requested variables and their
+    /// transitive query dependencies.
+    pub async fn resolve_composition_local_for_query_selection(
+        &self,
+        space_id: &str,
+        composition_id: &str,
+        revision_id: &str,
+        variables: &BTreeMap<String, Value>,
+        unset_variables: &[String],
+        requested_queries: Option<&[String]>,
+    ) -> Result<CompositionResolution> {
         let raw = self
             .get_composition_raw_revision_local(space_id, composition_id, revision_id)
             .await?;
-        self.resolve_composition_from_raw(space_id, raw, variables, unset_variables, None, None)
-            .await
+        self.resolve_composition_from_raw(
+            space_id,
+            raw,
+            variables,
+            unset_variables,
+            None,
+            requested_queries,
+        )
+        .await
     }
 
     /// Resolve an exact Composition revision after rechecking current
@@ -841,6 +871,28 @@ impl UgoiteService {
         unset_variables: &[String],
         base: Option<CompositionRevisionRef>,
     ) -> Result<CompositionPreview> {
+        self.preview_composition_local_with_base_and_query_selection(
+            space_id,
+            yaml,
+            variables,
+            unset_variables,
+            base,
+            None,
+        )
+        .await
+    }
+
+    /// Preview a local draft while resolving metadata only for the requested
+    /// query variables and their transitive dependencies.
+    pub async fn preview_composition_local_with_base_and_query_selection(
+        &self,
+        space_id: &str,
+        yaml: &str,
+        variables: &BTreeMap<String, Value>,
+        unset_variables: &[String],
+        base: Option<CompositionRevisionRef>,
+        requested_queries: Option<&[String]>,
+    ) -> Result<CompositionPreview> {
         self.preview_composition_from_yaml(
             space_id,
             yaml,
@@ -848,7 +900,7 @@ impl UgoiteService {
             unset_variables,
             None,
             base,
-            None,
+            requested_queries,
             true,
         )
         .await

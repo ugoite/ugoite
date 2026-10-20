@@ -108,6 +108,67 @@ impl UgoiteService {
         requested_queries: Option<&[String]>,
         page: Option<CompositionQueryEvaluationPage>,
     ) -> Result<CompositionQueryEvaluationResponse> {
+        self.evaluate_composition_graph(
+            space_id,
+            Some(principal_ids),
+            target,
+            evaluation_id,
+            base_entry_id,
+            base_revision_id,
+            variables,
+            unset_variables,
+            requested_queries,
+            page,
+        )
+        .await
+    }
+
+    /// Resolve and execute a graph at the trusted local operator boundary.
+    /// Local Space access has no application principal, but uses the same
+    /// snapshot-bound query graph executor and produces the same transient
+    /// response semantics as the authorized graph route.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn evaluate_composition_graph_local(
+        &self,
+        space_id: &str,
+        target: CompositionQueryEvaluationTarget,
+        evaluation_id: Uuid,
+        base_entry_id: Option<&str>,
+        base_revision_id: Option<&str>,
+        variables: &BTreeMap<String, Value>,
+        unset_variables: &[String],
+        requested_queries: Option<&[String]>,
+        page: Option<CompositionQueryEvaluationPage>,
+    ) -> Result<CompositionQueryEvaluationResponse> {
+        self.evaluate_composition_graph(
+            space_id,
+            None,
+            target,
+            evaluation_id,
+            base_entry_id,
+            base_revision_id,
+            variables,
+            unset_variables,
+            requested_queries,
+            page,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn evaluate_composition_graph(
+        &self,
+        space_id: &str,
+        principal_ids: Option<&[Uuid]>,
+        target: CompositionQueryEvaluationTarget,
+        evaluation_id: Uuid,
+        base_entry_id: Option<&str>,
+        base_revision_id: Option<&str>,
+        variables: &BTreeMap<String, Value>,
+        unset_variables: &[String],
+        requested_queries: Option<&[String]>,
+        page: Option<CompositionQueryEvaluationPage>,
+    ) -> Result<CompositionQueryEvaluationResponse> {
         if evaluation_id.is_nil() {
             return Err(AppError::invalid_input(
                 ErrorCode::InvalidInput,
@@ -163,7 +224,7 @@ impl UgoiteService {
         // match. The resolver reads the live Publication, so changes during
         // resolution are rejected by the check immediately afterward.
         let (authorization_fingerprint, publication) = self
-            .capture_authorized_graph_snapshot(
+            .capture_graph_snapshot(
                 space_id,
                 principal_ids,
                 base_acl_entry.as_deref(),
@@ -190,17 +251,31 @@ impl UgoiteService {
                     )
                     .into());
                 }
-                let resolution = self
-                    .resolve_composition_authorized_for_query_selection(
-                        space_id,
-                        &composition_id,
-                        &revision_id,
-                        variables,
-                        unset_variables,
-                        principal_ids,
-                        requested_queries,
-                    )
-                    .await?;
+                let resolution = match principal_ids {
+                    Some(principal_ids) => {
+                        self.resolve_composition_authorized_for_query_selection(
+                            space_id,
+                            &composition_id,
+                            &revision_id,
+                            variables,
+                            unset_variables,
+                            principal_ids,
+                            requested_queries,
+                        )
+                        .await?
+                    }
+                    None => {
+                        self.resolve_composition_local_for_query_selection(
+                            space_id,
+                            &composition_id,
+                            &revision_id,
+                            variables,
+                            unset_variables,
+                            requested_queries,
+                        )
+                        .await?
+                    }
+                };
                 let identity = match &resolution.plan {
                     Some(plan) => format!(
                         "saved:{}:{}",
@@ -225,17 +300,31 @@ impl UgoiteService {
                 )
             }
             CompositionQueryEvaluationTarget::Draft { yaml } => {
-                let preview = self
-                    .preview_composition_authorized_for_principals_with_base_and_query_selection(
-                        space_id,
-                        &yaml,
-                        variables,
-                        unset_variables,
-                        principal_ids,
-                        base,
-                        requested_queries,
-                    )
-                    .await?;
+                let preview = match principal_ids {
+                    Some(principal_ids) => {
+                        self.preview_composition_authorized_for_principals_with_base_and_query_selection(
+                            space_id,
+                            &yaml,
+                            variables,
+                            unset_variables,
+                            principal_ids,
+                            base,
+                            requested_queries,
+                        )
+                        .await?
+                    }
+                    None => {
+                        self.preview_composition_local_with_base_and_query_selection(
+                            space_id,
+                            &yaml,
+                            variables,
+                            unset_variables,
+                            base,
+                            requested_queries,
+                        )
+                        .await?
+                    }
+                };
                 let draft_fingerprint = preview.draft_fingerprint.clone();
                 let identity = format!(
                     "draft:{}:{}",
@@ -352,7 +441,7 @@ impl UgoiteService {
             Ok(evaluation) => evaluation,
             Err(query_diagnostics) => {
                 return self
-                    .query_evaluation_diagnostics_response_authorized(
+                    .query_evaluation_diagnostics_response_for_access(
                         space_id,
                         principal_ids,
                         base_acl_entry.as_deref(),
@@ -373,7 +462,7 @@ impl UgoiteService {
         if let Some(page) = &page {
             if !computed_query_ids.contains(&page.variable_id) {
                 return self
-                    .query_evaluation_diagnostics_response_authorized(
+                    .query_evaluation_diagnostics_response_for_access(
                         space_id,
                         principal_ids,
                         base_acl_entry.as_deref(),
@@ -413,7 +502,7 @@ impl UgoiteService {
                 Ok(request) => request,
                 Err(query_diagnostics) => {
                     return self
-                        .query_evaluation_diagnostics_response_authorized(
+                        .query_evaluation_diagnostics_response_for_access(
                             space_id,
                             principal_ids,
                             base_acl_entry.as_deref(),
@@ -432,15 +521,26 @@ impl UgoiteService {
             };
             let query_context = query_snapshot_fingerprint(&snapshot_fingerprint, query, &request)?;
             let page_result = if matches!(query.returns, VariableGraphResultType::Scalar { .. }) {
-                let probe = self
-                    .probe_composition_sql_scalar_authorized_at_publication(
-                        space_id,
-                        principal_ids,
-                        composition_entry_id.as_deref(),
-                        request.clone(),
-                        &publication,
-                    )
-                    .await?;
+                let probe = match principal_ids {
+                    Some(principal_ids) => {
+                        self.probe_composition_sql_scalar_authorized_at_publication(
+                            space_id,
+                            principal_ids,
+                            composition_entry_id.as_deref(),
+                            request.clone(),
+                            &publication,
+                        )
+                        .await?
+                    }
+                    None => {
+                        self.probe_composition_sql_scalar_local_at_publication(
+                            space_id,
+                            request.clone(),
+                            Some(&publication),
+                        )
+                        .await?
+                    }
+                };
                 SqlQueryPage {
                     columns: probe.columns,
                     rows: probe.rows,
@@ -456,21 +556,34 @@ impl UgoiteService {
                     exact_integer_rows: None,
                 }
             } else {
-                self.query_sql_authorized_for_composition(
-                    space_id,
-                    principal_ids,
-                    request.clone(),
-                    composition_entry_id.as_deref(),
-                    &publication,
-                    &query_context,
-                )
-                .await?
+                match principal_ids {
+                    Some(principal_ids) => {
+                        self.query_sql_authorized_for_composition(
+                            space_id,
+                            principal_ids,
+                            request.clone(),
+                            composition_entry_id.as_deref(),
+                            &publication,
+                            &query_context,
+                        )
+                        .await?
+                    }
+                    None => {
+                        self.query_sql_local_for_composition(
+                            space_id,
+                            request.clone(),
+                            &publication,
+                            &query_context,
+                        )
+                        .await?
+                    }
+                }
             };
             if let Err(query_diagnostics) =
                 evaluation.accept_page(variable_id, &request, &page_result)
             {
                 return self
-                    .query_evaluation_diagnostics_response_authorized(
+                    .query_evaluation_diagnostics_response_for_access(
                         space_id,
                         principal_ids,
                         base_acl_entry.as_deref(),
@@ -492,7 +605,7 @@ impl UgoiteService {
             Ok(preview) => preview,
             Err(query_diagnostics) => {
                 return self
-                    .query_evaluation_diagnostics_response_authorized(
+                    .query_evaluation_diagnostics_response_for_access(
                         space_id,
                         principal_ids,
                         base_acl_entry.as_deref(),
@@ -510,7 +623,7 @@ impl UgoiteService {
             }
         };
         let (current_authorization_fingerprint, _) = self
-            .capture_authorized_graph_snapshot(
+            .capture_graph_snapshot(
                 space_id,
                 principal_ids,
                 base_acl_entry.as_deref(),
@@ -550,6 +663,51 @@ impl UgoiteService {
             diagnostics: Vec::new(),
             query_diagnostics: Vec::new(),
         })
+    }
+
+    async fn capture_graph_snapshot(
+        &self,
+        space_id: &str,
+        principal_ids: Option<&[Uuid]>,
+        composition_entry_id: Option<&str>,
+        pinned_publication: Option<&PublicationRef>,
+    ) -> Result<(String, PublicationRef)> {
+        match principal_ids {
+            Some(principal_ids) => {
+                self.capture_authorized_graph_snapshot(
+                    space_id,
+                    principal_ids,
+                    composition_entry_id,
+                    pinned_publication,
+                )
+                .await
+            }
+            None => {
+                self.capture_local_graph_snapshot(space_id, pinned_publication)
+                    .await
+            }
+        }
+    }
+
+    async fn capture_local_graph_snapshot(
+        &self,
+        space_id: &str,
+        pinned_publication: Option<&PublicationRef>,
+    ) -> Result<(String, PublicationRef)> {
+        const LOCAL_AUTHORIZATION_FINGERPRINT: &str = "local-operator";
+
+        self.validate_complete_space(space_id).await?;
+        let workspace = iceberg_store::native_workspace_read_only(
+            &self.operator,
+            &self.workspace_path(space_id),
+        )
+        .await?;
+        let publication = match pinned_publication {
+            Some(publication) => publication.clone(),
+            None => workspace.current_publication().await?,
+        };
+        workspace.resolve_publication(&publication).await?;
+        Ok((LOCAL_AUTHORIZATION_FINGERPRINT.to_owned(), publication))
     }
 
     async fn capture_authorized_graph_snapshot(
@@ -598,13 +756,13 @@ impl UgoiteService {
     async fn ensure_graph_resolution_snapshot_unchanged(
         &self,
         space_id: &str,
-        principal_ids: &[Uuid],
+        principal_ids: Option<&[Uuid]>,
         composition_entry_id: Option<&str>,
         expected_authorization_fingerprint: &str,
         expected_publication: &PublicationRef,
     ) -> Result<()> {
         let (current_authorization_fingerprint, current_publication) = self
-            .capture_authorized_graph_snapshot(space_id, principal_ids, composition_entry_id, None)
+            .capture_graph_snapshot(space_id, principal_ids, composition_entry_id, None)
             .await?;
         ensure_graph_snapshot_unchanged(
             expected_authorization_fingerprint,
@@ -615,10 +773,10 @@ impl UgoiteService {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn query_evaluation_diagnostics_response_authorized(
+    async fn query_evaluation_diagnostics_response_for_access(
         &self,
         space_id: &str,
-        principal_ids: &[Uuid],
+        principal_ids: Option<&[Uuid]>,
         composition_entry_id: Option<&str>,
         publication: &PublicationRef,
         expected_authorization_fingerprint: &str,
@@ -631,7 +789,7 @@ impl UgoiteService {
         query_diagnostics: Vec<VariableGraphQueryEvaluationDiagnostic>,
     ) -> Result<CompositionQueryEvaluationResponse> {
         let (current_authorization_fingerprint, _) = self
-            .capture_authorized_graph_snapshot(
+            .capture_graph_snapshot(
                 space_id,
                 principal_ids,
                 composition_entry_id,
@@ -995,9 +1153,9 @@ mod tests {
             result_diagnostic: None,
         };
         let response = service
-            .query_evaluation_diagnostics_response_authorized(
+            .query_evaluation_diagnostics_response_for_access(
                 &space_id,
-                &[principal],
+                Some(&[principal]),
                 None,
                 &publication,
                 &stale_authorization_fingerprint,

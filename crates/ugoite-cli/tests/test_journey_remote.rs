@@ -155,62 +155,6 @@ fn normalize_composition_query_descriptor(mut query: serde_json::Value) -> serde
     query
 }
 
-fn graph_table_rows(result: &serde_json::Value) -> serde_json::Value {
-    let table = &result["value"];
-    assert_eq!(table["kind"], "table");
-    let columns = table["columns"]
-        .as_array()
-        .expect("graph table columns")
-        .iter()
-        .map(|column| {
-            column["name"]
-                .as_str()
-                .expect("graph table column name")
-                .to_owned()
-        })
-        .collect::<Vec<_>>();
-    let rows = table["rows"]
-        .as_array()
-        .expect("graph table rows")
-        .iter()
-        .map(|row| {
-            let cells = row.as_array().expect("graph table row");
-            assert_eq!(cells.len(), columns.len());
-            serde_json::Value::Object(
-                columns
-                    .iter()
-                    .zip(cells)
-                    .map(|(name, cell)| {
-                        (
-                            name.clone(),
-                            cell.get("value")
-                                .cloned()
-                                .unwrap_or(serde_json::Value::Null),
-                        )
-                    })
-                    .collect(),
-            )
-        })
-        .collect::<Vec<_>>();
-    serde_json::Value::Array(rows)
-}
-
-fn graph_table_columns(result: &serde_json::Value) -> serde_json::Value {
-    let columns = result["value"]["columns"]
-        .as_array()
-        .expect("graph table columns")
-        .iter()
-        .map(|column| {
-            json!({
-                "name": column["name"],
-                "type": column["value_type"]["scalar_type"],
-                "nullable": column["value_type"]["nullable"],
-            })
-        })
-        .collect::<Vec<_>>();
-    serde_json::Value::Array(columns)
-}
-
 fn composition_query_diagnostic_pairs(value: &serde_json::Value) -> Vec<(String, Option<String>)> {
     let mut diagnostics = value["diagnostics"]
         .as_array()
@@ -241,42 +185,40 @@ fn composition_query_diagnostic_pairs(value: &serde_json::Value) -> Vec<(String,
 
 fn assert_composition_query_semantics_match(core: &serde_json::Value, remote: &serde_json::Value) {
     assert_eq!(core["ok"], remote["ok"]);
+    assert!(
+        core.get("plan").is_none(),
+        "local output must use the graph response shape"
+    );
+    assert!(
+        core.get("metrics").is_none(),
+        "local output must not project per-component metrics"
+    );
     assert_eq!(
         composition_query_diagnostic_pairs(core),
         composition_query_diagnostic_pairs(remote),
         "local and remote Composition query diagnostics should carry the same codes and variables"
     );
-
-    let Some(plan) = core["plan"].as_object() else {
-        assert!(
-            remote["query_results"]
-                .as_object()
-                .is_none_or(serde_json::Map::is_empty),
-            "a failed local graph resolution must not expose remote query results"
-        );
-        assert!(remote["queries"].as_array().is_none_or(Vec::is_empty));
-        return;
-    };
-
     assert_eq!(
-        plan.get("composition_revision").expect("local revision"),
+        core.get("composition_revision")
+            .unwrap_or(&serde_json::Value::Null),
         &remote["composition_revision"]
     );
     assert_eq!(
-        plan.get("variable_values").expect("local variable values"),
+        core.get("variable_values").expect("local variable values"),
         &remote["variable_values"]
     );
     assert_eq!(
-        plan.get("component_bindings")
+        core.get("component_bindings")
             .expect("local component bindings"),
         &remote["component_bindings"]
     );
     assert_eq!(
-        plan.get("dependencies").expect("local dependency index"),
+        core.get("dependencies").expect("local dependency index"),
         &remote["dependencies"]
     );
+    assert_eq!(core["computed_query_ids"], remote["computed_query_ids"]);
 
-    let local_queries = plan["queries"].as_array().expect("local query plan");
+    let local_queries = core["queries"].as_array().expect("local query descriptors");
     let remote_queries = remote["queries"].as_array().expect("remote query plan");
     assert_eq!(local_queries.len(), remote_queries.len());
     for (local, remote) in local_queries.iter().zip(remote_queries) {
@@ -285,48 +227,22 @@ fn assert_composition_query_semantics_match(core: &serde_json::Value, remote: &s
         assert_eq!(local, remote, "query descriptors should remain equivalent");
     }
 
-    for local_query in core["queries"].as_array().expect("local query outputs") {
-        let Some(local_page) = local_query.get("page").filter(|page| !page.is_null()) else {
-            continue;
-        };
-        let variable_id = local_query["variable_id"]
-            .as_str()
-            .expect("local query variable ID");
-        let remote_result = &remote["query_results"][variable_id];
+    let local_results = core["query_results"]
+        .as_object()
+        .expect("local graph query results");
+    let remote_results = remote["query_results"]
+        .as_object()
+        .expect("remote graph query results");
+    assert_eq!(local_results.len(), remote_results.len());
+    for (variable_id, local_result) in local_results {
+        let remote_result = &remote_results[variable_id];
+        assert_eq!(local_result["value"], remote_result["value"]);
+        assert_eq!(local_result["has_more"], remote_result["has_more"]);
         assert_eq!(
-            local_page["rows"],
-            graph_table_rows(remote_result),
-            "table row values should match for {variable_id}"
+            local_result.get("exact_integer_rows"),
+            remote_result.get("exact_integer_rows"),
+            "exact table integers should match for {variable_id}"
         );
-        assert_eq!(
-            local_page["result_schema"],
-            graph_table_columns(remote_result)
-        );
-        assert_eq!(local_page["has_more"], remote_result["has_more"]);
-        assert_eq!(
-            local_page.get("next").unwrap_or(&serde_json::Value::Null),
-            remote_result
-                .get("next")
-                .unwrap_or(&serde_json::Value::Null)
-        );
-    }
-
-    for local_metric in core["metrics"].as_array().expect("local metric outputs") {
-        let component_id = local_metric["component_id"]
-            .as_str()
-            .expect("local Metric component ID");
-        let binding = remote["component_bindings"]
-            .as_array()
-            .expect("remote component bindings")
-            .iter()
-            .find(|binding| binding["component_id"] == component_id)
-            .expect("remote Metric binding");
-        let variable_id = binding["variable_id"]
-            .as_str()
-            .expect("remote Metric variable ID");
-        let result = &remote["query_results"][variable_id]["value"]["value"];
-        assert_eq!(local_metric["result_type"], binding["expected_result_type"]);
-        assert_eq!(local_metric["value"], result["value"]);
     }
 }
 
@@ -1927,7 +1843,7 @@ spec:
     assert_eq!(core_query["ok"], true, "Core query response: {core_query}");
     assert_composition_query_semantics_match(&core_query, &remote_query);
     assert_eq!(
-        core_query["queries"][0]["page"]["rows"]
+        core_query["query_results"]["expense_rows"]["value"]["rows"]
             .as_array()
             .map(Vec::len),
         Some(2),
@@ -1955,7 +1871,7 @@ spec:
     );
     assert_composition_query_semantics_match(&core_latest_query, &remote_latest_query);
     assert_eq!(
-        core_latest_query["queries"][0]["page"]["rows"]
+        core_latest_query["query_results"]["expense_rows"]["value"]["rows"]
             .as_array()
             .map(Vec::len),
         Some(1),
@@ -2027,7 +1943,7 @@ spec:
         core_explicit_unset["ok"], false,
         "explicit unset must bypass the declared month_start default"
     );
-    assert!(core_explicit_unset["plan"].is_null());
+    assert!(core_explicit_unset.get("plan").is_none());
     let explicit_unset_diagnostics = core_explicit_unset["diagnostics"]
         .as_array()
         .expect("explicit-unset diagnostics");
