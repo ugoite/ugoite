@@ -11,12 +11,13 @@ use anyhow::{Context, Result};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use ugoite_core::composition::CompositionRevisionRef;
+use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::composition::{
     canonicalize_composition, CompositionComponent, CompositionDocument, CompositionFormat,
     CompositionKind, CompositionSpec, DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow,
-    VariableGraphArgumentBinding, VariableGraphNode, VariableGraphNodeKind, VariableGraphQuery,
-    VariableGraphQueryDefinition, VariableGraphResultType, VariableGraphScalarDescriptor,
-    VariableGraphScalarType,
+    VariableGraphArgumentBinding, VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind,
+    VariableGraphQuery, VariableGraphQueryDefinition, VariableGraphResultType,
+    VariableGraphScalarDescriptor, VariableGraphScalarType,
 };
 use ugoite_domain::form::{sql_column_name, sql_relation_name};
 use ugoite_domain::id::{EntryId, FieldId, FormId, RevisionId};
@@ -206,6 +207,74 @@ async fn draft_preview_resolves_sql_schema_without_executing_source_rows() -> Re
         Some(request) if request.sql.contains(&sql_relation_name(form_id))
             && plan.queries[0].schema_fingerprint.len() == 64
     ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn inline_sql_planning_rejects_unsupported_decimal_and_json_arguments() -> Result<()> {
+    for scalar_type in [
+        VariableGraphScalarType::Decimal,
+        VariableGraphScalarType::Json,
+    ] {
+        let (service, space_id, mut document, _) = setup_preview_space().await?;
+        let query = document
+            .spec
+            .variables
+            .iter_mut()
+            .find(|node| node.id == "source")
+            .context("preview fixture query")?;
+        let VariableGraphNodeKind::Query { query, .. } = &mut query.kind else {
+            anyhow::bail!("preview fixture source must be a query variable");
+        };
+        let VariableGraphQueryDefinition::InlineSql { sql } = &mut query.definition else {
+            anyhow::bail!("preview fixture source must use inline SQL");
+        };
+        let order_by = sql
+            .find(" ORDER BY ")
+            .context("preview fixture should include a deterministic order")?;
+        sql.insert_str(order_by, " WHERE $threshold IS NOT NULL");
+        query.arguments.push(VariableGraphArgumentBinding {
+            name: "threshold".to_string(),
+            variable: "threshold".to_string(),
+        });
+        document.spec.variables.push(VariableGraphNode {
+            id: "threshold".to_string(),
+            kind: VariableGraphNodeKind::Constant {
+                value_type: VariableGraphScalarDescriptor {
+                    scalar_type,
+                    nullable: false,
+                },
+                value: match scalar_type {
+                    VariableGraphScalarType::Decimal => {
+                        VariableGraphLiteral::Decimal("1.25".to_string())
+                    }
+                    VariableGraphScalarType::Json => {
+                        VariableGraphLiteral::Json(json!({"value": 1}))
+                    }
+                    _ => unreachable!("only unsupported scalars are covered"),
+                },
+            },
+        });
+        let canonical =
+            canonicalize_composition(&document).map_err(|code| anyhow::anyhow!(code.as_str()))?;
+
+        let preview_error = service
+            .preview_composition_local(&space_id, &canonical.yaml, &BTreeMap::new(), &[])
+            .await
+            .expect_err("unsupported inline argument type must fail during preview planning");
+        assert_eq!(
+            preview_error.downcast_ref::<AppError>().map(AppError::code),
+            Some(ErrorCode::InvalidInput)
+        );
+
+        let save_error = save_local_composition(&service, &space_id, document)
+            .await
+            .expect_err("unsupported inline argument type must fail during save planning");
+        assert_eq!(
+            save_error.downcast_ref::<AppError>().map(AppError::code),
+            Some(ErrorCode::InvalidInput)
+        );
+    }
     Ok(())
 }
 

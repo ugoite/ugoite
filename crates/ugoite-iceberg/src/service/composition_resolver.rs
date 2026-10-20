@@ -1190,6 +1190,16 @@ fn query_parameter_types(
                     ..
                 } => return Err(anyhow!("table query cannot bind a scalar SQL argument")),
             };
+            if matches!(
+                value_type.scalar_type,
+                VariableGraphScalarType::Decimal | VariableGraphScalarType::Json
+            ) {
+                return Err(AppError::invalid_input(
+                    ErrorCode::InvalidInput,
+                    "Composition SQL arguments do not support decimal or json values",
+                )
+                .into());
+            }
             Ok((
                 argument.name.clone(),
                 variable_graph_sql_type(value_type.scalar_type).to_owned(),

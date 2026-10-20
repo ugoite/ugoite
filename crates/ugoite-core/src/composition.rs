@@ -410,21 +410,20 @@ pub fn resolve_composition_preview_with_unset(
     })
 }
 
+type ResolvedCompositionParts = (
+    BTreeMap<String, VariableGraphLiteral>,
+    Vec<ResolvedQueryRequest>,
+    Vec<ResolvedComponentBinding>,
+    CompositionDependencyIndex,
+);
+
 fn resolve_parts(
     spec: &CompositionSpec,
     variables: &BTreeMap<String, Value>,
     unset: &[String],
     current_queries: &[CurrentQueryDescriptor<'_>],
     allow_draft_descriptors: bool,
-) -> Result<
-    (
-        BTreeMap<String, VariableGraphLiteral>,
-        Vec<ResolvedQueryRequest>,
-        Vec<ResolvedComponentBinding>,
-        CompositionDependencyIndex,
-    ),
-    Vec<CompositionDiagnostic>,
-> {
+) -> Result<ResolvedCompositionParts, Vec<CompositionDiagnostic>> {
     let graph = VariableGraph {
         variables: spec.variables.clone(),
     };
