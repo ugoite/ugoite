@@ -413,6 +413,7 @@ async fn local_saved_sql_arguments_accept_planner_derived_scalar_queries() -> Re
     Ok(())
 }
 
+#[tokio::test]
 async fn draft_preview_resolves_sql_schema_without_executing_source_rows() -> Result<()> {
     let (service, space_id, mut document, form_id) = setup_preview_space().await?;
     let VariableGraphNodeKind::Query { query, .. } = &mut document.spec.variables[0].kind else {
