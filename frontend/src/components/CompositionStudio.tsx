@@ -1,4 +1,4 @@
-import { useNavigate } from "@solidjs/router";
+import { useLocation, useNavigate } from "@solidjs/router";
 import { createEffect, createResource, createSignal, Show } from "solid-js";
 import { BackLink } from "~/components/BackLink";
 import { CompositionGraphStudio } from "~/components/CompositionGraphStudio";
@@ -29,6 +29,17 @@ import {
   sameResolvedQueryMeaning,
 } from "~/lib/composition-variable-binding";
 import { t } from "~/lib/i18n";
+import {
+  compositionCanonicalizeErrorMessage,
+  compositionSaveErrorMessage,
+} from "~/lib/composition-save-error";
+import {
+  clearPendingCompositionSaveAttempt,
+  getPendingCompositionSaveAttempt,
+  markPendingCompositionSaveAttemptUncertain,
+  type PendingCompositionSaveAttempt,
+  stagePendingCompositionSaveAttempt,
+} from "~/lib/composition-save-attempt";
 import {
   changedCompositionQueryIds,
   dependentCompositionQueryIds,
@@ -133,10 +144,20 @@ const savedSqlChoice = (
 
 export function CompositionStudio(props: CompositionStudioProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [draft, setDraft] = createSignal<CompositionGraphDraft>(
     props.initialDraft ?? createCompositionGraphDraft(),
   );
   const [saving, setSaving] = createSignal(false);
+  const routeIdentity = () => ({
+    spaceId: props.spaceId,
+    routePath: location.pathname,
+  });
+  let pendingSave: PendingCompositionSaveAttempt | undefined =
+    getPendingCompositionSaveAttempt(routeIdentity())?.attempt;
+  const [saveRetryAvailable, setSaveRetryAvailable] = createSignal(
+    Boolean(getPendingCompositionSaveAttempt(routeIdentity())),
+  );
   const [saveError, setSaveError] = createSignal<string | null>(null);
   const [invalidEditorVariables, setInvalidEditorVariables] = createSignal(
     new Set<string>(),
@@ -649,8 +670,62 @@ export function CompositionStudio(props: CompositionStudioProps) {
     },
   };
 
+  const saveRequest = async (
+    attempt: PendingCompositionSaveAttempt,
+    isRetry: boolean,
+  ) => {
+    stagePendingCompositionSaveAttempt(attempt, undefined);
+    try {
+      const saved = await compositionApi.save(
+        attempt.spaceId,
+        attempt.yaml,
+        attempt.idempotencyKey,
+        props.saveMode.kind === "update"
+          ? {
+            compositionId: props.saveMode.compositionId,
+            baseRevisionId: props.saveMode.baseRevisionId,
+          }
+          : undefined,
+      );
+      if (attempt.routePath !== location.pathname) {
+        markPendingCompositionSaveAttemptUncertain(attempt, undefined);
+        pendingSave = attempt;
+        setSaveRetryAvailable(true);
+        return;
+      }
+      clearPendingCompositionSaveAttempt(attempt, "completed", undefined);
+      pendingSave = undefined;
+      setSaveRetryAvailable(false);
+      navigate(spaceCompositionRevisionPath(
+        props.spaceId,
+        saved.composition_id,
+        saved.revision_id,
+      ));
+    } catch (error) {
+      const outcome = error && typeof error === "object" &&
+          "mutationOutcome" in error
+        ? (error as { mutationOutcome?: unknown }).mutationOutcome
+        : "unknown";
+      const status = error && typeof error === "object" && "status" in error
+        ? (error as { status?: unknown }).status
+        : undefined;
+      const retryWasDenied = isRetry && (status === 401 || status === 403);
+      if (outcome === "rejected" && !retryWasDenied) {
+        clearPendingCompositionSaveAttempt(attempt, "rejected", undefined);
+        pendingSave = undefined;
+        setSaveRetryAvailable(false);
+        setSaveError(compositionSaveErrorMessage(error));
+      } else {
+        markPendingCompositionSaveAttemptUncertain(attempt, undefined);
+        pendingSave = attempt;
+        setSaveRetryAvailable(true);
+        setSaveError(t("composition.saveFailed"));
+      }
+    }
+  };
+
   const save = async () => {
-    if (saving() || !editorValid()) return;
+    if (saving() || saveRetryAvailable() || !editorValid()) return;
     const current = draft();
     if (!current.name.trim() || current.components.length === 0) {
       setSaveError(t("composition.studioInvalidDocument"));
@@ -695,27 +770,32 @@ export function CompositionStudio(props: CompositionStudioProps) {
         compositionGraphDocumentDraft(verified),
       );
       if (generation !== saveGeneration()) return;
-      const saved = await compositionApi.save(
-        props.spaceId,
-        canonical.canonical_yaml,
-        crypto.randomUUID(),
-        props.saveMode.kind === "update"
-          ? {
-            compositionId: props.saveMode.compositionId,
-            baseRevisionId: props.saveMode.baseRevisionId,
-          }
-          : undefined,
-      );
-      if (generation !== saveGeneration()) return;
-      navigate(spaceCompositionRevisionPath(
-        props.spaceId,
-        saved.composition_id,
-        saved.revision_id,
-      ));
-    } catch {
+      const attempt: PendingCompositionSaveAttempt = {
+        ...routeIdentity(),
+        name: current.name.trim(),
+        yaml: canonical.canonical_yaml,
+        idempotencyKey: crypto.randomUUID(),
+      };
+      pendingSave = attempt;
+      await saveRequest(attempt, false);
+    } catch (error) {
       if (generation === saveGeneration()) {
-        setSaveError(t("composition.saveFailed"));
+        setSaveError(compositionCanonicalizeErrorMessage(error));
       }
+    } finally {
+      if (generation === saveGeneration()) setSaving(false);
+    }
+  };
+
+  const retrySave = async () => {
+    const attempt = pendingSave;
+    if (saving() || !saveRetryAvailable() || !attempt) return;
+    const generation = saveGeneration() + 1;
+    setSaveGeneration(generation);
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await saveRequest(attempt, true);
     } finally {
       if (generation === saveGeneration()) setSaving(false);
     }
@@ -763,6 +843,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
   };
 
   const onDraftChange = (next: CompositionGraphDraft) => {
+    if (saving() || saveRetryAvailable()) return;
     const invalidated = changedCompositionQueryIds(draft(), next);
     markQueryPreviewsStale(invalidated);
     const remainingEditorIds = new Set(
@@ -778,68 +859,85 @@ export function CompositionStudio(props: CompositionStudioProps) {
   };
 
   return (
-    <div class="compositionGraphStudioRoot">
-      <header class="screenHead">
-        <div class="screenHeadStart">
-          <BackLink href={props.backHref} label={props.backLabel} />
-          <input
-            class="ui-input compositionGraphName"
-            aria-label={t("composition.name")}
-            value={draft().name}
-            onInput={(event) =>
-              onDraftChange({
-                ...draft(),
-                name: event.currentTarget.value,
-              })}
-          />
-        </div>
-      </header>
-      <Show when={formsResource.loading || sqlResource.loading}>
-        <LocalBusyIndicator label={t("common.loading")} />
-      </Show>
-      <CompositionGraphStudio
-        draft={draft()}
-        forms={forms()}
-        savedSql={savedSqlForPicker()}
-        savedSqlLoading={sqlResource.loading}
-        savedSqlSeedUnavailable={savedSqlSeedUnavailable()}
-        initialSavedSqlBinding={props.initialSavedSqlBinding}
-        provider={provider}
-        session={session}
-        getPrincipalGeneration={getPrincipalGeneration}
-        isSessionCurrent={isSessionCurrent}
-        sqlSchema={sqlSchema()}
-        sqlForms={formsResource() ?? []}
-        previewForQuery={(variableId) =>
-          queryPreviews()[variableId] ?? {
-            status: "idle",
-            isCurrent: false,
+    <div
+      class="compositionGraphStudioRoot"
+      aria-busy={saving() ? "true" : "false"}
+    >
+      <div
+        class="compositionGraphStudioEditor"
+        inert={saving() || saveRetryAvailable()}
+      >
+        <header class="screenHead">
+          <div class="screenHeadStart">
+            <BackLink href={props.backHref} label={props.backLabel} />
+            <input
+              class="ui-input compositionGraphName"
+              aria-label={t("composition.name")}
+              value={draft().name}
+              onInput={(event) =>
+                onDraftChange({
+                  ...draft(),
+                  name: event.currentTarget.value,
+                })}
+            />
+          </div>
+        </header>
+        <Show when={formsResource.loading || sqlResource.loading}>
+          <LocalBusyIndicator label={t("common.loading")} />
+        </Show>
+        <CompositionGraphStudio
+          draft={draft()}
+          forms={forms()}
+          savedSql={savedSqlForPicker()}
+          savedSqlLoading={sqlResource.loading}
+          savedSqlSeedUnavailable={savedSqlSeedUnavailable()}
+          initialSavedSqlBinding={props.initialSavedSqlBinding}
+          provider={provider}
+          session={session}
+          getPrincipalGeneration={getPrincipalGeneration}
+          isSessionCurrent={isSessionCurrent}
+          sqlSchema={sqlSchema()}
+          sqlForms={formsResource() ?? []}
+          previewForQuery={(variableId) =>
+            queryPreviews()[variableId] ?? {
+              status: "idle",
+              isCurrent: false,
+            }}
+          onRunQuery={(variableId) => void runQuery(variableId)}
+          onNextQuery={(variableId) => {
+            const evaluation = queryEvaluations()[variableId];
+            if (evaluation?.next) void runQuery(variableId, evaluation.next);
           }}
-        onRunQuery={(variableId) => void runQuery(variableId)}
-        onNextQuery={(variableId) => {
-          const evaluation = queryEvaluations()[variableId];
-          if (evaluation?.next) void runQuery(variableId, evaluation.next);
-        }}
-        onDraftChange={onDraftChange}
-        onQueryChange={(variableId, sql) => {
-          onDraftChange({
-            ...draft(),
-            variables: draft().variables.map((node) =>
-              node.id === variableId && node.kind === "query" &&
-                node.query.kind === "inline_sql"
-                ? { ...node, query: { ...node.query, sql } }
-                : node
-            ),
-          });
-        }}
-        onSave={save}
-        saveDisabled={!editorValid() || !draft().name.trim() ||
-          draft().components.length === 0}
-        saving={saving()}
-        onEditorValidityChange={onEditorValidityChange}
-      />
+          onDraftChange={onDraftChange}
+          onQueryChange={(variableId, sql) => {
+            onDraftChange({
+              ...draft(),
+              variables: draft().variables.map((node) =>
+                node.id === variableId && node.kind === "query" &&
+                  node.query.kind === "inline_sql"
+                  ? { ...node, query: { ...node.query, sql } }
+                  : node
+              ),
+            });
+          }}
+          onSave={save}
+          saveDisabled={!editorValid() || !draft().name.trim() ||
+            draft().components.length === 0 || saveRetryAvailable()}
+          saving={saving()}
+          onEditorValidityChange={onEditorValidityChange}
+        />
+      </div>
       <Show when={saveError()}>
         <p class="ui-text-danger" role="alert">{saveError()}</p>
+      </Show>
+      <Show when={saveRetryAvailable() && !saving()}>
+        <button
+          class="ui-button ui-button-secondary"
+          type="button"
+          onClick={() => void retrySave()}
+        >
+          {t("composition.retry")}
+        </button>
       </Show>
     </div>
   );

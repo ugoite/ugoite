@@ -24,6 +24,7 @@ const {
   evaluateMock,
   canonicalizeMock,
   parseInputMock,
+  saveMock,
 } = vi.hoisted(
   () => ({
     authSessionMock: vi.fn(),
@@ -34,10 +35,12 @@ const {
     evaluateMock: vi.fn(),
     canonicalizeMock: vi.fn(),
     parseInputMock: vi.fn(),
+    saveMock: vi.fn(),
   }),
 );
 
 vi.mock("@solidjs/router", () => ({
+  useLocation: () => ({ pathname: "/spaces/space-1/compositions/new" }),
   useNavigate: () => navigateMock,
   A: (props: { href: string; class?: string; children: unknown }) => (
     <a href={props.href} class={props.class}>{props.children as never}</a>
@@ -56,6 +59,7 @@ vi.mock("~/lib/composition-api", () => ({
     previewGraph: (...args: unknown[]) => previewGraphMock(...args),
     evaluate: (...args: unknown[]) => evaluateMock(...args),
     canonicalizeDocument: (...args: unknown[]) => canonicalizeMock(...args),
+    save: (...args: unknown[]) => saveMock(...args),
   },
 }));
 
@@ -191,6 +195,10 @@ describe("CompositionStudio graph surface", () => {
     canonicalizeMock.mockImplementation(async (document: unknown) => ({
       canonical_yaml: JSON.stringify(document),
     }));
+    saveMock.mockResolvedValue({
+      composition_id: "composition-1",
+      revision_id: "revision-1",
+    });
     evaluateMock.mockImplementation((
       _spaceId: string,
       request: { evaluation_id: string },
@@ -272,6 +280,81 @@ describe("CompositionStudio graph surface", () => {
       kind: "component",
       component: "input_1",
     });
+  });
+
+  it("locks the captured draft while Save is validating it", async () => {
+    renderStudio(renderedDraftWithTable());
+    const save = await screen.findByRole("button", { name: "Save" });
+    await waitFor(() => expect(save).toBeEnabled());
+    let finishPreview!: (result: ReturnType<typeof plannedQuery>) => void;
+    previewGraphMock.mockClear();
+    previewGraphMock.mockImplementationOnce(() =>
+      new Promise<ReturnType<typeof plannedQuery>>((resolve) => {
+        finishPreview = resolve;
+      })
+    );
+
+    fireEvent.click(save);
+    await waitFor(() => expect(previewGraphMock).toHaveBeenCalledOnce());
+    const root = document.querySelector(".compositionGraphStudioRoot");
+    const editor = document.querySelector(".compositionGraphStudioEditor");
+    expect(root).toHaveAttribute("aria-busy", "true");
+    expect((editor as HTMLElement).inert).toBe(true);
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue(
+      "Report",
+    );
+
+    finishPreview(plannedQuery(previewGraphMock.mock.calls[0][1], {
+      kind: "table",
+      columns: [{
+        name: "amount",
+        value_type: { scalar_type: "float", nullable: false },
+      }],
+    }));
+    await waitFor(() => expect(canonicalizeMock).toHaveBeenCalledOnce());
+    expect(
+      (canonicalizeMock.mock.calls[0][0] as { name: string }).name,
+    ).toBe("Report");
+    expect((editor as HTMLElement).inert).toBe(false);
+  });
+
+  it("retries an uncertain save with the same payload and idempotency key", async () => {
+    saveMock
+      .mockRejectedValueOnce(
+        Object.assign(new Error("response lost"), {
+          mutationOutcome: "unknown",
+        }),
+      )
+      .mockResolvedValueOnce({
+        composition_id: "composition-1",
+        revision_id: "revision-1",
+      });
+    const rendered = renderStudio(renderedDraftWithTable());
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await screen.findByRole("button", { name: "Retry" });
+    expect(
+      (document.querySelector(
+        ".compositionGraphStudioEditor",
+      ) as HTMLElement).inert,
+    ).toBe(true);
+    rendered.unmount();
+    renderStudio(renderedDraftWithTable());
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    expect(
+      (document.querySelector(
+        ".compositionGraphStudioEditor",
+      ) as HTMLElement).inert,
+    ).toBe(true);
+    fireEvent.click(retry);
+
+    await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(2));
+    expect(saveMock.mock.calls[1]).toEqual(saveMock.mock.calls[0]);
+    await waitFor(() =>
+      expect(navigateMock).toHaveBeenCalledWith(
+        "/spaces/space-1/compositions/composition-1/revision-1",
+      )
+    );
   });
 
   it("edits the shared graph through the Variables mode", async () => {
