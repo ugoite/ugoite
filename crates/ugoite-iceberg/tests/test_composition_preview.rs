@@ -494,7 +494,8 @@ async fn graph_evaluation_does_not_execute_an_unrequested_query_branch() -> Resu
 }
 
 #[tokio::test]
-async fn local_graph_table_pages_keep_their_publication_snapshot() -> Result<()> {
+async fn local_graph_table_pages_keep_query_continuations_across_unrelated_input_changes(
+) -> Result<()> {
     let (service, space_id, mut document, _) = setup_preview_space().await?;
     let rows = (0..101)
         .map(|index| format!("SELECT 'page-row-{index:03}' AS title"))
@@ -506,6 +507,26 @@ async fn local_graph_table_pages_keep_their_publication_snapshot() -> Result<()>
     query.definition = VariableGraphQueryDefinition::InlineSql {
         sql: format!("{rows} ORDER BY title"),
     };
+    document.spec.variables.push(VariableGraphNode {
+        id: "unrelated_input".to_owned(),
+        kind: VariableGraphNodeKind::Input {
+            value_type: VariableGraphScalarDescriptor {
+                scalar_type: VariableGraphScalarType::Integer,
+                nullable: false,
+            },
+            required: true,
+            default: None,
+        },
+    });
+    document.spec.components.push(CompositionComponent::Input {
+        id: "unrelated-input-component".to_owned(),
+        variable: "unrelated_input".to_owned(),
+    });
+    document.spec.layout.rows[0]
+        .items
+        .push(FlowItem::Component {
+            component: "unrelated-input-component".to_owned(),
+        });
     let saved = save_local_composition(&service, &space_id, document).await?;
     let evaluation_id = Uuid::now_v7();
     let requested_queries = ["source".to_owned()];
@@ -521,7 +542,7 @@ async fn local_graph_table_pages_keep_their_publication_snapshot() -> Result<()>
             evaluation_id,
             None,
             None,
-            &BTreeMap::new(),
+            &BTreeMap::from([("unrelated_input".to_owned(), json!(1))]),
             &[],
             Some(&requested_queries),
             None,
@@ -542,10 +563,10 @@ async fn local_graph_table_pages_keep_their_publication_snapshot() -> Result<()>
         .evaluate_composition_graph_local(
             &space_id,
             target(),
-            evaluation_id,
+            Uuid::now_v7(),
             None,
             None,
-            &BTreeMap::new(),
+            &BTreeMap::from([("unrelated_input".to_owned(), json!(2))]),
             &[],
             Some(&requested_queries),
             Some(CompositionQueryEvaluationPage {
@@ -555,7 +576,7 @@ async fn local_graph_table_pages_keep_their_publication_snapshot() -> Result<()>
         )
         .await?;
     assert!(second.ok, "{:?}", second.query_diagnostics);
-    assert_eq!(second.snapshot_fingerprint, first.snapshot_fingerprint);
+    assert_ne!(second.snapshot_fingerprint, first.snapshot_fingerprint);
     assert_eq!(
         second.publication_fingerprint,
         first.publication_fingerprint
@@ -578,7 +599,7 @@ async fn local_graph_table_pages_keep_their_publication_snapshot() -> Result<()>
     }));
 
     // A new Publication invalidates a continuation rather than mixing rows
-    // from two snapshots into one graph result.
+    // from two storage snapshots into one graph result.
     service
         .create_structured_entry_with_receipt(
             &space_id,
@@ -600,7 +621,7 @@ async fn local_graph_table_pages_keep_their_publication_snapshot() -> Result<()>
             evaluation_id,
             None,
             None,
-            &BTreeMap::new(),
+            &BTreeMap::from([("unrelated_input".to_owned(), json!(2))]),
             &[],
             Some(&requested_queries),
             Some(CompositionQueryEvaluationPage {

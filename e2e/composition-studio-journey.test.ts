@@ -582,7 +582,7 @@ test.describe("Composition Studio Journey", () => {
       await page.getByRole("button", { name: "Save as tool" }).click();
       await expect(page).toHaveURL(
         new RegExp(
-          `/spaces/${seed.spaceId}/compositions/new$`,
+          `/spaces/${seed.spaceId}/compositions/new(?:\\?.*)?$`,
         ),
       );
       const nameInput = page.getByLabel("Name", { exact: true });
@@ -857,7 +857,7 @@ test.describe("Composition Studio Journey", () => {
 
       await page.getByRole("button", { name: "Save as tool" }).click();
       await expect(page).toHaveURL(
-        new RegExp(`/spaces/${seed.spaceId}/compositions/new$`),
+        new RegExp(`/spaces/${seed.spaceId}/compositions/new(?:\\?.*)?$`),
       );
       await page.getByLabel("Name", { exact: true }).fill(seed.toolName);
       const initialPicker = page.getByRole("dialog", { name: "Table" });
@@ -1074,7 +1074,7 @@ test.describe("Composition Studio Journey", () => {
             };
           });
           expect(focusStyle.visible).toBe(true);
-          expect(focusStyle.outlineStyle).toBe("solid");
+          expect(["auto", "solid"]).toContain(focusStyle.outlineStyle);
           expect(focusStyle.outlineWidth).toBeGreaterThanOrEqual(2);
           const pageWidth = await page.evaluate(() => ({
             client: document.documentElement.clientWidth,

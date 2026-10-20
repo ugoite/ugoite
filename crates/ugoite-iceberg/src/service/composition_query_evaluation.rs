@@ -3,7 +3,9 @@
 //! Every request resolves the exact Composition target and current query
 //! descriptors again. SQL results live only for the duration of this request;
 //! table continuations are signed SQL cursors additionally scoped to the
-//! Composition snapshot and query variable.
+//! exact query snapshot and variable. Unrelated input changes can reuse a
+//! cursor; query arguments, authority, publication, and source revisions
+//! remain bound to the continuation.
 
 use anyhow::{anyhow, Result};
 use serde_json::Value;
@@ -204,7 +206,7 @@ impl UgoiteService {
                 if cursor.context_fingerprint.is_none() {
                     return Err(AppError::invalid_input(
                         ErrorCode::InvalidInput,
-                        "Composition page cursor is missing its graph snapshot binding",
+                        "Composition page cursor is missing its query snapshot binding",
                     )
                     .into());
                 }
@@ -525,7 +527,13 @@ impl UgoiteService {
                         .await;
                 }
             };
-            let query_context = query_snapshot_fingerprint(&snapshot_fingerprint, query, &request)?;
+            let query_context = query_snapshot_fingerprint(
+                &identity,
+                &publication,
+                &authorization_fingerprint,
+                query,
+                &request,
+            )?;
             let page_result = if matches!(query.returns, VariableGraphResultType::Scalar { .. }) {
                 let probe = match principal_ids {
                     Some(principal_ids) => {
@@ -938,15 +946,22 @@ fn graph_snapshot_fingerprint(
 }
 
 fn query_snapshot_fingerprint(
-    graph_snapshot: &str,
+    composition_identity: &str,
+    publication: &PublicationRef,
+    authorization_fingerprint: &str,
     query: &ResolvedQueryRequest,
     request: &SqlQueryRequest,
 ) -> Result<String> {
     fingerprint_serializable(&(
-        graph_snapshot,
+        "composition-query-page-v1",
+        composition_identity,
+        publication,
+        authorization_fingerprint,
         &query.variable_id,
         &query.query_semantic_fingerprint,
         &query.schema_fingerprint,
+        &query.form_bindings,
+        &query.returns,
         &request.sql,
         &request.saved_sql,
         &request.parameters,
@@ -1040,7 +1055,7 @@ mod tests {
     }
 
     #[test]
-    fn table_cursor_context_is_rejected_for_a_different_graph_snapshot() {
+    fn table_cursor_context_is_scoped_to_the_query_snapshot() {
         let query = resolved_query();
         let request = SqlQueryRequest {
             sql: "SELECT 1".to_owned(),
@@ -1048,11 +1063,68 @@ mod tests {
             execution_id: Some(Uuid::from_u128(1)),
             ..SqlQueryRequest::default()
         };
-        let original = query_snapshot_fingerprint("snapshot-v1", &query, &request)
-            .expect("original cursor context");
-        let changed = query_snapshot_fingerprint("snapshot-v2", &query, &request)
-            .expect("changed cursor context");
-        assert_ne!(original, changed);
+        let pinned_publication = publication(1);
+        let original = query_snapshot_fingerprint(
+            "composition/revision-v1",
+            &pinned_publication,
+            "authorization-v1",
+            &query,
+            &request,
+        )
+        .expect("original query cursor context");
+        let same_query = query_snapshot_fingerprint(
+            "composition/revision-v1",
+            &pinned_publication,
+            "authorization-v1",
+            &query,
+            &request,
+        )
+        .expect("same query cursor context");
+        assert_eq!(original, same_query);
+
+        let mut changed_request = request.clone();
+        changed_request
+            .parameters
+            .insert("minimum".to_owned(), serde_json::Value::from(2));
+        let changed_parameters = query_snapshot_fingerprint(
+            "composition/revision-v1",
+            &pinned_publication,
+            "authorization-v1",
+            &query,
+            &changed_request,
+        )
+        .expect("changed query parameters");
+        assert_ne!(original, changed_parameters);
+
+        let changed_revision = query_snapshot_fingerprint(
+            "composition/revision-v2",
+            &pinned_publication,
+            "authorization-v1",
+            &query,
+            &request,
+        )
+        .expect("changed composition revision");
+        assert_ne!(original, changed_revision);
+
+        let changed_publication = query_snapshot_fingerprint(
+            "composition/revision-v1",
+            &publication(2),
+            "authorization-v1",
+            &query,
+            &request,
+        )
+        .expect("changed publication");
+        assert_ne!(original, changed_publication);
+
+        let changed_authorization = query_snapshot_fingerprint(
+            "composition/revision-v1",
+            &pinned_publication,
+            "authorization-v2",
+            &query,
+            &request,
+        )
+        .expect("changed authorization");
+        assert_ne!(original, changed_authorization);
     }
 
     #[test]

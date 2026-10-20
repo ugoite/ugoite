@@ -6985,7 +6985,7 @@ impl UgoiteService {
                 {
                     return Err(AppError::invalid_input(
                         ErrorCode::InvalidInput,
-                        "SQL, parameters, or graph snapshot does not match the continuation",
+                        "SQL, parameter, Saved SQL revision, or graph snapshot fingerprint does not match the continuation",
                     )
                     .into());
                 }
@@ -7274,7 +7274,7 @@ impl UgoiteService {
                 {
                     return Err(AppError::invalid_input(
                         ErrorCode::InvalidInput,
-                        "SQL, parameters, or Saved SQL revision does not match the continuation",
+                        "SQL, parameter, Saved SQL revision, or graph snapshot fingerprint does not match the continuation",
                     )
                     .into());
                 }

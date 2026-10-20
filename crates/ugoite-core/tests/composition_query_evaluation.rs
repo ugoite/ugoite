@@ -212,6 +212,54 @@ fn only_descriptor_validated_query_values_reach_the_complete_preview() {
 }
 
 #[test]
+fn omitted_nullable_sql_cells_are_restored_as_null_for_graph_results() {
+    let mut query = scalar_query(
+        "nullable_total",
+        VariableGraphQueryDefinition::SavedSql {
+            entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
+            revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
+            column: Some("value".to_owned()),
+        },
+        Vec::new(),
+    );
+    if let VariableGraphNodeKind::Query { returns, .. } = &mut query.kind {
+        *returns = VariableGraphResultType::Scalar {
+            value_type: scalar(VariableGraphScalarType::Float, true),
+        };
+    }
+    let graph = VariableGraph {
+        variables: vec![query],
+    };
+    let execution_id = Uuid::from_u128(0x4464);
+    let mut evaluation = VariableGraphQueryEvaluation::new(&graph, execution_id, &BTreeMap::new())
+        .expect("nullable scalar graph is valid");
+    let request = evaluation
+        .compile_request("nullable_total")
+        .expect("saved query compiles");
+    let mut result = page(&request, vec![json!({})]);
+    result.result_schema = Some(vec![SqlResultColumn {
+        name: "value".to_owned(),
+        column_type: SqlResultColumnType::Float,
+        nullable: true,
+    }]);
+
+    evaluation
+        .accept_page("nullable_total", &request, &result)
+        .expect("an omitted nullable JSON field represents SQL NULL");
+    assert_eq!(
+        evaluation
+            .preview()
+            .expect("validated null scalar is renderable")
+            .query_results
+            .get("nullable_total")
+            .map(|value| &value.result),
+        Some(&VariableGraphValidatedResult::Scalar {
+            value: VariableGraphLiteral::Null,
+        })
+    );
+}
+
+#[test]
 fn requested_queries_expand_dependencies_and_reject_unselected_or_unknown_nodes() {
     let graph = VariableGraph {
         variables: vec![

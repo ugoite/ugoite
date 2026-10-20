@@ -11,7 +11,11 @@ import { CompositionGraphRenderer } from "~/components/CompositionGraphRenderer"
 import { IconButton } from "~/components/IconButton";
 import { IconLink } from "~/components/IconLink";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
-import { compositionApi, compositionDisplayName } from "~/lib/composition-api";
+import {
+  compositionApi,
+  compositionDisplayName,
+  type CompositionEvaluationResponse,
+} from "~/lib/composition-api";
 import {
   type CompositionGraphDraft,
   compositionGraphDraftFromDocument,
@@ -46,6 +50,12 @@ interface EvaluationState {
   evaluationId?: string;
   response?: Awaited<ReturnType<typeof compositionApi.evaluate>>;
   error?: string;
+}
+
+type GraphTablePage = CompositionEvaluationResponse["query_results"][string];
+interface GraphTablePageState {
+  pages: GraphTablePage[];
+  index: number;
 }
 
 const literalRawValue = (value: CompositionLiteral | undefined) =>
@@ -119,6 +129,9 @@ export default function CompositionRevisionRoute() {
   const [blockedQueryIds, setBlockedQueryIds] = createSignal<Set<string>>(
     new Set(),
   );
+  const [tablePages, setTablePages] = createSignal<
+    Record<string, GraphTablePageState>
+  >({});
   const [evaluation, setEvaluation] = createSignal<EvaluationState>({
     status: "idle",
   });
@@ -234,6 +247,37 @@ export default function CompositionRevisionRoute() {
         response,
         page ? [page.variable_id] : requestedQueries,
       );
+      if (page) {
+        const pageResult = responseToShow.query_results[page.variable_id];
+        if (pageResult) {
+          setTablePages((current) => {
+            const prior = current[page.variable_id];
+            const pages = prior
+              ? prior.pages.slice(0, prior.index + 1)
+              : previous?.query_results[page.variable_id]
+              ? [previous.query_results[page.variable_id]]
+              : [];
+            pages.push(pageResult);
+            return {
+              ...current,
+              [page.variable_id]: { pages, index: pages.length - 1 },
+            };
+          });
+        }
+      } else {
+        setTablePages((current) => {
+          const next = requestedQueries === undefined ? {} : { ...current };
+          for (const id of response.computed_query_ids) {
+            const result = responseToShow.query_results[id];
+            if (result?.value.kind === "table") {
+              next[id] = { pages: [result], index: 0 };
+            } else {
+              delete next[id];
+            }
+          }
+          return next;
+        });
+      }
       if (!page) {
         lastEvaluatedInputs = values;
         const computed = new Set(response.computed_query_ids ?? []);
@@ -241,13 +285,21 @@ export default function CompositionRevisionRoute() {
           new Set([...current].filter((id) => !computed.has(id)))
         );
       }
+      const diagnosticsAreComponentScoped = Boolean(
+        response.query_diagnostics?.length &&
+          response.query_diagnostics.every((diagnostic) =>
+            response.component_bindings.some((binding) =>
+              binding.variable_id === diagnostic.variable_id
+            )
+          ),
+      );
       setEvaluation({
         status: response.ok ? "ready" : "error",
         evaluationId,
         response: responseToShow,
-        error: response.ok ? undefined : response.diagnostics?.[0]?.code ??
-          response.query_diagnostics?.[0]?.code ??
-          t("composition.queryFailed"),
+        error: response.ok || diagnosticsAreComponentScoped
+          ? undefined
+          : t("composition.queryFailed"),
       });
     } catch (error) {
       if (generation !== evaluationGeneration) return;
@@ -287,6 +339,11 @@ export default function CompositionRevisionRoute() {
         new Set([variableId]),
       );
       setBlockedQueryIds((current) => new Set([...current, ...affected]));
+      setTablePages((current) => {
+        const next = { ...current };
+        for (const id of affected) delete next[id];
+        return next;
+      });
     }
     setInputStates((current) => ({ ...current, [variableId]: "pending" }));
     const generation = (parseGenerations.get(variableId) ?? 0) + 1;
@@ -346,6 +403,7 @@ export default function CompositionRevisionRoute() {
     setUnsetInputs([]);
     setInputStates({});
     setBlockedQueryIds(new Set());
+    setTablePages({});
     parseGenerations.clear();
     setEvaluation({ status: "loading" });
     lastEvaluatedInputs = undefined;
@@ -355,6 +413,44 @@ export default function CompositionRevisionRoute() {
     if (debounceTimer) clearTimeout(debounceTimer);
     evaluationGeneration++;
   });
+
+  const restoreTablePage = (variableId: string, index: number) => {
+    const state = tablePages()[variableId];
+    const page = state?.pages[index];
+    if (!state || !page || index < 0 || index >= state.pages.length) return;
+    setTablePages((current) => ({
+      ...current,
+      [variableId]: { ...state, index },
+    }));
+    setEvaluation((current) =>
+      current.response
+        ? {
+          ...current,
+          response: {
+            ...current.response,
+            query_results: {
+              ...current.response.query_results,
+              [variableId]: page,
+            },
+          },
+        }
+        : current
+    );
+  };
+
+  const nextTablePage = (variableId: string, cursor: string) => {
+    const state = tablePages()[variableId];
+    if (state && state.index + 1 < state.pages.length) {
+      restoreTablePage(variableId, state.index + 1);
+      return;
+    }
+    void evaluate({ variable_id: variableId, cursor });
+  };
+
+  const previousTablePage = (variableId: string) => {
+    const state = tablePages()[variableId];
+    if (state) restoreTablePage(variableId, state.index - 1);
+  };
 
   const handleRestore = async () => {
     const base = latestRevisionId();
@@ -473,9 +569,15 @@ export default function CompositionRevisionRoute() {
             rawInputs={rawInputs()}
             inputStates={inputStates()}
             blockedQueryIds={blockedQueryIds()}
+            previousPageQueryIds={new Set(
+              Object.entries(tablePages()).flatMap(([id, state]) =>
+                state.index > 0 ? [id] : []
+              ),
+            )}
+            pageBusy={evaluation().status === "loading"}
             onInput={handleInput}
-            onNext={(variableId, cursor) =>
-              void evaluate({ variable_id: variableId, cursor })}
+            onNext={nextTablePage}
+            onPrevious={previousTablePage}
           />
         )}
       </Show>

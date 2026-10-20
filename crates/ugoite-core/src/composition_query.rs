@@ -1307,6 +1307,13 @@ pub fn validate_variable_graph_sql_page(
         let mut values = Vec::with_capacity(selected_schema.len());
         for column in &selected_schema {
             let Some(value) = row.get(&column.name) else {
+                // The stable SQL JSON row contract omits null-valued keys.
+                // Restore a missing nullable field as SQL NULL here, where
+                // the planner-owned schema makes that interpretation safe.
+                if column.nullable {
+                    values.push(VariableGraphLiteral::Null);
+                    continue;
+                }
                 return Err(vec![VariableGraphQueryResultDiagnostic::for_node(
                     VariableGraphQueryResultDiagnosticCode::InvalidResultRow,
                     &node.id,

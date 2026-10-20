@@ -8,6 +8,10 @@ import {
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
 import { completeCompositionGraphYaml } from "./lib/composition-graph.ts";
 import { openIsolatedPasskeyPage } from "./lib/security-context.ts";
+import {
+  addVirtualAuthenticator,
+  removeVirtualAuthenticator,
+} from "./lib/webauthn.ts";
 
 const VARIABLE_ID = "query_key";
 const METRIC_QUERY_ID = "shared_metric";
@@ -460,6 +464,146 @@ test.describe("Composition graph ACL and runtime isolation", () => {
       );
     } finally {
       await ownerContext.close();
+    }
+  });
+
+  test("switching principal in one BrowserContext clears prior graph results", async ({ context, page, request }) => {
+    test.setTimeout(180_000);
+    const space = await createSpace(request, "principal-switch");
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const seed = await seedGraph(request, {
+      spaceId: space.id,
+      formName: `PrincipalSwitch${suffix}`,
+      compositionName: `Principal switch ${suffix}`,
+      protectedValue: `prior-principal-value-${suffix}`,
+    });
+
+    const ownerSessionResponse = await context.request.get(
+      getBackendUrl("/auth/session"),
+    );
+    expect(ownerSessionResponse.ok()).toBe(true);
+    const ownerSession = await ownerSessionResponse.json() as {
+      authenticated: boolean;
+      account: { account_id: string };
+    };
+    expect(ownerSession.authenticated).toBe(true);
+
+    const invitation = await request.post(
+      getBackendUrl(`/spaces/${seed.spaceId}/members/invitations`),
+      {
+        data: {
+          label: `Principal switch viewer ${suffix}`,
+          role: "viewer",
+        },
+      },
+    );
+    expect(invitation.status()).toBe(201);
+    const invitationUrl =
+      (await invitation.json() as { invitation_url?: string }).invitation_url;
+    expect(invitationUrl).toBeTruthy();
+
+    const ownerEvaluation = evaluationResponse(page);
+    await page.goto(getFrontendUrl(compositionPath(seed)), {
+      waitUntil: "domcontentloaded",
+    });
+    await expect(page.locator(".compositionGraphMetric strong"))
+      .toContainText(seed.protectedValue);
+    await expect(page.getByRole("table")).toContainText(seed.protectedValue);
+    expect((await ownerEvaluation).ok()).toBe(true);
+
+    const savedSqlPolicyResponse = await request.put(
+      getBackendUrl(
+        `/spaces/${seed.spaceId}/policies/saved_sql/${seed.savedSqlId}`,
+      ),
+      {
+        data: {
+          policy_id: crypto.randomUUID(),
+          inherit_space_role: false,
+          grants: [],
+        },
+      },
+    );
+    expect(savedSqlPolicyResponse.status()).toBe(200);
+
+    await page.getByRole("button", { name: "Account" }).click();
+    await page.getByRole("menuitem", { name: "Sign out" }).click();
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.locator("body")).not.toContainText(seed.protectedValue);
+
+    const cdp = await context.newCDPSession(page);
+    await cdp.send("WebAuthn.enable");
+    const authenticatorId = await addVirtualAuthenticator(cdp);
+    try {
+      await page.goto(invitationUrl!);
+      const invitationFinishResponse = page.waitForResponse(
+        (response) =>
+          response.url().includes("/api/auth/invitations/finish") &&
+          response.request().method() === "POST",
+        { timeout: 30_000 },
+      );
+      await page.getByRole("button", { name: "Accept invitation" }).click();
+      expect((await invitationFinishResponse).status()).toBe(201);
+      await expect(page).toHaveURL(/\/spaces$/);
+
+      const viewerSessionResponse = await context.request.get(
+        getBackendUrl("/auth/session"),
+      );
+      expect(viewerSessionResponse.ok()).toBe(true);
+      const viewerSession = await viewerSessionResponse.json() as {
+        authenticated: boolean;
+        account: { account_id: string };
+      };
+      expect(viewerSession.authenticated).toBe(true);
+      expect(viewerSession.account.account_id).not.toBe(
+        ownerSession.account.account_id,
+      );
+
+      const viewerSpace = await context.request.get(
+        getBackendUrl(`/spaces/${seed.spaceId}`),
+      );
+      expect(viewerSpace.status()).toBe(200);
+
+      const viewerEvaluation = evaluationResponse(page);
+      await page.goto(getFrontendUrl(compositionPath(seed)), {
+        waitUntil: "domcontentloaded",
+      });
+      await expect(
+        page.getByRole("heading", { level: 1, name: seed.compositionName }),
+      ).toBeVisible();
+      const denied = await viewerEvaluation;
+      expect([200, 403]).toContain(denied.status());
+      const deniedBody = await denied.text();
+      expect(deniedBody).not.toContain(seed.protectedValue);
+      expect(deniedBody).not.toContain(seed.savedSqlId);
+      if (denied.ok()) {
+        const body = JSON.parse(deniedBody) as EvaluationBody;
+        expect(body.ok).toBe(false);
+        expect(body.query_results ?? {}).toEqual({});
+      }
+      await expect(page.locator("body")).not.toContainText(
+        seed.protectedValue,
+      );
+      await expect(page.locator(".compositionGraphMetric")).toHaveCount(0);
+      await expect(page.getByRole("table")).toHaveCount(0);
+
+      const rawRevision = await context.request.get(
+        getBackendUrl(
+          `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/history/${seed.compositionRevisionId}`,
+        ),
+      );
+      expect(rawRevision.ok()).toBe(true);
+      expect(await rawRevision.text()).toContain(seed.compositionName);
+    } finally {
+      try {
+        await removeVirtualAuthenticator(cdp, authenticatorId);
+      } catch {
+        // Best-effort teardown must not mask the principal isolation result.
+      }
+      try {
+        await cdp.send("WebAuthn.disable");
+      } catch {
+        // The browser context owns the page and closes after the test.
+      }
     }
   });
 });

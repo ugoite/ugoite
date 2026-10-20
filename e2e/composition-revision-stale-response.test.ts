@@ -71,7 +71,7 @@ function compositionGraph(
         kind: "query",
         returns: {
           kind: "scalar",
-          value_type: { scalar_type: "float", nullable: false },
+          value_type: { scalar_type: "float", nullable: true },
         },
         query: {
           kind: "saved_sql",

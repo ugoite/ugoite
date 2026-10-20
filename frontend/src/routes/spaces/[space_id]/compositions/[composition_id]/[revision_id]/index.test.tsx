@@ -181,6 +181,53 @@ const tableGraphDocument = {
   },
 };
 
+const tableWithInputGraphDocument = {
+  ...tableGraphDocument,
+  name: "Rows with input",
+  spec: {
+    ...tableGraphDocument.spec,
+    variables: [
+      {
+        id: "day",
+        kind: "input",
+        value_type: { scalar_type: "date", nullable: false },
+        required: true,
+        default: { kind: "date", value: "2026-10-20" },
+      },
+      tableGraphDocument.spec.variables[0],
+      {
+        id: "filtered_count",
+        kind: "query",
+        returns: {
+          kind: "scalar",
+          value_type: { scalar_type: "integer", nullable: false },
+        },
+        query: {
+          kind: "inline_sql",
+          sql: "SELECT COUNT(*) FROM G WHERE day = $day",
+          arguments: [{ name: "day", variable: "day" }],
+        },
+      },
+    ],
+    components: [
+      { id: "day-input", kind: "input", variable: "day" },
+      ...tableGraphDocument.spec.components,
+      { id: "count-metric", kind: "metric", variable: "filtered_count" },
+    ],
+    layout: {
+      kind: "flow",
+      rows: [{
+        id: "main",
+        items: [
+          { kind: "component", component: "day-input" },
+          { kind: "component", component: "rows-table" },
+          { kind: "component", component: "count-metric" },
+        ],
+      }],
+    },
+  },
+};
+
 describe("Composition saved revision graph evaluation", () => {
   beforeEach(() => {
     setLocale("en");
@@ -292,7 +339,9 @@ describe("Composition saved revision graph evaluation", () => {
       target: { value: "bad" },
     });
 
-    expect(screen.getByLabelText("rows")).not.toHaveTextContent("1");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Waiting for input…",
+    );
     resolveChangedEvaluation(evaluation("stale", "auth-1", {
       rows: 99,
       stable: 10,
@@ -303,7 +352,9 @@ describe("Composition saved revision graph evaluation", () => {
     await new Promise((resolve) => setTimeout(resolve, 300));
 
     expect(evaluateMock).toHaveBeenCalledTimes(2);
-    expect(screen.getByLabelText("rows")).not.toHaveTextContent("99");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Waiting for input…",
+    );
     expect(screen.getByLabelText("stable")).toHaveTextContent("10");
   });
 
@@ -395,6 +446,126 @@ describe("Composition saved revision graph evaluation", () => {
     });
     await waitFor(() => expect(table).toHaveTextContent("next row"));
     expect(table).not.toHaveTextContent("alpha row");
+  });
+
+  it("keeps an unrelated table continuation after an input changes", async () => {
+    lintMock.mockResolvedValue({
+      ok: true,
+      value: { document: tableWithInputGraphDocument },
+    });
+    const tableQuery = {
+      variable_id: "rows",
+      deferred_arguments: [],
+      returns: {
+        kind: "table" as const,
+        columns: [{
+          name: "label",
+          value_type: { scalar_type: "string" as const, nullable: true },
+        }],
+      },
+      result_columns: [{
+        name: "label",
+        value_type: { scalar_type: "string" as const, nullable: true },
+      }],
+      form_bindings: [],
+      schema_fingerprint: "schema-rows",
+      query_semantic_fingerprint: "semantic-rows",
+    };
+    const countQuery = {
+      ...query("filtered_count", "day"),
+    };
+    const result = (
+      request: { evaluation_id: string; page?: { variable_id: string } },
+      computedQueryIds: string[],
+      labels: string[],
+      hasMore: boolean,
+      next: string | undefined,
+      count?: number,
+    ) => ({
+      evaluation_id: request.evaluation_id,
+      ok: true,
+      composition_revision: { entry_id: "comp-1", revision_id: "rev-1" },
+      publication_fingerprint: "publication-1",
+      authorization_fingerprint: "auth-1",
+      computed_query_ids: computedQueryIds,
+      variable_values: {},
+      queries: [tableQuery, countQuery],
+      component_bindings: [
+        { component_id: "day-input", kind: "input", variable_id: "day" },
+        { component_id: "rows-table", kind: "table", variable_id: "rows" },
+        {
+          component_id: "count-metric",
+          kind: "metric",
+          variable_id: "filtered_count",
+        },
+      ],
+      dependencies: {
+        variable_consumers: { day: { query_variable_ids: ["filtered_count"] } },
+      },
+      query_results: {
+        ...(computedQueryIds.includes("rows") ? {
+          rows: {
+            value: {
+              kind: "table",
+              columns: tableQuery.returns.columns,
+              rows: labels.map((label) => [{ kind: "string", value: label }]),
+            },
+            has_more: hasMore,
+            ...(next ? { next } : {}),
+          },
+        } : {}),
+        ...(count !== undefined ? {
+          filtered_count: {
+            value: { kind: "scalar", value: { kind: "integer", value: count } },
+            has_more: false,
+          },
+        } : {}),
+      },
+    });
+    evaluateMock.mockImplementation((
+      _spaceId: string,
+      request: {
+        evaluation_id: string;
+        page?: { variable_id: string; cursor: string };
+        requested_queries?: string[];
+      },
+    ) => {
+      if (request.page?.variable_id === "rows") {
+        return Promise.resolve(
+          request.page.cursor === "rows-cursor-1"
+            ? result(request, ["rows"], ["gamma row"], true, "rows-cursor-2")
+            : result(request, ["rows"], ["delta row"], false, undefined),
+        );
+      }
+      if (request.requested_queries) {
+        return Promise.resolve(result(request, ["filtered_count"], [], false, undefined, 2));
+      }
+      return Promise.resolve(
+        result(request, ["rows", "filtered_count"], ["alpha row", "beta row"], true, "rows-cursor-1", 1),
+      );
+    });
+
+    render(() => <CompositionRevisionRoute />);
+    const table = await screen.findByRole("table", { name: "rows results" });
+    expect(table).toHaveTextContent("alpha row");
+    await fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(table).toHaveTextContent("gamma row"));
+
+    fireEvent.input(screen.getByLabelText("day"), {
+      target: { value: "2026-10-21" },
+    });
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(3));
+    expect(evaluateMock.mock.calls[2][1].requested_queries).toEqual([
+      "filtered_count",
+    ]);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(4));
+    expect(evaluateMock.mock.calls[3][1].page).toEqual({
+      variable_id: "rows",
+      cursor: "rows-cursor-2",
+    });
+    await waitFor(() => expect(table).toHaveTextContent("delta row"));
   });
 
   it("drops cached values and requests the full graph after an ACL fingerprint changes", async () => {

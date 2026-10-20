@@ -108,6 +108,7 @@ describe("CompositionGraphRenderer", () => {
 
   it("renders typed query values and requests continuation by variable and cursor", () => {
     const onNext = vi.fn();
+    const onPrevious = vi.fn();
     render(() => (
       <CompositionGraphRenderer
         draft={draft}
@@ -115,8 +116,11 @@ describe("CompositionGraphRenderer", () => {
         rawInputs={{ minimum: "2" }}
         inputStates={{}}
         blockedQueryIds={new Set()}
+        previousPageQueryIds={new Set(["rows"])}
+        pageBusy={false}
         onInput={vi.fn()}
         onNext={onNext}
+        onPrevious={onPrevious}
       />
     ));
 
@@ -129,6 +133,8 @@ describe("CompositionGraphRenderer", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(onNext).toHaveBeenCalledWith("rows", "cursor-2");
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+    expect(onPrevious).toHaveBeenCalledWith("rows");
   });
 
   it("surfaces a query diagnostic in its local component", () => {
@@ -139,22 +145,49 @@ describe("CompositionGraphRenderer", () => {
           ...evaluation,
           query_diagnostics: [{
             code: "sql_error",
-            variable_id: "rows",
+            variable_id: "total",
             result_diagnostic: {
               code: "result_error",
-              result_diagnostic: { code: "planning_failed" },
+              result_diagnostic: { code: "scalar_multiple_rows" },
             },
           }],
         }}
         rawInputs={{}}
         inputStates={{}}
         blockedQueryIds={new Set()}
+        previousPageQueryIds={new Set()}
+        pageBusy={false}
         onInput={vi.fn()}
         onNext={vi.fn()}
+        onPrevious={vi.fn()}
       />
     ));
 
-    expect(screen.getByRole("alert")).toHaveTextContent("planning_failed");
-    expect(screen.getByLabelText("total")).toHaveTextContent("2");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "The metric returned more than one row.",
+    );
+    expect(screen.getByRole("table", { name: "rows results" })).toBeVisible();
+  });
+
+  it("hides stale metrics while an invalid input blocks their query", () => {
+    render(() => (
+      <CompositionGraphRenderer
+        draft={draft}
+        evaluation={evaluation}
+        rawInputs={{ minimum: "not an integer" }}
+        inputStates={{ minimum: "invalid" }}
+        blockedQueryIds={new Set(["total"])}
+        previousPageQueryIds={new Set()}
+        pageBusy={false}
+        onInput={vi.fn()}
+        onNext={vi.fn()}
+        onPrevious={vi.fn()}
+      />
+    ));
+
+    expect(screen.queryByLabelText("total")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Waiting for input…",
+    );
   });
 });
