@@ -614,6 +614,74 @@ describe("CompositionStudio graph surface", () => {
     );
   });
 
+  it("discards an in-flight query preview when a referenced input default changes", async () => {
+    const draft = createCompositionGraphDraft("Report");
+    draft.variables = [
+      {
+        id: "minimum_amount",
+        kind: "input",
+        value_type: { scalar_type: "integer", nullable: false },
+        required: true,
+        default: { kind: "integer", value: 1 },
+      },
+      {
+        id: "query_1",
+        kind: "query",
+        returns: {
+          kind: "scalar",
+          value_type: { scalar_type: "integer", nullable: false },
+        },
+        query: {
+          kind: "inline_sql",
+          sql: "SELECT $limit",
+          arguments: [{ name: "limit", variable: "minimum_amount" }],
+        },
+      },
+    ];
+    let resolveEvaluation!: () => void;
+    evaluateMock.mockImplementationOnce((
+      _spaceId: string,
+      request: { evaluation_id: string },
+    ) =>
+      new Promise((resolve) => {
+        resolveEvaluation = () =>
+          resolve({
+            evaluation_id: request.evaluation_id,
+            ok: true,
+            query_results: {
+              query_1: {
+                value: {
+                  kind: "scalar",
+                  value: { kind: "integer", value: 99 },
+                },
+                has_more: false,
+              },
+            },
+            query_diagnostics: [],
+            diagnostics: [],
+          });
+      })
+    );
+    renderStudio(draft);
+    fireEvent.click(await screen.findByRole("tab", { name: "Variables" }));
+    fireEvent.click(screen.getByRole("button", { name: "query_1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run query" }));
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledOnce());
+
+    fireEvent.click(screen.getByRole("button", { name: "minimum_amount" }));
+    fireEvent.input(screen.getByRole("textbox", { name: "Default" }), {
+      target: { value: "2" },
+    });
+    resolveEvaluation();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    fireEvent.click(screen.getByRole("button", { name: "query_1" }));
+    expect(screen.getByTestId("query-preview-status")).toHaveTextContent(
+      "idle",
+    );
+  });
+
   it("hides a query preview while a referenced literal is pending or invalid", async () => {
     const draft = createCompositionGraphDraft("Report");
     draft.variables = [

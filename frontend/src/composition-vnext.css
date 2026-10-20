@@ -239,6 +239,14 @@
   min-height: 44px;
   margin-left: auto;
 }
+.compositionGraphInput {
+  display: grid;
+  gap: var(--ui-spacing-xs);
+  min-width: 0;
+}
+.compositionGraphInput .ui-input {
+  min-height: 44px;
+}
 .compositionGraphCanvasRow {
   display: flex;
   min-height: 5rem;

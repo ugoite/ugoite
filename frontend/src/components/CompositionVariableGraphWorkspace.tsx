@@ -230,6 +230,24 @@ export function CompositionVariableGraphWorkspace(
     setMobileOpen(false);
   };
   const closeMobile = () => setMobileOpen(false);
+  const removeVariable = (variableId: string) => {
+    parseGenerations.set(
+      variableId,
+      (parseGenerations.get(variableId) ?? 0) + 1,
+    );
+    setRawValues((current) => {
+      const next = { ...current };
+      delete next[variableId];
+      return next;
+    });
+    setPendingOrInvalidLiterals((current) => {
+      const next = new Set(current);
+      next.delete(variableId);
+      return next;
+    });
+    props.onEditValidityChange?.(variableId, undefined);
+    props.onRemove(variableId);
+  };
   const openMobile = (event: MouseEvent) => {
     mobileOpener = event.currentTarget as HTMLElement;
     setMobileOpen(true);
@@ -433,15 +451,14 @@ export function CompositionVariableGraphWorkspace(
                   class="ui-input compositionVariableName"
                   aria-label={t("composition.studioVariableId")}
                   value={node().id}
-                  onInput={(event) =>
-                    rename(node(), event.currentTarget.value)}
+                  onInput={(event) => rename(node(), event.currentTarget.value)}
                 />
                 <IconButton
                   icon="trash"
                   label={t("composition.studioRemoveVariable", {
                     name: node().id,
                   })}
-                  onClick={() => props.onRemove(node().id)}
+                  onClick={() => removeVariable(node().id)}
                 />
               </div>
               <Show when={node().kind === "constant"}>

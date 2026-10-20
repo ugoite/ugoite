@@ -79,6 +79,8 @@ features:
               - kind: documents
                 anchor: REQ-FE-079#criterion.composition-mobile-workspace-accessibility
               - kind: documents
+                anchor: REQ-FE-079#criterion.composition-runtime-input-accessibility
+              - kind: documents
                 anchor: REQ-FE-079#criterion.composition-text-inspector-literal-editing
               - kind: documents
                 anchor: REQ-FE-079#criterion.composition-text-inspector-variable-binding
@@ -196,6 +198,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-runtime-input-accessibility
           - id: composition-studio
             adapter: typescript
             path: frontend/src/components/CompositionStudio.tsx

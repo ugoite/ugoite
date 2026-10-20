@@ -185,6 +185,7 @@ test.describe("Composition invalid variable Input", () => {
 
   test("invalid_raw_input_blocks_query_and_stale_result", async ({ page }) => {
     test.setTimeout(120_000);
+    await page.setViewportSize({ width: 390, height: 844 });
     let evaluationCount = 0;
     const evaluationPath = `/api/spaces/${seed.spaceId}/compositions/evaluate`;
     page.on("request", (request) => {
@@ -201,10 +202,28 @@ test.describe("Composition invalid variable Input", () => {
       { waitUntil: "domcontentloaded" },
     );
 
-    const inputs = page.getByRole("textbox");
+    const inputs = page.locator(".compositionGraphInput input");
     const firstInput = inputs.nth(0);
     const secondInput = inputs.nth(1);
     const metric = page.locator(".compositionGraphMetric strong");
+    await expect(firstInput).toHaveAccessibleName("minimum_amount");
+    await expect(secondInput).toHaveAccessibleName("minimum_amount");
+    const firstInputBox = await firstInput.boundingBox();
+    const secondInputBox = await secondInput.boundingBox();
+    expect(firstInputBox).not.toBeNull();
+    expect(secondInputBox).not.toBeNull();
+    expect(firstInputBox!.height).toBeGreaterThanOrEqual(44);
+    expect(secondInputBox!.height).toBeGreaterThanOrEqual(44);
+    expect(
+      await page.evaluate(() =>
+        document.documentElement.scrollWidth <=
+          document.documentElement.clientWidth
+      ),
+    ).toBe(true);
+    await firstInput.focus();
+    await expect(firstInput).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(secondInput).toBeFocused();
     await expect(firstInput).toHaveValue("5");
     await expect(secondInput).toHaveValue("5");
     await expect(metric).toHaveText("2", { timeout: 30_000 });

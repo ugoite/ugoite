@@ -16,6 +16,12 @@ import {
 import { buildSqlSchema } from "~/lib/sql";
 import { setLocale } from "~/lib/i18n";
 
+const { parseInputMock } = vi.hoisted(() => ({ parseInputMock: vi.fn() }));
+
+vi.mock("~/lib/ugoite-client", () => ({
+  parseVariableGraphInput: (...args: unknown[]) => parseInputMock(...args),
+}));
+
 describe("CompositionVariableGraphWorkspace", () => {
   it("adds typed graph nodes through the variable rail", () => {
     setLocale("en");
@@ -60,6 +66,106 @@ describe("CompositionVariableGraphWorkspace", () => {
       value_type: { scalar_type: "date", nullable: false },
     });
     expect(onDraftChange).toHaveBeenCalled();
+  });
+
+  it("ignores a pending default parse after removing and re-adding the same ID", async () => {
+    setLocale("en");
+    let resolveParse!: (value: unknown) => void;
+    parseInputMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveParse = resolve;
+      }),
+    );
+    const [draft, setDraft] = createSignal<CompositionGraphDraft>({
+      ...createCompositionGraphDraft("Report"),
+      variables: [{
+        id: "input_1",
+        kind: "input",
+        value_type: { scalar_type: "integer", nullable: false },
+        required: true,
+      }],
+    });
+    render(() => (
+      <CompositionVariableGraphWorkspace
+        draft={draft()}
+        selectedVariableId="input_1"
+        onSelect={() => {}}
+        onDraftChange={setDraft}
+        onRemove={(id) =>
+          setDraft((current) => ({
+            ...current,
+            variables: current.variables.filter((node) => node.id !== id),
+          }))}
+        sqlSchema={buildSqlSchema([])}
+      />
+    ));
+
+    fireEvent.input(screen.getByRole("textbox", { name: "Default" }), {
+      target: { value: "42" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Remove input_1" }));
+    expect(draft().variables).toEqual([]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
+    fireEvent.click(screen.getByRole("button", { name: "Input" }));
+    expect(draft().variables[0]).toMatchObject({
+      id: "input_1",
+      kind: "input",
+      value_type: { scalar_type: "string", nullable: false },
+      required: true,
+    });
+
+    resolveParse({ status: "valid", value: 42 });
+    await Promise.resolve();
+
+    expect(draft().variables[0]?.default).toBeUndefined();
+    expect(screen.getByRole("textbox", { name: "Default" })).toHaveValue("");
+  });
+
+  it("ignores a pending default parse after the input type changes", async () => {
+    setLocale("en");
+    let resolveParse!: (value: unknown) => void;
+    parseInputMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveParse = resolve;
+      }),
+    );
+    const [draft, setDraft] = createSignal<CompositionGraphDraft>({
+      ...createCompositionGraphDraft("Report"),
+      variables: [{
+        id: "minimum",
+        kind: "input",
+        value_type: { scalar_type: "integer", nullable: false },
+        required: true,
+      }],
+    });
+    render(() => (
+      <CompositionVariableGraphWorkspace
+        draft={draft()}
+        selectedVariableId="minimum"
+        onSelect={() => {}}
+        onDraftChange={setDraft}
+        onRemove={() => {}}
+        sqlSchema={buildSqlSchema([])}
+      />
+    ));
+
+    fireEvent.input(screen.getByRole("textbox", { name: "Default" }), {
+      target: { value: "42" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "Type" }), {
+      target: { value: "float" },
+    });
+    resolveParse({ status: "valid", value: 42 });
+    await Promise.resolve();
+
+    expect(draft().variables[0]).toMatchObject({
+      id: "minimum",
+      kind: "input",
+      value_type: { scalar_type: "float", nullable: false },
+    });
+    expect(draft().variables[0]?.default).toBeUndefined();
+    expect(screen.getByRole("textbox", { name: "Default" })).toHaveValue("");
   });
 
   it("commits a variable rename while the ID field is edited", () => {

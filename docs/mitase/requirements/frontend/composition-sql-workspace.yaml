@@ -112,6 +112,14 @@ requirements:
           opener, icon actions have accessible names and visible focus, and
           interactive targets are at least 44px. Save keeps visible text.
         governed_by: [POL-UI-002#rule.governance, POL-UI-005#rule.governance, POL-UI-007#rule.governance]
+      - id: composition-runtime-input-accessibility
+        kind: quality
+        statement: >-
+          At a 390px viewport, runtime Input components keep their visible and
+          accessible variable names, provide at least 44px controls, follow
+          component order during keyboard navigation, and cause no page-level
+          horizontal overflow.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-005#rule.governance, POL-UI-007#rule.governance]
       - id: composition-mode-context-singular
         kind: quality
         statement: >-
@@ -242,3 +250,12 @@ requirements:
                 criterion: REQ-FE-079#criterion.composition-mobile-overlays-are-exclusive
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "keeps one modal owner and restores focus after Escape" } }
+          - id: runtime-input-mobile-accessibility
+            adapter: typescript
+            path: e2e/composition-invalid-variable-input.test.ts
+            selector: { kind: test, name: "invalid_raw_input_blocks_query_and_stale_result" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-runtime-input-accessibility
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-result-renderer]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-invalid-variable-input.test.ts, test: "invalid_raw_input_blocks_query_and_stale_result" } }
