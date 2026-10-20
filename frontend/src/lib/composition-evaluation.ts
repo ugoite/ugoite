@@ -172,8 +172,19 @@ export const mergeCompositionEvaluation = (
     ),
     ...(next.query_diagnostics ?? []),
   ];
+  // Partial evaluations only return metadata for the queries selected by the
+  // caller. Preserve descriptors for the rest of this graph so a later input
+  // edit can still discover its affected queries. A same-ID descriptor from
+  // the latest response wins in case planner metadata has been refreshed.
+  const queriesById = new Map(
+    previous.queries.map((query) => [query.variable_id, query]),
+  );
+  for (const query of next.queries) {
+    queriesById.set(query.variable_id, query);
+  }
   return {
     ...next,
+    queries: [...queriesById.values()],
     query_results: queryResults,
     query_diagnostics: queryDiagnostics,
   };

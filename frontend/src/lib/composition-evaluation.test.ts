@@ -198,6 +198,32 @@ describe("Composition graph evaluation reuse", () => {
     });
   });
 
+  it("retains unselected query descriptors for later independent input edits", () => {
+    const previous = response();
+    const partial = response({
+      queries: [query("rows"), query("count", "rows")],
+      computed_query_ids: ["rows", "count"],
+    });
+
+    const merged = mergeCompositionEvaluation(previous, partial, [
+      "rows",
+      "count",
+    ]);
+
+    expect(merged.queries.map((item) => item.variable_id)).toEqual([
+      "rows",
+      "count",
+      "other",
+    ]);
+    expect(
+      affectedCompositionQueries(
+        merged.queries,
+        merged.dependencies,
+        new Set(["other_day"]),
+      ),
+    ).toEqual(["other"]);
+  });
+
   it("accepts omitted empty diagnostics from a successful evaluation", () => {
     const previous = response({
       query_results: {
