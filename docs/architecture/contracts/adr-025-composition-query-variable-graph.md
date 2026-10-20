@@ -28,6 +28,19 @@ Publication, or append-only history contracts. The CLI remains usable without a
 server. SQL execution stays within the existing Rust Core and stateless,
 bounded, authorized read path.
 
+### Compatibility policy for the unreleased Composition schema
+
+The replaced Composition schema has not shipped and is outside the v0.1
+Knowledge compatibility floor. Implementations replace it with the accepted
+strict grammar in place. They must not retain a compatibility reader or writer,
+legacy kind alias, API/DTO adapter, dual-read or dual-write path, hidden field,
+fallback, compatibility fixture, or migration. Tests must not accept old
+Composition fixtures as executable documents. Existing raw Entry history,
+inspection, and export remain available under their general contracts; they do
+not resolve or execute an old Composition. This policy does not relax
+compatibility for the released Space, Form, Entry, Saved SQL, SQL API, ACL,
+Publication, or append-only history contracts.
+
 ## Decision
 
 ### 1. One typed variable graph
@@ -93,7 +106,7 @@ explicit evidence gap until a fixture proves it.
 | SQL construct                                                                                                     | Required GUI operation                                          | Current evidence / gap                                                                                                                                                                                              |
 | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | One read-only `SELECT`; no multi-statement or write statement                                                     | Query tree, diagnostics, SQL preview                            | The existing SQL API contract requires read-only SQL; unsupported statements fail closed.                                                                                                                           |
-| `SELECT` without `FROM`; wildcard, columns, aliases, expressions, `DISTINCT`                                      | Columns and expression tree                                     | Executor fixture `read_only_aggregate_policy_registers_only_aggregate_functions` plans `SELECT COUNT(*)` without `FROM`; broad no-`FROM` expressions and GUI coverage are gaps.                                       |
+| `SELECT` without `FROM`; wildcard, columns, aliases, expressions, `DISTINCT`                                      | Columns and expression tree                                     | Executor fixture `read_only_aggregate_policy_registers_only_aggregate_functions` plans `SELECT COUNT(*)` without `FROM`; broad no-`FROM` expressions and GUI coverage are gaps.                                     |
 | `FROM` Form relations, aliases, joins, derived relations, CTEs                                                    | Form/relation tree and join editor                              | Multi-Form authorization is implemented in the SQL path; GUI parsing is a subset. Each construct needs executor and GUI fixtures.                                                                                   |
 | `UNION` and other set operations                                                                                  | Structure relation tree                                         | GUI structure currently rejects set operations; executor admission must be established per operation with fixtures.                                                                                                 |
 | `WHERE`: nested `AND`/`OR`/`NOT`, comparisons, column references, null tests, `IN`, `BETWEEN`, `LIKE`, parameters | Filter expression tree and argument binding                     | GUI currently accepts only simple parameter comparisons and null checks. Extended operators need execution fixtures and typed GUI controls.                                                                         |
