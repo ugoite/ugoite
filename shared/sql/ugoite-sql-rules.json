@@ -81,9 +81,9 @@
         },
         {
           "action": "filter",
-          "protocol": "set_filters",
+          "protocol": "set_filter_expression",
           "sql": ["WHERE"],
-          "coverage": "flat conjunction of typed predicates"
+          "coverage": "typed predicates with nested AND, OR, and NOT; groups are bounded to depth 32 and 128 nodes"
         },
         {
           "action": "sort",
@@ -118,10 +118,10 @@
         "coverage": "bounded",
         "values": ["integer", "string", "boolean", "null"]
       },
-      "protocol_extensions": [
+      "legacy_operations": [
         {
-          "protocol": "set_filter_expression",
-          "coverage": "typed boolean AST protocol is available; nested filter editor rollout is pending"
+          "protocol": "set_filters",
+          "coverage": "flat conjunction of typed predicates"
         }
       ],
       "constructs": [

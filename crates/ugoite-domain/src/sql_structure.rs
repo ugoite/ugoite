@@ -3738,9 +3738,9 @@ mod tests {
             .expect("feature matrix operations must be an array")
             .iter()
             .chain(
-                editor["protocol_extensions"]
+                editor["legacy_operations"]
                     .as_array()
-                    .expect("feature matrix protocol extensions must be an array")
+                    .expect("feature matrix legacy operations must be an array")
                     .iter(),
             )
             .map(|operation| {

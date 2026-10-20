@@ -5507,6 +5507,64 @@ a.tool {
   min-width: 0;
 }
 
+.sql-structure-filter-group,
+.sql-structure-filter-group-children,
+.sql-structure-filter-node,
+.sql-structure-filter-not {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sql-structure-filter-group,
+.sql-structure-filter-not {
+  box-sizing: border-box;
+  max-width: 100%;
+  margin-inline-start: 0;
+  padding-inline-start: 1px;
+  border-inline-start: 1px solid var(--ui-border);
+}
+
+.sql-structure-filter-group.sql-structure-filter--indented,
+.sql-structure-filter-not.sql-structure-filter--indented {
+  margin-inline-start: 3px;
+  padding-inline-start: 3px;
+}
+
+.sql-structure-filter-group-controls,
+.sql-structure-filter-node-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.sql-structure-filter-group-controls .ui-input,
+.sql-structure-filter-group-controls .ui-button,
+.sql-structure-filter-node-actions .ui-button,
+.sql-structure-filter-node-actions .icononly {
+  box-sizing: border-box;
+  min-height: 44px;
+  font-size: 16px;
+}
+
+.sql-structure-filter-operator {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-weight: 600;
+}
+
+.sql-structure-filter-group-children {
+  padding-inline-start: 0;
+}
+
+.sql-structure-filter-node-actions .ui-button {
+  padding-inline: 10px;
+}
+
 .sql-structure-sort-row {
   grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) 44px;
 }
@@ -5595,6 +5653,11 @@ a.tool {
   .sql-structure-aggregate-row .icononly {
     grid-column: 2;
     justify-self: end;
+  }
+
+  .sql-structure-filter-row .sql-structure-filter-node-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
   }
 }
 
