@@ -8,7 +8,8 @@
 use core::ops::ControlFlow;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
-    Distinct, Expr, Query, Select, SelectItem, Spanned, Statement, TableFactor, ValueWithSpan,
+    Distinct, Expr, GroupByExpr, Join, LimitClause, OffsetRows, Query, Select, SelectItem, SetExpr,
+    SetOperator, SetQuantifier, Spanned, Statement, TableFactor, TableWithJoins, ValueWithSpan,
     Visit, Visitor,
 };
 use sqlparser::dialect::GenericDialect;
@@ -164,6 +165,16 @@ pub enum SqlDocumentNodeKind {
     OtherStatement,
     /// A query, including nested queries and set-expression roots.
     Query,
+    /// A `WITH` clause and its common table expression definitions.
+    WithClause,
+    /// One common table expression definition.
+    CommonTableExpression,
+    /// A set-operation tree such as `UNION ALL`.
+    SetOperation,
+    /// One left or right query branch of a set operation.
+    SetOperationBranch,
+    /// The set operator and its optional quantifier.
+    SetOperationOperator,
     /// A `SELECT` node.
     Select,
     /// One item in a `SELECT` projection, including expressions and wildcards.
@@ -172,6 +183,22 @@ pub enum SqlDocumentNodeKind {
     Relation,
     /// A table factor such as a named table, join, or derived relation.
     TableFactor,
+    /// The `FROM` clause and its relation/join tree.
+    FromClause,
+    /// One join and its joined relation and constraint.
+    Join,
+    /// The `WHERE` clause.
+    WhereClause,
+    /// The `GROUP BY` clause.
+    GroupByClause,
+    /// The `HAVING` clause.
+    HavingClause,
+    /// A `SELECT DISTINCT` quantifier, including an optional `ON` expression list.
+    DistinctClause,
+    /// The `ORDER BY` clause.
+    OrderByClause,
+    /// A row limit clause, including its `LIMIT` and/or `OFFSET` keywords.
+    RowLimitClause,
     /// A simple column or name reference.
     IdentifierExpression,
     /// A compound column or name reference.
@@ -913,6 +940,7 @@ fn collect_nodes(
         source,
         source_map,
         tokens,
+        token_depths_before: token_depths_before(source, tokens),
         nodes: Vec::new(),
         parents: Vec::new(),
     };
@@ -920,15 +948,40 @@ fn collect_nodes(
         let _ = statement.visit(&mut collector);
     }
     collector.attach_projection_children();
-    collector.nodes
+    collector.rebuild_parent_links()
+}
+
+fn token_depths_before(source: &str, tokens: &[SqlDocumentToken]) -> Vec<usize> {
+    let mut depths = Vec::with_capacity(tokens.len() + 1);
+    let mut depth = 0_usize;
+    depths.push(depth);
+    for token in tokens {
+        if token.kind == SqlDocumentTokenKind::Punctuation {
+            match source.get(token.range.start..token.range.end) {
+                Some("(" | "[" | "{") => depth = depth.saturating_add(1),
+                Some(")" | "]" | "}") => depth = depth.saturating_sub(1),
+                _ => {}
+            }
+        }
+        depths.push(depth);
+    }
+    depths
 }
 
 struct NodeCollector<'a> {
     source: &'a str,
     source_map: &'a SqlSourceMap,
     tokens: &'a [SqlDocumentToken],
+    /// Parenthesis/bracket/brace depth before each token, plus a final entry.
+    /// Clause discovery uses this prefix table instead of rescanning all tokens.
+    token_depths_before: Vec<usize>,
     nodes: Vec<SqlDocumentNode>,
     parents: Vec<u32>,
+}
+
+struct ActiveRangeGroup {
+    range: SqlSourceRange,
+    last_by_order: std::collections::BTreeMap<u8, u32>,
 }
 
 impl NodeCollector<'_> {
@@ -967,6 +1020,729 @@ impl NodeCollector<'_> {
                     }),
             });
         }
+    }
+
+    fn push_range(&mut self, kind: SqlDocumentNodeKind, range: Option<SqlSourceRange>) {
+        let id = self.nodes.len() as u32;
+        self.nodes.push(SqlDocumentNode {
+            id,
+            parent: None,
+            kind,
+            range,
+        });
+    }
+
+    fn source_range<T: Spanned>(&self, node: &T) -> Option<SqlSourceRange> {
+        SqlSourceRange::from_span(self.source, self.source_map, node.span())
+    }
+
+    fn token_index_range(&self, range: SqlSourceRange) -> std::ops::Range<usize> {
+        let start = self
+            .tokens
+            .partition_point(|token| token.range.start < range.start);
+        let end = self
+            .tokens
+            .partition_point(|token| token.range.start < range.end);
+        start..end
+    }
+
+    fn nesting_depth_before(&self, offset: usize) -> usize {
+        let consumed = self
+            .tokens
+            .partition_point(|token| token.range.end <= offset);
+        self.token_depths_before[consumed]
+    }
+
+    fn top_level_words(&self, scope: SqlSourceRange) -> Vec<(usize, String)> {
+        let baseline = self.nesting_depth_before(scope.start);
+        let mut words = Vec::new();
+        for index in self.token_index_range(scope) {
+            let token = &self.tokens[index];
+            if token.range.end > scope.end {
+                continue;
+            }
+            if token.kind == SqlDocumentTokenKind::Word
+                && self.token_depths_before[index] == baseline
+            {
+                if let Some(text) = self.source.get(token.range.start..token.range.end) {
+                    words.push((index, text.to_ascii_uppercase()));
+                }
+            }
+        }
+        words
+    }
+
+    fn keyword_sequence_before(
+        &self,
+        scope: SqlSourceRange,
+        before: usize,
+        keywords: &[&str],
+    ) -> Option<SqlSourceRange> {
+        let words = self.top_level_words(scope);
+        let sequence = keywords
+            .iter()
+            .map(|word| word.to_ascii_uppercase())
+            .collect::<Vec<_>>();
+        let found = words.windows(sequence.len()).rev().find(|window| {
+            let Some((last_index, _)) = window.last() else {
+                return false;
+            };
+            let Some(last) = self.tokens.get(*last_index) else {
+                return false;
+            };
+            last.range.end <= before
+                && window
+                    .iter()
+                    .zip(&sequence)
+                    .all(|((_, actual), expected)| actual == expected)
+        })?;
+        let first = self.tokens.get(found.first()?.0)?;
+        let last = self.tokens.get(found.last()?.0)?;
+        Some(SqlSourceRange {
+            start: first.range.start,
+            end: last.range.end,
+        })
+    }
+
+    fn keyword_sequence_after(
+        &self,
+        scope: SqlSourceRange,
+        after: usize,
+        keywords: &[&str],
+    ) -> Option<SqlSourceRange> {
+        let words = self.top_level_words(scope);
+        let sequence = keywords
+            .iter()
+            .map(|word| word.to_ascii_uppercase())
+            .collect::<Vec<_>>();
+        let found = words.windows(sequence.len()).find(|window| {
+            let Some((first_index, _)) = window.first() else {
+                return false;
+            };
+            let Some(first) = self.tokens.get(*first_index) else {
+                return false;
+            };
+            first.range.start >= after
+                && window
+                    .iter()
+                    .zip(&sequence)
+                    .all(|((_, actual), expected)| actual == expected)
+        })?;
+        let first = self.tokens.get(found.first()?.0)?;
+        let last = self.tokens.get(found.last()?.0)?;
+        Some(SqlSourceRange {
+            start: first.range.start,
+            end: last.range.end,
+        })
+    }
+
+    fn clause_range_from_start(
+        &self,
+        scope: SqlSourceRange,
+        start: Option<SqlSourceRange>,
+        boundaries: &[Option<SqlSourceRange>],
+    ) -> Option<SqlSourceRange> {
+        let start = start?;
+        let end_bound = boundaries
+            .iter()
+            .flatten()
+            .filter(|candidate| candidate.start > start.start)
+            .map(|candidate| candidate.start)
+            .min()
+            .unwrap_or(scope.end);
+        let end = self
+            .token_index_range(SqlSourceRange {
+                start: start.start,
+                end: end_bound,
+            })
+            .map(|index| &self.tokens[index])
+            .filter(|token| token.range.end <= end_bound)
+            .filter(|token| {
+                !matches!(
+                    token.kind,
+                    SqlDocumentTokenKind::Trivia | SqlDocumentTokenKind::Comment
+                )
+            })
+            .map(|token| token.range.end)
+            .max()?;
+        (start.start < end).then_some(SqlSourceRange {
+            start: start.start,
+            end,
+        })
+    }
+
+    fn query_scope_range(&self, query: &Query) -> Option<SqlSourceRange> {
+        self.source_range(query)
+    }
+
+    fn query_lexical_scope(&self, query_range: SqlSourceRange) -> SqlSourceRange {
+        let baseline = self.nesting_depth_before(query_range.start);
+        let tail = self.token_index_range(SqlSourceRange {
+            start: query_range.end,
+            end: self.source.len(),
+        });
+        for index in tail {
+            let token = &self.tokens[index];
+            if token.kind != SqlDocumentTokenKind::Punctuation {
+                continue;
+            }
+            match self.source.get(token.range.start..token.range.end) {
+                Some(";") if self.token_depths_before[index] == baseline => {
+                    return SqlSourceRange {
+                        start: query_range.start,
+                        end: token.range.start,
+                    };
+                }
+                Some(")" | "]" | "}") if self.token_depths_before[index] == baseline => {
+                    return SqlSourceRange {
+                        start: query_range.start,
+                        end: token.range.start,
+                    };
+                }
+                _ => {}
+            }
+        }
+        SqlSourceRange {
+            start: query_range.start,
+            end: self.source.len(),
+        }
+    }
+
+    fn add_query_structure_nodes(&mut self, query: &Query) {
+        let Some(query_range) = self.query_scope_range(query) else {
+            return;
+        };
+
+        if let Some(with) = &query.with {
+            let with_range = self.source_range(with);
+            self.push_range(SqlDocumentNodeKind::WithClause, with_range);
+            for cte in &with.cte_tables {
+                self.push_range(
+                    SqlDocumentNodeKind::CommonTableExpression,
+                    self.source_range(cte),
+                );
+            }
+        }
+
+        self.add_set_expression_nodes(&query.body);
+
+        let order_by_start = query.order_by.as_ref().and_then(|order_by| {
+            let range = self.source_range(order_by)?;
+            self.keyword_sequence_before(query_range, range.start, &["ORDER", "BY"])
+        });
+        let row_limit_range = self.row_limit_range(query, query_range);
+        if query.order_by.is_some() {
+            self.push_range(
+                SqlDocumentNodeKind::OrderByClause,
+                self.clause_range_from_start(query_range, order_by_start, &[row_limit_range]),
+            );
+        }
+        if query.limit_clause.is_some() || query.fetch.is_some() {
+            self.push_range(SqlDocumentNodeKind::RowLimitClause, row_limit_range);
+        }
+    }
+
+    fn add_set_expression_nodes(&mut self, expression: &SetExpr) {
+        let SetExpr::SetOperation {
+            left,
+            op,
+            set_quantifier,
+            right,
+        } = expression
+        else {
+            return;
+        };
+        let operation_range = self.source_range(expression);
+        self.push_range(SqlDocumentNodeKind::SetOperation, operation_range);
+        self.push_range(
+            SqlDocumentNodeKind::SetOperationBranch,
+            self.source_range(left.as_ref()),
+        );
+        self.push_range(
+            SqlDocumentNodeKind::SetOperationBranch,
+            self.source_range(right.as_ref()),
+        );
+        self.push_range(
+            SqlDocumentNodeKind::SetOperationOperator,
+            self.set_operation_operator_range(left, *op, *set_quantifier, right),
+        );
+        self.add_set_expression_nodes(left);
+        self.add_set_expression_nodes(right);
+    }
+
+    fn set_operation_operator_range(
+        &self,
+        left: &SetExpr,
+        operator: SetOperator,
+        quantifier: SetQuantifier,
+        right: &SetExpr,
+    ) -> Option<SqlSourceRange> {
+        let left_range = self.source_range(left)?;
+        let right_range = self.source_range(right)?;
+        if left_range.end > right_range.start {
+            return None;
+        }
+        let gap = SqlSourceRange {
+            start: left_range.end,
+            end: right_range.start,
+        };
+        let operator_word = operator.to_string().to_ascii_uppercase();
+        let operator_index = self
+            .top_level_words(gap)
+            .into_iter()
+            .find_map(|(index, word)| (word == operator_word).then_some(index))?;
+        let operator_token = self.tokens.get(operator_index)?;
+        let mut end = operator_token.range.end;
+        if quantifier != SetQuantifier::None {
+            let expected = quantifier.to_string().to_ascii_uppercase();
+            let mut actual = String::new();
+            for (index, word) in self.top_level_words(gap) {
+                if index <= operator_index {
+                    continue;
+                }
+                if !actual.is_empty() {
+                    actual.push(' ');
+                }
+                actual.push_str(&word);
+                end = self.tokens.get(index)?.range.end;
+                if actual == expected {
+                    break;
+                }
+                if !expected.starts_with(&actual) {
+                    return None;
+                }
+            }
+            if actual != expected {
+                return None;
+            }
+        }
+        Some(SqlSourceRange {
+            start: operator_token.range.start,
+            end,
+        })
+    }
+
+    fn add_select_structure_nodes(&mut self, select: &Select) {
+        let Some(select_range) = self.source_range(select) else {
+            return;
+        };
+        let from_start = select.from.first().and_then(|relation| {
+            let range = self.source_range(relation)?;
+            self.keyword_sequence_before(select_range, range.start, &["FROM"])
+        });
+        let where_start = select.selection.as_ref().and_then(|expr| {
+            let range = self.source_range(expr)?;
+            self.keyword_sequence_before(select_range, range.start, &["WHERE"])
+        });
+        let group_by_start = match &select.group_by {
+            GroupByExpr::Expressions(expressions, _) if !expressions.is_empty() => {
+                self.source_range(&select.group_by).and_then(|range| {
+                    self.keyword_sequence_before(select_range, range.start, &["GROUP", "BY"])
+                })
+            }
+            GroupByExpr::All(_) => self.source_range(&select.group_by).and_then(|range| {
+                self.keyword_sequence_before(select_range, range.start, &["GROUP", "BY"])
+            }),
+            _ => None,
+        };
+        let having_start = select.having.as_ref().and_then(|expr| {
+            let range = self.source_range(expr)?;
+            self.keyword_sequence_before(select_range, range.start, &["HAVING"])
+        });
+        let prewhere_start = select.prewhere.as_ref().and_then(|expr| {
+            let range = self.source_range(expr)?;
+            self.keyword_sequence_before(select_range, range.start, &["PREWHERE"])
+        });
+        let qualify_start = select.qualify.as_ref().and_then(|expr| {
+            let range = self.source_range(expr)?;
+            self.keyword_sequence_before(select_range, range.start, &["QUALIFY"])
+        });
+        if matches!(select.distinct, Some(Distinct::Distinct | Distinct::On(_))) {
+            if let Some(first_projection) =
+                projection_item_ranges(self.source, self.source_map, self.tokens, select)
+                    .and_then(|ranges| ranges.first().copied())
+            {
+                let distinct_start = self.keyword_sequence_before(
+                    select_range,
+                    first_projection.start,
+                    &["DISTINCT"],
+                );
+                self.push_range(
+                    SqlDocumentNodeKind::DistinctClause,
+                    self.clause_range_from_start(
+                        select_range,
+                        distinct_start,
+                        &[Some(first_projection)],
+                    ),
+                );
+            }
+        }
+        let select_boundaries = [
+            where_start,
+            group_by_start,
+            having_start,
+            prewhere_start,
+            qualify_start,
+        ];
+        if !select.from.is_empty() {
+            if let Some(range) =
+                self.clause_range_from_start(select_range, from_start, &select_boundaries)
+            {
+                self.push_range(SqlDocumentNodeKind::FromClause, Some(range));
+                for relation in &select.from {
+                    self.add_table_join_nodes(relation, range);
+                }
+            } else {
+                // The parser's relation span is a safe fallback if a dialect
+                // accepts an unusual FROM form without a conventional keyword.
+                self.push_range(
+                    SqlDocumentNodeKind::FromClause,
+                    select
+                        .from
+                        .first()
+                        .and_then(|relation| self.source_range(relation)),
+                );
+            }
+        }
+        if select.selection.is_some() {
+            self.push_range(
+                SqlDocumentNodeKind::WhereClause,
+                self.clause_range_from_start(
+                    select_range,
+                    where_start,
+                    &[group_by_start, having_start, qualify_start],
+                ),
+            );
+        }
+        let has_group_by = match &select.group_by {
+            GroupByExpr::Expressions(expressions, _) => !expressions.is_empty(),
+            GroupByExpr::All(_) => true,
+        };
+        if has_group_by {
+            self.push_range(
+                SqlDocumentNodeKind::GroupByClause,
+                self.clause_range_from_start(
+                    select_range,
+                    group_by_start,
+                    &[having_start, qualify_start],
+                ),
+            );
+        }
+        if select.having.is_some() {
+            self.push_range(
+                SqlDocumentNodeKind::HavingClause,
+                self.clause_range_from_start(select_range, having_start, &[qualify_start]),
+            );
+        }
+    }
+
+    fn add_table_join_nodes(&mut self, table: &TableWithJoins, from_range: SqlSourceRange) {
+        let mut previous_end = self
+            .source_range(&table.relation)
+            .map_or(from_range.start, |range| range.end);
+        for join in &table.joins {
+            if let Some(range) = self.join_range(join, previous_end, from_range) {
+                self.push_range(SqlDocumentNodeKind::Join, Some(range));
+            }
+            previous_end = self
+                .source_range(join)
+                .map_or(previous_end, |range| range.end);
+            self.add_nested_table_join_nodes(&join.relation, from_range);
+        }
+        self.add_nested_table_join_nodes(&table.relation, from_range);
+    }
+
+    fn add_nested_table_join_nodes(&mut self, factor: &TableFactor, from_range: SqlSourceRange) {
+        if let TableFactor::NestedJoin {
+            table_with_joins, ..
+        } = factor
+        {
+            self.add_table_join_nodes(table_with_joins, from_range);
+        }
+    }
+
+    fn join_range(
+        &self,
+        join: &Join,
+        lower_bound: usize,
+        from_range: SqlSourceRange,
+    ) -> Option<SqlSourceRange> {
+        let joined_range = self.source_range(&join.relation)?;
+        let end = self.source_range(join)?.end.max(joined_range.end);
+        let scope = SqlSourceRange {
+            start: lower_bound.max(from_range.start),
+            end: joined_range.start,
+        };
+        let words = self.top_level_words(scope);
+        let join_index = words
+            .iter()
+            .rev()
+            .find_map(|(index, word)| (word == "JOIN").then_some(*index))?;
+        let join_token = self.tokens.get(join_index)?;
+        let mut start = join_token.range.start;
+        for (index, _) in words
+            .iter()
+            .rev()
+            .filter(|(index, _)| *index < join_index)
+            .take_while(|(_, word)| {
+                matches!(
+                    word.as_str(),
+                    "INNER"
+                        | "LEFT"
+                        | "RIGHT"
+                        | "FULL"
+                        | "CROSS"
+                        | "NATURAL"
+                        | "OUTER"
+                        | "SEMI"
+                        | "ANTI"
+                        | "ASOF"
+                )
+            })
+        {
+            start = self.tokens.get(*index)?.range.start;
+        }
+        Some(SqlSourceRange { start, end })
+    }
+
+    fn row_limit_range(
+        &self,
+        query: &Query,
+        query_range: SqlSourceRange,
+    ) -> Option<SqlSourceRange> {
+        let mut parts = Vec::new();
+        if let Some(limit) = &query.limit_clause {
+            if let Some(range) = self.explicit_limit_range(query_range, limit) {
+                parts.push(range);
+            }
+        }
+        if let Some(fetch) = &query.fetch {
+            if let Some(range) = self.fetch_range(query, fetch, query_range) {
+                parts.push(range);
+            }
+        }
+        let start = parts.iter().map(|range| range.start).min()?;
+        let end = parts.iter().map(|range| range.end).max()?;
+        Some(SqlSourceRange { start, end })
+    }
+
+    fn explicit_limit_range(
+        &self,
+        query_range: SqlSourceRange,
+        limit: &LimitClause,
+    ) -> Option<SqlSourceRange> {
+        let (limit_anchor, offset_anchor, offset_value_range, offset_rows) = match limit {
+            LimitClause::LimitOffset { limit, offset, .. } => (
+                limit.as_ref().and_then(|value| self.source_range(value)),
+                offset
+                    .as_ref()
+                    .and_then(|offset| self.source_range(&offset.value)),
+                offset
+                    .as_ref()
+                    .and_then(|offset| self.source_range(&offset.value)),
+                offset.as_ref().map(|offset| offset.rows),
+            ),
+            // MySQL's `LIMIT offset, limit` stores the first expression in
+            // the AST's `offset` field, but the source keyword still precedes it.
+            LimitClause::OffsetCommaLimit { offset, .. } => {
+                (self.source_range(offset), None, None, None)
+            }
+        };
+        let limit_start = limit_anchor
+            .and_then(|range| self.keyword_sequence_before(query_range, range.start, &["LIMIT"]));
+        let offset_start = offset_anchor
+            .and_then(|range| self.keyword_sequence_before(query_range, range.start, &["OFFSET"]));
+        let start = [limit_start, offset_start]
+            .into_iter()
+            .flatten()
+            .min_by_key(|range| range.start)?;
+        let end = self
+            .tokens
+            .iter()
+            .filter(|token| token.range.start >= start.start && token.range.end <= query_range.end)
+            .filter(|token| {
+                !matches!(
+                    token.kind,
+                    SqlDocumentTokenKind::Trivia | SqlDocumentTokenKind::Comment
+                )
+            })
+            .map(|token| token.range.end)
+            .max()?;
+        let end = if let (Some(value_range), Some(rows)) = (offset_value_range, offset_rows) {
+            if rows == OffsetRows::None {
+                end
+            } else {
+                let expected = match rows {
+                    OffsetRows::Row => "ROW",
+                    OffsetRows::Rows => "ROWS",
+                    OffsetRows::None => unreachable!(),
+                };
+                self.next_significant_token(
+                    value_range.end,
+                    self.query_lexical_scope(query_range).end,
+                )
+                .filter(|token| {
+                    self.source.get(token.range.start..token.range.end) == Some(expected)
+                })
+                .map_or(end, |token| end.max(token.range.end))
+            }
+        } else {
+            end
+        };
+        (start.start < end).then_some(SqlSourceRange {
+            start: start.start,
+            end,
+        })
+    }
+
+    fn fetch_range(
+        &self,
+        query: &Query,
+        fetch: &sqlparser::ast::Fetch,
+        query_range: SqlSourceRange,
+    ) -> Option<SqlSourceRange> {
+        let scope = self.query_lexical_scope(query_range);
+        let start = if let Some(quantity) = &fetch.quantity {
+            let range = self.source_range(quantity)?;
+            self.keyword_sequence_before(scope, range.start, &["FETCH"])?
+        } else {
+            let after = query
+                .order_by
+                .as_ref()
+                .and_then(|order_by| self.source_range(order_by))
+                .or_else(|| self.source_range(query.body.as_ref()))?
+                .end;
+            self.keyword_sequence_after(scope, after, &["FETCH"])?
+        };
+        let terminal = if fetch.with_ties { "TIES" } else { "ONLY" };
+        let end = self
+            .top_level_words(scope)
+            .into_iter()
+            .rev()
+            .find_map(|(index, word)| {
+                (word == terminal)
+                    .then(|| self.tokens.get(index).map(|token| token.range.end))
+                    .flatten()
+            })?;
+        (start.start < end).then_some(SqlSourceRange {
+            start: start.start,
+            end,
+        })
+    }
+
+    fn next_significant_token(&self, offset: usize, end_bound: usize) -> Option<&SqlDocumentToken> {
+        self.token_index_range(SqlSourceRange {
+            start: offset,
+            end: end_bound,
+        })
+        .map(|index| &self.tokens[index])
+        .filter(|token| token.range.end <= end_bound)
+        .find(|token| {
+            !matches!(
+                token.kind,
+                SqlDocumentTokenKind::Trivia | SqlDocumentTokenKind::Comment
+            )
+        })
+    }
+
+    fn rebuild_parent_links(mut self) -> Vec<SqlDocumentNode> {
+        let original_parents = self
+            .nodes
+            .iter()
+            .map(|node| (node.id, node.parent))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        self.nodes.sort_by(|left, right| {
+            let left_range = left.range.unwrap_or(SqlSourceRange {
+                start: usize::MAX,
+                end: usize::MAX,
+            });
+            let right_range = right.range.unwrap_or(SqlSourceRange {
+                start: usize::MAX,
+                end: usize::MAX,
+            });
+            left_range
+                .start
+                .cmp(&right_range.start)
+                .then_with(|| right_range.end.cmp(&left_range.end))
+                .then_with(|| {
+                    node_kind_parent_order(left.kind).cmp(&node_kind_parent_order(right.kind))
+                })
+                .then_with(|| left.id.cmp(&right.id))
+        });
+
+        let old_to_new = self
+            .nodes
+            .iter()
+            .enumerate()
+            .map(|(new, node)| (node.id, new as u32))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let mut range_stack: Vec<ActiveRangeGroup> = Vec::new();
+        for index in 0..self.nodes.len() {
+            let Some(child_range) = self.nodes[index].range else {
+                let old_parent = original_parents
+                    .get(&self.nodes[index].id)
+                    .copied()
+                    .flatten();
+                self.nodes[index].parent =
+                    old_parent.and_then(|parent| old_to_new.get(&parent).copied());
+                continue;
+            };
+            while range_stack.last().is_some_and(|group| {
+                group.range.start > child_range.start || child_range.end > group.range.end
+            }) {
+                range_stack.pop();
+            }
+
+            let old_parent = original_parents
+                .get(&self.nodes[index].id)
+                .copied()
+                .flatten()
+                .and_then(|parent| old_to_new.get(&parent).copied());
+            let child_order = node_kind_parent_order(self.nodes[index].kind);
+            let original_same_range_parent = old_parent.filter(|candidate| {
+                (*candidate as usize) < index
+                    && self.nodes[*candidate as usize].range == Some(child_range)
+            });
+            let parent = if let Some(group) = range_stack.last() {
+                if group.range == child_range {
+                    original_same_range_parent.or_else(|| {
+                        group
+                            .last_by_order
+                            .range(..child_order)
+                            .next_back()
+                            .map(|(_, parent)| *parent)
+                    })
+                } else {
+                    group
+                        .last_by_order
+                        .last_key_value()
+                        .map(|(_, parent)| *parent)
+                }
+            } else {
+                None
+            };
+            self.nodes[index].parent = parent;
+
+            if range_stack
+                .last()
+                .is_some_and(|group| group.range == child_range)
+            {
+                if let Some(group) = range_stack.last_mut() {
+                    group.last_by_order.insert(child_order, index as u32);
+                }
+            } else {
+                let mut last_by_order = std::collections::BTreeMap::new();
+                last_by_order.insert(child_order, index as u32);
+                range_stack.push(ActiveRangeGroup {
+                    range: child_range,
+                    last_by_order,
+                });
+            }
+        }
+        for (index, node) in self.nodes.iter_mut().enumerate() {
+            node.id = index as u32;
+        }
+        self.nodes
     }
 
     fn attach_projection_children(&mut self) {
@@ -1066,6 +1842,43 @@ fn projection_item_ranges(
     push_projection_range(&mut ranges, &mut item_start, &mut item_end);
 
     (ranges.len() == select.projection.len()).then_some(ranges)
+}
+
+fn node_kind_parent_order(kind: SqlDocumentNodeKind) -> u8 {
+    match kind {
+        SqlDocumentNodeKind::QueryStatement => 0,
+        SqlDocumentNodeKind::SubqueryExpression | SqlDocumentNodeKind::SetOperationBranch => 1,
+        SqlDocumentNodeKind::Query => 2,
+        SqlDocumentNodeKind::WithClause => 3,
+        SqlDocumentNodeKind::CommonTableExpression => 4,
+        SqlDocumentNodeKind::SetOperation => 4,
+        SqlDocumentNodeKind::SetOperationOperator => 5,
+        SqlDocumentNodeKind::Select => 6,
+        SqlDocumentNodeKind::SelectItem => 7,
+        SqlDocumentNodeKind::FromClause => 8,
+        SqlDocumentNodeKind::Join => 9,
+        SqlDocumentNodeKind::TableFactor => 10,
+        SqlDocumentNodeKind::Relation => 11,
+        SqlDocumentNodeKind::WhereClause
+        | SqlDocumentNodeKind::GroupByClause
+        | SqlDocumentNodeKind::HavingClause
+        | SqlDocumentNodeKind::DistinctClause
+        | SqlDocumentNodeKind::OrderByClause
+        | SqlDocumentNodeKind::RowLimitClause => 12,
+        SqlDocumentNodeKind::IdentifierExpression
+        | SqlDocumentNodeKind::CompoundIdentifierExpression
+        | SqlDocumentNodeKind::LiteralExpression
+        | SqlDocumentNodeKind::BinaryExpression
+        | SqlDocumentNodeKind::UnaryExpression
+        | SqlDocumentNodeKind::FunctionExpression
+        | SqlDocumentNodeKind::CaseExpression
+        | SqlDocumentNodeKind::CastExpression
+        | SqlDocumentNodeKind::PredicateExpression
+        | SqlDocumentNodeKind::NestedExpression
+        | SqlDocumentNodeKind::OtherExpression => 20,
+        SqlDocumentNodeKind::Value => 21,
+        SqlDocumentNodeKind::OtherStatement => 0,
+    }
 }
 
 fn projection_item_has_wildcard_except(select: &Select, index: usize) -> bool {
@@ -1275,6 +2088,7 @@ impl Visitor for NodeCollector<'_> {
 
     fn pre_visit_query(&mut self, query: &Query) -> ControlFlow<Self::Break> {
         self.push(SqlDocumentNodeKind::Query, query);
+        self.add_query_structure_nodes(query);
         ControlFlow::Continue(())
     }
 
@@ -1286,6 +2100,7 @@ impl Visitor for NodeCollector<'_> {
     fn pre_visit_select(&mut self, select: &Select) -> ControlFlow<Self::Break> {
         self.push(SqlDocumentNodeKind::Select, select);
         self.push_select_items(select);
+        self.add_select_structure_nodes(select);
         ControlFlow::Continue(())
     }
 
@@ -1841,6 +2656,170 @@ mod tests {
             assert_eq!(document.status, SqlDocumentStatus::Parsed, "{source}");
             assert_eq!(document.to_sql(), source);
         }
+    }
+
+    #[test]
+    fn classifies_nested_cte_set_operation_and_clause_paths_with_source_slices() {
+        let source = "WITH first_cte AS (SELECT g.id, g.amount FROM \"G\" AS g LEFT JOIN \"H\" AS h ON g.id = h.id WHERE g.amount > 0), second_cte AS (SELECT id, amount FROM first_cte GROUP BY id, amount HAVING SUM(amount) > 1) SELECT id, amount FROM (SELECT id, amount FROM second_cte WHERE id > 1 UNION ALL SELECT id, amount FROM second_cte WHERE id < 9) AS derived WHERE amount > 2 GROUP BY id, amount HAVING SUM(amount) > 3 ORDER BY id DESC LIMIT 10 OFFSET 2 /* trailing comment */";
+        let document = parse_sql_document(source);
+
+        assert_eq!(document.status, SqlDocumentStatus::Parsed);
+        let exact = |kind, expected: &str| {
+            document
+                .nodes
+                .iter()
+                .find(|node| {
+                    node.kind == kind
+                        && node.range.and_then(|range| document.source_slice(range))
+                            == Some(expected)
+                })
+                .unwrap_or_else(|| {
+                    panic!(
+                        "missing {kind:?} node for {expected:?}; actual nodes: {:?}",
+                        document
+                            .nodes
+                            .iter()
+                            .map(|node| (
+                                node.kind,
+                                node.range
+                                    .and_then(|range| document.source_slice(range))
+                                    .unwrap_or("<no range>")
+                            ))
+                            .collect::<Vec<_>>()
+                    )
+                })
+        };
+
+        let with_clause = exact(
+            SqlDocumentNodeKind::WithClause,
+            "WITH first_cte AS (SELECT g.id, g.amount FROM \"G\" AS g LEFT JOIN \"H\" AS h ON g.id = h.id WHERE g.amount > 0), second_cte AS (SELECT id, amount FROM first_cte GROUP BY id, amount HAVING SUM(amount) > 1)",
+        );
+        let first_cte = exact(
+            SqlDocumentNodeKind::CommonTableExpression,
+            "first_cte AS (SELECT g.id, g.amount FROM \"G\" AS g LEFT JOIN \"H\" AS h ON g.id = h.id WHERE g.amount > 0)",
+        );
+        let second_cte = exact(
+            SqlDocumentNodeKind::CommonTableExpression,
+            "second_cte AS (SELECT id, amount FROM first_cte GROUP BY id, amount HAVING SUM(amount) > 1)",
+        );
+        assert_eq!(first_cte.parent, Some(with_clause.id));
+        assert_eq!(second_cte.parent, Some(with_clause.id));
+
+        let join = exact(
+            SqlDocumentNodeKind::Join,
+            "LEFT JOIN \"H\" AS h ON g.id = h.id",
+        );
+        let first_from = exact(
+            SqlDocumentNodeKind::FromClause,
+            "FROM \"G\" AS g LEFT JOIN \"H\" AS h ON g.id = h.id",
+        );
+        assert_eq!(join.parent, Some(first_from.id));
+        exact(SqlDocumentNodeKind::WhereClause, "WHERE g.amount > 0");
+        exact(SqlDocumentNodeKind::GroupByClause, "GROUP BY id, amount");
+        exact(SqlDocumentNodeKind::HavingClause, "HAVING SUM(amount) > 1");
+
+        let set_operation = exact(
+            SqlDocumentNodeKind::SetOperation,
+            "SELECT id, amount FROM second_cte WHERE id > 1 UNION ALL SELECT id, amount FROM second_cte WHERE id < 9",
+        );
+        let operator = exact(SqlDocumentNodeKind::SetOperationOperator, "UNION ALL");
+        assert_eq!(operator.parent, Some(set_operation.id));
+        let left_branch = exact(
+            SqlDocumentNodeKind::SetOperationBranch,
+            "SELECT id, amount FROM second_cte WHERE id > 1",
+        );
+        let right_branch = exact(
+            SqlDocumentNodeKind::SetOperationBranch,
+            "SELECT id, amount FROM second_cte WHERE id < 9",
+        );
+        assert_eq!(left_branch.parent, Some(set_operation.id));
+        assert_eq!(right_branch.parent, Some(set_operation.id));
+        exact(SqlDocumentNodeKind::WhereClause, "WHERE id > 1");
+        exact(SqlDocumentNodeKind::WhereClause, "WHERE id < 9");
+
+        exact(
+            SqlDocumentNodeKind::FromClause,
+            "FROM (SELECT id, amount FROM second_cte WHERE id > 1 UNION ALL SELECT id, amount FROM second_cte WHERE id < 9) AS derived",
+        );
+        exact(SqlDocumentNodeKind::WhereClause, "WHERE amount > 2");
+        exact(SqlDocumentNodeKind::GroupByClause, "GROUP BY id, amount");
+        exact(SqlDocumentNodeKind::HavingClause, "HAVING SUM(amount) > 3");
+        exact(SqlDocumentNodeKind::OrderByClause, "ORDER BY id DESC");
+        exact(SqlDocumentNodeKind::RowLimitClause, "LIMIT 10 OFFSET 2");
+        assert!(document.source.ends_with("/* trailing comment */"));
+    }
+
+    #[test]
+    fn row_limit_keyword_lookup_ignores_limit_and_offset_aliases_and_trailing_comments() {
+        let source =
+            "SELECT 1 AS limit, 2 AS offset FROM t ORDER BY limit LIMIT 3 OFFSET 4 /* trailing */";
+        let document = parse_sql_document(source);
+
+        assert_eq!(document.status, SqlDocumentStatus::Parsed);
+        let order = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::OrderByClause)
+            .and_then(|node| node.range.map(|range| document.source_slice(range)))
+            .flatten();
+        assert_eq!(order, Some("ORDER BY limit"));
+        let row_limit = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::RowLimitClause)
+            .and_then(|node| node.range.map(|range| document.source_slice(range)))
+            .flatten();
+        assert_eq!(row_limit, Some("LIMIT 3 OFFSET 4"));
+
+        let no_limit = parse_sql_document("SELECT 1 AS limit, 2 AS offset FROM t /* trailing */");
+        assert_eq!(no_limit.status, SqlDocumentStatus::Parsed);
+        assert!(!no_limit
+            .nodes
+            .iter()
+            .any(|node| node.kind == SqlDocumentNodeKind::RowLimitClause));
+
+        for (source, expected) in [
+            ("SELECT 1 FROM t LIMIT 2, 10 /* trailing */", "LIMIT 2, 10"),
+            (
+                "SELECT 1 FROM t OFFSET 2 LIMIT 10 /* trailing */",
+                "OFFSET 2 LIMIT 10",
+            ),
+        ] {
+            let document = parse_sql_document(source);
+            assert_eq!(document.status, SqlDocumentStatus::Parsed, "{source}");
+            let row_limit = document
+                .nodes
+                .iter()
+                .find(|node| node.kind == SqlDocumentNodeKind::RowLimitClause)
+                .and_then(|node| node.range.map(|range| document.source_slice(range)))
+                .flatten();
+            assert_eq!(row_limit, Some(expected), "{source}");
+        }
+    }
+
+    #[test]
+    fn classifies_distinct_and_fetch_row_limit_ranges() {
+        let distinct = parse_sql_document("SELECT DISTINCT a, b FROM t /* trailing */");
+        assert_eq!(distinct.status, SqlDocumentStatus::Parsed);
+        let distinct_range = distinct
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::DistinctClause)
+            .and_then(|node| node.range.map(|range| distinct.source_slice(range)))
+            .flatten();
+        assert_eq!(distinct_range, Some("DISTINCT"));
+
+        let fetch = parse_sql_document(
+            "SELECT a FROM t ORDER BY a FETCH FIRST 10 ROWS ONLY /* trailing */",
+        );
+        assert_eq!(fetch.status, SqlDocumentStatus::Parsed);
+        let fetch_range = fetch
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::RowLimitClause)
+            .and_then(|node| node.range.map(|range| fetch.source_slice(range)))
+            .flatten();
+        assert_eq!(fetch_range, Some("FETCH FIRST 10 ROWS ONLY"));
     }
 
     #[test]

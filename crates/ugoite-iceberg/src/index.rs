@@ -4855,6 +4855,7 @@ mod tests {
         let matrix: Value =
             serde_json::from_str(include_str!("../../../shared/sql/ugoite-sql-rules.json"))
                 .expect("shared SQL feature matrix must remain valid JSON");
+        assert_eq!(matrix["feature_matrix"]["version"], 2);
         let backend = &matrix["feature_matrix"]["backend"];
         assert_eq!(
             backend["statement_gate"],
@@ -4863,6 +4864,51 @@ mod tests {
         assert!(backend["query_body_form_restricted"]
             .as_bool()
             .unwrap_or(false));
+        assert_eq!(
+            backend["query_body_policy"]["query_statement"],
+            "exactly_one"
+        );
+        assert_eq!(
+            backend["query_body_policy"]["query_body"],
+            "select_only_recursively"
+        );
+        assert_eq!(
+            backend["query_body_policy"]["set_operations"],
+            "select_operands_only"
+        );
+        assert_eq!(
+            backend["plan_validation"],
+            "authorized_logical_and_physical_plan"
+        );
+
+        let statement_gate_canaries = &backend["statement_gate_canaries"];
+        for sql in statement_gate_canaries["admitted"]
+            .as_array()
+            .expect("statement gate admitted canaries must be an array")
+        {
+            let sql = sql.as_str().expect("SQL canary must be a string");
+            validate_read_only_sql(sql)
+                .unwrap_or_else(|error| panic!("statement gate rejected {sql}: {error:#}"));
+        }
+        for sql in statement_gate_canaries["rejected"]
+            .as_array()
+            .expect("statement gate rejected canaries must be an array")
+        {
+            let sql = sql.as_str().expect("SQL canary must be a string");
+            let error = match validate_read_only_sql(sql) {
+                Ok(()) => panic!("statement gate admitted rejected canary: {sql}"),
+                Err(error) => error,
+            };
+            let app = error
+                .downcast_ref::<ugoite_core::error::AppError>()
+                .expect("statement gate rejection must have a typed error");
+            assert_eq!(
+                app.code(),
+                ugoite_core::error::ErrorCode::ReadOnlySqlRequired,
+                "{sql}"
+            );
+        }
+
         let constructs = matrix["feature_matrix"]["editor"]["constructs"]
             .as_array()
             .expect("SQL constructs must be an array");

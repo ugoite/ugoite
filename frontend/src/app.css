@@ -5363,6 +5363,59 @@ a.tool {
   min-width: 0;
 }
 
+.sql-document-structure-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.sql-document-structure-editor nav {
+  max-height: min(42dvh, 360px);
+  overflow: auto;
+}
+
+.sql-document-structure-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0 0 0 12px;
+  list-style: none;
+}
+
+.sql-document-structure-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sql-document-structure-node {
+  align-self: flex-start;
+}
+
+.sql-document-structure-selection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sql-document-structure-fragment,
+.sql-document-structure-replacement {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.sql-document-structure-replacement {
+  min-height: 44px;
+  font-size: 16px;
+}
+
 .sql-structure-column-list {
   max-height: min(55dvh, 480px);
   overflow: auto;

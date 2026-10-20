@@ -380,10 +380,23 @@ export type SqlDocumentNodeKind =
   | "query_statement"
   | "other_statement"
   | "query"
+  | "with_clause"
+  | "common_table_expression"
+  | "set_operation"
+  | "set_operation_branch"
+  | "set_operation_operator"
   | "select"
   | "select_item"
+  | "distinct_clause"
   | "relation"
   | "table_factor"
+  | "from_clause"
+  | "join"
+  | "where_clause"
+  | "group_by_clause"
+  | "having_clause"
+  | "order_by_clause"
+  | "row_limit_clause"
   | "identifier_expression"
   | "compound_identifier_expression"
   | "literal_expression"
@@ -449,6 +462,18 @@ export type SqlDocumentEditTransaction = {
   edits: SqlDocumentEdit[];
 };
 
+export type SqlDocumentNodeEdit = {
+  node_id: number;
+  expected_kind: SqlDocumentNodeKind;
+  replacement: string;
+};
+
+export type SqlDocumentNodeEditTransaction = {
+  contract_version: number;
+  expected_source: string;
+  edits: SqlDocumentNodeEdit[];
+};
+
 export type SqlDocumentEditResult = {
   document: SqlDocument;
   undo: SqlDocumentEditTransaction;
@@ -462,6 +487,12 @@ export type SqlDocumentEditErrorCode =
   | "source_too_large"
   | "source_too_complex"
   | "too_many_edits"
+  | "document_not_parsed"
+  | "contract_version_mismatch"
+  | "node_not_found"
+  | "node_kind_mismatch"
+  | "node_range_unavailable"
+  | "duplicate_node_target"
   | "invalid_range"
   | "range_out_of_bounds"
   | "not_utf8_boundary"
@@ -496,6 +527,16 @@ export const applySqlDocumentEditTransaction = async (
 ): Promise<SqlDocumentEditResult> =>
   await invokeProtocol<SqlDocumentEditResult, SqlDocumentEditErrorCode>({
     action: "domain.apply_sql_document_edit_transaction",
+    value: { current_source: currentSource, transaction },
+  });
+
+/** Apply guarded replacements to parser-classified nodes through Rust. */
+export const applySqlDocumentNodeEditTransaction = async (
+  currentSource: string,
+  transaction: SqlDocumentNodeEditTransaction,
+): Promise<SqlDocumentEditResult> =>
+  await invokeProtocol<SqlDocumentEditResult, SqlDocumentEditErrorCode>({
+    action: "domain.apply_sql_document_node_edit_transaction",
     value: { current_source: currentSource, transaction },
   });
 

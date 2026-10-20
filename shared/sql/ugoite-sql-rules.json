@@ -28,7 +28,7 @@
     "limit_requires_number": true
   },
   "feature_matrix": {
-    "version": 1,
+    "version": 2,
     "backend": {
       "statement_gate": "exactly_one_select_query_statement",
       "query_body_form_restricted": true,
@@ -39,6 +39,13 @@
       },
       "closed_clause_allowlist": false,
       "function_policy": "ReadOnlyAggregateV1",
+      "plan_validation": "authorized_logical_and_physical_plan",
+      "query_body_policy": {
+        "query_statement": "exactly_one",
+        "query_body": "select_only_recursively",
+        "set_operations": "select_operands_only",
+        "nested_queries": "select_bodies_only"
+      },
       "functions": {
         "scalar": [],
         "aggregate": ["count", "sum", "avg", "min", "max"],
@@ -46,6 +53,46 @@
       },
       "function_aliases": {
         "aggregate": { "mean": "avg" }
+      },
+      "statement_gate_canaries": {
+        "admitted": [
+          "SELECT 1",
+          "SELECT 1 UNION SELECT 2",
+          "WITH items AS (SELECT 1 AS value) SELECT value FROM items",
+          "WITH RECURSIVE items AS (SELECT 1 AS value) SELECT value FROM items",
+          "SELECT * FROM (SELECT 1 AS value) AS items",
+          "SELECT 1 WHERE EXISTS (SELECT 1)",
+          "SELECT 1 WHERE 1 IN (SELECT 1)"
+        ],
+        "rejected": [
+          "VALUES (1)",
+          "SELECT 1 UNION VALUES (2)",
+          "WITH items AS (VALUES (1)) SELECT * FROM items",
+          "SELECT * FROM (VALUES (1)) AS items(value)",
+          "TABLE items",
+          "INSERT INTO items SELECT 1",
+          "UPDATE items SET value = 1",
+          "DELETE FROM items",
+          "DROP TABLE items",
+          "SELECT 1; SELECT 2"
+        ]
+      },
+      "function_policy_canaries": {
+        "admitted": [
+          "SELECT COUNT(*)",
+          "SELECT SUM(1)",
+          "SELECT AVG(1)",
+          "SELECT MEAN(1)",
+          "SELECT MIN(1)",
+          "SELECT MAX(1)"
+        ],
+        "planner_rejects": [
+          "SELECT LOWER('value')",
+          "SELECT ROW_NUMBER() OVER ()"
+        ],
+        "plan_policy_rejects": [
+          "SELECT COUNT(1) OVER ()"
+        ]
       }
     },
     "direct_sql_lint": {
@@ -130,6 +177,7 @@
           "backend_admission": "planner_decides",
           "editor_coverage": "bounded",
           "limits": [
+            "each scanned relation must resolve through the authorized Form context; SQL relation text does not grant access",
             "one relation selected from trusted Form context",
             "relation-free SELECT 1 draft can select a Form",
             "plain aliases on a single relation are supported and preserved; edited column references remain unqualified",
@@ -158,9 +206,9 @@
           "backend_admission": "planner_decides",
           "editor_coverage": "bounded",
           "limits": [
-            "AND of column-to-parameter comparisons",
+            "typed comparisons and null predicates",
             "IS NULL and IS NOT NULL",
-            "no OR or NOT"
+            "bounded nested AND, OR, and NOT trees; at most 128 nodes and depth 32"
           ]
         },
         {
@@ -243,9 +291,65 @@
         },
         {
           "id": "general_expressions",
-          "sql": "CASE/CAST/arithmetic/scalar functions",
+          "sql": "CASE/CAST/arithmetic and other non-function expression syntax",
           "backend_admission": "planner_decides",
           "editor_coverage": "none"
+        },
+        {
+          "id": "scalar_functions",
+          "sql": "scalar functions",
+          "backend_admission": "function_policy_rejects",
+          "editor_coverage": "none",
+          "limits": [
+            "ReadOnlyAggregateV1 registers no user SQL scalar functions"
+          ]
+        },
+        {
+          "id": "window_functions",
+          "sql": "user SQL window functions",
+          "backend_admission": "function_policy_rejects",
+          "editor_coverage": "none",
+          "limits": [
+            "ReadOnlyAggregateV1 registers no user SQL window functions"
+          ]
+        },
+        {
+          "id": "aggregate_window_expressions",
+          "sql": "aggregate functions used with OVER",
+          "backend_admission": "plan_policy_rejects",
+          "editor_coverage": "none",
+          "limits": [
+            "an admitted aggregate used with OVER can be planned",
+            "the authorized logical-plan validator rejects Window plans"
+          ]
+        },
+        {
+          "id": "recursive_queries",
+          "sql": "recursive CTEs",
+          "backend_admission": "plan_policy_rejects",
+          "editor_coverage": "none",
+          "limits": [
+            "a SELECT-only statement shape does not imply an executable recursive query",
+            "the authorized logical-plan validator rejects RecursiveQuery plans"
+          ]
+        },
+        {
+          "id": "table_functions",
+          "sql": "user-authored table functions",
+          "backend_admission": "planner_rejects_unregistered",
+          "editor_coverage": "none",
+          "limits": [
+            "the user SQL session registers no table functions"
+          ]
+        },
+        {
+          "id": "user_unnest",
+          "sql": "user-authored UNNEST",
+          "backend_admission": "plan_policy_rejects",
+          "editor_coverage": "none",
+          "limits": [
+            "the authorized logical-plan validator rejects user-authored UNNEST"
+          ]
         }
       ]
     }

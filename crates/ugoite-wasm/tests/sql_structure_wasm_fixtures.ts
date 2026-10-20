@@ -309,6 +309,56 @@ async function main(): Promise<void> {
     "undo restores exact source",
   );
 
+  const nodeEditSource =
+    'SELECT * FROM "G" ORDER BY value -- keep trailing comment';
+  const nodeDocumentResponse = await invokeWasm(instance.exports, {
+    action: "domain.parse_sql_document",
+    value: { sql: nodeEditSource },
+  });
+  assertEqual(nodeDocumentResponse.ok, true, "node edit base document");
+  const nodeDocument = nodeDocumentResponse.value as Record<string, unknown>;
+  const nodeItem = (nodeDocument.nodes as Record<string, unknown>[]).find(
+    (node) => node.kind === "select_item",
+  );
+  if (!nodeItem) throw new Error("Typed projection node is missing");
+  const nodeEditResponse = await invokeWasm(instance.exports, {
+    action: "domain.apply_sql_document_node_edit_transaction",
+    value: {
+      current_source: nodeEditSource,
+      transaction: {
+        contract_version: nodeDocument.contract_version,
+        expected_source: nodeEditSource,
+        edits: [{
+          node_id: nodeItem.id,
+          expected_kind: "select_item",
+          replacement: "value AS selected",
+        }],
+      },
+    },
+  });
+  assertEqual(nodeEditResponse.ok, true, "typed node edit envelope");
+  const nodeEditResult = nodeEditResponse.value as Record<string, unknown>;
+  const nodeEditedDocument = nodeEditResult.document as Record<string, unknown>;
+  assertEqual(
+    nodeEditedDocument.source,
+    'SELECT value AS selected FROM "G" ORDER BY value -- keep trailing comment',
+    "typed node edit preserves unrelated clauses and trivia",
+  );
+  const nodeUndoResponse = await invokeWasm(instance.exports, {
+    action: "domain.apply_sql_document_edit_transaction",
+    value: {
+      current_source: nodeEditedDocument.source,
+      transaction: nodeEditResult.undo,
+    },
+  });
+  assertEqual(nodeUndoResponse.ok, true, "typed node edit undo envelope");
+  const nodeUndoResult = nodeUndoResponse.value as Record<string, unknown>;
+  assertEqual(
+    ((nodeUndoResult.document as Record<string, unknown>).source),
+    nodeEditSource,
+    "typed node edit undo restores exact source",
+  );
+
   const staleEditResponse = await invokeWasm(instance.exports, {
     action: "domain.apply_sql_document_edit_transaction",
     value: {

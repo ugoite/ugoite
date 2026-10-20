@@ -525,6 +525,12 @@ pub fn propose_sql_structure_operation(
                 Err(reason) => return rejected_proposal(base_sql, reason),
             }
         }
+        SqlStructureOperation::SetGroupBy { columns } => {
+            match rewrite_group_by(&base_sql, &parsed.query, context, columns) {
+                Ok(sql) => sql,
+                Err(reason) => return rejected_proposal(base_sql, reason),
+            }
+        }
         SqlStructureOperation::SetRelation { .. } => {
             unreachable!("SetRelation is handled by the Rust relation selection proposal")
         }
@@ -587,8 +593,8 @@ pub fn propose_sql_structure_operation(
                 SqlStructureOperation::SetAggregates { aggregates } => {
                     set_aggregates(&mut parsed.query, context, aggregates)
                 }
-                SqlStructureOperation::SetGroupBy { columns } => {
-                    set_group_by(&mut parsed.query, context, columns)
+                SqlStructureOperation::SetGroupBy { .. } => {
+                    unreachable!("SetGroupBy is handled by the source-preserving rewrite")
                 }
                 SqlStructureOperation::SetDistinct { distinct } => {
                     set_distinct(&mut parsed.query, distinct)
@@ -3374,24 +3380,209 @@ fn set_aggregates(
     Ok(())
 }
 
-fn set_group_by(
-    query: &mut Query,
+fn rewrite_group_by(
+    sql: &str,
+    query: &Query,
     context: &SqlStructureContext,
     columns: Vec<String>,
-) -> Result<(), SqlStructureReason> {
+) -> Result<String, SqlStructureReason> {
     if columns.len() > 256 {
         return Err(SqlStructureReason::GroupByUnsupported);
     }
     let columns = validate_schema_columns_allow_empty(context, &columns)?;
-    let select = select_mut(query)?;
-    select.group_by = GroupByExpr::Expressions(
-        columns
-            .into_iter()
-            .map(|column| Expr::Identifier(Ident::with_quote('"', column)))
-            .collect(),
-        Vec::new(),
-    );
-    Ok(())
+    let SetExpr::Select(select) = query.body.as_ref() else {
+        return Err(SqlStructureReason::SetOperationUnsupported);
+    };
+    if select
+        .from
+        .iter()
+        .any(|relation| !relation.joins.is_empty())
+    {
+        return Err(SqlStructureReason::JoinUnsupported);
+    }
+
+    let existing_columns = parse_group_by(&select.group_by, context)?;
+    let wildcard_projection = is_wildcard_projection(&select.projection);
+    let group_clause_present = contains_group_by_clause(sql)?;
+    if existing_columns.is_empty() && group_clause_present
+        || !existing_columns.is_empty() && !group_clause_present
+    {
+        return Err(SqlStructureReason::GroupByUnsupported);
+    }
+    if existing_columns == columns {
+        return Ok(sql.to_owned());
+    }
+    let group_by = match (&select.group_by, columns.as_slice()) {
+        (GroupByExpr::Expressions(expressions, modifiers), [])
+            if expressions.is_empty() && modifiers.is_empty() =>
+        {
+            None
+        }
+        (_, []) => Some(remove_group_by_source_range(sql, &select.group_by)?),
+        (GroupByExpr::Expressions(expressions, modifiers), requested)
+            if expressions.is_empty() && modifiers.is_empty() =>
+        {
+            let offset = group_by_insertion_offset(sql, select)?;
+            Some((
+                SqlSourceRange {
+                    start: offset,
+                    end: offset,
+                },
+                format!(" GROUP BY {}", quote_group_by_columns(requested)),
+            ))
+        }
+        (GroupByExpr::Expressions(expressions, modifiers), requested) => {
+            if !modifiers.is_empty() {
+                return Err(SqlStructureReason::GroupByUnsupported);
+            }
+            let range = group_by_expressions_source_range(sql, expressions)?;
+            if has_comment_token_in_range(sql, range) != Some(false) {
+                return Err(SqlStructureReason::GroupByUnsupported);
+            }
+            Some((range, quote_group_by_columns(requested)))
+        }
+        _ => return Err(SqlStructureReason::GroupByUnsupported),
+    };
+
+    let mut edits = Vec::with_capacity(2);
+    if let Some(edit) = group_by {
+        edits.push(edit);
+    }
+
+    if wildcard_projection && !columns.is_empty() {
+        let range =
+            projection_source_range(sql, query).ok_or(SqlStructureReason::ProjectionUnsupported)?;
+        let projection = quote_group_by_columns(&columns);
+        edits.push((range, projection));
+    }
+
+    if edits.is_empty() {
+        return Ok(sql.to_owned());
+    }
+    apply_sql_source_edits(sql, edits).ok_or(SqlStructureReason::GroupByUnsupported)
+}
+
+fn contains_group_by_clause(sql: &str) -> Result<bool, SqlStructureReason> {
+    let document = parse_sql_document(sql);
+    if document.status != SqlDocumentStatus::Parsed {
+        return Err(SqlStructureReason::GroupByUnsupported);
+    }
+    for group in document.tokens.iter().filter(|token| {
+        token.kind == SqlDocumentTokenKind::Word
+            && sql
+                .get(token.range.start..token.range.end)
+                .is_some_and(|word| word.eq_ignore_ascii_case("GROUP"))
+    }) {
+        let by = document.tokens.iter().find(|token| {
+            token.range.start >= group.range.end
+                && !matches!(
+                    token.kind,
+                    SqlDocumentTokenKind::Trivia | SqlDocumentTokenKind::Comment
+                )
+        });
+        if by.is_some_and(|token| {
+            token.kind == SqlDocumentTokenKind::Word
+                && sql
+                    .get(token.range.start..token.range.end)
+                    .is_some_and(|word| word.eq_ignore_ascii_case("BY"))
+        }) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn quote_group_by_columns(columns: &[String]) -> String {
+    columns
+        .iter()
+        .map(|column| Ident::with_quote('"', column.clone()).to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn group_by_expressions_source_range(
+    sql: &str,
+    expressions: &[Expr],
+) -> Result<SqlSourceRange, SqlStructureReason> {
+    let first = expressions
+        .first()
+        .ok_or(SqlStructureReason::GroupByUnsupported)?
+        .span();
+    let last = expressions
+        .last()
+        .ok_or(SqlStructureReason::GroupByUnsupported)?
+        .span();
+    if first == Span::empty() || last == Span::empty() {
+        return Err(SqlStructureReason::GroupByUnsupported);
+    }
+    let range = source_range_from_span(sql, Span::new(first.start, last.end))
+        .ok_or(SqlStructureReason::GroupByUnsupported)?;
+    (range.start < range.end)
+        .then_some(range)
+        .ok_or(SqlStructureReason::GroupByUnsupported)
+}
+
+fn remove_group_by_source_range(
+    sql: &str,
+    group_by: &GroupByExpr,
+) -> Result<(SqlSourceRange, String), SqlStructureReason> {
+    let GroupByExpr::Expressions(expressions, modifiers) = group_by else {
+        return Err(SqlStructureReason::GroupByUnsupported);
+    };
+    if expressions.is_empty() || !modifiers.is_empty() {
+        return Err(SqlStructureReason::GroupByUnsupported);
+    }
+    let expressions_range = group_by_expressions_source_range(sql, expressions)?;
+    let document = parse_sql_document(sql);
+    if document.status != SqlDocumentStatus::Parsed {
+        return Err(SqlStructureReason::GroupByUnsupported);
+    }
+
+    let group_token = document
+        .tokens
+        .iter()
+        .filter(|token| token.kind == SqlDocumentTokenKind::Word)
+        .filter(|token| token.range.end <= expressions_range.start)
+        .filter(|token| {
+            sql.get(token.range.start..token.range.end)
+                .is_some_and(|word| word.eq_ignore_ascii_case("GROUP"))
+        })
+        .rev()
+        .find(|group| {
+            let by = document.tokens.iter().find(|token| {
+                token.range.start >= group.range.end
+                    && token.range.end <= expressions_range.start
+                    && token.kind != SqlDocumentTokenKind::Trivia
+            });
+            by.is_some_and(|token| {
+                token.kind == SqlDocumentTokenKind::Word
+                    && sql
+                        .get(token.range.start..token.range.end)
+                        .is_some_and(|word| word.eq_ignore_ascii_case("BY"))
+            })
+        })
+        .ok_or(SqlStructureReason::GroupByUnsupported)?;
+    let range = SqlSourceRange {
+        start: group_token.range.start,
+        end: expressions_range.end,
+    };
+    if has_comment_token_in_range(sql, range) != Some(false) {
+        return Err(SqlStructureReason::GroupByUnsupported);
+    }
+    Ok((range, String::new()))
+}
+
+fn group_by_insertion_offset(sql: &str, select: &Select) -> Result<usize, SqlStructureReason> {
+    let anchor = select
+        .selection
+        .as_ref()
+        .map(Spanned::span)
+        .or_else(|| select.from.last().map(Spanned::span))
+        .or_else(|| select.projection.last().map(Spanned::span))
+        .ok_or(SqlStructureReason::GroupByUnsupported)?;
+    let range =
+        source_range_from_span(sql, anchor).ok_or(SqlStructureReason::GroupByUnsupported)?;
+    Ok(range.end)
 }
 
 fn set_distinct(query: &mut Query, distinct: bool) -> Result<(), SqlStructureReason> {
@@ -4611,7 +4802,9 @@ mod tests {
         assert_eq!(proposal.status, SqlStructureStatus::Supported);
         assert_eq!(
             proposal.proposed_sql.as_deref(),
-            Some("SELECT * FROM \"Task\" AS t INNER JOIN \"Task\" AS other ON t.field_101 = other.field_101 LIMIT 7")
+            Some(
+                "SELECT * FROM \"Task\" AS t INNER JOIN \"Task\" AS other ON t.field_101 = other.field_101 LIMIT 7"
+            )
         );
         assert_eq!(
             analyze_sql_structure(proposal.proposed_sql.as_deref().unwrap(), &context()).status,
@@ -4630,7 +4823,11 @@ mod tests {
         ] {
             let analysis = analyze_sql_structure(sql, &context());
             assert_eq!(analysis.status, SqlStructureStatus::Unsupported, "{sql}");
-            assert_eq!(analysis.reason, Some(SqlStructureReason::JoinUnsupported), "{sql}");
+            assert_eq!(
+                analysis.reason,
+                Some(SqlStructureReason::JoinUnsupported),
+                "{sql}"
+            );
         }
 
         let mismatch = propose_sql_structure_operation(
@@ -4950,7 +5147,9 @@ mod tests {
         assert_eq!(proposal.status, SqlStructureStatus::Supported);
         assert_eq!(
             proposal.proposed_sql.as_deref(),
-            Some("-- keep header\nSELECT \"field_102\" AS \"Gross Total\", \"field_101\" FROM \"Task\" /* relation */ WHERE \"field_102\" >= $priority ORDER BY \"_ugoite_id\"")
+            Some(
+                "-- keep header\nSELECT \"field_102\" AS \"Gross Total\", \"field_101\" FROM \"Task\" /* relation */ WHERE \"field_102\" >= $priority ORDER BY \"_ugoite_id\""
+            )
         );
         assert!(proposal.requires_confirmation);
         let updated = analyze_sql_structure(proposal.proposed_sql.as_deref().unwrap(), &context());
@@ -4981,7 +5180,9 @@ mod tests {
         assert_eq!(proposal.status, SqlStructureStatus::Supported);
         assert_eq!(
             proposal.proposed_sql.as_deref(),
-            Some("SELECT \"field_102\" AS GrossTotal FROM \"Task\" WHERE \"field_101\" = $status ORDER BY \"_ugoite_id\"")
+            Some(
+                "SELECT \"field_102\" AS GrossTotal FROM \"Task\" WHERE \"field_101\" = $status ORDER BY \"_ugoite_id\""
+            )
         );
     }
 
@@ -5002,7 +5203,9 @@ mod tests {
         assert_eq!(proposal.status, SqlStructureStatus::Supported);
         assert_eq!(
             proposal.proposed_sql.as_deref(),
-            Some("SELECT \"field_102\" AS total FROM \"Task\" WHERE \"field_101\" = $status ORDER BY \"_ugoite_id\"")
+            Some(
+                "SELECT \"field_102\" AS total FROM \"Task\" WHERE \"field_101\" = $status ORDER BY \"_ugoite_id\""
+            )
         );
     }
 
@@ -6104,6 +6307,46 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn grouping_a_wildcard_replaces_its_projection_and_preserves_other_sql_source() {
+        let sql = "-- report\nSELECT * FROM \"Task\" AS task_rows WHERE \"field_101\" = $status /* keep predicate note */ ORDER BY \"field_101\" DESC LIMIT 4";
+        let proposal = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetGroupBy {
+                columns: vec!["field_101".to_owned()],
+            },
+        );
+
+        assert_eq!(proposal.status, SqlStructureStatus::Supported);
+        assert!(proposal.requires_confirmation);
+        assert_eq!(
+            proposal.proposed_sql.as_deref(),
+            Some(
+                "-- report\nSELECT \"field_101\" FROM \"Task\" AS task_rows WHERE \"field_101\" = $status GROUP BY \"field_101\" /* keep predicate note */ ORDER BY \"field_101\" DESC LIMIT 4"
+            )
+        );
+    }
+
+    #[test]
+    fn group_by_source_edit_fails_closed_when_changing_a_commented_group_list() {
+        let sql = "SELECT \"field_101\", \"field_102\" FROM \"Task\" GROUP BY \"field_101\" /* retain comment */ , \"field_102\"";
+        let proposal = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetGroupBy {
+                columns: vec!["field_101".to_owned()],
+            },
+        );
+
+        assert_eq!(proposal.status, SqlStructureStatus::Unsupported);
+        assert_eq!(
+            proposal.reason,
+            Some(SqlStructureReason::GroupByUnsupported)
+        );
+        assert!(proposal.proposed_sql.is_none());
     }
 
     #[test]

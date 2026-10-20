@@ -72,6 +72,9 @@ fn sql_document_request_limit(action: &str) -> Option<usize> {
         "domain.parse_sql_document" => Some(MAX_SQL_DOCUMENT_REQUEST_BYTES),
         "domain.rename_sql_document_parameter" => Some(MAX_SQL_DOCUMENT_RENAME_REQUEST_BYTES),
         "domain.apply_sql_document_edit_transaction" => Some(MAX_SQL_DOCUMENT_EDIT_REQUEST_BYTES),
+        "domain.apply_sql_document_node_edit_transaction" => {
+            Some(MAX_SQL_DOCUMENT_EDIT_REQUEST_BYTES)
+        }
         _ => None,
     }
 }
@@ -235,6 +238,9 @@ fn invoke_domain(request: serde_json::Value) -> String {
         }
         Some("domain.apply_sql_document_edit_transaction") => {
             return invoke_sql_document_edit_transaction(request)
+        }
+        Some("domain.apply_sql_document_node_edit_transaction") => {
+            return invoke_sql_document_node_edit_transaction(request)
         }
         _ => {}
     }
@@ -650,6 +656,33 @@ fn invoke_sql_document_edit_transaction(request: serde_json::Value) -> String {
     };
 
     match ugoite_domain::sql_document::apply_sql_document_edit_transaction(
+        &protocol_request.current_source,
+        &protocol_request.transaction,
+    ) {
+        Ok(result) => serialize_sql_document_edit_response(&result)
+            .unwrap_or_else(|()| sql_document_response_too_large()),
+        Err(error) => sql_document_edit_error(error),
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SqlDocumentNodeEditProtocolRequest {
+    current_source: String,
+    transaction: ugoite_domain::sql_document::SqlDocumentNodeEditTransaction,
+}
+
+fn invoke_sql_document_node_edit_transaction(request: serde_json::Value) -> String {
+    let Some(payload) = request.get("value").cloned() else {
+        return sql_document_edit_invalid_request();
+    };
+    let Ok(protocol_request) =
+        serde_json::from_value::<SqlDocumentNodeEditProtocolRequest>(payload)
+    else {
+        return sql_document_edit_invalid_request();
+    };
+
+    match ugoite_domain::sql_document::apply_sql_document_node_edit_transaction(
         &protocol_request.current_source,
         &protocol_request.transaction,
     ) {
@@ -1774,6 +1807,50 @@ mod tests {
             serde_json::from_str(&super::invoke_json(&undo_request.to_string())).unwrap();
         assert_eq!(undo_response["ok"], true, "{undo_response}");
         assert_eq!(undo_response["value"]["document"]["source"], source);
+    }
+
+    #[test]
+    fn sql_document_node_edit_protocol_matches_native_typed_transaction() {
+        use ugoite_domain::sql_document::{
+            parse_sql_document, SqlDocumentNodeEdit, SqlDocumentNodeEditTransaction,
+        };
+
+        let source = "SELECT * FROM \"G\" ORDER BY value -- keep trailing comment";
+        let document = parse_sql_document(source);
+        let item = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::SelectItem)
+            .expect("parser exposes the projection as a typed node");
+        let transaction = SqlDocumentNodeEditTransaction {
+            contract_version: document.contract_version,
+            expected_source: source.to_owned(),
+            edits: vec![SqlDocumentNodeEdit {
+                node_id: item.id,
+                expected_kind: item.kind,
+                replacement: "value AS selected".to_owned(),
+            }],
+        };
+        let native = ugoite_domain::sql_document::apply_sql_document_node_edit_transaction(
+            source,
+            &transaction,
+        )
+        .expect("native node edit succeeds");
+        let request = serde_json::json!({
+            "action": "domain.apply_sql_document_node_edit_transaction",
+            "value": {
+                "current_source": source,
+                "transaction": transaction,
+            },
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"], serde_json::to_value(&native).unwrap());
+        assert_eq!(
+            response["value"]["document"]["source"],
+            "SELECT value AS selected FROM \"G\" ORDER BY value -- keep trailing comment"
+        );
     }
 
     #[test]

@@ -5,21 +5,27 @@ import {
   For,
   Index,
   Show,
+  untrack,
 } from "solid-js";
 import { IconButton } from "~/components/IconButton";
 import { UiIcon } from "~/components/UiIcon";
 import { handleDialogKeyDown, useDialogFocus } from "~/components/dialog-focus";
 import { t } from "~/lib/i18n";
 import { normalizeSqlVariables } from "~/lib/sql";
+import { SqlDocumentStructureEditor } from "~/components/SqlDocumentStructureEditor";
 import type { SQLWorkspaceAction } from "~/components/SQLWorkspace";
 import type { SqlStructureAdapterContext } from "~/lib/sql";
 import {
   analyzeSqlStructure,
   applySqlDocumentEditTransaction,
+  applySqlDocumentNodeEditTransaction,
+  parseSqlDocument,
   prepareSqlStructureParser,
   proposeSqlStructureOperation,
 } from "~/lib/ugoite-client";
 import type {
+  SqlDocument,
+  SqlDocumentNodeEdit,
   SqlStructureAggregate,
   SqlStructureAggregateFunction,
   SqlStructureAlias,
@@ -276,6 +282,8 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   const [analysisState, setAnalysisState] = createSignal<AnalysisState>(
     { status: "no_context" },
   );
+  const [sqlDocument, setSqlDocument] = createSignal<SqlDocument>();
+  const [sqlDocumentLoading, setSqlDocumentLoading] = createSignal(false);
   const [activeAction, setActiveAction] = createSignal<StructureAction | null>(
     null,
   );
@@ -303,7 +311,24 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   const [error, setError] = createSignal<string | null>(null);
   let analysisGeneration = 0;
   let proposalGeneration = 0;
+  let documentGeneration = 0;
   let dialog: HTMLDivElement | undefined;
+
+  createEffect(() => {
+    const sourceSql = props.sql();
+    const generation = ++documentGeneration;
+    setSqlDocument(undefined);
+    setSqlDocumentLoading(true);
+    void parseSqlDocument(sourceSql).then((document) => {
+      if (generation !== documentGeneration) return;
+      setSqlDocument(document);
+    }).catch(() => {
+      if (generation !== documentGeneration) return;
+      setSqlDocument(undefined);
+    }).finally(() => {
+      if (generation === documentGeneration) setSqlDocumentLoading(false);
+    });
+  });
 
   createEffect(() => {
     const sourceSql = props.sql();
@@ -317,7 +342,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     setProposal(undefined);
     setProposalVariables([]);
     setProposalContextIdentity(undefined);
-    setActiveAction(null);
+    if (untrack(activeAction) !== "join") setActiveAction(null);
     setLiteralProjection([]);
     setProjectionSlots([]);
     setFilters(undefined);
@@ -412,24 +437,24 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   };
 
   const actionDisabled = (action: StructureAction) => {
-    if (action === "form") {
-      return Boolean(
-        props.disabled?.() || !props.onSqlChange ||
-          analysisState().status !== "ready" || formOptions().length === 0,
-      );
+    if (props.disabled?.() || !props.onSqlChange) return true;
+    if (action === "join") {
+      return sqlDocumentLoading() || sqlDocument()?.status !== "parsed";
     }
-    return Boolean(
-      props.disabled?.() || !props.onSqlChange ||
-        analysisState().status !== "ready" ||
-        ready()?.analysis.status !== "supported" ||
-        !capability(action)?.enabled || !hasEditableCapabilities(action),
-    );
+    const documentFallbackReady = sqlDocument()?.status === "parsed" &&
+      analysisState().status !== "loading";
+    return !structuredEditorAvailable(action) && !documentFallbackReady;
   };
 
   const actionReason = (action: StructureAction) => {
+    if (props.disabled?.() || !props.onSqlChange) {
+      return t("sqlPage.structureReadOnly");
+    }
     if (action === "form") {
-      if (props.disabled?.() || !props.onSqlChange) {
-        return t("sqlPage.structureReadOnly");
+      if (sqlDocument()?.status === "parsed") {
+        return analysisState().status === "loading"
+          ? t("sqlPage.structureAnalyzing")
+          : undefined;
       }
       const state = analysisState();
       if (state.status === "loading") return t("sqlPage.structureAnalyzing");
@@ -439,11 +464,22 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
         ? t("sqlPage.structureUnavailable")
         : undefined;
     }
+    if (action === "join") {
+      if (sqlDocumentLoading()) return t("sqlPage.structureAnalyzing");
+      return sqlDocument()?.status === "parsed"
+        ? undefined
+        : unavailableReason();
+    }
+    if (
+      sqlDocument()?.status === "parsed" &&
+      !structuredEditorAvailable(action)
+    ) {
+      return analysisState().status === "loading"
+        ? t("sqlPage.structureAnalyzing")
+        : undefined;
+    }
     const commonReason = analysisReason(analysisState());
     if (commonReason) return commonReason;
-    if (props.disabled?.() || !props.onSqlChange) {
-      return t("sqlPage.structureReadOnly");
-    }
     const current = capability(action);
     return current && (!current.enabled || !hasEditableCapabilities(action))
       ? unavailableReason()
@@ -693,10 +729,10 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     ) return false;
     const projection = current.analysis.projection;
     if (projection.includes("*")) {
-      // Wildcard projection cannot be safely reconciled with selected group
-      // keys. Clearing an existing group is safe when no aggregate remains.
-      return selected.length === 0 &&
-        current.analysis.aggregates.length === 0;
+      // The Rust proposal replaces `*` with the selected grouping keys in one
+      // source-preserving edit. The browser only validates trusted column
+      // capabilities and sends the selected names to that authority.
+      return current.analysis.aggregates.length === 0;
     }
     return current.analysis.aggregates.length === 0 &&
         selected.length === 0 ||
@@ -819,13 +855,29 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     if (action === "group_by") {
       const projection = current.analysis.projection;
       const projectionCanBeGrouped = !projection.includes("*") ||
-        (current.analysis.group_by.length > 0 &&
-          current.analysis.aggregates.length === 0);
+        current.analysis.aggregates.length === 0;
       return projectionCanBeGrouped && groupableColumns().length > 0 &&
         existingGroupByIsEditable() && existingAggregatesAreEditable();
     }
     return distinctProjectionIsEditable();
   };
+
+  const structuredEditorAvailable = (action: StructureAction): boolean => {
+    const current = ready();
+    if (!current || current.analysis.status !== "supported") return false;
+    if (action === "form") return formOptions().length > 0;
+    if (action === "join") return hasEditableCapabilities("join");
+    return Boolean(
+      capability(action)?.enabled && hasEditableCapabilities(action),
+    );
+  };
+
+  const documentEditorFallback = (action: StructureAction | null): boolean =>
+    action !== null && action !== "join" &&
+    !structuredEditorAvailable(action);
+
+  const documentEditorVisible = (action: StructureAction | null): boolean =>
+    action === "join" || documentEditorFallback(action);
 
   useDialogFocus(() => activeAction() !== null, {
     dialog: () => dialog,
@@ -842,11 +894,43 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
       setActiveAction(action);
       return;
     }
+    if (action === "join") {
+      if (actionDisabled(action)) return;
+      setError(null);
+      setProposal(undefined);
+      setProposalContextIdentity(undefined);
+      setActiveAction(action);
+      const current = ready();
+      if (current?.analysis.status === "supported") {
+        const available = current.context.parser.columns.find((column) =>
+          [
+            "string",
+            "boolean",
+            "integer",
+            "float",
+            "date",
+            "timestamp",
+            "decimal",
+          ]
+            .includes(column.type)
+        )?.name ?? "";
+        const existing = current.analysis.joins[0];
+        setJoinLeftColumn(existing?.left_column ?? available);
+        setJoinRightColumn(
+          existing?.right_column ?? existing?.left_column ?? available,
+        );
+      }
+      return;
+    }
     const current = ready();
-    if (!current || actionDisabled(action)) return;
+    if (actionDisabled(action)) return;
     setError(null);
     setProposal(undefined);
     setProposalContextIdentity(undefined);
+    if (!current || !structuredEditorAvailable(action)) {
+      setActiveAction(action);
+      return;
+    }
     const projection = current.analysis.projection;
     setLiteralProjection([...current.analysis.literal_projection]);
     const slots = current.context.parser.relation === ""
@@ -1582,7 +1666,11 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
           if (distinct && !fallback) distinct = false;
         }
         if (distinct && columns.length > 1) distinct = false;
-        return { ...aggregateWithColumns(item, columns), function: fn, distinct };
+        return {
+          ...aggregateWithColumns(item, columns),
+          function: fn,
+          distinct,
+        };
       })
     );
   };
@@ -1617,9 +1705,10 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
 
   const addAggregateArgument = (index: number) => {
     const existingColumns = aggregateColumnsOf(aggregates()[index]);
-    const column = aggregateColumnsFor("count").find((candidate) =>
-      !existingColumns.includes(candidate.name)
-    ) ?? aggregateColumnsFor("count")[0];
+    const column =
+      aggregateColumnsFor("count").find((candidate) =>
+        !existingColumns.includes(candidate.name)
+      ) ?? aggregateColumnsFor("count")[0];
     if (!column) return;
     setAggregates((items) =>
       items.map((item, itemIndex) => {
@@ -1673,7 +1762,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     const action = activeAction();
     if (
       !current || !action || action === "form" || actionDisabled(action) ||
-      busy()
+      busy() || (action === "join" && current.analysis.status !== "supported")
     ) return;
     const legacyFilters = action === "filter" &&
         !supportsFilterExpression()
@@ -1837,6 +1926,47 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     }
   };
 
+  const replaceDocumentNode = async (edit: SqlDocumentNodeEdit) => {
+    const document = sqlDocument();
+    const action = activeAction();
+    if (
+      !document || document.status !== "parsed" ||
+      document.source !== props.sql() || props.disabled?.() ||
+      !props.onSqlChange || busy() || !action ||
+      (action !== "join" && !documentEditorFallback(action))
+    ) return;
+
+    const baseSql = document.source;
+    const generation = ++proposalGeneration;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await applySqlDocumentNodeEditTransaction(baseSql, {
+        contract_version: document.contract_version,
+        expected_source: baseSql,
+        edits: [edit],
+      });
+      if (
+        generation !== proposalGeneration || props.sql() !== baseSql ||
+        sqlDocument() !== document || props.disabled?.() ||
+        activeAction() !== action ||
+        (action !== "join" && !documentEditorFallback(action))
+      ) return;
+
+      // Rust resolves the node ID against the guarded source and returns the
+      // exact replacement plus a parsed next view. Saving/running remains the
+      // host's normal validated SQL path.
+      props.onSqlChange(result.document.source);
+      setSqlDocument(result.document);
+    } catch {
+      if (generation === proposalGeneration && props.sql() === baseSql) {
+        setError(t("sqlPage.structureUnavailable"));
+      }
+    } finally {
+      if (generation === proposalGeneration) setBusy(false);
+    }
+  };
+
   const confirmProposal = async () => {
     const current = proposal();
     const contextIdentity = proposalContextIdentity();
@@ -1923,7 +2053,9 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     return proposal()
       ? t("sqlPage.structure.proposal")
       : action
-      ? actionLabel(action)
+      ? action === "join"
+        ? t("sqlPage.structure.structure")
+        : actionLabel(action)
       : "";
   };
 
@@ -2007,7 +2139,10 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
               when={proposal()}
               fallback={
                 <div class="sql-structure-dialog-content">
-                  <Show when={activeAction() === "form"}>
+                  <Show
+                    when={activeAction() === "form" &&
+                      structuredEditorAvailable("form")}
+                  >
                     <div class="sql-structure-form-list">
                       <For each={formOptions()}>
                         {(context) => (
@@ -2027,7 +2162,99 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                     </div>
                   </Show>
 
-                  <Show when={activeAction() === "columns"}>
+                  <Show
+                    when={documentEditorVisible(activeAction()) &&
+                      sqlDocument()?.status === "parsed"}
+                  >
+                    <SqlDocumentStructureEditor
+                      document={sqlDocument()!}
+                      disabled={busy() || Boolean(props.disabled?.()) ||
+                        !props.onSqlChange}
+                      onReplaceNode={(edit) => void replaceDocumentNode(edit)}
+                    />
+                  </Show>
+
+                  <Show when={activeAction() === "join"}>
+                    <Show
+                      when={structuredEditorAvailable("join")}
+                    >
+                      <div class="sql-structure-join-fields">
+                        <label class="ui-field">
+                          <span>{t("sqlPage.structure.leftColumn")}</span>
+                          <select
+                            class="ui-input"
+                            value={joinLeftColumn()}
+                            disabled={busy() || Boolean(proposal())}
+                            onChange={(event) => {
+                              const value = event.currentTarget.value;
+                              const selectedType = ready()?.context.parser
+                                .columns
+                                .find((column) => column.name === value)?.type;
+                              setJoinLeftColumn(value);
+                              const counterpartType = ready()?.context.parser
+                                .columns.find((column) =>
+                                  column.name === joinRightColumn()
+                                )?.type;
+                              if (selectedType !== counterpartType) {
+                                setJoinRightColumn(
+                                  joinableColumns().find((column) =>
+                                    column.type === selectedType
+                                  )?.name ?? value,
+                                );
+                              }
+                            }}
+                          >
+                            <For each={joinColumnChoices()}>
+                              {(column) => (
+                                <option value={column.name}>
+                                  {column.name}
+                                </option>
+                              )}
+                            </For>
+                          </select>
+                        </label>
+                        <label class="ui-field">
+                          <span>{t("sqlPage.structure.rightColumn")}</span>
+                          <select
+                            class="ui-input"
+                            value={joinRightColumn()}
+                            disabled={busy() || Boolean(proposal())}
+                            onChange={(event) => {
+                              const value = event.currentTarget.value;
+                              const selectedType = ready()?.context.parser
+                                .columns
+                                .find((column) => column.name === value)?.type;
+                              setJoinRightColumn(value);
+                              const counterpartType = ready()?.context.parser
+                                .columns.find((column) =>
+                                  column.name === joinLeftColumn()
+                                )?.type;
+                              if (selectedType !== counterpartType) {
+                                setJoinLeftColumn(
+                                  joinableColumns().find((column) =>
+                                    column.type === selectedType
+                                  )?.name ?? value,
+                                );
+                              }
+                            }}
+                          >
+                            <For each={joinColumnChoices()}>
+                              {(column) => (
+                                <option value={column.name}>
+                                  {column.name}
+                                </option>
+                              )}
+                            </For>
+                          </select>
+                        </label>
+                      </div>
+                    </Show>
+                  </Show>
+
+                  <Show
+                    when={activeAction() === "columns" &&
+                      structuredEditorAvailable("columns")}
+                  >
                     <Show
                       when={ready()?.context.parser.relation === ""}
                       fallback={
@@ -2300,74 +2527,10 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                     </Show>
                   </Show>
 
-                  <Show when={activeAction() === "join"}>
-                    <div class="sql-structure-join-fields">
-                      <label class="ui-field">
-                        <span>{t("sqlPage.structure.leftColumn")}</span>
-                        <select
-                          class="ui-input"
-                          value={joinLeftColumn()}
-                          disabled={busy() || Boolean(proposal())}
-                          onChange={(event) => {
-                            const value = event.currentTarget.value;
-                            const selectedType = ready()?.context.parser.columns
-                              .find((column) => column.name === value)?.type;
-                            setJoinLeftColumn(value);
-                            const counterpartType = ready()?.context.parser
-                              .columns.find((column) =>
-                                column.name === joinRightColumn()
-                              )?.type;
-                            if (selectedType !== counterpartType) {
-                              setJoinRightColumn(
-                                joinableColumns().find((column) =>
-                                  column.type === selectedType
-                                )?.name ?? value,
-                              );
-                            }
-                          }}
-                        >
-                          <For each={joinColumnChoices()}>
-                            {(column) => (
-                              <option value={column.name}>{column.name}</option>
-                            )}
-                          </For>
-                        </select>
-                      </label>
-                      <label class="ui-field">
-                        <span>{t("sqlPage.structure.rightColumn")}</span>
-                        <select
-                          class="ui-input"
-                          value={joinRightColumn()}
-                          disabled={busy() || Boolean(proposal())}
-                          onChange={(event) => {
-                            const value = event.currentTarget.value;
-                            const selectedType = ready()?.context.parser.columns
-                              .find((column) => column.name === value)?.type;
-                            setJoinRightColumn(value);
-                            const counterpartType = ready()?.context.parser
-                              .columns.find((column) =>
-                                column.name === joinLeftColumn()
-                              )?.type;
-                            if (selectedType !== counterpartType) {
-                              setJoinLeftColumn(
-                                joinableColumns().find((column) =>
-                                  column.type === selectedType
-                                )?.name ?? value,
-                              );
-                            }
-                          }}
-                        >
-                          <For each={joinColumnChoices()}>
-                            {(column) => (
-                              <option value={column.name}>{column.name}</option>
-                            )}
-                          </For>
-                        </select>
-                      </label>
-                    </div>
-                  </Show>
-
-                  <Show when={activeAction() === "filter"}>
+                  <Show
+                    when={activeAction() === "filter" &&
+                      structuredEditorAvailable("filter")}
+                  >
                     <div class="sql-structure-filter-list">
                       <For each={filters() ? [filters()!] : []}>
                         {(filter) => renderFilterNode(filter)}
@@ -2396,7 +2559,10 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                     </div>
                   </Show>
 
-                  <Show when={activeAction() === "sort"}>
+                  <Show
+                    when={activeAction() === "sort" &&
+                      structuredEditorAvailable("sort")}
+                  >
                     <div class="sql-structure-sort-list">
                       <For each={sorts()}>
                         {(sort, index) => (
@@ -2498,7 +2664,10 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                     </div>
                   </Show>
 
-                  <Show when={activeAction() === "aggregate"}>
+                  <Show
+                    when={activeAction() === "aggregate" &&
+                      structuredEditorAvailable("aggregate")}
+                  >
                     <div class="sql-structure-aggregate-list">
                       <For each={aggregates()}>
                         {(aggregate, index) => {
@@ -2521,16 +2690,21 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                               : allowed;
                           };
                           const distinctable = () => {
-                            const aggregateColumns = aggregateColumnsOf(aggregate);
+                            const aggregateColumns = aggregateColumnsOf(
+                              aggregate,
+                            );
                             if (aggregateColumns.length === 0) {
                               return aggregate.function === "count";
                             }
                             return aggregateColumns.length === 1 && Boolean(
-                              columnCapability(aggregateColumns[0])?.distinctable,
+                              columnCapability(aggregateColumns[0])
+                                ?.distinctable,
                             );
                           };
                           const argumentsForEditor = () => {
-                            const aggregateColumns = aggregateColumnsOf(aggregate);
+                            const aggregateColumns = aggregateColumnsOf(
+                              aggregate,
+                            );
                             return aggregateColumns.length > 0
                               ? aggregateColumns
                               : [""];
@@ -2569,13 +2743,16 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                                   {(column, argumentIndex) => (
                                     <div class="sql-structure-aggregate-argument">
                                       <label class="ui-field">
-                                        <span>{t("sqlPage.structure.column")}</span>
+                                        <span>
+                                          {t("sqlPage.structure.column")}
+                                        </span>
                                         <select
                                           class="ui-input"
                                           value={aggregateColumnsOf(aggregate)[
                                             argumentIndex()
                                           ] ?? ""}
-                                          disabled={aggregate.function !== "count" &&
+                                          disabled={aggregate.function !==
+                                              "count" &&
                                             columns(column).length === 0}
                                           onChange={(event) =>
                                             updateAggregateArgument(
@@ -2584,24 +2761,33 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                                               event.currentTarget.value,
                                             )}
                                         >
-                                          <Show when={aggregate.function === "count"}>
+                                          <Show
+                                            when={aggregate.function ===
+                                              "count"}
+                                          >
                                             <option value="">
                                               {t("sqlPage.structure.allRows")}
                                             </option>
                                           </Show>
                                           <For each={columns(column)}>
                                             {(name) => (
-                                              <option value={name}>{name}</option>
+                                              <option value={name}>
+                                                {name}
+                                              </option>
                                             )}
                                           </For>
                                         </select>
                                       </label>
-                                      <Show when={aggregate.function === "count" &&
-                                        aggregateColumnsOf(aggregate).length > 0}
+                                      <Show
+                                        when={aggregate.function === "count" &&
+                                          aggregateColumnsOf(aggregate).length >
+                                            0}
                                       >
                                         <IconButton
                                           icon="trash"
-                                          label={t("sqlPage.structure.removeAggregateArgument")}
+                                          label={t(
+                                            "sqlPage.structure.removeAggregateArgument",
+                                          )}
                                           onClick={() =>
                                             removeAggregateArgument(
                                               index(),
@@ -2616,13 +2802,17 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                               <Show when={aggregate.function === "count"}>
                                 <IconButton
                                   icon="plus"
-                                  label={t("sqlPage.structure.addAggregateArgument")}
-                                  disabled={aggregateColumnsFor("count").length === 0}
+                                  label={t(
+                                    "sqlPage.structure.addAggregateArgument",
+                                  )}
+                                  disabled={aggregateColumnsFor("count")
+                                    .length === 0}
                                   onClick={() => addAggregateArgument(index())}
                                 />
                               </Show>
-                              <Show when={aggregate.function === "count" ||
-                                aggregateColumnsOf(aggregate).length === 1}
+                              <Show
+                                when={aggregate.function === "count" ||
+                                  aggregateColumnsOf(aggregate).length === 1}
                               >
                                 <label class="sql-structure-option sql-structure-aggregate-distinct">
                                   <input
@@ -2662,7 +2852,10 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                     </div>
                   </Show>
 
-                  <Show when={activeAction() === "group_by"}>
+                  <Show
+                    when={activeAction() === "group_by" &&
+                      structuredEditorAvailable("group_by")}
+                  >
                     <fieldset class="sql-structure-column-list">
                       <legend class="ui-sr-only">
                         {t("sqlPage.structure.groupBy")}
@@ -2696,7 +2889,10 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                     </fieldset>
                   </Show>
 
-                  <Show when={activeAction() === "distinct"}>
+                  <Show
+                    when={activeAction() === "distinct" &&
+                      structuredEditorAvailable("distinct")}
+                  >
                     <label class="sql-structure-option">
                       <input
                         type="checkbox"
@@ -2749,7 +2945,11 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
               <Show
                 when={proposal()}
                 fallback={
-                  <Show when={activeAction() !== "form"}>
+                  <Show
+                    when={activeAction() !== null &&
+                      activeAction() !== "form" &&
+                      structuredEditorAvailable(activeAction()!)}
+                  >
                     <button
                       type="button"
                       class="ui-button ui-button-primary"

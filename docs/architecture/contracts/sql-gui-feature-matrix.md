@@ -2,15 +2,30 @@
 title: SQL admission and structure editor coverage
 ---
 
-The shared read-only SQL gate requires exactly one DataFusion `Query` whose
-query bodies are all SELECTs or set operations composed of SELECT bodies.
-`SELECT 1`, CTEs with SELECT bodies, nested SELECTs, and SELECT set operations
-remain admitted. `VALUES`, `TABLE`, and non-SELECT bodies nested in a CTE,
-subquery, or set operation are rejected with `READ_ONLY_SQL_REQUIRED` before
-planning or execution. The stateless `ReadOnlyAggregateV1` policy currently
-admits `COUNT`, `SUM`, `AVG`, `MIN`, and `MAX` as canonical aggregate names,
-with the `MEAN` alias resolving to `AVG`, and no user SQL scalar or window
-functions. The aggregate structure editor uses that registry for signatures,
+The shared read-only SQL statement gate requires exactly one DataFusion
+`Query` whose query bodies are all SELECTs or set operations composed of SELECT
+bodies. The `statement_gate_canaries` in
+[`ugoite-sql-rules.json`](../../../shared/sql/ugoite-sql-rules.json) are
+executed by the Rust admission test: `SELECT 1`, SELECT-only CTEs, nested
+SELECTs, and SELECT set operations pass this shape check; `VALUES`, `TABLE`,
+write statements, multiple statements, and non-SELECT bodies nested in a CTE,
+subquery, or set operation fail with `READ_ONLY_SQL_REQUIRED` before planning.
+Passing this first gate is not a promise that a query can execute. DataFusion
+planning, the authorized logical and physical plan validators, relation ACLs,
+type checking, function policy, and resource limits still apply.
+
+The stateless `ReadOnlyAggregateV1` policy currently admits `COUNT`, `SUM`,
+`AVG`, `MIN`, and `MAX` as canonical aggregate names, with `MEAN` resolving to
+`AVG`. It registers no user SQL scalar functions, table functions, or window
+functions. An admitted aggregate used with `OVER` can reach planning but its
+window plan is rejected by the authorized plan validator. Recursive query
+plans and user-authored `UNNEST` are also rejected there. The
+`function_policy_canaries` distinguish functions rejected during planning
+from a supported aggregate that becomes disallowed when used as a window
+function. This matches the runtime's staged checks rather than describing a
+single closed SQL grammar.
+
+The aggregate structure editor uses the same function registry for signatures,
 accepts the `MEAN` alias, and round-trips nullary, wildcard, single-column, and
 variadic `COUNT` forms. `COUNT()` is canonicalized to `COUNT(*)` by structure
 serialization because both forms have the same runtime meaning. Multi-column
@@ -29,13 +44,26 @@ constructs that are context supplied, preserved without an editor operation, or
 outside structured coverage. Its `keywords` list is not consumed by the SQL
 admission or lint paths and is not a closed grammar definition.
 
+`SqlDocument` can retain generic source-ranged nodes for clauses and query
+branches even when no structured edit operation exists for them. In this matrix,
+`editor_coverage` records the ability to inspect and mutate a construct through
+the specialized GUI operations; a parsed node alone does not count as clause
+editing coverage. When Form-specific structured capabilities are unavailable,
+editable SQL toolbar actions fall back to the Rust node tree and guarded
+source-range replacement so users can edit an exact fragment. Generic
+replacement remains a SQL text edit and does not count as a clause-specific GUI
+operation in the matrix.
+
 The matrix pins the DataFusion version that supplies SQL parsing and planning.
 The focused validator compares that pin with `Cargo.lock`, so changing the
 runtime parser/planner version requires an explicit matrix review. The construct
-inventory is the current reviewed boundary: each admitted SQL category has a
-declared editor coverage state, including explicit gaps. This check does not
-claim that every DataFusion syntax form is accepted or that bounded editor
-coverage is complete.
+inventory is the current reviewed boundary: each SQL category has a declared
+backend decision stage and editor coverage state, including explicit gaps.
+`planner_decides` means the statement-shape gate does not decide the category;
+the later planner and authorized-plan checks may still reject a query. The
+statement and function canaries make those stages executable contract checks.
+The matrix does not claim that every DataFusion syntax form is accepted or that
+the current bounded editor coverage is complete.
 
 A single trusted Form relation may use a plain table alias; structure edits and
 Form changes preserve that alias. The editor also supports one bounded same-Form
@@ -82,10 +110,15 @@ limited to Form-column identifiers; arbitrary scalar expression arguments are
 tracked as a separate coverage gap. The matrix records that limit instead of
 claiming complete DataFusion expression coverage.
 
-`backend_admission: planner_decides` means the statement gate does not decide
-that construct's validity. It does not promise that every use will plan or
-execute. Likewise, `editor_coverage: none` describes the structure editor; it
-does not assert that the backend rejects the SQL. Changes to the closed function
+`backend_admission` identifies where the decision is made:
+`planner_decides` defers syntax and type validity to DataFusion,
+`function_policy_rejects` identifies functions absent from the configured SQL
+function registry, `planner_rejects_unregistered` identifies table functions
+that are not registered in the user SQL session, `plan_policy_rejects`
+identifies logical-plan forms denied by the authorized plan validator, and
+`statement_gate_rejects` identifies query bodies rejected before planning.
+Likewise, `editor_coverage: none` describes the structure editor; it does not
+assert that the backend rejects that SQL. Changes to the closed function
 policy, Domain structure protocol, or frontend toolbar actions are checked
 against this inventory by Rust and Deno tests.
 

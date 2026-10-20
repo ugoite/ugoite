@@ -2410,6 +2410,7 @@ mod form_name_resolution_tests {
 #[cfg(test)]
 mod function_policy_tests {
     use super::{bounded_session_context, AuthorizedQueryContext};
+    use serde_json::Value;
     use std::collections::{BTreeMap, BTreeSet, HashMap};
     use std::sync::Arc;
     use std::time::Duration;
@@ -2431,6 +2432,11 @@ mod function_policy_tests {
         let context = bounded_session_context(&limits(SqlFunctionPolicy::ReadOnlyAggregateV1))
             .expect("bounded DataFusion context should be created");
 
+        let matrix: Value =
+            serde_json::from_str(include_str!("../../../shared/sql/ugoite-sql-rules.json"))
+                .expect("shared SQL feature matrix must remain valid JSON");
+        let canaries = &matrix["feature_matrix"]["backend"]["function_policy_canaries"];
+
         for sql in [
             "SELECT COUNT(*)",
             "SELECT COUNT(DISTINCT *)",
@@ -2449,10 +2455,35 @@ mod function_policy_tests {
                 .unwrap_or_else(|error| panic!("aggregate policy rejected {sql}: {error}"));
         }
 
+        for sql in canaries["admitted"]
+            .as_array()
+            .expect("admitted function canaries must be an array")
+        {
+            let sql = sql.as_str().expect("SQL canary must be a string");
+            let plan = context
+                .state()
+                .create_logical_plan(sql)
+                .await
+                .unwrap_or_else(|error| panic!("function policy rejected {sql}: {error}"));
+            super::validate_sql_function_policy(&plan, SqlFunctionPolicy::ReadOnlyAggregateV1)
+                .unwrap_or_else(|error| panic!("function policy rejected {sql}: {error}"));
+        }
+
         for sql in ["SELECT LOWER('value')", "SELECT ROW_NUMBER() OVER ()"] {
             assert!(
                 context.state().create_logical_plan(sql).await.is_err(),
                 "aggregate policy unexpectedly admitted {sql}"
+            );
+        }
+
+        for sql in canaries["planner_rejects"]
+            .as_array()
+            .expect("planner-rejected function canaries must be an array")
+        {
+            let sql = sql.as_str().expect("SQL canary must be a string");
+            assert!(
+                context.state().create_logical_plan(sql).await.is_err(),
+                "function policy unexpectedly planned {sql}"
             );
         }
 
@@ -2469,6 +2500,23 @@ mod function_policy_tests {
             .is_err(),
             "an admitted aggregate must not become a window function by using OVER"
         );
+
+        for sql in canaries["plan_policy_rejects"]
+            .as_array()
+            .expect("plan-policy rejected canaries must be an array")
+        {
+            let sql = sql.as_str().expect("SQL canary must be a string");
+            let plan = context
+                .state()
+                .create_logical_plan(sql)
+                .await
+                .unwrap_or_else(|error| panic!("DataFusion did not plan {sql}: {error}"));
+            assert!(
+                super::validate_sql_function_policy(&plan, SqlFunctionPolicy::ReadOnlyAggregateV1)
+                    .is_err(),
+                "plan policy unexpectedly admitted {sql}"
+            );
+        }
     }
 
     #[tokio::test]

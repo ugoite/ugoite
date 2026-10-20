@@ -7,12 +7,22 @@ const matrix = JSON.parse(await read("shared/sql/ugoite-sql-rules.json"))
   .feature_matrix;
 
 Deno.test("SQL feature matrix binds the read-only gate and current UI actions", async () => {
-  assertEquals(matrix.version, 1);
+  assertEquals(matrix.version, 2);
   assertEquals(
     matrix.backend.statement_gate,
     "exactly_one_select_query_statement",
   );
   assertEquals(matrix.backend.query_body_form_restricted, true);
+  assertEquals(matrix.backend.query_body_policy, {
+    query_statement: "exactly_one",
+    query_body: "select_only_recursively",
+    set_operations: "select_operands_only",
+    nested_queries: "select_bodies_only",
+  });
+  assertEquals(
+    matrix.backend.plan_validation,
+    "authorized_logical_and_physical_plan",
+  );
   assertEquals(
     matrix.backend.clause_admission,
     "datafusion_parser_and_planner",
@@ -25,6 +35,7 @@ Deno.test("SQL feature matrix binds the read-only gate and current UI actions", 
 
   const [
     backendSource,
+    queryContextSource,
     toolbarSource,
     frontendSqlSource,
     sharedRules,
@@ -32,6 +43,7 @@ Deno.test("SQL feature matrix binds the read-only gate and current UI actions", 
     icebergManifest,
   ] = await Promise.all([
     read("crates/ugoite-iceberg/src/index.rs"),
+    read("crates/ugoite-iceberg/src/query_context.rs"),
     read("frontend/src/components/SqlStructureToolbar.tsx"),
     read("frontend/src/lib/sql.ts"),
     read("shared/sql/ugoite-sql-rules.json").then((contents) =>
@@ -106,11 +118,17 @@ Deno.test("SQL feature matrix binds the read-only gate and current UI actions", 
       "joins",
       "ordering",
       "projection",
+      "recursive_queries",
       "row_limit",
+      "scalar_functions",
       "set_operations",
       "table_query",
+      "table_functions",
       "where_predicate",
+      "user_unnest",
       "values_query",
+      "window_functions",
+      "aggregate_window_expressions",
     ].sort(),
   );
   assertEquals(
@@ -146,6 +164,9 @@ Deno.test("SQL feature matrix binds the read-only gate and current UI actions", 
       [
         "planner_decides",
         "statement_gate_rejects",
+        "function_policy_rejects",
+        "plan_policy_rejects",
+        "planner_rejects_unregistered",
       ].includes(
         construct.backend_admission,
       )
@@ -288,11 +309,13 @@ Deno.test("SQL feature matrix aggregate catalog remains present in the typed UI 
 });
 
 Deno.test("JOIN editor coverage is bounded without changing runtime admission", async () => {
-  const [backendSource, domainSource, toolbarSource] = await Promise.all([
-    read("crates/ugoite-iceberg/src/index.rs"),
-    read("crates/ugoite-domain/src/sql_structure.rs"),
-    read("frontend/src/components/SqlStructureToolbar.tsx"),
-  ]);
+  const [backendSource, queryContextSource, domainSource, toolbarSource] =
+    await Promise.all([
+      read("crates/ugoite-iceberg/src/index.rs"),
+      read("crates/ugoite-iceberg/src/query_context.rs"),
+      read("crates/ugoite-domain/src/sql_structure.rs"),
+      read("frontend/src/components/SqlStructureToolbar.tsx"),
+    ]);
   const joinConstruct = matrix.editor.constructs.find((construct: {
     id: string;
   }) => construct.id === "joins");
@@ -358,6 +381,36 @@ Deno.test("JOIN editor coverage is bounded without changing runtime admission", 
   assertEquals(statementGate.includes("parsed.len() != 1"), true);
   assertEquals(
     statementGate.includes("query_contains_only_select_bodies(query)"),
+    true,
+  );
+  const planValidation = queryContextSource.slice(
+    queryContextSource.indexOf("fn validate_logical_plan_inner"),
+    queryContextSource.indexOf(
+      "fn validate_sql_function_policy",
+      queryContextSource.indexOf("fn validate_logical_plan_inner"),
+    ),
+  );
+  assertEquals(planValidation.includes("LogicalPlan::Window(_)"), true);
+  assertEquals(planValidation.includes("LogicalPlan::RecursiveQuery(_)"), true);
+  assertEquals(planValidation.includes("LogicalPlan::Unnest(_)"), true);
+  assertEquals(
+    matrix.backend.statement_gate_canaries.admitted.length > 0,
+    true,
+  );
+  assertEquals(
+    matrix.backend.statement_gate_canaries.rejected.length > 0,
+    true,
+  );
+  assertEquals(
+    matrix.backend.function_policy_canaries.admitted.length > 0,
+    true,
+  );
+  assertEquals(
+    matrix.backend.function_policy_canaries.planner_rejects.length > 0,
+    true,
+  );
+  assertEquals(
+    matrix.backend.function_policy_canaries.plan_policy_rejects.length > 0,
     true,
   );
 });

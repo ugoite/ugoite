@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   analyzeSqlStructure,
   applySqlDocumentEditTransaction,
+  applySqlDocumentNodeEditTransaction,
   buildSpreadsheetCsvRequest,
   canonicalizeCompositionDocument,
   compileVariableGraph,
@@ -434,6 +435,66 @@ describe("portable Ugoite API protocol WASM", () => {
       edited.undo,
     );
     expect(restored.document.source).toBe(source);
+  });
+
+  it("applies source-guarded SQL Document node edits through Rust", async () => {
+    const source = 'SELECT * FROM "G" ORDER BY value -- keep trailing comment';
+    const document = await parseSqlDocument(source);
+    const item = document.nodes.find((node) => node.kind === "select_item");
+    expect(item).toBeDefined();
+
+    const edited = await applySqlDocumentNodeEditTransaction(source, {
+      contract_version: document.contract_version,
+      expected_source: source,
+      edits: [{
+        node_id: item!.id,
+        expected_kind: item!.kind,
+        replacement: "value AS selected",
+      }],
+    });
+    expect(edited.document.source).toBe(
+      'SELECT value AS selected FROM "G" ORDER BY value -- keep trailing comment',
+    );
+    expect(edited.document.status).toBe("parsed");
+
+    const restored = await applySqlDocumentEditTransaction(
+      edited.document.source,
+      edited.undo,
+    );
+    expect(restored.document.source).toBe(source);
+  });
+
+  it("exposes source-ranged query clauses and relationships from the Rust document", async () => {
+    const document = await parseSqlDocument(
+      'WITH source_rows AS (SELECT id FROM "G") SELECT DISTINCT id FROM source_rows LEFT JOIN "H" AS h ON source_rows.id = h.id WHERE h.id > 0 GROUP BY id HAVING COUNT(*) > 0 ORDER BY id DESC LIMIT 10 OFFSET 2',
+    );
+    expect(document.status).toBe("parsed");
+    const kinds = new Set(document.nodes.map((node) => node.kind));
+    for (
+      const kind of [
+        "with_clause",
+        "common_table_expression",
+        "distinct_clause",
+        "from_clause",
+        "join",
+        "where_clause",
+        "group_by_clause",
+        "having_clause",
+        "order_by_clause",
+        "row_limit_clause",
+      ] as const
+    ) {
+      expect(kinds.has(kind)).toBe(true);
+    }
+
+    const parentOf = (kind: typeof document.nodes[number]["kind"]) =>
+      document.nodes.find((node) => node.kind === kind);
+    const withClause = parentOf("with_clause");
+    const cte = parentOf("common_table_expression");
+    expect(cte?.parent).toBe(withClause?.id);
+    const join = parentOf("join");
+    expect(document.nodes.find((node) => node.id === join?.parent)?.kind)
+      .toBe("from_clause");
   });
 
   it("keeps incomplete SQL Document edit drafts and reports stable stale/range failures", async () => {

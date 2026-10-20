@@ -16,23 +16,34 @@ import {
 import type { Form } from "~/lib/types";
 import type { SQLWorkspaceAction } from "./SQLWorkspace";
 import type {
+  SqlDocument,
   SqlStructureAnalysis,
   SqlStructureOperation,
   SqlStructureProposal,
 } from "~/lib/ugoite-client";
 import { SqlStructureToolbar } from "./SqlStructureToolbar";
 
-const { analyzeMock, applyDocumentEditMock, prepareMock, proposeMock } = vi
-  .hoisted(() => ({
-    analyzeMock: vi.fn(),
-    applyDocumentEditMock: vi.fn(),
-    prepareMock: vi.fn(),
-    proposeMock: vi.fn(),
-  }));
+const {
+  analyzeMock,
+  applyDocumentEditMock,
+  applyNodeEditMock,
+  parseDocumentMock,
+  prepareMock,
+  proposeMock,
+} = vi.hoisted(() => ({
+  analyzeMock: vi.fn(),
+  applyDocumentEditMock: vi.fn(),
+  applyNodeEditMock: vi.fn(),
+  parseDocumentMock: vi.fn(),
+  prepareMock: vi.fn(),
+  proposeMock: vi.fn(),
+}));
 
 vi.mock("~/lib/ugoite-client", () => ({
   analyzeSqlStructure: analyzeMock,
   applySqlDocumentEditTransaction: applyDocumentEditMock,
+  applySqlDocumentNodeEditTransaction: applyNodeEditMock,
+  parseSqlDocument: parseDocumentMock,
   prepareSqlStructureParser: prepareMock,
   proposeSqlStructureOperation: proposeMock,
 }));
@@ -154,9 +165,26 @@ describe("SqlStructureToolbar adapter", () => {
     setLocale("en");
     analyzeMock.mockReset();
     applyDocumentEditMock.mockReset();
+    applyNodeEditMock.mockReset();
+    parseDocumentMock.mockReset();
     prepareMock.mockReset();
     proposeMock.mockReset();
     prepareMock.mockResolvedValue(undefined);
+    parseDocumentMock.mockImplementation(async (
+      source: string,
+    ): Promise<SqlDocument> => ({
+      contract_version: 1,
+      source,
+      status: "parsed",
+      diagnostics: [],
+      tokens: [],
+      nodes: [{
+        id: 0,
+        parent: null,
+        kind: "query_statement",
+        range: { start: 0, end: new TextEncoder().encode(source).byteLength },
+      }],
+    }));
     analyzeMock.mockResolvedValue(analysis);
     applyDocumentEditMock.mockImplementation(
       async (_currentSource: string, transaction: {
@@ -169,6 +197,14 @@ describe("SqlStructureToolbar adapter", () => {
         undo: transaction,
       }),
     );
+    applyNodeEditMock.mockImplementation(
+      async (_currentSource: string, transaction: {
+        edits: { replacement: string }[];
+      }) => ({
+        document: await parseDocumentMock(transaction.edits[0].replacement),
+        undo: { expected_source: transaction.edits[0].replacement, edits: [] },
+      }),
+    );
     proposeMock.mockImplementation(async (baseSql: string) => ({
       contract_version: 3,
       status: "supported",
@@ -177,6 +213,102 @@ describe("SqlStructureToolbar adapter", () => {
       requires_confirmation: true,
       added_stable_tie_breakers: [],
     }));
+  });
+
+  it("opens the Rust node tree without Form analysis and applies a guarded node edit", async () => {
+    const sql = "SELECT 1";
+    const onSqlChange = vi.fn();
+    let actions: readonly SQLWorkspaceAction[] = [];
+
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => []}
+        onSqlChange={onSqlChange}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    const structureAction = await waitFor(() => {
+      const action = actions.find((item) => item.kind === "structure");
+      expect(action?.disabled).toBe(false);
+      return action!;
+    });
+    structureAction.onActivate();
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("navigation")).toBeInTheDocument();
+
+    const replacement = within(dialog).getByRole("textbox", {
+      name: "Proposed SQL",
+    });
+    fireEvent.input(replacement, { target: { value: "SELECT 2" } });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Apply change" }),
+    );
+
+    await waitFor(() => expect(onSqlChange).toHaveBeenCalledWith("SELECT 2"));
+    expect(applyNodeEditMock).toHaveBeenCalledWith("SELECT 1", {
+      contract_version: 1,
+      expected_source: "SELECT 1",
+      edits: [{
+        node_id: 0,
+        expected_kind: "query_statement",
+        replacement: "SELECT 2",
+      }],
+    });
+  });
+
+  it("keeps each edit entry point available through the SQL tree without Form context", async () => {
+    const sql = 'SELECT * FROM "G"';
+    const onSqlChange = vi.fn();
+    let actions: readonly SQLWorkspaceAction[] = [];
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => []}
+        onSqlChange={onSqlChange}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() => expect(actions).toHaveLength(8));
+    await waitFor(() =>
+      expect(actions.every((action) => !action.disabled))
+        .toBe(true)
+    );
+
+    actions.find((action) => action.kind === "filter")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Filter" });
+    expect(
+      within(dialog).getByRole("navigation", {
+        name: "SQL structure actions",
+      }),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Review change" }))
+      .not.toBeInTheDocument();
+
+    const replacement = within(dialog).getByRole("textbox", {
+      name: "Proposed SQL",
+    });
+    fireEvent.input(replacement, {
+      target: { value: 'SELECT "amount" FROM "G"' },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Apply change" }),
+    );
+
+    await waitFor(() =>
+      expect(onSqlChange).toHaveBeenCalledWith('SELECT "amount" FROM "G"')
+    );
+    expect(applyNodeEditMock).toHaveBeenCalledWith(sql, {
+      contract_version: 1,
+      expected_source: sql,
+      edits: [{
+        node_id: 0,
+        expected_kind: "query_statement",
+        replacement: 'SELECT "amount" FROM "G"',
+      }],
+    });
   });
 
   it("intersects Form capabilities and changes SQL only after proposal confirmation", async () => {
@@ -203,9 +335,9 @@ describe("SqlStructureToolbar adapter", () => {
     expect(actions.find((action) => action.kind === "aggregate")?.disabled)
       .toBe(false);
     expect(actions.find((action) => action.kind === "group_by")?.disabled)
-      .toBe(true);
+      .toBe(false);
     expect(actions.find((action) => action.kind === "distinct")?.disabled)
-      .toBe(true);
+      .toBe(false);
 
     actions.find((action) => action.kind === "columns")!.onActivate();
     const dialog = screen.getByRole("dialog", { name: "Columns" });
@@ -755,7 +887,10 @@ describe("SqlStructureToolbar adapter", () => {
     expect(structureAction.label).toBe("Structure");
     expect(structureAction.icon).toBe("group-by");
     structureAction.onActivate();
-    const dialog = screen.getByRole("dialog", { name: "Join" });
+    const dialog = screen.getByRole("dialog", { name: "Structure" });
+    await waitFor(() =>
+      expect(within(dialog).getByLabelText("Left column")).toBeInTheDocument()
+    );
     fireEvent.change(within(dialog).getByLabelText("Left column"), {
       target: { value: "amount" },
     });
@@ -2355,7 +2490,63 @@ describe("SqlStructureToolbar adapter", () => {
     );
   });
 
-  it("keeps typed actions gated without trusted type metadata", async () => {
+  it("lets a wildcard query choose group keys and applies only the confirmed Rust proposal", async () => {
+    const sql =
+      '-- report\nSELECT * FROM "Orders" WHERE "amount" > $threshold ORDER BY "amount" DESC';
+    const proposedSql =
+      '-- report\nSELECT "amount" FROM "Orders" WHERE "amount" > $threshold GROUP BY "amount" ORDER BY "amount" DESC';
+    analyzeMock.mockResolvedValue({ ...analysis, projection: ["*"] });
+    proposeMock.mockResolvedValue({
+      contract_version: 3,
+      status: "supported",
+      base_sql: sql,
+      proposed_sql: proposedSql,
+      requires_confirmation: true,
+      added_stable_tie_breakers: [],
+    });
+    const onSqlChange = vi.fn();
+    let actions: readonly SQLWorkspaceAction[] = [];
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [context]}
+        onSqlChange={onSqlChange}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "group_by")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "group_by")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Group by" });
+    fireEvent.click(within(dialog).getByLabelText("amount"));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+
+    await waitFor(() =>
+      expect(within(dialog).getByText("Proposed SQL")).toBeInTheDocument()
+    );
+    expect(proposeMock).toHaveBeenCalledWith(
+      sql,
+      context.parser,
+      { kind: "set_group_by", columns: ["amount"] },
+    );
+    const proposedHeading = within(dialog).getByRole("heading", {
+      name: "Proposed SQL",
+    });
+    expect(proposedHeading.nextElementSibling?.textContent).toBe(proposedSql);
+    expect(onSqlChange).not.toHaveBeenCalled();
+
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Apply change" }),
+    );
+    await waitFor(() => expect(onSqlChange).toHaveBeenCalledWith(proposedSql));
+  });
+
+  it("falls back to SQL structure without trusted type metadata", async () => {
     const untrustedContext: SqlStructureAdapterContext = {
       ...context,
       columnCapabilities: Object.fromEntries(
@@ -2387,9 +2578,15 @@ describe("SqlStructureToolbar adapter", () => {
     expect(actions).toHaveLength(8);
     for (const kind of ["group_by", "distinct"] as const) {
       expect(actions.find((action) => action.kind === kind)?.disabled).toBe(
-        true,
+        false,
       );
     }
+    actions.find((action) => action.kind === "group_by")!.onActivate();
+    expect(
+      screen.getByRole("dialog", { name: "Group by" }).querySelector(
+        "nav[aria-label='SQL structure actions']",
+      ),
+    ).toBeInTheDocument();
     actions.find((action) => action.kind === "aggregate")!.onActivate();
     const dialog = screen.getByRole("dialog", { name: "Aggregate" });
     fireEvent.click(

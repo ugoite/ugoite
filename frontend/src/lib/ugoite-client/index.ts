@@ -31,6 +31,7 @@ export { RevisionConflictError } from "../entry-api";
 export {
   analyzeSqlStructure,
   applySqlDocumentEditTransaction,
+  applySqlDocumentNodeEditTransaction,
   buildSpreadsheetCsvRequest,
   canonicalizeCompositionDocument,
   type CompiledVariableGraph,
@@ -60,6 +61,8 @@ export {
   type SqlDocumentEditResult,
   type SqlDocumentEditTransaction,
   type SqlDocumentNode,
+  type SqlDocumentNodeEdit,
+  type SqlDocumentNodeEditTransaction,
   type SqlDocumentNodeKind,
   type SqlDocumentSourceRange,
   type SqlDocumentStatus,
