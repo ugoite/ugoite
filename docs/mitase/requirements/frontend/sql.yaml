@@ -246,6 +246,15 @@ requirements:
                 criterion: REQ-FE-063#criterion.typed-variable-defaults
                 covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.test.tsx", test: "saves an explicitly enabled default for a SQL variable" } }
+          - id: form-options-readiness
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/new.test.tsx
+            selector: { kind: test, name: keeps Form disabled after SQL analysis until Form options resolve }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-063#criterion.shared-structure-actions
+                covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.test.tsx", test: "keeps Form disabled after SQL analysis until Form options resolve" } }
 
   - id: REQ-FE-061
     title: Saved SQL List Route Guidance
