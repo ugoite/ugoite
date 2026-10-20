@@ -1,187 +1,39 @@
 ---
-title: "SQL-first Composition Studio"
+title: "Composition Studio"
 ---
 
-**Status: implemented for the current prerelease model.** This is the current
-Composition Studio interaction target from [ADR-024](../../../architecture/contracts/adr-024-composition-sql-first.md).
-The next unreleased target is [ADR-025](../../../architecture/contracts/adr-025-composition-query-variable-graph.md);
-its unified query-variable grammar and Design binding picker are not yet
-implemented.
-Composition-specific behavior is verified by the SQL-first golden journey,
-mobile Studio tests, and SQL-backed renderer tests. The shared SQL editor,
-typed parameter controls, preview, and result contract are defined in
-[`sql-workspace.yaml`](sql-workspace.yaml), with Composition-specific
-acceptance in REQ-FE-079.
+**Status: implementation in progress; complete SQL grammar coverage remains a separate gate.** The normative next Composition model is [ADR-025](../../../architecture/contracts/adr-025-composition-query-variable-graph.md). The unreleased source-based model in [ADR-024](../../../architecture/contracts/adr-024-composition-sql-first.md) is superseded and has no compatibility path.
 
-## Composition Data surface
+## Modes and variable graph
 
-Composition sources are inline SQL or an exact Saved SQL revision. Selecting a
-Form creates an inline SQL object whose initial editable name is copied from
-the Form, and whose editor generates SQL such as `SELECT * FROM "G"`; no
-EntryQuery is created and no `LIMIT 50` is added to the SQL text. The SQL
-object's semantic name can be edited independently from its opaque stable
-source ID. A Saved SQL source displays the referenced Saved SQL name, or the
-existing localized untitled representation when that name is absent, and
-stores no second name or alias. The selected SQL name has one visible owner
-and is not repeated in the SQL editor. An inline SQL name is editable only
-after the user activates its accessible rename action; Saved SQL keeps its
-name derived from the referenced Entry.
+The only mode controls are Design and Variables. The selected control owns its name; its panel does not repeat that name as a visible heading.
+
+Variables shows one typed graph. A row presents its meaningful variable name and kind icon. Adding a value, input, or SQL variable starts from +. A constant edits its typed literal, an input edits its type and default, and a query edits its SQL document in the shared Workspace. Query outputs show a table or scalar shape only when that distinction is unambiguous. The list has no common SQL subtitle, separate label field, or explanatory cards.
+
+Desktop places the variable rail beside its editor. On narrow screens the rail is a drawer that closes after selection. Drawer, selection, loading, and diagnostics are transient Work.
 
 ## Shared SQL Workspace
 
-The inline SQL editor uses the shared Workspace from
-[`sql-workspace.yaml`](sql-workspace.yaml). Form-assisted Columns, Filter, and
-Sort operations edit the SQL `SELECT`, `WHERE`, and `ORDER BY` clauses. The
-Structure control opens the secondary SQL operations for supported aggregate
-functions (`COUNT`, `SUM`, `AVG`, `MIN`, `MAX`), grouping, joins, and
-`DISTINCT`. A control is enabled only when the shared SQL capability model can
-safely represent its operation. The Workspace does not restrict valid
-read-only SQL to the structured subset.
+Every query variable uses the shared SQL Workspace defined in [sql-workspace.yaml](sql-workspace.yaml). The same editor kernel and toolbar behavior apply to new Saved SQL, Saved SQL editing, and Composition query variables. SQL text is the sole durable query representation. Rust owns parsing, validation, typing, compilation, and serialization; the browser does not define another SQL parser or generator.
 
-Direct SQL editing makes the SQL text authoritative. Unsupported CTEs,
-subqueries, or other syntax remain editable in the SQL editor; structured
-operations stay unavailable when the parser cannot safely round-trip them.
-The Workspace never silently replaces direct edits with generated SQL. A
-structured rewrite of directly edited SQL requires an explicit diff
-confirmation. Saved SQL source text remains read-only in Composition. The
-user may explicitly copy it into a new inline source or open the existing Saved
-SQL editor to make a new revision.
+The Workspace provides Form/relation, columns, filter, sort, structure, and arguments actions. Arguments can be added from an empty state and bind SQL parameter names explicitly to graph variables. A missing, unused, or mistyped argument is a local diagnostic and blocks saving or execution. Parameter values appear only when declared and supplied. The SQL body, result table, and local diagnostic remain in the same editor surface.
 
-Typed variables appear only for the selected SQL when that query declares
-them. Their values are transient Work. SQL preview, result paging, and total
-row count are separate operations: the page limit and continuation stay in the
-query request, and total count is shown only after an explicit count action.
-The result table owns horizontal scrolling; the page and SQL editor do not.
+The feature matrix in ADR-025 is the acceptance boundary: every SQL construct admitted by the Rust executor must have an equivalent typed GUI operation and round-trip fixture. The current structure toolbar is not evidence of full admitted-grammar coverage. CTEs, joins, nested expressions, set operations, and other constructs remain incomplete until their executor and GUI contracts are verified together.
 
-## Design canvas
+## Design canvas and binding picker
 
-The canvas inserts Input, Text, Table, and Metric components without a label
-editor or label step. Input refers to one declared variable and uses its
-semantic identifier for the control. Text displays its literal body or direct
-string-variable value. Table displays a SQL source page. Metric selects one
-declared scalar output column; the column alias supplies its name. A Metric
-may retain numeric unit and fractional-digit formatting, which does not name
-the component.
+The canvas offers Input, Text, Table, and Value. Input references one input variable. Text holds literal content or a string scalar reference. Table references a table result variable. Value references a compatible scalar variable. Display components do not store Form IDs, SQL text, Saved SQL revisions, SQL arguments, source IDs, or result schemas.
 
-Insertion completes when the component is placed: the picker closes, the
-canvas remains visible, and the new block is not selected for editing. This
-applies to Text and Input as well as Table and Metric. Selecting a placed block
-later opens its Inspector (inline on wide screens, in a sheet on narrow
-screens). A Table Inspector offers an explicit Change source action that opens
-the source picker; it does not keep a source selector in the ordinary view.
-Changing a source updates the selected Table component instead of inserting a
-second Table.
+Table and Value share one BindingPicker with Variables, Forms, and Saved SQL tabs. Variables is the default tab; the picker never silently applies a previous choice. Variable choices are filtered by result type. Choosing a Form or exact Saved SQL revision resolves or reuses a compatible query variable and inserts the component atomically. Form Table selection creates the equivalent of SELECT * FROM "G". Form Value requires an explicit aggregate and any required column. Saved SQL pins an exact revision; a scalar result must have exactly one row and one selected column. The picker never assumes COUNT or picks a first row or column.
 
-Composition names, SQL names, variable identifiers, Form field names, and
-Text content are shown where each value carries meaning. Source, variable, and
-component IDs used only for binding remain out of ordinary primary paths.
+Reuse is based on semantic query identity, exact bindings, result descriptor, and authorized context, not a matching display name. An edited query variable is not reused just because its name matches. Resolution, permission, descriptor, type, or revision failure leaves no partial query variable or component.
 
-Desktop uses a plain source rail with full-row selection. Narrow viewports use
-an overlay drawer; selecting a source closes it, Escape closes it, focus is
-restored, and the source-list control has a clear accessible name. Drawer and
-page state are transient Work. The shared SQL Workspace owns editor text size,
-result-table scrolling, and shared action sizing rules.
+Adding a component closes the picker and leaves the canvas visible; it does not open an Inspector. Selecting a placed Table or Value exposes one variable reference action. That action opens the same picker and changes only the selected component reference, leaving shared query variables intact. Removing a component does not remove its variable.
 
-There are no Composition tags or user-editable display labels for sources,
-variables, or components. The inline SQL object's editable name is semantic,
-not a display label; other names come from the referenced Saved SQL name, SQL
-output alias, variable ID, or Text body. Form field names and accessible names
-remain available where they carry meaning.
+The picker has one modal focus owner. Full rows select candidates; Escape closes the picker and restores focus. Controls expose accessible names, visible focus, and at least 44px targets. The picker and drawer fit 320px layouts without horizontal page overflow or a second navigation surface over the canvas.
 
-The steady state has no introductory paragraphs, duplicate SQL-type labels,
-revision banners, decorative cards, or persistent save-status summaries. Show
-only the SQL list, the selected Workspace, typed inputs when declared, and the
-current query result. The primary Save action keeps a visible text label.
-Columns, Filter, Sort, Structure, and Variables actions follow the shared
-Workspace controls in [`sql-workspace.yaml`](sql-workspace.yaml). Dialog options
-use concise text names. At 320px, 375px, and 390px viewport widths, the
-Composition source drawer supports keyboard navigation, Escape close, and
-focus restoration.
+## Names and state
 
-## Studio context and overlays
+Composition name, variable name, SQL output alias, Form field name, Text content, and accessible name each appear where they carry meaning. Binding-only UUIDs are not ordinary primary-path labels. There are no Composition tags, source aliases, or editable component labels.
 
-The visible Design or Data mode control owns the selected mode name. The
-selected mode's content does not repeat that name as a visible heading. The
-Data Sources and Variables tabs own their respective panel names through
-`aria-labelledby`; their content does not repeat the selected tab as a visible
-heading. Split gives the Design and Data panes accessible names without adding
-a visible heading to either pane.
-
-Each source row presents its semantic source name once and uses the full row
-for selection. Rows do not repeat a common SQL icon or a SQL-kind subtitle;
-the Forms and Saved SQL tabs distinguish source creation in the picker.
-Selecting an already selected source keeps it selected.
-
-## Text Inspector
-
-The Text Inspector presents the literal body as a multiline editor and keeps
-the text style control available. It does not show a Content selector. The
-body has an accessible name without repeating the visible Inspector title.
-When one or more string variables exist, a concise explicit action opens the
-variable chooser; without string variables, the action and chooser are absent.
-A bound variable name is shown once, and an explicit action returns the Text
-component to literal editing. The canonical TextContent literal-or-variable
-union is unchanged.
-
-The mobile source drawer, source picker, display picker, and inspector sheet
-share one Studio overlay state. Opening the source picker from the drawer
-closes the drawer in the same transition. Escape and Cancel close the picker
-without reopening the drawer, remove modal `inert` state, and restore focus to
-a visible control. Selecting a source from the drawer always closes it.
-
-## ADR-025 target: Design and Variables
-
-This section specifies the accepted next interaction contract. It is not a
-claim that the current Studio implements the variable graph or binding picker.
-When this target is implemented, the mode control is `Design | Variables`.
-The selected mode owns its name; its content does not repeat that name as a
-heading. The Variables view shows one typed graph: constants edit a typed
-value, inputs edit type and default, and query variables edit one SQL document
-in the shared Workspace. The variable rail shows the name and its kind icon.
-Creating a variable starts with `+` and a choice of value, input, or SQL; a
-new variable becomes the editing focus. On desktop, the rail stays to the left
-of the editor; on mobile it is a drawer that closes after selection. A query
-row may show a table/scalar shape icon when the distinction is unambiguous, but
-does not repeat a `SQL` subtitle or type label.
-
-The Design `+` menu offers Table, Value, Input, and Text. Table and Value use
-the same binding picker with `Variables | Forms | Saved SQL` entry points.
-Variables is the default tab, and no previous selection is applied implicitly.
-The Variables tab lists only table results for Table and only compatible
-scalar results for Value. Form and Saved SQL choices create or exactly reuse a
-typed query variable, then insert the display component in one transaction.
-Selecting a Form for Table creates the equivalent of `SELECT * FROM "G"` and
-inserts the Table immediately. Its Form ID binding and result descriptor are
-derived by the server. Selecting a Form for Value requires an explicit
-aggregate, column where applicable, and any filter before insertion; the UI
-does not assume `COUNT(*)`. Saved SQL choices pin one exact Entry revision and
-validate the result shape. A scalar choice requires exactly one row and one
-selected column; if a descriptor offers multiple candidate columns, the user
-selects one in the same picker. A multi-row or multi-column result is never
-treated as a scalar by picking its first row or column.
-
-Reuse compares semantic identity, not display names or similar SQL text. A
-Form query requires the same Form ID, canonical SQL meaning, explicit argument
-bindings, result descriptor, and authorized context. A Saved SQL query requires
-the same Entry ID, exact revision, explicit argument bindings, and output
-contract. A query variable edited after creation is not reused just because its
-name matches. Resolver, descriptor, permission, type, or revision failure
-leaves no query variable or component behind. Picker responses are accepted
-only for the active picker session, Space, document revision, and principal.
-
-The persisted Table and Value component references contain only `variable`.
-Form IDs, SQL text, Saved SQL revision, query arguments, and result schema
-belong to the query variable. The Inspector exposes one variable reference
-control and opens the same picker when the user changes it. Insertion closes
-the picker and leaves the canvas visible; it does not open an Inspector or a
-second source dialog. Changing a component reference does not edit a shared
-query variable. Removing a component does not remove its variable.
-
-The Domain validates Table-to-table, Value-to-compatible-scalar, Input-to-input,
-and Text-to-string-or-literal bindings on save as well as in the picker. An
-unavailable candidate remains unavailable and exposes a local reason. The
-single modal owner manages tab changes, selection, loading, failure, Escape,
-and focus restoration. Rows use full-width selection. The picker and drawer
-fit 320px layouts, use accessible names and 44px targets, and never layer a
-second navigation surface over the canvas. The steady state uses placement and
-icons; explanatory text appears only to resolve a local ambiguity or error.
+Inputs, constants under edit, preview values, query results, pages, cursors, loading state, and errors remain Work. Evaluation is stateless and does not append Entry history or persist result rows.

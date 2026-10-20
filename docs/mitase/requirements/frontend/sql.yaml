@@ -570,17 +570,13 @@ requirements:
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/SQLWorkspace.test.tsx, test: "REQ-FE-080: keeps SQL editing controlled and passes the accessible name" } }
           - id: adapter-owned-query
             adapter: typescript
-            path: frontend/src/components/CompositionDataWorkspace.test.tsx
-            selector: { kind: test, name: edits inline SQL directly and passes the current SQL page to the shared workspace }
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: writes inline SQL editor changes back to the graph node }
             claims:
               - kind: verifies
                 criterion: REQ-FE-080#criterion.adapter-owned-persistence-and-execution
                 covers: [FEAT-FE-008#binding.frontend/target.sql-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: edits inline SQL directly and passes the current SQL page to the shared workspace } }
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-uses-shared-workspace
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: edits inline SQL directly and passes the current SQL page to the shared workspace } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: writes inline SQL editor changes back to the graph node } }
           - id: transient-parameters
             adapter: typescript
             path: frontend/src/components/SQLWorkspace.test.tsx
@@ -664,9 +660,5 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-FE-080#criterion.safe-structured-operations
-                covers: [FEAT-FE-008#binding.frontend/target.sql-structure-toolbar]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlStructureToolbar.test.tsx, test: intersects Form capabilities and changes SQL only after proposal confirmation } }
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.sql-toolbar-keeps-query-meanings
                 covers: [FEAT-FE-008#binding.frontend/target.sql-structure-toolbar]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlStructureToolbar.test.tsx, test: intersects Form capabilities and changes SQL only after proposal confirmation } }

@@ -2,11 +2,12 @@
 title: "ADR-025 — Composition query variable graph and complete SQL Workspace"
 ---
 
-**Status: Accepted target; implementation is in progress.** This decision
+**Status: Accepted; graph implementation is in progress.** This decision
 replaces the unreleased Composition grammar and authoring model recorded in
-[ADR-024](adr-024-composition-sql-first.md). The current code still follows
-ADR-024 until the implementation gates below are complete. This decision does
-not authorize release preparation or publication.
+[ADR-024](adr-024-composition-sql-first.md). The active change implements the
+strict graph, stateless evaluation, and graph-based Studio; complete SQL
+document and executor-to-GUI coverage remains a separate open gate. This
+decision does not authorize release preparation or publication.
 
 ## Context
 
@@ -167,8 +168,9 @@ reader or migration.
 
 ## Implementation status
 
-This ADR describes an accepted future target. The current code and current UI
-still implement ADR-024's prerelease grammar. Work in progress must keep the
-target clearly marked as incomplete until the relevant implementation and
-verification evidence is merged. No release preparation, version update,
-candidate creation, or publication is included.
+The strict typed graph, stateless evaluation, and graph-based Studio cutover
+are implemented in the active change. Complete SQL executor-to-GUI coverage
+remains open: the shared editor still needs the lossless SQL document contract
+and paired fixtures for every admitted construct. Keep that coverage gate
+explicit until its parser, editor, and CI evidence are complete. No release
+preparation, version update, candidate creation, or publication is included.

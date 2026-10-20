@@ -4,10 +4,10 @@ namespace: composition
 category: Portable Composition documents and SQL-backed source resolution
 requirements:
   - id: REQ-COMP-008
-    title: SQL-first Composition source contract
-    description: The accepted Composition v1 contract has one SQL source model over Space-owned Knowledge and the existing stateless SQL executor. Its replaced prerelease grammar has no compatibility reader or migration.
+    title: Superseded SQL-first Composition source contract
+    description: Historical source-collection contract retained with its original criteria. It is superseded by REQ-COMP-009 and ADR-025; prior implementation evidence was replaced during the graph cutover, and current SQL GUI coverage remains unverified under REQ-COMP-009.
     priority: high
-    status: implemented
+    status: deprecated
     criteria:
       - id: sql-source-grammar
         kind: behavior
@@ -103,70 +103,3 @@ requirements:
           raw input, results, paging, previews, and UI state remain transient
           Work.
         governed_by: [POL-000#rule.foundation-precedence]
-    bindings:
-      - id: sql-first-composition-verification
-        role: verification
-        facet: verification
-        responsibility: Verify the canonical replacement grammar, trusted SQL binding, exact revisions, descriptors, and scalar result selection through exact Domain, Core, and storage tests. Graph-level stateless execution, authorization recheck, paging, cancellation, and invalidation remain an explicit evidence gap for the follow-up tracked by REQ-COMP-009 and FEAT-COMP-011.
-        targets:
-          - id: strict-domain-grammar
-            adapter: rust
-            path: crates/ugoite-domain/src/composition.rs
-            selector: { kind: symbol, name: tests::replaced_composition_shape_is_rejected_without_hidden_fields }
-            claims:
-              - kind: verifies
-                criterion: REQ-COMP-008#criterion.sql-source-grammar
-                covers: [FEAT-COMP-010#binding.sql-first-domain-implementation/target.canonical-composition-model]
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::replaced_composition_shape_is_rejected_without_hidden_fields } }
-              - kind: verifies
-                criterion: REQ-COMP-008#criterion.strict-replacement-envelope
-                covers: [FEAT-COMP-010#binding.sql-first-domain-implementation/target.canonical-composition-model]
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::replaced_composition_shape_is_rejected_without_hidden_fields } }
-              - kind: verifies
-                criterion: REQ-COMP-008#criterion.no-composition-tags-or-label-fields
-                covers: [FEAT-COMP-010#binding.sql-first-domain-implementation/target.canonical-composition-model]
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::replaced_composition_shape_is_rejected_without_hidden_fields } }
-              - kind: verifies
-                criterion: REQ-COMP-008#criterion.no-composition-legacy-reader
-                covers: [FEAT-COMP-010#binding.sql-first-domain-implementation/target.canonical-composition-model]
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::replaced_composition_shape_is_rejected_without_hidden_fields } }
-          - id: inline-sql-server-resolution
-            adapter: rust
-            path: crates/ugoite-iceberg/tests/test_composition_preview.rs
-            selector: { kind: test, name: draft_preview_resolves_sql_schema_without_executing_source_rows }
-            claims:
-              - kind: verifies
-                criterion: REQ-COMP-008#criterion.trusted-inline-form-bindings
-                covers: [FEAT-COMP-010#binding.sql-first-resolution-implementation/target.storage-composition-resolution]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: draft_preview_resolves_sql_schema_without_executing_source_rows } }
-              - kind: verifies
-                criterion: REQ-COMP-008#criterion.exact-sql-result-descriptor
-                covers: [FEAT-COMP-010#binding.sql-first-resolution-implementation/target.storage-composition-resolution]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: draft_preview_resolves_sql_schema_without_executing_source_rows } }
-          - id: inline-form-binding-spoof
-            adapter: rust
-            path: crates/ugoite-iceberg/tests/test_composition_preview.rs
-            selector: { kind: test, name: preview_ignores_yaml_form_binding_spoof_with_or_without_exact_base }
-            claims:
-              - kind: verifies
-                criterion: REQ-COMP-008#criterion.trusted-inline-form-bindings
-                covers: [FEAT-COMP-010#binding.sql-first-resolution-implementation/target.storage-composition-resolution]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: preview_ignores_yaml_form_binding_spoof_with_or_without_exact_base } }
-          - id: saved-sql-exact-revision
-            adapter: rust
-            path: crates/ugoite-iceberg/tests/test_composition_preview.rs
-            selector: { kind: test, name: parameterized_saved_sql_placeholder_previews_and_saves_with_server_schema }
-            claims:
-              - kind: verifies
-                criterion: REQ-COMP-008#criterion.saved-sql-exact-revision-and-defaults
-                covers: [FEAT-COMP-010#binding.sql-first-resolution-implementation/target.composition-resolver]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: parameterized_saved_sql_placeholder_previews_and_saves_with_server_schema } }
-          - id: scalar-metric-domain
-            adapter: rust
-            path: crates/ugoite-core/tests/composition_query_evaluation.rs
-            selector: { kind: test, name: only_descriptor_validated_query_values_reach_the_complete_preview }
-            claims:
-              - kind: verifies
-                criterion: REQ-COMP-008#criterion.scalar-metric-results
-                covers: [FEAT-COMP-010#binding.sql-first-resolution-implementation/target.composition-query-evaluation]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-core, harness: composition_query_evaluation, test: only_descriptor_validated_query_values_reach_the_complete_preview } }

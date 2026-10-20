@@ -1,51 +1,41 @@
 schema: mitase/authoring/v2
 kind: features
 namespace: composition
-category: SQL-first Composition authoring and execution
+category: Typed variable graph Studio and SQL query evaluation
 features:
   - id: FEAT-COMP-010
-    title: SQL-first Composition source and workspace
-    summary: Replace prerelease EntryQuery Composition sources with portable SQL sources resolved by the existing authorized executor, and share one accessible SQL Workspace across Saved SQL and Composition authoring.
-    status: implemented
+    title: Composition typed graph Studio
+    summary: Store constants, inputs, and SQL queries in one strict typed variable graph; display components bind only to compatible graph values, and query evaluation uses stateless authorized snapshots.
+    status: planned
     bindings:
       - id: sql-first-composition-contract
         role: contract-source
         facet: domain
-        responsibility: Define the accepted Composition source grammar, Form binding authority, Saved SQL default boundary, result behavior, and no-compatibility decision as the normative contract.
+        responsibility: Define the accepted variable graph, exact SQL identity, scalar cardinality, transient work, and no-compatibility boundary.
         targets:
           - id: sql-first-semantic-contract
             adapter: declared
-            path: docs/architecture/contracts/adr-024-composition-sql-first.md
-            selector:
-              kind: file
+            path: docs/architecture/contracts/adr-025-composition-query-variable-graph.md
+            selector: { kind: file }
             claims:
               - kind: documents
-                anchor: REQ-COMP-008#criterion.sql-source-grammar
+                anchor: REQ-COMP-009#criterion.single-typed-variable-graph
               - kind: documents
-                anchor: REQ-COMP-008#criterion.strict-replacement-envelope
+                anchor: REQ-COMP-009#criterion.display-components-reference-variables
               - kind: documents
-                anchor: REQ-COMP-008#criterion.no-composition-tags-or-label-fields
+                anchor: REQ-COMP-009#criterion.exact-query-identities
               - kind: documents
-                anchor: REQ-COMP-008#criterion.trusted-inline-form-bindings
+                anchor: REQ-COMP-009#criterion.scalar-cardinality-is-explicit
               - kind: documents
-                anchor: REQ-COMP-008#criterion.exact-sql-result-descriptor
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
               - kind: documents
-                anchor: REQ-COMP-008#criterion.saved-sql-exact-revision-and-defaults
+                anchor: REQ-COMP-009#criterion.replaced-composition-grammar-fails-closed
               - kind: documents
-                anchor: REQ-API-020#criterion.typed-variable-default
-              - kind: documents
-                anchor: REQ-COMP-008#criterion.scalar-metric-results
-              - kind: documents
-                anchor: REQ-COMP-008#criterion.stateless-bounded-execution
-              - kind: documents
-                anchor: REQ-COMP-008#criterion.no-composition-legacy-reader
-              - kind: documents
-                anchor: REQ-COMP-008#criterion.space-knowledge-and-transient-work
+                anchor: REQ-COMP-009#criterion.design-picker-normalizes-to-variable
           - id: sql-first-workspace-ui-contract
             adapter: declared
             path: docs/spec/ui/components/sql-workspace.yaml
-            selector:
-              kind: file
+            selector: { kind: file }
             claims:
               - kind: documents
                 anchor: REQ-FE-080#criterion.shared-editor-and-preview
@@ -68,8 +58,7 @@ features:
           - id: sql-first-composition-ui-contract
             adapter: declared
             path: docs/spec/ui/components/composition-studio.yaml
-            selector:
-              kind: file
+            selector: { kind: file }
             claims:
               - kind: documents
                 anchor: REQ-FE-079#criterion.composition-uses-shared-workspace
@@ -96,37 +85,36 @@ features:
           - id: sql-first-composition-architecture-contract
             adapter: declared
             path: docs/architecture/contracts/composition.md
-            selector:
-              kind: file
+            selector: { kind: file }
             claims:
               - kind: documents
-                anchor: REQ-COMP-008#criterion.strict-replacement-envelope
+                anchor: REQ-COMP-009#criterion.single-typed-variable-graph
               - kind: documents
-                anchor: REQ-COMP-008#criterion.no-composition-tags-or-label-fields
+                anchor: REQ-COMP-009#criterion.display-components-reference-variables
               - kind: documents
-                anchor: REQ-COMP-008#criterion.space-knowledge-and-transient-work
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+              - kind: documents
+                anchor: REQ-COMP-009#criterion.replaced-composition-grammar-fails-closed
           - id: sql-first-composition-revision-page-contract
             adapter: declared
             path: docs/spec/ui/pages/space-composition-revision.yaml
-            selector:
-              kind: file
+            selector: { kind: file }
             claims:
               - kind: documents
-                anchor: REQ-COMP-008#criterion.stateless-bounded-execution
+                anchor: REQ-COMP-009#criterion.scalar-cardinality-is-explicit
               - kind: documents
-                anchor: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
           - id: sql-first-composition-history-page-contract
             adapter: declared
             path: docs/spec/ui/pages/space-composition-history.yaml
-            selector:
-              kind: file
+            selector: { kind: file }
             claims:
               - kind: documents
                 anchor: REQ-FE-079#criterion.composition-history-hides-revision-identifiers
       - id: sql-first-domain-implementation
         role: implementation
         facet: domain
-        responsibility: Parse and validate the single SQL-first Composition v1 grammar, reject the replaced fields, and keep result descriptors and scalar Metrics typed.
+        responsibility: Parse and validate the strict variable graph and reject the replaced Composition schema without compatibility paths.
         targets:
           - id: canonical-composition-model
             adapter: rust
@@ -134,74 +122,77 @@ features:
             selector: { kind: symbol, name: CompositionDocument }
             claims:
               - kind: satisfies
-                criterion: REQ-COMP-008#criterion.sql-source-grammar
+                criterion: REQ-COMP-009#criterion.single-typed-variable-graph
               - kind: satisfies
-                criterion: REQ-COMP-008#criterion.strict-replacement-envelope
+                criterion: REQ-COMP-009#criterion.display-components-reference-variables
               - kind: satisfies
-                criterion: REQ-COMP-008#criterion.no-composition-tags-or-label-fields
-              - kind: satisfies
-                criterion: REQ-COMP-008#criterion.no-composition-legacy-reader
+                criterion: REQ-COMP-009#criterion.replaced-composition-grammar-fails-closed
       - id: sql-first-resolution-implementation
         role: implementation
         facet: core
-        responsibility: Derive trusted Form identity and exact SQL requests through the existing executor while retaining stateless variables and transient runtime values.
+        responsibility: Compile explicit graph bindings, derive query descriptors, and evaluate only dependency-closed requests through current authorized SQL paths.
         targets:
           - id: composition-resolver
             adapter: rust
             path: crates/ugoite-core/src/composition.rs
-            selector: { kind: symbol, name: resolve_composition_preview_with_unset }
+            selector: { kind: symbol, name: resolve_composition_authoring_preview_with_query_selection }
             claims:
               - kind: satisfies
-                criterion: REQ-COMP-008#criterion.saved-sql-exact-revision-and-defaults
+                criterion: REQ-COMP-009#criterion.exact-query-identities
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.authoring-query-metadata-preview
           - id: composition-query-evaluation
             adapter: rust
             path: crates/ugoite-core/src/composition_query.rs
             selector: { kind: symbol, name: VariableGraphQueryEvaluation }
             claims:
               - kind: satisfies
-                criterion: REQ-COMP-008#criterion.scalar-metric-results
+                criterion: REQ-COMP-009#criterion.query-results-validated-before-preview
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.scalar-cardinality-is-explicit
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
           - id: storage-composition-resolution
             adapter: rust
-            path: crates/ugoite-iceberg/src/service.rs
-            selector: { kind: symbol, name: CompositionResolution }
+            path: crates/ugoite-iceberg/src/service/composition_query_evaluation.rs
+            selector: { kind: symbol, name: evaluate_composition_graph_authorized_for_principals }
             claims:
               - kind: satisfies
-                criterion: REQ-COMP-008#criterion.trusted-inline-form-bindings
+                criterion: REQ-COMP-009#criterion.query-results-validated-before-preview
               - kind: satisfies
-                criterion: REQ-COMP-008#criterion.exact-sql-result-descriptor
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
       - id: sql-first-workspace-implementation
         role: implementation
         facet: frontend
-        responsibility: Use the shared SQL Workspace for inline SQL and keep Composition source, design, and result interactions structure-first and accessible.
+        responsibility: Present the strict graph, shared SQL Workspace, atomic typed binding picker, and transient query evaluation in the Composition Studio.
         targets:
           - id: composition-draft
             adapter: typescript
-            path: frontend/src/lib/composition-draft.ts
-            selector: { kind: symbol, name: toStudioDocument }
+            path: frontend/src/lib/composition-variable-binding.ts
+            selector: { kind: symbol, name: CompositionGraphDraft }
             claims:
               - kind: satisfies
                 criterion: REQ-FE-079#criterion.composition-no-label-or-tag-fields
-              - kind: satisfies
-                criterion: REQ-FE-079#criterion.composition-filter-can-add-sql-arguments
           - id: composition-data-workspace
             adapter: typescript
-            path: frontend/src/components/CompositionDataWorkspace.tsx
-            selector: { kind: symbol, name: CompositionDataWorkspace }
+            path: frontend/src/components/CompositionVariableGraphWorkspace.tsx
+            selector: { kind: symbol, name: CompositionVariableGraphWorkspace }
             claims:
               - kind: satisfies
                 criterion: REQ-FE-079#criterion.composition-uses-shared-workspace
               - kind: satisfies
-                criterion: REQ-FE-079#criterion.composition-filter-can-add-sql-arguments
-              - kind: satisfies
-                criterion: REQ-FE-079#criterion.form-selection-creates-inline-sql
-              - kind: satisfies
-                criterion: REQ-FE-079#criterion.composition-mobile-workspace-accessibility
-              - kind: satisfies
                 criterion: REQ-FE-079#criterion.composition-source-rows-show-name-once
+          - id: sql-structure-toolbar
+            adapter: typescript
+            path: frontend/src/components/SqlStructureToolbar.tsx
+            selector: { kind: symbol, name: SqlStructureToolbar }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.sql-filter-adds-typed-parameter
           - id: composition-result-renderer
             adapter: typescript
-            path: frontend/src/components/CompositionRenderer.tsx
-            selector: { kind: symbol, name: CompositionRenderer }
+            path: frontend/src/components/CompositionGraphRenderer.tsx
+            selector: { kind: symbol, name: CompositionGraphRenderer }
             claims:
               - kind: satisfies
                 criterion: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results
@@ -215,9 +206,14 @@ features:
               - kind: satisfies
                 criterion: REQ-FE-079#criterion.composition-mode-context-singular
               - kind: satisfies
-                criterion: REQ-FE-079#criterion.composition-source-rows-show-name-once
+                criterion: REQ-FE-079#criterion.composition-insertion-completes-before-edit
+          - id: composition-variable-binding-picker
+            adapter: typescript
+            path: frontend/src/components/CompositionVariableBindingPicker.tsx
+            selector: { kind: symbol, name: CompositionVariableBindingPicker }
+            claims:
               - kind: satisfies
-                criterion: REQ-FE-079#criterion.composition-mobile-overlays-are-exclusive
+                criterion: REQ-FE-079#criterion.form-selection-creates-inline-sql
               - kind: satisfies
                 criterion: REQ-FE-079#criterion.composition-insertion-completes-before-edit
               - kind: satisfies
@@ -238,8 +234,8 @@ features:
                 criterion: REQ-FE-079#criterion.composition-history-hides-revision-identifiers
           - id: composition-text-inspector
             adapter: typescript
-            path: frontend/src/components/composition/TextInspector.tsx
-            selector: { kind: symbol, name: TextInspector }
+            path: frontend/src/components/CompositionGraphDesignCanvas.tsx
+            selector: { kind: symbol, name: CompositionGraphDesignCanvas }
             claims:
               - kind: satisfies
                 criterion: REQ-FE-079#criterion.composition-text-inspector-literal-editing

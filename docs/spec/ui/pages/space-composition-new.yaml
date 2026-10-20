@@ -1,11 +1,11 @@
 version: "0.1"
-updated: "2026-10-16"
+updated: "2026-10-20"
 page:
   id: space-composition-new
   title: New tool
   route: /spaces/{space_id}/compositions/new
   implementation: implemented
-  contract_status: planned
+  contract_status: in_progress
 components:
   shared:
     - id: space-shell
@@ -24,42 +24,31 @@ components:
       single_control: true
       source: canonical Composition document through composition.save
       persistence: one Space-owned Entry revision with existing receipt and stale-write semantics
-      readiness: valid strict document with each component placed exactly once and no dangling references
+      readiness: strict typed graph, valid SQL descriptors and bindings, and each component placed exactly once
     - id: composition-studio
       type: composition-studio
       reference: ../components/composition-studio.yaml
-      contract_status: planned
-      steady_state: Design canvas and the selected SQL Workspace, without explanatory paragraphs or decorative cards
-      sources:
-        allowed: [inline_sql, saved_sql]
-        form_selection: >-
-          Selecting a Form creates an editable inline SQL source named from the
-          Form and starts with SQL such as SELECT * FROM "G". Core derives
-          immutable Form ID bindings; the editor does not insert LIMIT 50.
-        saved_sql_selection: >-
-          Select one exact Saved SQL Entry revision. Show its referenced name
-          or the existing localized untitled representation and keep its SQL
-          read-only in Composition.
-        inline_sql_name: Editable semantic SQL object name independent of stable source id
-        saved_sql_alias: absent
-      workspace:
-        inline_sql: shared SQL Workspace with direct SQL editing and capability-approved structured actions
-        saved_sql: read-only exact revision in Composition
-        contract: ../components/sql-workspace.yaml
+      contract_status: in_progress
+      modes: [design, variables]
+      variables:
+        kinds: [constant, input, query]
+        query_outputs: [table, scalar]
+        sql_representation: one durable SQL string; parser and descriptor metadata are server-owned
+        editor: shared SQL Workspace with local parameter and query diagnostics
       design:
-        components: [input, text, table, metric]
-        label_step: absent
-        variable_reference: Input references a Composition variable; Text displays literal content or a direct string-variable value
-        table: Uses the selected SQL source result
-        metric: Selects one declared scalar output column from a SQL source
-      composition_metadata:
-        tags_control: absent
-        editable_component_labels: absent
-        editable_variable_labels: absent
-        source_display_alias: absent
+        components: [input, text, table, value]
+        table_and_value_binding_picker:
+          tabs: [variables, forms, saved_sql]
+          default_tab: variables
+          form_table: create_or_exactly_reuse_query_variable_and_insert
+          form_value: require_explicit_aggregate_and_column_before_atomic_insert
+          saved_sql: pin_exact_entry_revision_and_validate_output_shape
+          persisted_component_reference: variable_only
+        insertion: close_picker_and_leave_canvas_visible_without_opening_inspector
+        inspector: one_variable_reference_action_for_table_and_value
       execution:
-        preview: explicit, owned by Composition adapter
-        results: shared SQL result presentation; current state only
-        paging_and_count: explicit query operations
-        browser_aggregation: absent
-      work: Draft, typed input, preview results, paging, and drawer state are transient
+        preview: composition.preview for authoring metadata; composition.evaluate for runtime values
+        results: transient_stateless_work
+        paging: bounded_server_owned_continuation
+        authorization: recheck_current_acl_publication_and_pinned_revisions
+      work: Draft, input values, previews, pages, results, and editor diagnostics are transient

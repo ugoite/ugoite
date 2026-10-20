@@ -48,8 +48,6 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-080#criterion.safe-structured-operations
-              - kind: satisfies
-                criterion: REQ-FE-079#criterion.sql-toolbar-keeps-query-meanings
           - id: sql-structure-context
             adapter: typescript
             path: frontend/src/lib/sql.ts

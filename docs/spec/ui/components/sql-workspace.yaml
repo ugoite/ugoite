@@ -2,14 +2,7 @@
 title: "Shared SQL Workspace"
 ---
 
-**Status: implemented for the current SQL editing contract.** `/sql/new`, Saved
-SQL detail/edit, and Composition inline SQL use the same Workspace component.
-The next target in [ADR-025](../../../architecture/contracts/adr-025-composition-query-variable-graph.md)
-expands its grammar coverage and action contract; that target is not yet
-implemented. The owning route or Composition source
-supplies SQL state, schema, parameters, preview, count, pagination, save, and
-execution callbacks. The Workspace presents them without becoming another
-query or persistence authority.
+**Status: shared editor implemented; complete grammar coverage remains in progress.** `/sql/new`, Saved SQL detail/edit, and Composition query variables use the same Workspace component. [ADR-025](../../../architecture/contracts/adr-025-composition-query-variable-graph.md) defines the required lossless document and executor-to-GUI coverage contract. The owning route or Composition graph adapter supplies SQL state, schema, parameters, preview, count, pagination, save, and execution callbacks. The Workspace presents them without becoming another query or persistence authority.
 
 ## Editing and parameter presentation
 
@@ -89,8 +82,8 @@ do not run implicitly on every page.
 - The owning route's primary Save action retains its visible text label.
 - Keep the steady state free of explanatory paragraphs and decorative cards.
 
-The Composition source rail, source naming, pinned-revision lifecycle, and
-Composition-specific drawer behavior are defined in
+The Composition variable rail, Design binding picker, pinned Saved SQL
+revision lifecycle, and graph-specific drawer behavior are defined in
 [`composition-studio.yaml`](composition-studio.yaml).
 
 ## ADR-025 target: shared SQL document controls
