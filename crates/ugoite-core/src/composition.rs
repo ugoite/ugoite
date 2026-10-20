@@ -280,12 +280,22 @@ pub struct ResolvedQueryRequest {
     /// an explicitly incomplete return descriptor; persistence always checks
     /// the same contract before accepting the document.
     pub returns: VariableGraphResultType,
+    /// Scalar query variables have an explicit one-row result contract.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scalar_cardinality: Option<CompositionScalarCardinality>,
     pub result_columns: Vec<VariableGraphColumn>,
     pub form_bindings: Vec<VariableGraphFormBinding>,
     pub schema_fingerprint: String,
     /// Stable identity for authoring-time reuse. Inline SQL hashes its exact
     /// bound SQL and all bindings; Saved SQL also pins exact entry/revision.
     pub query_semantic_fingerprint: String,
+}
+
+/// Cardinality promised by a scalar query variable's output contract.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompositionScalarCardinality {
+    ExactlyOneRow,
 }
 
 /// One variable's input, text, query, or visual consumers.
@@ -721,6 +731,8 @@ fn resolve_parts(
                 variable_id: item.variable_id,
                 request: item.request,
                 deferred_arguments: item.deferred_arguments,
+                scalar_cardinality: matches!(returns, VariableGraphResultType::Scalar { .. })
+                    .then_some(CompositionScalarCardinality::ExactlyOneRow),
                 returns,
                 result_columns,
                 form_bindings,

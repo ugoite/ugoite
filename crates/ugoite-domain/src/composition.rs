@@ -262,6 +262,12 @@ pub const MAX_COMPOSITION_VARIABLE_STRING_BYTES: usize = 4 * 1024;
 /// Keeping integers within JavaScript's safe range preserves exact values
 /// across portable JSON clients.
 pub const MAX_COMPOSITION_VARIABLE_INTEGER: i64 = 9_007_199_254_740_991;
+/// Maximum UTF-8 byte length accepted for a numeric Composition input token.
+///
+/// This bounds lexical parsing consistently across local CLI, browser, and
+/// server supplied typed values, including finite floating-point values that
+/// would otherwise accept arbitrarily long zero-padded tokens.
+pub const MAX_COMPOSITION_VARIABLE_NUMERIC_TOKEN_BYTES: usize = 64;
 
 fn valid_variable_string(value: &str) -> bool {
     value.len() <= MAX_COMPOSITION_VARIABLE_STRING_BYTES
