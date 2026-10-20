@@ -83,7 +83,7 @@
           "action": "filter",
           "protocol": "set_filters",
           "sql": ["WHERE"],
-          "coverage": "bounded"
+          "coverage": "flat conjunction of typed predicates"
         },
         {
           "action": "sort",
@@ -118,6 +118,12 @@
         "coverage": "bounded",
         "values": ["integer", "string", "boolean", "null"]
       },
+      "protocol_extensions": [
+        {
+          "protocol": "set_filter_expression",
+          "coverage": "typed boolean AST protocol is available; nested filter editor rollout is pending"
+        }
+      ],
       "constructs": [
         {
           "id": "from_relation",

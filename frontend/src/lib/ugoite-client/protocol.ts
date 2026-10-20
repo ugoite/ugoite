@@ -538,6 +538,17 @@ export type SqlStructureFilter = {
   parameter?: string;
 };
 
+export type SqlStructureFilterExpression =
+  | { kind: "and" | "or"; expressions: SqlStructureFilterExpression[] }
+  | { kind: "not"; expression: SqlStructureFilterExpression }
+  | {
+    kind: "predicate";
+    column: string;
+    qualifier?: SqlStructureAlias;
+    operator: SqlStructureFilterOperator;
+    parameter?: string;
+  };
+
 export type SqlStructureSort = {
   column: string;
   qualifier?: SqlStructureAlias;
@@ -583,6 +594,10 @@ export type SqlStructureOperation =
   | { kind: "set_columns"; columns: string[] }
   | { kind: "set_literal_projection"; values: SqlStructureLiteral[] }
   | { kind: "set_filters"; filters: SqlStructureFilter[] }
+  | {
+    kind: "set_filter_expression";
+    expression: SqlStructureFilterExpression | null;
+  }
   | { kind: "set_sort"; order_by: SqlStructureSort[] }
   | { kind: "set_aggregates"; aggregates: SqlStructureAggregate[] }
   | { kind: "set_group_by"; columns: string[] }
@@ -631,6 +646,7 @@ export type SqlStructureAnalysis = {
   projection: string[];
   literal_projection: SqlStructureLiteral[];
   filters: SqlStructureFilter[];
+  filter_expression?: SqlStructureFilterExpression | null;
   aggregates: SqlStructureAggregate[];
   group_by: string[];
   distinct: boolean;
@@ -642,6 +658,7 @@ export type SqlStructureAnalysis = {
     join: SqlStructureActionCapability;
     columns: SqlStructureActionCapability;
     filter: SqlStructureActionCapability;
+    filter_expression?: SqlStructureActionCapability;
     sort: SqlStructureActionCapability;
     aggregate: SqlStructureActionCapability;
     group_by: SqlStructureActionCapability;

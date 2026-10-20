@@ -18,13 +18,22 @@ use sqlparser::parser::Parser;
 use sqlparser::tokenizer::Span;
 use std::collections::BTreeSet;
 
-use crate::sql_document::{has_comment_token_in_range, source_range_from_span, SqlSourceRange};
+use crate::sql_document::{
+    has_comment_token_in_range, parse_sql_document, source_range_from_span, SqlDocumentStatus,
+    SqlDocumentTokenKind, SqlSourceRange,
+};
 
 /// The parser/capability contract version exposed through the WASM adapter.
 pub const SQL_STRUCTURE_CONTRACT_VERSION: u32 = 1;
 
 /// Keep SQL parsing within the same bound as the stateless SQL request.
 pub const MAX_SQL_STRUCTURE_QUERY_BYTES: usize = 256 * 1024;
+const MAX_FILTER_EXPRESSION_DEPTH: usize = 32;
+const MAX_FILTER_EXPRESSION_NODES: usize = 128;
+// sqlparser represents a flat N-leaf AND/OR chain as N predicates plus N-1
+// binary nodes. The public limit counts the normalized editor tree instead.
+const MAX_FILTER_EXPRESSION_PARSER_DEPTH: usize = MAX_FILTER_EXPRESSION_NODES * 2;
+const MAX_FILTER_EXPRESSION_PARSER_NODES: usize = MAX_FILTER_EXPRESSION_NODES * 2;
 
 /// Adapter-provided SQL schema information for a selected Form, or for a
 /// relation-free scalar query when `relation`, `columns`, and `stable_key` are
@@ -122,6 +131,10 @@ pub enum SqlStructureOperation {
     SetFilters {
         filters: Vec<SqlStructureFilter>,
     },
+    SetFilterExpression {
+        #[serde(default)]
+        expression: Option<SqlStructureFilterExpression>,
+    },
     SetSort {
         order_by: Vec<SqlStructureSort>,
     },
@@ -191,6 +204,30 @@ pub struct SqlStructureFilter {
     pub operator: SqlStructureFilterOperator,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parameter: Option<String>,
+}
+
+/// A bounded boolean expression tree used by the shared SQL filter editor.
+/// Predicate leaves keep the same typed validation contract as `SetFilters`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum SqlStructureFilterExpression {
+    And {
+        expressions: Vec<SqlStructureFilterExpression>,
+    },
+    Or {
+        expressions: Vec<SqlStructureFilterExpression>,
+    },
+    Not {
+        expression: Box<SqlStructureFilterExpression>,
+    },
+    Predicate {
+        column: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        qualifier: Option<SqlStructureAlias>,
+        operator: SqlStructureFilterOperator,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameter: Option<String>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -293,7 +330,10 @@ pub struct SqlStructureActionCapability {
 pub struct SqlStructureCapabilities {
     pub join: SqlStructureActionCapability,
     pub columns: SqlStructureActionCapability,
+    /// Flat-conjunction capability retained for older adapters.
     pub filter: SqlStructureActionCapability,
+    /// Boolean-tree capability exposed for the shared Workspace protocol.
+    pub filter_expression: SqlStructureActionCapability,
     pub sort: SqlStructureActionCapability,
     pub aggregate: SqlStructureActionCapability,
     pub group_by: SqlStructureActionCapability,
@@ -315,6 +355,8 @@ pub struct SqlStructureAnalysis {
     pub literal_projection: Vec<SqlStructureLiteral>,
     #[serde(default)]
     pub filters: Vec<SqlStructureFilter>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter_expression: Option<SqlStructureFilterExpression>,
     #[serde(default)]
     pub aggregates: Vec<SqlStructureAggregate>,
     #[serde(default)]
@@ -352,6 +394,7 @@ struct ParsedSqlStructure {
     projection: Vec<String>,
     literal_projection: Vec<SqlStructureLiteral>,
     filters: Vec<SqlStructureFilter>,
+    filter_expression: Option<SqlStructureFilterExpression>,
     aggregates: Vec<SqlStructureAggregate>,
     group_by: Vec<String>,
     distinct: bool,
@@ -413,6 +456,18 @@ pub fn propose_sql_structure_operation(
 
     let mut added_stable_tie_breakers = Vec::new();
     let proposed_sql = match operation {
+        SqlStructureOperation::SetFilterExpression { expression } => {
+            match rewrite_filter_expression(
+                &base_sql,
+                &parsed.query,
+                context,
+                &parsed.joins,
+                expression,
+            ) {
+                Ok(sql) => sql,
+                Err(reason) => return rejected_proposal(base_sql, reason),
+            }
+        }
         SqlStructureOperation::SetRelation { .. } => {
             unreachable!("SetRelation is handled by the Rust relation selection proposal")
         }
@@ -441,6 +496,9 @@ pub fn propose_sql_structure_operation(
                 }
                 SqlStructureOperation::SetFilters { filters } => {
                     set_filters(&mut parsed.query, context, &parsed.joins, filters)
+                }
+                SqlStructureOperation::SetFilterExpression { .. } => {
+                    unreachable!("SetFilterExpression is handled by the source-preserving rewrite")
                 }
                 SqlStructureOperation::SetSort { order_by } => set_sort(
                     &mut parsed.query,
@@ -873,11 +931,17 @@ fn parse_supported_sql(
         Some(Distinct::Distinct) => true,
         Some(Distinct::On(_)) => return Err(SqlStructureReason::DistinctUnsupported),
     };
-    let filters = select
+    let filter_expression = select
         .selection
         .as_ref()
-        .map(|selection| parse_filters(selection, context, &joins))
-        .transpose()?
+        .map(|selection| parse_filter_expression(selection, context, &joins))
+        .transpose()?;
+    // Preserve the legacy flat projection only when the WHERE expression is
+    // semantically a conjunction of predicates. Returning an empty list for
+    // OR/NOT avoids exposing a lossy representation to existing consumers.
+    let filters = filter_expression
+        .as_ref()
+        .and_then(flat_conjunctive_filters)
         .unwrap_or_default();
     let order_by = query
         .order_by
@@ -907,12 +971,10 @@ fn parse_supported_sql(
         Vec::new()
     };
 
-    let referenced_variables = filters
-        .iter()
-        .filter_map(|filter| filter.parameter.clone())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect();
+    let referenced_variables = filter_expression
+        .as_ref()
+        .map(filter_expression_variables)
+        .unwrap_or_default();
     let stable_key_ordered =
         if let Some(join) = joins.first() {
             context.stable_key.iter().all(|key| {
@@ -946,6 +1008,7 @@ fn parse_supported_sql(
         projection,
         literal_projection,
         filters,
+        filter_expression,
         aggregates,
         group_by,
         distinct,
@@ -1628,31 +1691,69 @@ fn validate_grouped_projection(
     Ok(())
 }
 
-fn parse_filters(
+fn parse_filter_expression(
     expression: &Expr,
     context: &SqlStructureContext,
     joins: &[SqlStructureJoin],
-) -> Result<Vec<SqlStructureFilter>, SqlStructureReason> {
-    let mut filters = Vec::new();
-    flatten_filters(expression, context, joins, &mut filters)?;
-    Ok(filters)
+) -> Result<SqlStructureFilterExpression, SqlStructureReason> {
+    let mut nodes = 0;
+    let expression = parse_filter_expression_inner(expression, context, joins, 0, &mut nodes)?;
+    let mut tree_nodes = 0;
+    validate_filter_expression_shape(&expression, 0, &mut tree_nodes)?;
+    Ok(expression)
 }
 
-fn flatten_filters(
+fn parse_filter_expression_inner(
     expression: &Expr,
     context: &SqlStructureContext,
     joins: &[SqlStructureJoin],
-    filters: &mut Vec<SqlStructureFilter>,
-) -> Result<(), SqlStructureReason> {
+    depth: usize,
+    nodes: &mut usize,
+) -> Result<SqlStructureFilterExpression, SqlStructureReason> {
+    // The parser AST is left associative, so a wide flat AND/OR chain can be
+    // deep even though its editable boolean tree is shallow. Bound traversal
+    // independently, then enforce the semantic tree depth after normalization.
+    if depth > MAX_FILTER_EXPRESSION_PARSER_DEPTH {
+        return Err(SqlStructureReason::FilterUnsupported);
+    }
     match expression {
-        Expr::Nested(inner) => flatten_filters(inner, context, joins, filters),
+        Expr::Nested(inner) => {
+            parse_filter_expression_inner(inner, context, joins, depth + 1, nodes)
+        }
         Expr::BinaryOp {
             left,
             op: BinaryOperator::And,
             right,
         } => {
-            flatten_filters(left, context, joins, filters)?;
-            flatten_filters(right, context, joins, filters)
+            increment_filter_parser_node(nodes)?;
+            let left = parse_filter_expression_inner(left, context, joins, depth + 1, nodes)?;
+            let right = parse_filter_expression_inner(right, context, joins, depth + 1, nodes)?;
+            Ok(combine_filter_expressions(true, left, right))
+        }
+        Expr::BinaryOp {
+            left,
+            op: BinaryOperator::Or,
+            right,
+        } => {
+            increment_filter_parser_node(nodes)?;
+            let left = parse_filter_expression_inner(left, context, joins, depth + 1, nodes)?;
+            let right = parse_filter_expression_inner(right, context, joins, depth + 1, nodes)?;
+            Ok(combine_filter_expressions(false, left, right))
+        }
+        Expr::UnaryOp {
+            op: UnaryOperator::Not,
+            expr,
+        } => {
+            increment_filter_parser_node(nodes)?;
+            Ok(SqlStructureFilterExpression::Not {
+                expression: Box::new(parse_filter_expression_inner(
+                    expr,
+                    context,
+                    joins,
+                    depth + 1,
+                    nodes,
+                )?),
+            })
         }
         Expr::BinaryOp { left, op, right } => {
             let (column, qualifier) = resolve_column_reference(
@@ -1672,8 +1773,8 @@ fn flatten_filters(
                 parameter: Some(parameter),
             };
             validate_filter(context, &filter)?;
-            filters.push(filter);
-            Ok(())
+            increment_filter_parser_node(nodes)?;
+            Ok(filter_expression_from_filter(filter))
         }
         Expr::IsNull(inner) | Expr::IsNotNull(inner) => {
             let (column, qualifier) = resolve_column_reference(
@@ -1687,16 +1788,164 @@ fn flatten_filters(
             } else {
                 SqlStructureFilterOperator::IsNotNull
             };
-            filters.push(SqlStructureFilter {
+            let filter = SqlStructureFilter {
                 column,
                 qualifier,
                 operator,
                 parameter: None,
-            });
-            Ok(())
+            };
+            validate_filter(context, &filter)?;
+            increment_filter_parser_node(nodes)?;
+            Ok(filter_expression_from_filter(filter))
         }
         _ => Err(SqlStructureReason::FilterUnsupported),
     }
+}
+
+fn increment_filter_node(nodes: &mut usize) -> Result<(), SqlStructureReason> {
+    *nodes += 1;
+    if *nodes > MAX_FILTER_EXPRESSION_NODES {
+        return Err(SqlStructureReason::FilterUnsupported);
+    }
+    Ok(())
+}
+
+fn increment_filter_parser_node(nodes: &mut usize) -> Result<(), SqlStructureReason> {
+    *nodes += 1;
+    if *nodes > MAX_FILTER_EXPRESSION_PARSER_NODES {
+        return Err(SqlStructureReason::FilterUnsupported);
+    }
+    Ok(())
+}
+
+fn combine_filter_expressions(
+    conjunction: bool,
+    left: SqlStructureFilterExpression,
+    right: SqlStructureFilterExpression,
+) -> SqlStructureFilterExpression {
+    if conjunction {
+        let mut expressions = match left {
+            SqlStructureFilterExpression::And { expressions } => expressions,
+            expression => vec![expression],
+        };
+        match right {
+            SqlStructureFilterExpression::And {
+                expressions: right_expressions,
+            } => expressions.extend(right_expressions),
+            expression => expressions.push(expression),
+        }
+        SqlStructureFilterExpression::And { expressions }
+    } else {
+        let mut expressions = match left {
+            SqlStructureFilterExpression::Or { expressions } => expressions,
+            expression => vec![expression],
+        };
+        match right {
+            SqlStructureFilterExpression::Or {
+                expressions: right_expressions,
+            } => expressions.extend(right_expressions),
+            expression => expressions.push(expression),
+        }
+        SqlStructureFilterExpression::Or { expressions }
+    }
+}
+
+fn validate_filter_expression_shape(
+    expression: &SqlStructureFilterExpression,
+    depth: usize,
+    nodes: &mut usize,
+) -> Result<(), SqlStructureReason> {
+    if depth > MAX_FILTER_EXPRESSION_DEPTH {
+        return Err(SqlStructureReason::FilterUnsupported);
+    }
+    increment_filter_node(nodes)?;
+    match expression {
+        SqlStructureFilterExpression::And { expressions }
+        | SqlStructureFilterExpression::Or { expressions } => {
+            if !(2..=MAX_FILTER_EXPRESSION_NODES).contains(&expressions.len()) {
+                return Err(SqlStructureReason::FilterUnsupported);
+            }
+            for expression in expressions {
+                validate_filter_expression_shape(expression, depth + 1, nodes)?;
+            }
+        }
+        SqlStructureFilterExpression::Not { expression } => {
+            validate_filter_expression_shape(expression, depth + 1, nodes)?;
+        }
+        SqlStructureFilterExpression::Predicate { .. } => {}
+    }
+    Ok(())
+}
+
+fn filter_expression_from_filter(filter: SqlStructureFilter) -> SqlStructureFilterExpression {
+    SqlStructureFilterExpression::Predicate {
+        column: filter.column,
+        qualifier: filter.qualifier,
+        operator: filter.operator,
+        parameter: filter.parameter,
+    }
+}
+
+fn filter_from_expression(expression: &SqlStructureFilterExpression) -> Option<SqlStructureFilter> {
+    match expression {
+        SqlStructureFilterExpression::Predicate {
+            column,
+            qualifier,
+            operator,
+            parameter,
+        } => Some(SqlStructureFilter {
+            column: column.clone(),
+            qualifier: qualifier.clone(),
+            operator: *operator,
+            parameter: parameter.clone(),
+        }),
+        _ => None,
+    }
+}
+
+fn flat_conjunctive_filters(
+    expression: &SqlStructureFilterExpression,
+) -> Option<Vec<SqlStructureFilter>> {
+    match expression {
+        SqlStructureFilterExpression::And { expressions } => {
+            let mut filters = Vec::new();
+            for expression in expressions {
+                filters.extend(flat_conjunctive_filters(expression)?);
+            }
+            Some(filters)
+        }
+        SqlStructureFilterExpression::Predicate { .. } => {
+            filter_from_expression(expression).map(|filter| vec![filter])
+        }
+        SqlStructureFilterExpression::Or { .. } | SqlStructureFilterExpression::Not { .. } => None,
+    }
+}
+
+fn filter_expression_variables(expression: &SqlStructureFilterExpression) -> Vec<String> {
+    fn collect(expression: &SqlStructureFilterExpression, variables: &mut BTreeSet<String>) {
+        match expression {
+            SqlStructureFilterExpression::And { expressions }
+            | SqlStructureFilterExpression::Or { expressions } => {
+                for expression in expressions {
+                    collect(expression, variables);
+                }
+            }
+            SqlStructureFilterExpression::Not { expression } => collect(expression, variables),
+            SqlStructureFilterExpression::Predicate {
+                parameter: Some(parameter),
+                ..
+            } => {
+                variables.insert(parameter.clone());
+            }
+            SqlStructureFilterExpression::Predicate {
+                parameter: None, ..
+            } => {}
+        }
+    }
+
+    let mut variables = BTreeSet::new();
+    collect(expression, &mut variables);
+    variables.into_iter().collect()
 }
 
 fn parse_order_by(
@@ -2119,6 +2368,90 @@ fn alias_ast_ident(alias: &SqlStructureAlias) -> Ident {
     }
 }
 
+fn insert_sql_source_offset(sql: &str, offset: usize, insertion: &str) -> Option<String> {
+    if offset > sql.len() || !sql.is_char_boundary(offset) {
+        return None;
+    }
+    let before = sql.get(..offset)?;
+    let after = sql.get(offset..)?;
+    Some(format!("{before}{insertion}{after}"))
+}
+
+fn rewrite_filter_expression(
+    sql: &str,
+    query: &Query,
+    context: &SqlStructureContext,
+    joins: &[SqlStructureJoin],
+    expression: Option<SqlStructureFilterExpression>,
+) -> Result<String, SqlStructureReason> {
+    let select = match query.body.as_ref() {
+        SetExpr::Select(select) => select,
+        _ => return Err(SqlStructureReason::SetOperationUnsupported),
+    };
+    let replacement = expression
+        .as_ref()
+        .map(|expression| {
+            let mut nodes = 0;
+            filter_expression_to_ast(expression, context, joins, 0, &mut nodes)
+        })
+        .transpose()?
+        .map(|expression| expression.to_string());
+
+    match (select.selection.as_ref(), replacement) {
+        (Some(selection), Some(replacement)) => {
+            let range = source_range_from_span(sql, selection.span())
+                .ok_or(SqlStructureReason::FilterUnsupported)?;
+            if has_comment_token_in_range(sql, range) != Some(false) {
+                return Err(SqlStructureReason::FilterUnsupported);
+            }
+            replace_sql_source_range(sql, range, &replacement)
+                .ok_or(SqlStructureReason::FilterUnsupported)
+        }
+        (Some(selection), None) => {
+            let selection_range = source_range_from_span(sql, selection.span())
+                .ok_or(SqlStructureReason::FilterUnsupported)?;
+            let document = parse_sql_document(sql);
+            if document.status != SqlDocumentStatus::Parsed {
+                return Err(SqlStructureReason::FilterUnsupported);
+            }
+            let where_token = document
+                .tokens
+                .iter()
+                .rev()
+                .find(|token| {
+                    token.kind == SqlDocumentTokenKind::Word
+                        && token.range.end <= selection_range.start
+                        && sql
+                            .get(token.range.start..token.range.end)
+                            .is_some_and(|word| word.eq_ignore_ascii_case("WHERE"))
+                })
+                .ok_or(SqlStructureReason::FilterUnsupported)?;
+            let clause_range = SqlSourceRange {
+                start: where_token.range.start,
+                end: selection_range.end,
+            };
+            if has_comment_token_in_range(sql, clause_range) != Some(false) {
+                return Err(SqlStructureReason::FilterUnsupported);
+            }
+            replace_sql_source_range(sql, clause_range, "")
+                .ok_or(SqlStructureReason::FilterUnsupported)
+        }
+        (None, Some(replacement)) => {
+            let anchor = select
+                .from
+                .last()
+                .map(Spanned::span)
+                .or_else(|| select.projection.last().map(Spanned::span))
+                .ok_or(SqlStructureReason::FilterUnsupported)?;
+            let range =
+                source_range_from_span(sql, anchor).ok_or(SqlStructureReason::FilterUnsupported)?;
+            insert_sql_source_offset(sql, range.end, &format!(" WHERE {replacement}"))
+                .ok_or(SqlStructureReason::FilterUnsupported)
+        }
+        (None, None) => Ok(sql.to_owned()),
+    }
+}
+
 fn set_filters(
     query: &mut Query,
     context: &SqlStructureContext,
@@ -2127,6 +2460,16 @@ fn set_filters(
 ) -> Result<(), SqlStructureReason> {
     if filters.len() > 128 {
         return Err(SqlStructureReason::FilterUnsupported);
+    }
+    let select = match query.body.as_ref() {
+        SetExpr::Select(select) => select,
+        _ => return Err(SqlStructureReason::SetOperationUnsupported),
+    };
+    if let Some(selection) = select.selection.as_ref() {
+        let current = parse_filter_expression(selection, context, joins)?;
+        if flat_conjunctive_filters(&current).is_none() {
+            return Err(SqlStructureReason::FilterUnsupported);
+        }
     }
     let mut expressions = Vec::with_capacity(filters.len());
     for filter in filters {
@@ -2161,6 +2504,92 @@ fn set_filters(
         });
     select_mut(query)?.selection = selection;
     Ok(())
+}
+
+fn filter_expression_to_ast(
+    expression: &SqlStructureFilterExpression,
+    context: &SqlStructureContext,
+    joins: &[SqlStructureJoin],
+    depth: usize,
+    nodes: &mut usize,
+) -> Result<Expr, SqlStructureReason> {
+    if depth > MAX_FILTER_EXPRESSION_DEPTH {
+        return Err(SqlStructureReason::FilterUnsupported);
+    }
+    increment_filter_node(nodes)?;
+    match expression {
+        SqlStructureFilterExpression::And { expressions }
+        | SqlStructureFilterExpression::Or { expressions } => {
+            if !(2..=MAX_FILTER_EXPRESSION_NODES).contains(&expressions.len()) {
+                return Err(SqlStructureReason::FilterUnsupported);
+            }
+            let operator = if matches!(expression, SqlStructureFilterExpression::And { .. }) {
+                BinaryOperator::And
+            } else {
+                BinaryOperator::Or
+            };
+            let mut expressions = expressions
+                .iter()
+                .map(|expression| {
+                    filter_expression_to_ast(expression, context, joins, depth + 1, nodes)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let first = expressions
+                .drain(..1)
+                .next()
+                .ok_or(SqlStructureReason::FilterUnsupported)?;
+            Ok(Expr::Nested(Box::new(expressions.into_iter().fold(
+                first,
+                |left, right| Expr::BinaryOp {
+                    left: Box::new(left),
+                    op: operator.clone(),
+                    right: Box::new(right),
+                },
+            ))))
+        }
+        SqlStructureFilterExpression::Not { expression } => Ok(Expr::UnaryOp {
+            op: UnaryOperator::Not,
+            expr: Box::new(filter_expression_to_ast(
+                expression,
+                context,
+                joins,
+                depth + 1,
+                nodes,
+            )?),
+        }),
+        SqlStructureFilterExpression::Predicate {
+            column,
+            qualifier,
+            operator,
+            parameter,
+        } => {
+            let filter = SqlStructureFilter {
+                column: column.clone(),
+                qualifier: qualifier.clone(),
+                operator: *operator,
+                parameter: parameter.clone(),
+            };
+            validate_filter(context, &filter)?;
+            let qualifier = resolve_filter_qualifier(filter.qualifier.as_ref(), joins)?;
+            let column = column_reference_expr(&filter.column, qualifier.as_ref());
+            match filter.operator {
+                SqlStructureFilterOperator::IsNull => Ok(Expr::IsNull(Box::new(column))),
+                SqlStructureFilterOperator::IsNotNull => Ok(Expr::IsNotNull(Box::new(column))),
+                operator => {
+                    let sql_operator = binary_from_filter_operator(operator)
+                        .ok_or(SqlStructureReason::FilterUnsupported)?;
+                    let parameter = filter
+                        .parameter
+                        .ok_or(SqlStructureReason::InvalidVariableName)?;
+                    Ok(Expr::BinaryOp {
+                        left: Box::new(column),
+                        op: sql_operator,
+                        right: Box::new(Expr::value(Value::Placeholder(format!("${parameter}")))),
+                    })
+                }
+            }
+        }
+    }
 }
 
 fn set_sort(
@@ -2486,6 +2915,10 @@ fn supported_analysis(
     } else {
         Some(SqlStructureReason::StableKeyUnorderable)
     };
+    let flat_filter_supported = parsed
+        .filter_expression
+        .as_ref()
+        .is_none_or(|expression| flat_conjunctive_filters(expression).is_some());
     SqlStructureAnalysis {
         contract_version: SQL_STRUCTURE_CONTRACT_VERSION,
         status: SqlStructureStatus::Supported,
@@ -2493,6 +2926,7 @@ fn supported_analysis(
         projection: parsed.projection,
         literal_projection: parsed.literal_projection,
         filters: parsed.filters,
+        filter_expression: parsed.filter_expression,
         aggregates: parsed.aggregates,
         group_by: parsed.group_by,
         distinct: parsed.distinct,
@@ -2516,6 +2950,14 @@ fn supported_analysis(
                 },
             ),
             filter: capability(
+                columns_available && flat_filter_supported,
+                (!columns_available)
+                    .then_some(SqlStructureReason::InvalidContext)
+                    .or_else(|| {
+                        (!flat_filter_supported).then_some(SqlStructureReason::FilterUnsupported)
+                    }),
+            ),
+            filter_expression: capability(
                 columns_available,
                 (!columns_available).then_some(SqlStructureReason::InvalidContext),
             ),
@@ -2599,6 +3041,7 @@ fn rejected_analysis(reason: SqlStructureReason) -> SqlStructureAnalysis {
         projection: Vec::new(),
         literal_projection: Vec::new(),
         filters: Vec::new(),
+        filter_expression: None,
         aggregates: Vec::new(),
         group_by: Vec::new(),
         distinct: false,
@@ -2610,6 +3053,7 @@ fn rejected_analysis(reason: SqlStructureReason) -> SqlStructureAnalysis {
             join: disabled.clone(),
             columns: disabled.clone(),
             filter: disabled.clone(),
+            filter_expression: disabled.clone(),
             sort: disabled.clone(),
             aggregate: disabled.clone(),
             group_by: disabled.clone(),
@@ -2755,6 +3199,12 @@ mod tests {
             .as_array()
             .expect("feature matrix operations must be an array")
             .iter()
+            .chain(
+                editor["protocol_extensions"]
+                    .as_array()
+                    .expect("feature matrix protocol extensions must be an array")
+                    .iter(),
+            )
             .map(|operation| {
                 operation["protocol"]
                     .as_str()
@@ -2780,6 +3230,7 @@ mod tests {
             SqlStructureOperation::SetColumns { columns: vec![] },
             SqlStructureOperation::SetLiteralProjection { values: vec![] },
             SqlStructureOperation::SetFilters { filters: vec![] },
+            SqlStructureOperation::SetFilterExpression { expression: None },
             SqlStructureOperation::SetSort { order_by: vec![] },
             SqlStructureOperation::SetAggregates { aggregates: vec![] },
             SqlStructureOperation::SetGroupBy { columns: vec![] },
@@ -3566,6 +4017,341 @@ mod tests {
     }
 
     #[test]
+    fn analyzes_and_edits_nested_boolean_filter_trees_with_typed_leaves() {
+        let sql = "SELECT * FROM \"Task\" WHERE (\"field_101\" = $status OR \"field_102\" >= $priority) AND NOT (\"field_101\" != $status)";
+        let analysis = analyze_sql_structure(sql, &context());
+        assert_eq!(analysis.status, SqlStructureStatus::Supported);
+        assert!(analysis.filters.is_empty());
+        assert!(!analysis.capabilities.filter.enabled);
+        assert!(analysis.capabilities.filter_expression.enabled);
+        assert_eq!(analysis.referenced_variables, ["priority", "status"]);
+        assert!(matches!(
+            analysis.filter_expression,
+            Some(SqlStructureFilterExpression::And { ref expressions })
+                if expressions.len() == 2
+                    && matches!(expressions[0], SqlStructureFilterExpression::Or { .. })
+                    && matches!(expressions[1], SqlStructureFilterExpression::Not { .. })
+        ));
+        let lossy_flat_edit = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetFilters {
+                filters: vec![SqlStructureFilter {
+                    column: "field_101".to_owned(),
+                    operator: SqlStructureFilterOperator::Eq,
+                    parameter: Some("status".to_owned()),
+                }],
+            },
+        );
+        assert_eq!(lossy_flat_edit.status, SqlStructureStatus::Unsupported);
+        assert_eq!(
+            lossy_flat_edit.reason,
+            Some(SqlStructureReason::FilterUnsupported)
+        );
+
+        let expression = SqlStructureFilterExpression::And {
+            expressions: vec![
+                SqlStructureFilterExpression::Predicate {
+                    column: "field_101".to_owned(),
+                    qualifier: None,
+                    operator: SqlStructureFilterOperator::Eq,
+                    parameter: Some("status".to_owned()),
+                },
+                SqlStructureFilterExpression::Or {
+                    expressions: vec![
+                        SqlStructureFilterExpression::Predicate {
+                            column: "field_102".to_owned(),
+                            qualifier: None,
+                            operator: SqlStructureFilterOperator::GtEq,
+                            parameter: Some("priority".to_owned()),
+                        },
+                        SqlStructureFilterExpression::Not {
+                            expression: Box::new(SqlStructureFilterExpression::Predicate {
+                                column: "field_101".to_owned(),
+                                qualifier: None,
+                                operator: SqlStructureFilterOperator::NotEq,
+                                parameter: Some("status".to_owned()),
+                            }),
+                        },
+                    ],
+                },
+            ],
+        };
+        let proposal = propose_sql_structure_operation(
+            "SELECT * FROM \"Task\" ORDER BY \"field_102\" DESC",
+            &context(),
+            SqlStructureOperation::SetFilterExpression {
+                expression: Some(expression.clone()),
+            },
+        );
+        assert_eq!(proposal.status, SqlStructureStatus::Supported);
+        assert!(proposal.requires_confirmation);
+        let proposed_sql = proposal.proposed_sql.expect("tree edit should propose SQL");
+        let edited = analyze_sql_structure(&proposed_sql, &context());
+        assert_eq!(edited.status, SqlStructureStatus::Supported);
+        assert_eq!(edited.filter_expression, Some(expression));
+        assert!(proposed_sql.contains("ORDER BY \"field_102\" DESC"));
+    }
+
+    #[test]
+    fn nested_boolean_filter_edits_preserve_join_qualifiers() {
+        let sql = "SELECT * FROM \"Task\" AS t INNER JOIN \"Task\" AS other ON t.field_101 = other.field_101 WHERE (t.field_101 = $status OR other.field_102 >= $priority) AND NOT (other.field_101 != $status) ORDER BY other._ugoite_id ASC, t._ugoite_id ASC";
+        let analysis = analyze_sql_structure(sql, &context());
+        assert_eq!(analysis.status, SqlStructureStatus::Supported);
+        assert_eq!(analysis.filters, Vec::<SqlStructureFilter>::new());
+
+        let expected = SqlStructureFilterExpression::And {
+            expressions: vec![
+                SqlStructureFilterExpression::Or {
+                    expressions: vec![
+                        SqlStructureFilterExpression::Predicate {
+                            column: "field_101".to_owned(),
+                            qualifier: Some(SqlStructureAlias {
+                                name: "t".to_owned(),
+                                quoted: false,
+                            }),
+                            operator: SqlStructureFilterOperator::Eq,
+                            parameter: Some("status".to_owned()),
+                        },
+                        SqlStructureFilterExpression::Predicate {
+                            column: "field_102".to_owned(),
+                            qualifier: Some(SqlStructureAlias {
+                                name: "other".to_owned(),
+                                quoted: false,
+                            }),
+                            operator: SqlStructureFilterOperator::GtEq,
+                            parameter: Some("priority".to_owned()),
+                        },
+                    ],
+                },
+                SqlStructureFilterExpression::Not {
+                    expression: Box::new(SqlStructureFilterExpression::Predicate {
+                        column: "field_101".to_owned(),
+                        qualifier: Some(SqlStructureAlias {
+                            name: "other".to_owned(),
+                            quoted: false,
+                        }),
+                        operator: SqlStructureFilterOperator::NotEq,
+                        parameter: Some("status".to_owned()),
+                    }),
+                },
+            ],
+        };
+        assert_eq!(analysis.filter_expression, Some(expected.clone()));
+
+        let proposal = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetFilterExpression {
+                expression: Some(expected.clone()),
+            },
+        );
+        assert_eq!(proposal.status, SqlStructureStatus::Supported);
+        let proposed = proposal.proposed_sql.expect("joined filter rewrite");
+        assert!(proposed.contains("t.\"field_101\" = $status"));
+        assert!(proposed.contains("other.\"field_102\" >= $priority"));
+        assert!(proposed.contains("NOT other.\"field_101\" != $status"));
+        let edited = analyze_sql_structure(&proposed, &context());
+        assert_eq!(edited.status, SqlStructureStatus::Supported);
+        assert_eq!(edited.filter_expression, Some(expected));
+    }
+
+    #[test]
+    fn filter_expression_edits_preserve_unrelated_sql_trivia() {
+        let expression = SqlStructureFilterExpression::Not {
+            expression: Box::new(SqlStructureFilterExpression::Predicate {
+                column: "field_101".to_owned(),
+                qualifier: None,
+                operator: SqlStructureFilterOperator::Eq,
+                parameter: Some("status".to_owned()),
+            }),
+        };
+        let sql = "SELECT /*keep projection*/ * FROM \"Task\" /*keep from*/ WHERE \"field_101\" = $status /*keep where*/ ORDER BY \"field_102\" DESC -- keep tail";
+        let proposal = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetFilterExpression {
+                expression: Some(expression),
+            },
+        );
+
+        assert_eq!(proposal.status, SqlStructureStatus::Supported);
+        let proposed = proposal
+            .proposed_sql
+            .expect("filter edit should be proposed");
+        for comment in [
+            "/*keep projection*/",
+            "/*keep from*/",
+            "/*keep where*/",
+            "-- keep tail",
+        ] {
+            assert!(proposed.contains(comment), "missing {comment}: {proposed}");
+        }
+        assert!(proposed.contains("NOT"), "unexpected rewrite: {proposed}");
+        assert!(proposed.contains("ORDER BY \"field_102\" DESC"));
+        let edited = analyze_sql_structure(&proposed, &context());
+        assert_eq!(edited.status, SqlStructureStatus::Supported);
+        assert!(matches!(
+            edited.filter_expression,
+            Some(SqlStructureFilterExpression::Not { expression })
+                if matches!(expression.as_ref(), SqlStructureFilterExpression::Predicate {
+                    column,
+                    operator: SqlStructureFilterOperator::Eq,
+                    parameter: Some(parameter),
+                    ..
+                } if column == "field_101" && parameter == "status")
+        ));
+    }
+
+    #[test]
+    fn filter_expression_edit_fails_closed_for_comments_inside_rewritten_expression() {
+        let sql = "SELECT * FROM \"Task\" WHERE \"field_101\" /*keep predicate*/ = $status";
+        let proposal = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetFilterExpression {
+                expression: Some(SqlStructureFilterExpression::Not {
+                    expression: Box::new(SqlStructureFilterExpression::Predicate {
+                        column: "field_101".to_owned(),
+                        qualifier: None,
+                        operator: SqlStructureFilterOperator::Eq,
+                        parameter: Some("status".to_owned()),
+                    }),
+                }),
+            },
+        );
+
+        assert_eq!(proposal.status, SqlStructureStatus::Unsupported);
+        assert_eq!(proposal.proposed_sql, None);
+        assert!(proposal.base_sql.contains("/*keep predicate*/"));
+    }
+
+    #[test]
+    fn adding_and_removing_filters_preserves_trivia_outside_where() {
+        let expression = SqlStructureFilterExpression::Predicate {
+            column: "field_101".to_owned(),
+            qualifier: None,
+            operator: SqlStructureFilterOperator::Eq,
+            parameter: Some("status".to_owned()),
+        };
+        let insert = propose_sql_structure_operation(
+            "SELECT /*keep projection*/ * FROM \"Task\" /*keep from*/ ORDER BY \"field_102\" DESC -- keep tail",
+            &context(),
+            SqlStructureOperation::SetFilterExpression {
+                expression: Some(expression.clone()),
+            },
+        );
+        assert_eq!(insert.status, SqlStructureStatus::Supported);
+        let inserted = insert.proposed_sql.expect("filter insertion");
+        for comment in ["/*keep projection*/", "/*keep from*/", "-- keep tail"] {
+            assert!(inserted.contains(comment), "missing {comment}: {inserted}");
+        }
+        assert_eq!(
+            analyze_sql_structure(&inserted, &context()).status,
+            SqlStructureStatus::Supported
+        );
+
+        let remove = propose_sql_structure_operation(
+            "SELECT /*keep projection*/ * FROM \"Task\" /*keep from*/ WHERE \"field_101\" = $status ORDER BY \"field_102\" DESC -- keep tail",
+            &context(),
+            SqlStructureOperation::SetFilterExpression { expression: None },
+        );
+        assert_eq!(remove.status, SqlStructureStatus::Supported);
+        let removed = remove.proposed_sql.expect("filter removal");
+        for comment in ["/*keep projection*/", "/*keep from*/", "-- keep tail"] {
+            assert!(removed.contains(comment), "missing {comment}: {removed}");
+        }
+        assert!(!removed.contains(" WHERE "));
+        assert_eq!(
+            analyze_sql_structure(&removed, &context()).status,
+            SqlStructureStatus::Supported
+        );
+    }
+
+    #[test]
+    fn wide_flat_conjunctions_remain_editable_with_bounded_tree_depth() {
+        let predicates = std::iter::repeat_n("\"field_101\" = $status", 65)
+            .collect::<Vec<_>>()
+            .join(" AND ");
+        let sql = format!("SELECT * FROM \"Task\" WHERE {predicates}");
+        let analysis = analyze_sql_structure(&sql, &context());
+
+        assert_eq!(analysis.status, SqlStructureStatus::Supported);
+        assert!(analysis.capabilities.filter.enabled);
+        assert!(analysis.capabilities.filter_expression.enabled);
+        assert!(matches!(
+            analysis.filter_expression,
+            Some(SqlStructureFilterExpression::And { ref expressions })
+                if expressions.len() == 65
+        ));
+    }
+
+    #[test]
+    fn boolean_filter_tree_rejects_malformed_groups_and_typed_leaf_mismatches() {
+        let single_child_group = propose_sql_structure_operation(
+            "SELECT * FROM \"Task\"",
+            &context(),
+            SqlStructureOperation::SetFilterExpression {
+                expression: Some(SqlStructureFilterExpression::Or {
+                    expressions: vec![SqlStructureFilterExpression::Predicate {
+                        column: "field_101".to_owned(),
+                        qualifier: None,
+                        operator: SqlStructureFilterOperator::Eq,
+                        parameter: Some("status".to_owned()),
+                    }],
+                }),
+            },
+        );
+        assert_eq!(single_child_group.status, SqlStructureStatus::Unsupported);
+        assert_eq!(
+            single_child_group.reason,
+            Some(SqlStructureReason::FilterUnsupported)
+        );
+
+        let mismatched_leaf = propose_sql_structure_operation(
+            "SELECT * FROM \"Task\"",
+            &context(),
+            SqlStructureOperation::SetFilterExpression {
+                expression: Some(SqlStructureFilterExpression::Predicate {
+                    column: "field_102".to_owned(),
+                    qualifier: None,
+                    operator: SqlStructureFilterOperator::Eq,
+                    parameter: Some("status".to_owned()),
+                }),
+            },
+        );
+        assert_eq!(mismatched_leaf.status, SqlStructureStatus::Unsupported);
+        assert_eq!(
+            mismatched_leaf.reason,
+            Some(SqlStructureReason::VariableTypeMismatch)
+        );
+
+        let mut nested = SqlStructureFilterExpression::Predicate {
+            column: "field_101".to_owned(),
+            qualifier: None,
+            operator: SqlStructureFilterOperator::Eq,
+            parameter: Some("status".to_owned()),
+        };
+        for _ in 0..=MAX_FILTER_EXPRESSION_DEPTH {
+            nested = SqlStructureFilterExpression::Not {
+                expression: Box::new(nested),
+            };
+        }
+        let excessive_depth = propose_sql_structure_operation(
+            "SELECT * FROM \"Task\"",
+            &context(),
+            SqlStructureOperation::SetFilterExpression {
+                expression: Some(nested),
+            },
+        );
+        assert_eq!(excessive_depth.status, SqlStructureStatus::Unsupported);
+        assert_eq!(
+            excessive_depth.reason,
+            Some(SqlStructureReason::FilterUnsupported)
+        );
+    }
+
+    #[test]
     fn set_columns_replaces_only_the_projection_source_span() {
         let columns = vec!["field_101".to_owned(), "field_102".to_owned()];
         let simple_sql = "SELECT * FROM \"G\"";
@@ -3665,7 +4451,7 @@ mod tests {
                 SqlStructureReason::JoinUnsupported,
             ),
             (
-                "SELECT * FROM \"Task\" WHERE \"field_101\" = $status OR \"field_102\" = $priority",
+                "SELECT * FROM \"Task\" WHERE \"field_101\" LIKE $status",
                 SqlStructureReason::FilterUnsupported,
             ),
         ] {
