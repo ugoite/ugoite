@@ -61,6 +61,8 @@ The Form picker shows the current Form name; SQL text uses the opaque,
 server-derived `form_<32-hex-ID>` relation for that Form ID. Renaming changes
 the picker label and schema context identity while leaving existing SQL bound
 to the same relation. A new Form with the same name receives its own relation.
+Alias edits that would change an `ORDER BY` identifier between an output alias
+and a same-named Form column are rejected with a sort diagnostic.
 The proposal view shows before/after SQL and applies changes only after
 confirmation. Other structure controls stay limited to operations that the
 Rust parser can safely round-trip, with capability reasons in disabled

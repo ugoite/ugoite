@@ -2325,6 +2325,14 @@ fn rewrite_projection(
         return Err(SqlStructureReason::ProjectionUnsupported);
     }
 
+    ensure_projection_alias_sort_binding_is_preserved(
+        query,
+        context,
+        &select.projection,
+        &columns,
+        &aliases,
+    )?;
+
     let current_columns = existing_aliases
         .iter()
         .map(|projection| projection.column.as_str())
@@ -2510,6 +2518,99 @@ fn rewrite_projection_aliases(
         }
     }
     apply_sql_source_edits(sql, edits).ok_or(SqlStructureReason::ProjectionUnsupported)
+}
+
+/// Reject a projection edit when an ORDER BY identifier would resolve to a
+/// different selected Form column after output aliases change. SQL gives a
+/// matching output alias precedence over a same-named input column in ORDER
+/// BY, so resolving the identifier only against Form metadata is insufficient.
+fn ensure_projection_alias_sort_binding_is_preserved(
+    query: &Query,
+    context: &SqlStructureContext,
+    projection: &[SelectItem],
+    requested_columns: &[String],
+    requested_aliases: &[Option<SqlStructureAlias>],
+) -> Result<(), SqlStructureReason> {
+    let Some(order_by) = &query.order_by else {
+        return Ok(());
+    };
+    let OrderByKind::Expressions(expressions) = &order_by.kind else {
+        return Err(SqlStructureReason::SortUnsupported);
+    };
+    if requested_columns.len() != requested_aliases.len() {
+        return Err(SqlStructureReason::ProjectionUnsupported);
+    }
+
+    let (current_projected_columns, current_aliases) = if projection.len() == 1
+        && matches!(&projection[0], SelectItem::Wildcard(options)
+            if options.opt_ilike.is_none()
+                && options.opt_exclude.is_none()
+                && options.opt_except.is_none()
+                && options.opt_replace.is_none()
+                && options.opt_rename.is_none()
+                && options.opt_alias.is_none())
+    {
+        // SELECT * has no editable output aliases. Its ORDER BY identifiers
+        // resolve to the corresponding Form columns before projection editing.
+        (Vec::new(), Vec::new())
+    } else {
+        let mut projected_columns = Vec::with_capacity(projection.len());
+        let mut aliases = Vec::with_capacity(projection.len());
+        for item in projection {
+            let (expression, alias) = match item {
+                SelectItem::UnnamedExpr(Expr::Identifier(expression)) => (expression, None),
+                SelectItem::ExprWithAlias {
+                    expr: Expr::Identifier(expression),
+                    alias,
+                } => (expression, Some(alias)),
+                _ => return Err(SqlStructureReason::ProjectionUnsupported),
+            };
+            let column = find_column_by_ident(context, expression)
+                .ok_or(SqlStructureReason::UnknownColumn)?;
+            projected_columns.push(column.name.clone());
+            aliases.push(alias.map(|alias| SqlStructureAlias {
+                name: alias.value.clone(),
+                quoted: alias.quote_style.is_some(),
+            }));
+        }
+        (projected_columns, aliases)
+    };
+
+    for order in expressions {
+        let Expr::Identifier(identifier) = &order.expr else {
+            // The bounded editor accepts simple column names here; other
+            // supported ordering forms cannot be affected by output aliases.
+            continue;
+        };
+        let resolve = |aliases: &[Option<SqlStructureAlias>], columns: &[String]| {
+            let matches = aliases
+                .iter()
+                .enumerate()
+                .filter_map(|(index, alias)| {
+                    alias
+                        .as_ref()
+                        .filter(|alias| identifier_matches_alias(identifier, alias))
+                        .map(|_| index)
+                })
+                .collect::<Vec<_>>();
+            match matches.as_slice() {
+                [index] => columns
+                    .get(*index)
+                    .cloned()
+                    .ok_or(SqlStructureReason::SortUnsupported),
+                [] => find_column_by_ident(context, identifier)
+                    .map(|column| column.name.clone())
+                    .ok_or(SqlStructureReason::SortUnsupported),
+                _ => Err(SqlStructureReason::SortUnsupported),
+            }
+        };
+        if resolve(&current_aliases, &current_projected_columns)?
+            != resolve(requested_aliases, requested_columns)?
+        {
+            return Err(SqlStructureReason::SortUnsupported);
+        }
+    }
+    Ok(())
 }
 
 fn sql_alias_to_string(alias: SqlStructureAlias) -> String {
@@ -3484,6 +3585,8 @@ mod tests {
         assert!(projection_limits.contains(
             &"simple Form-column projection aliases are inspected and editable with quoted semantics preserved when each source column occurs once"
         ));
+        assert!(projection_limits
+            .contains(&"alias edits that would change ORDER BY output-name binding fail closed"));
         assert!(projection_limits.contains(
             &"repeated source columns keep the query editable but disable the Columns rewrite to avoid projection-slot ambiguity"
         ));
@@ -4275,6 +4378,47 @@ mod tests {
             proposal.proposed_sql.as_deref(),
             Some("SELECT \"field_102\" AS total FROM \"Task\" WHERE \"field_101\" = $status ORDER BY \"_ugoite_id\"")
         );
+    }
+
+    #[test]
+    fn projection_alias_edits_fail_closed_when_they_change_order_by_binding() {
+        let sql = "SELECT \"field_102\" AS \"field_101\" FROM \"Task\" ORDER BY \"field_101\"";
+        let analysis = analyze_sql_structure(sql, &context());
+        assert_eq!(analysis.status, SqlStructureStatus::Supported);
+
+        let renamed = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetColumns {
+                columns: vec!["field_102".to_owned()],
+                aliases: vec![Some(SqlStructureAlias {
+                    name: "total".to_owned(),
+                    quoted: false,
+                })],
+            },
+        );
+        assert_eq!(renamed.status, SqlStructureStatus::Unsupported);
+        assert_eq!(renamed.reason, Some(SqlStructureReason::SortUnsupported));
+        assert_eq!(renamed.base_sql, sql);
+        assert_eq!(renamed.proposed_sql, None);
+
+        let alias_added = propose_sql_structure_operation(
+            "SELECT \"field_102\" FROM \"Task\" ORDER BY \"field_101\"",
+            &context(),
+            SqlStructureOperation::SetColumns {
+                columns: vec!["field_102".to_owned()],
+                aliases: vec![Some(SqlStructureAlias {
+                    name: "field_101".to_owned(),
+                    quoted: true,
+                })],
+            },
+        );
+        assert_eq!(alias_added.status, SqlStructureStatus::Unsupported);
+        assert_eq!(
+            alias_added.reason,
+            Some(SqlStructureReason::SortUnsupported)
+        );
+        assert_eq!(alias_added.proposed_sql, None);
     }
 
     #[test]

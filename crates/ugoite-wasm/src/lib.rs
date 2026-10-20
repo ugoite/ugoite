@@ -1479,6 +1479,53 @@ mod tests {
     }
 
     #[test]
+    fn sql_structure_projection_alias_sort_binding_rejections_match_domain() {
+        let sql = "SELECT \"field_102\" AS \"field_101\" FROM \"Task\" ORDER BY \"field_101\"";
+        let context = ugoite_domain::sql_structure::SqlStructureContext {
+            relation: "Task".to_owned(),
+            columns: vec![
+                ugoite_domain::sql_structure::SqlStructureColumn {
+                    name: "field_101".to_owned(),
+                    column_type: ugoite_domain::sql_structure::SqlStructureColumnType::String,
+                },
+                ugoite_domain::sql_structure::SqlStructureColumn {
+                    name: "field_102".to_owned(),
+                    column_type: ugoite_domain::sql_structure::SqlStructureColumnType::Integer,
+                },
+            ],
+            variables: vec![],
+            stable_key: vec![],
+        };
+        let operation = ugoite_domain::sql_structure::SqlStructureOperation::SetColumns {
+            columns: vec!["field_102".to_owned()],
+            aliases: vec![Some(ugoite_domain::sql_structure::SqlStructureAlias {
+                name: "total".to_owned(),
+                quoted: false,
+            })],
+        };
+        let expected = serde_json::to_value(
+            ugoite_domain::sql_structure::propose_sql_structure_operation(
+                sql,
+                &context,
+                operation.clone(),
+            ),
+        )
+        .expect("Domain proposal serializes");
+        assert_eq!(expected["status"], "unsupported");
+        assert_eq!(expected["reason"], "sort_unsupported");
+        assert_eq!(expected["proposed_sql"], Value::Null);
+
+        let request = serde_json::json!({
+            "action": "domain.propose_sql_structure_operation",
+            "value": {"sql": sql, "context": context, "operation": operation},
+        })
+        .to_string();
+        let response: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"], expected);
+    }
+
+    #[test]
     fn sql_document_protocol_accepts_maximum_source_with_json_escaped_trivia() {
         let sql = format!(
             "SELECT 1 /*{}*/",

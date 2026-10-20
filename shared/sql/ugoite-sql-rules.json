@@ -147,6 +147,7 @@
             "typed literal projection edits are restricted to those relation-free literals",
             "wildcard or simple columns",
             "simple Form-column projection aliases are inspected and editable with quoted semantics preserved when each source column occurs once",
+            "alias edits that would change ORDER BY output-name binding fail closed",
             "repeated source columns keep the query editable but disable the Columns rewrite to avoid projection-slot ambiguity",
             "allowlisted aggregates over supported arguments"
           ]
