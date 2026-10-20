@@ -138,7 +138,7 @@ describe("CompositionGraphRenderer", () => {
     expect(onPrevious).toHaveBeenCalledWith("rows");
   });
 
-  it("shows the selected Saved SQL output alias for a scalar metric", () => {
+  it("shows the selected Saved SQL output alias for an opaque generated variable", () => {
     const variableId =
       "query_018ff2a7-32d4-7b80-a57f-03010544ea9b_opaque_value";
     const savedSqlDraft: CompositionGraphDraft = {
@@ -196,6 +196,66 @@ describe("CompositionGraphRenderer", () => {
     expect(screen.getByRole("region", { name: "total_amount", exact: true }))
       .toHaveTextContent("20");
     expect(screen.queryByRole("region", { name: variableId }))
+      .not.toBeInTheDocument();
+  });
+
+  it("uses the declared variable name for a Saved SQL metric with a named ID", () => {
+    const variableId = "all_rows";
+    const namedVariableDraft: CompositionGraphDraft = {
+      ...draft,
+      variables: draft.variables.map((node) =>
+        node.id === "total"
+          ? {
+            ...node,
+            id: variableId,
+            query: {
+              kind: "saved_sql",
+              entry_id: "018ff2a7-32d4-7b80-a57f-03010544ea9b",
+              revision_id: "2fbf7d50-5a29-4805-a936-41bf2702a908",
+              column: "row_count",
+              arguments: [],
+            },
+          }
+          : node
+      ),
+      components: draft.components.map((component) =>
+        component.kind === "metric"
+          ? { ...component, variable: variableId }
+          : component
+      ),
+    };
+    const namedVariableEvaluation: CompositionEvaluationResponse = {
+      ...evaluation,
+      computed_query_ids: ["rows", variableId],
+      query_results: {
+        ...evaluation.query_results,
+        [variableId]: {
+          value: { kind: "scalar", value: { kind: "integer", value: 3 } },
+          has_more: false,
+        },
+      },
+    };
+
+    render(() => (
+      <CompositionGraphRenderer
+        draft={namedVariableDraft}
+        evaluation={namedVariableEvaluation}
+        rawInputs={{}}
+        inputStates={{}}
+        blockedQueryIds={new Set()}
+        previousPageQueryIds={new Set()}
+        pageBusy={false}
+        onInput={vi.fn()}
+        onNext={vi.fn()}
+        onPrevious={vi.fn()}
+      />
+    ));
+
+    expect(screen.getByRole("heading", { name: variableId, exact: true }))
+      .toBeVisible();
+    expect(screen.getByRole("region", { name: variableId, exact: true }))
+      .toHaveTextContent("3");
+    expect(screen.queryByRole("region", { name: "row_count" }))
       .not.toBeInTheDocument();
   });
 

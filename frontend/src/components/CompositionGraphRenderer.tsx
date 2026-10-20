@@ -50,6 +50,10 @@ const variableValue = (
 const inputType = (type: CompositionScalarType): string =>
   type === "date" ? "date" : type === "timestamp" ? "datetime-local" : "text";
 
+const isGeneratedSavedSqlVariableId = (value: string): boolean =>
+  /^query_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_/i
+    .test(value);
+
 const queryError = (
   evaluation: CompositionEvaluationResponse | undefined,
   variableId: string,
@@ -109,13 +113,10 @@ export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
                         if (
                           valueNode?.kind === "query" &&
                           valueNode.query.kind === "saved_sql" &&
-                          valueNode.query.column
-                        ) return valueNode.query.column;
-                        if (
-                          valueNode?.kind === "query" &&
-                          valueNode.query.kind === "saved_sql"
+                          isGeneratedSavedSqlVariableId(variableId() ?? "")
                         ) {
-                          return t("composition.studioMetricPreview");
+                          return valueNode.query.column ??
+                            t("composition.studioMetricPreview");
                         }
                         return variableId() ?? "";
                       };
@@ -124,8 +125,7 @@ export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
                           !props.blockedQueryIds.has(variableId()!)
                           ? props.evaluation?.query_results[variableId()!]
                           : undefined;
-                      const evaluated = () =>
-                        queryResult()?.value;
+                      const evaluated = () => queryResult()?.value;
                       const blocked = () =>
                         Boolean(
                           variableId() &&
