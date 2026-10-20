@@ -746,16 +746,16 @@ async fn query_composition(
         SpaceTarget::Remote { .. } => None,
     };
 
-    let resolution = resolve_composition(
+    let resolution = resolve_composition(CompositionResolveContext {
         target,
-        target_space_id(target),
+        space_id: target_space_id(target),
         composition_id,
-        &composition.revision.revision_id,
-        &variable_definitions,
-        variable_values.clone(),
-        unset_variables.clone(),
-        local_service.as_ref(),
-    )
+        revision_id: &composition.revision.revision_id,
+        variable_definitions: &variable_definitions,
+        variables: &variable_values,
+        unset_variables: &unset_variables,
+        local_service: local_service.as_ref(),
+    })
     .await?;
     let plan = match resolution {
         CompositionQueryResolution::Plan(plan) => *plan,
@@ -825,25 +825,20 @@ fn composition_metric_query_request(
 }
 
 async fn resolve_composition(
-    target: &SpaceTarget,
-    space_id: &str,
-    composition_id: &str,
-    revision_id: &str,
-    variable_definitions: &[VariableGraphNode],
-    variables: BTreeMap<String, Value>,
-    unset_variables: Vec<String>,
-    local_service: Option<&UgoiteService>,
+    context: CompositionResolveContext<'_>,
 ) -> Result<CompositionQueryResolution> {
-    match target {
+    match context.target {
         SpaceTarget::Core { .. } => {
-            let service = local_service.context("local Composition service is unavailable")?;
+            let service = context
+                .local_service
+                .context("local Composition service is unavailable")?;
             let resolution = service
                 .resolve_composition_local(
-                    space_id,
-                    composition_id,
-                    revision_id,
-                    &variables,
-                    &unset_variables,
+                    context.space_id,
+                    context.composition_id,
+                    context.revision_id,
+                    context.variables,
+                    context.unset_variables,
                 )
                 .await?;
             if let Some(plan) = resolution.plan {
@@ -866,14 +861,21 @@ async fn resolve_composition(
         }
         SpaceTarget::Remote { .. } => {
             let arguments = json!({
-                "space_id": space_id,
-                "composition_id": composition_id,
+                "space_id": context.space_id,
+                "composition_id": context.composition_id,
             });
-            let body =
-                composition_resolve_body(revision_id, variables.clone(), unset_variables.clone());
-            let response =
-                http::execute_for_target(target, "composition.resolve", arguments, Some(body))
-                    .await?;
+            let body = composition_resolve_body(
+                context.revision_id,
+                context.variables.clone(),
+                context.unset_variables.to_vec(),
+            );
+            let response = http::execute_for_target(
+                context.target,
+                "composition.resolve",
+                arguments,
+                Some(body),
+            )
+            .await?;
             let response: CompositionResolveResponse =
                 serde_json::from_value(response).context("decode Composition resolve response")?;
             if response.ok {
@@ -883,9 +885,9 @@ async fn resolve_composition(
                 Ok(CompositionQueryResolution::Plan(Box::new(
                     composition_query_plan_from_portable(
                         plan,
-                        variable_definitions,
-                        &variables,
-                        &unset_variables,
+                        context.variable_definitions,
+                        context.variables,
+                        context.unset_variables,
                     )?,
                 )))
             } else {
@@ -907,6 +909,17 @@ async fn resolve_composition(
             }
         }
     }
+}
+
+struct CompositionResolveContext<'a> {
+    target: &'a SpaceTarget,
+    space_id: &'a str,
+    composition_id: &'a str,
+    revision_id: &'a str,
+    variable_definitions: &'a [VariableGraphNode],
+    variables: &'a BTreeMap<String, Value>,
+    unset_variables: &'a [String],
+    local_service: Option<&'a UgoiteService>,
 }
 
 fn composition_diagnostic_code_for_cli(code: CompositionDiagnosticCode) -> String {
