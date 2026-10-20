@@ -819,6 +819,124 @@ test.describe("Composition Studio Journey", () => {
     }
   });
 
+  test("Form bindings create variable-backed displays with explicit aggregation", async ({ browser, context, request }) => {
+    const storageState = await context.storageState();
+    const ownerContext = await openOwnerContext(browser, storageState);
+    const page = await ownerContext.newPage();
+    try {
+      const formsResponse = await request.get(
+        getBackendUrl(`/spaces/${seed.spaceId}/forms`),
+      );
+      expect(formsResponse.ok()).toBe(true);
+      const forms = await formsResponse.json() as Array<{
+        id?: string;
+        name?: string;
+        sql_relation?: string;
+        fields?: Record<string, { sql_column?: string }>;
+      }>;
+      const form = forms.find((candidate) => candidate.name === seed.formName);
+      expect(form?.id).toBeTruthy();
+      expect(form?.sql_relation).toBeTruthy();
+      const amountColumn = form?.fields?.Amount?.sql_column;
+      expect(amountColumn).toBeTruthy();
+      const formSlug = seed.formName.normalize("NFKD").toLowerCase()
+        .replace(/\p{M}/gu, "")
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
+
+      await page.goto(
+        getFrontendUrl(`/spaces/${seed.spaceId}/compositions/new`),
+        { waitUntil: "domcontentloaded" },
+      );
+      await page.getByLabel("Name", { exact: true }).fill(
+        `${seed.toolName} Form bindings`,
+      );
+
+      await page.getByRole("button", { name: "Add to design", exact: true })
+        .first().click();
+      const palette = page.getByRole("group", { name: "Add to design" });
+      await palette.getByRole("button", { name: "Table", exact: true }).click();
+      const tablePicker = page.getByRole("dialog", {
+        name: "Table",
+        exact: true,
+      });
+      await tablePicker.getByRole("tab", { name: "Forms", exact: true })
+        .click();
+      await tablePicker.getByRole("button", {
+        name: seed.formName,
+        exact: true,
+      }).click();
+      await expect(tablePicker).toHaveCount(0);
+      await expect(page.getByRole("button", { name: /Change variable/ }))
+        .toHaveCount(0);
+
+      await page.getByRole("button", { name: "Add to design", exact: true })
+        .first().click();
+      await page.getByRole("group", { name: "Add to design" })
+        .getByRole("button", { name: "Metric", exact: true }).click();
+      const metricPicker = page.getByRole("dialog", {
+        name: "Metric",
+        exact: true,
+      });
+      await metricPicker.getByRole("tab", { name: "Forms", exact: true })
+        .click();
+      await metricPicker.getByRole("button", {
+        name: seed.formName,
+        exact: true,
+      }).click();
+      const aggregation = metricPicker.getByRole("combobox", {
+        name: "Aggregation",
+        exact: true,
+      });
+      await expect(aggregation).toHaveValue("");
+      const addMetric = metricPicker.getByRole("button", {
+        name: "Add",
+        exact: true,
+      });
+      await expect(addMetric).toBeDisabled();
+      await aggregation.selectOption("sum");
+      await metricPicker.getByRole("combobox", {
+        name: "Column",
+        exact: true,
+      }).selectOption({ label: "Amount" });
+      await addMetric.click();
+      await expect(metricPicker).toHaveCount(0);
+      await expect(page.getByRole("button", { name: /Change variable/ }))
+        .toHaveCount(0);
+
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(page).toHaveURL(
+        new RegExp(`/spaces/${seed.spaceId}/compositions/[^/]+/[^/]+$`),
+      );
+      const saved = revisionFromUrl(page.url());
+      const response = await request.get(
+        getBackendUrl(
+          `/spaces/${seed.spaceId}/compositions/${saved.compositionId}/history/${saved.revisionId}`,
+        ),
+      );
+      expect(response.ok()).toBe(true);
+      const revision = await response.json() as StudioRawRevision;
+      const savedYaml = String(revision.fields["spec"]);
+      const components =
+        savedYaml.split("components:")[1]?.split("layout:")[0] ??
+          "";
+
+      expect(savedYaml).toContain(
+        `SELECT * FROM "${form?.sql_relation}"`,
+      );
+      expect(savedYaml).toContain(
+        `SUM("${amountColumn}") AS value FROM "${form?.sql_relation}"`,
+      );
+      expect(components).toContain(`variable: ${formSlug}_rows`);
+      expect(components).toContain(
+        `variable: ${formSlug}_sum_amount`,
+      );
+      expect(components).not.toMatch(/\b(?:form_id|source_id|source):/);
+    } finally {
+      await ownerContext.close();
+    }
+  });
+
   test("Composition Studio saves and reopens a filtered SQL metric", async ({ browser, context, request }) => {
     test.setTimeout(120_000);
     const seed = await seedReactiveMetricKnowledge(request);

@@ -69,7 +69,11 @@ describe("CompositionVariableBindingPicker", () => {
     id: "form-id",
     name: "Customers",
     relation: "Customers",
-    fields: [{ name: "total", type: "decimal" as const }],
+    fields: [{
+      name: "Total",
+      column: "field_total",
+      type: "decimal" as const,
+    }],
   }];
   const renderPicker = (
     props: Partial<Parameters<typeof CompositionVariableBindingPicker>[0]> & {
@@ -191,6 +195,36 @@ describe("CompositionVariableBindingPicker", () => {
       kind: "metric",
       variable: "customer_count",
     }]);
+  });
+
+  it("shows Form field names while binding the SQL column", async () => {
+    const onCommit = vi.fn();
+    const resolveForm = vi.fn(async () => ({ variable: metricQuery }));
+    renderPicker({
+      kind: "metric",
+      provider: { resolveForm, prepareSavedSql: vi.fn() },
+      onCommit,
+    });
+    const dialog = screen.getByRole("dialog", { name: "Metric" });
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Forms" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Customers" }));
+    fireEvent.change(
+      within(dialog).getByRole("combobox", { name: "Aggregation" }),
+      { target: { value: "sum" } },
+    );
+
+    const column = within(dialog).getByRole("combobox", { name: "Column" });
+    expect(within(column).getByRole("option", { name: "Total" }))
+      .toHaveValue("field_total");
+    fireEvent.change(column, { target: { value: "field_total" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    await waitFor(() => expect(resolveForm).toHaveBeenCalledOnce());
+    expect(resolveForm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        aggregate: { kind: "sum", column: "field_total" },
+      }),
+    );
   });
 
   it("pins exact Saved SQL revision and chosen scalar column", async () => {

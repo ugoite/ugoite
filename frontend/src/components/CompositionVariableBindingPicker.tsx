@@ -685,7 +685,7 @@ export function CompositionVariableBindingPicker(
                                   )}
                                 >
                                   {(field) => (
-                                    <option value={field.name}>
+                                    <option value={field.column}>
                                       {field.name}
                                     </option>
                                   )}

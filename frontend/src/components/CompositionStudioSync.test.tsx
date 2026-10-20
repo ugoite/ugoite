@@ -691,7 +691,7 @@ describe("CompositionStudio graph surface", () => {
     );
 
     const block = await screen.findByRole("button", {
-      name: "table, query_form-id_table",
+      name: "table, receipts_rows",
     });
     expect(block).toBeVisible();
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -713,6 +713,71 @@ describe("CompositionStudio graph surface", () => {
       kind: "component",
       component: authored.spec.components[0].id,
     }]);
+  });
+
+  it("uses readable Form labels and SQL columns for explicit aggregates", async () => {
+    formsMock.mockResolvedValue([{
+      id: "form-id",
+      name: "Receipts",
+      sql_relation: "form_receipts",
+      fields: {
+        Amount: { type: "double", sql_column: "field_103" },
+        Units: { type: "long", sql_column: "field_104" },
+        Notes: { type: "markdown", sql_column: "field_105" },
+        Query: { type: "sql", sql_column: "field_106" },
+        Created: { type: "timestamp_tz_ns", sql_column: "field_107" },
+      },
+    }]);
+    previewGraphMock.mockImplementation((_spaceId: string, yaml: string) =>
+      plannedQuery(yaml, {
+        kind: "scalar",
+        value_type: { scalar_type: "float", nullable: true },
+      })
+    );
+    renderStudio(createCompositionGraphDraft("Report"));
+    fireEvent.click(screen.getByRole("button", { name: "Add to design" }));
+    fireEvent.click(screen.getByRole("button", { name: "Metric" }));
+    const picker = screen.getByRole("dialog", { name: "Metric" });
+    fireEvent.click(within(picker).getByRole("tab", { name: "Forms" }));
+    fireEvent.click(
+      await within(picker).findByRole("button", { name: "Receipts" }),
+    );
+    fireEvent.change(
+      within(picker).getByRole("combobox", { name: "Aggregation" }),
+      { target: { value: "sum" } },
+    );
+    const column = within(picker).getByRole("combobox", { name: "Column" });
+    expect(within(column).getByRole("option", { name: "Amount" }))
+      .toHaveValue("field_103");
+    expect(within(column).getByRole("option", { name: "Units" }))
+      .toHaveValue("field_104");
+    fireEvent.change(
+      within(picker).getByRole("combobox", { name: "Aggregation" }),
+      { target: { value: "max" } },
+    );
+    expect(within(column).getByRole("option", { name: "Notes" }))
+      .toHaveValue("field_105");
+    expect(within(column).getByRole("option", { name: "Query" }))
+      .toHaveValue("field_106");
+    expect(within(column).getByRole("option", { name: "Created" }))
+      .toHaveValue("field_107");
+    fireEvent.change(
+      within(picker).getByRole("combobox", { name: "Aggregation" }),
+      { target: { value: "sum" } },
+    );
+    fireEvent.change(column, { target: { value: "field_103" } });
+    fireEvent.click(within(picker).getByRole("button", { name: "Add" }));
+
+    expect(
+      await screen.findByRole("button", {
+        name: "metric, receipts_sum_amount",
+      }),
+    ).toBeVisible();
+    expect(previewGraphMock).toHaveBeenCalledOnce();
+    const authored = JSON.parse(previewGraphMock.mock.calls[0][1]);
+    expect(authored.spec.variables[0].query.sql).toBe(
+      'SELECT SUM("field_103") AS value FROM "form_receipts"',
+    );
   });
 
   it("drops a Form preview resolved after the authenticated account changes", async () => {
@@ -754,7 +819,7 @@ describe("CompositionStudio graph surface", () => {
 
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.queryByRole("button", {
-      name: "table, query_form-id_table",
+      name: "table, receipts_rows",
     })).toBeNull();
   });
 

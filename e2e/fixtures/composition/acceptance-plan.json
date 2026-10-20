@@ -15,9 +15,11 @@
       "selectors": [
         { "path": "crates/ugoite-domain/src/sql_structure.rs", "kind": "test", "name": "relation_selection_builds_a_form_query_and_preserves_source_trivia" },
         { "path": "crates/ugoite-iceberg/tests/test_composition_preview.rs", "kind": "test", "name": "draft_preview_resolves_without_publication" },
-        { "path": "crates/ugoite-core/src/sql_query.rs", "kind": "file" }
+        { "path": "crates/ugoite-core/src/sql_query.rs", "kind": "file" },
+        { "path": "frontend/src/components/CompositionVariableBindingPicker.test.tsx", "kind": "file" },
+        { "path": "e2e/composition-studio-journey.test.ts", "kind": "test", "name": "Form bindings create variable-backed displays with explicit aggregation" }
       ],
-      "manual_evidence_gaps": ["Interactive Form-to-query insertion is not implemented in the vNext graph UI; browser verification of that flow and the separate 50-row preview limit is pending."]
+      "manual_evidence_gaps": ["The browser tests do not independently verify the 50-row preview cap versus SQL text LIMIT."]
     },
     {
       "id": "A03",
@@ -27,7 +29,7 @@
         { "path": "crates/ugoite-iceberg/tests/test_composition_query_authorization.rs", "kind": "test", "name": "authorized_composition_metrics_recheck_current_entry_and_saved_sql_access" },
         { "path": "e2e/composition-source-acl-isolation.test.ts", "kind": "test", "name": "evaluate rechecks Form and exact Saved SQL access after revocation" }
       ],
-      "manual_evidence_gaps": ["Form rename and same-name replacement identity behavior, and Form-specific ACL revocation or missing-Form diagnostics are not covered by the vNext tests selected here"]
+      "manual_evidence_gaps": ["Form rename and same-name replacement identity behavior are not covered by the vNext tests selected here"]
     },
     {
       "id": "A04",
@@ -47,9 +49,11 @@
         { "path": "crates/ugoite-core/src/composition_query.rs", "kind": "test", "name": "compiles_inline_sql_with_explicit_names_and_typed_values" },
         { "path": "crates/ugoite-domain/src/composition/variable_graph.rs", "kind": "test", "name": "inline_parameter_binding_ignores_comments_literals_and_repeated_uses" },
         { "path": "crates/ugoite-domain/src/composition/variable_graph_input.rs", "kind": "test", "name": "resolves_constants_defaults_and_supplied_values_without_coercion" },
-        { "path": "crates/ugoite-iceberg/tests/test_composition_preview.rs", "kind": "test", "name": "parameterized_saved_sql_placeholder_previews_and_saves_with_server_schema" }
+        { "path": "crates/ugoite-iceberg/tests/test_composition_preview.rs", "kind": "test", "name": "parameterized_saved_sql_placeholder_previews_and_saves_with_server_schema" },
+        { "path": "e2e/composition-invalid-variable-input.test.ts", "kind": "test", "name": "invalid_raw_input_blocks_query_and_stale_result" },
+        { "path": "e2e/composition-revision-stale-response.test.ts", "kind": "test", "name": "discard a delayed metric response after navigating to another exact revision" }
       ],
-      "manual_evidence_gaps": ["Browser invalid-input and stale-result behavior, and standalone-preview handling of Saved SQL defaults, are not verified by the vNext backend tests selected here"]
+      "manual_evidence_gaps": ["Standalone-preview handling of Saved SQL defaults is not verified by the vNext tests selected here"]
     },
     {
       "id": "A06",
@@ -83,7 +87,8 @@
       "selectors": [
         { "path": "crates/ugoite-domain/src/composition/variable_graph.rs", "kind": "test", "name": "scalar_results_distinguish_cardinality_null_and_valid_values" },
         { "path": "crates/ugoite-core/src/composition_query.rs", "kind": "test", "name": "validates_inline_planner_schema_before_exposing_scalar_values" },
-        { "path": "crates/ugoite-core/tests/composition_query_evaluation.rs", "kind": "test", "name": "only_descriptor_validated_query_values_reach_the_complete_preview" }
+        { "path": "crates/ugoite-core/tests/composition_query_evaluation.rs", "kind": "test", "name": "only_descriptor_validated_query_values_reach_the_complete_preview" },
+        { "path": "e2e/composition-studio-journey.test.ts", "kind": "test", "name": "Form bindings create variable-backed displays with explicit aggregation" }
       ]
     },
     {

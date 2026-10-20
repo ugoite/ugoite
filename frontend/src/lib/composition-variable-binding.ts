@@ -198,7 +198,13 @@ export interface CompositionFormChoice {
   name: string;
   /** Server-owned relation name used only to author the inline query. */
   relation: string;
-  fields: Array<{ name: string; type: CompositionScalarType }>;
+  fields: Array<{
+    /** Human-readable Form field name shown in the picker. */
+    name: string;
+    /** Server-owned SQL column used only in the generated query. */
+    column: string;
+    type: CompositionScalarType;
+  }>;
 }
 
 export interface CompositionSavedSqlChoice {

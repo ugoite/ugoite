@@ -106,6 +106,42 @@ const scalarFor = (
   nullable,
 });
 
+const variableSlug = (value: string): string =>
+  value.normalize("NFKD").toLowerCase()
+    .replace(/\p{M}/gu, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+const formScalarType = (
+  type: string,
+): CompositionScalarDescriptor["scalar_type"] | undefined => {
+  switch (type) {
+    case "string":
+    case "boolean":
+    case "integer":
+    case "float":
+    case "decimal":
+    case "date":
+    case "timestamp":
+    case "json":
+      return type;
+    case "long":
+      return "integer";
+    case "markdown":
+    case "sql":
+    case "row_reference":
+      return "string";
+    case "timestamp_tz":
+    case "timestamp_ns":
+    case "timestamp_tz_ns":
+      return "timestamp";
+    case "double":
+      return "float";
+    default:
+      return undefined;
+  }
+};
+
 const formChoice = (form: Form): CompositionFormChoice | undefined => {
   if (!form.id || !form.sql_relation?.trim()) return undefined;
   return {
@@ -113,11 +149,12 @@ const formChoice = (form: Form): CompositionFormChoice | undefined => {
     name: form.name,
     relation: form.sql_relation,
     fields: Object.entries(form.fields ?? {}).flatMap(([name, field]) => {
-      const type = field.type;
+      const type = field.type ? formScalarType(field.type) : undefined;
       if (!type) return [];
       return [{
-        name: field.sql_column?.trim() || name,
-        type: type as CompositionScalarDescriptor["scalar_type"],
+        name,
+        column: field.sql_column?.trim() || name,
+        type,
       }];
     }),
   };
@@ -529,11 +566,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
         } else {
           if (!aggregate.column) throw new Error("Aggregate column required");
           const field = form.fields.find((candidate) =>
-            candidate.name === aggregate.column
+            candidate.column === aggregate.column
           );
           if (!field) throw new Error("Aggregate field unavailable");
           sql = `SELECT ${aggregate.kind.toUpperCase()}(${
-            quoteIdentifier(field.name)
+            quoteIdentifier(field.column)
           }) AS value FROM ${relation}`;
         }
         returns = {
@@ -544,9 +581,21 @@ export function CompositionStudio(props: CompositionStudioProps) {
           ),
         };
       }
-      const id = `query_${
-        form.id.replace(/[^a-zA-Z0-9_-]/g, "_")
-      }_${component}`;
+      const formSlug = variableSlug(form.name);
+      const formPrefix = /^[a-z]/.test(formSlug)
+        ? formSlug
+        : formSlug
+        ? `form_${formSlug}`
+        : "form";
+      const aggregateField = component === "metric" && aggregate?.column
+        ? form.fields.find((field) => field.column === aggregate.column)
+        : undefined;
+      const aggregateFieldSlug = aggregateField
+        ? variableSlug(aggregateField.name)
+        : "";
+      const variableSuffix = component === "table" ? "rows" : aggregate!.kind +
+        (aggregateFieldSlug ? `_${aggregateFieldSlug}` : "");
+      const id = `${formPrefix}_${variableSuffix}`;
       const candidate = draftQuery("inline_sql", { sql }, [], returns);
       const uniqueId = (base: string) => {
         let value = base;
