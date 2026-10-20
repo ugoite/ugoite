@@ -707,11 +707,17 @@ fn resolve_parts(
     .map_err(|errors| {
         errors
             .into_iter()
-            .map(|error| {
-                CompositionDiagnostic::for_variable(
+            .map(|error| match error.code {
+                crate::composition_query::VariableGraphQueryRequestDiagnosticCode::MissingArgumentValue => {
+                    CompositionDiagnostic::for_variable(
+                        CompositionDiagnosticCode::VariableMissing,
+                        error.reference_id.as_deref().unwrap_or(&error.variable_id),
+                    )
+                }
+                _ => CompositionDiagnostic::for_variable(
                     CompositionDiagnosticCode::VariableTypeMismatch,
                     &error.variable_id,
-                )
+                ),
             })
             .collect::<Vec<_>>()
     })?;

@@ -15257,6 +15257,12 @@ spec:
         form_bindings: []
         schema_fingerprint: ''
   components:
+    - id: month_start_input
+      kind: input
+      variable: month_start
+    - id: month_end_input
+      kind: input
+      variable: month_end
     - id: rows
       kind: table
       variable: studio_rows
@@ -15265,6 +15271,10 @@ spec:
     rows:
       - id: main
         items:
+          - kind: component
+            component: month_start_input
+          - kind: component
+            component: month_end_input
           - kind: component
             component: rows
 "#
@@ -16869,18 +16879,36 @@ spec:
                         },
                     },
                 ],
-                components: vec![CompositionComponent::Metric {
-                    id: "total_metric".to_string(),
-                    variable: "metric_source".to_string(),
-                    presentation: None,
-                }],
+                components: vec![
+                    CompositionComponent::Input {
+                        id: "optional_input".to_string(),
+                        variable: "optional_value".to_string(),
+                    },
+                    CompositionComponent::Input {
+                        id: "required_input".to_string(),
+                        variable: "required_value".to_string(),
+                    },
+                    CompositionComponent::Metric {
+                        id: "total_metric".to_string(),
+                        variable: "metric_source".to_string(),
+                        presentation: None,
+                    },
+                ],
                 layout: DashboardFlowLayout {
                     kind: FlowLayoutKind::Flow,
                     rows: vec![FlowRow {
                         id: "main".to_string(),
-                        items: vec![FlowItem::Component {
-                            component: "total_metric".to_string(),
-                        }],
+                        items: vec![
+                            FlowItem::Component {
+                                component: "optional_input".to_string(),
+                            },
+                            FlowItem::Component {
+                                component: "required_input".to_string(),
+                            },
+                            FlowItem::Component {
+                                component: "total_metric".to_string(),
+                            },
+                        ],
                     }],
                 },
             },
@@ -16928,7 +16956,7 @@ spec:
         assert_eq!(resolve_body["ok"], false);
         assert_eq!(
             resolve_body["diagnostics"],
-            json!([{"code": "variable_missing"}])
+            json!([{"code": "variable_missing", "variable_id": "optional_value"}])
         );
 
         let (preview_status, preview_body) = route_json(
@@ -16949,7 +16977,7 @@ spec:
         assert_eq!(preview_body["ok"], false);
         assert_eq!(
             preview_body["diagnostics"],
-            json!([{"code": "variable_missing"}])
+            json!([{"code": "variable_missing", "variable_id": "optional_value"}])
         );
 
         let (partial_base_status, partial_base_body) = route_json(
