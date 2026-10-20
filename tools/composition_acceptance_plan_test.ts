@@ -83,6 +83,24 @@ Deno.test(
       ["Actual browser 200% zoom and iPhone Safari device verification"],
     );
     assertEquals(
+      plan.criteria.find(({ id }) => id === "A02")?.manual_evidence_gaps,
+      [
+        "Interactive Form-to-query insertion is not implemented in the vNext graph UI; browser verification of that flow and the separate 50-row preview limit is pending.",
+      ],
+    );
+    assert(
+      plan.criteria.find(({ id }) => id === "A02")?.selectors.every((
+        { path },
+      ) => path.startsWith("crates/")),
+      "A02 selectors must point only to current backend evidence",
+    );
+    assert(
+      plan.criteria.find(({ id }) => id === "A09")?.selectors.every((
+        { path },
+      ) => path.startsWith("crates/")),
+      "A09 selectors must point to vNext graph result evidence",
+    );
+    assertEquals(
       plan.criteria.find(({ id }) => id === "A12")?.manual_evidence_gaps,
       ["VoiceOver and NVDA device verification"],
     );

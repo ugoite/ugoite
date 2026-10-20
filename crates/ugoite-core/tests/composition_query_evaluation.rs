@@ -9,8 +9,9 @@ use ugoite_core::sql_query::{
 };
 use ugoite_domain::composition::{
     VariableGraph, VariableGraphArgumentBinding, VariableGraphLiteral, VariableGraphNode,
-    VariableGraphNodeKind, VariableGraphQueryDefinition, VariableGraphResultType,
-    VariableGraphScalarDescriptor, VariableGraphScalarType, VariableGraphValidatedResult,
+    VariableGraphNodeKind, VariableGraphQuery, VariableGraphQueryDefinition,
+    VariableGraphResultType, VariableGraphScalarDescriptor, VariableGraphScalarType,
+    VariableGraphValidatedResult,
 };
 use uuid::Uuid;
 
@@ -35,7 +36,6 @@ fn input(id: &str, scalar_type: VariableGraphScalarType) -> VariableGraphNode {
 fn argument(name: &str, variable: &str) -> VariableGraphArgumentBinding {
     VariableGraphArgumentBinding {
         name: name.to_owned(),
-        value_type: scalar(VariableGraphScalarType::Integer, false),
         variable: variable.to_owned(),
     }
 }
@@ -51,8 +51,12 @@ fn scalar_query(
             returns: VariableGraphResultType::Scalar {
                 value_type: scalar(VariableGraphScalarType::Integer, false),
             },
-            query: definition,
-            arguments,
+            query: VariableGraphQuery {
+                definition,
+                arguments,
+                form_bindings: Vec::new(),
+                schema_fingerprint: String::new(),
+            },
         },
     }
 }
@@ -67,10 +71,14 @@ fn table_query(id: &str) -> VariableGraphNode {
                     value_type: scalar(VariableGraphScalarType::Integer, false),
                 }],
             },
-            query: VariableGraphQueryDefinition::InlineSql {
-                sql: "SELECT value FROM \"G\" ORDER BY value".to_owned(),
+            query: VariableGraphQuery {
+                definition: VariableGraphQueryDefinition::InlineSql {
+                    sql: "SELECT value FROM \"G\" ORDER BY value".to_owned(),
+                },
+                arguments: Vec::new(),
+                form_bindings: Vec::new(),
+                schema_fingerprint: String::new(),
             },
-            arguments: Vec::new(),
         },
     }
 }

@@ -791,16 +791,18 @@ async fn composition_update_requires_exact_base_and_reports_stale_revision() -> 
     assert_eq!(updated.entry_id, created.entry_id);
     assert_ne!(updated.revision_id, created.revision_id);
     assert_eq!(updated.document, changed);
-    assert!(matches!(
-        &updated.document.spec.sources[0],
-        ugoite_domain::composition::CompositionSource::InlineSql {
-            expected_result,
-            schema_fingerprint,
-            ..
-        } if expected_result.len() == 1
-            && expected_result[0].name == "total"
-            && schema_fingerprint.len() == 64
-    ));
+    assert!(updated.document.has_complete_query_descriptors());
+    assert!(updated
+        .document
+        .spec
+        .variables
+        .iter()
+        .all(|node| match &node.kind {
+            ugoite_domain::composition::VariableGraphNodeKind::Query { query, .. } => {
+                query.schema_fingerprint.len() == 64
+            }
+            _ => true,
+        }));
     let current = service
         .get_composition_raw_authorized_for_principals(
             &space_id,
@@ -1829,19 +1831,15 @@ async fn local_composition_save_creates_updates_and_conflicts_with_receipts() ->
     assert_eq!(created_raw.fields["kind"], json!("dashboard"));
     assert_eq!(created_raw.fields["format_version"], json!(1));
     assert_eq!(created_raw.fields["spec"], json!(created.canonical_yaml));
-    assert!(created.document.has_complete_source_descriptors());
-    let [ugoite_domain::composition::CompositionSource::InlineSql {
-        form_bindings,
-        expected_result,
-        schema_fingerprint,
-        ..
-    }] = created.document.spec.sources.as_slice()
-    else {
-        anyhow::bail!("local save should retain its inline SQL source");
-    };
-    assert!(form_bindings.is_empty());
-    assert_eq!(expected_result.len(), 1);
-    assert_eq!(schema_fingerprint.len(), 64);
+    assert!(created.document.has_complete_query_descriptors());
+    assert!(created.document.spec.variables.iter().any(|node| {
+        node.id == "total"
+            && matches!(
+                &node.kind,
+                ugoite_domain::composition::VariableGraphNodeKind::Query { query, .. }
+                    if query.form_bindings.is_empty() && query.schema_fingerprint.len() == 64
+            )
+    }));
 
     let mut updated_document = created.document.clone();
     updated_document.name = "Local update".to_string();
@@ -1938,19 +1936,24 @@ format_version: 1
 kind: dashboard
 name: Local SQL source
 spec:
-  sources:
+  variables:
     - id: amount_rows
-      kind: inline_sql
-      name: Amount rows
-      sql: SELECT "field_203" AS "amount" FROM "{form_name}"
-      form_bindings: []
-      expected_result: []
-      schema_fingerprint: ''
+      kind: query
+      returns:
+        kind: scalar
+        value_type:
+          scalar_type: integer
+          nullable: true
+      query:
+        kind: inline_sql
+        sql: SELECT SUM("field_203") AS "amount" FROM "{form_name}"
+        arguments: []
+        form_bindings: []
+        schema_fingerprint: ''
   components:
     - id: amount_metric
       kind: metric
-      source: amount_rows
-      column: amount
+      variable: amount_rows
   layout:
     kind: flow
     rows:
@@ -1973,24 +1976,27 @@ spec:
             &owner.to_string(),
         )
         .await?;
-    let [ugoite_domain::composition::CompositionSource::InlineSql {
-        form_bindings,
-        expected_result,
-        schema_fingerprint,
+    assert!(saved.document.has_complete_query_descriptors());
+    let Some(ugoite_domain::composition::VariableGraphNode {
+        kind: ugoite_domain::composition::VariableGraphNodeKind::Query { returns, query },
         ..
-    }] = saved.document.spec.sources.as_slice()
+    }) = saved
+        .document
+        .spec
+        .variables
+        .iter()
+        .find(|node| node.id == "amount_rows")
     else {
-        anyhow::bail!("local save should retain its inline SQL source");
+        anyhow::bail!("local save should retain the inline SQL query variable");
     };
-    assert_eq!(form_bindings.len(), 1);
-    assert_eq!(form_bindings[0].relation, form_name);
-    assert_eq!(expected_result.len(), 1);
-    assert_eq!(expected_result[0].name, "amount");
-    assert_eq!(
-        expected_result[0].result_type,
-        ugoite_domain::composition::CompositionResultFieldType::Integer
-    );
-    assert_eq!(schema_fingerprint.len(), 64);
+    assert_eq!(query.form_bindings.len(), 1);
+    assert_eq!(query.form_bindings[0].relation, form_name);
+    assert!(matches!(
+        returns,
+        ugoite_domain::composition::VariableGraphResultType::Scalar { value_type }
+            if value_type.scalar_type == ugoite_domain::composition::VariableGraphScalarType::Integer
+    ));
+    assert_eq!(query.schema_fingerprint.len(), 64);
 
     let resolution = service
         .resolve_composition_local(
@@ -2050,7 +2056,7 @@ async fn invalid_local_composition_save_does_not_create_registry() -> anyhow::Re
 #[tokio::test]
 async fn local_and_authorized_composition_saves_fail_closed_for_missing_exact_base(
 ) -> anyhow::Result<()> {
-    use ugoite_domain::composition::CompositionSource;
+    use ugoite_domain::composition::{VariableGraphNodeKind, VariableGraphQueryDefinition};
     use ugoite_domain::form::sql_column_name;
     use ugoite_domain::id::FieldId;
 
@@ -2088,13 +2094,31 @@ async fn local_and_authorized_composition_saves_fail_closed_for_missing_exact_ba
 
     let mut document = parse_composition_yaml(SQL_FIRST_COMPOSITION)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
-    let CompositionSource::InlineSql { sql, .. } = &mut document.spec.sources[0] else {
-        anyhow::bail!("fixture should have an inline SQL source");
+    let Some(node) = document
+        .spec
+        .variables
+        .iter_mut()
+        .find(|node| node.id == "total")
+    else {
+        anyhow::bail!("fixture should have an inline query variable");
     };
-    *sql = format!(
-        "SELECT SUM(\"{}\") AS total FROM \"{form_name}\"",
-        sql_column_name(field_id)
-    );
+    let VariableGraphNodeKind::Query { query, returns } = &mut node.kind else {
+        anyhow::bail!("expense_rows should be a query variable");
+    };
+    query.definition = VariableGraphQueryDefinition::InlineSql {
+        sql: format!(
+            "SELECT SUM(\"{}\") AS total FROM \"{form_name}\"",
+            sql_column_name(field_id)
+        ),
+    };
+    *returns = ugoite_domain::composition::VariableGraphResultType::Scalar {
+        value_type: ugoite_domain::composition::VariableGraphScalarDescriptor {
+            scalar_type: ugoite_domain::composition::VariableGraphScalarType::Integer,
+            nullable: true,
+        },
+    };
+    query.form_bindings.clear();
+    query.schema_fingerprint.clear();
 
     let local_created = service
         .save_composition_local(

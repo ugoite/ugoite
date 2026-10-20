@@ -8,12 +8,12 @@ import {
   compileVariableGraph,
   encodeSpreadsheetCsv,
   getWasmSupportedOperations,
-  parseCompositionVariableInput,
-  parseCompositionVariableInputSync,
   parseSqlDocument,
+  parseVariableGraphInput,
+  parseVariableGraphInputSync,
   prepareApiRequest,
-  prepareCompositionVariableInputParser,
   prepareSqlStructureParser,
+  prepareVariableGraphInputParser,
   proposeSqlStructureOperation,
   protocolFetch,
   protocolFetchResponse,
@@ -38,6 +38,60 @@ const validReference = {
 };
 
 const typedCompositionDocument = {
+  format: "ugoite.composition",
+  format_version: 1,
+  kind: "dashboard",
+  name: "Monthly expenses",
+  spec: {
+    variables: [
+      {
+        id: "month_start",
+        kind: "input",
+        value_type: { scalar_type: "date", nullable: false },
+        required: true,
+        default: { kind: "date", value: "2026-10-01" },
+      },
+      {
+        id: "expense_rows",
+        kind: "query",
+        returns: {
+          kind: "table",
+          columns: [{
+            name: "amount",
+            value_type: { scalar_type: "decimal", nullable: true },
+          }],
+        },
+        query: {
+          kind: "inline_sql",
+          sql: 'SELECT amount FROM "Expense" WHERE "Date" >= $month_start',
+          arguments: [{ name: "month_start", variable: "month_start" }],
+          form_bindings: [{
+            relation: "Expense",
+            form_id: "00000000-0000-7000-8000-000000000010",
+          }],
+          schema_fingerprint:
+            "99a980a869d3c01c212a4d175e0616b3237ddfc19b35a6f027829f7cadad3d67",
+        },
+      },
+    ],
+    components: [
+      { id: "month_start_input", kind: "input", variable: "month_start" },
+      { id: "results_table", kind: "table", variable: "expense_rows" },
+    ],
+    layout: {
+      kind: "flow",
+      rows: [{
+        id: "main",
+        items: [
+          { kind: "component", component: "month_start_input" },
+          { kind: "component", component: "results_table" },
+        ],
+      }],
+    },
+  },
+};
+
+const prereleaseSourceShapedCompositionDocument = {
   format: "ugoite.composition",
   format_version: 1,
   kind: "dashboard",
@@ -79,17 +133,20 @@ const typedCompositionDocument = {
 describe("portable Ugoite API protocol WASM", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("requires preparation before synchronously parsing Composition Input", async () => {
+  it("requires preparation before synchronously parsing a graph Input", async () => {
     vi.resetModules();
     const freshProtocol = await import("./protocol");
 
     expect(() =>
-      freshProtocol.parseCompositionVariableInputSync("integer", "1")
+      freshProtocol.parseVariableGraphInputSync(
+        { scalar_type: "integer", nullable: false },
+        "1",
+      )
     )
-      .toThrow("Composition variable parser is not prepared");
+      .toThrow("Variable graph input parser is not prepared");
   });
 
-  it("canonicalizes a typed Composition document through the Rust/WASM bridge", async () => {
+  it("canonicalizes a strict variable-graph Composition through Rust/WASM", async () => {
     const canonical = await canonicalizeCompositionDocument(
       typedCompositionDocument,
     );
@@ -99,12 +156,14 @@ describe("portable Ugoite API protocol WASM", () => {
       format_version: 1,
       name: "Monthly expenses",
       spec: {
-        variables: [{ id: "month_start", type: "date" }],
-        sources: [{
-          kind: "saved_sql",
-          entry_id: "00000000-0000-7000-8000-000000000020",
-          revision_id: "00000000-0000-7000-8000-000000000021",
-        }],
+        variables: [
+          {
+            id: "month_start",
+            kind: "input",
+            value_type: { scalar_type: "date", nullable: false },
+          },
+          { id: "expense_rows", kind: "query", query: { kind: "inline_sql" } },
+        ],
         components: [
           {
             id: "month_start_input",
@@ -114,15 +173,26 @@ describe("portable Ugoite API protocol WASM", () => {
           {
             id: "results_table",
             kind: "table",
-            source: "sql_results",
+            variable: "expense_rows",
           },
         ],
       },
     });
     expect(canonical.canonical_yaml).toContain(
-      "revision_id: 00000000-0000-7000-8000-000000000021",
+      'SELECT amount FROM "Expense" WHERE "Date" >= $month_start',
     );
     expect(canonical.fingerprint).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("rejects prerelease source-shaped Composition documents", async () => {
+    await expect(
+      canonicalizeCompositionDocument(
+        prereleaseSourceShapedCompositionDocument,
+      ),
+    ).rejects.toMatchObject({
+      kind: "composition_diagnostic",
+      code: "invalid_composition",
+    });
   });
 
   it("compiles a typed variable graph through the versioned Rust/WASM action", async () => {
@@ -131,32 +201,28 @@ describe("portable Ugoite API protocol WASM", () => {
       variables: [
         {
           id: "total",
-          kind: {
-            kind: "query",
-            returns: { kind: "scalar", value_type: integer },
-            query: { kind: "inline_sql", sql: "SELECT $amount" },
+          kind: "query",
+          returns: { kind: "scalar", value_type: integer },
+          query: {
+            kind: "inline_sql",
+            sql: "SELECT $amount",
             arguments: [{
               name: "amount",
-              value_type: integer,
               variable: "amount",
             }],
           },
         },
         {
           id: "amount",
-          kind: {
-            kind: "input",
-            value_type: integer,
-            required: true,
-          },
+          kind: "input",
+          value_type: integer,
+          required: true,
         },
         {
           id: "independent",
-          kind: {
-            kind: "constant",
-            value_type: integer,
-            value: { kind: "integer", value: 1 },
-          },
+          kind: "constant",
+          value_type: integer,
+          value: { kind: "integer", value: 1 },
         },
       ],
     };
@@ -175,11 +241,12 @@ describe("portable Ugoite API protocol WASM", () => {
       variables: [
         {
           id: "amount",
-          kind: {
-            kind: "input",
-            value_type: { scalar_type: "string", nullable: false },
-            required: true,
+          kind: "query",
+          returns: {
+            kind: "table",
+            columns: [{ name: "value", value_type: integer }],
           },
+          query: { kind: "inline_sql", sql: "SELECT 1" },
         },
         graph.variables[0],
       ],
@@ -419,32 +486,74 @@ describe("portable Ugoite API protocol WASM", () => {
     ).rejects.toMatchObject({ kind: "domain_output_too_large" });
   });
 
-  it("parses Composition Input with the shared Rust Domain contract without coercion", async () => {
+  it("parses graph Input with the shared Rust Domain contract without coercion", async () => {
     const cases = [
-      ["string", "", { status: "unset" }],
-      ["string", "日本語", { status: "valid", value: "日本語" }],
-      ["string", "x".repeat(4097), { status: "invalid" }],
-      ["boolean", "false", { status: "valid", value: false }],
-      ["boolean", "FALSE", { status: "invalid" }],
-      ["integer", "9007199254740991", {
+      [{ scalar_type: "string", nullable: false }, "", { status: "unset" }],
+      [{ scalar_type: "string", nullable: false }, "日本語", {
+        status: "valid",
+        value: "日本語",
+      }],
+      [{ scalar_type: "string", nullable: false }, "x".repeat(4097), {
+        status: "invalid",
+      }],
+      [{ scalar_type: "boolean", nullable: false }, "false", {
+        status: "valid",
+        value: false,
+      }],
+      [{ scalar_type: "boolean", nullable: false }, "FALSE", {
+        status: "invalid",
+      }],
+      [{ scalar_type: "integer", nullable: false }, "9007199254740991", {
         status: "valid",
         value: 9_007_199_254_740_991,
       }],
-      ["integer", "1.0", { status: "invalid" }],
-      ["float", "1", { status: "valid", value: 1 }],
-      ["float", "1e-4000", { status: "invalid" }],
-      ["float", "1e309", { status: "invalid" }],
-      ["date", "2024-02-29", { status: "valid", value: "2024-02-29" }],
-      ["date", "2025-02-29", { status: "invalid" }],
-      ["timestamp", "2026-10-13T23:59:59.123456789+09:00", {
-        status: "valid",
-        value: "2026-10-13T23:59:59.123456789+09:00",
+      [{ scalar_type: "integer", nullable: false }, "1.0", {
+        status: "invalid",
       }],
-      ["timestamp", "2026-10-13T14:59:59", { status: "invalid" }],
+      [{ scalar_type: "float", nullable: false }, "1", {
+        status: "valid",
+        value: 1,
+      }],
+      [{ scalar_type: "float", nullable: false }, "1e-4000", {
+        status: "invalid",
+      }],
+      [{ scalar_type: "float", nullable: false }, "1e309", {
+        status: "invalid",
+      }],
+      [{ scalar_type: "decimal", nullable: false }, "12.3400", {
+        status: "valid",
+        value: "12.3400",
+      }],
+      [{ scalar_type: "decimal", nullable: false }, "1e3", {
+        status: "invalid",
+      }],
+      [{ scalar_type: "date", nullable: false }, "2024-02-29", {
+        status: "valid",
+        value: "2024-02-29",
+      }],
+      [{ scalar_type: "date", nullable: false }, "2025-02-29", {
+        status: "invalid",
+      }],
+      [
+        { scalar_type: "timestamp", nullable: false },
+        "2026-10-13T23:59:59.123456789+09:00",
+        {
+          status: "valid",
+          value: "2026-10-13T23:59:59.123456789+09:00",
+        },
+      ],
+      [{ scalar_type: "timestamp", nullable: false }, "2026-10-13T14:59:59", {
+        status: "invalid",
+      }],
+      [{ scalar_type: "json", nullable: false }, '{"n":1}', {
+        status: "valid",
+        value: { n: 1 },
+      }],
+      [{ scalar_type: "json", nullable: true }, "null", { status: "invalid" }],
     ] as const;
 
-    for (const [type, raw, expected] of cases) {
-      await expect(parseCompositionVariableInput(type, raw)).resolves.toEqual(
+    for (const [valueType, raw, expected] of cases) {
+      await expect(parseVariableGraphInput(valueType, raw)).resolves.toEqual(
         expected,
       );
     }
@@ -475,17 +584,32 @@ SELECT $day + $day AS total, '$day' AS literal, $day2 AS other FROM "G"`;
     ).toEqual(["$billing_day", "$billing_day", "$day2"]);
   });
 
-  it("parses Composition Input synchronously after preparing the shared WASM parser", async () => {
-    await prepareCompositionVariableInputParser();
+  it("parses graph Input synchronously after preparing the shared WASM parser", async () => {
+    await prepareVariableGraphInputParser();
 
-    expect(parseCompositionVariableInputSync("integer", "+00042")).toEqual({
+    expect(
+      parseVariableGraphInputSync(
+        { scalar_type: "integer", nullable: false },
+        "+00042",
+      ),
+    ).toEqual({
       status: "valid",
       value: 42,
     });
-    expect(parseCompositionVariableInputSync("date", "2025-02-29")).toEqual({
+    expect(
+      parseVariableGraphInputSync(
+        { scalar_type: "date", nullable: false },
+        "2025-02-29",
+      ),
+    ).toEqual({
       status: "invalid",
     });
-    expect(parseCompositionVariableInputSync("string", "")).toEqual({
+    expect(
+      parseVariableGraphInputSync(
+        { scalar_type: "string", nullable: false },
+        "",
+      ),
+    ).toEqual({
       status: "unset",
     });
   });

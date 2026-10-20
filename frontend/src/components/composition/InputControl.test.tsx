@@ -4,8 +4,8 @@ import { createSignal } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CompositionVariableDefinition } from "~/lib/composition-api";
 import {
-  parseCompositionVariableInputSync,
-  prepareCompositionVariableInputParser,
+  parseVariableGraphInputSync,
+  prepareVariableGraphInputParser,
 } from "~/lib/ugoite-client/protocol";
 import { InputControl } from "./InputControl";
 
@@ -44,7 +44,7 @@ describe("Composition InputControl", () => {
   });
 
   it("synchronously shares valid typed values and invalid raw text across Inputs", async () => {
-    await prepareCompositionVariableInputParser();
+    await prepareVariableGraphInputParser();
     const definition: CompositionVariableDefinition = {
       id: "limit",
       type: "integer",
@@ -56,7 +56,10 @@ describe("Composition InputControl", () => {
     const [invalid, setInvalid] = createSignal(false);
     const onInput = (next: string) => {
       setRaw(next);
-      const parsed = parseCompositionVariableInputSync("integer", next);
+      const parsed = parseVariableGraphInputSync(
+        { scalar_type: "integer", nullable: false },
+        next,
+      );
       if (parsed.status === "valid") {
         setValue(parsed.value);
         setInvalid(false);

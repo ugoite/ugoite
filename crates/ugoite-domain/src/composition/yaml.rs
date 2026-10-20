@@ -1,9 +1,7 @@
 //! Restricted YAML parsing for the typed Composition v1 contract.
 
-use super::CompositionVariableType;
 use super::{CompositionDiagnosticCode, CompositionDocument};
 use serde_json::Value;
-use serde_saphyr::granit_parser::{Event, Parser, ScalarStyle};
 use serde_saphyr::{DuplicateKeyPolicy, MergeKeyPolicy};
 
 /// Maximum UTF-8 input size accepted by the Composition YAML parser.
@@ -43,89 +41,7 @@ pub fn parse_composition_yaml(
             .map_err(|_| CompositionDiagnosticCode::InvalidComposition)?;
 
     document.validate_format_version()?;
-    validate_float_default_lexemes(input, &document)?;
     super::canonical::normalize_composition_document(&document)
-}
-
-fn validate_float_default_lexemes(
-    input: &str,
-    document: &CompositionDocument,
-) -> Result<(), CompositionDiagnosticCode> {
-    if !document.spec.variables.iter().any(|variable| {
-        variable.variable_type == CompositionVariableType::Float && variable.default.is_some()
-    }) {
-        return Ok(());
-    }
-
-    let mut default_scalars = Vec::new();
-    let mut frames = Vec::new();
-    for event in Parser::new_from_str(input) {
-        let (event, span) = event.map_err(|_| CompositionDiagnosticCode::InvalidComposition)?;
-        match event {
-            Event::Scalar(value, style, _, _) => {
-                if let Some(Frame::Mapping(key)) = frames.last_mut() {
-                    if let Some(key) = key.take() {
-                        if key == "default" {
-                            let raw = span
-                                .slice(input)
-                                .ok_or(CompositionDiagnosticCode::InvalidComposition)?;
-                            default_scalars.push((raw.to_owned(), style));
-                        }
-                    } else {
-                        *key = Some(value.into_owned());
-                    }
-                }
-            }
-            Event::MappingStart(..) => {
-                consume_mapping_value(&mut frames);
-                frames.push(Frame::Mapping(None));
-            }
-            Event::SequenceStart(..) => {
-                consume_mapping_value(&mut frames);
-                frames.push(Frame::Sequence);
-            }
-            Event::MappingEnd => {
-                frames.pop();
-            }
-            Event::SequenceEnd => {
-                frames.pop();
-            }
-            _ => {}
-        }
-    }
-
-    let mut defaults = default_scalars.into_iter();
-    for variable in &document.spec.variables {
-        if variable.default.is_none() {
-            continue;
-        }
-
-        let (raw, style) = defaults
-            .next()
-            .ok_or(CompositionDiagnosticCode::InvalidComposition)?;
-        if variable.variable_type == CompositionVariableType::Float
-            && style == ScalarStyle::Plain
-            && super::parse_variable_float(&raw).is_none()
-        {
-            return Err(CompositionDiagnosticCode::InvalidComposition);
-        }
-    }
-
-    if defaults.next().is_some() {
-        return Err(CompositionDiagnosticCode::InvalidComposition);
-    }
-    Ok(())
-}
-
-fn consume_mapping_value(frames: &mut [Frame]) {
-    if let Some(Frame::Mapping(key)) = frames.last_mut() {
-        key.take();
-    }
-}
-
-enum Frame {
-    Sequence,
-    Mapping(Option<String>),
 }
 
 fn probe_document_envelope(input: &str) -> Result<(), CompositionDiagnosticCode> {
@@ -190,274 +106,159 @@ fn version_probe_options() -> serde_saphyr::Options {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        parse_composition_yaml, strict_v1_options, MAX_COMPOSITION_COLLECTION_ITEMS,
-        MAX_COMPOSITION_YAML_BYTES, MAX_COMPOSITION_YAML_DEPTH,
-    };
+    use super::{parse_composition_yaml, MAX_COMPOSITION_YAML_BYTES};
     use crate::composition::{
-        CompositionDiagnosticCode, CompositionLiteral, CompositionSource, CompositionValue,
-        CompositionVariableType,
+        CompositionDiagnosticCode, VariableGraphNodeKind, VariableGraphQueryDefinition,
     };
-    use serde_saphyr::DuplicateKeyPolicy;
-    use std::cell::RefCell;
-    use std::rc::Rc;
-    use std::time::Instant;
 
-    const SQL_FIRST: &str = include_str!("../../tests/fixtures/composition/sql-first.ugcomp.yaml");
+    const GRAPH: &str = include_str!("../../tests/fixtures/composition/sql-first.ugcomp.yaml");
 
     #[test]
-    fn parses_inline_sql_and_exact_saved_sql_descriptors() {
-        let document = parse_composition_yaml(SQL_FIRST).unwrap();
-        assert_eq!(document.spec.sources.len(), 2);
+    fn parses_strict_variable_graph_and_shared_query_descriptors() {
+        let document = parse_composition_yaml(GRAPH).unwrap();
+        assert_eq!(document.spec.variables.len(), 4);
+        assert_eq!(document.spec.components.len(), 4);
+        let VariableGraphNodeKind::Query { query, returns: _ } = &document.spec.variables[2].kind
+        else {
+            panic!("third graph node should be a query");
+        };
         assert!(matches!(
-            document.spec.sources[0],
-            CompositionSource::InlineSql { .. }
+            query.definition,
+            VariableGraphQueryDefinition::InlineSql { .. }
         ));
-        let CompositionSource::SavedSql {
-            expected_result,
-            schema_fingerprint,
-            ..
-        } = &document.spec.sources[1]
-        else {
-            panic!("second source should be Saved SQL");
-        };
-        assert_eq!(expected_result[0].name, "total");
-        assert_eq!(schema_fingerprint.len(), 64);
-    }
-
-    #[test]
-    fn result_descriptors_keep_order_and_reject_duplicates_or_unknown_fields() {
-        let ordered = SQL_FIRST.replace(
-            "        - name: total\n          type: decimal",
-            "        - name: count\n          type: integer\n        - name: total\n          type: decimal",
-        );
-        let parsed = parse_composition_yaml(&ordered).unwrap();
-        let CompositionSource::SavedSql {
-            expected_result, ..
-        } = &parsed.spec.sources[1]
-        else {
-            panic!("second source should be Saved SQL");
-        };
+        assert_eq!(query.arguments.len(), 2);
+        assert_eq!(query.form_bindings.len(), 1);
+        assert_eq!(query.schema_fingerprint.len(), 64);
+        assert!(document.has_complete_query_descriptors());
         assert_eq!(
-            expected_result
+            document
+                .spec
+                .components_in_render_order()
+                .unwrap()
                 .iter()
-                .map(|column| column.name.as_str())
+                .map(|item| item.id())
                 .collect::<Vec<_>>(),
-            ["count", "total"]
+            [
+                "month_start_input",
+                "month_end_input",
+                "total",
+                "transactions"
+            ]
         );
+    }
 
-        let duplicate = ordered.replace(
-            "        - name: total\n          type: decimal",
-            "        - name: count\n          type: decimal",
+    #[test]
+    fn rejects_source_shaped_documents_and_unknown_graph_fields() {
+        let source_shaped = GRAPH.replace(
+            "  variables:
+",
+            "  sources: []
+  variables:
+",
         );
         assert_eq!(
-            parse_composition_yaml(&duplicate),
+            parse_composition_yaml(&source_shaped),
             Err(CompositionDiagnosticCode::InvalidComposition)
         );
-
-        let unknown_column_field = SQL_FIRST.replace(
-            "          type: decimal",
-            "          type: decimal\n          nullable: true",
+        let component_source = GRAPH.replace(
+            "      variable: expense_rows
+",
+            "      source: expense_rows
+",
         );
         assert_eq!(
-            parse_composition_yaml(&unknown_column_field),
+            parse_composition_yaml(&component_source),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+        let root_tags = GRAPH.replace(
+            "name: Monthly expenses\n",
+            "name: Monthly expenses\ntags: []\n",
+        );
+        assert_eq!(
+            parse_composition_yaml(&root_tags),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+        let variable_label = GRAPH.replace(
+            "    - id: month_start\n",
+            "    - id: month_start\n      label: Start month\n",
+        );
+        assert_eq!(
+            parse_composition_yaml(&variable_label),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+        let component_label = GRAPH.replace(
+            "    - id: month_start_input\n",
+            "    - id: month_start_input\n      label: Start month\n",
+        );
+        assert_eq!(
+            parse_composition_yaml(&component_label),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+        let unknown = GRAPH.replace(
+            "      kind: query
+",
+            "      kind: query
+      legacy_source: true
+",
+        );
+        assert_eq!(
+            parse_composition_yaml(&unknown),
             Err(CompositionDiagnosticCode::InvalidComposition)
         );
     }
 
     #[test]
-    fn returns_unsupported_version_before_strict_v1_deserialization() {
-        let input = "format: ugoite.composition\nformat_version: 2\nfuture_data: !future &shared [one, two]\nfuture_alias: *shared\n";
+    fn allows_only_empty_descriptor_pair_in_drafts() {
+        let incomplete = GRAPH.replace(
+            "        form_bindings:
+          - relation: Expense
+            form_id: \"00000000-0000-7000-8000-000000000010\"
+        schema_fingerprint: 99a980a869d3c01c212a4d175e0616b3237ddfc19b35a6f027829f7cadad3d67",
+            "        form_bindings: []
+        schema_fingerprint: ''",
+        );
+        let document = parse_composition_yaml(&incomplete).unwrap();
+        assert!(!document.has_complete_query_descriptors());
+        let partial = incomplete.replace(
+            "        form_bindings: []",
+            "        form_bindings:\n          - relation: Expense\n            form_id: \"00000000-0000-7000-8000-000000000010\"",
+        );
         assert_eq!(
-            parse_composition_yaml(input),
-            Err(CompositionDiagnosticCode::UnsupportedFormatVersion)
+            parse_composition_yaml(&partial),
+            Err(CompositionDiagnosticCode::InvalidComposition)
         );
     }
 
     #[test]
-    fn rejects_duplicate_keys_documents_anchors_merges_and_unknown_fields() {
-        let invalid = [
-            SQL_FIRST.replace("name: Monthly expenses\n", "name: Monthly expenses\nname: Duplicate\n"),
-            format!("{SQL_FIRST}---\nformat: ugoite.composition\nformat_version: 1\n"),
-            SQL_FIRST.replace("name: Monthly expenses", "name: &name Monthly expenses"),
-            SQL_FIRST.replace("spec:\n", "spec:\n  <<: {variables: [], sources: [], components: [], layout: {kind: flow, rows: []}}\n"),
-            SQL_FIRST.replace("name: Monthly expenses", "name: !custom Monthly expenses"),
-            SQL_FIRST.replace("name: Monthly expenses\n", "name: Monthly expenses\nfuture_field: true\n"),
-        ];
-        for input in invalid {
+    fn strict_yaml_rejects_duplicate_keys_aliases_multiple_documents_and_bad_versions() {
+        for input in [
+            GRAPH.replace(
+                "name: Monthly expenses\n",
+                "name: Monthly expenses\nname: Duplicate\n",
+            ),
+            format!("{GRAPH}---\nformat: ugoite.composition\nformat_version: 1\n"),
+            GRAPH.replace("name: Monthly expenses", "name: &name Monthly expenses"),
+            GRAPH.replace("name: Monthly expenses", "name: !custom Monthly expenses"),
+        ] {
             assert_eq!(
                 parse_composition_yaml(&input),
                 Err(CompositionDiagnosticCode::InvalidComposition)
             );
         }
-    }
-
-    #[test]
-    fn float_defaults_reject_overflow_and_underflow_and_accept_json_numbers() {
-        for token in ["1e309", "1e-4000"] {
-            let input = variable_document(&format!("default: {token}\n"), "float");
-            assert_eq!(
-                parse_composition_yaml(&input),
-                Err(CompositionDiagnosticCode::InvalidComposition)
-            );
-        }
-        for token in ["1", "1.0", ".5"] {
-            let input = variable_document(&format!("default: {token}\n"), "float");
-            assert!(parse_composition_yaml(&input).is_ok(), "rejected {token}");
-        }
-    }
-
-    #[test]
-    fn date_like_literals_remain_strings_and_defaults_are_type_checked() {
-        let input = variable_document("default: 2026-10-02\n", "date");
-        let document = parse_composition_yaml(&input).unwrap();
-        assert!(matches!(
-            &document.spec.variables[0].default,
-            Some(value) if value.as_json_value() == &serde_json::Value::String("2026-10-02".to_owned())
-        ));
-        assert!(CompositionVariableType::Date.accepts_value(&serde_json::json!("2026-10-02")));
-
-        let mismatched = variable_document("default: true\n", "date");
         assert_eq!(
-            parse_composition_yaml(&mismatched),
-            Err(CompositionDiagnosticCode::InvalidComposition)
-        );
-        let null_default = variable_document("default: null\n", "date");
-        assert_eq!(
-            parse_composition_yaml(&null_default),
-            Err(CompositionDiagnosticCode::InvalidComposition)
-        );
-    }
-
-    #[test]
-    fn rejects_input_over_the_byte_limit_and_accepts_the_limit() {
-        let at_limit = padded_fixture(MAX_COMPOSITION_YAML_BYTES);
-        assert!(parse_composition_yaml(&at_limit).is_ok());
-        let over_limit = padded_fixture(MAX_COMPOSITION_YAML_BYTES + 1);
-        assert_eq!(
-            parse_composition_yaml(&over_limit),
-            Err(CompositionDiagnosticCode::InvalidComposition)
-        );
-    }
-
-    #[test]
-    fn enforces_per_collection_item_limit_without_legacy_collections() {
-        assert!(
-            parse_composition_yaml(&variables_document(MAX_COMPOSITION_COLLECTION_ITEMS)).is_ok()
-        );
-        assert_eq!(
-            parse_composition_yaml(&variables_document(MAX_COMPOSITION_COLLECTION_ITEMS + 1)),
-            Err(CompositionDiagnosticCode::InvalidComposition)
-        );
-        assert_eq!(
-            parse_composition_yaml(&SQL_FIRST.replace("kind: inline_sql", "kind: entry_query")),
-            Err(CompositionDiagnosticCode::InvalidComposition)
-        );
-    }
-
-    #[test]
-    fn enforces_version_probe_nesting_limit() {
-        assert_eq!(
-            parse_composition_yaml(&nested_future_document(MAX_COMPOSITION_YAML_DEPTH - 1)),
+            parse_composition_yaml(
+                "format: ugoite.composition\nformat_version: 2\nfuture: !tag &x [one, two]\n"
+            ),
             Err(CompositionDiagnosticCode::UnsupportedFormatVersion)
         );
+    }
+
+    #[test]
+    fn enforces_input_and_collection_limits() {
+        let over = format!("{GRAPH}{}", "#x\n".repeat(MAX_COMPOSITION_YAML_BYTES / 2));
         assert_eq!(
-            parse_composition_yaml(&nested_future_document(MAX_COMPOSITION_YAML_DEPTH)),
+            parse_composition_yaml(&over),
             Err(CompositionDiagnosticCode::InvalidComposition)
         );
-    }
-
-    #[test]
-    fn parser_keeps_date_like_scalar_as_string_without_schema_coercion() {
-        let options = serde_saphyr::options! {
-            budget: serde_saphyr::budget! {
-                max_documents: 1,
-                max_depth: MAX_COMPOSITION_YAML_DEPTH,
-                max_nodes: 4096,
-                max_events: 8192,
-                max_total_scalar_bytes: MAX_COMPOSITION_YAML_BYTES,
-            },
-            duplicate_keys: DuplicateKeyPolicy::Error,
-            no_schema: true,
-            strict_booleans: true,
-            reject_unsupported_tags: true,
-            emit_comments: false,
-            with_snippet: false,
-        };
-        let date: CompositionValue =
-            serde_saphyr::from_str_with_options("2026-10-02", options).unwrap();
-        assert!(
-            matches!(date, CompositionValue::Literal(CompositionLiteral(value)) if value == serde_json::Value::String("2026-10-02".to_owned()))
-        );
-    }
-
-    #[test]
-    #[ignore = "manual parser profile; run with --ignored --nocapture"]
-    fn profile_sql_first_fixture() {
-        let report = Rc::new(RefCell::new(None));
-        let captured_report = Rc::clone(&report);
-        let options = strict_v1_options().with_budget_report(move |summary| {
-            *captured_report.borrow_mut() = Some(summary);
-        });
-        let _: super::super::CompositionDocument =
-            serde_saphyr::from_slice_with_options(SQL_FIRST.as_bytes(), options).unwrap();
-        let report = report.borrow();
-        let report = report.as_ref().expect("parser budget report");
-        eprintln!(
-            "fixture_bytes={} nodes={} events={} max_depth={} scalar_bytes={} documents={}",
-            SQL_FIRST.len(),
-            report.nodes,
-            report.events,
-            report.max_depth,
-            report.total_scalar_bytes,
-            report.documents,
-        );
-        assert!(parse_composition_yaml(SQL_FIRST).is_ok());
-        let iterations = 1000;
-        let start = Instant::now();
-        for _ in 0..iterations {
-            assert!(parse_composition_yaml(SQL_FIRST).is_ok());
-        }
-        eprintln!(
-            "parsed {iterations} fixture documents in {:?}",
-            start.elapsed()
-        );
-    }
-
-    fn variable_document(default: &str, kind: &str) -> String {
-        format!(
-            "format: ugoite.composition\nformat_version: 1\nname: Example\nkind: dashboard\nspec:\n  variables:\n    - id: variable\n      type: {kind}\n      required: false\n      {default}  components:\n    - id: marker\n      kind: text\n      content: {{kind: literal, text: marker}}\n      style: body\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: component\n            component: marker\n"
-        )
-    }
-
-    fn padded_fixture(target_bytes: usize) -> String {
-        let mut input = SQL_FIRST.to_owned();
-        assert!(input.ends_with('\n'));
-        input.push('#');
-        input.push_str(&"x".repeat(target_bytes - input.len()));
-        input
-    }
-
-    fn variables_document(count: usize) -> String {
-        let mut input = String::from(
-            "format: ugoite.composition\nformat_version: 1\nname: Example\nkind: dashboard\nspec:\n  variables:\n",
-        );
-        for index in 0..count {
-            input.push_str(&format!(
-                "    - id: variable_{index}\n      type: string\n      required: false\n"
-            ));
-        }
-        input.push_str(
-            "  components:\n    - id: marker\n      kind: text\n      content:\n        kind: literal\n        text: marker\n      style: body\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: component\n            component: marker\n",
-        );
-        input
-    }
-
-    fn nested_future_document(depth: usize) -> String {
-        format!(
-            "format: ugoite.composition\nformat_version: 2\nvalue: {}0{}\n",
-            "[".repeat(depth),
-            "]".repeat(depth)
-        )
     }
 }

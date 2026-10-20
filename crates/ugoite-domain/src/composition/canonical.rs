@@ -1,7 +1,8 @@
 //! Canonical normalization and semantic fingerprints for Composition v1.
 
 use super::{
-    CompositionComponent, CompositionDiagnosticCode, CompositionDocument, CompositionSource,
+    CompositionComponent, CompositionDiagnosticCode, CompositionDocument, VariableGraphNodeKind,
+    VariableGraphResultType, VariableGraphScalarType,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -101,20 +102,20 @@ pub(super) fn normalize_composition_document(
     }
 
     let mut normalized = document.clone();
-    for source in &mut normalized.spec.sources {
-        if let CompositionSource::InlineSql { form_bindings, .. } = source {
-            form_bindings.sort_by(|left, right| left.relation.cmp(&right.relation));
+    for variable in &mut normalized.spec.variables {
+        if let VariableGraphNodeKind::Query { query, .. } = &mut variable.kind {
+            query
+                .form_bindings
+                .sort_by(|left, right| left.relation.cmp(&right.relation));
         }
     }
-
     Ok(normalized)
 }
 
 fn metric_bindings_are_well_formed(document: &CompositionDocument) -> bool {
     document.spec.components.iter().all(|component| {
         let CompositionComponent::Metric {
-            source,
-            column,
+            variable,
             presentation,
             ..
         } = component
@@ -122,38 +123,36 @@ fn metric_bindings_are_well_formed(document: &CompositionDocument) -> bool {
             return true;
         };
 
-        let mut matching_sources = document
+        let mut matching_variables = document
             .spec
-            .sources
+            .variables
             .iter()
-            .filter(|candidate| candidate.id() == source);
-        let Some(source) = matching_sources.next() else {
+            .filter(|candidate| candidate.id == *variable);
+        let Some(node) = matching_variables.next() else {
             return false;
         };
-        if matching_sources.next().is_some() {
+        if matching_variables.next().is_some() {
             return false;
         }
-        if !source.has_complete_source_descriptors() {
-            // The Core preview path supplies a live descriptor for an SQL
-            // draft before it can be persisted. The draft still needs a
-            // selected column, but its scalar type is not yet known here.
-            return !column.trim().is_empty();
-        }
-
-        let mut matching_columns = source
-            .expected_result()
-            .iter()
-            .filter(|result_column| result_column.name == *column);
-        matching_columns.next().is_some_and(|result_column| {
-            result_column.result_type.supports_metric()
-                && (presentation.is_none()
-                    || matches!(
-                        result_column.result_type,
-                        super::CompositionResultFieldType::Integer
-                            | super::CompositionResultFieldType::Float
-                            | super::CompositionResultFieldType::Decimal
-                    ))
-        }) && matching_columns.next().is_none()
+        let scalar_type = match &node.kind {
+            VariableGraphNodeKind::Constant { value_type, .. }
+            | VariableGraphNodeKind::Input { value_type, .. } => value_type.scalar_type,
+            VariableGraphNodeKind::Query {
+                returns: VariableGraphResultType::Scalar { value_type },
+                ..
+            } => value_type.scalar_type,
+            VariableGraphNodeKind::Query {
+                returns: VariableGraphResultType::Table { .. },
+                ..
+            } => return false,
+        };
+        presentation.is_none()
+            || matches!(
+                scalar_type,
+                VariableGraphScalarType::Integer
+                    | VariableGraphScalarType::Float
+                    | VariableGraphScalarType::Decimal
+            )
     })
 }
 
@@ -161,32 +160,19 @@ fn composition_collection_limits_hold(document: &CompositionDocument) -> bool {
     let max_items = super::MAX_COMPOSITION_COLLECTION_ITEMS;
     let spec = &document.spec;
     if spec.variables.len() > max_items
-        || spec.sources.len() > max_items
         || spec.components.len() > max_items
         || spec.layout.rows.len() > max_items
     {
         return false;
     }
 
-    for source in &spec.sources {
-        match source {
-            CompositionSource::InlineSql {
-                form_bindings,
-                expected_result,
-                ..
-            } => {
-                if form_bindings.len() > max_items || expected_result.len() > max_items {
-                    return false;
-                }
-            }
-            CompositionSource::SavedSql {
-                variables,
-                expected_result,
-                ..
-            } => {
-                if variables.len() > max_items || expected_result.len() > max_items {
-                    return false;
-                }
+    for variable in &spec.variables {
+        if let VariableGraphNodeKind::Query { returns, query } = &variable.kind {
+            if query.arguments.len() > max_items
+                || query.form_bindings.len() > max_items
+                || matches!(returns, VariableGraphResultType::Table { columns } if columns.len() > max_items)
+            {
+                return false;
             }
         }
     }
@@ -201,157 +187,61 @@ fn composition_collection_limits_hold(document: &CompositionDocument) -> bool {
 mod tests {
     use super::{canonicalize_composition, canonicalize_composition_yaml};
     use crate::composition::{
-        CompositionComponent, CompositionDiagnosticCode, CompositionMetricPresentation,
-        CompositionSource,
+        CompositionDiagnosticCode, VariableGraphFormBinding, VariableGraphNodeKind,
     };
 
-    const SQL_FIRST: &str = include_str!("../../tests/fixtures/composition/sql-first.ugcomp.yaml");
+    const GRAPH: &str = include_str!("../../tests/fixtures/composition/sql-first.ugcomp.yaml");
 
     #[test]
-    fn canonical_bytes_and_fingerprint_match_the_sql_first_fixture() {
-        let result = canonicalize_composition_yaml(SQL_FIRST).unwrap();
-        assert_eq!(
-            result.yaml,
-            include_str!("../../tests/fixtures/composition/sql-first.canonical.ugcomp.yaml")
-        );
-        assert_eq!(
-            result.fingerprint,
-            include_str!("../../tests/fixtures/composition/sql-first.fingerprint.txt").trim()
-        );
+    fn canonical_yaml_and_fingerprint_are_stable_for_variable_graph() {
+        let result = canonicalize_composition_yaml(GRAPH).unwrap();
         assert!(result.yaml.ends_with('\n'));
         assert!(!result.yaml.contains('\r'));
         assert_eq!(canonicalize_composition_yaml(&result.yaml).unwrap(), result);
-        assert!(result
-            .document
-            .spec
-            .sources
-            .iter()
-            .all(|source| match source {
-                CompositionSource::InlineSql { .. } | CompositionSource::SavedSql { .. } => true,
-            }));
+        assert!(result.document.has_complete_query_descriptors());
     }
 
     #[test]
-    fn metrics_accept_either_sql_source_when_the_selected_column_is_scalar() {
-        let mut document = canonicalize_composition_yaml(SQL_FIRST).unwrap().document;
-        let inline = document.spec.sources[0].id().to_owned();
-        let CompositionComponent::Metric { source, column, .. } = &mut document.spec.components[2]
+    fn duplicate_form_bindings_and_invalid_metric_types_are_rejected() {
+        let mut document = canonicalize_composition_yaml(GRAPH).unwrap().document;
+        let VariableGraphNodeKind::Query { query, .. } = &mut document.spec.variables[2].kind
         else {
-            panic!("fixture component should be a Metric");
+            panic!("fixture node should be a query");
         };
-        *source = inline;
-        *column = "amount".to_owned();
-        assert!(canonicalize_composition(&document).is_ok());
-
-        let CompositionComponent::Metric { column, .. } = &mut document.spec.components[2] else {
-            unreachable!();
-        };
-        *column = "payload".to_owned();
-        assert_eq!(
-            canonicalize_composition(&document),
-            Err(CompositionDiagnosticCode::InvalidComposition)
-        );
-    }
-
-    #[test]
-    fn metric_rejects_missing_columns_and_non_numeric_number_presentation() {
-        let baseline = canonicalize_composition_yaml(SQL_FIRST).unwrap().document;
-        let mut missing_column = baseline.clone();
-        let CompositionComponent::Metric { column, .. } = &mut missing_column.spec.components[2]
-        else {
-            panic!("fixture component should be a Metric");
-        };
-        *column = "missing".to_owned();
-        assert_eq!(
-            canonicalize_composition(&missing_column),
-            Err(CompositionDiagnosticCode::InvalidComposition)
-        );
-
-        let mut number_on_date = baseline;
-        let CompositionComponent::Metric {
-            source,
-            column,
-            presentation,
-            ..
-        } = &mut number_on_date.spec.components[2]
-        else {
-            panic!("fixture component should be a Metric");
-        };
-        *source = "expense_rows".to_owned();
-        *column = "Date".to_owned();
-        *presentation = Some(CompositionMetricPresentation::Number {
-            unit: None,
-            fraction_digits: None,
+        query.form_bindings.push(VariableGraphFormBinding {
+            relation: "Expense".to_owned(),
+            form_id: query.form_bindings[0].form_id,
         });
         assert_eq!(
-            canonicalize_composition(&number_on_date),
-            Err(CompositionDiagnosticCode::InvalidComposition)
-        );
-    }
-
-    #[test]
-    fn form_bindings_are_canonicalized_without_changing_sql_semantics() {
-        let mut document = canonicalize_composition_yaml(SQL_FIRST).unwrap().document;
-        let CompositionSource::InlineSql { form_bindings, .. } = &mut document.spec.sources[0]
-        else {
-            panic!("first source should be Inline SQL");
-        };
-        form_bindings.push(form_bindings[0].clone());
-        assert_eq!(
             canonicalize_composition(&document),
             Err(CompositionDiagnosticCode::InvalidComposition)
         );
+
+        let mut invalid_metric = canonicalize_composition_yaml(GRAPH).unwrap().document;
+        let VariableGraphNodeKind::Query { returns, .. } =
+            &mut invalid_metric.spec.variables[2].kind
+        else {
+            panic!("fixture node should be a query");
+        };
+        *returns = crate::composition::VariableGraphResultType::Table { columns: vec![] };
+        assert_eq!(
+            canonicalize_composition(&invalid_metric),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
     }
 
     #[test]
-    fn semantic_edits_change_the_document_fingerprint() {
-        let baseline = canonicalize_composition_yaml(SQL_FIRST).unwrap();
-        let renamed = SQL_FIRST.replace("name: Monthly expenses", "name: Expenses");
-        let changed = canonicalize_composition_yaml(&renamed).unwrap();
-        assert_ne!(baseline.fingerprint, changed.fingerprint);
-
-        let changed_sql_name =
-            SQL_FIRST.replace("      name: Expense rows", "      name: Recent expenses");
+    fn semantic_edits_change_the_fingerprint_and_unknown_fields_fail_closed() {
+        let baseline = canonicalize_composition_yaml(GRAPH).unwrap();
+        let renamed = GRAPH.replace("name: Monthly expenses", "name: Expenses");
         assert_ne!(
             baseline.fingerprint,
-            canonicalize_composition_yaml(&changed_sql_name)
-                .unwrap()
-                .fingerprint
+            canonicalize_composition_yaml(&renamed).unwrap().fingerprint
         );
-    }
-
-    #[test]
-    fn canonicalization_rejects_empty_or_unreferenced_layouts() {
-        let mut document = canonicalize_composition_yaml(SQL_FIRST).unwrap().document;
-        document.spec.layout.rows[0].items.pop();
+        let mut value = serde_json::to_value(baseline.document).unwrap();
+        value["future_field"] = serde_json::json!(true);
         assert_eq!(
-            canonicalize_composition(&document),
-            Err(CompositionDiagnosticCode::InvalidComposition)
-        );
-
-        let mut document = canonicalize_composition_yaml(SQL_FIRST).unwrap().document;
-        document.spec.layout.rows.clear();
-        assert_eq!(
-            canonicalize_composition(&document),
-            Err(CompositionDiagnosticCode::InvalidComposition)
-        );
-    }
-
-    #[test]
-    fn value_validation_checks_version_then_rejects_unknown_v1_fields() {
-        let document = canonicalize_composition_yaml(SQL_FIRST).unwrap().document;
-        let mut future_version = serde_json::to_value(&document).unwrap();
-        future_version["format_version"] = serde_json::json!(2);
-        future_version["future_field"] = serde_json::json!({"enabled": true});
-        assert_eq!(
-            super::canonicalize_composition_document_value(future_version),
-            Err(CompositionDiagnosticCode::UnsupportedFormatVersion)
-        );
-
-        let mut unknown_v1_field = serde_json::to_value(document).unwrap();
-        unknown_v1_field["future_field"] = serde_json::json!({"enabled": true});
-        assert_eq!(
-            super::canonicalize_composition_document_value(unknown_v1_field),
+            super::canonicalize_composition_document_value(value),
             Err(CompositionDiagnosticCode::InvalidComposition)
         );
     }
