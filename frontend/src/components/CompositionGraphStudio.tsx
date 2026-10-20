@@ -143,7 +143,7 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
   return (
     <>
       <nav
-        class="compositionGraphMode"
+        class="studioMode"
         role="tablist"
         aria-label={t("composition.studioMode")}
       >
@@ -152,8 +152,9 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
             <button
               type="button"
               role="tab"
+              class="studioModeOption"
+              classList={{ "studioModeOption--active": mode() === entry }}
               aria-selected={mode() === entry}
-              classList={{ active: mode() === entry }}
               onClick={() => setMode(entry)}
             >
               {entry === "design"

@@ -418,6 +418,6 @@ test.describe("Composition revision stale response", () => {
     expect(currentAfterRelease.metric?.trim()).toBe(String(SECOND_TOTAL));
     const probe = await readProbe(page);
     expect(probe?.targets).toEqual([seed.firstRevisionId]);
-    expect(probe?.oldValues).toEqual([FIRST_TOTAL]);
+    expect(probe?.oldValues).toEqual([{ kind: "float", value: FIRST_TOTAL }]);
   });
 });

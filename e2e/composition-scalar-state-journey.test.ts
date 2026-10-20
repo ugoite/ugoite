@@ -272,13 +272,11 @@ async function openSavedComposition(
 ): Promise<void> {
   const path =
     `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/${seed.compositionRevisionId}`;
-  await page.goto(getFrontendUrl(`/spaces/${seed.spaceId}/dashboard`), {
+  await page.goto(getFrontendUrl(`/spaces/${seed.spaceId}/compositions`), {
     waitUntil: "domcontentloaded",
   });
-  const link = page.getByRole("link", {
-    name: new RegExp(`^${seed.compositionName} Dashboard`),
-  });
-  await expect(link).toHaveAttribute("href", path);
+  const link = page.locator(`a[href="${path}"]`);
+  await expect(link).toBeVisible();
   await link.click();
   await page.waitForURL((url) => url.pathname === path);
   await expect(
@@ -286,14 +284,12 @@ async function openSavedComposition(
   ).toBeVisible();
 }
 
-function metricSection(page: Page, componentIndex: number) {
-  return page.locator("section.section").nth(componentIndex);
+function metricSection(page: Page, variableId: string) {
+  return page.getByRole("region", { name: variableId, exact: true });
 }
 
-function metricOutput(page: Page, componentIndex: number) {
-  return metricSection(page, componentIndex).locator(
-    ".compositionGraphMetric strong",
-  );
+function metricOutput(page: Page, variableId: string) {
+  return metricSection(page, variableId).locator("strong");
 }
 
 const scalarResultTimeoutMs = 30_000;
@@ -324,16 +320,16 @@ test.describe("Composition scalar state journey", () => {
     test.setTimeout(120_000);
     const { freshContext, page } = await openOwnerPage(browser, context, seed);
     try {
-      await expect(metricOutput(page, 0)).toHaveText("3", {
+      await expect(metricOutput(page, "all_rows")).toHaveText("3", {
         timeout: scalarResultTimeoutMs,
       });
-      await expect(metricOutput(page, 1)).toHaveText("2", {
+      await expect(metricOutput(page, "rows_with_amount")).toHaveText("2", {
         timeout: scalarResultTimeoutMs,
       });
-      await expect(metricOutput(page, 2)).toHaveText("30", {
+      await expect(metricOutput(page, "amount_total")).toHaveText("30", {
         timeout: scalarResultTimeoutMs,
       });
-      await expect(metricOutput(page, 3)).toHaveText("15", {
+      await expect(metricOutput(page, "amount_average")).toHaveText("15", {
         timeout: scalarResultTimeoutMs,
       });
     } finally {
@@ -345,7 +341,10 @@ test.describe("Composition scalar state journey", () => {
     test.setTimeout(120_000);
     const { freshContext, page } = await openOwnerPage(browser, context, seed);
     try {
-      const zeroRowsSection = metricSection(page, 4);
+      const zeroRowsSection = page.getByRole("region", {
+        name: "scalar_states",
+        exact: true,
+      });
       await expect(zeroRowsSection.getByRole("alert")).toContainText(
         await page.locator("html").getAttribute("lang").then((locale) =>
           locale === "ja"
@@ -354,17 +353,19 @@ test.describe("Composition scalar state journey", () => {
         ),
         { timeout: scalarResultTimeoutMs },
       );
-      await expect(zeroRowsSection.locator(".compositionGraphMetric strong"))
-        .toHaveCount(0, { timeout: scalarResultTimeoutMs });
+      await expect(page.getByRole("region", {
+        name: "zero_rows",
+        exact: true,
+      })).toHaveCount(0, { timeout: scalarResultTimeoutMs });
 
-      const nullOutput = metricOutput(page, 5);
+      const nullOutput = metricOutput(page, "null_result");
       await expect(nullOutput).toHaveText(
         await page.locator("html").getAttribute("lang").then((locale) =>
           locale === "ja" ? "データなし" : "No data"
         ),
         { timeout: scalarResultTimeoutMs },
       );
-      await expect(metricOutput(page, 6)).toHaveText("0", {
+      await expect(metricOutput(page, "zero_result")).toHaveText("0", {
         timeout: scalarResultTimeoutMs,
       });
       await expect(nullOutput).not.toHaveText("0", {

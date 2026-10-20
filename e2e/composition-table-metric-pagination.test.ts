@@ -257,13 +257,11 @@ test.describe("Composition Table and Metric pagination", () => {
 
     const path =
       `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/${seed.revisionId}`;
-    await page.goto(getFrontendUrl(`/spaces/${seed.spaceId}/dashboard`), {
+    await page.goto(getFrontendUrl(`/spaces/${seed.spaceId}/compositions`), {
       waitUntil: "domcontentloaded",
     });
-    const link = page.getByRole("link", {
-      name: new RegExp(`^${seed.compositionName} Dashboard`),
-    });
-    await uiExpect(link).toHaveAttribute("href", path);
+    const link = page.locator(`a[href="${path}"]`);
+    await uiExpect(link).toBeVisible();
     await link.click();
     await uiExpect(page).toHaveURL(new RegExp(`${path}$`));
 

@@ -403,7 +403,8 @@ async function addStudioText(page: Page, variableId: string): Promise<void> {
   });
   await expect(textBlock).toBeVisible();
   await textBlock.click();
-  await page.getByLabel("Variables", { exact: true })
+  await page.getByRole("complementary", { name: "Selected component" })
+    .getByLabel("Variables", { exact: true })
     .selectOption({ label: variableId });
 }
 
@@ -504,7 +505,7 @@ function buildMobileStudioSeed(
   };
 }
 
-async function openToolFromHome(
+async function openToolFromSavedTools(
   page: Page,
   spaceId: string,
   compositionId: string,
@@ -512,13 +513,11 @@ async function openToolFromHome(
   toolName: string,
 ): Promise<string> {
   const path = `/spaces/${spaceId}/compositions/${compositionId}/${revisionId}`;
-  await page.goto(getFrontendUrl(`/spaces/${spaceId}/dashboard`), {
+  await page.goto(getFrontendUrl(`/spaces/${spaceId}/compositions`), {
     waitUntil: "domcontentloaded",
   });
-  const link = page.getByRole("link", {
-    name: new RegExp(`^${toolName} Dashboard`),
-  });
-  await expect(link).toHaveAttribute("href", path);
+  const link = page.locator(`a[href="${path}"]`);
+  await expect(link).toBeVisible();
   await link.click();
   await expect(page).toHaveURL(new RegExp(`${path.replaceAll("/", "\\/")}$`));
   await expect(
@@ -659,8 +658,8 @@ test.describe("Composition Studio Journey", () => {
           }
         }
       });
-      // Home rediscovers the tool; the exact revision keeps its values.
-      await openToolFromHome(
+      // The Saved tools list rediscovers the exact saved revision.
+      await openToolFromSavedTools(
         page,
         seed.spaceId,
         compositionId,
@@ -1039,7 +1038,7 @@ test.describe("Composition Studio Journey", () => {
         }
       });
 
-      await openToolFromHome(
+      await openToolFromSavedTools(
         page,
         seed.spaceId,
         compositionId,

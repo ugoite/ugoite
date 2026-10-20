@@ -238,8 +238,16 @@ describe("CompositionStudio graph surface", () => {
 
   it("offers only Design and Variables and inserts a Table without opening an Inspector", async () => {
     renderStudio();
-    expect(await screen.findByRole("tab", { name: "Design" })).toBeVisible();
-    expect(screen.getByRole("tab", { name: "Variables" })).toBeVisible();
+    const designTab = await screen.findByRole("tab", { name: "Design" });
+    const variablesTab = screen.getByRole("tab", { name: "Variables" });
+    expect(designTab).toBeVisible();
+    expect(variablesTab).toBeVisible();
+    expect(designTab.closest('[role="tablist"]')).toHaveClass("studioMode");
+    expect(designTab).toHaveClass(
+      "studioModeOption",
+      "studioModeOption--active",
+    );
+    expect(variablesTab).toHaveClass("studioModeOption");
     expect(screen.queryByRole("tab", { name: "Data" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Add to design" }));
