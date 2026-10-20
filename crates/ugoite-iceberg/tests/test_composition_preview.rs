@@ -17,12 +17,12 @@ use ugoite_domain::composition::{
     CompositionKind, CompositionSpec, DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow,
     VariableGraphArgumentBinding, VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind,
     VariableGraphQuery, VariableGraphQueryDefinition, VariableGraphResultType,
-    VariableGraphScalarDescriptor, VariableGraphScalarType,
+    VariableGraphScalarDescriptor, VariableGraphScalarType, VariableGraphValidatedResult,
 };
 use ugoite_domain::form::{sql_column_name, sql_relation_name};
 use ugoite_domain::id::{EntryId, FieldId, FormId, RevisionId};
 use ugoite_iceberg::saved_sql::{SqlKind, SqlPayload};
-use ugoite_iceberg::service::UgoiteService;
+use ugoite_iceberg::service::{CompositionQueryEvaluationTarget, UgoiteService};
 use uuid::Uuid;
 
 async fn setup_preview_space() -> Result<(UgoiteService, String, CompositionDocument, FormId)> {
@@ -273,6 +273,84 @@ async fn preview_plans_query_arguments_with_server_derived_upstream_types() -> R
 }
 
 #[tokio::test]
+async fn graph_evaluation_does_not_execute_an_unrequested_query_branch() -> Result<()> {
+    let (service, space_id, mut document, _) = setup_preview_space().await?;
+    let integer = VariableGraphScalarDescriptor {
+        scalar_type: VariableGraphScalarType::Integer,
+        nullable: false,
+    };
+    let query = |sql: String| VariableGraphNodeKind::Query {
+        returns: VariableGraphResultType::Scalar {
+            value_type: integer,
+        },
+        query: VariableGraphQuery {
+            definition: VariableGraphQueryDefinition::InlineSql { sql },
+            arguments: Vec::new(),
+            form_bindings: Vec::new(),
+            schema_fingerprint: String::new(),
+        },
+    };
+    let unresolved_metadata_query =
+        "SELECT 1 AS value FROM \"Missing-Composition-Form\" LIMIT 1".to_owned();
+    document.spec.variables = vec![
+        VariableGraphNode {
+            id: "selected".to_owned(),
+            kind: query("SELECT 1 AS value".to_owned()),
+        },
+        VariableGraphNode {
+            id: "unrelated".to_owned(),
+            kind: query(unresolved_metadata_query),
+        },
+    ];
+    document.spec.components = vec![CompositionComponent::Metric {
+        id: "metric".to_owned(),
+        variable: "selected".to_owned(),
+        presentation: None,
+    }];
+    document.spec.layout.rows[0].items = vec![FlowItem::Component {
+        component: "metric".to_owned(),
+    }];
+    let canonical =
+        canonicalize_composition(&document).map_err(|code| anyhow::anyhow!(code.as_str()))?;
+
+    let requested = vec!["selected".to_owned()];
+    let response = service
+        .evaluate_composition_graph_authorized_for_principals(
+            &space_id,
+            &[Uuid::from_u128(3_434_001)],
+            CompositionQueryEvaluationTarget::Draft {
+                yaml: canonical.yaml,
+            },
+            Uuid::now_v7(),
+            None,
+            None,
+            &BTreeMap::new(),
+            &[],
+            Some(&requested),
+            None,
+        )
+        .await?;
+
+    assert!(response.ok, "{:?}", response.query_diagnostics);
+    assert_eq!(response.computed_query_ids, vec!["selected".to_owned()]);
+    assert_eq!(response.query_results.len(), 1);
+    assert!(response.query_results.contains_key("selected"));
+    assert_eq!(
+        response
+            .plan
+            .as_ref()
+            .expect("selected graph plan")
+            .queries
+            .iter()
+            .map(|query| query.variable_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["selected"]
+    );
+    assert!(response.authorization_fingerprint.is_some());
+    Ok(())
+}
+
+#[tokio::test]
 async fn draft_preview_resolves_sql_schema_without_executing_source_rows() -> Result<()> {
     let (service, space_id, mut document, form_id) = setup_preview_space().await?;
     let VariableGraphNodeKind::Query { query, .. } = &mut document.spec.variables[0].kind else {
@@ -378,6 +456,9 @@ async fn inline_sql_planning_rejects_unsupported_decimal_and_json_arguments() ->
 async fn parameterized_saved_sql_placeholder_previews_and_saves_with_server_schema() -> Result<()> {
     let (service, space_id, _, _) = setup_preview_space().await?;
     let sql_id = Uuid::from_u128(3_434_010);
+    let pinned_sql_input = "SELECT {{minimum}} AS total";
+    let pinned_sql_text = "SELECT $minimum AS total";
+    let latest_sql_text = "SELECT {{minimum}} + 100 AS total";
     let created = service
         .create_saved_sql(
             &space_id,
@@ -386,7 +467,7 @@ async fn parameterized_saved_sql_placeholder_previews_and_saves_with_server_sche
                 name: Some("Minimum value".to_string()),
                 kind: SqlKind::UserQuery,
                 metadata: None,
-                sql: "SELECT {{minimum}} AS total".to_string(),
+                sql: pinned_sql_input.to_string(),
                 variables: json!([{
                     "name": "minimum",
                     "type": "integer",
@@ -402,6 +483,31 @@ async fn parameterized_saved_sql_placeholder_previews_and_saves_with_server_sche
             .and_then(Value::as_str)
             .context("saved SQL should return its revision ID")?,
     )?;
+    let first_revision_id = RevisionId::from_uuid(revision_id).to_string();
+    let updated = service
+        .update_saved_sql(
+            &space_id,
+            &sql_id.to_string(),
+            &SqlPayload {
+                name: Some("Minimum value".to_string()),
+                kind: SqlKind::UserQuery,
+                metadata: None,
+                sql: latest_sql_text.to_string(),
+                variables: json!([{
+                    "name": "minimum",
+                    "type": "integer",
+                    "description": "",
+                }]),
+            },
+            &first_revision_id,
+            "owner",
+        )
+        .await?;
+    let latest_revision_id = updated
+        .get("revision_id")
+        .and_then(Value::as_str)
+        .context("updated Saved SQL should return its revision ID")?;
+    assert_ne!(latest_revision_id, first_revision_id);
 
     let document = CompositionDocument {
         format: CompositionFormat::UgoiteComposition,
@@ -417,8 +523,8 @@ async fn parameterized_saved_sql_placeholder_previews_and_saves_with_server_sche
                             scalar_type: VariableGraphScalarType::Integer,
                             nullable: false,
                         },
-                        required: false,
-                        default: Some(VariableGraphLiteral::Integer(7)),
+                        required: true,
+                        default: None,
                     },
                 },
                 VariableGraphNode {
@@ -477,19 +583,46 @@ async fn parameterized_saved_sql_placeholder_previews_and_saves_with_server_sche
     let canonical =
         canonicalize_composition(&document).map_err(|code| anyhow::anyhow!(code.as_str()))?;
 
+    let principal_ids = [Uuid::from_u128(3_434_001)];
     let preview = service
-        .preview_composition_local(&space_id, &canonical.yaml, &BTreeMap::new(), &[])
+        .preview_composition_authoring_authorized_for_principals_with_base(
+            &space_id,
+            &canonical.yaml,
+            &BTreeMap::new(),
+            &[],
+            &principal_ids,
+            None,
+        )
         .await?;
     assert!(preview.diagnostics.is_empty(), "{:?}", preview.diagnostics);
     let plan = preview
         .plan
         .context("preview should resolve parameterized SQL")?;
     assert_eq!(plan.queries.len(), 1);
+    assert!(plan.queries[0].request.is_none());
+    assert!(!plan.variable_values.contains_key("minimum"));
+    assert_eq!(plan.queries[0].sql_text.as_deref(), Some(pinned_sql_text));
+    assert_eq!(plan.queries[0].schema_fingerprint.len(), 64);
+
+    let resolved_preview = service
+        .preview_composition_authoring_authorized_for_principals_with_base(
+            &space_id,
+            &canonical.yaml,
+            &BTreeMap::from([("minimum".to_owned(), json!(7))]),
+            &[],
+            &principal_ids,
+            None,
+        )
+        .await?;
+    let resolved_plan = resolved_preview.plan.context("bound preview request")?;
     assert!(matches!(
-        plan.queries[0].request.as_ref(),
+        resolved_plan.queries[0].request.as_ref(),
         Some(request) if request.parameters.get("minimum") == Some(&json!(7))
-            && plan.queries[0].schema_fingerprint.len() == 64
     ));
+    assert_eq!(
+        resolved_plan.queries[0].sql_text.as_deref(),
+        Some(pinned_sql_text)
+    );
 
     let document_with_descriptors =
         apply_preview_query_descriptors(&service, &space_id, document.clone()).await?;
@@ -502,7 +635,7 @@ async fn parameterized_saved_sql_placeholder_previews_and_saves_with_server_sche
                 document: document_with_descriptors,
             },
             "owner",
-            &[Uuid::from_u128(3_434_001)],
+            &principal_ids,
         )
         .await?;
     assert!(authorized.document.has_complete_query_descriptors());
@@ -522,6 +655,66 @@ async fn parameterized_saved_sql_placeholder_previews_and_saves_with_server_sche
         anyhow::bail!("saved Composition should retain its Saved SQL query variable");
     };
     assert_eq!(query.schema_fingerprint.len(), 64);
+
+    let requested_queries = ["minimum_query".to_owned()];
+    let runtime_without_required_input = service
+        .evaluate_composition_graph_authorized_for_principals(
+            &space_id,
+            &principal_ids,
+            CompositionQueryEvaluationTarget::SavedRevision {
+                composition_id: saved.entry_id.to_string(),
+                revision_id: saved.revision_id.to_string(),
+            },
+            Uuid::now_v7(),
+            None,
+            None,
+            &BTreeMap::new(),
+            &[],
+            Some(&requested_queries),
+            None,
+        )
+        .await?;
+    assert!(!runtime_without_required_input.ok);
+    assert!(runtime_without_required_input
+        .diagnostics
+        .iter()
+        .any(|diagnostic| {
+            diagnostic.code
+                == ugoite_domain::composition::CompositionDiagnosticCode::VariableMissing
+                && diagnostic.variable_id.as_deref() == Some("minimum")
+        }));
+
+    let runtime_with_required_input = service
+        .evaluate_composition_graph_authorized_for_principals(
+            &space_id,
+            &principal_ids,
+            CompositionQueryEvaluationTarget::SavedRevision {
+                composition_id: saved.entry_id.to_string(),
+                revision_id: saved.revision_id.to_string(),
+            },
+            Uuid::now_v7(),
+            None,
+            None,
+            &BTreeMap::from([("minimum".to_owned(), json!(7))]),
+            &[],
+            Some(&requested_queries),
+            None,
+        )
+        .await?;
+    assert!(
+        runtime_with_required_input.ok,
+        "{:?}",
+        runtime_with_required_input.query_diagnostics
+    );
+    assert!(matches!(
+        runtime_with_required_input
+            .query_results
+            .get("minimum_query")
+            .map(|result| &result.result),
+        Some(VariableGraphValidatedResult::Scalar {
+            value: VariableGraphLiteral::Integer(7)
+        })
+    ));
     Ok(())
 }
 

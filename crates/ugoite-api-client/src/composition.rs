@@ -278,6 +278,168 @@ pub struct CompositionPreviewResponse {
     pub diagnostics: Vec<CompositionResolveDiagnostic>,
 }
 
+/// Stored revision or unsaved draft evaluated as one immutable graph
+/// snapshot. Draft bases are optional and always identify an exact revision.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CompositionEvaluationTarget {
+    SavedRevision {
+        composition_id: String,
+        revision_id: String,
+    },
+    Draft {
+        yaml: String,
+    },
+}
+
+/// Selects a stateless continuation for one table query variable.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionEvaluationPage {
+    pub variable_id: String,
+    pub cursor: String,
+}
+
+/// Request to resolve and evaluate a typed Composition query graph.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionEvaluationRequest {
+    /// Caller-owned generation ID. Responses and page cursors echo/bind it so
+    /// clients can discard stale results without depending on cancellation.
+    pub evaluation_id: String,
+    pub target: CompositionEvaluationTarget,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_entry_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_revision_id: Option<String>,
+    #[serde(default)]
+    pub variables: BTreeMap<String, Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unset_variables: Vec<String>,
+    /// Query variable IDs whose results should be recomputed. Core expands
+    /// this list to include all query dependencies. Omission evaluates the
+    /// full graph; an empty list evaluates no query nodes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requested_queries: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page: Option<CompositionEvaluationPage>,
+}
+
+/// One graph query result. `value` is the tagged, descriptor-validated
+/// `scalar` or `table` result; it is keyed once by query variable ID even
+/// when multiple display components reference that variable.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionGraphQueryResult {
+    pub value: Value,
+    pub has_more: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next: Option<String>,
+}
+
+/// Query-graph execution failure scoped to one variable. `code` is the
+/// stable Core evaluation code; nested result codes preserve the Domain's
+/// scalar-cardinality and result-schema diagnostics.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionEvaluationQueryDiagnostic {
+    pub code: String,
+    pub variable_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_diagnostic: Option<CompositionEvaluationRequestDiagnostic>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_diagnostic: Option<CompositionEvaluationResultDiagnostic>,
+}
+
+/// Query request compilation details, when an evaluation failure originated
+/// in a graph-bound SQL argument or request.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionEvaluationRequestDiagnostic {
+    pub code: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub argument_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain_code: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cycle: Vec<String>,
+}
+
+/// Stable query-result validation failure, including the Domain result code
+/// that distinguishes scalar cardinality, column shape, and typed values.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionEvaluationResultDiagnostic {
+    pub code: String,
+    pub variable_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_diagnostic: Option<CompositionEvaluationResultContractDiagnostic>,
+}
+
+/// Exact Domain detail for an observed query-result mismatch.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionEvaluationResultContractDiagnostic {
+    pub code: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observed_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub row_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_column_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_value_type: Option<CompositionScalarDescriptor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observed_value_type: Option<CompositionScalarDescriptor>,
+}
+
+/// Stateless graph evaluation response. `evaluation_id` and both fingerprints
+/// identify the input, authorization, query, and Publication snapshot used.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionEvaluationResponse {
+    pub evaluation_id: String,
+    pub ok: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshot_fingerprint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publication_fingerprint: Option<String>,
+    /// Stable identity for the authorization state rechecked after execution.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authorization_fingerprint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub composition_revision: Option<CompositionRevisionReference>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft_fingerprint: Option<String>,
+    #[serde(default)]
+    pub variable_values: BTreeMap<String, Value>,
+    #[serde(default)]
+    pub queries: Vec<CompositionResolvedQuery>,
+    #[serde(default)]
+    pub component_bindings: Vec<CompositionResolvedComponentBinding>,
+    #[serde(default)]
+    pub dependencies: CompositionDependencyIndex,
+    #[serde(default)]
+    pub query_results: BTreeMap<String, CompositionGraphQueryResult>,
+    /// Query variables whose results were computed in this response, in
+    /// dependency order. Failed evaluations return an empty list.
+    pub computed_query_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<CompositionResolveDiagnostic>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub query_diagnostics: Vec<CompositionEvaluationQueryDiagnostic>,
+}
+
 /// Target of a bounded, read-only Composition Metric query.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -541,6 +703,9 @@ pub struct CompositionResolvedQuery {
     pub variable_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request: Option<Value>,
+    /// Exact SQL source for an authorized pinned Saved SQL revision.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sql_text: Option<String>,
     #[serde(default)]
     pub deferred_arguments: Vec<CompositionDeferredArgument>,
     pub returns: CompositionQueryResultType,

@@ -12,11 +12,13 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::Duration;
 use ugoite_core::composition::{
-    bind_variables_with_unset, resolve_composition_preview_with_unset,
-    resolve_composition_with_unset, returns_from_schema, CompositionDiagnostic,
-    CompositionRevisionRef, CurrentQueryDescriptor, InlineSqlQueryMetadata, PreviewCompositionPlan,
-    ResolveInput, ResolvedCompositionPlan, SavedSqlRevisionMetadata,
+    bind_variables_with_unset, resolve_composition_authoring_preview_with_query_selection,
+    resolve_composition_preview_with_query_selection, resolve_composition_with_query_selection,
+    returns_from_schema, CompositionDiagnostic, CompositionRevisionRef, CurrentQueryDescriptor,
+    InlineSqlQueryMetadata, PreviewCompositionPlan, ResolveInput, ResolvedCompositionPlan,
+    SavedSqlRevisionMetadata,
 };
+use ugoite_core::composition_query::selected_query_dependency_closure_for_graph;
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::{
     AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
@@ -89,6 +91,23 @@ pub(crate) fn variable_graph_topological_order(
 ) -> Result<Vec<String>, Vec<ugoite_domain::composition::VariableGraphDiagnostic>> {
     variable_graph_dependency_order(&VariableGraph {
         variables: variables.to_vec(),
+    })
+}
+
+fn query_selection_for_resolution(
+    variables: &[VariableGraphNode],
+    requested_queries: Option<&[String]>,
+) -> Option<BTreeSet<String>> {
+    requested_queries.map(|requested_queries| {
+        let graph = VariableGraph {
+            variables: variables.to_vec(),
+        };
+        // Selection validation is reported by the evaluator after the plan is
+        // assembled. An invalid selection therefore derives no SQL metadata.
+        selected_query_dependency_closure_for_graph(&graph, Some(requested_queries))
+            .unwrap_or_default()
+            .into_iter()
+            .collect()
     })
 }
 
@@ -390,6 +409,7 @@ impl UgoiteService {
         Ok(Some(SavedSqlRevisionMetadata {
             entry_id: descriptor.id,
             revision_id: descriptor.revision_id,
+            sql_text: revision.sql,
             parameter_types,
             form_bindings: planned.form_bindings,
             result_columns,
@@ -661,7 +681,7 @@ impl UgoiteService {
         let raw = self
             .get_composition_raw_revision_local(space_id, composition_id, revision_id)
             .await?;
-        self.resolve_composition_from_raw(space_id, raw, variables, unset_variables, None)
+        self.resolve_composition_from_raw(space_id, raw, variables, unset_variables, None, None)
             .await
     }
 
@@ -677,6 +697,31 @@ impl UgoiteService {
         unset_variables: &[String],
         principal_ids: &[Uuid],
     ) -> Result<CompositionResolution> {
+        self.resolve_composition_authorized_for_query_selection(
+            space_id,
+            composition_id,
+            revision_id,
+            variables,
+            unset_variables,
+            principal_ids,
+            None,
+        )
+        .await
+    }
+
+    /// Resolve an exact authorized Composition revision while deriving query
+    /// metadata only for the requested variables and their transitive query
+    /// dependencies.
+    pub async fn resolve_composition_authorized_for_query_selection(
+        &self,
+        space_id: &str,
+        composition_id: &str,
+        revision_id: &str,
+        variables: &BTreeMap<String, Value>,
+        unset_variables: &[String],
+        principal_ids: &[Uuid],
+        requested_queries: Option<&[String]>,
+    ) -> Result<CompositionResolution> {
         let raw = self
             .get_composition_raw_revision_authorized_for_principals(
                 space_id,
@@ -691,6 +736,7 @@ impl UgoiteService {
             variables,
             unset_variables,
             Some(principal_ids),
+            requested_queries,
         )
         .await
     }
@@ -702,6 +748,7 @@ impl UgoiteService {
         variables: &BTreeMap<String, Value>,
         unset_variables: &[String],
         principal_ids: Option<&[Uuid]>,
+        requested_queries: Option<&[String]>,
     ) -> Result<CompositionResolution> {
         let Some(yaml) = raw.fields.get("spec").and_then(Value::as_str) else {
             return Ok(diagnostic_result(
@@ -725,6 +772,8 @@ impl UgoiteService {
             });
         }
 
+        let selected_query_ids =
+            query_selection_for_resolution(&document.spec.variables, requested_queries);
         let owned_queries = self
             .read_current_queries(
                 space_id,
@@ -732,13 +781,14 @@ impl UgoiteService {
                 principal_ids,
                 None,
                 false,
+                selected_query_ids.as_ref(),
             )
             .await?;
         let current_queries = owned_queries
             .iter()
             .map(OwnedCurrentQueryDescriptor::as_current_query)
             .collect::<Vec<_>>();
-        let result = resolve_composition_with_unset(
+        let result = resolve_composition_with_query_selection(
             ResolveInput {
                 composition_revision: CompositionRevisionRef {
                     entry_id: raw.revision.entry_id,
@@ -750,6 +800,7 @@ impl UgoiteService {
                 current_queries: &current_queries,
             },
             unset_variables,
+            selected_query_ids.as_ref(),
         );
 
         Ok(match result {
@@ -790,8 +841,17 @@ impl UgoiteService {
         unset_variables: &[String],
         base: Option<CompositionRevisionRef>,
     ) -> Result<CompositionPreview> {
-        self.preview_composition_from_yaml(space_id, yaml, variables, unset_variables, None, base)
-            .await
+        self.preview_composition_from_yaml(
+            space_id,
+            yaml,
+            variables,
+            unset_variables,
+            None,
+            base,
+            None,
+            true,
+        )
+        .await
     }
 
     /// Preview one unsaved candidate document after rechecking current
@@ -828,6 +888,29 @@ impl UgoiteService {
         principal_ids: &[Uuid],
         base: Option<CompositionRevisionRef>,
     ) -> Result<CompositionPreview> {
+        self.preview_composition_authorized_for_principals_with_base_and_query_selection(
+            space_id,
+            yaml,
+            variables,
+            unset_variables,
+            principal_ids,
+            base,
+            None,
+        )
+        .await
+    }
+
+    /// Authoring-only preview that resolves authorized query metadata while
+    /// required Inputs remain unset. It never executes SQL or stores values.
+    pub async fn preview_composition_authoring_authorized_for_principals_with_base(
+        &self,
+        space_id: &str,
+        yaml: &str,
+        variables: &BTreeMap<String, Value>,
+        unset_variables: &[String],
+        principal_ids: &[Uuid],
+        base: Option<CompositionRevisionRef>,
+    ) -> Result<CompositionPreview> {
         self.preview_composition_from_yaml(
             space_id,
             yaml,
@@ -835,6 +918,33 @@ impl UgoiteService {
             unset_variables,
             Some(principal_ids),
             base,
+            None,
+            true,
+        )
+        .await
+    }
+
+    /// Preview an authorized draft while deriving query metadata only for
+    /// the requested variables and their transitive query dependencies.
+    pub async fn preview_composition_authorized_for_principals_with_base_and_query_selection(
+        &self,
+        space_id: &str,
+        yaml: &str,
+        variables: &BTreeMap<String, Value>,
+        unset_variables: &[String],
+        principal_ids: &[Uuid],
+        base: Option<CompositionRevisionRef>,
+        requested_queries: Option<&[String]>,
+    ) -> Result<CompositionPreview> {
+        self.preview_composition_from_yaml(
+            space_id,
+            yaml,
+            variables,
+            unset_variables,
+            Some(principal_ids),
+            base,
+            requested_queries,
+            false,
         )
         .await
     }
@@ -847,6 +957,8 @@ impl UgoiteService {
         unset_variables: &[String],
         principal_ids: Option<&[Uuid]>,
         base: Option<CompositionRevisionRef>,
+        requested_queries: Option<&[String]>,
+        allow_unset_inputs: bool,
     ) -> Result<CompositionPreview> {
         let document = match parse_composition_yaml(yaml) {
             Ok(document) => document,
@@ -866,6 +978,8 @@ impl UgoiteService {
             unset_variables,
             principal_ids,
             base,
+            requested_queries,
+            allow_unset_inputs,
         )
         .await
     }
@@ -878,6 +992,8 @@ impl UgoiteService {
         unset_variables: &[String],
         principal_ids: Option<&[Uuid]>,
         base: Option<CompositionRevisionRef>,
+        requested_queries: Option<&[String]>,
+        allow_unset_inputs: bool,
     ) -> Result<CompositionPreview> {
         let draft_fingerprint = match canonicalize_composition(document) {
             Ok(canonical) => canonical.fingerprint,
@@ -936,6 +1052,8 @@ impl UgoiteService {
         } else {
             None
         };
+        let selected_query_ids =
+            query_selection_for_resolution(&document.spec.variables, requested_queries);
         let owned_queries = self
             .read_current_queries(
                 space_id,
@@ -943,20 +1061,35 @@ impl UgoiteService {
                 principal_ids,
                 previous_document.as_ref(),
                 true,
+                selected_query_ids.as_ref(),
             )
             .await?;
         let current_queries = owned_queries
             .iter()
             .map(OwnedCurrentQueryDescriptor::as_current_query)
             .collect::<Vec<_>>();
-        let result = resolve_composition_preview_with_unset(
-            Uuid::new_v4(),
-            &document.spec,
-            variables,
-            unset_variables,
-            &current_queries,
-            draft_fingerprint.clone(),
-        );
+        let execution_id = Uuid::new_v4();
+        let result = if allow_unset_inputs {
+            resolve_composition_authoring_preview_with_query_selection(
+                execution_id,
+                &document.spec,
+                variables,
+                unset_variables,
+                &current_queries,
+                draft_fingerprint.clone(),
+                selected_query_ids.as_ref(),
+            )
+        } else {
+            resolve_composition_preview_with_query_selection(
+                execution_id,
+                &document.spec,
+                variables,
+                unset_variables,
+                &current_queries,
+                draft_fingerprint.clone(),
+                selected_query_ids.as_ref(),
+            )
+        };
 
         Ok(match result {
             Ok(plan) => CompositionPreview {
@@ -983,6 +1116,7 @@ impl UgoiteService {
         principal_ids: Option<&[Uuid]>,
         previous_document: Option<&CompositionDocument>,
         allow_unbound_draft: bool,
+        selected_query_ids: Option<&BTreeSet<String>>,
     ) -> Result<Vec<OwnedCurrentQueryDescriptor>> {
         let mut owned = Vec::new();
         let mut planning_variables = variables.to_vec();
@@ -1000,6 +1134,9 @@ impl UgoiteService {
             let VariableGraphNodeKind::Query { query, .. } = &node.kind else {
                 continue;
             };
+            if selected_query_ids.is_some_and(|selected| !selected.contains(&node.id)) {
+                continue;
+            }
             match &query.definition {
                 VariableGraphQueryDefinition::InlineSql { sql } => {
                     let trusted_bindings = if allow_unbound_draft {

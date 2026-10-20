@@ -212,6 +212,84 @@ fn only_descriptor_validated_query_values_reach_the_complete_preview() {
 }
 
 #[test]
+fn requested_queries_expand_dependencies_and_reject_unselected_or_unknown_nodes() {
+    let graph = VariableGraph {
+        variables: vec![
+            scalar_query(
+                "selected",
+                VariableGraphQueryDefinition::InlineSql {
+                    sql: "SELECT $base + $delta AS value".to_owned(),
+                },
+                vec![argument("base", "base"), argument("delta", "delta")],
+            ),
+            scalar_query(
+                "base",
+                VariableGraphQueryDefinition::InlineSql {
+                    sql: "SELECT $threshold AS value".to_owned(),
+                },
+                vec![argument("threshold", "threshold")],
+            ),
+            scalar_query(
+                "unrelated",
+                VariableGraphQueryDefinition::InlineSql {
+                    sql: "SELECT 99 AS value".to_owned(),
+                },
+                Vec::new(),
+            ),
+            input("delta", VariableGraphScalarType::Integer),
+            input("threshold", VariableGraphScalarType::Integer),
+        ],
+    };
+    let requested = vec!["selected".to_owned()];
+    let evaluation = VariableGraphQueryEvaluation::new_for_queries(
+        &graph,
+        Uuid::from_u128(0x4436),
+        &input_values([("delta", 3), ("threshold", 4)]),
+        Some(&requested),
+    )
+    .expect("selected query and query dependencies are valid");
+    assert_eq!(
+        evaluation
+            .selected_query_ids()
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        ["base", "selected"]
+    );
+    assert_eq!(
+        evaluation
+            .compile_request("unrelated")
+            .expect_err("unselected query cannot be executed")[0]
+            .code,
+        VariableGraphQueryEvaluationDiagnosticCode::QueryNotSelected
+    );
+
+    let unknown = VariableGraphQueryEvaluation::new_for_queries(
+        &graph,
+        Uuid::from_u128(0x4437),
+        &input_values([("delta", 3), ("threshold", 4)]),
+        Some(&["missing".to_owned()]),
+    )
+    .expect_err("unknown selected IDs fail closed");
+    assert_eq!(
+        unknown[0].code,
+        VariableGraphQueryEvaluationDiagnosticCode::QueryVariableNotFound
+    );
+
+    let non_query = VariableGraphQueryEvaluation::new_for_queries(
+        &graph,
+        Uuid::from_u128(0x4438),
+        &input_values([("delta", 3), ("threshold", 4)]),
+        Some(&["threshold".to_owned()]),
+    )
+    .expect_err("only query variables can be selected");
+    assert_eq!(
+        non_query[0].code,
+        VariableGraphQueryEvaluationDiagnosticCode::QueryNodeRequired
+    );
+}
+
+#[test]
 fn evaluation_rejects_requests_with_unbound_parameters_or_stale_snapshot_ids() {
     let graph = VariableGraph {
         variables: vec![
@@ -297,6 +375,42 @@ fn evaluation_rejects_requests_with_unbound_parameters_or_stale_snapshot_ids() {
                 next: None,
             }
         )
+    );
+}
+
+#[test]
+fn evaluation_accepts_only_the_compiled_table_continuation_request() {
+    let graph = VariableGraph {
+        variables: vec![table_query("rows")],
+    };
+    let execution_id = Uuid::from_u128(0x4488);
+    let mut evaluation = VariableGraphQueryEvaluation::new(&graph, execution_id, &BTreeMap::new())
+        .expect("snapshot has no required input variables");
+
+    let request = evaluation
+        .compile_page_request("rows", Some("opaque-cursor"))
+        .expect("table continuation can be recompiled statelessly");
+    assert_eq!(request.continuation.as_deref(), Some("opaque-cursor"));
+    assert_eq!(request.execution_id, Some(execution_id));
+
+    let mut page = page(&request, vec![json!({"value": 9})]);
+    page.has_more = true;
+    page.next = Some("next-cursor".to_owned());
+    evaluation
+        .accept_page("rows", &request, &page)
+        .expect("page matches the graph query and snapshot");
+    let preview = evaluation.preview().expect("table page is validated");
+    assert!(matches!(
+        preview.query_results.get("rows").map(|value| &value.result),
+        Some(VariableGraphValidatedResult::Table { rows, .. }) if rows.len() == 1
+    ));
+
+    let mismatched = evaluation
+        .compile_page_request("rows", Some("other-cursor"))
+        .expect_err("an evaluated table must use the server-returned continuation");
+    assert_eq!(
+        mismatched[0].code,
+        ugoite_core::composition_query::VariableGraphQueryEvaluationDiagnosticCode::RequestDoesNotMatchGraph
     );
 }
 

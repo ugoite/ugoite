@@ -464,6 +464,7 @@ impl UgoiteService {
             request,
             None,
             false,
+            None,
         )
         .await
     }
@@ -483,6 +484,27 @@ impl UgoiteService {
             request,
             query_limits_override,
             true,
+            None,
+        )
+        .await
+    }
+
+    pub(super) async fn probe_composition_sql_scalar_authorized_at_publication(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        composition_id: Option<&str>,
+        request: SqlQueryRequest,
+        publication: &PublicationRef,
+    ) -> Result<SqlScalarProbeResult> {
+        self.probe_sql_scalar_authorized_with_composition_access(
+            space_id,
+            principal_ids,
+            composition_id,
+            request,
+            None,
+            true,
+            Some(publication),
         )
         .await
     }
@@ -495,6 +517,7 @@ impl UgoiteService {
         request: SqlQueryRequest,
         query_limits_override: Option<&QueryLimits>,
         allow_inline_sql: bool,
+        publication_override: Option<&PublicationRef>,
     ) -> Result<SqlScalarProbeResult> {
         validate_scalar_probe_request_with_inline(&request, allow_inline_sql)?;
         require_nonempty_authorized_principals(principal_ids)?;
@@ -522,7 +545,10 @@ impl UgoiteService {
         self.validate_complete_space(space_id).await?;
         let workspace =
             iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
-        let publication = workspace.current_publication().await?;
+        let publication = match publication_override {
+            Some(publication) => publication.clone(),
+            None => workspace.current_publication().await?,
+        };
         let checkpoint = workspace.resolve_publication(&publication).await?;
         let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
         if let Some(composition_id) = composition_id {

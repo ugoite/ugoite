@@ -5,13 +5,13 @@ category: Typed query variable graph evaluation
 features:
   - id: FEAT-COMP-011
     title: Validated Composition query results
-    summary: Keep SQL results transient and expose them to Composition preview only after Core validates them against the graph's explicit request bindings, evaluation snapshot, and declared return descriptors.
+    summary: Keep SQL results transient and expose only selected, dependency-closed query results to Composition preview after Core validates them against explicit bindings, the evaluation snapshot, and declared return descriptors.
     status: planned
     bindings:
       - id: query-result-validation
         role: implementation
         facet: core
-        responsibility: Compile each query request from graph-bound scalar values, validate its exact response before retaining a query result, and release preview values only when all graph query nodes validate.
+        responsibility: Compile query requests from graph-bound scalar values, validate each exact response before retaining it, and let a scoped evaluation publish only its server-derived dependency closure.
         targets:
           - id: composition-query-evaluation
             adapter: rust
@@ -22,3 +22,61 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-COMP-009#criterion.query-results-validated-before-preview
+      - id: composition-graph-evaluation
+        role: implementation
+        facet: storage
+        responsibility: Resolve the exact Composition target and current publication/authorization snapshot, then execute only the server-derived dependency closure through bounded stateless SQL paths.
+        targets:
+          - id: stateless-query-evaluation
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service/composition_query_evaluation.rs
+            selector:
+              kind: symbol
+              name: evaluate_composition_graph_authorized_for_principals
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.query-results-validated-before-preview
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.query-results-validated-before-preview
+      - id: authoring-query-metadata
+        role: implementation
+        facet: service
+        responsibility: Resolve authorized query schema for authoring even when Inputs are unset, omit preview-only placeholders from values and requests, and expose Saved SQL source only from its exact pinned revision.
+        targets:
+          - id: authoring-preview
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service/composition_resolver.rs
+            selector:
+              kind: symbol
+              name: preview_composition_authoring_authorized_for_principals_with_base
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.authoring-query-metadata-preview
+          - id: exact-saved-sql-source
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service/composition_resolver.rs
+            selector:
+              kind: symbol
+              name: derive_saved_sql_query_metadata
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-009#criterion.exact-query-identities
+      - id: composition-preview-response-contract
+        role: contract-source
+        facet: api
+        responsibility: Define the Composition preview response, including optional exact-revision Saved SQL source metadata.
+        targets:
+          - id: composition-preview-operation
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector:
+              kind: operation
+              method: post
+              path: /spaces/{space_id}/compositions/preview
+            claims:
+              - kind: documents
+                anchor: REQ-COMP-009#criterion.authoring-query-metadata-preview
+              - kind: documents
+                anchor: REQ-COMP-009#criterion.exact-query-identities
