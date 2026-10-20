@@ -5,7 +5,7 @@ import type { CompositionVariableType } from "~/lib/composition-api";
 import { compositionVariableDisplayName } from "~/lib/composition-variable-name";
 import type { DraftVariable } from "~/lib/composition-draft";
 import { t } from "~/lib/i18n";
-import { parseCompositionVariableInput } from "~/lib/ugoite-client/protocol";
+import { parseVariableGraphInput } from "~/lib/ugoite-client/protocol";
 
 const variableTypes: CompositionVariableType[] = [
   "string",
@@ -43,7 +43,9 @@ interface CompositionVariableListProps {
 export function CompositionVariableList(props: CompositionVariableListProps) {
   const nextVariableId = (variables: readonly DraftVariable[]) => {
     let sequence = 1;
-    while (variables.some((variable) => variable.id === `variable_${sequence}`)) {
+    while (
+      variables.some((variable) => variable.id === `variable_${sequence}`)
+    ) {
       sequence += 1;
     }
     return `variable_${sequence}`;
@@ -95,7 +97,10 @@ export function CompositionVariableList(props: CompositionVariableListProps) {
     saveDefault(raw === "" ? undefined : raw);
 
     try {
-      const parsed = await parseCompositionVariableInput(variable.type, raw);
+      const parsed = await parseVariableGraphInput(
+        { scalar_type: variable.type, nullable: false },
+        raw,
+      );
       if (defaultInputGenerations.get(variable.id) !== generation) return;
       const current = currentVariable();
       if (!current || current.type !== variable.type) return;
@@ -121,7 +126,13 @@ export function CompositionVariableList(props: CompositionVariableListProps) {
       type: newType(),
       required: true,
     });
-    setNewId(nextVariableId([...props.variables, { id, type: newType(), required: true }]));
+    setNewId(
+      nextVariableId([...props.variables, {
+        id,
+        type: newType(),
+        required: true,
+      }]),
+    );
   };
 
   const duplicateNewId = () =>
