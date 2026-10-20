@@ -124,6 +124,11 @@ pub enum SqlStructureOperation {
     },
     SetColumns {
         columns: Vec<String>,
+        /// Optional aliases aligned with `columns`. An omitted/empty list
+        /// keeps aliases on retained columns; a non-empty list replaces the
+        /// alias state for every selected projection.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        aliases: Vec<Option<SqlStructureAlias>>,
     },
     SetLiteralProjection {
         values: Vec<SqlStructureLiteral>,
@@ -205,6 +210,15 @@ pub struct SqlStructureAlias {
     pub name: String,
     #[serde(default)]
     pub quoted: bool,
+}
+
+/// Alias state for a simple Form-column projection, in SELECT-list order.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SqlStructureProjectionAlias {
+    pub column: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alias: Option<SqlStructureAlias>,
 }
 
 /// A typed predicate that references a declared SQL variable by name.
@@ -367,6 +381,8 @@ pub struct SqlStructureAnalysis {
     #[serde(default)]
     pub literal_projection: Vec<SqlStructureLiteral>,
     #[serde(default)]
+    pub projection_aliases: Vec<SqlStructureProjectionAlias>,
+    #[serde(default)]
     pub filters: Vec<SqlStructureFilter>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filter_expression: Option<SqlStructureFilterExpression>,
@@ -406,6 +422,7 @@ struct ParsedSqlStructure {
     query: Query,
     projection: Vec<String>,
     literal_projection: Vec<SqlStructureLiteral>,
+    projection_aliases: Vec<SqlStructureProjectionAlias>,
     filters: Vec<SqlStructureFilter>,
     filter_expression: Option<SqlStructureFilterExpression>,
     aggregates: Vec<SqlStructureAggregate>,
@@ -487,8 +504,18 @@ pub fn propose_sql_structure_operation(
         SqlStructureOperation::SetJoin { .. } => {
             unreachable!("JOIN edits are handled by the source-preserving proposal")
         }
-        SqlStructureOperation::SetColumns { columns } => {
-            match rewrite_projection(&base_sql, &parsed.query, context, columns) {
+        SqlStructureOperation::SetColumns { columns, aliases } => {
+            if !projection_sources_are_unique(&parsed.projection) {
+                return rejected_proposal(base_sql, SqlStructureReason::ProjectionUnsupported);
+            }
+            match rewrite_projection(
+                &base_sql,
+                &parsed.query,
+                context,
+                columns,
+                aliases,
+                &parsed.projection_aliases,
+            ) {
                 Ok(sql) => sql,
                 Err(reason) => return rejected_proposal(base_sql, reason),
             }
@@ -940,7 +967,8 @@ fn parse_supported_sql(
     validate_select_shape(select)?;
     let joins = validate_relation(select, context)?;
 
-    let (projection, aggregates) = parse_projection(&select.projection, context)?;
+    let (projection, projection_aliases, aggregates) =
+        parse_projection(&select.projection, context)?;
     let group_by = parse_group_by(&select.group_by, context)?;
     validate_grouped_projection(&projection, &aggregates, &group_by)?;
     let distinct = match select.distinct.as_ref() {
@@ -1024,6 +1052,7 @@ fn parse_supported_sql(
         query,
         projection,
         literal_projection,
+        projection_aliases,
         filters,
         filter_expression,
         aggregates,
@@ -1508,7 +1537,14 @@ fn is_wildcard_projection(projection: &[SelectItem]) -> bool {
 fn parse_projection(
     projection: &[SelectItem],
     context: &SqlStructureContext,
-) -> Result<(Vec<String>, Vec<SqlStructureAggregate>), SqlStructureReason> {
+) -> Result<
+    (
+        Vec<String>,
+        Vec<SqlStructureProjectionAlias>,
+        Vec<SqlStructureAggregate>,
+    ),
+    SqlStructureReason,
+> {
     if projection.is_empty() || projection.len() > 384 {
         return Err(SqlStructureReason::ProjectionUnsupported);
     }
@@ -1524,12 +1560,13 @@ fn parse_projection(
                 if context.relation.is_empty() {
                     return Err(SqlStructureReason::ProjectionUnsupported);
                 }
-                return Ok((vec!["*".to_owned()], Vec::new()));
+                return Ok((vec!["*".to_owned()], Vec::new(), Vec::new()));
             }
         }
     }
 
     let mut columns = Vec::new();
+    let mut projection_aliases = Vec::new();
     let mut aggregates = Vec::new();
     for item in projection {
         match item {
@@ -1537,6 +1574,31 @@ fn parse_projection(
                 let column = find_column_by_ident(context, identifier)
                     .ok_or(SqlStructureReason::UnknownColumn)?;
                 columns.push(column.name.clone());
+                if !context.relation.is_empty() {
+                    projection_aliases.push(SqlStructureProjectionAlias {
+                        column: column.name.clone(),
+                        alias: None,
+                    });
+                }
+            }
+            SelectItem::ExprWithAlias {
+                expr: Expr::Identifier(identifier),
+                alias,
+            } if !context.relation.is_empty() => {
+                let column = find_column_by_ident(context, identifier)
+                    .ok_or(SqlStructureReason::UnknownColumn)?;
+                let alias = SqlStructureAlias {
+                    name: alias.value.clone(),
+                    quoted: alias.quote_style.is_some(),
+                };
+                if !valid_projection_alias(&alias) {
+                    return Err(SqlStructureReason::ProjectionUnsupported);
+                }
+                columns.push(column.name.clone());
+                projection_aliases.push(SqlStructureProjectionAlias {
+                    column: column.name.clone(),
+                    alias: Some(alias),
+                });
             }
             SelectItem::UnnamedExpr(expression) if context.relation.is_empty() => {
                 if supported_projection_literal(expression).is_none() {
@@ -1569,7 +1631,10 @@ fn parse_projection(
     if columns.is_empty() && aggregates.is_empty() {
         return Err(SqlStructureReason::ProjectionUnsupported);
     }
-    Ok((columns, aggregates))
+    if !aggregates.is_empty() || projection_aliases.len() != columns.len() {
+        projection_aliases.clear();
+    }
+    Ok((columns, projection_aliases, aggregates))
 }
 
 fn parse_aggregate(
@@ -1645,12 +1710,10 @@ fn parse_aggregate(
         }
         _ => return Err(SqlStructureReason::AggregateUnsupported),
     };
-    if alias.as_ref().is_some_and(|alias| {
-        alias.name.is_empty()
-            || alias.name.len() > 1024
-            || alias.name.chars().any(char::is_control)
-            || (!alias.quoted && !valid_variable_name(&alias.name))
-    }) {
+    if alias
+        .as_ref()
+        .is_some_and(|alias| !valid_projection_alias(alias))
+    {
         return Err(SqlStructureReason::AggregateUnsupported);
     }
     Ok(SqlStructureAggregate {
@@ -1659,6 +1722,13 @@ fn parse_aggregate(
         distinct,
         alias,
     })
+}
+
+fn valid_projection_alias(alias: &SqlStructureAlias) -> bool {
+    !alias.name.is_empty()
+        && alias.name.len() <= 1024
+        && !alias.name.chars().any(char::is_control)
+        && (alias.quoted || valid_variable_name(&alias.name))
 }
 
 fn parse_group_by(
@@ -2218,6 +2288,8 @@ fn rewrite_projection(
     query: &Query,
     context: &SqlStructureContext,
     columns: Vec<String>,
+    aliases: Vec<Option<SqlStructureAlias>>,
+    existing_aliases: &[SqlStructureProjectionAlias],
 ) -> Result<String, SqlStructureReason> {
     let columns = validate_schema_columns(context, &columns)?;
     let SetExpr::Select(select) = query.body.as_ref() else {
@@ -2226,11 +2298,55 @@ fn rewrite_projection(
     if select.projection.iter().any(select_item_is_aggregate) {
         return Err(SqlStructureReason::ProjectionUnsupported);
     }
+
+    let aliases = if aliases.is_empty() {
+        columns
+            .iter()
+            .map(|column| {
+                let matching = existing_aliases
+                    .iter()
+                    .filter(|projection| projection.column == *column)
+                    .collect::<Vec<_>>();
+                (matching.len() == 1)
+                    .then(|| matching[0].alias.clone())
+                    .flatten()
+            })
+            .collect::<Vec<_>>()
+    } else if aliases.len() == columns.len() {
+        aliases
+    } else {
+        return Err(SqlStructureReason::ProjectionUnsupported);
+    };
+    if aliases
+        .iter()
+        .flatten()
+        .any(|alias| !valid_projection_alias(alias))
+    {
+        return Err(SqlStructureReason::ProjectionUnsupported);
+    }
+
+    let current_columns = existing_aliases
+        .iter()
+        .map(|projection| projection.column.as_str())
+        .collect::<Vec<_>>();
+    if current_columns == columns.iter().map(String::as_str).collect::<Vec<_>>()
+        && existing_aliases.len() == select.projection.len()
+    {
+        return rewrite_projection_aliases(sql, &select.projection, &aliases);
+    }
+
     let source_range =
         projection_source_range(sql, query).ok_or(SqlStructureReason::ProjectionUnsupported)?;
     let replacement = columns
         .into_iter()
-        .map(|column| Ident::with_quote('"', column).to_string())
+        .zip(aliases)
+        .map(|(column, alias)| {
+            let column = Ident::with_quote('"', column).to_string();
+            match alias {
+                Some(alias) => format!("{column} AS {}", sql_alias_to_string(alias)),
+                None => column,
+            }
+        })
         .collect::<Vec<_>>()
         .join(", ");
     replace_sql_source_range(sql, source_range, &replacement)
@@ -2306,6 +2422,137 @@ fn literal_projection_source_range(sql: &str, query: &Query) -> Option<SqlSource
     }
     range.start = sign_start;
     Some(range)
+}
+
+fn rewrite_projection_aliases(
+    sql: &str,
+    projection: &[SelectItem],
+    aliases: &[Option<SqlStructureAlias>],
+) -> Result<String, SqlStructureReason> {
+    if projection.is_empty() || projection.len() != aliases.len() {
+        return Err(SqlStructureReason::ProjectionUnsupported);
+    }
+    let mut edits = Vec::new();
+    for (item, requested_alias) in projection.iter().zip(aliases) {
+        let (expression, current_alias) = match item {
+            SelectItem::UnnamedExpr(Expr::Identifier(expression)) => (expression, None),
+            SelectItem::ExprWithAlias {
+                expr: Expr::Identifier(expression),
+                alias,
+            } => (expression, Some(alias)),
+            _ => return Err(SqlStructureReason::ProjectionUnsupported),
+        };
+        if requested_alias
+            .as_ref()
+            .is_some_and(|alias| !valid_projection_alias(alias))
+        {
+            return Err(SqlStructureReason::ProjectionUnsupported);
+        }
+        let current_alias = current_alias.map(|alias| SqlStructureAlias {
+            name: alias.value.clone(),
+            quoted: alias.quote_style.is_some(),
+        });
+        if current_alias.as_ref() == requested_alias.as_ref() {
+            continue;
+        }
+
+        let expression_range = source_range_from_span(sql, expression.span)
+            .ok_or(SqlStructureReason::ProjectionUnsupported)?;
+        if let Some(current_alias_ast) = match item {
+            SelectItem::ExprWithAlias {
+                expr: Expr::Identifier(_),
+                alias,
+            } => Some(alias),
+            _ => None,
+        } {
+            let alias_range = source_range_from_span(sql, current_alias_ast.span)
+                .ok_or(SqlStructureReason::ProjectionUnsupported)?;
+            if alias_range.start < expression_range.end
+                || has_comment_token_in_range(
+                    sql,
+                    SqlSourceRange {
+                        start: expression_range.end,
+                        end: alias_range.start,
+                    },
+                ) == Some(true)
+            {
+                return Err(SqlStructureReason::ProjectionUnsupported);
+            }
+            match requested_alias {
+                Some(alias) => {
+                    if has_comment_token_in_range(sql, alias_range) != Some(false) {
+                        return Err(SqlStructureReason::ProjectionUnsupported);
+                    }
+                    edits.push((alias_range, sql_alias_to_string(alias.clone())));
+                }
+                None => {
+                    let range = SqlSourceRange {
+                        start: expression_range.end,
+                        end: alias_range.end,
+                    };
+                    if has_comment_token_in_range(sql, range) != Some(false) {
+                        return Err(SqlStructureReason::ProjectionUnsupported);
+                    }
+                    edits.push((range, String::new()));
+                }
+            }
+        } else if let Some(alias) = requested_alias {
+            if comment_follows_source_offset(sql, expression_range.end) != Some(false) {
+                return Err(SqlStructureReason::ProjectionUnsupported);
+            }
+            edits.push((
+                SqlSourceRange {
+                    start: expression_range.end,
+                    end: expression_range.end,
+                },
+                format!(" AS {}", sql_alias_to_string(alias.clone())),
+            ));
+        }
+    }
+    apply_sql_source_edits(sql, edits).ok_or(SqlStructureReason::ProjectionUnsupported)
+}
+
+fn sql_alias_to_string(alias: SqlStructureAlias) -> String {
+    if alias.quoted {
+        Ident::with_quote('"', alias.name).to_string()
+    } else {
+        Ident::new(alias.name).to_string()
+    }
+}
+
+fn comment_follows_source_offset(sql: &str, offset: usize) -> Option<bool> {
+    let document = crate::sql_document::parse_sql_document(sql);
+    if document.status != crate::sql_document::SqlDocumentStatus::Parsed {
+        return None;
+    }
+    for token in document
+        .tokens
+        .iter()
+        .filter(|token| token.range.start >= offset)
+    {
+        match token.kind {
+            crate::sql_document::SqlDocumentTokenKind::Trivia => continue,
+            crate::sql_document::SqlDocumentTokenKind::Comment => return Some(true),
+            _ => return Some(false),
+        }
+    }
+    Some(false)
+}
+
+fn apply_sql_source_edits(sql: &str, mut edits: Vec<(SqlSourceRange, String)>) -> Option<String> {
+    edits.sort_by(|(left, _), (right, _)| right.start.cmp(&left.start));
+    let mut result = sql.to_owned();
+    let mut previous_start = sql.len().checked_add(1)?;
+    for (range, replacement) in edits {
+        if range.start > range.end || range.end > sql.len() || range.end > previous_start {
+            return None;
+        }
+        let before = result.get(..range.start)?;
+        let after = result.get(range.end..)?;
+        result = format!("{before}{replacement}{after}");
+        previous_start = range.start;
+    }
+    Some(result)
 }
 
 fn projection_source_range(sql: &str, query: &Query) -> Option<SqlSourceRange> {
@@ -2912,8 +3159,12 @@ fn supported_analysis(
     let literal_projection_enabled = context.relation.is_empty()
         && !parsed.literal_projection.is_empty()
         && structured_projection;
-    let columns_enabled =
-        (columns_available || literal_projection_enabled) && structured_projection && !has_join;
+    let unique_projection_sources =
+        context.relation.is_empty() || projection_sources_are_unique(&parsed.projection);
+    let columns_enabled = (columns_available || literal_projection_enabled)
+        && structured_projection
+        && !has_join
+        && unique_projection_sources;
     let literal_projection = context.relation.is_empty()
         && !parsed.projection.is_empty()
         && parsed.aggregates.is_empty()
@@ -2942,6 +3193,7 @@ fn supported_analysis(
         reason: None,
         projection: parsed.projection,
         literal_projection: parsed.literal_projection,
+        projection_aliases: parsed.projection_aliases,
         filters: parsed.filters,
         filter_expression: parsed.filter_expression,
         aggregates: parsed.aggregates,
@@ -2963,7 +3215,8 @@ fn supported_analysis(
                 } else if !columns_available && !literal_projection_enabled {
                     Some(SqlStructureReason::InvalidContext)
                 } else {
-                    (!structured_projection).then_some(SqlStructureReason::ProjectionUnsupported)
+                    (!structured_projection || !unique_projection_sources)
+                        .then_some(SqlStructureReason::ProjectionUnsupported)
                 },
             ),
             filter: capability(
@@ -3003,6 +3256,10 @@ fn supported_analysis(
             stable_pagination: capability(parsed.stable_pagination, pagination_reason),
         },
     }
+}
+
+fn projection_sources_are_unique(projection: &[String]) -> bool {
+    projection.iter().collect::<BTreeSet<_>>().len() == projection.len()
 }
 
 fn stable_key_is_orderable(context: &SqlStructureContext) -> bool {
@@ -3057,6 +3314,7 @@ fn rejected_analysis(reason: SqlStructureReason) -> SqlStructureAnalysis {
         reason: Some(reason),
         projection: Vec::new(),
         literal_projection: Vec::new(),
+        projection_aliases: Vec::new(),
         filters: Vec::new(),
         filter_expression: None,
         aggregates: Vec::new(),
@@ -3212,6 +3470,23 @@ mod tests {
         assert!(join_limits.contains(
             &"WHERE supports bounded AND/OR/NOT trees of qualified parameter comparisons plus IS NULL/IS NOT NULL on qualified columns; adding a JOIN qualifies every supported predicate leaf; ORDER BY supports simple qualified columns with ASC/DESC and no NULLS FIRST/LAST; unqualified references fail closed"
         ));
+        let projection_limits = editor["constructs"]
+            .as_array()
+            .expect("editor constructs must be an array")
+            .iter()
+            .find(|construct| construct["id"] == "projection")
+            .expect("SELECT projection coverage must be declared")["limits"]
+            .as_array()
+            .expect("projection limits must be an array")
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .collect::<BTreeSet<_>>();
+        assert!(projection_limits.contains(
+            &"simple Form-column projection aliases are inspected and editable with quoted semantics preserved when each source column occurs once"
+        ));
+        assert!(projection_limits.contains(
+            &"repeated source columns keep the query editable but disable the Columns rewrite to avoid projection-slot ambiguity"
+        ));
         let declared_operations = editor["operations"]
             .as_array()
             .expect("feature matrix operations must be an array")
@@ -3244,8 +3519,11 @@ mod tests {
                 left_column: "field_101".to_owned(),
                 right_column: "field_101".to_owned(),
             },
-            SqlStructureOperation::SetColumns { columns: vec![] },
             SqlStructureOperation::SetLiteralProjection { values: vec![] },
+            SqlStructureOperation::SetColumns {
+                columns: vec![],
+                aliases: vec![],
+            },
             SqlStructureOperation::SetFilters { filters: vec![] },
             SqlStructureOperation::SetFilterExpression { expression: None },
             SqlStructureOperation::SetSort { order_by: vec![] },
@@ -3862,6 +4140,205 @@ mod tests {
     }
 
     #[test]
+    fn repeated_projection_sources_keep_sql_editable_but_disable_column_rewrites() {
+        let result = analyze_sql_structure(
+            "SELECT \"field_101\" AS first, \"field_101\" AS second FROM \"Task\" WHERE \"field_101\" = $status ORDER BY \"_ugoite_id\"",
+            &context(),
+        );
+
+        assert_eq!(result.status, SqlStructureStatus::Supported);
+        assert_eq!(result.projection, vec!["field_101", "field_101"]);
+        assert!(!result.capabilities.columns.enabled);
+        assert_eq!(
+            result.capabilities.columns.reason,
+            Some(SqlStructureReason::ProjectionUnsupported)
+        );
+        assert!(result.capabilities.filter.enabled);
+        assert!(result.capabilities.sort.enabled);
+    }
+
+    #[test]
+    fn set_columns_proposal_fails_closed_for_repeated_projection_sources() {
+        let sql = "SELECT \"field_101\" AS first, \"field_101\" AS second FROM \"Task\"";
+        let proposal = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetColumns {
+                columns: vec!["field_101".to_owned()],
+                aliases: vec![],
+            },
+        );
+
+        assert_eq!(proposal.status, SqlStructureStatus::Unsupported);
+        assert_eq!(
+            proposal.reason,
+            Some(SqlStructureReason::ProjectionUnsupported)
+        );
+        assert_eq!(proposal.base_sql, sql);
+        assert_eq!(proposal.proposed_sql, None);
+    }
+
+    #[test]
+    fn analyzes_and_edits_simple_form_column_projection_aliases_losslessly() {
+        let sql = "-- keep header\nSELECT \"field_102\" AS \"Total Amount\", \"field_101\" status FROM \"Task\" /* relation */ WHERE \"field_102\" >= $priority ORDER BY \"_ugoite_id\"";
+        let analysis = analyze_sql_structure(sql, &context());
+        assert_eq!(analysis.status, SqlStructureStatus::Supported);
+        assert_eq!(analysis.projection, vec!["field_102", "field_101"]);
+        assert_eq!(
+            analysis.projection_aliases,
+            vec![
+                SqlStructureProjectionAlias {
+                    column: "field_102".to_owned(),
+                    alias: Some(SqlStructureAlias {
+                        name: "Total Amount".to_owned(),
+                        quoted: true,
+                    }),
+                },
+                SqlStructureProjectionAlias {
+                    column: "field_101".to_owned(),
+                    alias: Some(SqlStructureAlias {
+                        name: "status".to_owned(),
+                        quoted: false,
+                    }),
+                },
+            ]
+        );
+
+        let proposal = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetColumns {
+                columns: vec!["field_102".to_owned(), "field_101".to_owned()],
+                aliases: vec![
+                    Some(SqlStructureAlias {
+                        name: "Gross Total".to_owned(),
+                        quoted: true,
+                    }),
+                    None,
+                ],
+            },
+        );
+        assert_eq!(proposal.status, SqlStructureStatus::Supported);
+        assert_eq!(
+            proposal.proposed_sql.as_deref(),
+            Some("-- keep header\nSELECT \"field_102\" AS \"Gross Total\", \"field_101\" FROM \"Task\" /* relation */ WHERE \"field_102\" >= $priority ORDER BY \"_ugoite_id\"")
+        );
+        assert!(proposal.requires_confirmation);
+        let updated = analyze_sql_structure(proposal.proposed_sql.as_deref().unwrap(), &context());
+        assert_eq!(updated.status, SqlStructureStatus::Supported);
+        assert_eq!(updated.projection, analysis.projection);
+        assert_eq!(
+            updated.projection_aliases[0].alias.as_ref().unwrap().name,
+            "Gross Total"
+        );
+        assert!(updated.projection_aliases[0].alias.as_ref().unwrap().quoted);
+        assert_eq!(updated.projection_aliases[1].alias, None);
+    }
+
+    #[test]
+    fn adding_projection_alias_preserves_other_sql_and_quoted_semantics() {
+        let sql = "SELECT \"field_102\" FROM \"Task\" WHERE \"field_101\" = $status ORDER BY \"_ugoite_id\"";
+        let proposal = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetColumns {
+                columns: vec!["field_102".to_owned()],
+                aliases: vec![Some(SqlStructureAlias {
+                    name: "GrossTotal".to_owned(),
+                    quoted: false,
+                })],
+            },
+        );
+        assert_eq!(proposal.status, SqlStructureStatus::Supported);
+        assert_eq!(
+            proposal.proposed_sql.as_deref(),
+            Some("SELECT \"field_102\" AS GrossTotal FROM \"Task\" WHERE \"field_101\" = $status ORDER BY \"_ugoite_id\"")
+        );
+    }
+
+    #[test]
+    fn adding_projection_alias_when_replacing_wildcard_preserves_other_clauses() {
+        let sql = "SELECT * FROM \"Task\" WHERE \"field_101\" = $status ORDER BY \"_ugoite_id\"";
+        let proposal = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetColumns {
+                columns: vec!["field_102".to_owned()],
+                aliases: vec![Some(SqlStructureAlias {
+                    name: "total".to_owned(),
+                    quoted: false,
+                })],
+            },
+        );
+        assert_eq!(proposal.status, SqlStructureStatus::Supported);
+        assert_eq!(
+            proposal.proposed_sql.as_deref(),
+            Some("SELECT \"field_102\" AS total FROM \"Task\" WHERE \"field_101\" = $status ORDER BY \"_ugoite_id\"")
+        );
+    }
+
+    #[test]
+    fn projection_alias_edits_fail_closed_for_comments_and_invalid_alias_shapes() {
+        let commented_gap = "SELECT \"field_102\" /* keep */ AS total FROM \"Task\"";
+        let removal = propose_sql_structure_operation(
+            commented_gap,
+            &context(),
+            SqlStructureOperation::SetColumns {
+                columns: vec!["field_102".to_owned()],
+                aliases: vec![None],
+            },
+        );
+        assert_eq!(removal.status, SqlStructureStatus::Unsupported);
+        assert_eq!(
+            removal.reason,
+            Some(SqlStructureReason::ProjectionUnsupported)
+        );
+        assert_eq!(removal.base_sql, commented_gap);
+        assert!(removal.proposed_sql.is_none());
+
+        let comment_after_column = "SELECT \"field_102\" /* keep */ FROM \"Task\"";
+        let addition = propose_sql_structure_operation(
+            comment_after_column,
+            &context(),
+            SqlStructureOperation::SetColumns {
+                columns: vec!["field_102".to_owned()],
+                aliases: vec![Some(SqlStructureAlias {
+                    name: "total".to_owned(),
+                    quoted: false,
+                })],
+            },
+        );
+        assert_eq!(addition.status, SqlStructureStatus::Unsupported);
+        assert_eq!(
+            addition.reason,
+            Some(SqlStructureReason::ProjectionUnsupported)
+        );
+
+        let expression = analyze_sql_structure(
+            "SELECT \"field_102\" + 1 AS total FROM \"Task\"",
+            &context(),
+        );
+        assert_eq!(expression.status, SqlStructureStatus::Unsupported);
+        assert_eq!(
+            expression.reason,
+            Some(SqlStructureReason::ProjectionUnsupported)
+        );
+
+        let invalid_unquoted = propose_sql_structure_operation(
+            "SELECT \"field_102\" FROM \"Task\"",
+            &context(),
+            SqlStructureOperation::SetColumns {
+                columns: vec!["field_102".to_owned()],
+                aliases: vec![Some(SqlStructureAlias {
+                    name: "Total Amount".to_owned(),
+                    quoted: false,
+                })],
+            },
+        );
+        assert_eq!(invalid_unquoted.status, SqlStructureStatus::Unsupported);
+    }
+
+    #[test]
     fn analyzes_and_proposes_distinct_for_a_relation_free_literal_select() {
         let relation_free_context = SqlStructureContext {
             relation: String::new(),
@@ -3876,6 +4353,11 @@ mod tests {
         assert_eq!(analysis.projection, vec!["1"]);
         assert!(analysis.capabilities.distinct.enabled);
         assert!(analysis.capabilities.columns.enabled);
+
+        let repeated_literals = analyze_sql_structure("SELECT 1, 1", &relation_free_context);
+        assert_eq!(repeated_literals.status, SqlStructureStatus::Supported);
+        assert_eq!(repeated_literals.literal_projection.len(), 2);
+        assert!(repeated_literals.capabilities.columns.enabled);
         assert!(!analysis.capabilities.filter.enabled);
         assert!(!analysis.capabilities.sort.enabled);
         assert!(!analysis.capabilities.aggregate.enabled);
@@ -4044,6 +4526,7 @@ mod tests {
             &context(),
             SqlStructureOperation::SetColumns {
                 columns: vec!["field_101".to_owned(), "field_102".to_owned()],
+                aliases: vec![],
             },
         );
         assert_eq!(sql, "SELECT * FROM \"Task\"");
@@ -4464,6 +4947,7 @@ mod tests {
                 context,
                 SqlStructureOperation::SetColumns {
                     columns: columns.clone(),
+                    aliases: vec![],
                 },
             );
 
@@ -4494,6 +4978,7 @@ mod tests {
             &context(),
             SqlStructureOperation::SetColumns {
                 columns: vec!["field_102".to_owned()],
+                aliases: vec![],
             },
         );
 
@@ -4882,6 +5367,7 @@ mod tests {
             &context(),
             SqlStructureOperation::SetColumns {
                 columns: vec!["unknown".to_owned()],
+                aliases: vec![],
             },
         );
         assert_eq!(

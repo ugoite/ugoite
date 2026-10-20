@@ -49,8 +49,14 @@ Form from the relation-free `SELECT 1` workspace seed proposes
 `SELECT * FROM <relation>`; replacing one simple relation preserves the other
 SQL clauses and is accepted only when the target Form schema validates them.
 For a single aliased relation, structure edits preserve the alias and emit
-unqualified column references. Joins, derived relations, and table alias column
-lists remain unsupported.
+unqualified column references. One same-Form `INNER JOIN` with explicit aliases
+and a supported equality is editable; other join shapes, derived relations, and
+table alias column lists remain unsupported. For a simple Form-column
+projection where each source column occurs once, the Columns editor exposes
+the output alias and lets the user add, rename, or remove it while keeping the
+selected column. Repeated source columns remain visible and analyzable, but
+disable the Columns rewrite to avoid applying one source-name edit ambiguously
+to multiple projection slots; unrelated actions remain available.
 The Form picker shows the current Form name; SQL text uses the opaque,
 server-derived `form_<32-hex-ID>` relation for that Form ID. Renaming changes
 the picker label and schema context identity while leaving existing SQL bound

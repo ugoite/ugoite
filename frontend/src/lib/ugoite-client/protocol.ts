@@ -575,6 +575,11 @@ export type SqlStructureJoin = {
   right_column: string;
 };
 
+export type SqlStructureProjectionAlias = {
+  column: string;
+  alias?: SqlStructureAlias;
+};
+
 export type SqlStructureAggregate = {
   function: SqlStructureAggregateFunction;
   /** Omitted only for COUNT(*). */
@@ -591,8 +596,13 @@ export type SqlStructureLiteral =
 export type SqlStructureOperation =
   | { kind: "set_relation"; relation: string }
   | { kind: "set_join"; left_column: string; right_column: string }
-  | { kind: "set_columns"; columns: string[] }
   | { kind: "set_literal_projection"; values: SqlStructureLiteral[] }
+  | {
+    kind: "set_columns";
+    columns: string[];
+    /** Aligned aliases. Omitted to retain aliases on selected columns. */
+    aliases?: (SqlStructureAlias | null)[];
+  }
   | { kind: "set_filters"; filters: SqlStructureFilter[] }
   | {
     kind: "set_filter_expression";
@@ -645,6 +655,7 @@ export type SqlStructureAnalysis = {
   reason?: SqlStructureReason;
   projection: string[];
   literal_projection: SqlStructureLiteral[];
+  projection_aliases: SqlStructureProjectionAlias[];
   filters: SqlStructureFilter[];
   filter_expression?: SqlStructureFilterExpression | null;
   aggregates: SqlStructureAggregate[];

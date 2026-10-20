@@ -80,6 +80,7 @@ export {
   type SqlStructureFilterOperator,
   type SqlStructureLiteral,
   type SqlStructureOperation,
+  type SqlStructureProjectionAlias,
   type SqlStructureProposal,
   type SqlStructureReason,
   type SqlStructureSort,

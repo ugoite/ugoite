@@ -103,6 +103,20 @@ Deno.test("SQL feature matrix binds the read-only gate and current UI actions", 
       ),
     true,
   );
+  assertEquals(
+    constructs.find((construct) => construct.id === "projection")?.limits
+      .includes(
+        "simple Form-column projection aliases are inspected and editable with quoted semantics preserved when each source column occurs once",
+      ),
+    true,
+  );
+  assertEquals(
+    constructs.find((construct) => construct.id === "projection")?.limits
+      .includes(
+        "repeated source columns keep the query editable but disable the Columns rewrite to avoid projection-slot ambiguity",
+      ),
+    true,
+  );
   const valuesQuery = constructs.find((construct) =>
     construct.id === "values_query"
   );
@@ -127,6 +141,32 @@ Deno.test("SQL feature matrix binds the read-only gate and current UI actions", 
         construct.editor_coverage,
       )
     ),
+    true,
+  );
+});
+
+Deno.test("SQL projection alias editing stays in the Rust-backed Columns contract", async () => {
+  const [domainSql, toolbarSource, protocolSource] = await Promise.all([
+    read("crates/ugoite-domain/src/sql_structure.rs"),
+    read("frontend/src/components/SqlStructureToolbar.tsx"),
+    read("frontend/src/lib/ugoite-client/protocol.ts"),
+  ]);
+  const projectionParser = domainSql.slice(
+    domainSql.indexOf("fn parse_projection("),
+    domainSql.indexOf(
+      "fn parse_aggregate(",
+      domainSql.indexOf("fn parse_projection("),
+    ),
+  );
+  assertEquals(
+    projectionParser.includes("expr: Expr::Identifier(identifier)"),
+    true,
+  );
+  assertEquals(domainSql.includes("fn rewrite_projection_aliases("), true);
+  assertEquals(toolbarSource.includes("projection_aliases"), true);
+  assertEquals(toolbarSource.includes('"sqlPage.structure.aliasFor"'), true);
+  assertEquals(
+    protocolSource.includes("aliases?: (SqlStructureAlias | null)[]"),
     true,
   );
 });

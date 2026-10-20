@@ -7,12 +7,11 @@ query bodies are all SELECTs or set operations composed of SELECT bodies.
 `SELECT 1`, CTEs with SELECT bodies, nested SELECTs, and SELECT set operations
 remain admitted. `VALUES`, `TABLE`, and non-SELECT bodies nested in a CTE,
 subquery, or set operation are rejected with `READ_ONLY_SQL_REQUIRED` before
-planning or execution. The stateless
-`ReadOnlyAggregateV1` policy currently admits `COUNT`, `SUM`, `AVG`, `MIN`, and
-`MAX` as canonical aggregate names, with the `MEAN` alias resolving to `AVG`,
-and no user SQL scalar or window functions. The current structure editor does
-not recognize `MEAN`; the shared matrix records that alias gap until the editor
-implements the same registry.
+planning or execution. The stateless `ReadOnlyAggregateV1` policy currently
+admits `COUNT`, `SUM`, `AVG`, `MIN`, and `MAX` as canonical aggregate names,
+with the `MEAN` alias resolving to `AVG`, and no user SQL scalar or window
+functions. The current structure editor does not recognize `MEAN`; the shared
+matrix records that alias gap until the editor implements the same registry.
 
 The structure editor is a separate, narrower contract. Its parser accepts a
 bounded subset that it can safely analyze and rewrite; direct SQL editing
@@ -41,18 +40,25 @@ uses the existing group-by icon; it is not a separate plus action. Aggregate,
 group-by, and distinct controls remain separately surfaced during this
 transition, so the planned compact six-action toolbar is not complete.
 
-The matrix records the same SELECT-only boundary as the runtime statement
-gate. Relation-free scalar queries align with direct SQL lint and the structure
+Simple Form-column projections expose their output aliases in the Columns editor
+when each source column occurs once. Alias edits preserve the selected source
+column and the quoted or unquoted identifier meaning. A repeated source column
+keeps the query analyzable and other actions available, but disables the Columns
+rewrite because the current operation identifies columns by source name rather
+than projection slot. Projections with unsupported expressions or unsafe
+comment/source spans also remain unavailable to that operation.
+
+The matrix records the same SELECT-only boundary as the runtime statement gate.
+Relation-free scalar queries align with direct SQL lint and the structure
 editor. The SQL executor remains responsible for planner, relation, function,
 type, authorization, and resource-limit decisions after admission.
 
 Aggregate parity is checked here only at the canonical function-name level and
-the runtime alias map is checked separately. Signatures,
-type restrictions, modifier round-trips, and runtime behavior for
-`COUNT(DISTINCT *)` remain unverified; the structure parser explicitly rejects
-that form. These gaps are tracked by
-[issue #4381](https://github.com/ugoite/ugoite/issues/4381). The matrix records
-them so its name check is not read as complete aggregate parity.
+the runtime alias map is checked separately. Signatures, type restrictions,
+modifier round-trips, and runtime behavior for `COUNT(DISTINCT *)` remain
+unverified; the structure parser explicitly rejects that form. These gaps are
+tracked by [issue #4381](https://github.com/ugoite/ugoite/issues/4381). The
+matrix records them so its name check is not read as complete aggregate parity.
 
 `backend_admission: planner_decides` means the statement gate does not decide
 that construct's validity. It does not promise that every use will plan or

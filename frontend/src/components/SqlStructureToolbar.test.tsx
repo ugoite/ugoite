@@ -92,6 +92,7 @@ const analysis: SqlStructureAnalysis = {
   status: "supported",
   projection: ["*"],
   literal_projection: [],
+  projection_aliases: [],
   filters: [],
   aggregates: [],
   group_by: [],
@@ -365,6 +366,163 @@ describe("SqlStructureToolbar adapter", () => {
     expect(onSqlChange).toHaveBeenCalledWith(proposedSql);
   });
 
+  it("edits a projected column alias and preserves its quoted identifier choice", async () => {
+    const sql =
+      'SELECT "amount" AS "Total Amount" FROM "Orders" ORDER BY "_ugoite_id"';
+    analyzeMock.mockResolvedValue({
+      ...analysis,
+      projection: ["amount"],
+      projection_aliases: [{
+        column: "amount",
+        alias: { name: "Total Amount", quoted: true },
+      }],
+    });
+    proposeMock.mockResolvedValue({
+      contract_version: 1,
+      status: "supported",
+      base_sql: sql,
+      proposed_sql:
+        'SELECT "amount" AS GrossTotal FROM "Orders" ORDER BY "_ugoite_id"',
+      requires_confirmation: true,
+      added_stable_tie_breakers: [],
+    });
+    let actions: readonly SQLWorkspaceAction[] = [];
+    const onSqlChange = vi.fn();
+
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [context]}
+        onSqlChange={onSqlChange}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "columns")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "columns")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Columns" });
+    const aliasInput = within(dialog).getByRole("textbox", {
+      name: "Alias for amount",
+    });
+    expect(aliasInput).toHaveValue("Total Amount");
+    const quoted = within(dialog).getByRole("checkbox", {
+      name: "Quote alias for amount",
+    });
+    expect(quoted).toBeChecked();
+    fireEvent.input(aliasInput, { target: { value: "GrossTotal" } });
+    fireEvent.click(quoted);
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(proposeMock).toHaveBeenCalledWith(
+      sql,
+      context.parser,
+      {
+        kind: "set_columns",
+        columns: ["amount"],
+        aliases: [{ name: "GrossTotal", quoted: false }],
+      },
+    );
+    expect(onSqlChange).not.toHaveBeenCalled();
+  });
+
+  it("allows aliases while choosing columns from a wildcard projection", async () => {
+    const sql = 'SELECT * FROM "Orders"';
+    analyzeMock.mockResolvedValue({
+      ...analysis,
+      projection: ["*"],
+      projection_aliases: [],
+    });
+    proposeMock.mockResolvedValue({
+      contract_version: 1,
+      status: "supported",
+      base_sql: sql,
+      proposed_sql: 'SELECT "amount" AS total FROM "Orders"',
+      requires_confirmation: true,
+      added_stable_tie_breakers: [],
+    });
+    let actions: readonly SQLWorkspaceAction[] = [];
+
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [context]}
+        onSqlChange={vi.fn()}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "columns")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "columns")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Columns" });
+    fireEvent.click(
+      within(dialog).getByRole("checkbox", { name: "_ugoite_id" }),
+    );
+    fireEvent.click(
+      within(dialog).getByRole("checkbox", { name: "category" }),
+    );
+    fireEvent.input(
+      within(dialog).getByRole("textbox", { name: "Alias for amount" }),
+      { target: { value: "total" } },
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(proposeMock).toHaveBeenCalledWith(
+      sql,
+      context.parser,
+      {
+        kind: "set_columns",
+        columns: ["amount"],
+        aliases: [{ name: "total", quoted: false }],
+      },
+    );
+  });
+
+  it("keeps duplicate source projections readable and disables ambiguous column rewrites", async () => {
+    const sql =
+      'SELECT "amount" AS first, "amount" AS second FROM "Orders" WHERE "category" = $threshold';
+    analyzeMock.mockResolvedValue({
+      ...analysis,
+      projection: ["amount", "amount"],
+      projection_aliases: [
+        { column: "amount", alias: { name: "first", quoted: false } },
+        { column: "amount", alias: { name: "second", quoted: false } },
+      ],
+      capabilities: {
+        ...analysis.capabilities,
+        columns: { enabled: false, reason: "projection_unsupported" },
+      },
+    });
+    let actions: readonly SQLWorkspaceAction[] = [];
+
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [context]}
+        onSqlChange={vi.fn()}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() => {
+      expect(actions.find((action) => action.kind === "columns")?.disabled)
+        .toBe(true);
+      expect(actions.find((action) => action.kind === "filter")?.disabled)
+        .toBe(false);
+    });
+  });
+
   it("offers a safe structure edit for scalar SELECT without a Form", async () => {
     const sql = "SELECT 1";
     const contexts = buildSqlStructureContexts([], [], "new-sql");
@@ -373,6 +531,7 @@ describe("SqlStructureToolbar adapter", () => {
       status: "supported",
       projection: ["1"],
       literal_projection: [{ kind: "integer", value: "1" }],
+      projection_aliases: [],
       filters: [],
       aggregates: [],
       group_by: [],
