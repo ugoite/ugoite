@@ -275,6 +275,147 @@ async fn preview_plans_query_arguments_with_server_derived_upstream_types() -> R
 }
 
 #[tokio::test]
+async fn local_saved_sql_arguments_accept_planner_derived_scalar_queries() -> Result<()> {
+    let (service, space_id, _, _) = setup_preview_space().await?;
+    let sql_id = Uuid::from_u128(3_434_002);
+    let created = service
+        .create_saved_sql(
+            &space_id,
+            Some(&sql_id.to_string()),
+            &SqlPayload {
+                name: Some("Integer parameter".to_string()),
+                kind: SqlKind::UserQuery,
+                metadata: None,
+                sql: "SELECT {{minimum}} AS total".to_string(),
+                variables: json!([{
+                    "name": "minimum",
+                    "type": "integer",
+                    "description": "",
+                }]),
+            },
+            "owner",
+        )
+        .await?;
+    let revision_id = created
+        .get("revision_id")
+        .and_then(Value::as_str)
+        .context("Saved SQL should return its revision ID")?;
+    let entry_id = EntryId::from_uuid(sql_id).to_string();
+    let revision_id = RevisionId::from_uuid(Uuid::parse_str(revision_id)?);
+
+    let document_for = |source_returns, source_sql: &str, name: &str| {
+        let source_query = |returns| VariableGraphNodeKind::Query {
+            returns,
+            query: VariableGraphQuery {
+                definition: VariableGraphQueryDefinition::InlineSql {
+                    sql: source_sql.to_string(),
+                },
+                arguments: Vec::new(),
+                form_bindings: Vec::new(),
+                schema_fingerprint: String::new(),
+            },
+        };
+        CompositionDocument {
+            format: CompositionFormat::UgoiteComposition,
+            format_version: 1,
+            kind: CompositionKind::Dashboard,
+            name: name.to_string(),
+            spec: CompositionSpec {
+                variables: vec![
+                    VariableGraphNode {
+                        id: "upstream".to_string(),
+                        kind: source_query(source_returns),
+                    },
+                    VariableGraphNode {
+                        id: "total".to_string(),
+                        kind: VariableGraphNodeKind::Query {
+                            returns: VariableGraphResultType::Scalar {
+                                value_type: VariableGraphScalarDescriptor {
+                                    scalar_type: VariableGraphScalarType::Integer,
+                                    nullable: true,
+                                },
+                            },
+                            query: VariableGraphQuery {
+                                definition: VariableGraphQueryDefinition::SavedSql {
+                                    entry_id: Some(entry_id.clone()),
+                                    revision_id: Some(revision_id.to_string()),
+                                    column: Some("total".to_string()),
+                                },
+                                arguments: vec![VariableGraphArgumentBinding {
+                                    name: "minimum".to_string(),
+                                    variable: "upstream".to_string(),
+                                }],
+                                form_bindings: Vec::new(),
+                                schema_fingerprint: String::new(),
+                            },
+                        },
+                    },
+                ],
+                components: vec![CompositionComponent::Metric {
+                    id: "total_metric".to_string(),
+                    variable: "total".to_string(),
+                    presentation: None,
+                }],
+                layout: DashboardFlowLayout {
+                    kind: FlowLayoutKind::Flow,
+                    rows: vec![FlowRow {
+                        id: "main".to_string(),
+                        items: vec![FlowItem::Component {
+                            component: "total_metric".to_string(),
+                        }],
+                    }],
+                },
+            },
+        }
+    };
+
+    let integer = VariableGraphScalarDescriptor {
+        scalar_type: VariableGraphScalarType::Integer,
+        nullable: false,
+    };
+    let saved = save_local_composition(
+        &service,
+        &space_id,
+        document_for(
+            VariableGraphResultType::Scalar {
+                value_type: integer,
+            },
+            "SELECT 7 AS value",
+            "Scalar query argument",
+        ),
+    )
+    .await?;
+    assert!(saved.document.has_complete_query_descriptors());
+
+    let mismatch = save_local_composition(
+        &service,
+        &space_id,
+        document_for(
+            VariableGraphResultType::Scalar {
+                value_type: VariableGraphScalarDescriptor {
+                    scalar_type: VariableGraphScalarType::String,
+                    nullable: false,
+                },
+            },
+            "SELECT 'seven' AS value",
+            "Mismatched scalar query argument",
+        ),
+    )
+    .await
+    .expect_err("a planner-derived string cannot bind an integer parameter");
+    assert_eq!(
+        mismatch.downcast_ref::<AppError>().map(AppError::code),
+        Some(ErrorCode::InvalidInput)
+    );
+
+    let saved_compositions = service
+        .list_compositions_local_page(&space_id, 100, 0)
+        .await?;
+    assert_eq!(saved_compositions.items.len(), 1);
+    Ok(())
+}
+
+#[tokio::test]
 async fn graph_evaluation_does_not_execute_an_unrequested_query_branch() -> Result<()> {
     let (service, space_id, mut document, _) = setup_preview_space().await?;
     let integer = VariableGraphScalarDescriptor {
