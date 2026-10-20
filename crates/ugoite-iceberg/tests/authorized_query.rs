@@ -497,6 +497,31 @@ async fn sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts
         batch.schema().field(3).data_type(),
         &arrow_schema::DataType::Int64
     );
+    let distinct_wildcard = context
+        .execute("SELECT COUNT(DISTINCT *) FROM tasks")
+        .await?;
+    assert_eq!(distinct_wildcard[0].num_rows(), 1);
+    assert_eq!(
+        distinct_wildcard[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("COUNT(DISTINCT *) returns Int64")
+            .value(0),
+        1,
+        "COUNT(DISTINCT *) counts the one distinct wildcard row value admitted by DataFusion"
+    );
+    let nullary_count = context.execute("SELECT COUNT() FROM tasks").await?;
+    assert_eq!(
+        nullary_count[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("COUNT() returns Int64")
+            .value(0),
+        4,
+        "COUNT() counts every authorized input row"
+    );
     assert_eq!(
         batch.schema().field(4).data_type(),
         &arrow_schema::DataType::Float64

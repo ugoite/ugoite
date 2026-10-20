@@ -85,7 +85,7 @@ const aggregateFunctionsForType = (
     case "integer":
     case "float":
     case "decimal":
-      return ["count", "sum", "avg", "min", "max"];
+      return ["count", "sum", "avg", "mean", "min", "max"];
     case "string":
     case "boolean":
     case "date":
@@ -94,7 +94,7 @@ const aggregateFunctionsForType = (
     case "json":
       return ["count"];
     case "other":
-      return [];
+      return ["count"];
   }
 };
 

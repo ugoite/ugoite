@@ -19,6 +19,7 @@ import {
   protocolFetchResponse,
   renameSqlDocumentParameter,
   spreadsheetCsvRequestBytes,
+  type SqlDocumentEditErrorCode,
   UGOITE_API_OPERATIONS,
   UGOITE_WASM_PROTOCOL_VERSION,
   UgoiteApiError,
@@ -474,6 +475,24 @@ describe("portable Ugoite API protocol WASM", () => {
       kind: "sql_document_edit",
       code: "range_out_of_bounds",
     });
+  });
+
+  it("exposes SQL Document edit codes through the typed API error contract", () => {
+    const sqlEditError = new UgoiteApiError<SqlDocumentEditErrorCode>({
+      kind: "sql_document_edit",
+      message: "The SQL source changed before the edit was applied",
+      code: "stale_source",
+    });
+    const sqlEditCode: SqlDocumentEditErrorCode | undefined = sqlEditError.code;
+    expect(sqlEditCode).toBe("stale_source");
+
+    const unrelatedError = new UgoiteApiError({
+      kind: "not_found",
+      message: "Space was not found",
+      code: "space_missing",
+    });
+    const unrelatedApiCode: string | undefined = unrelatedError.code;
+    expect(unrelatedApiCode).toBe("space_missing");
   });
 
   it("bounds SQL Document edit result serialization", async () => {
