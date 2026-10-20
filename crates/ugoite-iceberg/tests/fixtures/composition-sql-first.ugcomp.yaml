@@ -3,19 +3,24 @@ format_version: 1
 kind: dashboard
 name: Iceberg Composition test
 spec:
-  sources:
+  variables:
     - id: total
-      kind: inline_sql
-      name: Total
-      sql: SELECT 1 AS total
-      form_bindings: []
-      expected_result: []
-      schema_fingerprint: ''
+      kind: query
+      returns:
+        kind: scalar
+        value_type:
+          scalar_type: integer
+          nullable: false
+      query:
+        kind: inline_sql
+        sql: SELECT 1 AS total
+        arguments: []
+        form_bindings: []
+        schema_fingerprint: ''
   components:
     - id: total_metric
       kind: metric
-      source: total
-      column: total
+      variable: total
   layout:
     kind: flow
     rows:

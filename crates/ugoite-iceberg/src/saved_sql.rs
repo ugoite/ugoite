@@ -9,13 +9,51 @@ use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::EntryScope;
-use ugoite_domain::composition::CompositionVariableType;
 use uuid::Uuid;
 
 const SQL_FORM_NAME: &str = "SQL";
 const SQL_VARIABLE_DEFAULTS_KEY: &str = "sql_variable_defaults";
 pub(crate) const SQL_FORM_NAME_FOR_AUDIT: &str = SQL_FORM_NAME;
 const SQL_VALIDATION_PREFIX: &str = "UGOITE_SQL_VALIDATION";
+
+/// SQL parameter declaration types belong to the Saved SQL contract, not to
+/// Composition's variable graph.
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum SavedSqlParameterType {
+    String,
+    Boolean,
+    Integer,
+    Float,
+    Date,
+    Timestamp,
+}
+
+impl SavedSqlParameterType {
+    fn accepts(self, value: &Value) -> bool {
+        match self {
+            Self::String => value.as_str().is_some_and(|text| {
+                text.len() <= 4 * 1024
+                    && text.chars().all(|character| {
+                        !character.is_control() || matches!(character, '\t' | '\n' | '\r')
+                    })
+            }),
+            Self::Boolean => value.is_boolean(),
+            Self::Integer => value.as_i64().is_some_and(|number| {
+                (-9_007_199_254_740_991_i64..=9_007_199_254_740_991_i64).contains(&number)
+            }),
+            Self::Float => value.as_f64().is_some_and(f64::is_finite),
+            Self::Date => value.as_str().is_some_and(|text| {
+                chrono::NaiveDate::parse_from_str(text, "%Y-%m-%d")
+                    .ok()
+                    .is_some_and(|date| date.format("%Y-%m-%d").to_string() == text)
+            }),
+            Self::Timestamp => value
+                .as_str()
+                .is_some_and(|text| chrono::DateTime::parse_from_rfc3339(text).is_ok()),
+        }
+    }
+}
 
 fn validation_error(message: impl std::fmt::Display) -> anyhow::Error {
     AppError::invalid_input(
@@ -298,10 +336,11 @@ fn normalize_sql_variables(value: Option<&Value>) -> Result<Value> {
             .get("type")
             .and_then(|v| v.as_str())
             .ok_or_else(|| validation_error("variables.type must be a string"))?;
-        let parsed_type = serde_json::from_value::<CompositionVariableType>(Value::String(
-            var_type.to_owned(),
-        ))
-        .map_err(|_| validation_error(format!("variables.type is unsupported: {var_type}")))?;
+        let parsed_type =
+            serde_json::from_value::<SavedSqlParameterType>(Value::String(var_type.to_owned()))
+                .map_err(|_| {
+                    validation_error(format!("variables.type is unsupported: {var_type}"))
+                })?;
         let name = obj
             .get("name")
             .and_then(|v| v.as_str())
@@ -328,7 +367,7 @@ fn normalize_sql_variables(value: Option<&Value>) -> Result<Value> {
             "description": description,
         });
         if let Some(default) = obj.get("default") {
-            if !parsed_type.accepts_value(default) {
+            if !parsed_type.accepts(default) {
                 return Err(validation_error(format!(
                     "variables.default must be a non-null scalar matching variables.type {var_type}"
                 )));

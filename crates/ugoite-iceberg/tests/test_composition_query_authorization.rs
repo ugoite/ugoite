@@ -7,9 +7,10 @@ use std::collections::BTreeMap;
 use ugoite_core::sql_query::{SavedSqlRevisionRef, SqlQueryRequest};
 use ugoite_domain::composition::{
     CompositionComponent, CompositionDocument, CompositionFormat, CompositionKind,
-    CompositionResultColumn, CompositionResultFieldType, CompositionSource, CompositionSpec,
-    CompositionValue, CompositionVariable, CompositionVariableReference, CompositionVariableType,
-    DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow,
+    CompositionResultFieldType, CompositionSpec, DashboardFlowLayout, FlowItem, FlowLayoutKind,
+    FlowRow, VariableGraphArgumentBinding, VariableGraphColumn, VariableGraphNode,
+    VariableGraphNodeKind, VariableGraphQuery, VariableGraphQueryDefinition,
+    VariableGraphResultType, VariableGraphScalarDescriptor, VariableGraphScalarType,
 };
 use ugoite_domain::identity::{
     AccessPolicy, Action, Grant, PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
@@ -27,16 +28,32 @@ fn resolved_sql_request(
         .plan
         .as_ref()
         .context("authorized Composition resolution should return a plan")?;
-    let [ugoite_core::composition::ResolvedSourceRequest::Sql { request, .. }] =
-        plan.sources.as_slice()
-    else {
-        anyhow::bail!("test Composition should resolve to exactly one SQL source");
+    let [query] = plan.queries.as_slice() else {
+        anyhow::bail!("test Composition should resolve to exactly one query variable");
     };
-    Ok(request.clone())
+    query
+        .request
+        .clone()
+        .context("query variable should contain a bounded SQL request")
 }
 
-fn placeholder_schema_fingerprint() -> String {
-    "0".repeat(64)
+fn scalar_descriptor(
+    result_type: CompositionResultFieldType,
+    nullable: bool,
+) -> VariableGraphScalarDescriptor {
+    VariableGraphScalarDescriptor {
+        scalar_type: match result_type {
+            CompositionResultFieldType::String => VariableGraphScalarType::String,
+            CompositionResultFieldType::Boolean => VariableGraphScalarType::Boolean,
+            CompositionResultFieldType::Integer => VariableGraphScalarType::Integer,
+            CompositionResultFieldType::Float => VariableGraphScalarType::Float,
+            CompositionResultFieldType::Decimal => VariableGraphScalarType::Decimal,
+            CompositionResultFieldType::Date => VariableGraphScalarType::Date,
+            CompositionResultFieldType::Timestamp => VariableGraphScalarType::Timestamp,
+            CompositionResultFieldType::Json => VariableGraphScalarType::Json,
+        },
+        nullable,
+    }
 }
 
 #[tokio::test]
@@ -222,24 +239,39 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
             .await?;
         saved_sqls.insert(*id, saved);
     }
-    let source = |id: &str, column: &str, result_type| {
+    let query_variable = |id: &str, column: &str, result_type| {
         let sql = saved_sqls.get(id).unwrap();
-        CompositionSource::SavedSql {
+        let nullable = !matches!(id, "row_count_sql" | "value_count_sql" | "empty_count_sql");
+        let arguments = if id == "parameter_sql" {
+            vec![VariableGraphArgumentBinding {
+                name: "minimum".to_string(),
+                variable: "minimum".to_string(),
+            }]
+        } else {
+            Vec::new()
+        };
+        VariableGraphNode {
             id: id.to_string(),
-            entry_id: serde_json::from_value(sql["id"].clone()).unwrap(),
-            revision_id: serde_json::from_value(sql["revision_id"].clone()).unwrap(),
-            expected_result: vec![CompositionResultColumn {
-                name: column.to_string(),
-                result_type,
-            }],
-            schema_fingerprint: placeholder_schema_fingerprint(),
-            variables: BTreeMap::new(),
+            kind: VariableGraphNodeKind::Query {
+                returns: VariableGraphResultType::Scalar {
+                    value_type: scalar_descriptor(result_type, nullable),
+                },
+                query: VariableGraphQuery {
+                    definition: VariableGraphQueryDefinition::SavedSql {
+                        entry_id: sql["id"].as_str().map(str::to_owned),
+                        revision_id: sql["revision_id"].as_str().map(str::to_owned),
+                        column: Some(column.to_string()),
+                    },
+                    arguments,
+                    form_bindings: Vec::new(),
+                    schema_fingerprint: String::new(),
+                },
+            },
         }
     };
-    let metric = |id: &str, source: &str, column: &str| CompositionComponent::Metric {
+    let metric = |id: &str, variable: &str, _column: &str| CompositionComponent::Metric {
         id: id.to_string(),
-        source: source.to_string(),
-        column: column.to_string(),
+        variable: variable.to_string(),
         presentation: None,
     };
     let mut components = [
@@ -264,27 +296,18 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
         id: "minimum_input".to_string(),
         variable: "minimum".to_string(),
     });
-    let source_list = metric_sql_specs
+    let mut graph_variables = metric_sql_specs
         .iter()
-        .map(|(id, _, column, result_type, _, _)| source(id, column, *result_type))
+        .map(|(id, _, column, result_type, _, _)| query_variable(id, column, *result_type))
         .collect::<Vec<_>>();
-    let source_list = source_list
-        .into_iter()
-        .map(|mut source| {
-            match &mut source {
-                CompositionSource::SavedSql { id, variables, .. } if id == "parameter_sql" => {
-                    variables.insert(
-                        "minimum".to_string(),
-                        CompositionValue::Variable(CompositionVariableReference {
-                            variable: "minimum".to_string(),
-                        }),
-                    );
-                }
-                _ => {}
-            }
-            source
-        })
-        .collect::<Vec<_>>();
+    graph_variables.push(VariableGraphNode {
+        id: "minimum".to_string(),
+        kind: VariableGraphNodeKind::Input {
+            value_type: scalar_descriptor(CompositionResultFieldType::Integer, false),
+            required: true,
+            default: None,
+        },
+    });
     let component_ids = components
         .iter()
         .map(|component| component.id().to_string())
@@ -295,14 +318,7 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
         kind: CompositionKind::Dashboard,
         name: "Metric query contract".to_string(),
         spec: CompositionSpec {
-            variables: vec![CompositionVariable {
-                id: "minimum".to_string(),
-                variable_type: CompositionVariableType::Integer,
-                required: true,
-                default: None,
-                format: None,
-            }],
-            sources: source_list,
+            variables: graph_variables,
             components,
             layout: DashboardFlowLayout {
                 kind: FlowLayoutKind::Flow,
@@ -517,20 +533,36 @@ async fn source_resolution_and_continuation_recheck_current_authorization() -> R
         kind: CompositionKind::Dashboard,
         name: "Authorized query pages".to_string(),
         spec: CompositionSpec {
-            variables: Vec::new(),
-            sources: vec![CompositionSource::InlineSql {
+            variables: vec![VariableGraphNode {
                 id: "source".to_string(),
-                name: "Authorized query source".to_string(),
-                sql: format!(
-                    "SELECT \"_ugoite_id\" AS id, \"{title_column}\" AS title FROM \"{form_name}\" ORDER BY \"_ugoite_id\""
-                ),
-                form_bindings: Vec::new(),
-                expected_result: Vec::new(),
-                schema_fingerprint: String::new(),
+                kind: VariableGraphNodeKind::Query {
+                    returns: VariableGraphResultType::Table {
+                        columns: vec![
+                            VariableGraphColumn {
+                                name: "id".to_string(),
+                                value_type: scalar_descriptor(CompositionResultFieldType::String, false),
+                            },
+                            VariableGraphColumn {
+                                name: "title".to_string(),
+                                value_type: scalar_descriptor(CompositionResultFieldType::String, true),
+                            },
+                        ],
+                    },
+                    query: VariableGraphQuery {
+                        definition: VariableGraphQueryDefinition::InlineSql {
+                            sql: format!(
+                                "SELECT \"_ugoite_id\" AS id, \"{title_column}\" AS title FROM \"{form_name}\" ORDER BY \"_ugoite_id\""
+                            ),
+                        },
+                        arguments: Vec::new(),
+                        form_bindings: Vec::new(),
+                        schema_fingerprint: String::new(),
+                    },
+                },
             }],
             components: vec![CompositionComponent::Table {
                 id: "table".to_string(),
-                source: "source".to_string(),
+                variable: "source".to_string(),
             }],
             layout: DashboardFlowLayout {
                 kind: FlowLayoutKind::Flow,
@@ -835,22 +867,27 @@ async fn authorized_composition_metrics_recheck_current_entry_and_saved_sql_acce
         kind: CompositionKind::Dashboard,
         name: "Authorized metric".to_string(),
         spec: CompositionSpec {
-            variables: Vec::new(),
-            sources: vec![CompositionSource::SavedSql {
+            variables: vec![VariableGraphNode {
                 id: "amount_sql".to_string(),
-                entry_id: serde_json::from_value(saved_sql["id"].clone())?,
-                revision_id: serde_json::from_value(saved_sql["revision_id"].clone())?,
-                expected_result: vec![CompositionResultColumn {
-                    name: "total".to_string(),
-                    result_type: CompositionResultFieldType::Integer,
-                }],
-                schema_fingerprint: placeholder_schema_fingerprint(),
-                variables: BTreeMap::new(),
+                kind: VariableGraphNodeKind::Query {
+                    returns: VariableGraphResultType::Scalar {
+                        value_type: scalar_descriptor(CompositionResultFieldType::Integer, true),
+                    },
+                    query: VariableGraphQuery {
+                        definition: VariableGraphQueryDefinition::SavedSql {
+                            entry_id: saved_sql["id"].as_str().map(str::to_owned),
+                            revision_id: saved_sql["revision_id"].as_str().map(str::to_owned),
+                            column: Some("total".to_string()),
+                        },
+                        arguments: Vec::new(),
+                        form_bindings: Vec::new(),
+                        schema_fingerprint: String::new(),
+                    },
+                },
             }],
             components: vec![CompositionComponent::Metric {
                 id: "amount_metric".to_string(),
-                source: "amount_sql".to_string(),
-                column: "total".to_string(),
+                variable: "amount_sql".to_string(),
                 presentation: None,
             }],
             layout: DashboardFlowLayout {
@@ -1022,7 +1059,7 @@ async fn authorized_composition_metrics_recheck_current_entry_and_saved_sql_acce
     assert!(saved_sql_revoked.result.is_none());
     assert_eq!(
         saved_sql_revoked.diagnostics[0].code,
-        ugoite_domain::composition::CompositionDiagnosticCode::SourceUnavailable
+        ugoite_domain::composition::CompositionDiagnosticCode::QueryUnavailable
     );
     Ok(())
 }

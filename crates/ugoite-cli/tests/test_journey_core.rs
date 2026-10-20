@@ -17,7 +17,6 @@ kind: dashboard
 name: Basic Composition
 spec:
   variables: []
-  sources: []
   components:
     - id: note
       kind: text

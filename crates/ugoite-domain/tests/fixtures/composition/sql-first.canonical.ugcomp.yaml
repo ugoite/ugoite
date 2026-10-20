@@ -5,46 +5,68 @@ name: Monthly expenses
 spec:
   variables:
     - id: month_start
-      type: date
+      kind: input
+      value_type:
+        scalar_type: date
+        nullable: false
       required: true
-      format: year-month
     - id: month_end
-      type: date
+      kind: input
+      value_type:
+        scalar_type: date
+        nullable: false
       required: true
-      format: year-month
-  sources:
-    - kind: inline_sql
-      id: expense_rows
-      name: Expense rows
-      sql: |-
-        SELECT "Date", "category", "amount"
-        FROM "Expense"
-        WHERE "Date" >= $month_start AND "Date" < $month_end
-        ORDER BY "Date" DESC, "_ugoite_id"
-      form_bindings:
-        - relation: Expense
-          form_id: 00000000-0000-7000-8000-000000000010
-      expected_result:
-        - name: Date
-          type: date
-        - name: category
-          type: string
-        - name: amount
-          type: decimal
-      schema_fingerprint: 99a980a869d3c01c212a4d175e0616b3237ddfc19b35a6f027829f7cadad3d67
-    - kind: saved_sql
-      id: month_total
-      entry_id: 00000000-0000-7000-8000-000000000020
-      revision_id: 00000000-0000-7000-8000-000000000021
-      expected_result:
-        - name: total
-          type: decimal
-      schema_fingerprint: f907f602a58c987ee0678cbdd199189fb05085e9e4d21dd05e8dbf64b63d87e1
-      variables:
-        month_end:
-          variable: month_end
-        month_start:
-          variable: month_start
+    - id: expense_rows
+      kind: query
+      returns:
+        kind: table
+        columns:
+          - name: Date
+            value_type:
+              scalar_type: date
+              nullable: false
+          - name: category
+            value_type:
+              scalar_type: string
+              nullable: true
+          - name: amount
+            value_type:
+              scalar_type: decimal
+              nullable: true
+      query:
+        kind: inline_sql
+        sql: |-
+          SELECT "Date", category, amount
+          FROM "Expense"
+          WHERE "Date" >= $month_start AND "Date" < $month_end
+          ORDER BY "Date" DESC
+        arguments:
+          - name: month_start
+            variable: month_start
+          - name: month_end
+            variable: month_end
+        form_bindings:
+          - relation: Expense
+            form_id: 00000000-0000-7000-8000-000000000010
+        schema_fingerprint: 99a980a869d3c01c212a4d175e0616b3237ddfc19b35a6f027829f7cadad3d67
+    - id: month_total
+      kind: query
+      returns:
+        kind: scalar
+        value_type:
+          scalar_type: decimal
+          nullable: true
+      query:
+        kind: saved_sql
+        entry_id: 00000000-0000-7000-8000-000000000020
+        revision_id: 00000000-0000-7000-8000-000000000021
+        column: total
+        arguments:
+          - name: month_start
+            variable: month_start
+          - name: month_end
+            variable: month_end
+        schema_fingerprint: f907f602a58c987ee0678cbdd199189fb05085e9e4d21dd05e8dbf64b63d87e1
   components:
     - kind: input
       id: month_start_input
@@ -54,15 +76,10 @@ spec:
       variable: month_end
     - kind: metric
       id: total
-      source: month_total
-      column: total
-      presentation:
-        kind: number
-        unit: 円
-        fraction_digits: 0
+      variable: month_total
     - kind: table
       id: transactions
-      source: expense_rows
+      variable: expense_rows
   layout:
     kind: flow
     rows:

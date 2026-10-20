@@ -13,20 +13,21 @@ use url::Url;
 pub mod composition;
 
 pub use composition::{
-    CompositionDependencyIndex, CompositionDiagnosticCode, CompositionEntryIntegrity,
-    CompositionEntryMetadata, CompositionHistoryPage, CompositionLintError,
-    CompositionLintResponse, CompositionLintValue, CompositionListItem, CompositionListPage,
-    CompositionMetricPresentation, CompositionMetricQueryDiagnostic, CompositionMetricQueryRequest,
-    CompositionMetricQueryResponse, CompositionMetricQueryTarget, CompositionMetricQueryValue,
-    CompositionPreviewPlan, CompositionPreviewRequest, CompositionPreviewResponse,
-    CompositionPublicationReceipt, CompositionRawRevision, CompositionResolveDiagnostic,
-    CompositionResolvePlan, CompositionResolveRequest, CompositionResolveResponse,
-    CompositionResolvedComponentBinding, CompositionResolvedComponentKind,
-    CompositionResolvedFormBinding, CompositionResolvedResultColumn, CompositionResolvedSource,
-    CompositionRestoreRequest, CompositionRestoreResponse, CompositionResultFieldType,
-    CompositionRevisionMetadata, CompositionRevisionReference, CompositionSaveRequest,
-    CompositionSaveResponse, CompositionSourceConsumers, CompositionVariableConsumers,
-    CompositionVariableDefinition, CompositionVariableFormat, CompositionVariableType,
+    CompositionDeferredArgument, CompositionDependencyIndex, CompositionDiagnosticCode,
+    CompositionEntryIntegrity, CompositionEntryMetadata, CompositionHistoryPage,
+    CompositionLintError, CompositionLintResponse, CompositionLintValue, CompositionListItem,
+    CompositionListPage, CompositionMetricPresentation, CompositionMetricQueryDiagnostic,
+    CompositionMetricQueryRequest, CompositionMetricQueryResponse, CompositionMetricQueryTarget,
+    CompositionMetricQueryValue, CompositionPreviewPlan, CompositionPreviewRequest,
+    CompositionPreviewResponse, CompositionPublicationReceipt, CompositionQueryResultType,
+    CompositionRawRevision, CompositionResolveDiagnostic, CompositionResolvePlan,
+    CompositionResolveRequest, CompositionResolveResponse, CompositionResolvedComponentBinding,
+    CompositionResolvedComponentKind, CompositionResolvedFormBinding, CompositionResolvedQuery,
+    CompositionResolvedResultColumn, CompositionRestoreRequest, CompositionRestoreResponse,
+    CompositionResultFieldType, CompositionRevisionMetadata, CompositionRevisionReference,
+    CompositionSaveRequest, CompositionSaveResponse, CompositionScalarCardinality,
+    CompositionScalarDescriptor, CompositionScalarType, CompositionVariableConsumers,
+    CompositionVariableDefinition,
 };
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -2735,19 +2736,25 @@ mod tests {
 
         let variable_definition = CompositionVariableDefinition {
             id: "month".to_owned(),
-            variable_type: CompositionVariableType::Date,
+            value_type: CompositionScalarDescriptor {
+                scalar_type: CompositionScalarType::Date,
+                nullable: false,
+            },
             required: true,
             default: None,
-            format: Some(CompositionVariableFormat::YearMonth),
         };
         let definition_wire =
             serde_json::to_value(variable_definition).expect("variable definition DTO");
         assert_eq!(definition_wire["id"], "month");
+        assert_eq!(
+            definition_wire["value_type"],
+            json!({"scalar_type":"date","nullable":false})
+        );
         assert!(definition_wire.get("label").is_none());
         assert!(
             serde_json::from_value::<CompositionVariableDefinition>(json!({
                 "id": "month",
-                "type": "date",
+                "value_type": {"scalar_type":"date","nullable":false},
                 "required": true,
                 "label": "Month"
             }))
@@ -2835,22 +2842,24 @@ mod tests {
     #[test]
     fn composition_inline_sql_resolved_request_round_trips_sql_first_shape() {
         let inline_sql = json!({
-            "kind": "inline_sql",
-            "source_id": "expense_rows",
+            "variable_id": "expense_rows",
             "request": {
                 "sql": "SELECT \"amount\" FROM \"__form_10\" WHERE \"Date\" >= $month_start",
                 "parameters": {"month_start": "2026-10-01"},
                 "parameter_types": {"month_start": "date"},
                 "limit": 100
             },
-            "source_schema_fingerprint": "a".repeat(64),
+            "deferred_arguments": [],
+            "returns": {"kind":"table","columns":[{"name":"amount","value_type":{"scalar_type":"decimal","nullable":true}}]},
+            "result_columns": [{"name":"amount","value_type":{"scalar_type":"decimal","nullable":true}}],
             "form_bindings": [{"relation": "expenses", "form_id": "form-1"}],
-            "expected_result": [{"name": "amount", "type": "decimal"}]
+            "schema_fingerprint": "a".repeat(64),
+            "query_semantic_fingerprint": "b".repeat(64)
         });
-        let source: CompositionResolvedSource =
-            serde_json::from_value(inline_sql.clone()).expect("inline SQL source DTO");
+        let query: CompositionResolvedQuery =
+            serde_json::from_value(inline_sql.clone()).expect("resolved query DTO");
         assert_eq!(
-            serde_json::to_value(&source).expect("serialize inline SQL source DTO"),
+            serde_json::to_value(&query).expect("serialize resolved query DTO"),
             inline_sql
         );
         assert_eq!(
@@ -2862,7 +2871,7 @@ mod tests {
         let component_binding = json!({
             "component_id": "transactions",
             "kind": "table",
-            "source_id": "expense_rows"
+            "variable_id": "expense_rows"
         });
         let binding: CompositionResolvedComponentBinding =
             serde_json::from_value(component_binding.clone()).expect("binding DTO");
@@ -2874,7 +2883,7 @@ mod tests {
             serde_json::from_value::<CompositionResolvedComponentBinding>(json!({
                 "component_id": "transactions",
                 "kind": "table",
-                "source_id": "expense_rows",
+                "variable_id": "expense_rows",
                 "label": "Expense rows"
             }))
             .is_err()
@@ -3193,13 +3202,12 @@ mod tests {
             "ok": true,
             "variable_definitions": [{
                 "id": "month",
-                "type": "date",
+                "value_type": {"scalar_type":"date","nullable":false},
                 "required": true,
-                "default": "2026-10-01",
-                "format": "year-month"
+                "default": "2026-10-01"
             }, {
                 "id": "region",
-                "type": "string",
+                "value_type": {"scalar_type":"string","nullable":false},
                 "required": false
             }],
             "plan": {
@@ -3207,21 +3215,23 @@ mod tests {
                     "entry_id": "01900000-0000-7000-8000-000000000002",
                     "revision_id": "01900000-0000-7000-8000-000000000003"
                 },
-                "sources": [{
-                    "kind": "inline_sql",
-                    "source_id": "expense_rows",
+                "variable_values": {},
+                "queries": [{
+                    "variable_id": "expense_rows",
                     "request": {
                         "sql": "SELECT \"amount\" FROM \"__form_10\" WHERE \"Date\" >= $month_start",
                         "parameters": {"month_start": "2026-10-01"},
                         "parameter_types": {"month_start": "date"},
                         "limit": 100
                     },
-                    "source_schema_fingerprint": "a".repeat(64),
+                    "deferred_arguments": [],
+                    "returns": {"kind":"table","columns":[{"name":"amount","value_type":{"scalar_type":"decimal","nullable":true}}]},
+                    "result_columns": [{"name":"amount","value_type":{"scalar_type":"decimal","nullable":true}}],
                     "form_bindings": [],
-                    "expected_result": [{"name": "amount", "type": "decimal"}]
+                    "schema_fingerprint": "a".repeat(64),
+                    "query_semantic_fingerprint": "c".repeat(64)
                 }, {
-                    "kind": "saved_sql",
-                    "source_id": "monthly-total",
+                    "variable_id": "monthly_total",
                     "request": {
                         "limit": 100,
                         "saved_sql": {
@@ -3229,18 +3239,22 @@ mod tests {
                             "revision_id": "01900000-0000-7000-8000-000000000005"
                         }
                     },
-                    "source_schema_fingerprint": "b".repeat(64),
-                    "expected_result": [{"name": "total_amount", "type": "integer"}]
+                    "deferred_arguments": [],
+                    "returns": {"kind":"scalar","value_type":{"scalar_type":"integer","nullable":false}},
+                    "result_columns": [{"name":"total_amount","value_type":{"scalar_type":"integer","nullable":false}}],
+                    "form_bindings": [],
+                    "schema_fingerprint": "b".repeat(64),
+                    "query_semantic_fingerprint": "d".repeat(64),
+                    "scalar_cardinality": "exactly_one_row"
                 }],
                 "component_bindings": [{
                     "component_id": "rows",
                     "kind": "table",
-                    "source_id": "expense_rows"
+                    "variable_id": "expense_rows"
                 }, {
                     "component_id": "total",
                     "kind": "metric",
-                    "source_id": "monthly-total",
-                    "result_property_key": "total_amount",
+                    "variable_id": "monthly_total",
                     "expected_result_type": "integer"
                 }]
             }
@@ -3258,31 +3272,30 @@ mod tests {
         });
         let text_dto: CompositionResolvedComponentBinding =
             serde_json::from_value(text_binding.clone()).expect("text binding DTO");
-        assert_eq!(text_dto.source_id, None);
+        assert_eq!(text_dto.variable_id, None);
         assert_eq!(
             serde_json::to_value(&text_dto).expect("serialize text binding DTO"),
             text_binding
         );
-        let source_unavailable = json!({
+        let query_unavailable = json!({
             "ok": false,
             "variable_definitions": [{
                 "id": "month",
-                "type": "date",
+                "value_type": {"scalar_type":"date","nullable":false},
                 "required": true,
-                "default": "2026-10-01",
-                "format": "year-month"
+                "default": "2026-10-01"
             }],
-            "diagnostics": [{"code": "source_unavailable"}]
+            "diagnostics": [{"code": "query_unavailable"}]
         });
         let resolve_error_dto: CompositionResolveResponse =
-            serde_json::from_value(source_unavailable.clone()).expect("resolve diagnostic DTO");
+            serde_json::from_value(query_unavailable.clone()).expect("resolve diagnostic DTO");
         assert_eq!(
             serde_json::to_value(&resolve_error_dto).expect("serialize resolve diagnostic DTO"),
-            source_unavailable
+            query_unavailable
         );
         assert_eq!(
-            CompositionDiagnosticCode::SourceUnavailable.as_str(),
-            "source_unavailable"
+            CompositionDiagnosticCode::QueryUnavailable.as_str(),
+            "query_unavailable"
         );
         let variable_diagnostic = json!({
             "ok": false,
@@ -3371,12 +3384,13 @@ mod tests {
             "draft_fingerprint": "f".repeat(64),
             "variable_definitions": [{
                 "id": "month",
-                "type": "date",
+                "value_type": {"scalar_type":"date","nullable":false},
                 "required": true
             }],
             "plan": {
                 "draft_fingerprint": "f".repeat(64),
-                "sources": [],
+                "variable_values": {},
+                "queries": [],
                 "component_bindings": []
             }
         });
@@ -3579,7 +3593,7 @@ mod tests {
             assert_eq!(decoded, expected);
         }
 
-        for response_value in [resolve_success, source_unavailable] {
+        for response_value in [resolve_success, query_unavailable] {
             let decoded = decode_response(
                 "composition.resolve",
                 ApiResponse {
