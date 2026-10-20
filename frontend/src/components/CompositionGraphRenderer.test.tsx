@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library";
+import { createSignal } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CompositionGraphRenderer } from "./CompositionGraphRenderer";
 import type { CompositionEvaluationResponse } from "~/lib/composition-api";
@@ -135,6 +136,78 @@ describe("CompositionGraphRenderer", () => {
     expect(onNext).toHaveBeenCalledWith("rows", "cursor-2");
     fireEvent.click(screen.getByRole("button", { name: "Previous" }));
     expect(onPrevious).toHaveBeenCalledWith("rows");
+  });
+
+  it("renders the current raw string input in text bindings before evaluation", () => {
+    const textDraft: CompositionGraphDraft = {
+      name: "Report",
+      variables: [{
+        id: "report_title",
+        kind: "input",
+        value_type: { scalar_type: "string", nullable: false },
+        required: true,
+        default: { kind: "string", value: "Previous title" },
+      }],
+      components: [
+        { id: "title_input", kind: "input", variable: "report_title" },
+        {
+          id: "title_text",
+          kind: "text",
+          content: { kind: "variable", variable: "report_title" },
+          style: "body",
+        },
+      ],
+      layout: {
+        kind: "flow",
+        rows: [{
+          id: "main",
+          items: [
+            { kind: "component", component: "title_input" },
+            { kind: "component", component: "title_text" },
+          ],
+        }],
+      },
+    };
+    const [rawInputs, setRawInputs] = createSignal<Record<string, string>>({});
+    const [inputStates, setInputStates] = createSignal<
+      Record<string, "pending" | "invalid" | "missing">
+    >({});
+    render(() => (
+      <CompositionGraphRenderer
+        draft={textDraft}
+        evaluation={{
+          ...evaluation,
+          computed_query_ids: [],
+          variable_values: {
+            report_title: { kind: "string", value: "Previous title" },
+          },
+          query_results: {},
+        }}
+        rawInputs={rawInputs()}
+        inputStates={inputStates()}
+        blockedQueryIds={new Set()}
+        previousPageQueryIds={new Set()}
+        pageBusy={false}
+        onInput={(variableId, raw) => {
+          setRawInputs((current) => ({ ...current, [variableId]: raw }));
+          setInputStates((current) => ({
+            ...current,
+            [variableId]: "pending",
+          }));
+        }}
+        onNext={vi.fn()}
+        onPrevious={vi.fn()}
+      />
+    ));
+
+    const input = screen.getByRole("textbox", { name: "report_title" });
+    expect(screen.getByText("Previous title")).toBeVisible();
+
+    fireEvent.input(input, { target: { value: "Transient report title" } });
+
+    expect(input).toHaveValue("Transient report title");
+    expect(screen.getByText("Transient report title")).toBeVisible();
+    expect(screen.queryByText("Previous title")).not.toBeInTheDocument();
   });
 
   it("renders a one-row NULL scalar distinctly from zero rows", () => {

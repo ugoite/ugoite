@@ -29,13 +29,16 @@ const literalValue = (value: CompositionLiteral | undefined): unknown =>
 const variableValue = (
   draft: CompositionGraphDraft,
   evaluation: CompositionEvaluationResponse | undefined,
+  rawInputs: Readonly<Record<string, string>>,
   id: string,
   unavailableInputIds: ReadonlySet<string>,
+  preferRawInput = false,
 ): unknown => {
   const node = draft.variables.find((candidate) => candidate.id === id);
   if (!node) return undefined;
   if (node.kind === "constant") return literalValue(node.value);
   if (node.kind === "input") {
+    if (preferRawInput && Object.hasOwn(rawInputs, id)) return rawInputs[id];
     if (unavailableInputIds.has(id)) return undefined;
     return literalValue(evaluation?.variable_values[id] ?? node.default);
   }
@@ -209,11 +212,13 @@ export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
                                       : safeText(variableValue(
                                         props.draft,
                                         props.evaluation,
+                                        props.rawInputs,
                                         content.variable,
                                         new Set([
                                           ...Object.keys(props.inputStates),
                                           ...props.blockedQueryIds,
                                         ]),
+                                        true,
                                       ));
                                     const tag = entry().style === "title" ||
                                         entry().style === "heading"
@@ -228,6 +233,7 @@ export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
                                     : variableValue(
                                       props.draft,
                                       props.evaluation,
+                                      props.rawInputs,
                                       variableId() ?? "",
                                       new Set([
                                         ...Object.keys(props.inputStates),
