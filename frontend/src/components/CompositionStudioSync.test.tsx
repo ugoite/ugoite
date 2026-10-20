@@ -371,6 +371,40 @@ describe("CompositionStudio graph surface", () => {
     );
   });
 
+  it("keeps a remounted editor locked while a save is in flight", async () => {
+    let rejectSave!: (error: unknown) => void;
+    saveMock.mockImplementationOnce(() =>
+      new Promise((_resolve, reject) => rejectSave = reject)
+    );
+
+    const firstVisit = renderStudio(renderedDraftWithTable());
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveMock).toHaveBeenCalledOnce());
+    const originalCall = saveMock.mock.calls[0];
+
+    firstVisit.unmount();
+    renderStudio(renderedDraftWithTable());
+    const save = await screen.findByRole("button", { name: "Save" });
+    expect(save).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+
+    rejectSave(
+      Object.assign(new Error("response lost"), {
+        mutationOutcome: "unknown",
+      }),
+    );
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    fireEvent.click(retry);
+
+    await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(2));
+    expect(saveMock.mock.calls[1]).toEqual(originalCall);
+    await waitFor(() =>
+      expect(navigateMock).toHaveBeenCalledWith(
+        "/spaces/space-1/compositions/composition-1/revision-1",
+      )
+    );
+  });
+
   it("keeps an in-flight save bound to the route target captured before canonicalization", async () => {
     let finishCanonicalize!: (result: { canonical_yaml: string }) => void;
     canonicalizeMock.mockImplementationOnce(() =>

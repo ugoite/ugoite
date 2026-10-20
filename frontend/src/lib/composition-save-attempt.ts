@@ -73,11 +73,16 @@ export function stagePendingCompositionSaveAttempt(
   attempt: PendingCompositionSaveAttempt,
   routeVisitId: number | undefined,
 ): void {
-  pendingAttempts?.set(identityKey(attempt), {
+  const stored = {
     attempt,
     state: "in_flight",
     routeVisitId,
-  });
+  } as const;
+  const key = identityKey(attempt);
+  pendingAttempts?.set(key, stored);
+  for (const listener of listeners?.get(key) ?? []) {
+    listener({ type: "pending", stored });
+  }
 }
 
 export function markPendingCompositionSaveAttemptUncertain(

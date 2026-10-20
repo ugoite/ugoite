@@ -1,5 +1,11 @@
 import { useLocation, useNavigate } from "@solidjs/router";
-import { createEffect, createResource, createSignal, Show } from "solid-js";
+import {
+  createEffect,
+  createResource,
+  createSignal,
+  onCleanup,
+  Show,
+} from "solid-js";
 import { BackLink } from "~/components/BackLink";
 import { CompositionGraphStudio } from "~/components/CompositionGraphStudio";
 import type { SQLWorkspacePreview } from "~/components/SQLWorkspace";
@@ -41,6 +47,7 @@ import {
   type PendingCompositionSaveAttempt,
   sameCompositionSaveIdentity,
   stagePendingCompositionSaveAttempt,
+  subscribeToPendingCompositionSaveAttempt,
 } from "~/lib/composition-save-attempt";
 import {
   changedCompositionQueryIds,
@@ -148,7 +155,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const [draft, setDraft] = createSignal<CompositionGraphDraft>(
     props.initialDraft ?? createCompositionGraphDraft(),
   );
-  const [saving, setSaving] = createSignal(false);
   const routeIdentity = () => ({
     spaceId: props.spaceId,
     routePath: location.pathname,
@@ -156,15 +162,36 @@ export function CompositionStudio(props: CompositionStudioProps) {
       ? { ...props.saveMode }
       : { kind: "create" as const },
   });
-  let pendingSave: PendingCompositionSaveAttempt | undefined =
-    getPendingCompositionSaveAttempt(routeIdentity())?.attempt;
+  const initialPending = getPendingCompositionSaveAttempt(routeIdentity());
+  let pendingSave: PendingCompositionSaveAttempt | undefined = initialPending
+    ?.attempt;
+  const [saving, setSaving] = createSignal(
+    initialPending?.state === "in_flight",
+  );
   const [saveRetryAvailable, setSaveRetryAvailable] = createSignal(
-    Boolean(getPendingCompositionSaveAttempt(routeIdentity())),
+    initialPending?.state === "uncertain",
   );
   createEffect(() => {
-    const stored = getPendingCompositionSaveAttempt(routeIdentity());
+    const identity = routeIdentity();
+    const stored = getPendingCompositionSaveAttempt(identity);
     pendingSave = stored?.attempt;
+    setSaving(stored?.state === "in_flight");
     setSaveRetryAvailable(stored?.state === "uncertain");
+    const unsubscribe = subscribeToPendingCompositionSaveAttempt(
+      identity,
+      (event) => {
+        if (event.type === "pending") {
+          pendingSave = event.stored.attempt;
+          setSaving(event.stored.state === "in_flight");
+          setSaveRetryAvailable(event.stored.state === "uncertain");
+        } else if (pendingSave?.idempotencyKey === event.idempotencyKey) {
+          pendingSave = undefined;
+          setSaving(false);
+          setSaveRetryAvailable(false);
+        }
+      },
+    );
+    onCleanup(unsubscribe);
   });
   const [saveError, setSaveError] = createSignal<string | null>(null);
   const [invalidEditorVariables, setInvalidEditorVariables] = createSignal(
@@ -735,7 +762,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
   };
 
   const save = async () => {
-    if (saving() || saveRetryAvailable() || !editorValid()) return;
+    if (saving() || saveRetryAvailable() || pendingSave || !editorValid()) {
+      return;
+    }
     const current = draft();
     if (!current.name.trim() || current.components.length === 0) {
       setSaveError(t("composition.studioInvalidDocument"));
@@ -751,6 +780,14 @@ export function CompositionStudio(props: CompositionStudioProps) {
     setSaveGeneration(generation);
     setSaving(true);
     setSaveError(null);
+    let attempt: PendingCompositionSaveAttempt = {
+      ...saveIdentity,
+      name: current.name.trim(),
+      yaml: "",
+      idempotencyKey: crypto.randomUUID(),
+    };
+    pendingSave = attempt;
+    stagePendingCompositionSaveAttempt(attempt, undefined);
     try {
       const checked = await previewCandidate(current);
       if (!checked.ok || !checked.plan) {
@@ -781,15 +818,15 @@ export function CompositionStudio(props: CompositionStudioProps) {
         compositionGraphDocumentDraft(verified),
       );
       if (generation !== saveGeneration()) return;
-      const attempt: PendingCompositionSaveAttempt = {
-        ...saveIdentity,
-        name: current.name.trim(),
-        yaml: canonical.canonical_yaml,
-        idempotencyKey: crypto.randomUUID(),
-      };
+      attempt = { ...attempt, yaml: canonical.canonical_yaml };
       pendingSave = attempt;
       await saveRequest(attempt, false);
     } catch (error) {
+      clearPendingCompositionSaveAttempt(attempt, "rejected", undefined);
+      if (sameCompositionSaveIdentity(attempt, routeIdentity())) {
+        pendingSave = undefined;
+        setSaveRetryAvailable(false);
+      }
       if (generation === saveGeneration()) {
         setSaveError(compositionCanonicalizeErrorMessage(error));
       }

@@ -15,13 +15,21 @@ import {
 } from "~/lib/composition-variable-binding";
 import { setLocale } from "~/lib/i18n";
 
-const { navigateMock, formsMock, savedSqlMock } = vi.hoisted(() => ({
-  navigateMock: vi.fn(),
-  formsMock: vi.fn(),
-  savedSqlMock: vi.fn(),
-}));
+const { navigateMock, formsMock, savedSqlMock, routePathMock } = vi.hoisted(
+  () => ({
+    navigateMock: vi.fn(),
+    formsMock: vi.fn(),
+    savedSqlMock: vi.fn(),
+    routePathMock: { value: "/spaces/space-1/compositions/new" },
+  }),
+);
 
 vi.mock("@solidjs/router", () => ({
+  useLocation: () => ({
+    get pathname() {
+      return routePathMock.value;
+    },
+  }),
   useNavigate: () => navigateMock,
   A: (props: { href: string; class?: string; children: unknown }) => (
     <a href={props.href} class={props.class}>{props.children as never}</a>
@@ -54,6 +62,7 @@ describe("CompositionStudio narrow binding picker", () => {
   beforeEach(() => {
     setLocale("en");
     vi.clearAllMocks();
+    routePathMock.value = "/spaces/space-1/compositions/new";
     formsMock.mockResolvedValue([]);
     savedSqlMock.mockResolvedValue([]);
   });
