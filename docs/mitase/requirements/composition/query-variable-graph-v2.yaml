@@ -111,9 +111,12 @@ requirements:
         statement: >-
           The canonical reader accepts only the new variable-graph grammar and
           does not execute the replaced unreleased Composition grammar through
-          an alias, fallback, dual reader, hidden retained field, or migration.
-          Raw history, inspection, and export continue under their existing
-          general Entry contracts.
+          a compatibility reader or writer, alias, adapter, fallback, dual-read
+          or dual-write path, hidden retained field, compatibility fixture, or
+          migration. The replaced schema is outside the v0.1 Knowledge
+          compatibility floor. Raw history, inspection, and export continue
+          under their existing general Entry contracts and do not make an old
+          Composition executable.
         governed_by: [
           POL-000#rule.foundation-precedence,
           POL-004#rule.governance,
@@ -145,7 +148,9 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-COMP-009#criterion.query-results-validated-before-preview
-                covers: [FEAT-COMP-011#binding.query-result-validation/target.composition-query-evaluation]
+                covers: [
+                  FEAT-COMP-011#binding.query-result-validation/target.composition-query-evaluation,
+                ]
                 runner:
                   runner: cargo-test-integration
                   arguments:
@@ -161,7 +166,9 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-COMP-009#criterion.query-results-validated-before-preview
-                covers: [FEAT-COMP-011#binding.query-result-validation/target.composition-query-evaluation]
+                covers: [
+                  FEAT-COMP-011#binding.query-result-validation/target.composition-query-evaluation,
+                ]
                 runner:
                   runner: cargo-test-integration
                   arguments:
@@ -177,7 +184,9 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-COMP-009#criterion.query-results-validated-before-preview
-                covers: [FEAT-COMP-011#binding.query-result-validation/target.composition-query-evaluation]
+                covers: [
+                  FEAT-COMP-011#binding.query-result-validation/target.composition-query-evaluation,
+                ]
                 runner:
                   runner: cargo-test-integration
                   arguments:

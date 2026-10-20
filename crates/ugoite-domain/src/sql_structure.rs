@@ -24,7 +24,7 @@ use crate::sql_document::{
 };
 
 /// The parser/capability contract version exposed through the WASM adapter.
-pub const SQL_STRUCTURE_CONTRACT_VERSION: u32 = 2;
+pub const SQL_STRUCTURE_CONTRACT_VERSION: u32 = 3;
 
 /// Keep SQL parsing within the same bound as the stateless SQL request.
 pub const MAX_SQL_STRUCTURE_QUERY_BYTES: usize = 256 * 1024;
@@ -292,6 +292,11 @@ pub struct SqlStructureSort {
     pub column: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub qualifier: Option<SqlStructureAlias>,
+    /// Set when this term resolves to a simple SELECT projection alias. The
+    /// column remains the projected source column for type checks and UI
+    /// capabilities; SQL rewrites preserve the alias as the ORDER BY target.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projection_alias: Option<SqlStructureAlias>,
     pub direction: SqlStructureSortDirection,
 }
 
@@ -1019,7 +1024,7 @@ fn parse_supported_sql(
     let order_by = query
         .order_by
         .as_ref()
-        .map(|order_by| parse_order_by(order_by, context, &joins))
+        .map(|order_by| parse_order_by(order_by, select, context, &joins))
         .transpose()?
         .unwrap_or_default();
     let can_add_join = joins.is_empty()
@@ -2064,6 +2069,7 @@ fn filter_expression_variables(expression: &SqlStructureFilterExpression) -> Vec
 
 fn parse_order_by(
     order_by: &OrderBy,
+    select: &Select,
     context: &SqlStructureContext,
     joins: &[SqlStructureJoin],
 ) -> Result<Vec<SqlStructureSort>, SqlStructureReason> {
@@ -2080,12 +2086,39 @@ fn parse_order_by(
             if expression.with_fill.is_some() || expression.options.nulls_first.is_some() {
                 return Err(SqlStructureReason::SortUnsupported);
             }
-            let (column, qualifier) = resolve_column_reference(
-                &expression.expr,
-                context,
-                joins,
-                SqlStructureReason::SortUnsupported,
-            )?;
+            let (column, qualifier, projection_alias) = if joins.is_empty() {
+                if let Expr::Identifier(identifier) = &expression.expr {
+                    if let Some((column, alias)) =
+                        projection_alias_binding(select, identifier, context)?
+                    {
+                        (column, None, Some(alias))
+                    } else {
+                        let (column, qualifier) = resolve_column_reference(
+                            &expression.expr,
+                            context,
+                            joins,
+                            SqlStructureReason::SortUnsupported,
+                        )?;
+                        (column, qualifier, None)
+                    }
+                } else {
+                    let (column, qualifier) = resolve_column_reference(
+                        &expression.expr,
+                        context,
+                        joins,
+                        SqlStructureReason::SortUnsupported,
+                    )?;
+                    (column, qualifier, None)
+                }
+            } else {
+                let (column, qualifier) = resolve_column_reference(
+                    &expression.expr,
+                    context,
+                    joins,
+                    SqlStructureReason::SortUnsupported,
+                )?;
+                (column, qualifier, None)
+            };
             let key = (qualifier.as_ref().map(alias_resolution_key), column.clone());
             if !seen.insert(key) {
                 return Err(SqlStructureReason::DuplicateColumn);
@@ -2097,6 +2130,7 @@ fn parse_order_by(
             Ok(SqlStructureSort {
                 column: column.name.clone(),
                 qualifier,
+                projection_alias,
                 direction: if expression.options.asc == Some(false) {
                     SqlStructureSortDirection::Desc
                 } else {
@@ -2160,7 +2194,9 @@ fn validate_order_by_semantics(
             if is_aggregate_alias {
                 continue;
             }
-            let column = find_column_by_ident(context, identifier)
+            let column = projection_alias_binding(select, identifier, context)?
+                .map(|(column, _)| find_column(context, &column))
+                .unwrap_or_else(|| find_column_by_ident(context, identifier))
                 .ok_or(SqlStructureReason::UnknownColumn)?;
             if !group_by.iter().any(|group| group == &column.name) {
                 return Err(SqlStructureReason::SortUnsupported);
@@ -2168,6 +2204,40 @@ fn validate_order_by_semantics(
         }
     }
     Ok(())
+}
+
+/// Resolve an unqualified ORDER BY name against explicit simple projection
+/// aliases before looking for an input Form column. SQL gives output names
+/// precedence here, including when an alias shadows a source column.
+fn projection_alias_binding(
+    select: &Select,
+    identifier: &Ident,
+    context: &SqlStructureContext,
+) -> Result<Option<(String, SqlStructureAlias)>, SqlStructureReason> {
+    let mut binding = None;
+    for item in &select.projection {
+        let SelectItem::ExprWithAlias {
+            expr: Expr::Identifier(source),
+            alias,
+        } = item
+        else {
+            continue;
+        };
+        let alias = SqlStructureAlias {
+            name: alias.value.clone(),
+            quoted: alias.quote_style.is_some(),
+        };
+        if !identifier_matches_alias(identifier, &alias) {
+            continue;
+        }
+        if binding.is_some() {
+            return Err(SqlStructureReason::SortUnsupported);
+        }
+        let column =
+            find_column_by_ident(context, source).ok_or(SqlStructureReason::UnknownColumn)?;
+        binding = Some((column.name.clone(), alias));
+    }
+    Ok(binding)
 }
 
 fn identifier_matches_alias(identifier: &Ident, alias: &SqlStructureAlias) -> bool {
@@ -2868,6 +2938,14 @@ fn column_reference_expr(column: &str, qualifier: Option<&SqlStructureAlias>) ->
     }
 }
 
+fn alias_reference_expr(alias: &SqlStructureAlias) -> Expr {
+    Expr::Identifier(if alias.quoted {
+        Ident::with_quote('"', alias.name.clone())
+    } else {
+        Ident::new(alias.name.clone())
+    })
+}
+
 fn alias_ast_ident(alias: &SqlStructureAlias) -> Ident {
     if alias.quoted {
         Ident::with_quote('"', alias.name.clone())
@@ -3123,7 +3201,19 @@ fn set_sort(
     if order_by.len() > 256 {
         return Err(SqlStructureReason::SortUnsupported);
     }
-    let mut validated = validate_sort_columns(context, order_by, joins)?;
+    let mut validated = validate_sort_columns(context, order_by, joins, select)?;
+    // An unqualified stable-key name would resolve to this output alias and
+    // sort by a different source column. There is no safe unqualified rewrite
+    // for the hidden source key, so reject this edit instead of claiming a
+    // deterministic order.
+    for key in &context.stable_key {
+        let identifier = Ident::with_quote('"', key.clone());
+        if projection_alias_binding(select, &identifier, context)?
+            .is_some_and(|(source, _)| !names_match(&source, key))
+        {
+            return Err(SqlStructureReason::SortUnsupported);
+        }
+    }
     if let Some(join) = joins.first() {
         for alias in [&join.left_alias, &join.right_alias] {
             for key in &context.stable_key {
@@ -3138,6 +3228,7 @@ fn set_sort(
                     validated.push(SqlStructureSort {
                         column: key.clone(),
                         qualifier: Some(alias.clone()),
+                        projection_alias: None,
                         direction: SqlStructureSortDirection::Asc,
                     });
                     added_tie_breakers.push(format!("{}.{}", alias.name, key));
@@ -3153,6 +3244,7 @@ fn set_sort(
                 validated.push(SqlStructureSort {
                     column: key.clone(),
                     qualifier: None,
+                    projection_alias: None,
                     direction: SqlStructureSortDirection::Asc,
                 });
                 added_tie_breakers.push(key.clone());
@@ -3164,7 +3256,10 @@ fn set_sort(
             validated
                 .into_iter()
                 .map(|sort| OrderByExpr {
-                    expr: column_reference_expr(&sort.column, sort.qualifier.as_ref()),
+                    expr: sort.projection_alias.as_ref().map_or_else(
+                        || column_reference_expr(&sort.column, sort.qualifier.as_ref()),
+                        alias_reference_expr,
+                    ),
                     options: OrderByOptions {
                         asc: Some(sort.direction == SqlStructureSortDirection::Asc),
                         nulls_first: None,
@@ -3361,11 +3456,43 @@ fn validate_sort_columns(
     context: &SqlStructureContext,
     order_by: Vec<SqlStructureSort>,
     joins: &[SqlStructureJoin],
+    select: &Select,
 ) -> Result<Vec<SqlStructureSort>, SqlStructureReason> {
     let mut validated = Vec::with_capacity(order_by.len());
     let mut seen = BTreeSet::new();
     for sort in order_by {
-        let column = find_column(context, &sort.column).ok_or(SqlStructureReason::UnknownColumn)?;
+        let (source_column, projection_alias) = match sort.projection_alias.as_ref() {
+            Some(alias) => {
+                if sort.qualifier.is_some() {
+                    return Err(SqlStructureReason::SortUnsupported);
+                }
+                let identifier = if alias.quoted {
+                    Ident::with_quote('"', alias.name.clone())
+                } else {
+                    Ident::new(alias.name.clone())
+                };
+                let Some((source, actual_alias)) =
+                    projection_alias_binding(select, &identifier, context)?
+                else {
+                    return Err(SqlStructureReason::SortUnsupported);
+                };
+                if actual_alias != *alias || !names_match(&source, &sort.column) {
+                    return Err(SqlStructureReason::SortUnsupported);
+                }
+                (source, Some(alias.clone()))
+            }
+            None => {
+                let identifier = Ident::with_quote('"', sort.column.clone());
+                if projection_alias_binding(select, &identifier, context)?
+                    .is_some_and(|(source, _)| !names_match(&source, &sort.column))
+                {
+                    return Err(SqlStructureReason::SortUnsupported);
+                }
+                (sort.column.clone(), None)
+            }
+        };
+        let column =
+            find_column(context, &source_column).ok_or(SqlStructureReason::UnknownColumn)?;
         if !column_type_supports_sort(column.column_type) {
             return Err(SqlStructureReason::SortUnsupported);
         }
@@ -3380,6 +3507,7 @@ fn validate_sort_columns(
         validated.push(SqlStructureSort {
             column: column.name.clone(),
             qualifier,
+            projection_alias,
             direction: sort.direction,
         });
     }
@@ -3738,9 +3866,9 @@ mod tests {
             .expect("feature matrix operations must be an array")
             .iter()
             .chain(
-                editor["protocol_extensions"]
+                editor["legacy_operations"]
                     .as_array()
-                    .expect("feature matrix protocol extensions must be an array")
+                    .expect("feature matrix legacy operations must be an array")
                     .iter(),
             )
             .map(|operation| {
@@ -4286,6 +4414,7 @@ mod tests {
                 order_by: vec![SqlStructureSort {
                     column: "field_101".to_owned(),
                     qualifier: Some(join.left_alias.clone()),
+                    projection_alias: None,
                     direction: SqlStructureSortDirection::Desc,
                 }],
             },
@@ -4338,6 +4467,7 @@ mod tests {
                         name: "t".to_owned(),
                         quoted: false,
                     }),
+                    projection_alias: None,
                     direction: SqlStructureSortDirection::Desc,
                 }],
             },
@@ -4798,6 +4928,84 @@ mod tests {
     }
 
     #[test]
+    fn order_by_resolves_projection_alias_before_a_colliding_source_column() {
+        for (sql, quoted) in [
+            (
+                "SELECT \"field_102\" AS field_101 FROM \"Task\" ORDER BY field_101",
+                false,
+            ),
+            (
+                "SELECT \"field_102\" AS \"field_101\" FROM \"Task\" ORDER BY \"field_101\"",
+                true,
+            ),
+        ] {
+            let analysis = analyze_sql_structure(sql, &context());
+            assert_eq!(analysis.status, SqlStructureStatus::Supported, "{sql}");
+            assert_eq!(analysis.order_by.len(), 1, "{sql}");
+            assert_eq!(analysis.order_by[0].column, "field_102", "{sql}");
+            assert_eq!(
+                analysis.order_by[0].projection_alias,
+                Some(SqlStructureAlias {
+                    name: "field_101".to_owned(),
+                    quoted,
+                }),
+                "{sql}"
+            );
+
+            let alias_sort = propose_sql_structure_operation(
+                sql,
+                &context(),
+                SqlStructureOperation::SetSort {
+                    order_by: vec![SqlStructureSort {
+                        column: "field_102".to_owned(),
+                        qualifier: None,
+                        projection_alias: analysis.order_by[0].projection_alias.clone(),
+                        direction: SqlStructureSortDirection::Desc,
+                    }],
+                },
+            );
+            assert_eq!(alias_sort.status, SqlStructureStatus::Supported, "{sql}");
+            let sorted_sql = alias_sort.proposed_sql.expect("alias sort proposal");
+            let expected_alias = if quoted { "\"field_101\"" } else { "field_101" };
+            assert!(
+                sorted_sql.contains(&format!("ORDER BY {expected_alias} DESC")),
+                "{sorted_sql}"
+            );
+            assert!(sorted_sql.contains("\"_ugoite_id\" ASC"), "{sorted_sql}");
+            let updated = analyze_sql_structure(&sorted_sql, &context());
+            assert_eq!(
+                updated.status,
+                SqlStructureStatus::Supported,
+                "{sorted_sql}"
+            );
+            assert_eq!(updated.order_by[0].column, "field_102");
+            assert_eq!(
+                updated.order_by[0].projection_alias,
+                analysis.order_by[0].projection_alias
+            );
+
+            let source_sort = propose_sql_structure_operation(
+                sql,
+                &context(),
+                SqlStructureOperation::SetSort {
+                    order_by: vec![SqlStructureSort {
+                        column: "field_101".to_owned(),
+                        qualifier: None,
+                        projection_alias: None,
+                        direction: SqlStructureSortDirection::Asc,
+                    }],
+                },
+            );
+            assert_eq!(source_sort.status, SqlStructureStatus::Unsupported, "{sql}");
+            assert_eq!(
+                source_sort.reason,
+                Some(SqlStructureReason::SortUnsupported)
+            );
+            assert!(source_sort.proposed_sql.is_none());
+        }
+    }
+
+    #[test]
     fn projection_alias_edits_fail_closed_for_comments_and_invalid_alias_shapes() {
         let commented_gap = "SELECT \"field_102\" /* keep */ AS total FROM \"Task\"";
         let removal = propose_sql_structure_operation(
@@ -5080,6 +5288,7 @@ mod tests {
                 order_by: vec![SqlStructureSort {
                     column: "field_102".to_owned(),
                     qualifier: None,
+                    projection_alias: None,
                     direction: SqlStructureSortDirection::Desc,
                 }],
             },
@@ -5952,6 +6161,7 @@ mod tests {
                 order_by: vec![SqlStructureSort {
                     column: "field_101".to_owned(),
                     qualifier: None,
+                    projection_alias: None,
                     direction: SqlStructureSortDirection::Asc,
                 }],
             },
@@ -6004,6 +6214,7 @@ mod tests {
                 order_by: vec![SqlStructureSort {
                     column: "field_102".to_owned(),
                     qualifier: None,
+                    projection_alias: None,
                     direction: SqlStructureSortDirection::Desc,
                 }],
             },

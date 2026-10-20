@@ -24,6 +24,7 @@ import type {
   SqlStructureAlias,
   SqlStructureAnalysis,
   SqlStructureFilter,
+  SqlStructureFilterExpression,
   SqlStructureFilterOperator,
   SqlStructureLiteral,
   SqlStructureOperation,
@@ -42,7 +43,9 @@ type StructureAction =
   | "aggregate"
   | "group_by"
   | "distinct";
-type FilterDraft = {
+type FilterPredicateDraft = {
+  kind: "predicate";
+  id: string;
   column: string;
   qualifier?: SqlStructureAlias;
   operator: SqlStructureFilterOperator;
@@ -52,11 +55,13 @@ type FilterDraft = {
 type SortDraft = {
   column: string;
   qualifier?: SqlStructureAlias;
+  projection_alias?: SqlStructureAlias;
   direction: "asc" | "desc";
 };
 type ColumnChoice = {
   column: string;
   qualifier?: SqlStructureAlias;
+  projection_alias?: SqlStructureAlias;
   value: string;
   label: string;
 };
@@ -67,6 +72,11 @@ type ProjectionSlotDraft = {
   column: string;
   alias: SqlStructureAlias;
 };
+
+type FilterDraft =
+  | FilterPredicateDraft
+  | { kind: "and" | "or"; id: string; expressions: FilterDraft[] }
+  | { kind: "not"; id: string; expression: FilterDraft };
 type AnalyzedStructure = {
   context: SqlStructureAdapterContext;
   analysis: SqlStructureAnalysis;
@@ -134,6 +144,124 @@ const operatorsForColumn = (
 
 const unavailableReason = () => t("sqlPage.structureUnsupported");
 
+const filterExpressionToDraft = (
+  expression: SqlStructureFilterExpression,
+): FilterDraft => {
+  const id = createUniqueId();
+  switch (expression.kind) {
+    case "and":
+    case "or":
+      return {
+        kind: expression.kind,
+        id,
+        expressions: expression.expressions.map(filterExpressionToDraft),
+      };
+    case "not":
+      return {
+        kind: "not",
+        id,
+        expression: filterExpressionToDraft(expression.expression),
+      };
+    case "predicate":
+      return {
+        kind: "predicate",
+        id,
+        column: expression.column,
+        ...(expression.qualifier
+          ? { qualifier: { ...expression.qualifier } }
+          : {}),
+        operator: expression.operator,
+        parameter: expression.parameter ?? "",
+      };
+  }
+};
+
+const flatFiltersToDraft = (
+  filters: readonly SqlStructureFilter[],
+): FilterDraft | undefined => {
+  const predicates = filters.map((filter): FilterPredicateDraft => ({
+    kind: "predicate",
+    id: createUniqueId(),
+    column: filter.column,
+    ...(filter.qualifier ? { qualifier: { ...filter.qualifier } } : {}),
+    operator: filter.operator,
+    parameter: filter.parameter ?? "",
+  }));
+  if (predicates.length === 0) return undefined;
+  if (predicates.length === 1) return predicates[0];
+  return { kind: "and", id: createUniqueId(), expressions: predicates };
+};
+
+const filterDraftToExpression = (
+  draft: FilterDraft,
+): SqlStructureFilterExpression => {
+  switch (draft.kind) {
+    case "and":
+    case "or":
+      return {
+        kind: draft.kind,
+        expressions: draft.expressions.map(filterDraftToExpression),
+      };
+    case "not":
+      return {
+        kind: "not",
+        expression: filterDraftToExpression(draft.expression),
+      };
+    case "predicate":
+      return {
+        kind: "predicate",
+        column: draft.column,
+        ...(draft.qualifier ? { qualifier: { ...draft.qualifier } } : {}),
+        operator: draft.operator,
+        ...(isNullOperator(draft.operator)
+          ? {}
+          : { parameter: draft.parameter }),
+      };
+  }
+};
+
+const filterDraftToFlatFilters = (
+  draft?: FilterDraft,
+): SqlStructureFilter[] | undefined => {
+  if (!draft) return [];
+  switch (draft.kind) {
+    case "predicate":
+      return [{
+        column: draft.column,
+        ...(draft.qualifier ? { qualifier: { ...draft.qualifier } } : {}),
+        operator: draft.operator,
+        ...(isNullOperator(draft.operator)
+          ? {}
+          : { parameter: draft.parameter }),
+      }];
+    case "and": {
+      const filters: SqlStructureFilter[] = [];
+      for (const child of draft.expressions) {
+        const childFilters = filterDraftToFlatFilters(child);
+        if (!childFilters) return undefined;
+        filters.push(...childFilters);
+      }
+      return filters;
+    }
+    case "or":
+    case "not":
+      return undefined;
+  }
+};
+
+const filterDraftLeaves = (draft?: FilterDraft): FilterPredicateDraft[] => {
+  if (!draft) return [];
+  switch (draft.kind) {
+    case "predicate":
+      return [draft];
+    case "not":
+      return filterDraftLeaves(draft.expression);
+    case "and":
+    case "or":
+      return draft.expressions.flatMap(filterDraftLeaves);
+  }
+};
+
 function analysisReason(state: AnalysisState): string | undefined {
   if (state.status === "loading") return t("sqlPage.structureAnalyzing");
   if (state.status === "no_context") return t("sqlPage.structureNoForm");
@@ -156,7 +284,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   const [projectionSlots, setProjectionSlots] = createSignal<
     ProjectionSlotDraft[]
   >([]);
-  const [filters, setFilters] = createSignal<FilterDraft[]>([]);
+  const [filters, setFilters] = createSignal<FilterDraft>();
   const [sorts, setSorts] = createSignal<SortDraft[]>([]);
   const [aggregates, setAggregates] = createSignal<SqlStructureAggregate[]>([]);
   const [groupByColumns, setGroupByColumns] = createSignal<string[]>([]);
@@ -191,7 +319,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     setActiveAction(null);
     setLiteralProjection([]);
     setProjectionSlots([]);
-    setFilters([]);
+    setFilters(undefined);
     setSorts([]);
     setAggregates([]);
     setGroupByColumns([]);
@@ -257,8 +385,18 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   const capability = (action: StructureAction) => {
     if (action === "form") return undefined;
     const current = ready()?.analysis;
+    if (action === "filter") {
+      // Older WASM adapters expose only the flat capability. Prefer the
+      // boolean-tree capability only when it is enabled; a disabled tree
+      // capability must not hide a usable flat conjunction editor.
+      const expression = current?.capabilities.filter_expression;
+      return expression?.enabled ? expression : current?.capabilities.filter;
+    }
     return current?.capabilities[action];
   };
+
+  const supportsFilterExpression = () =>
+    ready()?.analysis.capabilities.filter_expression?.enabled === true;
 
   const formOptions = () => {
     const seen = new Set<string>();
@@ -396,6 +534,42 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     column: string,
     qualifier?: SqlStructureAlias,
   ) => columnChoiceValue(column, qualifier);
+
+  const sortChoiceValue = (sort: SortDraft) =>
+    sort.projection_alias
+      ? JSON.stringify([
+        "projection_alias",
+        sort.projection_alias.name,
+        sort.projection_alias.quoted,
+      ])
+      : selectedColumnChoice(sort.column, sort.qualifier);
+
+  const sortChoices = (): ColumnChoice[] => {
+    const current = ready();
+    const columns = sortableColumns();
+    const choices = columnChoices(columns);
+    if (!current || activeJoin()) return choices;
+    const sortable = new Set(columns.map((column) => column.name));
+    const projectionChoices = current.analysis.projection_aliases.flatMap(
+      (slot): ColumnChoice[] =>
+        slot.alias && sortable.has(slot.column)
+          ? [{
+            column: slot.column,
+            projection_alias: slot.alias,
+            value: JSON.stringify([
+              "projection_alias",
+              slot.alias.name,
+              slot.alias.quoted,
+            ]),
+            label: t("sqlPage.structure.sortProjectionAliasChoice", {
+              alias: slot.alias.name,
+              column: slot.column,
+            }),
+          }]
+          : [],
+    );
+    return [...choices, ...projectionChoices];
+  };
 
   const choiceForValue = (value: string, choices: ColumnChoice[]) =>
     choices.find((choice) => choice.value === value);
@@ -666,12 +840,11 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
         quoted: slot.alias?.quoted ?? false,
       },
     })));
-    setFilters(current.analysis.filters.map((filter) => ({
-      column: filter.column,
-      ...(filter.qualifier ? { qualifier: { ...filter.qualifier } } : {}),
-      operator: filter.operator,
-      parameter: filter.parameter ?? "",
-    })));
+    setFilters(
+      current.analysis.filter_expression
+        ? filterExpressionToDraft(current.analysis.filter_expression)
+        : flatFiltersToDraft(current.analysis.filters),
+    );
     setSorts(current.analysis.order_by.map((sort) => ({ ...sort })));
     setAggregates(current.analysis.aggregates.map((aggregate) => ({
       ...aggregate,
@@ -717,7 +890,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
         variable.name
       ),
       ...(props.reservedVariableNames?.() ?? []),
-      ...filters().map((filter) => filter.parameter),
+      ...filterDraftLeaves(filters()).map((filter) => filter.parameter),
     ]);
     if (!used.has(base)) return base;
     let index = 2;
@@ -727,11 +900,11 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
 
   const variablesCreatedByFilters = (
     existing: readonly { name: string; type: SqlStructureVariableType }[],
-    drafts: readonly FilterDraft[] = filters(),
+    drafts: FilterDraft | undefined = filters(),
   ) => {
     const existingNames = new Set(existing.map((variable) => variable.name));
     const byName = new Map<string, SqlStructureVariableType>();
-    for (const filter of drafts) {
+    for (const filter of filterDraftLeaves(drafts)) {
       if (
         filter.createdVariable && !existingNames.has(filter.parameter)
       ) byName.set(filter.parameter, filter.createdVariable);
@@ -744,7 +917,16 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
       ready()?.context.columnCapabilities[column.name]?.filterable
     );
 
-  const addFilter = () => {
+  const canAddFilter = () =>
+    filterableColumns().some((column) =>
+      operatorsForColumn(ready()?.context, column.name).some((operator) =>
+        isNullOperator(operator) || variablesFor(column.name).length > 0 ||
+        (props.onVariablesAdded !== undefined &&
+          filterVariableType(column.name) !== undefined)
+      )
+    );
+
+  const makeFilterDraft = (): FilterPredicateDraft | undefined => {
     if (busy() || proposal()) return;
     const candidate = filterableColumns().flatMap((column) => {
       const operators = operatorsForColumn(ready()?.context, column.name);
@@ -760,13 +942,15 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
         ? [{ column, operator, qualifier: activeJoin()?.left_alias }]
         : [];
     })[0];
-    if (!candidate) return;
+    if (!candidate) return undefined;
     const compatibleVariables = variablesFor(candidate.column.name);
     const createdVariable = !isNullOperator(candidate.operator) &&
         compatibleVariables.length === 0 && props.onVariablesAdded
       ? filterVariableType(candidate.column.name)
       : undefined;
-    setFilters((items) => [...items, {
+    return {
+      kind: "predicate",
+      id: createUniqueId(),
       column: candidate.column.name,
       ...(candidate.qualifier ? { qualifier: candidate.qualifier } : {}),
       operator: candidate.operator,
@@ -777,78 +961,543 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
             ? uniqueFilterVariableName(candidate.column.name)
             : ""),
       ...(createdVariable ? { createdVariable } : {}),
-    }]);
+    };
   };
 
-  const updateFilter = (index: number, update: Partial<FilterDraft>) => {
-    if (busy() || proposal()) return;
-    setFilters((items) =>
-      items.map((item, itemIndex) => {
-        if (index !== itemIndex) return item;
-        const next = { ...item, ...update };
-        const column = ready()?.context.parser.columns.find((entry) =>
-          entry.name === next.column
+  const updateFilterDraft = (
+    draft: FilterDraft,
+    id: string,
+    update: (node: FilterDraft) => FilterDraft,
+  ): FilterDraft => {
+    if (draft.id === id) return update(draft);
+    if (draft.kind === "not") {
+      return {
+        ...draft,
+        expression: updateFilterDraft(draft.expression, id, update),
+      };
+    }
+    if (draft.kind === "and" || draft.kind === "or") {
+      return {
+        ...draft,
+        expressions: draft.expressions.map((child) =>
+          updateFilterDraft(child, id, update)
+        ),
+      };
+    }
+    return draft;
+  };
+
+  const removeFilterDraft = (
+    draft: FilterDraft,
+    id: string,
+  ): FilterDraft | undefined => {
+    if (draft.id === id) return undefined;
+    if (draft.kind === "not") {
+      const expression = removeFilterDraft(draft.expression, id);
+      return expression ? { ...draft, expression } : undefined;
+    }
+    if (draft.kind === "and" || draft.kind === "or") {
+      const expressions = draft.expressions
+        .map((child) => removeFilterDraft(child, id))
+        .filter((child): child is FilterDraft => child !== undefined);
+      if (expressions.length === 0) return undefined;
+      if (expressions.length === 1) return expressions[0];
+      return { ...draft, expressions };
+    }
+    return draft;
+  };
+
+  const setFilterDraft = (
+    next:
+      | FilterDraft
+      | undefined
+      | (
+        (previous: FilterDraft | undefined) => FilterDraft | undefined
+      ),
+  ) => {
+    const active = typeof document === "undefined"
+      ? undefined
+      : document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : undefined;
+    const filterList = active?.closest<HTMLElement>(
+      ".sql-structure-filter-list",
+    );
+    if (!filterList) {
+      setFilters(next);
+      return;
+    }
+
+    const focusKey = active?.dataset.filterFocusKey;
+    const nodeIds: string[] = [];
+    let node = active?.closest<HTMLElement>("[data-filter-node]");
+    while (node) {
+      if (node.dataset.filterNode) nodeIds.push(node.dataset.filterNode);
+      node = node.parentElement?.closest<HTMLElement>("[data-filter-node]");
+    }
+    setFilters(next);
+    queueMicrotask(() => {
+      const dialog = filterList.closest<HTMLElement>('[role="dialog"]');
+      if (!dialog?.isConnected) return;
+      const controls = Array.from(
+        dialog.querySelectorAll<HTMLElement>("[data-filter-focus-key]"),
+      );
+      const target = controls.find((control) =>
+        control.dataset.filterFocusKey === focusKey
+      ) ?? nodeIds.map((id) => {
+        const retainedNode = Array.from(
+          dialog.querySelectorAll<HTMLElement>("[data-filter-node]"),
+        ).find((candidate) =>
+          candidate.dataset.filterNode === id
         );
-        const supportedOperators = column
-          ? operatorsForColumn(ready()?.context, column.name)
-          : [];
-        if (!supportedOperators.includes(next.operator)) {
-          next.operator = supportedOperators[0] ?? "is_null";
-          next.parameter = "";
-        }
-        if (!isNullOperator(next.operator)) {
-          const compatibleVariables = variablesFor(next.column);
-          const existingVariable = compatibleVariables.find((variable) =>
-            variable.name === next.parameter
-          );
-          if (existingVariable) {
-            delete next.createdVariable;
-          } else if (
-            next.createdVariable &&
-            next.createdVariable === filterVariableType(next.column) &&
-            next.parameter
-          ) {
-            // Keep the locally-created typed parameter while the user edits
-            // other parts of the same filter row.
-          } else if (compatibleVariables[0]) {
-            next.parameter = compatibleVariables[0].name;
-            delete next.createdVariable;
-          } else if (
-            props.onVariablesAdded &&
-            filterVariableType(next.column)
-          ) {
-            next.parameter = uniqueFilterVariableName(next.column);
-            next.createdVariable = filterVariableType(next.column);
-          } else {
-            next.parameter = "";
-            delete next.createdVariable;
-          }
+        return retainedNode?.querySelector<HTMLElement>(
+          "[data-filter-focus-key]",
+        );
+      }).find((control) => control !== undefined) ?? controls[0];
+      target?.focus();
+    });
+  };
+
+  const addFilter = () => {
+    if (busy() || proposal()) return;
+    const filter = makeFilterDraft();
+    if (!filter) return;
+    const current = filters();
+    if (!current) {
+      setFilterDraft(filter);
+    } else if (current.kind === "and") {
+      setFilterDraft({
+        ...current,
+        expressions: [...current.expressions, filter],
+      });
+    } else {
+      setFilterDraft({
+        kind: "and",
+        id: createUniqueId(),
+        expressions: [current, filter],
+      });
+    }
+  };
+
+  const addFilterToGroup = (id: string) => {
+    if (busy() || proposal()) return;
+    const filter = makeFilterDraft();
+    const current = filters();
+    if (!filter || !current) return;
+    setFilterDraft(
+      updateFilterDraft(
+        current,
+        id,
+        (node) =>
+          node.kind === "and" || node.kind === "or"
+            ? { ...node, expressions: [...node.expressions, filter] }
+            : node,
+      ),
+    );
+  };
+
+  const addGroup = (parentId?: string, kind: "and" | "or" = "and") => {
+    if (busy() || proposal()) return;
+    const group: FilterDraft = {
+      kind,
+      id: createUniqueId(),
+      expressions: [],
+    };
+    const current = filters();
+    if (!current) {
+      setFilterDraft(group);
+    } else if (parentId) {
+      setFilterDraft(
+        updateFilterDraft(
+          current,
+          parentId,
+          (node) =>
+            node.kind === "and" || node.kind === "or"
+              ? { ...node, expressions: [...node.expressions, group] }
+              : node,
+        ),
+      );
+    } else if (current.kind === "and") {
+      setFilterDraft({
+        ...current,
+        expressions: [...current.expressions, group],
+      });
+    } else {
+      setFilterDraft({
+        kind: "and",
+        id: createUniqueId(),
+        expressions: [current, group],
+      });
+    }
+  };
+
+  const addNot = (id: string) => {
+    if (busy() || proposal()) return;
+    const current = filters();
+    if (!current) return;
+    setFilterDraft(updateFilterDraft(current, id, (node) => ({
+      kind: "not",
+      id: createUniqueId(),
+      expression: node,
+    })));
+  };
+
+  const removeNot = (id: string) => {
+    if (busy() || proposal()) return;
+    const current = filters();
+    if (!current) return;
+    setFilterDraft(
+      updateFilterDraft(
+        current,
+        id,
+        (node) => node.kind === "not" ? node.expression : node,
+      ),
+    );
+  };
+
+  const setFilterGroupKind = (id: string, kind: "and" | "or") => {
+    if (busy() || proposal()) return;
+    const current = filters();
+    if (!current) return;
+    setFilterDraft(
+      updateFilterDraft(
+        current,
+        id,
+        (node) =>
+          node.kind === "and" || node.kind === "or" ? { ...node, kind } : node,
+      ),
+    );
+  };
+
+  const removeFilter = (id: string) => {
+    if (busy() || proposal()) return;
+    const current = filters();
+    if (current) setFilterDraft(removeFilterDraft(current, id));
+  };
+
+  const updateFilter = (id: string, update: Partial<FilterPredicateDraft>) => {
+    if (busy() || proposal()) return;
+    const current = filters();
+    if (!current) return;
+    setFilterDraft(updateFilterDraft(current, id, (item) => {
+      if (item.kind !== "predicate") return item;
+      const next: FilterPredicateDraft = { ...item, ...update };
+      const column = ready()?.context.parser.columns.find((entry) =>
+        entry.name === next.column
+      );
+      const supportedOperators = column
+        ? operatorsForColumn(ready()?.context, column.name)
+        : [];
+      if (!supportedOperators.includes(next.operator)) {
+        next.operator = supportedOperators[0] ?? "is_null";
+        next.parameter = "";
+      }
+      if (!isNullOperator(next.operator)) {
+        const compatibleVariables = variablesFor(next.column);
+        const existingVariable = compatibleVariables.find((variable) =>
+          variable.name === next.parameter
+        );
+        if (existingVariable) {
+          delete next.createdVariable;
+        } else if (
+          next.createdVariable &&
+          next.createdVariable === filterVariableType(next.column) &&
+          next.parameter
+        ) {
+          // Keep the locally-created typed parameter while the user edits
+          // other parts of the same filter row.
+        } else if (compatibleVariables[0]) {
+          next.parameter = compatibleVariables[0].name;
+          delete next.createdVariable;
+        } else if (
+          props.onVariablesAdded &&
+          filterVariableType(next.column)
+        ) {
+          next.parameter = uniqueFilterVariableName(next.column);
+          next.createdVariable = filterVariableType(next.column);
         } else {
           next.parameter = "";
           delete next.createdVariable;
         }
-        return next;
-      })
-    );
+      } else {
+        next.parameter = "";
+        delete next.createdVariable;
+      }
+      return next;
+    }));
   };
 
-  const filterRowsValid = () =>
-    filters().every((filter) =>
-      Boolean(ready()?.context.columnCapabilities[filter.column]?.filterable) &&
-      (activeJoin()
-        ? [activeJoin()?.left_alias, activeJoin()?.right_alias].some((alias) =>
-          alias?.name === filter.qualifier?.name &&
-          alias.quoted === filter.qualifier?.quoted
-        )
-        : !filter.qualifier) &&
-      operatorsForColumn(ready()?.context, filter.column).includes(
-        filter.operator,
-      ) &&
-      (isNullOperator(filter.operator) ||
-        variablesFor(filter.column).some((variable) =>
-          variable.name === filter.parameter
-        ) || filter.createdVariable === filterVariableType(filter.column))
+  const filterRowsValid = () => {
+    let nodes = 0;
+    const isValid = (filter: FilterDraft, depth = 0): boolean => {
+      nodes += 1;
+      if (nodes > 128 || depth > 32) return false;
+      if (filter.kind === "and" || filter.kind === "or") {
+        return filter.expressions.length >= 2 &&
+          filter.expressions.every((child) => isValid(child, depth + 1));
+      }
+      if (filter.kind === "not") return isValid(filter.expression, depth + 1);
+      return Boolean(
+        ready()?.context.columnCapabilities[filter.column]?.filterable &&
+          (activeJoin()
+            ? [activeJoin()?.left_alias, activeJoin()?.right_alias].some(
+              (alias) =>
+                alias?.name === filter.qualifier?.name &&
+                alias.quoted === filter.qualifier?.quoted,
+            )
+            : !filter.qualifier) &&
+          operatorsForColumn(ready()?.context, filter.column).includes(
+            filter.operator,
+          ) &&
+          (isNullOperator(filter.operator) ||
+            (filter.parameter.length > 0 &&
+              (variablesFor(filter.column).some((variable) =>
+                variable.name === filter.parameter
+              ) ||
+                filter.createdVariable === filterVariableType(filter.column)))),
+      );
+    };
+    const filter = filters();
+    return !filter || isValid(filter);
+  };
+
+  const filterRootIsGroup = () => {
+    const filter = filters();
+    return filter?.kind === "and" || filter?.kind === "or";
+  };
+
+  const filterIndentClass = (depth: number) =>
+    depth > 0 && depth <= 3 ? " sql-structure-filter--indented" : "";
+
+  const renderFilterNode = (filter: FilterDraft, depth = 0) => {
+    if (filter.kind === "predicate") {
+      const context = () => ready()?.context;
+      const operators = () => operatorsForColumn(context(), filter.column);
+      const variables = () => variablesFor(filter.column);
+      const allowedChoices = () => {
+        const choices = columnChoices(filterableColumns());
+        const selected = selectedColumnChoice(
+          filter.column,
+          filter.qualifier,
+        );
+        return choices.some((choice) => choice.value === selected)
+          ? choices
+          : [{
+            column: filter.column,
+            qualifier: filter.qualifier,
+            value: selected,
+            label: filter.qualifier
+              ? `${filter.qualifier.name}.${filter.column}`
+              : filter.column,
+          }, ...choices];
+      };
+      const rowEditable = () =>
+        Boolean(
+          context()?.columnCapabilities[filter.column]?.filterable &&
+            operators().length > 0,
+        );
+      return (
+        <div
+          class="sql-structure-filter-node"
+          data-filter-node={filter.id}
+          data-filter-depth={depth}
+        >
+          <div class="sql-structure-filter-row">
+            <label class="ui-field">
+              <span>{t("sqlPage.structure.column")}</span>
+              <select
+                class="ui-input"
+                data-filter-focus-key={`${filter.id}:column`}
+                value={selectedColumnChoice(filter.column, filter.qualifier)}
+                disabled={busy() || Boolean(proposal()) || !rowEditable()}
+                onChange={(event) => {
+                  const selected = choiceForValue(
+                    event.currentTarget.value,
+                    allowedChoices(),
+                  );
+                  if (selected) {
+                    updateFilter(filter.id, {
+                      column: selected.column,
+                      qualifier: selected.qualifier,
+                    });
+                  }
+                }}
+              >
+                <For each={allowedChoices()}>
+                  {(choice) => (
+                    <option value={choice.value}>{choice.label}</option>
+                  )}
+                </For>
+              </select>
+            </label>
+            <label class="ui-field">
+              <span>{t("sqlPage.structure.operator")}</span>
+              <select
+                class="ui-input"
+                data-filter-focus-key={`${filter.id}:operator`}
+                value={filter.operator}
+                disabled={busy() || Boolean(proposal()) || !rowEditable()}
+                onChange={(event) =>
+                  updateFilter(filter.id, {
+                    operator: event.currentTarget
+                      .value as SqlStructureFilterOperator,
+                  })}
+              >
+                <For each={operators()}>
+                  {(operator) => (
+                    <option value={operator}>{t(operatorKey(operator))}</option>
+                  )}
+                </For>
+                <Show when={!operators().includes(filter.operator)}>
+                  <option value={filter.operator}>
+                    {t("sqlPage.structure.unsupportedOperator")}
+                  </option>
+                </Show>
+              </select>
+            </label>
+            <Show when={!isNullOperator(filter.operator)}>
+              <label class="ui-field">
+                <span>{t("sqlPage.structure.variable")}</span>
+                <select
+                  class="ui-input"
+                  data-filter-focus-key={`${filter.id}:variable`}
+                  value={filter.parameter}
+                  disabled={busy() || Boolean(proposal()) || !rowEditable()}
+                  onChange={(event) =>
+                    updateFilter(filter.id, {
+                      parameter: event.currentTarget.value,
+                    })}
+                >
+                  <For each={variables()}>
+                    {(variable) => (
+                      <option value={variable.name}>{variable.name}</option>
+                    )}
+                  </For>
+                  <Show
+                    when={!variables().some((variable) =>
+                      variable.name === filter.parameter
+                    )}
+                  >
+                    <option value={filter.parameter}>{filter.parameter}</option>
+                  </Show>
+                </select>
+              </label>
+            </Show>
+            <div class="sql-structure-filter-node-actions">
+              <button
+                type="button"
+                class="ui-button ui-button-secondary"
+                data-filter-focus-key={`${filter.id}:negate`}
+                aria-label={t("sqlPage.structure.negateFilter")}
+                title={t("sqlPage.structure.negateFilter")}
+                disabled={busy() || Boolean(proposal()) ||
+                  !supportsFilterExpression()}
+                onClick={() => addNot(filter.id)}
+              >
+                NOT
+              </button>
+              <IconButton
+                icon="trash"
+                label={t("sqlPage.structure.removeFilter")}
+                disabled={busy() || Boolean(proposal())}
+                onClick={() => removeFilter(filter.id)}
+              />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (filter.kind === "not") {
+      return (
+        <div
+          class={`sql-structure-filter-not${filterIndentClass(depth)}`}
+          data-filter-node={filter.id}
+          data-filter-depth={depth}
+        >
+          <span class="sql-structure-filter-operator">NOT</span>
+          {renderFilterNode(filter.expression, depth + 1)}
+          <IconButton
+            icon="trash"
+            label={t("sqlPage.structure.removeNot")}
+            disabled={busy() || Boolean(proposal())}
+            onClick={() => removeNot(filter.id)}
+          />
+        </div>
+      );
+    }
+
+    return (
+      <section
+        class={`sql-structure-filter-group${filterIndentClass(depth)}`}
+        role="group"
+        aria-label={t("sqlPage.structure.filterGroup")}
+        data-filter-node={filter.id}
+        data-filter-depth={depth}
+      >
+        <div class="sql-structure-filter-group-controls">
+          <select
+            class="ui-input"
+            data-filter-focus-key={`${filter.id}:operator`}
+            aria-label={t("sqlPage.structure.filterGroupOperator")}
+            value={filter.kind}
+            disabled={busy() || Boolean(proposal())}
+            onChange={(event) =>
+              setFilterGroupKind(
+                filter.id,
+                event.currentTarget.value as "and" | "or",
+              )}
+          >
+            <option value="and">AND</option>
+            <Show when={supportsFilterExpression()}>
+              <option value="or">OR</option>
+            </Show>
+          </select>
+          <button
+            type="button"
+            class="ui-button ui-button-secondary"
+            data-filter-focus-key={`${filter.id}:add-filter`}
+            onClick={() => addFilterToGroup(filter.id)}
+            disabled={busy() || Boolean(proposal()) || !canAddFilter()}
+          >
+            {t("sqlPage.structure.addFilter")}
+          </button>
+          <button
+            type="button"
+            class="ui-button ui-button-secondary"
+            data-filter-focus-key={`${filter.id}:add-group`}
+            onClick={() => addGroup(filter.id)}
+            disabled={busy() || Boolean(proposal())}
+          >
+            {t("sqlPage.structure.addFilterGroup")}
+          </button>
+          <button
+            type="button"
+            class="ui-button ui-button-secondary"
+            data-filter-focus-key={`${filter.id}:negate`}
+            aria-label={t("sqlPage.structure.negateFilter")}
+            title={t("sqlPage.structure.negateFilter")}
+            onClick={() => addNot(filter.id)}
+            disabled={busy() || Boolean(proposal()) ||
+              !supportsFilterExpression()}
+          >
+            NOT
+          </button>
+          <IconButton
+            icon="trash"
+            label={t("sqlPage.structure.removeFilterGroup")}
+            disabled={busy() || Boolean(proposal())}
+            onClick={() => removeFilter(filter.id)}
+          />
+        </div>
+        <div class="sql-structure-filter-group-children">
+          <For each={filter.expressions}>
+            {(child) => renderFilterNode(child, depth + 1)}
+          </For>
+        </div>
+      </section>
     );
+  };
 
   const sortableColumns = () =>
     (ready()?.context.parser.columns ?? []).filter((column) =>
@@ -859,26 +1508,21 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
 
   const sortRowsValid = () =>
     sorts().every((sort) =>
-      sortableColumns().some((column) => column.name === sort.column) &&
-      (activeJoin()
-        ? [activeJoin()?.left_alias, activeJoin()?.right_alias].some((alias) =>
-          alias?.name === sort.qualifier?.name &&
-          alias.quoted === sort.qualifier?.quoted
-        )
-        : !sort.qualifier)
+      sortChoices().some((choice) => choice.value === sortChoiceValue(sort))
     );
 
   const addSort = () => {
-    const choices = columnChoices(sortableColumns());
+    const choices = sortChoices();
     const available = choices.find((choice) =>
-      !sorts().some((sort) =>
-        selectedColumnChoice(sort.column, sort.qualifier) === choice.value
-      )
+      !sorts().some((sort) => sortChoiceValue(sort) === choice.value)
     );
     if (!available) return;
     setSorts((items) => [...items, {
       column: available.column,
       ...(available.qualifier ? { qualifier: available.qualifier } : {}),
+      ...(available.projection_alias
+        ? { projection_alias: available.projection_alias }
+        : {}),
       direction: "asc",
     }]);
   };
@@ -973,6 +1617,16 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
       !current || !action || action === "form" || actionDisabled(action) ||
       busy()
     ) return;
+    const legacyFilters = action === "filter" &&
+        !supportsFilterExpression()
+      ? filterDraftToFlatFilters(filters())
+      : undefined;
+    if (
+      action === "filter" && !supportsFilterExpression() && !legacyFilters
+    ) {
+      setError(unavailableReason());
+      return;
+    }
     const operation: SqlStructureOperation = action === "columns"
       ? current.context.parser.relation === ""
         ? { kind: "set_literal_projection", values: literalProjection() }
@@ -995,17 +1649,12 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
         right_column: joinRightColumn(),
       }
       : action === "filter"
-      ? {
-        kind: "set_filters" as const,
-        filters: filters().map((filter): SqlStructureFilter => ({
-          column: filter.column,
-          ...(filter.qualifier ? { qualifier: filter.qualifier } : {}),
-          operator: filter.operator,
-          ...(isNullOperator(filter.operator)
-            ? {}
-            : { parameter: filter.parameter }),
-        })),
-      }
+      ? supportsFilterExpression()
+        ? {
+          kind: "set_filter_expression" as const,
+          expression: filters() ? filterDraftToExpression(filters()!) : null,
+        }
+        : { kind: "set_filters", filters: legacyFilters! }
       : action === "sort"
       ? {
         kind: "set_sort",
@@ -1616,169 +2265,30 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
 
                   <Show when={activeAction() === "filter"}>
                     <div class="sql-structure-filter-list">
-                      <For each={filters()}>
-                        {(filter, index) => {
-                          const context = () => ready()?.context;
-                          const operators = () =>
-                            operatorsForColumn(
-                              context(),
-                              filter.column,
-                            );
-                          const variables = () => variablesFor(filter.column);
-                          const allowedChoices = () => {
-                            const choices = columnChoices(filterableColumns());
-                            const value = selectedColumnChoice(
-                              filter.column,
-                              filter.qualifier,
-                            );
-                            return choices.some((choice) =>
-                                choice.value === value
-                              )
-                              ? choices
-                              : [{
-                                column: filter.column,
-                                qualifier: filter.qualifier,
-                                value,
-                                label: filter.qualifier
-                                  ? `${filter.qualifier.name}.${filter.column}`
-                                  : filter.column,
-                              }, ...choices];
-                          };
-                          const rowEditable = () =>
-                            Boolean(
-                              context()?.columnCapabilities[filter.column]
-                                ?.filterable && operators().length > 0,
-                            );
-                          return (
-                            <div class="sql-structure-filter-row">
-                              <label class="ui-field">
-                                <span>{t("sqlPage.structure.column")}</span>
-                                <select
-                                  class="ui-input"
-                                  value={selectedColumnChoice(
-                                    filter.column,
-                                    filter.qualifier,
-                                  )}
-                                  disabled={busy() || Boolean(proposal()) ||
-                                    !rowEditable()}
-                                  onChange={(event) =>
-                                    (() => {
-                                      const selected = choiceForValue(
-                                        event.currentTarget.value,
-                                        allowedChoices(),
-                                      );
-                                      if (selected) {
-                                        updateFilter(index(), {
-                                          column: selected.column,
-                                          qualifier: selected.qualifier,
-                                        });
-                                      }
-                                    })()}
-                                >
-                                  <For each={allowedChoices()}>
-                                    {(choice) => (
-                                      <option value={choice.value}>
-                                        {choice.label}
-                                      </option>
-                                    )}
-                                  </For>
-                                </select>
-                              </label>
-                              <label class="ui-field">
-                                <span>{t("sqlPage.structure.operator")}</span>
-                                <select
-                                  class="ui-input"
-                                  value={filter.operator}
-                                  disabled={busy() || Boolean(proposal()) ||
-                                    !rowEditable()}
-                                  onChange={(event) =>
-                                    updateFilter(index(), {
-                                      operator: event.currentTarget
-                                        .value as SqlStructureFilterOperator,
-                                    })}
-                                >
-                                  <For each={operators()}>
-                                    {(operator) => (
-                                      <option value={operator}>
-                                        {t(operatorKey(operator))}
-                                      </option>
-                                    )}
-                                  </For>
-                                  <Show
-                                    when={!operators().includes(
-                                      filter.operator,
-                                    )}
-                                  >
-                                    <option value={filter.operator}>
-                                      {t(
-                                        "sqlPage.structure.unsupportedOperator",
-                                      )}
-                                    </option>
-                                  </Show>
-                                </select>
-                              </label>
-                              <Show when={!isNullOperator(filter.operator)}>
-                                <label class="ui-field">
-                                  <span>{t("sqlPage.structure.variable")}</span>
-                                  <select
-                                    class="ui-input"
-                                    value={filter.parameter}
-                                    disabled={busy() || Boolean(proposal()) ||
-                                      !rowEditable()}
-                                    onChange={(event) =>
-                                      updateFilter(index(), {
-                                        parameter: event.currentTarget.value,
-                                      })}
-                                  >
-                                    <For each={variables()}>
-                                      {(variable) => (
-                                        <option value={variable.name}>
-                                          {variable.name}
-                                        </option>
-                                      )}
-                                    </For>
-                                    <Show
-                                      when={!variables().some((variable) =>
-                                        variable.name === filter.parameter
-                                      )}
-                                    >
-                                      <option value={filter.parameter}>
-                                        {filter.parameter}
-                                      </option>
-                                    </Show>
-                                  </select>
-                                </label>
-                              </Show>
-                              <IconButton
-                                icon="trash"
-                                label={t("sqlPage.structure.removeFilter")}
-                                disabled={busy() || Boolean(proposal())}
-                                onClick={() =>
-                                  setFilters((items) =>
-                                    items.filter((_, i) => i !== index())
-                                  )}
-                              />
-                            </div>
-                          );
-                        }}
+                      <For each={filters() ? [filters()!] : []}>
+                        {(filter) => renderFilterNode(filter)}
                       </For>
-                      <button
-                        type="button"
-                        class="ui-button ui-button-secondary"
-                        onClick={addFilter}
-                        disabled={busy() || Boolean(proposal()) ||
-                          !filterableColumns().some((column) =>
-                            operatorsForColumn(ready()?.context, column.name)
-                              .some((operator) =>
-                                isNullOperator(operator) ||
-                                variablesFor(column.name).length > 0 ||
-                                (props.onVariablesAdded !== undefined &&
-                                  filterVariableType(column.name) !== undefined)
-                              )
-                          )}
-                      >
-                        {t("sqlPage.structure.addFilter")}
-                      </button>
+                      <Show when={!filterRootIsGroup()}>
+                        <button
+                          type="button"
+                          class="ui-button ui-button-secondary"
+                          data-filter-focus-key="root:add-filter"
+                          onClick={addFilter}
+                          disabled={busy() || Boolean(proposal()) ||
+                            !canAddFilter()}
+                        >
+                          {t("sqlPage.structure.addFilter")}
+                        </button>
+                        <button
+                          type="button"
+                          class="ui-button ui-button-secondary"
+                          data-filter-focus-key="root:add-group"
+                          onClick={() => addGroup()}
+                          disabled={busy() || Boolean(proposal())}
+                        >
+                          {t("sqlPage.structure.addFilterGroup")}
+                        </button>
+                      </Show>
                     </div>
                   </Show>
 
@@ -1791,31 +2301,38 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                               <span>{t("sqlPage.structure.column")}</span>
                               <select
                                 class="ui-input"
-                                value={selectedColumnChoice(
-                                  sort.column,
-                                  sort.qualifier,
-                                )}
+                                value={sortChoiceValue(sort)}
                                 onChange={(event) =>
                                   (() => {
                                     const selected = choiceForValue(
                                       event.currentTarget.value,
-                                      columnChoices(sortableColumns()),
+                                      sortChoices(),
                                     );
                                     if (!selected) return;
                                     setSorts((items) =>
                                       items.map((item, i) =>
                                         i === index()
                                           ? {
-                                            ...item,
+                                            direction: item.direction,
                                             column: selected.column,
-                                            qualifier: selected.qualifier,
+                                            ...(selected.qualifier
+                                              ? {
+                                                qualifier: selected.qualifier,
+                                              }
+                                              : {}),
+                                            ...(selected.projection_alias
+                                              ? {
+                                                projection_alias: selected
+                                                  .projection_alias,
+                                              }
+                                              : {}),
                                           }
                                           : item
                                       )
                                     );
                                   })()}
                               >
-                                <For each={columnChoices(sortableColumns())}>
+                                <For each={sortChoices()}>
                                   {(choice) => (
                                     <option value={choice.value}>
                                       {choice.label}
@@ -1865,14 +2382,10 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                         type="button"
                         class="ui-button ui-button-secondary"
                         onClick={addSort}
-                        disabled={!columnChoices(sortableColumns()).some(
+                        disabled={!sortChoices().some(
                           (choice) =>
                             !sorts().some((sort) =>
-                              selectedColumnChoice(
-                                sort.column,
-                                sort.qualifier,
-                              ) ===
-                                choice.value
+                              sortChoiceValue(sort) === choice.value
                             ),
                         )}
                       >

@@ -322,6 +322,34 @@ pub struct SqlDocumentEditTransaction {
     pub edits: Vec<SqlDocumentEdit>,
 }
 
+/// One replacement addressed to a parser-classified syntax node.
+///
+/// The node ID is meaningful only for the exact source guarded by the parent
+/// transaction. Requiring the expected node kind prevents an adapter from
+/// applying an old selection to a different syntax category after reparsing.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SqlDocumentNodeEdit {
+    /// Node index returned by the SQL Document parser.
+    pub node_id: u32,
+    /// Syntax category the caller selected in the parsed document.
+    pub expected_kind: SqlDocumentNodeKind,
+    /// Replacement SQL for the node's exact source range.
+    pub replacement: String,
+}
+
+/// A set of typed node replacements guarded by the exact document source.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SqlDocumentNodeEditTransaction {
+    /// Parser contract version that produced the selected node IDs.
+    pub contract_version: u32,
+    /// Exact source used to select the node IDs. A mismatch rejects all edits.
+    pub expected_source: String,
+    /// Disjoint parser-node replacements interpreted against the original tree.
+    pub edits: Vec<SqlDocumentNodeEdit>,
+}
+
 /// Result of applying an edit transaction, including a guarded inverse transaction.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -348,6 +376,18 @@ pub enum SqlDocumentEditError {
     SourceTooComplex,
     /// The transaction exceeds the edit-count limit.
     TooManyEdits,
+    /// A typed node edit requires a successfully parsed single query document.
+    DocumentNotParsed,
+    /// The caller's node IDs were produced by a different document contract.
+    ContractVersionMismatch,
+    /// A typed node edit refers to a node index absent from its source document.
+    NodeNotFound,
+    /// A typed node edit's expected category differs from the parsed node.
+    NodeKindMismatch,
+    /// A selected syntax node has no source range suitable for replacement.
+    NodeRangeUnavailable,
+    /// A node ID appears more than once in one typed edit transaction.
+    DuplicateNodeTarget,
     /// An edit has a reversed range.
     InvalidRange,
     /// An edit range extends past the source boundary.
@@ -375,6 +415,18 @@ impl core::fmt::Display for SqlDocumentEditError {
             Self::SourceTooLarge => "SQL source exceeds the document size limit",
             Self::SourceTooComplex => "SQL source exceeds the document complexity limit",
             Self::TooManyEdits => "SQL document edit transaction exceeds the edit limit",
+            Self::DocumentNotParsed => {
+                "typed SQL document edits require one successfully parsed query"
+            }
+            Self::ContractVersionMismatch => {
+                "SQL document edit contract version does not match the parser"
+            }
+            Self::NodeNotFound => "SQL document edit node does not exist in this source",
+            Self::NodeKindMismatch => "SQL document edit node kind does not match",
+            Self::NodeRangeUnavailable => "SQL document edit node has no replaceable source range",
+            Self::DuplicateNodeTarget => {
+                "SQL document edit transaction targets one node more than once"
+            }
             Self::InvalidRange => "SQL document edit range is reversed",
             Self::RangeOutOfBounds => "SQL document edit range is outside the source",
             Self::NotUtf8Boundary => "SQL document edit range splits a UTF-8 code point",
@@ -387,6 +439,85 @@ impl core::fmt::Display for SqlDocumentEditError {
 }
 
 impl std::error::Error for SqlDocumentEditError {}
+
+/// Apply simultaneous replacements to parser-classified nodes.
+///
+/// The exact source must match the transaction guard, and the supplied parser
+/// contract version must be current. Node IDs and ranges are resolved from a
+/// fresh Rust parse instead of an adapter-provided tree. The operation then
+/// delegates to the same bounded byte-range transaction used by text edits,
+/// so preimages, UTF-8 boundaries, overlap, output size, and guarded undo have
+/// one authority. A parsed result is still subject to the normal Core planner,
+/// authorization, and executor admission.
+pub fn apply_sql_document_node_edit_transaction(
+    current_source: &str,
+    transaction: &SqlDocumentNodeEditTransaction,
+) -> Result<SqlDocumentEditResult, SqlDocumentEditError> {
+    if current_source != transaction.expected_source {
+        return Err(SqlDocumentEditError::StaleSource);
+    }
+    if transaction.edits.len() > MAX_SQL_DOCUMENT_EDITS {
+        return Err(SqlDocumentEditError::TooManyEdits);
+    }
+    if transaction.contract_version != SQL_DOCUMENT_CONTRACT_VERSION {
+        return Err(SqlDocumentEditError::ContractVersionMismatch);
+    }
+
+    // Reparse the guarded source here instead of trusting an adapter-supplied
+    // serialized `SqlDocument` tree. Node IDs are resolved only against the
+    // Rust parser's current view of the exact source.
+    let document = parse_sql_document(current_source);
+    if document.status != SqlDocumentStatus::Parsed {
+        if document.status == SqlDocumentStatus::TooLarge {
+            return Err(SqlDocumentEditError::SourceTooLarge);
+        }
+        if document.status == SqlDocumentStatus::TooComplex {
+            return Err(SqlDocumentEditError::SourceTooComplex);
+        }
+        return Err(SqlDocumentEditError::DocumentNotParsed);
+    }
+
+    let mut resolved = Vec::with_capacity(transaction.edits.len());
+    for node_edit in &transaction.edits {
+        if resolved
+            .iter()
+            .any(|(node_id, _): &(u32, SqlDocumentEdit)| *node_id == node_edit.node_id)
+        {
+            return Err(SqlDocumentEditError::DuplicateNodeTarget);
+        }
+        let node = document
+            .nodes
+            .get(node_edit.node_id as usize)
+            .filter(|node| node.id == node_edit.node_id)
+            .ok_or(SqlDocumentEditError::NodeNotFound)?;
+        if node.kind != node_edit.expected_kind {
+            return Err(SqlDocumentEditError::NodeKindMismatch);
+        }
+        let range = node
+            .range
+            .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+        let expected_text = document
+            .source_slice(range)
+            .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+        resolved.push((
+            node.id,
+            SqlDocumentEdit {
+                range,
+                expected_text: expected_text.to_owned(),
+                replacement: node_edit.replacement.clone(),
+            },
+        ));
+    }
+
+    let edits = resolved.into_iter().map(|(_, edit)| edit).collect();
+    apply_sql_document_edit_transaction(
+        current_source,
+        &SqlDocumentEditTransaction {
+            expected_source: transaction.expected_source.clone(),
+            edits,
+        },
+    )
+}
 
 /// Rename every exact named `$old_name` placeholder token in a SQL source.
 ///
@@ -1297,6 +1428,138 @@ mod tests {
                 .find(|token| document.source_slice(token.range) == Some("$day"))
                 .map(|token| token.kind),
             Some(SqlDocumentTokenKind::Placeholder)
+        );
+    }
+
+    #[test]
+    fn typed_node_edit_preserves_aliases_literals_comments_and_other_clauses() {
+        let source = "-- report\nSELECT /* left */ \"Amount\" AS \"Total\", 'paid' AS label FROM \"G\" WHERE \"Amount\" > 1 ORDER BY \"Total\" DESC /* tail */";
+        let document = parse_sql_document(source);
+        assert_eq!(document.status, SqlDocumentStatus::Parsed);
+        assert_eq!(document.to_sql().as_bytes(), source.as_bytes());
+
+        let predicate = document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::BinaryExpression
+                    && node.range.and_then(|range| document.source_slice(range))
+                        == Some("\"Amount\" > 1")
+            })
+            .expect("the WHERE comparison has a typed expression node");
+        let changed = apply_sql_document_node_edit_transaction(
+            source,
+            &SqlDocumentNodeEditTransaction {
+                contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+                expected_source: source.to_owned(),
+                edits: vec![SqlDocumentNodeEdit {
+                    node_id: predicate.id,
+                    expected_kind: SqlDocumentNodeKind::BinaryExpression,
+                    replacement: "\"Amount\" >= 2".to_owned(),
+                }],
+            },
+        )
+        .expect("the selected expression can be replaced atomically");
+
+        let expected = "-- report\nSELECT /* left */ \"Amount\" AS \"Total\", 'paid' AS label FROM \"G\" WHERE \"Amount\" >= 2 ORDER BY \"Total\" DESC /* tail */";
+        assert_eq!(changed.document.status, SqlDocumentStatus::Parsed);
+        assert_eq!(changed.document.to_sql(), expected);
+        assert!(changed.document.to_sql().contains("AS \"Total\""));
+        assert!(changed.document.to_sql().contains("'paid' AS label"));
+        assert!(changed.document.to_sql().contains("/* left */"));
+        assert!(changed.document.to_sql().ends_with("/* tail */"));
+        assert!(changed.document.to_sql().contains("FROM \"G\""));
+        assert!(changed
+            .document
+            .to_sql()
+            .contains("ORDER BY \"Total\" DESC"));
+
+        let undone = apply_sql_document_edit_transaction(&changed.document.source, &changed.undo)
+            .expect("the typed edit returns a guarded inverse transaction");
+        assert_eq!(undone.document.to_sql().as_bytes(), source.as_bytes());
+    }
+
+    #[test]
+    fn typed_node_edits_reject_stale_or_mistyped_targets() {
+        let source = "SELECT amount FROM \"G\" WHERE amount > 1";
+        let document = parse_sql_document(source);
+        let predicate = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::BinaryExpression)
+            .expect("the comparison has a typed expression node");
+        let node_edit = SqlDocumentNodeEdit {
+            node_id: predicate.id,
+            expected_kind: SqlDocumentNodeKind::IdentifierExpression,
+            replacement: "amount >= 2".to_owned(),
+        };
+
+        assert_eq!(
+            apply_sql_document_node_edit_transaction(
+                source,
+                &SqlDocumentNodeEditTransaction {
+                    contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+                    expected_source: "SELECT changed FROM \"G\" WHERE amount > 1".to_owned(),
+                    edits: vec![node_edit.clone()],
+                },
+            ),
+            Err(SqlDocumentEditError::StaleSource)
+        );
+        assert_eq!(
+            apply_sql_document_node_edit_transaction(
+                source,
+                &SqlDocumentNodeEditTransaction {
+                    contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+                    expected_source: source.to_owned(),
+                    edits: vec![node_edit],
+                },
+            ),
+            Err(SqlDocumentEditError::NodeKindMismatch)
+        );
+
+        assert_eq!(
+            apply_sql_document_node_edit_transaction(
+                source,
+                &SqlDocumentNodeEditTransaction {
+                    contract_version: SQL_DOCUMENT_CONTRACT_VERSION + 1,
+                    expected_source: source.to_owned(),
+                    edits: vec![],
+                },
+            ),
+            Err(SqlDocumentEditError::ContractVersionMismatch)
+        );
+        assert_eq!(
+            apply_sql_document_node_edit_transaction(
+                "SELECT (",
+                &SqlDocumentNodeEditTransaction {
+                    contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+                    expected_source: "SELECT (".to_owned(),
+                    edits: vec![],
+                },
+            ),
+            Err(SqlDocumentEditError::DocumentNotParsed)
+        );
+
+        let select_item = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+            .expect("the SELECT projection has a typed node");
+        let duplicate_target = SqlDocumentNodeEdit {
+            node_id: select_item.id,
+            expected_kind: SqlDocumentNodeKind::SelectItem,
+            replacement: "other".to_owned(),
+        };
+        assert_eq!(
+            apply_sql_document_node_edit_transaction(
+                source,
+                &SqlDocumentNodeEditTransaction {
+                    contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+                    expected_source: source.to_owned(),
+                    edits: vec![duplicate_target.clone(), duplicate_target],
+                },
+            ),
+            Err(SqlDocumentEditError::DuplicateNodeTarget)
         );
     }
 

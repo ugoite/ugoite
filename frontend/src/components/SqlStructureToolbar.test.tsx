@@ -17,6 +17,7 @@ import type { Form } from "~/lib/types";
 import type { SQLWorkspaceAction } from "./SQLWorkspace";
 import type {
   SqlStructureAnalysis,
+  SqlStructureOperation,
   SqlStructureProposal,
 } from "~/lib/ugoite-client";
 import { SqlStructureToolbar } from "./SqlStructureToolbar";
@@ -88,7 +89,7 @@ const context: SqlStructureAdapterContext = {
 };
 
 const analysis: SqlStructureAnalysis = {
-  contract_version: 2,
+  contract_version: 3,
   status: "supported",
   projection: ["*"],
   literal_projection: [],
@@ -105,6 +106,7 @@ const analysis: SqlStructureAnalysis = {
     join: { enabled: true },
     columns: { enabled: true },
     filter: { enabled: true },
+    filter_expression: { enabled: true },
     sort: { enabled: true },
     aggregate: { enabled: true },
     group_by: { enabled: true },
@@ -153,7 +155,7 @@ describe("SqlStructureToolbar adapter", () => {
     prepareMock.mockResolvedValue(undefined);
     analyzeMock.mockResolvedValue(analysis);
     proposeMock.mockImplementation(async (baseSql: string) => ({
-      contract_version: 2,
+      contract_version: 3,
       status: "supported",
       base_sql: baseSql,
       proposed_sql: 'SELECT "amount" FROM "Orders" ORDER BY "_ugoite_id" ASC',
@@ -250,13 +252,104 @@ describe("SqlStructureToolbar adapter", () => {
       sql,
       context.parser,
       {
-        kind: "set_filters",
-        filters: [{
+        kind: "set_filter_expression",
+        expression: {
+          kind: "predicate",
           column: "amount",
           qualifier: { name: "right_rows", quoted: true },
           operator: "gt",
           parameter: "threshold",
-        }],
+        },
+      },
+    );
+  });
+
+  it("keeps join qualifiers through nested boolean filter edits", async () => {
+    analyzeMock.mockResolvedValue(
+      {
+        ...joinedAnalysis,
+        filters: [],
+        filter_expression: {
+          kind: "or",
+          expressions: [
+            {
+              kind: "predicate",
+              column: "amount",
+              qualifier: { name: "left_rows", quoted: true },
+              operator: "gt",
+              parameter: "threshold",
+            },
+            {
+              kind: "not",
+              expression: {
+                kind: "predicate",
+                column: "amount",
+                qualifier: { name: "right_rows", quoted: true },
+                operator: "eq",
+                parameter: "threshold",
+              },
+            },
+          ],
+        },
+      } satisfies SqlStructureAnalysis,
+    );
+    const sql =
+      'SELECT * FROM "Orders" AS "left_rows" INNER JOIN "Orders" AS "right_rows" ON "left_rows"."category" = "right_rows"."category" WHERE "left_rows"."amount" > $threshold OR NOT ("right_rows"."amount" = $threshold) ORDER BY "right_rows"."_ugoite_id"';
+    let actions: readonly SQLWorkspaceAction[] = [];
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [context]}
+        onSqlChange={vi.fn()}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "filter")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "filter")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Filter" });
+    const firstFilter = dialog.querySelector(
+      ".sql-structure-filter-node select",
+    );
+    expect(firstFilter).not.toBeNull();
+    fireEvent.change(firstFilter as HTMLSelectElement, {
+      target: { value: '["right_rows",true,"amount"]' },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(proposeMock).toHaveBeenCalledWith(
+      sql,
+      context.parser,
+      {
+        kind: "set_filter_expression",
+        expression: {
+          kind: "or",
+          expressions: [
+            {
+              kind: "predicate",
+              column: "amount",
+              qualifier: { name: "right_rows", quoted: true },
+              operator: "gt",
+              parameter: "threshold",
+            },
+            {
+              kind: "not",
+              expression: {
+                kind: "predicate",
+                column: "amount",
+                qualifier: { name: "right_rows", quoted: true },
+                operator: "eq",
+                parameter: "threshold",
+              },
+            },
+          ],
+        },
       },
     );
   });
@@ -306,12 +399,89 @@ describe("SqlStructureToolbar adapter", () => {
     );
   });
 
+  it("shows and rewrites ORDER BY projection aliases as aliases", async () => {
+    const alias = { name: "field_101", quoted: true };
+    const collisionContext: SqlStructureAdapterContext = {
+      ...context,
+      parser: {
+        ...context.parser,
+        columns: [
+          ...context.parser.columns,
+          { name: "field_101", type: "string" },
+          { name: "field_102", type: "integer" },
+        ],
+      },
+      columnCapabilities: {
+        ...context.columnCapabilities,
+        field_101: context.columnCapabilities.category,
+        field_102: context.columnCapabilities.amount,
+      },
+    };
+    analyzeMock.mockResolvedValue({
+      ...analysis,
+      projection: ["field_102"],
+      projection_aliases: [{ column: "field_102", alias }],
+      order_by: [{
+        column: "field_102",
+        projection_alias: alias,
+        direction: "asc",
+      }],
+    });
+    const sql =
+      'SELECT "field_102" AS "field_101" FROM "Orders" ORDER BY "field_101"';
+    let actions: readonly SQLWorkspaceAction[] = [];
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [collisionContext]}
+        onSqlChange={vi.fn()}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "sort")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "sort")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Sort" });
+    const column = within(dialog).getByRole("combobox", { name: "Column" });
+    const aliasValue = JSON.stringify([
+      "projection_alias",
+      alias.name,
+      alias.quoted,
+    ]);
+    expect(column).toHaveValue(aliasValue);
+    expect(
+      within(column).getByRole("option", {
+        name: "alias field_101 (field_102)",
+      }),
+    ).toBeInTheDocument();
+    fireEvent.change(
+      within(dialog).getByRole("combobox", { name: "Direction" }),
+      { target: { value: "desc" } },
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(proposeMock).toHaveBeenCalledWith(sql, collisionContext.parser, {
+      kind: "set_sort",
+      order_by: [{
+        column: "field_102",
+        projection_alias: alias,
+        direction: "desc",
+      }],
+    });
+  });
+
   it("adds a typed inner self-join through the shared toolbar", async () => {
     const sql = 'SELECT * FROM "Orders"';
     const proposedSql =
       'SELECT * FROM "Orders" AS "_ugoite_left" INNER JOIN "Orders" AS "_ugoite_right" ON "_ugoite_left"."amount" = "_ugoite_right"."amount"';
     proposeMock.mockResolvedValue({
-      contract_version: 2,
+      contract_version: 3,
       status: "supported",
       base_sql: sql,
       proposed_sql: proposedSql,
@@ -381,7 +551,7 @@ describe("SqlStructureToolbar adapter", () => {
       }],
     });
     proposeMock.mockResolvedValue({
-      contract_version: 2,
+      contract_version: 3,
       status: "supported",
       base_sql: sql,
       proposed_sql:
@@ -448,7 +618,7 @@ describe("SqlStructureToolbar adapter", () => {
       projection_aliases: [],
     });
     proposeMock.mockResolvedValue({
-      contract_version: 2,
+      contract_version: 3,
       status: "supported",
       base_sql: sql,
       proposed_sql:
@@ -521,7 +691,7 @@ describe("SqlStructureToolbar adapter", () => {
       ],
     });
     proposeMock.mockResolvedValue({
-      contract_version: 2,
+      contract_version: 3,
       status: "supported",
       base_sql: sql,
       proposed_sql:
@@ -585,7 +755,7 @@ describe("SqlStructureToolbar adapter", () => {
     const sql = "SELECT 1";
     const contexts = buildSqlStructureContexts([], [], "new-sql");
     const scalarAnalysis: SqlStructureAnalysis = {
-      contract_version: 2,
+      contract_version: 3,
       status: "supported",
       projection: ["1"],
       literal_projection: [{ kind: "integer", value: "1" }],
@@ -614,7 +784,7 @@ describe("SqlStructureToolbar adapter", () => {
     };
     analyzeMock.mockResolvedValue(scalarAnalysis);
     proposeMock.mockResolvedValue({
-      contract_version: 2,
+      contract_version: 3,
       status: "supported",
       base_sql: sql,
       proposed_sql: "SELECT DISTINCT 1",
@@ -763,7 +933,7 @@ describe("SqlStructureToolbar adapter", () => {
       )
     );
     proposeMock.mockResolvedValue({
-      contract_version: 2,
+      contract_version: 3,
       status: "supported",
       base_sql: sql,
       proposed_sql: proposedSql,
@@ -883,7 +1053,7 @@ describe("SqlStructureToolbar adapter", () => {
       new Promise<void>((resolve) => resolveParser = resolve)
     );
     proposeMock.mockResolvedValue({
-      contract_version: 2,
+      contract_version: 3,
       status: "supported",
       base_sql: sql,
       proposed_sql: 'SELECT * FROM "Orders"',
@@ -958,7 +1128,7 @@ describe("SqlStructureToolbar adapter", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
     resolveProposal?.({
-      contract_version: 2,
+      contract_version: 3,
       status: "supported",
       base_sql: initialSql,
       proposed_sql: 'SELECT "amount" FROM "Orders"',
@@ -1047,9 +1217,336 @@ describe("SqlStructureToolbar adapter", () => {
       sql,
       nullContext.parser,
       {
-        kind: "set_filters",
-        filters: [{ column: "amount", operator: "is_null" }],
+        kind: "set_filter_expression",
+        expression: {
+          kind: "predicate",
+          column: "amount",
+          operator: "is_null",
+        },
       },
+    );
+  });
+
+  it("uses the flat filter operation with older adapters", async () => {
+    const legacyContext: SqlStructureAdapterContext = {
+      ...context,
+      parser: {
+        ...context.parser,
+        variables: [
+          ...context.parser.variables,
+          { name: "category_value", type: "string" },
+        ],
+      },
+    };
+    const legacyAnalysis: SqlStructureAnalysis = {
+      ...joinedAnalysis,
+      filters: [
+        {
+          column: "amount",
+          qualifier: { name: "left_rows", quoted: true },
+          operator: "gt",
+          parameter: "threshold",
+        },
+        {
+          column: "amount",
+          qualifier: { name: "right_rows", quoted: true },
+          operator: "eq",
+          parameter: "threshold",
+        },
+      ],
+      filter_expression: undefined,
+      capabilities: {
+        ...joinedAnalysis.capabilities,
+        filter_expression: { enabled: false },
+      },
+    };
+    proposeMock.mockImplementation(async (
+      baseSql: string,
+      _parser: unknown,
+      operation: SqlStructureOperation,
+    ) => {
+      if (operation.kind === "set_filter_expression") {
+        throw new Error("legacy adapter does not support filter trees");
+      }
+      return {
+        contract_version: 1,
+        status: "supported",
+        base_sql: baseSql,
+        proposed_sql: baseSql,
+        requires_confirmation: true,
+        added_stable_tie_breakers: [],
+      } satisfies SqlStructureProposal;
+    });
+    analyzeMock.mockResolvedValue(legacyAnalysis);
+    const sql =
+      'SELECT * FROM "Orders" AS "left_rows" INNER JOIN "Orders" AS "right_rows" ON "left_rows"."category" = "right_rows"."category" WHERE "left_rows"."amount" > $threshold AND "right_rows"."amount" = $threshold';
+    let actions: readonly SQLWorkspaceAction[] = [];
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [legacyContext]}
+        onSqlChange={vi.fn()}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "filter")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "filter")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Filter" });
+    expect(
+      within(dialog).getByRole("combobox", {
+        name: "Filter group operator",
+      }).querySelectorAll("option"),
+    ).toHaveLength(1);
+    for (
+      const button of within(dialog).getAllByRole("button", {
+        name: "Negate filter",
+      })
+    ) {
+      expect(button).toBeDisabled();
+    }
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(proposeMock).toHaveBeenCalledWith(
+      sql,
+      legacyContext.parser,
+      {
+        kind: "set_filters",
+        filters: [
+          {
+            column: "amount",
+            qualifier: { name: "left_rows", quoted: true },
+            operator: "gt",
+            parameter: "threshold",
+          },
+          {
+            column: "amount",
+            qualifier: { name: "right_rows", quoted: true },
+            operator: "eq",
+            parameter: "threshold",
+          },
+        ],
+      },
+    );
+  });
+
+  it("edits parsed AND, OR, and NOT filters as a nested tree", async () => {
+    const treeContext: SqlStructureAdapterContext = {
+      ...context,
+      identity: "inline:source-1:form-1:boolean-tree",
+      columnCapabilities: {
+        ...context.columnCapabilities,
+        amount: {
+          ...context.columnCapabilities.amount,
+          supportedOperators: ["eq", "gt", "lt"],
+        },
+      },
+    };
+    const booleanAnalysis: SqlStructureAnalysis = {
+      ...analysis,
+      filters: [],
+      filter_expression: {
+        kind: "and",
+        expressions: [
+          {
+            kind: "or",
+            expressions: [
+              {
+                kind: "predicate",
+                column: "amount",
+                operator: "gt",
+                parameter: "threshold",
+              },
+              {
+                kind: "predicate",
+                column: "amount",
+                operator: "eq",
+                parameter: "threshold",
+              },
+            ],
+          },
+          {
+            kind: "not",
+            expression: {
+              kind: "predicate",
+              column: "amount",
+              operator: "lt",
+              parameter: "threshold",
+            },
+          },
+        ],
+      },
+    };
+    analyzeMock.mockResolvedValue(booleanAnalysis);
+    const sql =
+      'SELECT * FROM "Orders" WHERE ("amount" > $threshold OR "amount" = $threshold) AND NOT ("amount" < $threshold)';
+    let actions: readonly SQLWorkspaceAction[] = [];
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [treeContext]}
+        onSqlChange={vi.fn()}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "filter")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "filter")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Filter" });
+    const groups = within(dialog).getAllByRole("group", {
+      name: "Filter group",
+    });
+    expect(groups).toHaveLength(2);
+    expect(within(dialog).getAllByText("NOT").length).toBeGreaterThan(0);
+    fireEvent.change(
+      within(groups[0]).getAllByRole("combobox", {
+        name: "Filter group operator",
+      })[0],
+      { target: { value: "or" } },
+    );
+    const updatedGroups = within(dialog).getAllByRole("group", {
+      name: "Filter group",
+    });
+    fireEvent.click(
+      within(updatedGroups[1]).getByRole("button", { name: "Add filter" }),
+    );
+    const groupsAfterAddingFilter = within(dialog).getAllByRole("group", {
+      name: "Filter group",
+    });
+    const firstNestedLeaf = groupsAfterAddingFilter[1].querySelector(
+      ".sql-structure-filter-node",
+    );
+    expect(firstNestedLeaf).not.toBeNull();
+    fireEvent.click(
+      within(firstNestedLeaf as HTMLElement).getByRole("button", {
+        name: "Negate filter",
+      }),
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(proposeMock).toHaveBeenCalledWith(
+      sql,
+      treeContext.parser,
+      {
+        kind: "set_filter_expression",
+        expression: {
+          kind: "or",
+          expressions: [
+            {
+              kind: "or",
+              expressions: [
+                {
+                  kind: "not",
+                  expression: {
+                    kind: "predicate",
+                    column: "amount",
+                    operator: "gt",
+                    parameter: "threshold",
+                  },
+                },
+                {
+                  kind: "predicate",
+                  column: "amount",
+                  operator: "eq",
+                  parameter: "threshold",
+                },
+                {
+                  kind: "predicate",
+                  column: "amount",
+                  operator: "eq",
+                  parameter: "threshold",
+                },
+              ],
+            },
+            {
+              kind: "not",
+              expression: {
+                kind: "predicate",
+                column: "amount",
+                operator: "lt",
+                parameter: "threshold",
+              },
+            },
+          ],
+        },
+      },
+    );
+  });
+
+  it("keeps keyboard focus on a filter control after editing the tree", async () => {
+    const treeContext: SqlStructureAdapterContext = {
+      ...context,
+      identity: "inline:source-1:form-1:filter-focus",
+      parser: {
+        ...context.parser,
+        variables: [
+          ...context.parser.variables,
+          { name: "category_value", type: "string" },
+        ],
+      },
+    };
+    analyzeMock.mockResolvedValue({
+      ...analysis,
+      filter_expression: {
+        kind: "and",
+        expressions: [
+          {
+            kind: "predicate",
+            column: "amount",
+            operator: "gt",
+            parameter: "threshold",
+          },
+          {
+            kind: "predicate",
+            column: "category",
+            operator: "eq",
+            parameter: "category_value",
+          },
+        ],
+      },
+    });
+    const sql =
+      'SELECT * FROM "Orders" WHERE "amount" > $threshold AND "category" = $category_value';
+    let actions: readonly SQLWorkspaceAction[] = [];
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [treeContext]}
+        onSqlChange={vi.fn()}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "filter")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "filter")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Filter" });
+    const operator = within(dialog).getByRole("combobox", {
+      name: "Filter group operator",
+    });
+    operator.focus();
+    fireEvent.change(operator, { target: { value: "or" } });
+
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("combobox", {
+          name: "Filter group operator",
+        }),
+      ).toHaveFocus()
     );
   });
 
@@ -1072,7 +1569,7 @@ describe("SqlStructureToolbar adapter", () => {
     const onVariablesAdded = vi.fn();
     proposeMock.mockResolvedValue(
       {
-        contract_version: 2,
+        contract_version: 3,
         status: "supported",
         base_sql: sql,
         proposed_sql: 'SELECT * FROM "Orders" WHERE "amount" = $filter_amount',
@@ -1113,12 +1610,13 @@ describe("SqlStructureToolbar adapter", () => {
         variables: [{ name: "filter_amount", type: "integer" }],
       },
       {
-        kind: "set_filters",
-        filters: [{
+        kind: "set_filter_expression",
+        expression: {
+          kind: "predicate",
           column: "amount",
           operator: "eq",
           parameter: "filter_amount",
-        }],
+        },
       },
     );
 
@@ -1153,7 +1651,7 @@ describe("SqlStructureToolbar adapter", () => {
     const onVariablesAdded = vi.fn(() => false);
     proposeMock.mockResolvedValue(
       {
-        contract_version: 2,
+        contract_version: 3,
         status: "supported",
         base_sql: currentSql,
         proposed_sql: 'SELECT * FROM "Orders" WHERE "amount" = $filter_amount',
@@ -1221,7 +1719,7 @@ describe("SqlStructureToolbar adapter", () => {
     let actions: readonly SQLWorkspaceAction[] = [];
     proposeMock.mockResolvedValue(
       {
-        contract_version: 2,
+        contract_version: 3,
         status: "supported",
         base_sql: sql,
         proposed_sql:
@@ -1263,12 +1761,13 @@ describe("SqlStructureToolbar adapter", () => {
         variables: [{ name: "filter_amount_2", type: "integer" }],
       },
       {
-        kind: "set_filters",
-        filters: [{
+        kind: "set_filter_expression",
+        expression: {
+          kind: "predicate",
           column: "amount",
           operator: "eq",
           parameter: "filter_amount_2",
-        }],
+        },
       },
     );
 
@@ -1344,7 +1843,7 @@ describe("SqlStructureToolbar adapter", () => {
     ).toBeDisabled();
 
     resolveProposal({
-      contract_version: 2,
+      contract_version: 3,
       status: "supported",
       base_sql: sql,
       proposed_sql: 'SELECT * FROM "Orders" WHERE "amount" = $filter_amount',
