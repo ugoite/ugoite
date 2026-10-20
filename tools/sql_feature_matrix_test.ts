@@ -311,3 +311,17 @@ Deno.test("JOIN editor coverage is bounded without changing runtime admission", 
     true,
   );
 });
+
+Deno.test("ORDER BY editor resolves projection aliases before Form columns", () => {
+  const ordering = matrix.editor.constructs.find((construct: {
+    id: string;
+  }) => construct.id === "ordering");
+  assertEquals(ordering.backend_admission, "planner_decides");
+  assertEquals(ordering.editor_coverage, "bounded");
+  assertEquals(
+    ordering.limits.includes(
+      "unqualified identifiers resolve explicit projection aliases before same-named Form columns; the editor retains the typed source binding",
+    ),
+    true,
+  );
+});

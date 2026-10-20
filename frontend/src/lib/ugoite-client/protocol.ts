@@ -552,6 +552,7 @@ export type SqlStructureFilterExpression =
 export type SqlStructureSort = {
   column: string;
   qualifier?: SqlStructureAlias;
+  projection_alias?: SqlStructureAlias;
   direction: "asc" | "desc";
 };
 

@@ -55,11 +55,13 @@ type FilterPredicateDraft = {
 type SortDraft = {
   column: string;
   qualifier?: SqlStructureAlias;
+  projection_alias?: SqlStructureAlias;
   direction: "asc" | "desc";
 };
 type ColumnChoice = {
   column: string;
   qualifier?: SqlStructureAlias;
+  projection_alias?: SqlStructureAlias;
   value: string;
   label: string;
 };
@@ -532,6 +534,42 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     column: string,
     qualifier?: SqlStructureAlias,
   ) => columnChoiceValue(column, qualifier);
+
+  const sortChoiceValue = (sort: SortDraft) =>
+    sort.projection_alias
+      ? JSON.stringify([
+        "projection_alias",
+        sort.projection_alias.name,
+        sort.projection_alias.quoted,
+      ])
+      : selectedColumnChoice(sort.column, sort.qualifier);
+
+  const sortChoices = (): ColumnChoice[] => {
+    const current = ready();
+    const columns = sortableColumns();
+    const choices = columnChoices(columns);
+    if (!current || activeJoin()) return choices;
+    const sortable = new Set(columns.map((column) => column.name));
+    const projectionChoices = current.analysis.projection_aliases.flatMap(
+      (slot): ColumnChoice[] =>
+        slot.alias && sortable.has(slot.column)
+          ? [{
+            column: slot.column,
+            projection_alias: slot.alias,
+            value: JSON.stringify([
+              "projection_alias",
+              slot.alias.name,
+              slot.alias.quoted,
+            ]),
+            label: t("sqlPage.structure.sortProjectionAliasChoice", {
+              alias: slot.alias.name,
+              column: slot.column,
+            }),
+          }]
+          : [],
+    );
+    return [...choices, ...projectionChoices];
+  };
 
   const choiceForValue = (value: string, choices: ColumnChoice[]) =>
     choices.find((choice) => choice.value === value);
@@ -1470,26 +1508,21 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
 
   const sortRowsValid = () =>
     sorts().every((sort) =>
-      sortableColumns().some((column) => column.name === sort.column) &&
-      (activeJoin()
-        ? [activeJoin()?.left_alias, activeJoin()?.right_alias].some((alias) =>
-          alias?.name === sort.qualifier?.name &&
-          alias.quoted === sort.qualifier?.quoted
-        )
-        : !sort.qualifier)
+      sortChoices().some((choice) => choice.value === sortChoiceValue(sort))
     );
 
   const addSort = () => {
-    const choices = columnChoices(sortableColumns());
+    const choices = sortChoices();
     const available = choices.find((choice) =>
-      !sorts().some((sort) =>
-        selectedColumnChoice(sort.column, sort.qualifier) === choice.value
-      )
+      !sorts().some((sort) => sortChoiceValue(sort) === choice.value)
     );
     if (!available) return;
     setSorts((items) => [...items, {
       column: available.column,
       ...(available.qualifier ? { qualifier: available.qualifier } : {}),
+      ...(available.projection_alias
+        ? { projection_alias: available.projection_alias }
+        : {}),
       direction: "asc",
     }]);
   };
@@ -2268,31 +2301,38 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                               <span>{t("sqlPage.structure.column")}</span>
                               <select
                                 class="ui-input"
-                                value={selectedColumnChoice(
-                                  sort.column,
-                                  sort.qualifier,
-                                )}
+                                value={sortChoiceValue(sort)}
                                 onChange={(event) =>
                                   (() => {
                                     const selected = choiceForValue(
                                       event.currentTarget.value,
-                                      columnChoices(sortableColumns()),
+                                      sortChoices(),
                                     );
                                     if (!selected) return;
                                     setSorts((items) =>
                                       items.map((item, i) =>
                                         i === index()
                                           ? {
-                                            ...item,
+                                            direction: item.direction,
                                             column: selected.column,
-                                            qualifier: selected.qualifier,
+                                            ...(selected.qualifier
+                                              ? {
+                                                qualifier: selected.qualifier,
+                                              }
+                                              : {}),
+                                            ...(selected.projection_alias
+                                              ? {
+                                                projection_alias: selected
+                                                  .projection_alias,
+                                              }
+                                              : {}),
                                           }
                                           : item
                                       )
                                     );
                                   })()}
                               >
-                                <For each={columnChoices(sortableColumns())}>
+                                <For each={sortChoices()}>
                                   {(choice) => (
                                     <option value={choice.value}>
                                       {choice.label}
@@ -2342,14 +2382,10 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                         type="button"
                         class="ui-button ui-button-secondary"
                         onClick={addSort}
-                        disabled={!columnChoices(sortableColumns()).some(
+                        disabled={!sortChoices().some(
                           (choice) =>
                             !sorts().some((sort) =>
-                              selectedColumnChoice(
-                                sort.column,
-                                sort.qualifier,
-                              ) ===
-                                choice.value
+                              sortChoiceValue(sort) === choice.value
                             ),
                         )}
                       >
