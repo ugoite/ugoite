@@ -273,6 +273,352 @@ async fn preview_plans_query_arguments_with_server_derived_upstream_types() -> R
 }
 
 #[tokio::test]
+<<<<<<< HEAD
+=======
+async fn local_saved_sql_arguments_accept_planner_derived_scalar_queries() -> Result<()> {
+    let (service, space_id, _, _) = setup_preview_space().await?;
+    let sql_id = Uuid::from_u128(3_434_002);
+    let created = service
+        .create_saved_sql(
+            &space_id,
+            Some(&sql_id.to_string()),
+            &SqlPayload {
+                name: Some("Integer parameter".to_string()),
+                kind: SqlKind::UserQuery,
+                metadata: None,
+                sql: "SELECT {{minimum}} AS total".to_string(),
+                variables: json!([{
+                    "name": "minimum",
+                    "type": "integer",
+                    "description": "",
+                }]),
+            },
+            "owner",
+        )
+        .await?;
+    let revision_id = created
+        .get("revision_id")
+        .and_then(Value::as_str)
+        .context("Saved SQL should return its revision ID")?;
+    let entry_id = EntryId::from_uuid(sql_id).to_string();
+    let revision_id = RevisionId::from_uuid(Uuid::parse_str(revision_id)?);
+
+    let document_for = |source_returns, source_sql: &str, name: &str| {
+        let source_query = |returns| VariableGraphNodeKind::Query {
+            returns,
+            query: VariableGraphQuery {
+                definition: VariableGraphQueryDefinition::InlineSql {
+                    sql: source_sql.to_string(),
+                },
+                arguments: Vec::new(),
+                form_bindings: Vec::new(),
+                schema_fingerprint: String::new(),
+            },
+        };
+        CompositionDocument {
+            format: CompositionFormat::UgoiteComposition,
+            format_version: 1,
+            kind: CompositionKind::Dashboard,
+            name: name.to_string(),
+            spec: CompositionSpec {
+                variables: vec![
+                    VariableGraphNode {
+                        id: "upstream".to_string(),
+                        kind: source_query(source_returns),
+                    },
+                    VariableGraphNode {
+                        id: "total".to_string(),
+                        kind: VariableGraphNodeKind::Query {
+                            returns: VariableGraphResultType::Scalar {
+                                value_type: VariableGraphScalarDescriptor {
+                                    scalar_type: VariableGraphScalarType::Integer,
+                                    nullable: true,
+                                },
+                            },
+                            query: VariableGraphQuery {
+                                definition: VariableGraphQueryDefinition::SavedSql {
+                                    entry_id: Some(entry_id.clone()),
+                                    revision_id: Some(revision_id.to_string()),
+                                    column: Some("total".to_string()),
+                                },
+                                arguments: vec![VariableGraphArgumentBinding {
+                                    name: "minimum".to_string(),
+                                    variable: "upstream".to_string(),
+                                }],
+                                form_bindings: Vec::new(),
+                                schema_fingerprint: String::new(),
+                            },
+                        },
+                    },
+                ],
+                components: vec![CompositionComponent::Metric {
+                    id: "total_metric".to_string(),
+                    variable: "total".to_string(),
+                    presentation: None,
+                }],
+                layout: DashboardFlowLayout {
+                    kind: FlowLayoutKind::Flow,
+                    rows: vec![FlowRow {
+                        id: "main".to_string(),
+                        items: vec![FlowItem::Component {
+                            component: "total_metric".to_string(),
+                        }],
+                    }],
+                },
+            },
+        }
+    };
+
+    let integer = VariableGraphScalarDescriptor {
+        scalar_type: VariableGraphScalarType::Integer,
+        nullable: false,
+    };
+    let saved = save_local_composition(
+        &service,
+        &space_id,
+        document_for(
+            VariableGraphResultType::Scalar {
+                value_type: integer,
+            },
+            "SELECT 7 AS value",
+            "Scalar query argument",
+        ),
+    )
+    .await?;
+    assert!(saved.document.has_complete_query_descriptors());
+
+    let mismatch = save_local_composition(
+        &service,
+        &space_id,
+        document_for(
+            VariableGraphResultType::Scalar {
+                value_type: VariableGraphScalarDescriptor {
+                    scalar_type: VariableGraphScalarType::String,
+                    nullable: false,
+                },
+            },
+            "SELECT 'seven' AS value",
+            "Mismatched scalar query argument",
+        ),
+    )
+    .await
+    .expect_err("a planner-derived string cannot bind an integer parameter");
+    assert_eq!(
+        mismatch.downcast_ref::<AppError>().map(AppError::code),
+        Some(ErrorCode::InvalidInput)
+    );
+
+    let saved_compositions = service
+        .list_compositions_local_page(&space_id, 100, 0)
+        .await?;
+    assert_eq!(saved_compositions.items.len(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn graph_evaluation_does_not_execute_an_unrequested_query_branch() -> Result<()> {
+    let (service, space_id, mut document, _) = setup_preview_space().await?;
+    let integer = VariableGraphScalarDescriptor {
+        scalar_type: VariableGraphScalarType::Integer,
+        nullable: false,
+    };
+    let query = |sql: String| VariableGraphNodeKind::Query {
+        returns: VariableGraphResultType::Scalar {
+            value_type: integer,
+        },
+        query: VariableGraphQuery {
+            definition: VariableGraphQueryDefinition::InlineSql { sql },
+            arguments: Vec::new(),
+            form_bindings: Vec::new(),
+            schema_fingerprint: String::new(),
+        },
+    };
+    let unresolved_metadata_query =
+        "SELECT 1 AS value FROM \"Missing-Composition-Form\" LIMIT 1".to_owned();
+    document.spec.variables = vec![
+        VariableGraphNode {
+            id: "selected".to_owned(),
+            kind: query("SELECT 1 AS value".to_owned()),
+        },
+        VariableGraphNode {
+            id: "unrelated".to_owned(),
+            kind: query(unresolved_metadata_query),
+        },
+    ];
+    document.spec.components = vec![CompositionComponent::Metric {
+        id: "metric".to_owned(),
+        variable: "selected".to_owned(),
+        presentation: None,
+    }];
+    document.spec.layout.rows[0].items = vec![FlowItem::Component {
+        component: "metric".to_owned(),
+    }];
+    let canonical =
+        canonicalize_composition(&document).map_err(|code| anyhow::anyhow!(code.as_str()))?;
+
+    let requested = vec!["selected".to_owned()];
+    let response = service
+        .evaluate_composition_graph_authorized_for_principals(
+            &space_id,
+            &[Uuid::from_u128(3_434_001)],
+            CompositionQueryEvaluationTarget::Draft {
+                yaml: canonical.yaml,
+            },
+            Uuid::now_v7(),
+            None,
+            None,
+            &BTreeMap::new(),
+            &[],
+            Some(&requested),
+            None,
+        )
+        .await?;
+
+    assert!(response.ok, "{:?}", response.query_diagnostics);
+    assert_eq!(response.computed_query_ids, vec!["selected".to_owned()]);
+    assert_eq!(response.query_results.len(), 1);
+    assert!(response.query_results.contains_key("selected"));
+    assert_eq!(
+        response
+            .plan
+            .as_ref()
+            .expect("selected graph plan")
+            .queries
+            .iter()
+            .map(|query| query.variable_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["selected"]
+    );
+    assert!(response.authorization_fingerprint.is_some());
+    Ok(())
+}
+
+#[tokio::test]
+async fn local_graph_table_pages_keep_their_publication_snapshot() -> Result<()> {
+    let (service, space_id, mut document, _) = setup_preview_space().await?;
+    let rows = (0..101)
+        .map(|index| format!("SELECT 'page-row-{index:03}' AS title"))
+        .collect::<Vec<_>>()
+        .join(" UNION ALL ");
+    let VariableGraphNodeKind::Query { query, .. } = &mut document.spec.variables[0].kind else {
+        anyhow::bail!("fixture should contain one table query variable");
+    };
+    query.definition = VariableGraphQueryDefinition::InlineSql {
+        sql: format!("{rows} ORDER BY title"),
+    };
+    let saved = save_local_composition(&service, &space_id, document).await?;
+    let evaluation_id = Uuid::now_v7();
+    let requested_queries = ["source".to_owned()];
+    let target = || CompositionQueryEvaluationTarget::SavedRevision {
+        composition_id: saved.entry_id.to_string(),
+        revision_id: saved.revision_id.to_string(),
+    };
+
+    let first = service
+        .evaluate_composition_graph_local(
+            &space_id,
+            target(),
+            evaluation_id,
+            None,
+            None,
+            &BTreeMap::new(),
+            &[],
+            Some(&requested_queries),
+            None,
+        )
+        .await?;
+    assert!(first.ok, "{:?}", first.query_diagnostics);
+    let first_result = first
+        .query_results
+        .get("source")
+        .context("local graph query returns its first table page")?;
+    assert!(first_result.has_more);
+    let cursor = first_result
+        .next
+        .clone()
+        .context("first local graph page includes a continuation")?;
+
+    let second = service
+        .evaluate_composition_graph_local(
+            &space_id,
+            target(),
+            evaluation_id,
+            None,
+            None,
+            &BTreeMap::new(),
+            &[],
+            Some(&requested_queries),
+            Some(CompositionQueryEvaluationPage {
+                variable_id: "source".to_owned(),
+                cursor: cursor.clone(),
+            }),
+        )
+        .await?;
+    assert!(second.ok, "{:?}", second.query_diagnostics);
+    assert_eq!(second.snapshot_fingerprint, first.snapshot_fingerprint);
+    assert_eq!(
+        second.publication_fingerprint,
+        first.publication_fingerprint
+    );
+    let second_result = second
+        .query_results
+        .get("source")
+        .context("local graph query returns its continuation page")?;
+    assert!(!second_result.has_more);
+    let VariableGraphValidatedResult::Table { rows, .. } = &second_result.result else {
+        anyhow::bail!("local graph result should remain a table");
+    };
+    assert_eq!(
+        rows.len(),
+        1,
+        "only the last row from the pinned snapshot remains"
+    );
+    assert!(!rows.iter().flatten().any(|value| {
+        matches!(value, VariableGraphLiteral::String(value) if value == "after-snapshot")
+    }));
+
+    // A new Publication invalidates a continuation rather than mixing rows
+    // from two snapshots into one graph result.
+    service
+        .create_structured_entry_with_receipt(
+            &space_id,
+            "composition-preview-after-first-page",
+            "Composition-Preview".to_owned(),
+            Vec::new(),
+            BTreeMap::from([(
+                "title".to_string(),
+                Value::String("after-snapshot".to_owned()),
+            )]),
+            BTreeMap::new(),
+            "owner",
+        )
+        .await?;
+    let stale = service
+        .evaluate_composition_graph_local(
+            &space_id,
+            target(),
+            evaluation_id,
+            None,
+            None,
+            &BTreeMap::new(),
+            &[],
+            Some(&requested_queries),
+            Some(CompositionQueryEvaluationPage {
+                variable_id: "source".to_owned(),
+                cursor,
+            }),
+        )
+        .await;
+    assert!(stale.is_err(), "stale graph cursor should be rejected");
+    assert!(stale
+        .expect_err("stale graph cursor is rejected")
+        .to_string()
+        .contains("Publication changed during descriptor resolution"));
+    Ok(())
+}
+
+#[tokio::test]
+>>>>>>> ac3e3fa50 (fix(composition): allow scalar query bindings)
 async fn draft_preview_resolves_sql_schema_without_executing_source_rows() -> Result<()> {
     let (service, space_id, mut document, form_id) = setup_preview_space().await?;
     let VariableGraphNodeKind::Query { query, .. } = &mut document.spec.variables[0].kind else {

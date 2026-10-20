@@ -43,7 +43,14 @@ pub(super) fn validate_saved_sql_arguments(
         let actual = match &node.kind {
             VariableGraphNodeKind::Constant { value_type, .. }
             | VariableGraphNodeKind::Input { value_type, .. } => *value_type,
-            VariableGraphNodeKind::Query { .. } => {
+            VariableGraphNodeKind::Query {
+                returns: ugoite_domain::composition::VariableGraphResultType::Scalar { value_type },
+                ..
+            } => *value_type,
+            VariableGraphNodeKind::Query {
+                returns: ugoite_domain::composition::VariableGraphResultType::Table { .. },
+                ..
+            } => {
                 return Err(invalid_composition(
                     "Composition SQL arguments must reference scalar values",
                 ));
@@ -77,4 +84,70 @@ fn supported_saved_argument_type(value: VariableGraphScalarType) -> bool {
 
 fn invalid_composition(message: &'static str) -> anyhow::Error {
     AppError::invalid_input(ErrorCode::InvalidInput, message).into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ugoite_domain::composition::{
+        VariableGraphArgumentBinding, VariableGraphColumn, VariableGraphQuery,
+        VariableGraphQueryDefinition, VariableGraphResultType,
+    };
+
+    #[test]
+    fn saved_sql_arguments_accept_scalar_query_nodes_but_reject_tables() {
+        let binding = VariableGraphArgumentBinding {
+            name: "minimum".to_owned(),
+            variable: "source".to_owned(),
+        };
+        let saved_sql_types = BTreeMap::from([(
+            "minimum".to_owned(),
+            VariableGraphScalarDescriptor {
+                scalar_type: VariableGraphScalarType::Integer,
+                nullable: false,
+            },
+        )]);
+        let query = VariableGraphQuery {
+            definition: VariableGraphQueryDefinition::InlineSql {
+                sql: "SELECT 7 AS value".to_owned(),
+            },
+            arguments: Vec::new(),
+            form_bindings: Vec::new(),
+            schema_fingerprint: String::new(),
+        };
+        let scalar = VariableGraphNode {
+            id: "source".to_owned(),
+            kind: VariableGraphNodeKind::Query {
+                returns: VariableGraphResultType::Scalar {
+                    value_type: saved_sql_types["minimum"],
+                },
+                query: query.clone(),
+            },
+        };
+        assert!(validate_saved_sql_arguments(
+            std::slice::from_ref(&binding),
+            &saved_sql_types,
+            &[scalar],
+        )
+        .is_ok());
+
+        let table = VariableGraphNode {
+            id: "source".to_owned(),
+            kind: VariableGraphNodeKind::Query {
+                returns: VariableGraphResultType::Table {
+                    columns: vec![VariableGraphColumn {
+                        name: "value".to_owned(),
+                        value_type: saved_sql_types["minimum"],
+                    }],
+                },
+                query,
+            },
+        };
+        let error = validate_saved_sql_arguments(&[binding], &saved_sql_types, &[table])
+            .expect_err("table query variables cannot be SQL scalar arguments");
+        assert_eq!(
+            error.downcast_ref::<AppError>().map(AppError::code),
+            Some(ErrorCode::InvalidInput)
+        );
+    }
 }
