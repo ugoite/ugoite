@@ -1379,6 +1379,7 @@ mod tests {
         let metadata = SavedSqlRevisionMetadata {
             entry_id: "00000000-0000-0000-0000-000000000001".to_owned(),
             revision_id: "00000000-0000-0000-0000-000000000002".to_owned(),
+            sql_text: "SELECT {{minimum}} AS value".to_owned(),
             parameter_types: BTreeMap::from([("minimum".to_owned(), integer)]),
             form_bindings: Vec::new(),
             result_columns: vec![VariableGraphColumn {
