@@ -301,8 +301,15 @@ describe("SqlStructureToolbar adapter", () => {
 
   it("does not commit a toolbar proposal rejected by SQL Document parsing", async () => {
     const sql = 'SELECT * FROM "Orders"';
-    const proposedSql = 'SELECT "amount" FROM "Orders"';
+    const proposedSql =
+      'SELECT * FROM "Orders" WHERE "amount" = $filter_amount';
+    const emptyContext: SqlStructureAdapterContext = {
+      ...context,
+      identity: "inline:source-1:form-1:document-rejection",
+      parser: { ...context.parser, variables: [] },
+    };
     const onSqlChange = vi.fn();
+    const onVariablesAdded = vi.fn();
     let actions: readonly SQLWorkspaceAction[] = [];
     proposeMock.mockResolvedValue({
       contract_version: 3,
@@ -320,18 +327,20 @@ describe("SqlStructureToolbar adapter", () => {
     render(() => (
       <SqlStructureToolbar
         sql={() => sql}
-        contexts={() => [context]}
+        contexts={() => [emptyContext]}
         onSqlChange={onSqlChange}
+        onVariablesAdded={onVariablesAdded}
         onActionsChange={(next) => actions = next}
       />
     ));
 
     await waitFor(() =>
-      expect(actions.find((action) => action.kind === "columns")?.disabled)
+      expect(actions.find((action) => action.kind === "filter")?.disabled)
         .toBe(false)
     );
-    actions.find((action) => action.kind === "columns")!.onActivate();
-    const dialog = screen.getByRole("dialog", { name: "Columns" });
+    actions.find((action) => action.kind === "filter")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Filter" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add filter" }));
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Review change" }),
     );
@@ -343,6 +352,7 @@ describe("SqlStructureToolbar adapter", () => {
     await waitFor(() =>
       expect(within(dialog).getByRole("alert")).toBeInTheDocument()
     );
+    expect(onVariablesAdded).not.toHaveBeenCalled();
     expect(onSqlChange).not.toHaveBeenCalled();
   });
 
@@ -385,6 +395,56 @@ describe("SqlStructureToolbar adapter", () => {
     await waitFor(() => expect(applyDocumentEditMock).toHaveBeenCalledOnce());
 
     setSql("SELECT 1");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    resolveEdit({
+      document: { status: "parsed", source: proposedSql },
+      undo: {},
+    });
+    await applyDocumentEditMock.mock.results[0].value;
+    expect(onSqlChange).not.toHaveBeenCalled();
+  });
+
+  it("discards an SQL Document response after its context changes", async () => {
+    const sql = 'SELECT * FROM "Orders"';
+    const proposedSql = 'SELECT "amount" FROM "Orders"';
+    const [contexts, setContexts] = createSignal<
+      readonly SqlStructureAdapterContext[]
+    >([context]);
+    const onSqlChange = vi.fn();
+    let resolveEdit!: (result: {
+      document: { status: string; source: string };
+      undo: unknown;
+    }) => void;
+    applyDocumentEditMock.mockImplementation(() =>
+      new Promise((resolve) => resolveEdit = resolve)
+    );
+    let actions: readonly SQLWorkspaceAction[] = [];
+
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={contexts}
+        onSqlChange={onSqlChange}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "columns")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "columns")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Columns" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    fireEvent.click(
+      await within(dialog).findByRole("button", { name: "Apply change" }),
+    );
+    await waitFor(() => expect(applyDocumentEditMock).toHaveBeenCalledOnce());
+
+    setContexts([{ ...context, identity: `${context.identity}:changed` }]);
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     resolveEdit({
       document: { status: "parsed", source: proposedSql },
