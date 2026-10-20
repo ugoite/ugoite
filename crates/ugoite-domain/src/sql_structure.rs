@@ -874,13 +874,17 @@ fn collect_filter_identifiers(expression: &Expr, identifiers: &mut Vec<Ident>) -
         Expr::Nested(inner) => collect_filter_identifiers(inner, identifiers),
         Expr::BinaryOp {
             left,
-            op: BinaryOperator::And,
+            op: BinaryOperator::And | BinaryOperator::Or,
             right,
         } => {
             collect_filter_identifiers(left, identifiers)
                 && collect_filter_identifiers(right, identifiers)
         }
-        Expr::BinaryOp { left, .. } => {
+        Expr::UnaryOp {
+            op: UnaryOperator::Not,
+            expr,
+        } => collect_filter_identifiers(expr, identifiers),
+        Expr::BinaryOp { left, op, .. } if filter_operator_from_binary(op).is_some() => {
             let Expr::Identifier(identifier) = left.as_ref() else {
                 return false;
             };
@@ -3193,7 +3197,7 @@ mod tests {
         assert!(join_limits
             .contains(&"one INNER self-join of the selected Form with explicit distinct aliases"));
         assert!(join_limits.contains(
-            &"WHERE supports AND trees of qualified parameter comparisons plus IS NULL/IS NOT NULL on qualified columns; ORDER BY supports simple qualified columns with ASC/DESC and no NULLS FIRST/LAST; unqualified references fail closed"
+            &"WHERE supports bounded AND/OR/NOT trees of qualified parameter comparisons plus IS NULL/IS NOT NULL on qualified columns; adding a JOIN qualifies every supported predicate leaf; ORDER BY supports simple qualified columns with ASC/DESC and no NULLS FIRST/LAST; unqualified references fail closed"
         ));
         let declared_operations = editor["operations"]
             .as_array()
@@ -3567,6 +3571,61 @@ mod tests {
             analyze_sql_structure(&proposed, &context()).status,
             SqlStructureStatus::Supported
         );
+    }
+
+    #[test]
+    fn adding_join_qualifies_every_leaf_in_nested_boolean_filters() {
+        let sql = "SELECT * FROM \"Task\" WHERE (\"field_101\" = $status OR \"field_102\" >= $priority) AND NOT (\"field_101\" != $status) ORDER BY \"_ugoite_id\" ASC";
+        let analysis = analyze_sql_structure(sql, &context());
+        assert_eq!(analysis.status, SqlStructureStatus::Supported);
+        assert!(analysis.capabilities.join.enabled);
+
+        let proposal = propose_sql_structure_operation(
+            sql,
+            &context(),
+            SqlStructureOperation::SetJoin {
+                left_column: "field_101".to_owned(),
+                right_column: "field_101".to_owned(),
+            },
+        );
+        assert_eq!(proposal.status, SqlStructureStatus::Supported);
+        let proposed = proposal.proposed_sql.expect("join proposal");
+        let joined = analyze_sql_structure(&proposed, &context());
+        assert_eq!(joined.status, SqlStructureStatus::Supported, "{proposed}");
+        assert_eq!(joined.joins.len(), 1);
+        let left_alias = joined.joins[0].left_alias.clone();
+        assert_eq!(
+            joined.filter_expression,
+            Some(SqlStructureFilterExpression::And {
+                expressions: vec![
+                    SqlStructureFilterExpression::Or {
+                        expressions: vec![
+                            SqlStructureFilterExpression::Predicate {
+                                column: "field_101".to_owned(),
+                                qualifier: Some(left_alias.clone()),
+                                operator: SqlStructureFilterOperator::Eq,
+                                parameter: Some("status".to_owned()),
+                            },
+                            SqlStructureFilterExpression::Predicate {
+                                column: "field_102".to_owned(),
+                                qualifier: Some(left_alias.clone()),
+                                operator: SqlStructureFilterOperator::GtEq,
+                                parameter: Some("priority".to_owned()),
+                            },
+                        ],
+                    },
+                    SqlStructureFilterExpression::Not {
+                        expression: Box::new(SqlStructureFilterExpression::Predicate {
+                            column: "field_101".to_owned(),
+                            qualifier: Some(left_alias),
+                            operator: SqlStructureFilterOperator::NotEq,
+                            parameter: Some("status".to_owned()),
+                        }),
+                    },
+                ],
+            })
+        );
+        assert!(proposed.contains("ORDER BY \"_ugoite_left\".\"_ugoite_id\" ASC"));
     }
 
     #[test]
@@ -4038,6 +4097,7 @@ mod tests {
             SqlStructureOperation::SetFilters {
                 filters: vec![SqlStructureFilter {
                     column: "field_101".to_owned(),
+                    qualifier: None,
                     operator: SqlStructureFilterOperator::Eq,
                     parameter: Some("status".to_owned()),
                 }],
@@ -4150,7 +4210,8 @@ mod tests {
         let proposed = proposal.proposed_sql.expect("joined filter rewrite");
         assert!(proposed.contains("t.\"field_101\" = $status"));
         assert!(proposed.contains("other.\"field_102\" >= $priority"));
-        assert!(proposed.contains("NOT other.\"field_101\" != $status"));
+        assert!(proposed.contains("NOT"));
+        assert!(proposed.contains("other.\"field_101\" <> $status"));
         let edited = analyze_sql_structure(&proposed, &context());
         assert_eq!(edited.status, SqlStructureStatus::Supported);
         assert_eq!(edited.filter_expression, Some(expected));
