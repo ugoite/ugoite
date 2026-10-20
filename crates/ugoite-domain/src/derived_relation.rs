@@ -182,12 +182,16 @@ pub fn canonical_json<T: Serialize>(value: &T) -> Result<Vec<u8>, serde_json::Er
             serde_json::Value::Array(values) => {
                 serde_json::Value::Array(values.into_iter().map(sort).collect())
             }
-            serde_json::Value::Object(values) => serde_json::Value::Object(
-                values
-                    .into_iter()
-                    .map(|(key, value)| (key, sort(value)))
-                    .collect::<serde_json::Map<_, _>>(),
-            ),
+            serde_json::Value::Object(values) => {
+                let mut entries = values.into_iter().collect::<Vec<_>>();
+                entries.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+                serde_json::Value::Object(
+                    entries
+                        .into_iter()
+                        .map(|(key, value)| (key, sort(value)))
+                        .collect::<serde_json::Map<_, _>>(),
+                )
+            }
             scalar => scalar,
         }
     }
@@ -226,5 +230,20 @@ mod tests {
             producer_id: "ugoite.asset_text".into(),
         };
         assert_eq!(definition.fingerprint(), definition.fingerprint());
+    }
+
+    #[test]
+    fn canonical_json_sorts_nested_object_keys() {
+        let first = serde_json::json!({"z": {"y": 2, "x": 1}, "a": true});
+        let second = serde_json::json!({"a": true, "z": {"x": 1, "y": 2}});
+
+        assert_eq!(
+            canonical_json(&first).unwrap(),
+            canonical_json(&second).unwrap()
+        );
+        assert_eq!(
+            canonical_json(&first).unwrap(),
+            br#"{"a":true,"z":{"x":1,"y":2}}"#
+        );
     }
 }

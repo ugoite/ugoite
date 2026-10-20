@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use chrono::{SecondsFormat, Utc};
 use fs2::FileExt;
 use futures::stream::{self, StreamExt, TryStreamExt};
@@ -6,7 +6,7 @@ use hmac::{Hmac, KeyInit, Mac};
 use opendal::Operator;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::sync::{Arc, OnceLock};
 use std::{
@@ -17,6 +17,7 @@ use std::{
 };
 use tokio::sync::Mutex;
 use ugoite_core::error::{AppError, ErrorCode};
+use ugoite_domain::derived_relation::canonical_json;
 
 const DEFAULT_AUDIT_LIMIT: usize = 100;
 const MAX_AUDIT_LIMIT: usize = 500;
@@ -225,9 +226,14 @@ fn now_iso() -> String {
 }
 
 fn event_hash(payload: &Value, prev_hash: &str) -> Result<String> {
-    let canonical = serde_json::to_string(payload)?;
-    let material = format!("{prev_hash}:{canonical}");
-    let digest = Sha256::digest(material.as_bytes());
+    // Audit event hashes are persisted. Keep their byte representation
+    // independent of serde_json's workspace-wide `preserve_order` feature.
+    let canonical = canonical_json(payload)?;
+    let mut material = Vec::with_capacity(prev_hash.len() + 1 + canonical.len());
+    material.extend_from_slice(prev_hash.as_bytes());
+    material.push(b':');
+    material.extend_from_slice(&canonical);
+    let digest = Sha256::digest(&material);
     Ok(hex::encode(digest))
 }
 
@@ -236,7 +242,7 @@ fn audit_event_fingerprint(value: &Value) -> Result<String> {
     let object = source
         .as_object()
         .ok_or_else(|| anyhow!("audit event fingerprint source must be an object"))?;
-    serde_json::to_string(&json!({
+    let fingerprint = json!({
         "action": object.get("action").cloned().unwrap_or(Value::Null),
         "space_uid": object.get("space_uid").cloned().unwrap_or(Value::Null),
         "challenge_id": object.get("challenge_id").cloned().unwrap_or(Value::Null),
@@ -285,8 +291,8 @@ fn audit_event_fingerprint(value: &Value) -> Result<String> {
             .unwrap_or(Value::Null),
         "request_id": object.get("request_id").cloned().unwrap_or(Value::Null),
         "metadata": object.get("metadata").cloned().unwrap_or_else(|| json!({})),
-    }))
-    .map_err(Into::into)
+    });
+    Ok(String::from_utf8(canonical_json(&fingerprint)?)?)
 }
 
 fn marker_is_final(marker: &Value) -> bool {
@@ -1924,6 +1930,35 @@ mod tests {
         assert_eq!(normalize_audit_page(u64::MAX, u64::MAX), (500, usize::MAX));
     }
 
+    #[test]
+    fn audit_event_hash_is_stable_for_nested_json_key_order() -> Result<()> {
+        let first = json!({"z": {"y": 2, "x": 1}, "a": true});
+        let second = json!({"a": true, "z": {"x": 1, "y": 2}});
+
+        assert_eq!(event_hash(&first, "root")?, event_hash(&second, "root")?);
+        Ok(())
+    }
+
+    #[test]
+    fn audit_event_fingerprint_is_stable_for_nested_metadata_key_order() -> Result<()> {
+        let first = json!({
+            "action": "entry.updated",
+            "space_uid": "space-1",
+            "metadata": {"z": {"y": 2, "x": 1}, "a": true}
+        });
+        let second = json!({
+            "metadata": {"a": true, "z": {"x": 1, "y": 2}},
+            "space_uid": "space-1",
+            "action": "entry.updated"
+        });
+
+        assert_eq!(
+            audit_event_fingerprint(&first)?,
+            audit_event_fingerprint(&second)?
+        );
+        Ok(())
+    }
+
     #[tokio::test]
     async fn checkpointed_recovery_verifies_tail_and_refreshes_checkpoint() -> Result<()> {
         let op = operator_from_uri("memory://audit-checkpoint-tail")?;
@@ -2109,9 +2144,11 @@ mod tests {
         new_node_store
             .create_if_absent(&key, foreign_checkpoint.value)
             .await?;
-        assert!(read_audit_checkpoint(&new_node_config, "demo")
-            .await
-            .is_none());
+        assert!(
+            read_audit_checkpoint(&new_node_config, "demo")
+                .await
+                .is_none()
+        );
 
         append_audit_events_with_checkpoint(&copied_op, "demo", &space_uid, &[], &new_node_config)
             .await?;
@@ -2260,8 +2297,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn audit_recovery_batch_chain_write_failure_with_duplicate_leaves_no_committed_marker(
-    ) -> Result<()> {
+    async fn audit_recovery_batch_chain_write_failure_with_duplicate_leaves_no_committed_marker()
+    -> Result<()> {
         let op = operator_from_uri("memory://audit-recovery-chain-write-failure")?;
         let first_id = uuid::Uuid::now_v7().to_string();
         let first = json!({
@@ -2352,8 +2389,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_req_sec_013_replay_with_same_event_id_but_different_payload_is_rejected(
-    ) -> Result<()> {
+    async fn test_req_sec_013_replay_with_same_event_id_but_different_payload_is_rejected()
+    -> Result<()> {
         let op = operator_from_uri("memory://audit-conflicting-replay")?;
         let event_id = uuid::Uuid::now_v7().to_string();
         let first = json!({
@@ -2446,9 +2483,11 @@ mod tests {
         let events = read_events(&op, "demo").await?;
         verify_chain(&events)?;
         assert_eq!(events.len(), 100);
-        assert!(events
-            .iter()
-            .all(|event| event["event_id"] != retained_out_id));
+        assert!(
+            events
+                .iter()
+                .all(|event| event["event_id"] != retained_out_id)
+        );
         let (marker, _) = read_event_marker(&op, "demo", &retained_out_id)
             .await?
             .expect("retention disposition marker");
