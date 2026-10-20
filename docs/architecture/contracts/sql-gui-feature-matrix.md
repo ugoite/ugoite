@@ -40,13 +40,14 @@ uses the existing group-by icon; it is not a separate plus action. Aggregate,
 group-by, and distinct controls remain separately surfaced during this
 transition, so the planned compact six-action toolbar is not complete.
 
-Simple Form-column projections expose their output aliases in the Columns editor
-when each source column occurs once. Alias edits preserve the selected source
-column and the quoted or unquoted identifier meaning. A repeated source column
-keeps the query analyzable and other actions available, but disables the Columns
-rewrite because the current operation identifies columns by source name rather
-than projection slot. Projections with unsupported expressions or unsafe
-comment/source spans also remain unavailable to that operation.
+Simple Form-column projections expose each output alias in the Columns editor.
+The editor assigns a transient slot identity from each projection's ordinal in
+the exact SQL snapshot, so repeated source columns can be reordered and aliased
+independently. A proposal must identify each retained slot at most once; id-less
+rows add new slots. The identity is not persisted beside SQL. The legacy
+`set_columns` operation remains fail-closed for repeated sources. Projections
+with unsupported expressions or unsafe comment/source spans also remain
+unavailable to structured edits.
 
 The matrix records the same SELECT-only boundary as the runtime statement gate.
 Relation-free scalar queries align with direct SQL lint and the structure

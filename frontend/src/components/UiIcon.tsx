@@ -25,6 +25,8 @@ export type UiIconName =
   | "preview"
   | "download"
   | "close"
+  | "arrow-up"
+  | "arrow-down"
   | "chevron-left"
   | "chevron-right"
   | "columns"
@@ -189,6 +191,18 @@ const paths: Record<UiIconName, () => JSX.Element> = {
   close: () => (
     <>
       <path d="m6 6 12 12M18 6 6 18" />
+    </>
+  ),
+  "arrow-up": () => (
+    <>
+      <path d="M12 19V5" />
+      <path d="m6 11 6-6 6 6" />
+    </>
+  ),
+  "arrow-down": () => (
+    <>
+      <path d="M12 5v14" />
+      <path d="m18 13-6 6-6-6" />
     </>
   ),
   "chevron-left": () => <path d="m15 18-6-6 6-6" />,

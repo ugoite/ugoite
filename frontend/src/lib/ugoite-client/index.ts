@@ -81,6 +81,7 @@ export {
   type SqlStructureLiteral,
   type SqlStructureOperation,
   type SqlStructureProjectionAlias,
+  type SqlStructureProjectionSlotInput,
   type SqlStructureProposal,
   type SqlStructureReason,
   type SqlStructureSort,
