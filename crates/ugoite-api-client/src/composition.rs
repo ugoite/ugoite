@@ -275,7 +275,7 @@ pub struct CompositionPreviewResponse {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plan: Option<CompositionPreviewPlan>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub diagnostics: Vec<CompositionResolveDiagnostic>,
+    pub diagnostics: Vec<CompositionDiagnostic>,
 }
 
 /// Stored revision or unsaved draft evaluated as one immutable graph
@@ -335,6 +335,11 @@ pub struct CompositionGraphQueryResult {
     pub has_more: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next: Option<String>,
+    /// Exact base-10 integers for table cells, aligned with the typed rows.
+    /// JSON numbers remain in `value` for portable scalar decoding; this
+    /// companion preserves integers beyond JavaScript's safe range.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exact_integer_rows: Option<Vec<Vec<Option<String>>>>,
 }
 
 /// Query-graph execution failure scoped to one variable. `code` is the
@@ -424,9 +429,9 @@ pub struct CompositionEvaluationResponse {
     #[serde(default)]
     pub variable_values: BTreeMap<String, Value>,
     #[serde(default)]
-    pub queries: Vec<CompositionResolvedQuery>,
+    pub queries: Vec<CompositionQuery>,
     #[serde(default)]
-    pub component_bindings: Vec<CompositionResolvedComponentBinding>,
+    pub component_bindings: Vec<CompositionComponentBinding>,
     #[serde(default)]
     pub dependencies: CompositionDependencyIndex,
     #[serde(default)]
@@ -435,82 +440,9 @@ pub struct CompositionEvaluationResponse {
     /// dependency order. Failed evaluations return an empty list.
     pub computed_query_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub diagnostics: Vec<CompositionResolveDiagnostic>,
+    pub diagnostics: Vec<CompositionDiagnostic>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub query_diagnostics: Vec<CompositionEvaluationQueryDiagnostic>,
-}
-
-/// Target of a bounded, read-only Composition Metric query.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum CompositionMetricQueryTarget {
-    SavedRevision {
-        composition_id: String,
-        revision_id: String,
-    },
-    Draft {
-        yaml: String,
-    },
-}
-
-/// Request to evaluate one metric from a stored exact revision or unsaved
-/// Composition draft.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct CompositionMetricQueryRequest {
-    pub target: CompositionMetricQueryTarget,
-    /// Exact Composition revision a draft edits. Both identity fields must
-    /// be supplied together; saved-revision queries omit them.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub base_entry_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub base_revision_id: Option<String>,
-    pub component_id: String,
-    #[serde(default)]
-    pub variables: BTreeMap<String, Value>,
-    /// Variables explicitly left unset; omission from both fields uses the
-    /// declared default when one exists.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub unset_variables: Vec<String>,
-}
-
-/// One successful display value selected from a Saved SQL result.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct CompositionMetricQueryValue {
-    pub component_id: String,
-    pub result_type: CompositionResultFieldType,
-    /// JSON encoding follows `result_type`: Integer results are canonical
-    /// base-10 strings, Decimal results are strings preserving scale, Float
-    /// results are JSON numbers, Boolean results are JSON booleans, and
-    /// String/Date/Timestamp results are JSON strings. Successful SQL NULL is
-    /// represented by a present JSON `null`.
-    pub value: Value,
-}
-
-/// Stable metric-query diagnostic without backend error detail.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct CompositionMetricQueryDiagnostic {
-    pub code: CompositionDiagnosticCode,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub component_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub variable_id: Option<String>,
-}
-
-/// Result of one bounded metric query. A present `value: null` is distinct
-/// from a query that returns zero rows.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct CompositionMetricQueryResponse {
-    pub ok: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub draft_fingerprint: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub result: Option<CompositionMetricQueryValue>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub diagnostics: Vec<CompositionMetricQueryDiagnostic>,
 }
 
 /// Side-effect-free preview plan keyed by draft fingerprint instead of a
@@ -522,44 +454,15 @@ pub struct CompositionPreviewPlan {
     pub draft_fingerprint: String,
     #[serde(default)]
     pub variable_values: BTreeMap<String, Value>,
-    pub queries: Vec<CompositionResolvedQuery>,
+    pub queries: Vec<CompositionQuery>,
     /// Stable display bindings in the resolver's layout row and item order.
     #[serde(default)]
-    pub component_bindings: Vec<CompositionResolvedComponentBinding>,
+    pub component_bindings: Vec<CompositionComponentBinding>,
     /// Semantic graph dependency edges derived by Core. Additive to the
     /// existing portable plan so adapters can schedule reactive work without
     /// re-parsing the Composition document.
     #[serde(default, skip_serializing_if = "CompositionDependencyIndex::is_empty")]
     pub dependencies: CompositionDependencyIndex,
-}
-
-/// Request to resolve one exact Composition revision against current query
-/// metadata. Resolution does not execute any query or create state.
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct CompositionResolveRequest {
-    pub revision_id: String,
-    #[serde(default)]
-    pub variables: BTreeMap<String, Value>,
-    /// Variables explicitly left unset; omission from both fields uses the
-    /// declared default when one exists.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub unset_variables: Vec<String>,
-}
-
-/// Caller-visible result of a side-effect-free Composition resolution pass.
-/// Variable definitions are present whenever the exact revision parsed as a
-/// supported Composition document, including responses with diagnostics.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct CompositionResolveResponse {
-    pub ok: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub variable_definitions: Option<Vec<CompositionVariableDefinition>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub plan: Option<CompositionResolvePlan>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub diagnostics: Vec<CompositionResolveDiagnostic>,
 }
 
 /// Typed, UI-neutral fields needed to collect caller variable values.
@@ -591,20 +494,6 @@ pub enum CompositionScalarType {
 pub struct CompositionScalarDescriptor {
     pub scalar_type: CompositionScalarType,
     pub nullable: bool,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct CompositionResolvePlan {
-    pub composition_revision: CompositionRevisionReference,
-    #[serde(default)]
-    pub variable_values: BTreeMap<String, Value>,
-    pub queries: Vec<CompositionResolvedQuery>,
-    /// Stable display bindings in the resolver's layout row and item order.
-    #[serde(default)]
-    pub component_bindings: Vec<CompositionResolvedComponentBinding>,
-    #[serde(default, skip_serializing_if = "CompositionDependencyIndex::is_empty")]
-    pub dependencies: CompositionDependencyIndex,
 }
 
 /// Variable and component consumers derived by Core independently of layout
@@ -640,7 +529,7 @@ pub struct CompositionVariableConsumers {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CompositionResolvedComponentKind {
+pub enum CompositionComponentKind {
     Input,
     Metric,
     Table,
@@ -675,9 +564,9 @@ pub enum CompositionResultFieldType {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct CompositionResolvedComponentBinding {
+pub struct CompositionComponentBinding {
     pub component_id: String,
-    pub kind: CompositionResolvedComponentKind,
+    pub kind: CompositionComponentKind,
     /// The single typed graph value bound to this component.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variable_id: Option<String>,
@@ -699,7 +588,7 @@ pub struct CompositionRevisionReference {
 /// query that waits for scalar query-variable dependencies.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct CompositionResolvedQuery {
+pub struct CompositionQuery {
     pub variable_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request: Option<Value>,
@@ -709,8 +598,8 @@ pub struct CompositionResolvedQuery {
     #[serde(default)]
     pub deferred_arguments: Vec<CompositionDeferredArgument>,
     pub returns: CompositionQueryResultType,
-    pub result_columns: Vec<CompositionResolvedResultColumn>,
-    pub form_bindings: Vec<CompositionResolvedFormBinding>,
+    pub result_columns: Vec<CompositionResultColumn>,
+    pub form_bindings: Vec<CompositionFormBinding>,
     pub schema_fingerprint: String,
     pub query_semantic_fingerprint: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -732,7 +621,7 @@ pub enum CompositionQueryResultType {
         value_type: CompositionScalarDescriptor,
     },
     Table {
-        columns: Vec<CompositionResolvedResultColumn>,
+        columns: Vec<CompositionResultColumn>,
     },
 }
 
@@ -744,21 +633,21 @@ pub enum CompositionScalarCardinality {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct CompositionResolvedFormBinding {
+pub struct CompositionFormBinding {
     pub relation: String,
     pub form_id: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct CompositionResolvedResultColumn {
+pub struct CompositionResultColumn {
     pub name: String,
     pub value_type: CompositionScalarDescriptor,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct CompositionResolveDiagnostic {
+pub struct CompositionDiagnostic {
     pub code: CompositionDiagnosticCode,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variable_id: Option<String>,

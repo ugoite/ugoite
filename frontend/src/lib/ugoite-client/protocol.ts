@@ -67,10 +67,8 @@ export const UGOITE_API_OPERATIONS = [
   "composition.list",
   "composition.get",
   "composition.history",
-  "composition.resolve",
   "composition.preview",
   "composition.evaluate",
-  "composition.metric.query",
   "composition.save",
   "composition.restore",
   "sql.list",
@@ -556,7 +554,6 @@ export type SqlStructureFilterExpression =
 export type SqlStructureSort = {
   column: string;
   qualifier?: SqlStructureAlias;
-  projection_alias?: SqlStructureAlias;
   direction: "asc" | "desc";
 };
 
