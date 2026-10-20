@@ -354,6 +354,39 @@ async function main(): Promise<void> {
     "stable range error",
   );
 
+  const overlappingEditResponse = await invokeWasm(instance.exports, {
+    action: "domain.apply_sql_document_edit_transaction",
+    value: {
+      current_source: "SELECT 12",
+      transaction: {
+        expected_source: "SELECT 12",
+        edits: [
+          {
+            range: { start: 7, end: 9 },
+            expected_text: "12",
+            replacement: "34",
+          },
+          {
+            range: { start: 8, end: 9 },
+            expected_text: "2",
+            replacement: "3",
+          },
+        ],
+      },
+    },
+  });
+  assertEqual(overlappingEditResponse.ok, false, "overlapping edit rejection");
+  assertEqual(
+    (overlappingEditResponse.error as Record<string, unknown>).code,
+    "overlapping_edits",
+    "stable overlap error",
+  );
+  assertEqual(
+    Object.hasOwn(overlappingEditResponse, "value"),
+    false,
+    "overlapping edits do not return a partial document or undo transaction",
+  );
+
   const amplifiedEditSource = `SELECT ${Array(20_000).fill("1").join(",")}`;
   const amplifiedEditResponse = await invokeWasm(instance.exports, {
     action: "domain.apply_sql_document_edit_transaction",
@@ -596,10 +629,52 @@ async function main(): Promise<void> {
   assertEqual(aggregates.length, 1, "aggregate count");
   assertEqual(aggregates[0].function, "count", "aggregate function");
   assertEqual(aggregates[0].column, "amount", "aggregate column");
+  assertEqual(
+    Object.hasOwn(aggregates[0], "arguments"),
+    false,
+    "legacy single-column aggregate wire shape",
+  );
   assertEqual(aggregates[0].distinct, true, "DISTINCT aggregate");
   const alias = aggregates[0].alias as Record<string, unknown>;
   assertEqual(alias.name, "unique_count", "aggregate alias");
   assertEqual(alias.quoted, false, "aggregate alias quoting");
+
+  const paritySql =
+    'SELECT COUNT() AS all_rows, COUNT("title", "amount") AS pair_count, MEAN("amount") AS average, COUNT(DISTINCT *) AS unique_row FROM "Task"';
+  const parityResult = await invokeWasm(instance.exports, {
+    action: "domain.analyze_sql_structure",
+    value: { sql: paritySql, context },
+  });
+  const parityValue = parityResult.value as Record<string, unknown>;
+  assertEqual(parityValue.status, "supported", "aggregate parity analysis");
+  const parityAggregates = parityValue.aggregates as Record<string, unknown>[];
+  assertEqual(
+    parityAggregates[0].column,
+    undefined,
+    "nullary COUNT wildcard column",
+  );
+  assertEqual(
+    Object.hasOwn(parityAggregates[0], "arguments"),
+    false,
+    "nullary COUNT legacy wire shape",
+  );
+  assertEqual(
+    parityAggregates[1].column,
+    "title",
+    "variadic COUNT first column",
+  );
+  assertEqual(
+    JSON.stringify(parityAggregates[1].arguments),
+    JSON.stringify(["amount"]),
+    "variadic COUNT additional columns",
+  );
+  assertEqual(parityAggregates[2].function, "mean", "MEAN alias identity");
+  assertEqual(
+    parityAggregates[3].column,
+    undefined,
+    "distinct wildcard column",
+  );
+  assertEqual(parityAggregates[3].distinct, true, "distinct wildcard modifier");
 
   const groupedAggregate = await invokeWasm(instance.exports, {
     action: "domain.propose_sql_structure_operation",

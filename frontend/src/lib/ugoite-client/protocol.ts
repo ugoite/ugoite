@@ -107,10 +107,10 @@ type PreparedRequest = {
   body_kind: "none" | "json" | "multipart";
 };
 
-type ProtocolErrorPayload = {
+type ProtocolErrorPayload<TCode extends string = string> = {
   kind: string;
   message: string;
-  code?: string;
+  code?: TCode;
   contract_version?: number;
   diagnostics?: VariableGraphDiagnostic[];
   operation?: string;
@@ -119,9 +119,9 @@ type ProtocolErrorPayload = {
   payload?: unknown;
 };
 
-type ProtocolEnvelope<T> =
+type ProtocolEnvelope<T, TCode extends string = string> =
   | { ok: true; value: T }
-  | { ok: false; error: ProtocolErrorPayload };
+  | { ok: false; error: ProtocolErrorPayload<TCode> };
 
 type UgoiteWasmExports = WebAssembly.Exports & {
   memory: WebAssembly.Memory;
@@ -156,7 +156,7 @@ const loadExports = async (): Promise<UgoiteWasmExports> => {
   return await exportsPromise;
 };
 
-const invokeProtocolWithExports = <T>(
+const invokeProtocolWithExports = <T, TCode extends string = string>(
   exports: UgoiteWasmExports,
   command: unknown,
 ): T => {
@@ -186,9 +186,9 @@ const invokeProtocolWithExports = <T>(
         outputLength,
       ).slice(),
     );
-    const envelope = JSON.parse(output) as ProtocolEnvelope<T>;
+    const envelope = JSON.parse(output) as ProtocolEnvelope<T, TCode>;
     if (!envelope.ok) {
-      throw new UgoiteApiError(envelope.error);
+      throw new UgoiteApiError<TCode>(envelope.error);
     }
     return envelope.value;
   } finally {
@@ -197,8 +197,10 @@ const invokeProtocolWithExports = <T>(
   }
 };
 
-const invokeProtocol = async <T>(command: unknown): Promise<T> =>
-  invokeProtocolWithExports(await loadExports(), command);
+const invokeProtocol = async <T, TCode extends string = string>(
+  command: unknown,
+): Promise<T> =>
+  invokeProtocolWithExports<T, TCode>(await loadExports(), command);
 
 export type KonaseProtocolAction =
   | "konase.version"
@@ -490,7 +492,7 @@ export const applySqlDocumentEditTransaction = async (
   currentSource: string,
   transaction: SqlDocumentEditTransaction,
 ): Promise<SqlDocumentEditResult> =>
-  await invokeProtocol<SqlDocumentEditResult>({
+  await invokeProtocol<SqlDocumentEditResult, SqlDocumentEditErrorCode>({
     action: "domain.apply_sql_document_edit_transaction",
     value: { current_source: currentSource, transaction },
   });
@@ -560,6 +562,7 @@ export type SqlStructureAggregateFunction =
   | "count"
   | "sum"
   | "avg"
+  | "mean"
   | "min"
   | "max";
 
@@ -593,6 +596,8 @@ export type SqlStructureAggregate = {
   function: SqlStructureAggregateFunction;
   /** Omitted only for COUNT(*). */
   column?: string;
+  /** Additional column names after `column` for variadic COUNT. */
+  arguments?: string[];
   distinct: boolean;
   alias?: SqlStructureAlias;
 };
@@ -831,9 +836,9 @@ export const validateEntryDraft = async (
     value: { form, draft },
   });
 
-export class UgoiteApiError extends Error {
+export class UgoiteApiError<TCode extends string = string> extends Error {
   readonly kind: string;
-  readonly code?: string;
+  readonly code?: TCode;
   readonly contract_version?: number;
   readonly diagnostics?: VariableGraphDiagnostic[];
   readonly operation?: string;
@@ -843,12 +848,12 @@ export class UgoiteApiError extends Error {
   readonly mutationOutcome: MutationOutcome | null;
   readonly mutationCode?: string;
 
-  constructor(error: ProtocolErrorPayload) {
+  constructor(error: ProtocolErrorPayload<TCode>) {
     super(error.message);
     this.name = "UgoiteApiError";
     this.kind = error.kind;
-    this.code = error.code ?? readErrorCode(error.detail) ??
-      readErrorCode(error.payload);
+    this.code = (error.code ?? readErrorCode(error.detail) ??
+      readErrorCode(error.payload)) as TCode | undefined;
     this.contract_version = error.contract_version;
     this.diagnostics = error.diagnostics;
     this.operation = error.operation;

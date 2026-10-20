@@ -54,14 +54,9 @@
     },
     "editor": {
       "aggregate_contract": {
-        "checked": "name_catalog_only",
-        "known_editor_rejections": ["COUNT(DISTINCT *)", "MEAN"],
-        "verification_gaps": [
-          "runtime_structure_frontend_signature_and_type_parity",
-          "supported_aggregate_modifier_parity",
-          "count_distinct_wildcard_execution_semantics",
-          "aggregate_alias_parity"
-        ]
+        "checked": "registry_signature_and_gui_roundtrip",
+        "known_editor_rejections": [],
+        "verification_gaps": ["aggregate_expression_arguments_outside_form_columns"]
       },
       "operations": [
         {
@@ -100,7 +95,7 @@
           "protocol": "set_aggregates",
           "sql": ["SELECT aggregate projection"],
           "coverage": "bounded",
-          "functions": ["count", "sum", "avg", "min", "max"]
+          "functions": ["count", "sum", "avg", "mean", "min", "max"]
         },
         {
           "action": "group_by",

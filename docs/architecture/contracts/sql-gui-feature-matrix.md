@@ -10,8 +10,14 @@ subquery, or set operation are rejected with `READ_ONLY_SQL_REQUIRED` before
 planning or execution. The stateless `ReadOnlyAggregateV1` policy currently
 admits `COUNT`, `SUM`, `AVG`, `MIN`, and `MAX` as canonical aggregate names,
 with the `MEAN` alias resolving to `AVG`, and no user SQL scalar or window
-functions. The current structure editor does not recognize `MEAN`; the shared
-matrix records that alias gap until the editor implements the same registry.
+functions. The aggregate structure editor uses that registry for signatures,
+accepts the `MEAN` alias, and round-trips nullary, wildcard, single-column, and
+variadic `COUNT` forms. `COUNT()` is canonicalized to `COUNT(*)` by structure
+serialization because both forms have the same runtime meaning. Multi-column
+COUNT is represented as the original first `column` plus an optional list of
+additional columns, leaving the existing single-column and wildcard wire shapes
+unchanged. Aggregate expression trees that are not simple Form-column
+references remain outside structured coverage.
 
 The structure editor is a separate, narrower contract. Its parser accepts a
 bounded subset that it can safely analyze and rewrite; direct SQL editing
@@ -68,12 +74,13 @@ Relation-free scalar queries align with direct SQL lint and the structure
 editor. The SQL executor remains responsible for planner, relation, function,
 type, authorization, and resource-limit decisions after admission.
 
-Aggregate parity is checked here only at the canonical function-name level and
-the runtime alias map is checked separately. Signatures, type restrictions,
-modifier round-trips, and runtime behavior for `COUNT(DISTINCT *)` remain
-unverified; the structure parser explicitly rejects that form. These gaps are
-tracked by [issue #4381](https://github.com/ugoite/ugoite/issues/4381). The
-matrix records them so its name check is not read as complete aggregate parity.
+Aggregate parity checks bind the Rust registry, structure parser and validator,
+Browser function picker, signature/type gates, and authorized execution tests.
+`COUNT(DISTINCT *)`, `COUNT()`, `COUNT(*)`, `MEAN`, and variadic COUNT over Form
+columns have parser/serializer coverage. Structured aggregate expressions remain
+limited to Form-column identifiers; arbitrary scalar expression arguments are
+tracked as a separate coverage gap. The matrix records that limit instead of
+claiming complete DataFusion expression coverage.
 
 `backend_admission: planner_decides` means the statement gate does not decide
 that construct's validity. It does not promise that every use will plan or

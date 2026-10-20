@@ -646,7 +646,7 @@ describe("SQL structure adapter context", () => {
       filterable: true,
       sortable: true,
       supportedOperators: ["eq", "gt", "is_null", "is_not_null"],
-      aggregateFunctions: ["count", "sum", "avg", "min", "max"],
+      aggregateFunctions: ["count", "sum", "avg", "mean", "min", "max"],
       groupable: true,
       distinctable: true,
     });
@@ -657,7 +657,7 @@ describe("SQL structure adapter context", () => {
     expect(context.columnCapabilities.field_category.groupable).toBe(true);
     expect(context.columnCapabilities.field_category.distinctable).toBe(true);
     expect(context.columnCapabilities.field_long.aggregateFunctions).toEqual(
-      [],
+      ["count"],
     );
     expect(context.columnCapabilities.field_long.groupable).toBe(false);
     expect(context.columnCapabilities.field_long.distinctable).toBe(false);
