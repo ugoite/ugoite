@@ -1389,6 +1389,40 @@ mod tests {
     }
 
     #[test]
+    fn sql_structure_protocol_rejects_missing_filter_expression() {
+        let request = serde_json::json!({
+            "action": "domain.propose_sql_structure_operation",
+            "value": {
+                "sql": "SELECT * FROM \"Task\" WHERE \"field_101\" = $status",
+                "context": {
+                    "relation": "Task",
+                    "columns": [
+                        {"name": "field_101", "type": "string"}
+                    ],
+                    "variables": [
+                        {"name": "status", "type": "string"}
+                    ],
+                    "stable_key": []
+                },
+                "operation": {
+                    "kind": "set_filter_expression"
+                }
+            }
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).expect("JSON response");
+
+        assert_eq!(
+            response["ok"], false,
+            "missing expression must not clear WHERE"
+        );
+        assert_eq!(response["error"]["kind"], "domain_validation");
+        assert!(response["error"]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("expression")));
+    }
+
+    #[test]
     fn sql_document_protocol_accepts_maximum_source_with_json_escaped_trivia() {
         let sql = format!(
             "SELECT 1 /*{}*/",

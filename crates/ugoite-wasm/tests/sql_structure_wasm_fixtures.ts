@@ -468,6 +468,57 @@ async function main(): Promise<void> {
     throw new Error(`Typed filter parameter was not preserved: ${proposedSql}`);
   }
 
+  const booleanProposal = await invokeWasm(instance.exports, {
+    action: "domain.propose_sql_structure_operation",
+    value: {
+      sql: 'SELECT * FROM "Task"',
+      context,
+      operation: {
+        kind: "set_filter_expression",
+        expression: {
+          kind: "and",
+          expressions: [
+            {
+              kind: "or",
+              expressions: [
+                {
+                  kind: "predicate",
+                  column: "title",
+                  operator: "eq",
+                  parameter: "title",
+                },
+                {
+                  kind: "predicate",
+                  column: "amount",
+                  operator: "gt_eq",
+                  parameter: "minimum",
+                },
+              ],
+            },
+            {
+              kind: "not",
+              expression: {
+                kind: "predicate",
+                column: "title",
+                operator: "not_eq",
+                parameter: "title",
+              },
+            },
+          ],
+        },
+      },
+    },
+  });
+  assertEqual(booleanProposal.ok, true, "boolean filter proposal envelope");
+  const booleanSql = String(
+    (booleanProposal.value as Record<string, unknown>).proposed_sql,
+  );
+  if (!booleanSql.includes(" OR ") || !booleanSql.includes("NOT ")) {
+    throw new Error(
+      `Nested boolean filter operations were lost: ${booleanSql}`,
+    );
+  }
+
   const sorted = await invokeWasm(instance.exports, {
     action: "domain.propose_sql_structure_operation",
     value: {

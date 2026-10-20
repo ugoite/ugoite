@@ -29,8 +29,8 @@ export { spaceApi } from "../space-api";
 export { sqlApi } from "../sql-api";
 export { RevisionConflictError } from "../entry-api";
 export {
-  applySqlDocumentEditTransaction,
   analyzeSqlStructure,
+  applySqlDocumentEditTransaction,
   buildSpreadsheetCsvRequest,
   canonicalizeCompositionDocument,
   type CompiledVariableGraph,
@@ -76,6 +76,7 @@ export {
   type SqlStructureColumnType,
   type SqlStructureContext,
   type SqlStructureFilter,
+  type SqlStructureFilterExpression,
   type SqlStructureFilterOperator,
   type SqlStructureLiteral,
   type SqlStructureOperation,
