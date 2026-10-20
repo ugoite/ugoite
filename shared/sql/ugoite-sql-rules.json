@@ -67,6 +67,13 @@
           "coverage": "bounded"
         },
         {
+          "action": "join",
+          "toolbar_category": "structure",
+          "protocol": "set_join",
+          "sql": ["JOIN", "ON"],
+          "coverage": "bounded"
+        },
+        {
           "action": "columns",
           "protocol": "set_columns",
           "sql": ["SELECT projection"],
@@ -121,7 +128,7 @@
             "one relation selected from trusted Form context",
             "relation-free SELECT 1 draft can select a Form",
             "plain aliases on a single relation are supported and preserved; edited column references remain unqualified",
-            "joins, derived relations, and table alias column lists are not supported"
+            "self-join relations are resolved from the same trusted Form context"
           ]
         },
         {
@@ -185,7 +192,17 @@
           "id": "joins",
           "sql": "JOIN",
           "backend_admission": "planner_decides",
-          "editor_coverage": "none"
+          "editor_coverage": "bounded",
+          "limits": [
+            "one INNER self-join of the selected Form with explicit distinct aliases",
+            "ON must be left_alias.column = right_alias.column with matching supported scalar types; reversed equality operands fail closed",
+            "wildcard projection only; editing ON preserves other SQL source text",
+            "WHERE supports AND trees of qualified parameter comparisons plus IS NULL/IS NOT NULL on qualified columns; ORDER BY supports simple qualified columns with ASC/DESC and no NULLS FIRST/LAST; unqualified references fail closed",
+            "filter and sort edits fail closed when comments in the query could be lost by AST serialization",
+            "adding a join qualifies existing supported single-relation WHERE/ORDER BY columns with the left alias and preserves surrounding clause text",
+            "unquoted aliases and columns resolve with SQL case folding; quoted identifiers remain exact",
+            "LEFT/RIGHT/FULL/CROSS/NATURAL/USING, multiple joins, derived relations, reversed equality operands, and other ON expressions fail closed"
+          ]
         },
         {
           "id": "common_table_expressions",

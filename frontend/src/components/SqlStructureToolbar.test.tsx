@@ -97,9 +97,11 @@ const analysis: SqlStructureAnalysis = {
   group_by: [],
   distinct: false,
   order_by: [{ column: "_ugoite_id", direction: "asc" }],
+  joins: [],
   referenced_variables: [],
   stable_pagination: true,
   capabilities: {
+    join: { enabled: true },
     columns: { enabled: true },
     filter: { enabled: true },
     sort: { enabled: true },
@@ -107,6 +109,37 @@ const analysis: SqlStructureAnalysis = {
     group_by: { enabled: true },
     distinct: { enabled: true },
     stable_pagination: { enabled: true },
+  },
+};
+
+const joinedAnalysis: SqlStructureAnalysis = {
+  ...analysis,
+  filters: [{
+    column: "amount",
+    qualifier: { name: "left_rows", quoted: true },
+    operator: "gt",
+    parameter: "threshold",
+  }],
+  order_by: [{
+    column: "_ugoite_id",
+    qualifier: { name: "right_rows", quoted: true },
+    direction: "asc",
+  }],
+  joins: [{
+    relation: "Orders",
+    left_alias: { name: "left_rows", quoted: true },
+    right_alias: { name: "right_rows", quoted: true },
+    left_column: "category",
+    right_column: "category",
+  }],
+  stable_pagination: false,
+  capabilities: {
+    ...analysis.capabilities,
+    columns: { enabled: false, reason: "join_unsupported" },
+    aggregate: { enabled: false, reason: "join_unsupported" },
+    group_by: { enabled: false, reason: "join_unsupported" },
+    distinct: { enabled: false, reason: "join_unsupported" },
+    stable_pagination: { enabled: false, reason: "stable_order_required" },
   },
 };
 
@@ -141,7 +174,7 @@ describe("SqlStructureToolbar adapter", () => {
       />
     ));
 
-    await waitFor(() => expect(actions).toHaveLength(7));
+    await waitFor(() => expect(actions).toHaveLength(8));
     await waitFor(() =>
       expect(actions.find((action) => action.kind === "columns")?.disabled)
         .toBe(false)
@@ -178,6 +211,160 @@ describe("SqlStructureToolbar adapter", () => {
     );
   });
 
+  it("edits qualified filters on either side of a supported join", async () => {
+    analyzeMock.mockResolvedValue(joinedAnalysis);
+    const sql =
+      'SELECT * FROM "Orders" AS "left_rows" INNER JOIN "Orders" AS "right_rows" ON "left_rows"."category" = "right_rows"."category" WHERE "left_rows"."amount" > $threshold ORDER BY "right_rows"."_ugoite_id"';
+    let actions: readonly SQLWorkspaceAction[] = [];
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [context]}
+        onSqlChange={vi.fn()}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "filter")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "filter")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Filter" });
+    const column = within(dialog).getByRole("combobox", { name: "Column" });
+    expect(within(column).getByRole("option", { name: "right_rows.amount" }))
+      .toBeInTheDocument();
+    fireEvent.change(column, {
+      target: { value: '["right_rows",true,"amount"]' },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(proposeMock).toHaveBeenCalledWith(
+      sql,
+      context.parser,
+      {
+        kind: "set_filters",
+        filters: [{
+          column: "amount",
+          qualifier: { name: "right_rows", quoted: true },
+          operator: "gt",
+          parameter: "threshold",
+        }],
+      },
+    );
+  });
+
+  it("edits qualified ORDER BY identifiers on either side of a supported join", async () => {
+    analyzeMock.mockResolvedValue(joinedAnalysis);
+    const sql =
+      'SELECT * FROM "Orders" AS "left_rows" INNER JOIN "Orders" AS "right_rows" ON "left_rows"."category" = "right_rows"."category" WHERE "left_rows"."amount" > $threshold ORDER BY "right_rows"."_ugoite_id"';
+    let actions: readonly SQLWorkspaceAction[] = [];
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [context]}
+        onSqlChange={vi.fn()}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "sort")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "sort")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Sort" });
+    const column = within(dialog).getByRole("combobox", { name: "Column" });
+    expect(within(column).getByRole("option", { name: "left_rows._ugoite_id" }))
+      .toBeInTheDocument();
+    fireEvent.change(column, {
+      target: { value: '["left_rows",true,"_ugoite_id"]' },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(proposeMock).toHaveBeenCalledWith(
+      sql,
+      context.parser,
+      {
+        kind: "set_sort",
+        order_by: [{
+          column: "_ugoite_id",
+          qualifier: { name: "left_rows", quoted: true },
+          direction: "asc",
+        }],
+      },
+    );
+  });
+
+  it("adds a typed inner self-join through the shared toolbar", async () => {
+    const sql = 'SELECT * FROM "Orders"';
+    const proposedSql =
+      'SELECT * FROM "Orders" AS "_ugoite_left" INNER JOIN "Orders" AS "_ugoite_right" ON "_ugoite_left"."amount" = "_ugoite_right"."amount"';
+    proposeMock.mockResolvedValue({
+      contract_version: 1,
+      status: "supported",
+      base_sql: sql,
+      proposed_sql: proposedSql,
+      requires_confirmation: true,
+      added_stable_tie_breakers: [],
+    });
+    const onSqlChange = vi.fn();
+    let actions: readonly SQLWorkspaceAction[] = [];
+    let resolveStructureAction!: (action: SQLWorkspaceAction) => void;
+    const structureActionReady = new Promise<SQLWorkspaceAction>((resolve) => {
+      resolveStructureAction = resolve;
+    });
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [context]}
+        onSqlChange={onSqlChange}
+        onActionsChange={(next) => {
+          actions = next;
+          const structureAction = next.find((action) =>
+            action.kind === "structure"
+          );
+          if (structureAction && !structureAction.disabled) {
+            resolveStructureAction(structureAction);
+          }
+        }}
+      />
+    ));
+
+    const structureAction = await structureActionReady;
+    expect(actions).toHaveLength(8);
+    expect(actions.some((action) => action.kind === "join")).toBe(false);
+    expect(structureAction.disabled).toBe(false);
+    expect(structureAction.label).toBe("Structure");
+    expect(structureAction.icon).toBe("group-by");
+    structureAction.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Join" });
+    fireEvent.change(within(dialog).getByLabelText("Left column"), {
+      target: { value: "amount" },
+    });
+    expect(within(dialog).getByLabelText("Right column")).toHaveValue("amount");
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(proposeMock.mock.calls[0][2]).toEqual({
+      kind: "set_join",
+      left_column: "amount",
+      right_column: "amount",
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Apply change" }),
+    );
+    expect(onSqlChange).toHaveBeenCalledWith(proposedSql);
+  });
+
   it("offers a safe structure edit for scalar SELECT without a Form", async () => {
     const sql = "SELECT 1";
     const contexts = buildSqlStructureContexts([], [], "new-sql");
@@ -191,9 +378,11 @@ describe("SqlStructureToolbar adapter", () => {
       group_by: [],
       distinct: false,
       order_by: [],
+      joins: [],
       referenced_variables: [],
       stable_pagination: false,
       capabilities: {
+        join: { enabled: false, reason: "invalid_context" },
         columns: { enabled: true },
         filter: { enabled: false, reason: "invalid_context" },
         sort: { enabled: false, reason: "stable_key_unavailable" },
@@ -1148,7 +1337,7 @@ describe("SqlStructureToolbar adapter", () => {
       expect(actions.find((action) => action.kind === "aggregate")?.disabled)
         .toBe(false)
     );
-    expect(actions).toHaveLength(7);
+    expect(actions).toHaveLength(8);
     for (const kind of ["group_by", "distinct"] as const) {
       expect(actions.find((action) => action.kind === kind)?.disabled).toBe(
         true,

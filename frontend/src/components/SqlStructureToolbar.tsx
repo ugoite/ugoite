@@ -20,6 +20,7 @@ import {
 import type {
   SqlStructureAggregate,
   SqlStructureAggregateFunction,
+  SqlStructureAlias,
   SqlStructureAnalysis,
   SqlStructureFilter,
   SqlStructureFilterOperator,
@@ -32,6 +33,7 @@ import type {
 
 type StructureAction =
   | "form"
+  | "join"
   | "columns"
   | "filter"
   | "sort"
@@ -40,11 +42,22 @@ type StructureAction =
   | "distinct";
 type FilterDraft = {
   column: string;
+  qualifier?: SqlStructureAlias;
   operator: SqlStructureFilterOperator;
   parameter: string;
   createdVariable?: SqlStructureVariableType;
 };
-type SortDraft = { column: string; direction: "asc" | "desc" };
+type SortDraft = {
+  column: string;
+  qualifier?: SqlStructureAlias;
+  direction: "asc" | "desc";
+};
+type ColumnChoice = {
+  column: string;
+  qualifier?: SqlStructureAlias;
+  value: string;
+  label: string;
+};
 type AnalyzedStructure = {
   context: SqlStructureAdapterContext;
   analysis: SqlStructureAnalysis;
@@ -137,6 +150,8 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   const [aggregates, setAggregates] = createSignal<SqlStructureAggregate[]>([]);
   const [groupByColumns, setGroupByColumns] = createSignal<string[]>([]);
   const [selectDistinct, setSelectDistinct] = createSignal(false);
+  const [joinLeftColumn, setJoinLeftColumn] = createSignal("");
+  const [joinRightColumn, setJoinRightColumn] = createSignal("");
   const [proposal, setProposal] = createSignal<SqlStructureProposal>();
   const [proposalVariables, setProposalVariables] = createSignal<
     { name: string; type: SqlStructureVariableType }[]
@@ -290,6 +305,64 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
 
   const columnCapability = (columnName: string) =>
     ready()?.context.columnCapabilities[columnName];
+
+  const activeJoin = () => ready()?.analysis.joins[0];
+
+  const columnChoiceValue = (
+    column: string,
+    qualifier?: SqlStructureAlias,
+  ) =>
+    qualifier
+      ? JSON.stringify([qualifier.name, qualifier.quoted, column])
+      : column;
+
+  const columnChoices = (
+    columns: readonly { name: string }[],
+  ): ColumnChoice[] => {
+    const join = activeJoin();
+    if (!join) {
+      return columns.map((column) => ({
+        column: column.name,
+        value: column.name,
+        label: column.name,
+      }));
+    }
+    return [join.left_alias, join.right_alias].flatMap((qualifier) =>
+      columns.map((column) => ({
+        column: column.name,
+        qualifier,
+        value: columnChoiceValue(column.name, qualifier),
+        label: `${qualifier.name}.${column.name}`,
+      }))
+    );
+  };
+
+  const selectedColumnChoice = (
+    column: string,
+    qualifier?: SqlStructureAlias,
+  ) => columnChoiceValue(column, qualifier);
+
+  const choiceForValue = (value: string, choices: ColumnChoice[]) =>
+    choices.find((choice) => choice.value === value);
+
+  const joinableColumns = () =>
+    (ready()?.context.parser.columns ?? []).filter((column) =>
+      ["string", "boolean", "integer", "float", "date", "timestamp", "decimal"]
+        .includes(column.type)
+    );
+
+  const joinColumnChoices = () => joinableColumns();
+
+  const joinOperationValid = () => {
+    const columns = ready()?.context.parser.columns ?? [];
+    const left = columns.find((column) => column.name === joinLeftColumn());
+    const right = columns.find((column) => column.name === joinRightColumn());
+    return Boolean(
+      left && right && left.type === right.type &&
+        joinableColumns().some((column) => column.name === left.name) &&
+        joinableColumns().some((column) => column.name === right.name),
+    );
+  };
 
   const aggregateColumnsFor = (
     fn: SqlStructureAggregateFunction,
@@ -447,6 +520,12 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   const hasEditableCapabilities = (action: StructureAction): boolean => {
     const current = ready();
     if (!current) return false;
+    if (action === "join") {
+      const columns = joinableColumns();
+      return columns.some((left) =>
+        columns.some((right) => left.type === right.type)
+      );
+    }
     if (action === "columns") {
       return current.context.parser.columns.some((column) =>
         current.context.columnCapabilities[column.name]?.projectable
@@ -528,6 +607,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     );
     setFilters(current.analysis.filters.map((filter) => ({
       column: filter.column,
+      ...(filter.qualifier ? { qualifier: { ...filter.qualifier } } : {}),
       operator: filter.operator,
       parameter: filter.parameter ?? "",
     })));
@@ -538,6 +618,13 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     })));
     setGroupByColumns([...current.analysis.group_by]);
     setSelectDistinct(current.analysis.distinct);
+    const availableJoinColumn = joinableColumns()[0]?.name ?? "";
+    const existingJoin = current.analysis.joins[0];
+    setJoinLeftColumn(existingJoin?.left_column ?? availableJoinColumn);
+    setJoinRightColumn(
+      existingJoin?.right_column ?? existingJoin?.left_column ??
+        availableJoinColumn,
+    );
     setActiveAction(action);
   };
 
@@ -608,7 +695,9 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
         )
         : undefined) ??
         operators.find(isNullOperator);
-      return operator ? [{ column, operator }] : [];
+      return operator
+        ? [{ column, operator, qualifier: activeJoin()?.left_alias }]
+        : [];
     })[0];
     if (!candidate) return;
     const compatibleVariables = variablesFor(candidate.column.name);
@@ -618,6 +707,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
       : undefined;
     setFilters((items) => [...items, {
       column: candidate.column.name,
+      ...(candidate.qualifier ? { qualifier: candidate.qualifier } : {}),
       operator: candidate.operator,
       parameter: isNullOperator(candidate.operator)
         ? ""
@@ -684,6 +774,12 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   const filterRowsValid = () =>
     filters().every((filter) =>
       Boolean(ready()?.context.columnCapabilities[filter.column]?.filterable) &&
+      (activeJoin()
+        ? [activeJoin()?.left_alias, activeJoin()?.right_alias].some((alias) =>
+          alias?.name === filter.qualifier?.name &&
+          alias.quoted === filter.qualifier?.quoted
+        )
+        : !filter.qualifier) &&
       operatorsForColumn(ready()?.context, filter.column).includes(
         filter.operator,
       ) &&
@@ -702,16 +798,26 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
 
   const sortRowsValid = () =>
     sorts().every((sort) =>
-      sortableColumns().some((column) => column.name === sort.column)
+      sortableColumns().some((column) => column.name === sort.column) &&
+      (activeJoin()
+        ? [activeJoin()?.left_alias, activeJoin()?.right_alias].some((alias) =>
+          alias?.name === sort.qualifier?.name &&
+          alias.quoted === sort.qualifier?.quoted
+        )
+        : !sort.qualifier)
     );
 
   const addSort = () => {
-    const available = sortableColumns().find((column) =>
-      !sorts().some((sort) => sort.column === column.name)
+    const choices = columnChoices(sortableColumns());
+    const available = choices.find((choice) =>
+      !sorts().some((sort) =>
+        selectedColumnChoice(sort.column, sort.qualifier) === choice.value
+      )
     );
     if (!available) return;
     setSorts((items) => [...items, {
-      column: available.name,
+      column: available.column,
+      ...(available.qualifier ? { qualifier: available.qualifier } : {}),
       direction: "asc",
     }]);
   };
@@ -810,11 +916,18 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
       ? current.context.parser.relation === ""
         ? { kind: "set_literal_projection", values: literalProjection() }
         : { kind: "set_columns", columns: selectedColumns() }
+      : action === "join"
+      ? {
+        kind: "set_join",
+        left_column: joinLeftColumn(),
+        right_column: joinRightColumn(),
+      }
       : action === "filter"
       ? {
         kind: "set_filters" as const,
         filters: filters().map((filter): SqlStructureFilter => ({
           column: filter.column,
+          ...(filter.qualifier ? { qualifier: filter.qualifier } : {}),
           operator: filter.operator,
           ...(isNullOperator(filter.operator)
             ? {}
@@ -836,6 +949,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
       : { kind: "set_distinct", distinct: selectDistinct() };
     if (
       action === "columns" && !projectionEditValid() ||
+      action === "join" && !joinOperationValid() ||
       action === "filter" && !filterRowsValid() ||
       action === "sort" && !sortRowsValid() ||
       action === "aggregate" && !aggregateOperationValid() ||
@@ -1001,6 +1115,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   createEffect(() => {
     const actions = ([
       "form",
+      "join",
       "columns",
       "filter",
       "sort",
@@ -1013,16 +1128,20 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
         const reason = actionReason(action);
         const disabled = actionDisabled(action);
         return {
-          kind: action,
+          kind: action === "join" ? "structure" : action,
           icon: action === "form"
             ? "forms"
+            : action === "join"
+            ? "group-by"
             : action === "group_by"
             ? "group-by"
             : action,
-          label,
+          label: action === "join" ? t("sqlPage.structure.structure") : label,
           disabled,
           disabledReason: disabled ? reason : undefined,
-          active: activeAction() === action,
+          active: action === "join"
+            ? activeAction() === "join"
+            : activeAction() === action,
           onActivate: () => openAction(action),
         };
       },
@@ -1237,6 +1356,73 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                     </Show>
                   </Show>
 
+                  <Show when={activeAction() === "join"}>
+                    <div class="sql-structure-join-fields">
+                      <label class="ui-field">
+                        <span>{t("sqlPage.structure.leftColumn")}</span>
+                        <select
+                          class="ui-input"
+                          value={joinLeftColumn()}
+                          disabled={busy() || Boolean(proposal())}
+                          onChange={(event) => {
+                            const value = event.currentTarget.value;
+                            const selectedType = ready()?.context.parser.columns
+                              .find((column) => column.name === value)?.type;
+                            setJoinLeftColumn(value);
+                            const counterpartType = ready()?.context.parser
+                              .columns.find((column) =>
+                                column.name === joinRightColumn()
+                              )?.type;
+                            if (selectedType !== counterpartType) {
+                              setJoinRightColumn(
+                                joinableColumns().find((column) =>
+                                  column.type === selectedType
+                                )?.name ?? value,
+                              );
+                            }
+                          }}
+                        >
+                          <For each={joinColumnChoices()}>
+                            {(column) => (
+                              <option value={column.name}>{column.name}</option>
+                            )}
+                          </For>
+                        </select>
+                      </label>
+                      <label class="ui-field">
+                        <span>{t("sqlPage.structure.rightColumn")}</span>
+                        <select
+                          class="ui-input"
+                          value={joinRightColumn()}
+                          disabled={busy() || Boolean(proposal())}
+                          onChange={(event) => {
+                            const value = event.currentTarget.value;
+                            const selectedType = ready()?.context.parser.columns
+                              .find((column) => column.name === value)?.type;
+                            setJoinRightColumn(value);
+                            const counterpartType = ready()?.context.parser
+                              .columns.find((column) =>
+                                column.name === joinLeftColumn()
+                              )?.type;
+                            if (selectedType !== counterpartType) {
+                              setJoinLeftColumn(
+                                joinableColumns().find((column) =>
+                                  column.type === selectedType
+                                )?.name ?? value,
+                              );
+                            }
+                          }}
+                        >
+                          <For each={joinColumnChoices()}>
+                            {(column) => (
+                              <option value={column.name}>{column.name}</option>
+                            )}
+                          </For>
+                        </select>
+                      </label>
+                    </div>
+                  </Show>
+
                   <Show when={activeAction() === "filter"}>
                     <div class="sql-structure-filter-list">
                       <For each={filters()}>
@@ -1248,13 +1434,24 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                               filter.column,
                             );
                           const variables = () => variablesFor(filter.column);
-                          const allowedColumns = () => {
-                            const allowed = filterableColumns().map((item) =>
-                              item.name
+                          const allowedChoices = () => {
+                            const choices = columnChoices(filterableColumns());
+                            const value = selectedColumnChoice(
+                              filter.column,
+                              filter.qualifier,
                             );
-                            return allowed.includes(filter.column)
-                              ? allowed
-                              : [filter.column, ...allowed];
+                            return choices.some((choice) =>
+                                choice.value === value
+                              )
+                              ? choices
+                              : [{
+                                column: filter.column,
+                                qualifier: filter.qualifier,
+                                value,
+                                label: filter.qualifier
+                                  ? `${filter.qualifier.name}.${filter.column}`
+                                  : filter.column,
+                              }, ...choices];
                           };
                           const rowEditable = () =>
                             Boolean(
@@ -1267,17 +1464,31 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                                 <span>{t("sqlPage.structure.column")}</span>
                                 <select
                                   class="ui-input"
-                                  value={filter.column}
+                                  value={selectedColumnChoice(
+                                    filter.column,
+                                    filter.qualifier,
+                                  )}
                                   disabled={busy() || Boolean(proposal()) ||
                                     !rowEditable()}
                                   onChange={(event) =>
-                                    updateFilter(index(), {
-                                      column: event.currentTarget.value,
-                                    })}
+                                    (() => {
+                                      const selected = choiceForValue(
+                                        event.currentTarget.value,
+                                        allowedChoices(),
+                                      );
+                                      if (selected) {
+                                        updateFilter(index(), {
+                                          column: selected.column,
+                                          qualifier: selected.qualifier,
+                                        });
+                                      }
+                                    })()}
                                 >
-                                  <For each={allowedColumns()}>
-                                    {(name) => (
-                                      <option value={name}>{name}</option>
+                                  <For each={allowedChoices()}>
+                                    {(choice) => (
+                                      <option value={choice.value}>
+                                        {choice.label}
+                                      </option>
                                     )}
                                   </For>
                                 </select>
@@ -1389,31 +1600,35 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                               <span>{t("sqlPage.structure.column")}</span>
                               <select
                                 class="ui-input"
-                                value={sort.column}
+                                value={selectedColumnChoice(
+                                  sort.column,
+                                  sort.qualifier,
+                                )}
                                 onChange={(event) =>
-                                  setSorts((items) =>
-                                    items.map((item, i) =>
-                                      i === index()
-                                        ? {
-                                          ...item,
-                                          column: event.currentTarget.value,
-                                        }
-                                        : item
-                                    )
-                                  )}
+                                  (() => {
+                                    const selected = choiceForValue(
+                                      event.currentTarget.value,
+                                      columnChoices(sortableColumns()),
+                                    );
+                                    if (!selected) return;
+                                    setSorts((items) =>
+                                      items.map((item, i) =>
+                                        i === index()
+                                          ? {
+                                            ...item,
+                                            column: selected.column,
+                                            qualifier: selected.qualifier,
+                                          }
+                                          : item
+                                      )
+                                    );
+                                  })()}
                               >
-                                <For
-                                  each={[
-                                    ...new Set([
-                                      sort.column,
-                                      ...sortableColumns().map((column) =>
-                                        column.name
-                                      ),
-                                    ]),
-                                  ]}
-                                >
-                                  {(name) => (
-                                    <option value={name}>{name}</option>
+                                <For each={columnChoices(sortableColumns())}>
+                                  {(choice) => (
+                                    <option value={choice.value}>
+                                      {choice.label}
+                                    </option>
                                   )}
                                 </For>
                               </select>
@@ -1459,8 +1674,15 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                         type="button"
                         class="ui-button ui-button-secondary"
                         onClick={addSort}
-                        disabled={!sortableColumns().some((column) =>
-                          !sorts().some((sort) => sort.column === column.name)
+                        disabled={!columnChoices(sortableColumns()).some(
+                          (choice) =>
+                            !sorts().some((sort) =>
+                              selectedColumnChoice(
+                                sort.column,
+                                sort.qualifier,
+                              ) ===
+                                choice.value
+                            ),
                         )}
                       >
                         {t("sqlPage.structure.addSort")}
@@ -1686,6 +1908,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                         activeAction() === "columns" &&
                         !projectionEditValid()
                       ) ||
+                        (activeAction() === "join" && !joinOperationValid()) ||
                         (activeAction() === "filter" && !filterRowsValid()) ||
                         (activeAction() === "sort" && !sortRowsValid()) ||
                         (activeAction() === "aggregate" &&

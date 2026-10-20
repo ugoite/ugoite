@@ -193,3 +193,78 @@ Deno.test("SQL feature matrix aggregate catalog remains present in the typed UI 
     true,
   );
 });
+
+Deno.test("JOIN editor coverage is bounded without changing runtime admission", async () => {
+  const [backendSource, domainSource, toolbarSource] = await Promise.all([
+    read("crates/ugoite-iceberg/src/index.rs"),
+    read("crates/ugoite-domain/src/sql_structure.rs"),
+    read("frontend/src/components/SqlStructureToolbar.tsx"),
+  ]);
+  const joinConstruct = matrix.editor.constructs.find((construct: {
+    id: string;
+  }) => construct.id === "joins");
+  assertEquals(joinConstruct.backend_admission, "planner_decides");
+  assertEquals(joinConstruct.editor_coverage, "bounded");
+  assertEquals(
+    joinConstruct.limits.includes(
+      "one INNER self-join of the selected Form with explicit distinct aliases",
+    ),
+    true,
+  );
+  assertEquals(
+    joinConstruct.limits.includes(
+      "ON must be left_alias.column = right_alias.column with matching supported scalar types; reversed equality operands fail closed",
+    ),
+    true,
+  );
+  assertEquals(
+    joinConstruct.limits.includes(
+      "WHERE supports AND trees of qualified parameter comparisons plus IS NULL/IS NOT NULL on qualified columns; ORDER BY supports simple qualified columns with ASC/DESC and no NULLS FIRST/LAST; unqualified references fail closed",
+    ),
+    true,
+  );
+  assertEquals(
+    joinConstruct.limits.includes(
+      "adding a join qualifies existing supported single-relation WHERE/ORDER BY columns with the left alias and preserves surrounding clause text",
+    ),
+    true,
+  );
+  assertEquals(
+    matrix.editor.operations.some((operation: { action: string }) =>
+      operation.action === "join"
+    ),
+    true,
+  );
+  assertEquals(
+    matrix.editor.operations.find((operation: { action: string }) =>
+      operation.action === "join"
+    )?.toolbar_category,
+    "structure",
+  );
+  assertEquals(
+    toolbarSource.includes('kind: action === "join" ? "structure" : action'),
+    true,
+  );
+  assertEquals(toolbarSource.includes('? "plus"'), false);
+  assertEquals(toolbarSource.includes('"join"'), true);
+  assertEquals(domainSource.includes("JoinOperator::Inner"), true);
+  assertEquals(domainSource.includes("resolve_column_reference"), true);
+  assertEquals(domainSource.includes("qualify_join_input_references"), true);
+  assertEquals(
+    domainSource.includes("SqlStructureReason::JoinUnsupported"),
+    true,
+  );
+
+  const statementGate = backendSource.slice(
+    backendSource.indexOf("pub fn validate_read_only_sql"),
+    backendSource.indexOf(
+      "pub async fn query_index_authorized",
+      backendSource.indexOf("pub fn validate_read_only_sql"),
+    ),
+  );
+  assertEquals(statementGate.includes("parsed.len() != 1"), true);
+  assertEquals(
+    statementGate.includes("query_contains_only_select_bodies(query)"),
+    true,
+  );
+});

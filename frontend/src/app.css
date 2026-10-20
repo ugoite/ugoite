@@ -5120,6 +5120,13 @@ a.tool {
     overflow-x: hidden;
   }
 
+  /* Keep nested horizontal scrollers, such as the SQL action row, from
+   * extending the document's scrollable width. `clip` does not create a
+   * second scroll container around their own scrollport. */
+  .main {
+    overflow-x: clip;
+  }
+
   /* iOS Safari zooms focused text-entry controls smaller than 16px.
    * Single base rule covers every text input/select/textarea (login,
    * setup, settings, search, forms, entries); component rules keep only
@@ -5345,6 +5352,7 @@ a.tool {
 }
 
 .sql-structure-dialog-content,
+.sql-structure-join-fields,
 .sql-structure-column-list,
 .sql-structure-filter-list,
 .sql-structure-sort-list,

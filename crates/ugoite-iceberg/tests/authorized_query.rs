@@ -352,6 +352,7 @@ async fn context_makes_unapproved_forms_entries_columns_and_system_objects_unres
     }
     for sql in [
         "SELECT * FROM tasks t JOIN tasks other ON t.field_100 = other.field_100",
+        "SELECT * FROM tasks AS \"_ugoite_left\" INNER JOIN tasks AS \"_ugoite_right\" ON \"_ugoite_left\".\"field_100\" = \"_ugoite_right\".\"field_100\"",
         "SELECT * FROM (SELECT * FROM tasks) nested",
         "SELECT t.field_100 FROM tasks AS t",
     ] {
@@ -361,6 +362,19 @@ async fn context_makes_unapproved_forms_entries_columns_and_system_objects_unres
             1
         );
     }
+    let joined_filter_order = context
+        .execute(
+            "SELECT * FROM tasks AS left_rows INNER JOIN tasks AS right_rows ON left_rows.field_100 = right_rows.field_100 WHERE right_rows.field_100 IS NOT NULL ORDER BY left_rows.field_100 ASC LIMIT 8",
+        )
+        .await?;
+    assert_eq!(
+        joined_filter_order
+            .iter()
+            .map(|batch| batch.num_rows())
+            .sum::<usize>(),
+        1,
+        "the planner admits a joined query with qualified WHERE and ORDER BY"
+    );
     assert_eq!(
         context
             .execute("SELECT field_100 AS entry_id FROM tasks")

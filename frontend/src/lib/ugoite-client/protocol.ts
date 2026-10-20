@@ -533,12 +533,14 @@ export type SqlStructureFilterOperator =
 
 export type SqlStructureFilter = {
   column: string;
+  qualifier?: SqlStructureAlias;
   operator: SqlStructureFilterOperator;
   parameter?: string;
 };
 
 export type SqlStructureSort = {
   column: string;
+  qualifier?: SqlStructureAlias;
   direction: "asc" | "desc";
 };
 
@@ -552,6 +554,14 @@ export type SqlStructureAggregateFunction =
 export type SqlStructureAlias = {
   name: string;
   quoted: boolean;
+};
+
+export type SqlStructureJoin = {
+  relation: string;
+  left_alias: SqlStructureAlias;
+  right_alias: SqlStructureAlias;
+  left_column: string;
+  right_column: string;
 };
 
 export type SqlStructureAggregate = {
@@ -569,6 +579,7 @@ export type SqlStructureLiteral =
 
 export type SqlStructureOperation =
   | { kind: "set_relation"; relation: string }
+  | { kind: "set_join"; left_column: string; right_column: string }
   | { kind: "set_columns"; columns: string[] }
   | { kind: "set_literal_projection"; values: SqlStructureLiteral[] }
   | { kind: "set_filters"; filters: SqlStructureFilter[] }
@@ -624,9 +635,11 @@ export type SqlStructureAnalysis = {
   group_by: string[];
   distinct: boolean;
   order_by: SqlStructureSort[];
+  joins: SqlStructureJoin[];
   referenced_variables: string[];
   stable_pagination: boolean;
   capabilities: {
+    join: SqlStructureActionCapability;
     columns: SqlStructureActionCapability;
     filter: SqlStructureActionCapability;
     sort: SqlStructureActionCapability;
