@@ -72,6 +72,9 @@ fn sql_document_request_limit(action: &str) -> Option<usize> {
         "domain.parse_sql_document" => Some(MAX_SQL_DOCUMENT_REQUEST_BYTES),
         "domain.rename_sql_document_parameter" => Some(MAX_SQL_DOCUMENT_RENAME_REQUEST_BYTES),
         "domain.apply_sql_document_edit_transaction" => Some(MAX_SQL_DOCUMENT_EDIT_REQUEST_BYTES),
+        "domain.apply_sql_document_replacement_transaction" => {
+            Some(MAX_SQL_DOCUMENT_EDIT_REQUEST_BYTES)
+        }
         "domain.apply_sql_document_node_edit_transaction" => {
             Some(MAX_SQL_DOCUMENT_EDIT_REQUEST_BYTES)
         }
@@ -238,6 +241,9 @@ fn invoke_domain(request: serde_json::Value) -> String {
         }
         Some("domain.apply_sql_document_edit_transaction") => {
             return invoke_sql_document_edit_transaction(request)
+        }
+        Some("domain.apply_sql_document_replacement_transaction") => {
+            return invoke_sql_document_replacement_transaction(request)
         }
         Some("domain.apply_sql_document_node_edit_transaction") => {
             return invoke_sql_document_node_edit_transaction(request)
@@ -658,6 +664,33 @@ fn invoke_sql_document_edit_transaction(request: serde_json::Value) -> String {
     match ugoite_domain::sql_document::apply_sql_document_edit_transaction(
         &protocol_request.current_source,
         &protocol_request.transaction,
+    ) {
+        Ok(result) => serialize_sql_document_edit_response(&result)
+            .unwrap_or_else(|()| sql_document_response_too_large()),
+        Err(error) => sql_document_edit_error(error),
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SqlDocumentReplacementProtocolRequest {
+    current_source: String,
+    replacement_source: String,
+}
+
+fn invoke_sql_document_replacement_transaction(request: serde_json::Value) -> String {
+    let Some(payload) = request.get("value").cloned() else {
+        return sql_document_edit_invalid_request();
+    };
+    let Ok(protocol_request) =
+        serde_json::from_value::<SqlDocumentReplacementProtocolRequest>(payload)
+    else {
+        return sql_document_edit_invalid_request();
+    };
+
+    match ugoite_domain::sql_document::apply_sql_document_replacement_transaction(
+        &protocol_request.current_source,
+        &protocol_request.replacement_source,
     ) {
         Ok(result) => serialize_sql_document_edit_response(&result)
             .unwrap_or_else(|()| sql_document_response_too_large()),
@@ -1452,6 +1485,50 @@ mod tests {
     }
 
     #[test]
+    fn sql_structure_protocol_preserves_trivia_for_aggregate_and_distinct_edits() {
+        let context = serde_json::json!({
+            "relation": "Task",
+            "columns": [
+                {"name": "_ugoite_id", "type": "string"},
+                {"name": "field_101", "type": "string"}
+            ],
+            "variables": [],
+            "stable_key": []
+        });
+        for (sql, operation, expected) in [
+            (
+                "-- heading\nSELECT /* projection lead */ * FROM \"Task\" /* tail */",
+                serde_json::json!({
+                    "kind": "set_aggregates",
+                    "aggregates": [{
+                        "function": "count",
+                        "column": null,
+                        "arguments": [],
+                        "distinct": false,
+                        "alias": null
+                    }]
+                }),
+                "-- heading\nSELECT /* projection lead */ COUNT(*) FROM \"Task\" /* tail */",
+            ),
+            (
+                "-- heading\nSELECT /* after select */ \"field_101\" FROM \"Task\" /* tail */",
+                serde_json::json!({"kind": "set_distinct", "distinct": true}),
+                "-- heading\nSELECT DISTINCT /* after select */ \"field_101\" FROM \"Task\" /* tail */",
+            ),
+        ] {
+            let request = serde_json::json!({
+                "action": "domain.propose_sql_structure_operation",
+                "value": {"sql": sql, "context": context, "operation": operation}
+            });
+            let response: Value = serde_json::from_str(&super::invoke_json(&request.to_string()))
+                .expect("JSON response");
+            assert_eq!(response["ok"], true, "{response}");
+            assert_eq!(response["value"]["status"], "supported", "{response}");
+            assert_eq!(response["value"]["proposed_sql"], expected);
+        }
+    }
+
+    #[test]
     fn sql_structure_protocol_rejects_missing_filter_expression() {
         let request = serde_json::json!({
             "action": "domain.propose_sql_structure_operation",
@@ -1795,6 +1872,41 @@ mod tests {
             response["value"]["document"]["source"],
             "-- 日本語\nSELECT 10 FROM \"G\" WHERE n = 3"
         );
+
+        let undo_request = serde_json::json!({
+            "action": "domain.apply_sql_document_edit_transaction",
+            "value": {
+                "current_source": native.document.source,
+                "transaction": native.undo,
+            },
+        });
+        let undo_response: Value =
+            serde_json::from_str(&super::invoke_json(&undo_request.to_string())).unwrap();
+        assert_eq!(undo_response["ok"], true, "{undo_response}");
+        assert_eq!(undo_response["value"]["document"]["source"], source);
+    }
+
+    #[test]
+    fn sql_document_replacement_protocol_preserves_unchanged_source_and_matches_native() {
+        let source = "SELECT a /* keep */, b FROM \"G\" WHERE id = 1 -- tail";
+        let replacement = "SELECT total_a /* keep */, total_b FROM \"G\" WHERE id = 2 -- tail";
+        let native = ugoite_domain::sql_document::apply_sql_document_replacement_transaction(
+            source,
+            replacement,
+        )
+        .unwrap();
+        let request = serde_json::json!({
+            "action": "domain.apply_sql_document_replacement_transaction",
+            "value": {
+                "current_source": source,
+                "replacement_source": replacement,
+            },
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"], serde_json::to_value(&native).unwrap());
+        assert_eq!(response["value"]["document"]["source"], replacement);
 
         let undo_request = serde_json::json!({
             "action": "domain.apply_sql_document_edit_transaction",

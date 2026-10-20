@@ -569,6 +569,36 @@ pub fn propose_sql_structure_operation(
             Ok(sql) => sql,
             Err(reason) => return rejected_proposal(base_sql, reason),
         },
+        SqlStructureOperation::SetAggregates { aggregates } => {
+            let Some(projection_range) =
+                aggregate_projection_source_range(&base_sql, &parsed.query)
+            else {
+                return rejected_proposal(base_sql, SqlStructureReason::AggregateUnsupported);
+            };
+            if let Err(reason) = set_aggregates(&mut parsed.query, context, aggregates) {
+                return rejected_proposal(base_sql, reason);
+            }
+            let SetExpr::Select(select) = parsed.query.body.as_ref() else {
+                return rejected_proposal(base_sql, SqlStructureReason::SetOperationUnsupported);
+            };
+            let replacement = select
+                .projection
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
+            let Some(sql) = replace_sql_source_range(&base_sql, projection_range, &replacement)
+            else {
+                return rejected_proposal(base_sql, SqlStructureReason::AggregateUnsupported);
+            };
+            sql
+        }
+        SqlStructureOperation::SetDistinct { distinct } => {
+            match rewrite_distinct(&base_sql, &parsed.query, distinct) {
+                Ok(sql) => sql,
+                Err(reason) => return rejected_proposal(base_sql, reason),
+            }
+        }
         operation => {
             let mutation = match operation {
                 SqlStructureOperation::SetRelation { .. } => {
@@ -590,14 +620,14 @@ pub fn propose_sql_structure_operation(
                     order_by,
                     &mut added_stable_tie_breakers,
                 ),
-                SqlStructureOperation::SetAggregates { aggregates } => {
-                    set_aggregates(&mut parsed.query, context, aggregates)
+                SqlStructureOperation::SetAggregates { .. } => {
+                    unreachable!("aggregate edits use a source-ranged projection replacement")
                 }
                 SqlStructureOperation::SetGroupBy { .. } => {
                     unreachable!("SetGroupBy is handled by the source-preserving rewrite")
                 }
-                SqlStructureOperation::SetDistinct { distinct } => {
-                    set_distinct(&mut parsed.query, distinct)
+                SqlStructureOperation::SetDistinct { .. } => {
+                    unreachable!("distinct edits use a source-ranged keyword edit")
                 }
                 SqlStructureOperation::SetColumns { .. } => unreachable!(
                     "SetColumns is handled by the source-preserving projection rewrite"
@@ -2956,6 +2986,50 @@ fn projection_source_range(sql: &str, query: &Query) -> Option<SqlSourceRange> {
     Some(range)
 }
 
+fn aggregate_projection_source_range(sql: &str, query: &Query) -> Option<SqlSourceRange> {
+    let SetExpr::Select(select) = query.body.as_ref() else {
+        return None;
+    };
+    let select_keyword = source_range_from_span(sql, select.select_token.0.span)?;
+    let document = parse_sql_document(sql);
+    if document.status != SqlDocumentStatus::Parsed {
+        return None;
+    }
+    let select_node = document.nodes.iter().find(|node| {
+        node.kind == crate::sql_document::SqlDocumentNodeKind::Select
+            && node
+                .range
+                .is_some_and(|range| range.start == select_keyword.start)
+    })?;
+    let projection_ranges = document
+        .nodes
+        .iter()
+        .filter(|node| {
+            node.kind == crate::sql_document::SqlDocumentNodeKind::SelectItem
+                && node.parent == Some(select_node.id)
+        })
+        .map(|node| node.range)
+        .collect::<Option<Vec<_>>>()?;
+    if projection_ranges.len() != select.projection.len() {
+        return None;
+    }
+    let first = projection_ranges.first()?;
+    let last = projection_ranges.last()?;
+    let range = SqlSourceRange {
+        start: first.start,
+        end: last.end,
+    };
+    if range.start >= range.end
+        || projection_ranges
+            .windows(2)
+            .any(|pair| pair[0].end > pair[1].start)
+        || has_comment_token_in_range(sql, range)?
+    {
+        return None;
+    }
+    Some(range)
+}
+
 fn replace_sql_source_range(sql: &str, range: SqlSourceRange, replacement: &str) -> Option<String> {
     if range.start >= range.end {
         return None;
@@ -3585,9 +3659,70 @@ fn group_by_insertion_offset(sql: &str, select: &Select) -> Result<usize, SqlStr
     Ok(range.end)
 }
 
-fn set_distinct(query: &mut Query, distinct: bool) -> Result<(), SqlStructureReason> {
-    select_mut(query)?.distinct = distinct.then_some(Distinct::Distinct);
-    Ok(())
+fn rewrite_distinct(
+    sql: &str,
+    query: &Query,
+    distinct: bool,
+) -> Result<String, SqlStructureReason> {
+    let SetExpr::Select(select) = query.body.as_ref() else {
+        return Err(SqlStructureReason::SetOperationUnsupported);
+    };
+    let current = match select.distinct.as_ref() {
+        None | Some(Distinct::All) => false,
+        Some(Distinct::Distinct) => true,
+        Some(Distinct::On(_)) => return Err(SqlStructureReason::DistinctUnsupported),
+    };
+    if current == distinct {
+        return Ok(sql.to_owned());
+    }
+
+    let document = parse_sql_document(sql);
+    if document.status != SqlDocumentStatus::Parsed {
+        return Err(SqlStructureReason::DistinctUnsupported);
+    }
+    let select_range = source_range_from_span(sql, select.span())
+        .ok_or(SqlStructureReason::DistinctUnsupported)?;
+    let first_projection = select
+        .projection
+        .first()
+        .and_then(|item| source_range_from_span(sql, item.span()))
+        .ok_or(SqlStructureReason::DistinctUnsupported)?;
+    let keyword_range = |keyword: &str, start: usize| {
+        document.tokens.iter().find_map(|token| {
+            if token.kind != SqlDocumentTokenKind::Word
+                || token.range.start < start
+                || token.range.end > first_projection.start
+            {
+                return None;
+            }
+            sql.get(token.range.start..token.range.end)
+                .is_some_and(|text| text.eq_ignore_ascii_case(keyword))
+                .then_some(token.range)
+        })
+    };
+    let select_keyword = keyword_range("SELECT", select_range.start)
+        .ok_or(SqlStructureReason::DistinctUnsupported)?;
+
+    if distinct {
+        if matches!(select.distinct, Some(Distinct::All)) {
+            let all_keyword = keyword_range("ALL", select_keyword.end)
+                .ok_or(SqlStructureReason::DistinctUnsupported)?;
+            return replace_sql_source_range(sql, all_keyword, "DISTINCT")
+                .ok_or(SqlStructureReason::DistinctUnsupported);
+        }
+        let before = sql
+            .get(..select_keyword.end)
+            .ok_or(SqlStructureReason::DistinctUnsupported)?;
+        let after = sql
+            .get(select_keyword.end..)
+            .ok_or(SqlStructureReason::DistinctUnsupported)?;
+        return Ok(format!("{before} DISTINCT{after}"));
+    }
+
+    let distinct_keyword = keyword_range("DISTINCT", select_keyword.end)
+        .ok_or(SqlStructureReason::DistinctUnsupported)?;
+    replace_sql_source_range(sql, distinct_keyword, "")
+        .ok_or(SqlStructureReason::DistinctUnsupported)
 }
 
 fn validate_aggregate(
@@ -5426,6 +5561,104 @@ mod tests {
     }
 
     #[test]
+    fn distinct_edits_preserve_surrounding_comments_and_select_trivia() {
+        let context = context();
+        let sql = "-- heading\nSELECT /* after select */ \"field_101\" FROM \"Task\" /* tail */";
+        let enabled = propose_sql_structure_operation(
+            sql,
+            &context,
+            SqlStructureOperation::SetDistinct { distinct: true },
+        );
+
+        assert_eq!(enabled.status, SqlStructureStatus::Supported, "{enabled:?}");
+        let enabled_sql = enabled.proposed_sql.expect("distinct proposal");
+        assert!(enabled_sql.starts_with("-- heading\nSELECT DISTINCT /* after select */"));
+        assert!(enabled_sql.ends_with("/* tail */"));
+        assert_eq!(
+            analyze_sql_structure(&enabled_sql, &context).status,
+            SqlStructureStatus::Supported
+        );
+
+        let disabled = propose_sql_structure_operation(
+            &enabled_sql,
+            &context,
+            SqlStructureOperation::SetDistinct { distinct: false },
+        );
+        assert_eq!(disabled.status, SqlStructureStatus::Supported);
+        let disabled_sql = disabled.proposed_sql.expect("distinct removal proposal");
+        assert!(!disabled_sql.contains("DISTINCT"));
+        assert!(disabled_sql.contains("/* after select */"));
+        assert!(disabled_sql.ends_with("/* tail */"));
+        assert_eq!(
+            analyze_sql_structure(&disabled_sql, &context).status,
+            SqlStructureStatus::Supported
+        );
+
+        let select_all = propose_sql_structure_operation(
+            "SELECT ALL /* modifier */ \"field_101\" FROM \"Task\"",
+            &context,
+            SqlStructureOperation::SetDistinct { distinct: true },
+        );
+        assert_eq!(select_all.status, SqlStructureStatus::Supported);
+        assert!(select_all
+            .proposed_sql
+            .expect("replace ALL modifier")
+            .contains("SELECT DISTINCT /* modifier */"));
+    }
+
+    #[test]
+    fn aggregate_edits_rewrite_only_the_projection_and_keep_other_trivia() {
+        let context = context();
+        let sql = "-- heading\nSELECT /* projection lead */ * FROM \"Task\" /* tail */";
+        let proposal = propose_sql_structure_operation(
+            sql,
+            &context,
+            SqlStructureOperation::SetAggregates {
+                aggregates: vec![SqlStructureAggregate {
+                    function: SqlStructureAggregateFunction::Count,
+                    column: None,
+                    arguments: vec![],
+                    distinct: false,
+                    alias: None,
+                }],
+            },
+        );
+
+        assert_eq!(
+            proposal.status,
+            SqlStructureStatus::Supported,
+            "{proposal:?}"
+        );
+        let proposed_sql = proposal.proposed_sql.expect("aggregate proposal");
+        assert!(proposed_sql.starts_with("-- heading\nSELECT /* projection lead */ COUNT(*)"));
+        assert!(proposed_sql.ends_with("/* tail */"));
+        assert_eq!(
+            analyze_sql_structure(&proposed_sql, &context).status,
+            SqlStructureStatus::Supported
+        );
+
+        let commented_projection = propose_sql_structure_operation(
+            "SELECT \"field_101\" /* between items */, \"field_102\" FROM \"Task\"",
+            &context,
+            SqlStructureOperation::SetAggregates {
+                aggregates: vec![SqlStructureAggregate {
+                    function: SqlStructureAggregateFunction::Count,
+                    column: None,
+                    arguments: vec![],
+                    distinct: false,
+                    alias: None,
+                }],
+            },
+        );
+        assert_eq!(commented_projection.status, SqlStructureStatus::Unsupported);
+        assert_eq!(
+            commented_projection.base_sql,
+            "SELECT \"field_101\" /* between items */, \"field_102\" FROM \"Task\""
+        );
+        assert_eq!(commented_projection.proposed_sql, None);
+    }
+
+    #[test]
     fn edits_typed_relation_free_literal_projection_without_adding_a_relation() {
         let relation_free_context = SqlStructureContext {
             relation: String::new(),
@@ -6168,7 +6401,11 @@ mod tests {
                 aggregates: count_empty.aggregates.clone(),
             },
         );
-        assert_eq!(nullary_count_rewrite.status, SqlStructureStatus::Supported);
+        assert_eq!(
+            nullary_count_rewrite.status,
+            SqlStructureStatus::Supported,
+            "{nullary_count_rewrite:?}"
+        );
         assert!(nullary_count_rewrite
             .proposed_sql
             .expect("nullary COUNT canonical rewrite")

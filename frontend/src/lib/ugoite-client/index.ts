@@ -32,6 +32,7 @@ export {
   analyzeSqlStructure,
   applySqlDocumentEditTransaction,
   applySqlDocumentNodeEditTransaction,
+  applySqlDocumentReplacementTransaction,
   buildSpreadsheetCsvRequest,
   canonicalizeCompositionDocument,
   type CompiledVariableGraph,

@@ -4,6 +4,7 @@ import {
   analyzeSqlStructure,
   applySqlDocumentEditTransaction,
   applySqlDocumentNodeEditTransaction,
+  applySqlDocumentReplacementTransaction,
   buildSpreadsheetCsvRequest,
   canonicalizeCompositionDocument,
   compileVariableGraph,
@@ -429,6 +430,34 @@ describe("portable Ugoite API protocol WASM", () => {
     const edited = await applySqlDocumentEditTransaction(source, transaction);
     expect(edited.document.source).toBe('-- 日本語\nSELECT 2 FROM "G"');
     expect(edited.document.status).toBe("parsed");
+
+    const restored = await applySqlDocumentEditTransaction(
+      edited.document.source,
+      edited.undo,
+    );
+    expect(restored.document.source).toBe(source);
+  });
+
+  it("applies proposal replacements through a source-preserving Rust transaction", async () => {
+    const source = 'SELECT a /* keep */, b FROM "G" WHERE id = 1 -- tail';
+    const replacement =
+      'SELECT total_a /* keep */, total_b FROM "G" WHERE id = 2 -- tail';
+
+    const edited = await applySqlDocumentReplacementTransaction(
+      source,
+      replacement,
+    );
+    expect(edited.document.source).toBe(replacement);
+    expect(edited.document.status).toBe("parsed");
+    expect(edited.undo.edits.length).toBeGreaterThan(1);
+    expect(
+      edited.undo.edits.every((edit) =>
+        !edit.expected_text.includes("keep") &&
+        !edit.expected_text.includes("tail") &&
+        !edit.replacement.includes("keep") &&
+        !edit.replacement.includes("tail")
+      ),
+    ).toBe(true);
 
     const restored = await applySqlDocumentEditTransaction(
       edited.document.source,

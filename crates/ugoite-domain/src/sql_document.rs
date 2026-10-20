@@ -6,6 +6,7 @@
 //! authority for expression types and result schemas.
 
 use core::ops::ControlFlow;
+use dissimilar::Chunk;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
     Distinct, Expr, GroupByExpr, Join, LimitClause, OffsetRows, Query, Select, SelectItem, SetExpr,
@@ -387,6 +388,8 @@ pub struct SqlDocumentEditResult {
     pub undo: SqlDocumentEditTransaction,
 }
 
+const MAX_SQL_SOURCE_DIFF_BYTES: usize = 4096;
+
 /// Failure to apply an SQL Document edit transaction atomically.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -462,6 +465,146 @@ impl core::fmt::Display for SqlDocumentEditError {
             Self::OutputTooLarge => "SQL document edit output exceeds the size limit",
         };
         formatter.write_str(message)
+    }
+}
+
+/// Apply a Rust-generated SQL replacement as bounded, source-preserving edits.
+///
+/// Small proposals use a text diff to retain unchanged source fragments between
+/// edited regions. Larger proposals use a linear-time common-edge edit. The
+/// final result always comes from the normal guarded edit transaction and is
+/// reparsed by the SQL Document parser; this function does not admit or execute
+/// SQL.
+pub fn apply_sql_document_replacement_transaction(
+    current_source: &str,
+    replacement_source: &str,
+) -> Result<SqlDocumentEditResult, SqlDocumentEditError> {
+    if current_source.len() > MAX_SQL_DOCUMENT_BYTES
+        || replacement_source.len() > MAX_SQL_DOCUMENT_BYTES
+    {
+        return Err(SqlDocumentEditError::SourceTooLarge);
+    }
+
+    let edits = if current_source == replacement_source {
+        Vec::new()
+    } else if current_source.len() <= MAX_SQL_SOURCE_DIFF_BYTES
+        && replacement_source.len() <= MAX_SQL_SOURCE_DIFF_BYTES
+    {
+        source_diff_edits(current_source, replacement_source)
+            .filter(|edits| edits.len() <= MAX_SQL_DOCUMENT_EDITS)
+            .unwrap_or_else(|| vec![common_edge_replacement(current_source, replacement_source)])
+    } else {
+        vec![common_edge_replacement(current_source, replacement_source)]
+    };
+
+    let transaction = SqlDocumentEditTransaction {
+        expected_source: current_source.to_owned(),
+        edits,
+    };
+    let result = apply_sql_document_edit_transaction(current_source, &transaction)?;
+    if result.document.source != replacement_source {
+        return Err(SqlDocumentEditError::PreimageMismatch);
+    }
+    Ok(result)
+}
+
+fn source_diff_edits(
+    current_source: &str,
+    replacement_source: &str,
+) -> Option<Vec<SqlDocumentEdit>> {
+    let mut edits = Vec::new();
+    let mut source_offset = 0usize;
+    let mut edit_start = None;
+    let mut expected_text = String::new();
+    let mut replacement = String::new();
+
+    let flush = |edits: &mut Vec<SqlDocumentEdit>,
+                 edit_start: &mut Option<usize>,
+                 source_offset: usize,
+                 expected_text: &mut String,
+                 replacement: &mut String| {
+        if let Some(start) = edit_start.take() {
+            if expected_text != replacement {
+                edits.push(SqlDocumentEdit {
+                    range: SqlSourceRange {
+                        start,
+                        end: source_offset,
+                    },
+                    expected_text: core::mem::take(expected_text),
+                    replacement: core::mem::take(replacement),
+                });
+            } else {
+                expected_text.clear();
+                replacement.clear();
+            }
+        }
+    };
+
+    for chunk in dissimilar::diff(current_source, replacement_source) {
+        match chunk {
+            Chunk::Equal(text) => {
+                flush(
+                    &mut edits,
+                    &mut edit_start,
+                    source_offset,
+                    &mut expected_text,
+                    &mut replacement,
+                );
+                source_offset = source_offset.checked_add(text.len())?;
+            }
+            Chunk::Delete(text) => {
+                edit_start.get_or_insert(source_offset);
+                source_offset = source_offset.checked_add(text.len())?;
+                expected_text.push_str(text);
+            }
+            Chunk::Insert(text) => {
+                edit_start.get_or_insert(source_offset);
+                replacement.push_str(text);
+            }
+        }
+    }
+    flush(
+        &mut edits,
+        &mut edit_start,
+        source_offset,
+        &mut expected_text,
+        &mut replacement,
+    );
+    (source_offset == current_source.len()).then_some(edits)
+}
+
+fn common_edge_replacement(current_source: &str, replacement_source: &str) -> SqlDocumentEdit {
+    let prefix_bytes = current_source
+        .chars()
+        .zip(replacement_source.chars())
+        .take_while(|(current, replacement)| current == replacement)
+        .map(|(character, _)| character.len_utf8())
+        .sum::<usize>();
+    let max_suffix_bytes = current_source
+        .len()
+        .saturating_sub(prefix_bytes)
+        .min(replacement_source.len().saturating_sub(prefix_bytes));
+    let mut suffix_bytes = 0usize;
+    for (current, replacement) in current_source
+        .chars()
+        .rev()
+        .zip(replacement_source.chars().rev())
+    {
+        let character_bytes = current.len_utf8();
+        if current != replacement || suffix_bytes + character_bytes > max_suffix_bytes {
+            break;
+        }
+        suffix_bytes += character_bytes;
+    }
+    let current_end = current_source.len() - suffix_bytes;
+    let replacement_end = replacement_source.len() - suffix_bytes;
+    SqlDocumentEdit {
+        range: SqlSourceRange {
+            start: prefix_bytes,
+            end: current_end,
+        },
+        expected_text: current_source[prefix_bytes..current_end].to_owned(),
+        replacement: replacement_source[prefix_bytes..replacement_end].to_owned(),
     }
 }
 
@@ -2215,6 +2358,53 @@ mod tests {
             expected_source: source.to_owned(),
             edits,
         }
+    }
+
+    #[test]
+    fn replacement_transaction_preserves_unchanged_fragments_and_undoes_exactly() {
+        let source = "SELECT a /* keep this comment */, b FROM \"G\" WHERE id = 1 -- keep tail";
+        let replacement =
+            "SELECT total_a /* keep this comment */, total_b FROM \"G\" WHERE id = 2 -- keep tail";
+
+        let result = apply_sql_document_replacement_transaction(source, replacement).unwrap();
+        assert_eq!(result.document.source, replacement);
+        assert_eq!(result.document.status, SqlDocumentStatus::Parsed);
+        assert!(result.undo.edits.len() > 1);
+        assert!(result.undo.edits.iter().all(|edit| {
+            !edit.expected_text.contains("keep this comment")
+                && !edit.expected_text.contains("keep tail")
+                && !edit.replacement.contains("keep this comment")
+                && !edit.replacement.contains("keep tail")
+        }));
+
+        let restored =
+            apply_sql_document_edit_transaction(&result.document.source, &result.undo).unwrap();
+        assert_eq!(restored.document.source, source);
+    }
+
+    #[test]
+    fn replacement_transaction_uses_bounded_utf8_safe_edit_for_large_sources() {
+        let source = format!("SELECT old_{} FROM \"G\"", "a".repeat(5000));
+        let replacement = format!("SELECT new_{} FROM \"G\"", "a".repeat(5000));
+
+        let result = apply_sql_document_replacement_transaction(&source, &replacement).unwrap();
+        assert_eq!(result.document.source, replacement);
+        assert_eq!(result.undo.edits.len(), 1);
+        assert_eq!(result.undo.edits[0].expected_text, "new");
+        assert_eq!(result.undo.edits[0].replacement, "old");
+
+        let unicode_source = "SELECT '東京'";
+        let unicode_replacement = "SELECT '大阪'";
+        let unicode_result =
+            apply_sql_document_replacement_transaction(unicode_source, unicode_replacement)
+                .unwrap();
+        assert_eq!(unicode_result.document.source, unicode_replacement);
+        let restored = apply_sql_document_edit_transaction(
+            &unicode_result.document.source,
+            &unicode_result.undo,
+        )
+        .unwrap();
+        assert_eq!(restored.document.source, unicode_source);
     }
 
     #[test]

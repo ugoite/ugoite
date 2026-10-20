@@ -19,6 +19,7 @@ import {
   analyzeSqlStructure,
   applySqlDocumentEditTransaction,
   applySqlDocumentNodeEditTransaction,
+  applySqlDocumentReplacementTransaction,
   parseSqlDocument,
   prepareSqlStructureParser,
   proposeSqlStructureOperation,
@@ -2133,19 +2134,9 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     setBusy(true);
     setError(null);
     try {
-      const result = await applySqlDocumentEditTransaction(
+      const result = await applySqlDocumentReplacementTransaction(
         current.base_sql,
-        {
-          expected_source: current.base_sql,
-          edits: [{
-            range: {
-              start: 0,
-              end: new TextEncoder().encode(current.base_sql).byteLength,
-            },
-            expected_text: current.base_sql,
-            replacement: current.proposed_sql,
-          }],
-        },
+        current.proposed_sql,
       );
 
       // SQL Document parsing validates and returns the exact draft only. It

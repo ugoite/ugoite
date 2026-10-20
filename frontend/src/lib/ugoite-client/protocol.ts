@@ -530,6 +530,19 @@ export const applySqlDocumentEditTransaction = async (
     value: { current_source: currentSource, transaction },
   });
 
+/** Apply a Rust-generated replacement through a minimal SQL source transaction. */
+export const applySqlDocumentReplacementTransaction = async (
+  currentSource: string,
+  replacementSource: string,
+): Promise<SqlDocumentEditResult> =>
+  await invokeProtocol<SqlDocumentEditResult, SqlDocumentEditErrorCode>({
+    action: "domain.apply_sql_document_replacement_transaction",
+    value: {
+      current_source: currentSource,
+      replacement_source: replacementSource,
+    },
+  });
+
 /** Apply guarded replacements to parser-classified nodes through Rust. */
 export const applySqlDocumentNodeEditTransaction = async (
   currentSource: string,

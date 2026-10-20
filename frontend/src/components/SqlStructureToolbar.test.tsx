@@ -28,6 +28,7 @@ const {
   analyzeMock,
   applyDocumentEditMock,
   applyNodeEditMock,
+  applyReplacementMock,
   parseDocumentMock,
   prepareMock,
   proposeMock,
@@ -35,6 +36,7 @@ const {
   analyzeMock: vi.fn(),
   applyDocumentEditMock: vi.fn(),
   applyNodeEditMock: vi.fn(),
+  applyReplacementMock: vi.fn(),
   parseDocumentMock: vi.fn(),
   prepareMock: vi.fn(),
   proposeMock: vi.fn(),
@@ -44,6 +46,7 @@ vi.mock("~/lib/ugoite-client", () => ({
   analyzeSqlStructure: analyzeMock,
   applySqlDocumentEditTransaction: applyDocumentEditMock,
   applySqlDocumentNodeEditTransaction: applyNodeEditMock,
+  applySqlDocumentReplacementTransaction: applyReplacementMock,
   parseSqlDocument: parseDocumentMock,
   prepareSqlStructureParser: prepareMock,
   proposeSqlStructureOperation: proposeMock,
@@ -167,6 +170,7 @@ describe("SqlStructureToolbar adapter", () => {
     analyzeMock.mockReset();
     applyDocumentEditMock.mockReset();
     applyNodeEditMock.mockReset();
+    applyReplacementMock.mockReset();
     parseDocumentMock.mockReset();
     prepareMock.mockReset();
     proposeMock.mockReset();
@@ -204,6 +208,12 @@ describe("SqlStructureToolbar adapter", () => {
       }) => ({
         document: await parseDocumentMock(transaction.edits[0].replacement),
         undo: { expected_source: transaction.edits[0].replacement, edits: [] },
+      }),
+    );
+    applyReplacementMock.mockImplementation(
+      async (_currentSource: string, replacementSource: string) => ({
+        document: await parseDocumentMock(replacementSource),
+        undo: { expected_source: replacementSource, edits: [] },
       }),
     );
     proposeMock.mockImplementation(async (baseSql: string) => ({
@@ -454,7 +464,7 @@ describe("SqlStructureToolbar adapter", () => {
     );
   });
 
-  it("applies toolbar proposals through Rust SQL Document with UTF-8 ranges", async () => {
+  it("applies toolbar proposals through the Rust source-preserving transaction", async () => {
     const initialSql = '-- 注釈\nSELECT * FROM "Orders" ORDER BY "_ugoite_id"';
     const proposedSql =
       '-- 注釈\nSELECT "amount" FROM "Orders" ORDER BY "_ugoite_id" ASC';
@@ -494,17 +504,7 @@ describe("SqlStructureToolbar adapter", () => {
     );
 
     await waitFor(() => expect(onSqlChange).toHaveBeenCalledWith(proposedSql));
-    expect(applyDocumentEditMock).toHaveBeenCalledWith(initialSql, {
-      expected_source: initialSql,
-      edits: [{
-        range: {
-          start: 0,
-          end: new TextEncoder().encode(initialSql).byteLength,
-        },
-        expected_text: initialSql,
-        replacement: proposedSql,
-      }],
-    });
+    expect(applyReplacementMock).toHaveBeenCalledWith(initialSql, proposedSql);
     await waitFor(() =>
       expect(analyzeMock).toHaveBeenLastCalledWith(proposedSql, context.parser)
     );
@@ -539,7 +539,7 @@ describe("SqlStructureToolbar adapter", () => {
       requires_confirmation: true,
       added_stable_tie_breakers: [],
     });
-    applyDocumentEditMock.mockResolvedValue({
+    applyReplacementMock.mockResolvedValue({
       document: { status: "invalid_sql", source: proposedSql },
       undo: {},
     });
@@ -585,7 +585,7 @@ describe("SqlStructureToolbar adapter", () => {
       document: { status: string; source: string };
       undo: unknown;
     }) => void;
-    applyDocumentEditMock.mockImplementation(() =>
+    applyReplacementMock.mockImplementation(() =>
       new Promise((resolve) => resolveEdit = resolve)
     );
     let actions: readonly SQLWorkspaceAction[] = [];
@@ -612,7 +612,7 @@ describe("SqlStructureToolbar adapter", () => {
     fireEvent.click(
       await within(dialog).findByRole("button", { name: "Apply change" }),
     );
-    await waitFor(() => expect(applyDocumentEditMock).toHaveBeenCalledOnce());
+    await waitFor(() => expect(applyReplacementMock).toHaveBeenCalledOnce());
 
     setSql("SELECT 1");
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -620,7 +620,7 @@ describe("SqlStructureToolbar adapter", () => {
       document: { status: "parsed", source: proposedSql },
       undo: {},
     });
-    await applyDocumentEditMock.mock.results[0].value;
+    await applyReplacementMock.mock.results[0].value;
     expect(onSqlChange).not.toHaveBeenCalled();
   });
 
@@ -635,7 +635,7 @@ describe("SqlStructureToolbar adapter", () => {
       document: { status: string; source: string };
       undo: unknown;
     }) => void;
-    applyDocumentEditMock.mockImplementation(() =>
+    applyReplacementMock.mockImplementation(() =>
       new Promise((resolve) => resolveEdit = resolve)
     );
     let actions: readonly SQLWorkspaceAction[] = [];
@@ -662,7 +662,7 @@ describe("SqlStructureToolbar adapter", () => {
     fireEvent.click(
       await within(dialog).findByRole("button", { name: "Apply change" }),
     );
-    await waitFor(() => expect(applyDocumentEditMock).toHaveBeenCalledOnce());
+    await waitFor(() => expect(applyReplacementMock).toHaveBeenCalledOnce());
 
     setContexts([{ ...context, identity: `${context.identity}:changed` }]);
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -670,7 +670,7 @@ describe("SqlStructureToolbar adapter", () => {
       document: { status: "parsed", source: proposedSql },
       undo: {},
     });
-    await applyDocumentEditMock.mock.results[0].value;
+    await applyReplacementMock.mock.results[0].value;
     expect(onSqlChange).not.toHaveBeenCalled();
   });
 
