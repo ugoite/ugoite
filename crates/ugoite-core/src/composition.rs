@@ -375,6 +375,12 @@ pub struct PreviewCompositionPlan {
     pub dependencies: CompositionDependencyIndex,
 }
 
+struct ResolvePartsOptions<'a> {
+    allow_draft_descriptors: bool,
+    allow_unset_inputs: bool,
+    selected_query_ids: Option<&'a BTreeSet<String>>,
+}
+
 pub fn resolve_composition(
     input: ResolveInput<'_>,
 ) -> Result<ResolvedCompositionPlan, Vec<CompositionDiagnostic>> {
@@ -403,9 +409,11 @@ pub fn resolve_composition_with_query_selection(
         input.variables,
         unset,
         input.current_queries,
-        false,
-        false,
-        selected_query_ids,
+        ResolvePartsOptions {
+            allow_draft_descriptors: false,
+            allow_unset_inputs: false,
+            selected_query_ids,
+        },
     )?;
     Ok(ResolvedCompositionPlan {
         composition_revision: input.composition_revision,
@@ -470,8 +478,11 @@ pub fn resolve_composition_preview_with_query_selection(
         unset,
         current_queries,
         draft_fingerprint,
-        selected_query_ids,
-        false,
+        ResolvePartsOptions {
+            allow_draft_descriptors: true,
+            allow_unset_inputs: false,
+            selected_query_ids,
+        },
     )
 }
 
@@ -494,8 +505,11 @@ pub fn resolve_composition_authoring_preview_with_query_selection(
         unset,
         current_queries,
         draft_fingerprint,
-        selected_query_ids,
-        true,
+        ResolvePartsOptions {
+            allow_draft_descriptors: true,
+            allow_unset_inputs: true,
+            selected_query_ids,
+        },
     )
 }
 
@@ -506,8 +520,7 @@ fn resolve_composition_preview_with_query_selection_and_unset_inputs(
     unset: &[String],
     current_queries: &[CurrentQueryDescriptor<'_>],
     draft_fingerprint: String,
-    selected_query_ids: Option<&BTreeSet<String>>,
-    allow_unset_inputs: bool,
+    options: ResolvePartsOptions<'_>,
 ) -> Result<PreviewCompositionPlan, Vec<CompositionDiagnostic>> {
     let (variable_values, queries, component_bindings, dependencies) = resolve_parts(
         execution_id,
@@ -515,9 +528,7 @@ fn resolve_composition_preview_with_query_selection_and_unset_inputs(
         variables,
         unset,
         current_queries,
-        true,
-        allow_unset_inputs,
-        selected_query_ids,
+        options,
     )?;
     Ok(PreviewCompositionPlan {
         draft_fingerprint,
@@ -609,14 +620,12 @@ fn resolve_parts(
     variables: &BTreeMap<String, Value>,
     unset: &[String],
     current_queries: &[CurrentQueryDescriptor<'_>],
-    allow_draft_descriptors: bool,
-    allow_unset_inputs: bool,
-    selected_query_ids: Option<&BTreeSet<String>>,
+    options: ResolvePartsOptions<'_>,
 ) -> Result<ResolvedCompositionParts, Vec<CompositionDiagnostic>> {
     let graph = VariableGraph {
         variables: spec.variables.clone(),
     };
-    let (bindings, missing_inputs) = if allow_unset_inputs {
+    let (bindings, missing_inputs) = if options.allow_unset_inputs {
         bind_authoring_preview_inputs(&spec.variables, variables, unset)?
     } else {
         let bindings = bind_variables_with_unset(&spec.variables, variables, unset);
@@ -639,7 +648,7 @@ fn resolve_parts(
         .iter()
         .map(|node| node.id.clone())
         .collect::<BTreeSet<_>>();
-    if selected_query_ids.is_some_and(|selected| {
+    if options.selected_query_ids.is_some_and(|selected| {
         selected
             .iter()
             .any(|variable_id| !query_ids.contains(variable_id))
@@ -656,7 +665,7 @@ fn resolve_parts(
     let blocked_by_unset_inputs =
         queries_blocked_by_unset_inputs(&graph, &query_order, &missing_inputs);
     let mut query_binding_values = bindings.values.clone();
-    if allow_unset_inputs {
+    if options.allow_unset_inputs {
         for node in &spec.variables {
             if missing_inputs.contains(&node.id) {
                 if let VariableGraphNodeKind::Input { value_type, .. } = &node.kind {
@@ -705,7 +714,10 @@ fn resolve_parts(
         let VariableGraphNodeKind::Query { query, returns } = &mut node.kind else {
             continue;
         };
-        if selected_query_ids.is_some_and(|selected| !selected.contains(&node.id)) {
+        if options
+            .selected_query_ids
+            .is_some_and(|selected| !selected.contains(&node.id))
+        {
             continue;
         }
         let Some(descriptor) = current.get(node.id.as_str()).copied() else {
@@ -735,7 +747,7 @@ fn resolve_parts(
                 // Preview is an authorized planner boundary. Treat every
                 // client-supplied descriptor as untrusted, including nonempty
                 // or forged values, and replace it with planner output.
-                if !allow_draft_descriptors
+                if !options.allow_draft_descriptors
                     && (query.form_bindings != metadata.form_bindings
                         || query.schema_fingerprint != metadata.schema_fingerprint)
                 {
@@ -745,7 +757,7 @@ fn resolve_parts(
                     ));
                     continue;
                 }
-                let draft_returns = allow_draft_descriptors;
+                let draft_returns = options.allow_draft_descriptors;
                 if !returns_match_schema(returns, &metadata.result_columns) && !draft_returns {
                     diagnostics.push(CompositionDiagnostic::for_variable(
                         CompositionDiagnosticCode::QuerySchemaChanged,
@@ -823,7 +835,7 @@ fn resolve_parts(
                 }
                 // Saved SQL metadata is also re-derived for each preview;
                 // client descriptors never establish a result contract.
-                if !allow_draft_descriptors
+                if !options.allow_draft_descriptors
                     && (query.form_bindings != metadata.form_bindings
                         || query.schema_fingerprint != metadata.schema_fingerprint)
                 {
@@ -833,7 +845,7 @@ fn resolve_parts(
                     ));
                     continue;
                 }
-                let draft_returns = allow_draft_descriptors;
+                let draft_returns = options.allow_draft_descriptors;
                 if (!returns_match_schema(returns, &metadata.result_columns) && !draft_returns)
                     || !saved_arguments_match(&query.arguments, &metadata.parameter_types)
                 {
@@ -896,7 +908,11 @@ fn resolve_parts(
 
     let requested = query_nodes
         .iter()
-        .filter(|node| selected_query_ids.is_none_or(|selected| selected.contains(&node.id)))
+        .filter(|node| {
+            options
+                .selected_query_ids
+                .is_none_or(|selected| selected.contains(&node.id))
+        })
         .map(|node| node.id.clone())
         .collect::<Vec<_>>();
     let request_batch = crate::composition_query::compile_variable_graph_query_request_batch(
