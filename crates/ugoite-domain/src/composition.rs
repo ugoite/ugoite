@@ -19,12 +19,13 @@ mod yaml;
 use variable_binding::{compile_variable_graph_bindings, VariableGraphComponentBinding};
 
 pub use variable_graph::{
-    compile_variable_graph, validate_variable_graph_result, CompiledVariableGraph, VariableGraph,
-    VariableGraphArgumentBinding, VariableGraphColumn, VariableGraphDiagnostic,
-    VariableGraphDiagnosticCode, VariableGraphFormBinding, VariableGraphLiteral, VariableGraphNode,
-    VariableGraphNodeKind, VariableGraphQuery, VariableGraphQueryDefinition,
-    VariableGraphResultDiagnostic, VariableGraphResultDiagnosticCode, VariableGraphResultType,
-    VariableGraphScalarDescriptor, VariableGraphScalarType, VariableGraphValidatedResult,
+    compile_variable_graph, validate_variable_graph_result, variable_graph_dependency_order,
+    CompiledVariableGraph, VariableGraph, VariableGraphArgumentBinding, VariableGraphColumn,
+    VariableGraphDiagnostic, VariableGraphDiagnosticCode, VariableGraphFormBinding,
+    VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind, VariableGraphQuery,
+    VariableGraphQueryDefinition, VariableGraphResultDiagnostic, VariableGraphResultDiagnosticCode,
+    VariableGraphResultType, VariableGraphScalarDescriptor, VariableGraphScalarType,
+    VariableGraphValidatedResult,
 };
 pub use variable_graph_input::{
     parse_variable_graph_input, resolve_variable_graph_inputs, ResolvedVariableGraphInputs,
@@ -633,6 +634,50 @@ mod tests {
                 "transactions"
             ]
         );
+    }
+
+    #[test]
+    fn replaced_composition_shape_is_rejected_without_hidden_fields() {
+        for (field, invalid) in [
+            (
+                "spec.sources",
+                GRAPH.replace("  variables:\n", "  sources: []\n  variables:\n"),
+            ),
+            (
+                "component.source",
+                GRAPH.replace(
+                    "      variable: expense_rows\n",
+                    "      source: expense_rows\n",
+                ),
+            ),
+            (
+                "root tags",
+                GRAPH.replace(
+                    "name: Monthly expenses\n",
+                    "name: Monthly expenses\ntags: []\n",
+                ),
+            ),
+            (
+                "variable label",
+                GRAPH.replace(
+                    "    - id: month_start\n",
+                    "    - id: month_start\n      label: Start month\n",
+                ),
+            ),
+            (
+                "component label",
+                GRAPH.replace(
+                    "    - id: month_start_input\n",
+                    "    - id: month_start_input\n      label: Start month\n",
+                ),
+            ),
+        ] {
+            assert_eq!(
+                parse_composition_yaml(&invalid),
+                Err(CompositionDiagnosticCode::InvalidComposition),
+                "unexpectedly accepted {field}"
+            );
+        }
     }
 
     #[test]

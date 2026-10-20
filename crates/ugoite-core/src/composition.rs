@@ -10,11 +10,12 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use ugoite_domain::composition::{
-    CompositionComponent, CompositionDiagnosticCode, CompositionMetricPresentation,
-    CompositionResultFieldType, CompositionSpec, CompositionTextContent, VariableGraph,
-    VariableGraphColumn, VariableGraphFormBinding, VariableGraphInputDiagnosticCode,
-    VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind, VariableGraphQueryDefinition,
-    VariableGraphResultType, VariableGraphScalarDescriptor, VariableGraphScalarType,
+    variable_graph_dependency_order, CompositionComponent, CompositionDiagnosticCode,
+    CompositionMetricPresentation, CompositionResultFieldType, CompositionSpec,
+    CompositionTextContent, VariableGraph, VariableGraphColumn, VariableGraphFormBinding,
+    VariableGraphInputDiagnosticCode, VariableGraphLiteral, VariableGraphNode,
+    VariableGraphNodeKind, VariableGraphQueryDefinition, VariableGraphResultType,
+    VariableGraphScalarDescriptor, VariableGraphScalarType,
 };
 use ugoite_domain::id::{EntryId, RevisionId};
 use uuid::Uuid;
@@ -458,6 +459,11 @@ fn resolve_parts(
         .iter()
         .map(|node| node.id.clone())
         .collect::<BTreeSet<_>>();
+    let query_order = variable_graph_dependency_order(&graph).map_err(|_| {
+        vec![CompositionDiagnostic::without_variable(
+            CompositionDiagnosticCode::InvalidComposition,
+        )]
+    })?;
     let mut current = BTreeMap::new();
     for descriptor in current_queries {
         if !query_ids.contains(descriptor.variable_id())
@@ -483,7 +489,14 @@ fn resolve_parts(
         ),
     >::new();
     let mut diagnostics = Vec::new();
-    for node in &mut execution_graph.variables {
+    for variable_id in query_order {
+        let Some(node) = execution_graph
+            .variables
+            .iter_mut()
+            .find(|node| node.id == variable_id)
+        else {
+            continue;
+        };
         let VariableGraphNodeKind::Query { query, returns } = &mut node.kind else {
             continue;
         };
@@ -554,7 +567,9 @@ fn resolve_parts(
                     &query.definition,
                     &query.arguments,
                     &metadata.form_bindings,
+                    &returns,
                     &metadata.result_columns,
+                    &metadata.schema_fingerprint,
                 )
                 .map_err(|_| {
                     vec![CompositionDiagnostic::for_variable(
@@ -638,7 +653,9 @@ fn resolve_parts(
                     &query.definition,
                     &query.arguments,
                     &metadata.form_bindings,
+                    &returns,
                     &metadata.result_columns,
+                    &metadata.schema_fingerprint,
                 )
                 .map_err(|_| {
                     vec![CompositionDiagnostic::for_variable(
@@ -940,11 +957,20 @@ fn query_semantic_fingerprint(
     definition: &VariableGraphQueryDefinition,
     arguments: &[ugoite_domain::composition::VariableGraphArgumentBinding],
     form_bindings: &[VariableGraphFormBinding],
+    returns: &VariableGraphResultType,
     result_columns: &[VariableGraphColumn],
+    schema_fingerprint: &str,
 ) -> Result<String, serde_json::Error> {
     let mut arguments = arguments.to_vec();
     arguments.sort_by(|left, right| left.name.cmp(&right.name));
-    let descriptor = serde_json::to_vec(&(definition, arguments, form_bindings, result_columns))?;
+    let descriptor = serde_json::to_vec(&(
+        definition,
+        arguments,
+        form_bindings,
+        returns,
+        result_columns,
+        schema_fingerprint,
+    ))?;
     Ok(hex::encode(Sha256::digest(descriptor)))
 }
 
@@ -964,4 +990,54 @@ fn schema_is_well_formed(columns: &[VariableGraphColumn], fingerprint: &str) -> 
         && fingerprint
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn query_semantic_fingerprint_includes_scalar_or_table_return_shape() {
+        let definition = VariableGraphQueryDefinition::InlineSql {
+            sql: "SELECT 1 AS value".to_owned(),
+        };
+        let descriptor = VariableGraphScalarDescriptor {
+            scalar_type: VariableGraphScalarType::Integer,
+            nullable: false,
+        };
+        let columns = vec![VariableGraphColumn {
+            name: "value".to_owned(),
+            value_type: descriptor,
+        }];
+        let scalar = VariableGraphResultType::Scalar {
+            value_type: descriptor,
+        };
+        let table = VariableGraphResultType::Table {
+            columns: columns.clone(),
+        };
+        let args = [];
+        let bindings = [];
+        let schema_fingerprint = "0".repeat(64);
+
+        let scalar_fingerprint = query_semantic_fingerprint(
+            &definition,
+            &args,
+            &bindings,
+            &scalar,
+            &columns,
+            &schema_fingerprint,
+        )
+        .expect("scalar semantic fingerprint");
+        let table_fingerprint = query_semantic_fingerprint(
+            &definition,
+            &args,
+            &bindings,
+            &table,
+            &columns,
+            &schema_fingerprint,
+        )
+        .expect("table semantic fingerprint");
+
+        assert_ne!(scalar_fingerprint, table_fingerprint);
+    }
 }

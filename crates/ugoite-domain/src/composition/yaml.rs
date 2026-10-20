@@ -170,6 +170,30 @@ mod tests {
             parse_composition_yaml(&component_source),
             Err(CompositionDiagnosticCode::InvalidComposition)
         );
+        let root_tags = GRAPH.replace(
+            "name: Monthly expenses\n",
+            "name: Monthly expenses\ntags: []\n",
+        );
+        assert_eq!(
+            parse_composition_yaml(&root_tags),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+        let variable_label = GRAPH.replace(
+            "    - id: month_start\n",
+            "    - id: month_start\n      label: Start month\n",
+        );
+        assert_eq!(
+            parse_composition_yaml(&variable_label),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+        let component_label = GRAPH.replace(
+            "    - id: month_start_input\n",
+            "    - id: month_start_input\n      label: Start month\n",
+        );
+        assert_eq!(
+            parse_composition_yaml(&component_label),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
         let unknown = GRAPH.replace(
             "      kind: query
 ",

@@ -210,6 +210,69 @@ async fn draft_preview_resolves_without_publication() -> Result<()> {
 }
 
 #[tokio::test]
+async fn preview_plans_query_arguments_with_server_derived_upstream_types() -> Result<()> {
+    let (service, space_id, mut document, _) = setup_preview_space().await?;
+    let forged_type = VariableGraphScalarDescriptor {
+        scalar_type: VariableGraphScalarType::String,
+        nullable: false,
+    };
+    let query = |sql: &str, arguments| VariableGraphNodeKind::Query {
+        returns: VariableGraphResultType::Scalar {
+            value_type: forged_type,
+        },
+        query: VariableGraphQuery {
+            definition: VariableGraphQueryDefinition::InlineSql {
+                sql: sql.to_owned(),
+            },
+            arguments,
+            form_bindings: Vec::new(),
+            schema_fingerprint: String::new(),
+        },
+    };
+    document.spec.variables = vec![
+        VariableGraphNode {
+            id: "downstream".to_owned(),
+            kind: query(
+                "SELECT $upstream AS value",
+                vec![VariableGraphArgumentBinding {
+                    name: "upstream".to_owned(),
+                    variable: "upstream".to_owned(),
+                }],
+            ),
+        },
+        VariableGraphNode {
+            id: "upstream".to_owned(),
+            kind: query("SELECT 1 AS value", Vec::new()),
+        },
+    ];
+    document.spec.components = vec![CompositionComponent::Metric {
+        id: "metric".to_owned(),
+        variable: "downstream".to_owned(),
+        presentation: None,
+    }];
+    document.spec.layout.rows[0].items = vec![FlowItem::Component {
+        component: "metric".to_owned(),
+    }];
+
+    let canonical =
+        canonicalize_composition(&document).map_err(|code| anyhow::anyhow!(code.as_str()))?;
+    let preview = service
+        .preview_composition_local(&space_id, &canonical.yaml, &BTreeMap::new(), &[])
+        .await?;
+    assert!(preview.diagnostics.is_empty(), "{:?}", preview.diagnostics);
+    let plan = preview
+        .plan
+        .context("preview should resolve query dependencies")?;
+    for query in &plan.queries {
+        let VariableGraphResultType::Scalar { value_type } = &query.returns else {
+            anyhow::bail!("query results should remain scalar");
+        };
+        assert_eq!(value_type.scalar_type, VariableGraphScalarType::Integer);
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn draft_preview_resolves_sql_schema_without_executing_source_rows() -> Result<()> {
     let (service, space_id, mut document, form_id) = setup_preview_space().await?;
     let VariableGraphNodeKind::Query { query, .. } = &mut document.spec.variables[0].kind else {
@@ -355,7 +418,7 @@ async fn parameterized_saved_sql_placeholder_previews_and_saves_with_server_sche
                             nullable: false,
                         },
                         required: false,
-                        default: None,
+                        default: Some(VariableGraphLiteral::Integer(7)),
                     },
                 },
                 VariableGraphNode {
@@ -415,12 +478,7 @@ async fn parameterized_saved_sql_placeholder_previews_and_saves_with_server_sche
         canonicalize_composition(&document).map_err(|code| anyhow::anyhow!(code.as_str()))?;
 
     let preview = service
-        .preview_composition_local(
-            &space_id,
-            &canonical.yaml,
-            &BTreeMap::from([("minimum".to_string(), json!(7))]),
-            &[],
-        )
+        .preview_composition_local(&space_id, &canonical.yaml, &BTreeMap::new(), &[])
         .await?;
     assert!(preview.diagnostics.is_empty(), "{:?}", preview.diagnostics);
     let plan = preview
