@@ -3726,7 +3726,7 @@ mod tests {
             .filter_map(serde_json::Value::as_str)
             .collect::<BTreeSet<_>>();
         assert!(projection_limits.contains(
-            &"simple Form-column projection aliases are inspected and editable with quoted semantics preserved when each source column occurs once"
+            &"simple Form-column projection aliases are inspected and edited independently by SQL-document-scoped projection slot identity"
         ));
         assert!(projection_limits
             .contains(&"alias edits that would change ORDER BY output-name binding fail closed"));
