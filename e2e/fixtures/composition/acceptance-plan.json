@@ -6,7 +6,7 @@
       "id": "A01",
       "requirement": "Composition schema: entry_query, tags, and every label field make YAML invalid; there is no compatibility parser.",
       "selectors": [
-        { "path": "crates/ugoite-domain/src/composition.rs", "kind": "test", "name": "old_composition_v1_grammar_and_display_fields_fail_closed" }
+        { "path": "crates/ugoite-domain/src/composition/yaml.rs", "kind": "test", "name": "rejects_source_shaped_documents_and_unknown_graph_fields" }
       ]
     },
     {
@@ -22,28 +22,33 @@
       "id": "A03",
       "requirement": "Source binding: Form rename follows immutable identity; same-name Form replacement fails; ACL revocation or a missing Form stops with source_unavailable.",
       "selectors": [
-        { "path": "crates/ugoite-iceberg/src/service/composition_resolver.rs", "kind": "test", "name": "same_name_form_replacement_does_not_replace_exact_base_binding" },
-        { "path": "crates/ugoite-iceberg/src/service/composition_resolver.rs", "kind": "test", "name": "exact_base_preview_retains_form_id_after_rename" },
+        { "path": "crates/ugoite-iceberg/tests/test_composition_preview.rs", "kind": "test", "name": "preview_ignores_yaml_form_binding_spoof_and_keeps_exact_base_form" },
+        { "path": "crates/ugoite-iceberg/tests/test_composition_query_authorization.rs", "kind": "test", "name": "authorized_composition_metrics_recheck_current_entry_and_saved_sql_access" },
         { "path": "e2e/composition-source-acl-isolation.test.ts", "kind": "test", "name": "Viewer Metric and Table clear after Form or Saved SQL Read is revoked" }
-      ]
+      ],
+      "manual_evidence_gaps": ["Form rename and same-name replacement identity behavior, and Form-specific ACL revocation or missing-Form diagnostics are not covered by the vNext tests selected here"]
     },
     {
       "id": "A04",
       "requirement": "Saved SQL: pin an exact revision with no latest fallback, silent rebind, or mutation; duplication creates inline SQL.",
       "selectors": [
-        { "path": "crates/ugoite-core/src/composition.rs", "kind": "test", "name": "saved_sql_uses_exact_revision_and_keeps_parameters_stateless" },
-        { "path": "crates/ugoite-core/src/composition.rs", "kind": "test", "name": "saved_sql_rejects_changed_schema_and_non_exact_revision" },
-        { "path": "frontend/src/components/CompositionSourcePicker.test.tsx", "kind": "file" }
-      ]
+        { "path": "crates/ugoite-core/src/composition_query.rs", "kind": "test", "name": "compiles_saved_sql_to_exact_revision_without_copying_sql_text" },
+        { "path": "crates/ugoite-iceberg/tests/test_composition_preview.rs", "kind": "test", "name": "parameterized_saved_sql_placeholder_previews_and_saves_with_server_schema" },
+        { "path": "crates/ugoite-core/tests/composition_query_evaluation.rs", "kind": "test", "name": "evaluation_rejects_requests_with_unbound_parameters_or_stale_snapshot_ids" }
+      ],
+      "manual_evidence_gaps": ["Saved SQL duplication into inline SQL is not covered by the vNext tests selected here"]
     },
     {
       "id": "A05",
       "requirement": "Variables: Composition defaults match their type; required, unset, and invalid values remain distinct; SQL is never interpolated. Saved SQL defaults are typed in standalone preview.",
       "selectors": [
-        { "path": "crates/ugoite-core/src/composition.rs", "kind": "test", "name": "inline_sql_reports_unknown_and_missing_typed_parameters" },
-        { "path": "crates/ugoite-domain/src/composition.rs", "kind": "test", "name": "typed_input_parser_enforces_the_pinned_lexical_contract" },
-        { "path": "e2e/composition-invalid-variable-input.test.ts", "kind": "test", "name": "invalid_raw_input_blocks_query_and_stale_result" }
-      ]
+        { "path": "crates/ugoite-core/src/composition_query.rs", "kind": "test", "name": "missing_values_and_type_mismatches_are_stable" },
+        { "path": "crates/ugoite-core/src/composition_query.rs", "kind": "test", "name": "compiles_inline_sql_with_explicit_names_and_typed_values" },
+        { "path": "crates/ugoite-domain/src/composition/variable_graph.rs", "kind": "test", "name": "inline_parameter_binding_ignores_comments_literals_and_repeated_uses" },
+        { "path": "crates/ugoite-domain/src/composition/variable_graph_input.rs", "kind": "test", "name": "resolves_constants_defaults_and_supplied_values_without_coercion" },
+        { "path": "crates/ugoite-iceberg/tests/test_composition_preview.rs", "kind": "test", "name": "parameterized_saved_sql_placeholder_previews_and_saves_with_server_schema" }
+      ],
+      "manual_evidence_gaps": ["Browser invalid-input and stale-result behavior, and standalone-preview handling of Saved SQL defaults, are not verified by the vNext backend tests selected here"]
     },
     {
       "id": "A06",
