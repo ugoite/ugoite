@@ -17,6 +17,10 @@ Deno.test("SQL feature matrix binds the read-only gate and current UI actions", 
     matrix.backend.clause_admission,
     "datafusion_parser_and_planner",
   );
+  assertEquals(matrix.backend.parser_engine, {
+    crate: "datafusion",
+    version: "54.1.0",
+  });
   assertEquals(matrix.backend.closed_clause_allowlist, false);
 
   const [
@@ -24,6 +28,8 @@ Deno.test("SQL feature matrix binds the read-only gate and current UI actions", 
     toolbarSource,
     frontendSqlSource,
     sharedRules,
+    cargoLock,
+    icebergManifest,
   ] = await Promise.all([
     read("crates/ugoite-iceberg/src/index.rs"),
     read("frontend/src/components/SqlStructureToolbar.tsx"),
@@ -31,7 +37,17 @@ Deno.test("SQL feature matrix binds the read-only gate and current UI actions", 
     read("shared/sql/ugoite-sql-rules.json").then((contents) =>
       JSON.parse(contents)
     ),
+    read("Cargo.lock"),
+    read("crates/ugoite-iceberg/Cargo.toml"),
   ]);
+  const datafusionLockPackage = cargoLock.match(
+    /^name = "datafusion"\nversion = "([^"]+)"/m,
+  )?.[1];
+  assertEquals(datafusionLockPackage, matrix.backend.parser_engine.version);
+  const datafusionDependency = icebergManifest.match(
+    /^datafusion = "([^"]+)"/m,
+  )?.[1];
+  assertEquals(datafusionDependency, matrix.backend.parser_engine.version);
   const statementGate = backendSource.slice(
     backendSource.indexOf("pub fn validate_read_only_sql"),
     backendSource.indexOf(
@@ -70,6 +86,7 @@ Deno.test("SQL feature matrix binds the read-only gate and current UI actions", 
 
   const constructs = matrix.editor.constructs as Array<{
     id: string;
+    sql: string;
     backend_admission: string;
     editor_coverage: string;
     limits: string[];
@@ -137,6 +154,13 @@ Deno.test("SQL feature matrix binds the read-only gate and current UI actions", 
   );
   assertEquals(
     constructs.every((construct) =>
+      typeof construct.sql === "string" && construct.sql.length > 0 &&
+      Object.hasOwn(construct, "editor_coverage")
+    ),
+    true,
+  );
+  assertEquals(
+    constructs.every((construct) =>
       ["bounded", "context_only", "preserved_only", "none"].includes(
         construct.editor_coverage,
       )
@@ -172,10 +196,13 @@ Deno.test("SQL projection alias editing stays in the Rust-backed Columns contrac
 });
 
 Deno.test("SQL feature matrix aggregate catalog remains present in the typed UI picker", async () => {
-  const [frontendSql, domainSql] = await Promise.all([
-    read("frontend/src/lib/sql.ts"),
-    read("crates/ugoite-domain/src/sql_structure.rs"),
-  ]);
+  const [frontendSql, domainSql, functionRegistry, clientProtocol] =
+    await Promise.all([
+      read("frontend/src/lib/sql.ts"),
+      read("crates/ugoite-domain/src/sql_structure.rs"),
+      read("crates/ugoite-domain/src/sql_functions.rs"),
+      read("frontend/src/lib/ugoite-client/protocol.ts"),
+    ]);
   const aggregateCapability = frontendSql.slice(
     frontendSql.indexOf("const aggregateFunctionsForType"),
     frontendSql.indexOf("const sqlStructureTypeSupportsGrouping"),
@@ -187,8 +214,30 @@ Deno.test("SQL feature matrix aggregate catalog remains present in the typed UI 
     (operation: { action: string }) => operation.action === "aggregate",
   )?.functions as string[] | undefined;
 
+  const descriptors = [...functionRegistry.matchAll(
+    /const ([A-Z]+): SqlAggregateFunction = SqlAggregateFunction \{([\s\S]*?)\n\};/g,
+  )].map(([, , body]) => ({
+    name: body.match(/\n\s*name: "([^"]+)"/)?.[1],
+    aliases: [...(body.match(/\n\s*aliases: &\[([^\]]*)\]/)?.[1] ?? "")
+      .matchAll(/"([^"]+)"/g)].map(([, alias]) => alias),
+  }));
+  const registryFunctions = descriptors.map((descriptor) => descriptor.name);
+  const registryAliases = Object.fromEntries(
+    descriptors.flatMap((descriptor) =>
+      descriptor.aliases.map((alias) => [alias, descriptor.name])
+    ),
+  );
+  const frontendFunctionUnion = clientProtocol.match(
+    /export type SqlStructureAggregateFunction =([\s\S]*?);/,
+  )?.[1];
+  const frontendFunctions = [...(frontendFunctionUnion ?? "").matchAll(
+    /"([a-z_]+)"/g,
+  )].map(([, name]) => name);
+
   assertEquals(editorFunctions, backendFunctions);
-  assertEquals(backendAggregateAliases, { mean: "avg" });
+  assertEquals(registryFunctions, backendFunctions);
+  assertEquals(backendAggregateAliases, registryAliases);
+  assertEquals(frontendFunctions, backendFunctions);
   assertEquals(
     matrix.editor.aggregate_contract.checked,
     "name_catalog_only",

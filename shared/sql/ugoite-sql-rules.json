@@ -33,6 +33,10 @@
       "statement_gate": "exactly_one_select_query_statement",
       "query_body_form_restricted": true,
       "clause_admission": "datafusion_parser_and_planner",
+      "parser_engine": {
+        "crate": "datafusion",
+        "version": "54.1.0"
+      },
       "closed_clause_allowlist": false,
       "function_policy": "ReadOnlyAggregateV1",
       "functions": {
