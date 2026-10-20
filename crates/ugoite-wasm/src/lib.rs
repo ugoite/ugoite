@@ -685,6 +685,20 @@ fn sql_document_edit_error(error: ugoite_domain::sql_document::SqlDocumentEditEr
         ugoite_domain::sql_document::SqlDocumentEditError::SourceTooLarge => "source_too_large",
         ugoite_domain::sql_document::SqlDocumentEditError::SourceTooComplex => "source_too_complex",
         ugoite_domain::sql_document::SqlDocumentEditError::TooManyEdits => "too_many_edits",
+        ugoite_domain::sql_document::SqlDocumentEditError::DocumentNotParsed => {
+            "document_not_parsed"
+        }
+        ugoite_domain::sql_document::SqlDocumentEditError::ContractVersionMismatch => {
+            "contract_version_mismatch"
+        }
+        ugoite_domain::sql_document::SqlDocumentEditError::NodeNotFound => "node_not_found",
+        ugoite_domain::sql_document::SqlDocumentEditError::NodeKindMismatch => "node_kind_mismatch",
+        ugoite_domain::sql_document::SqlDocumentEditError::NodeRangeUnavailable => {
+            "node_range_unavailable"
+        }
+        ugoite_domain::sql_document::SqlDocumentEditError::DuplicateNodeTarget => {
+            "duplicate_node_target"
+        }
         ugoite_domain::sql_document::SqlDocumentEditError::InvalidRange => "invalid_range",
         ugoite_domain::sql_document::SqlDocumentEditError::RangeOutOfBounds => {
             "range_out_of_bounds"
@@ -1744,6 +1758,32 @@ mod tests {
             serde_json::from_str(&super::invoke_json(&undo_request.to_string())).unwrap();
         assert_eq!(undo_response["ok"], true, "{undo_response}");
         assert_eq!(undo_response["value"]["document"]["source"], source);
+    }
+
+    #[test]
+    fn sql_document_edit_error_codes_cover_typed_node_failures() {
+        use ugoite_domain::sql_document::SqlDocumentEditError as EditError;
+
+        let cases = [
+            (EditError::DocumentNotParsed, "document_not_parsed"),
+            (
+                EditError::ContractVersionMismatch,
+                "contract_version_mismatch",
+            ),
+            (EditError::NodeNotFound, "node_not_found"),
+            (EditError::NodeKindMismatch, "node_kind_mismatch"),
+            (EditError::NodeRangeUnavailable, "node_range_unavailable"),
+            (EditError::DuplicateNodeTarget, "duplicate_node_target"),
+        ];
+
+        for (error, expected_code) in cases {
+            let response: Value =
+                serde_json::from_str(&super::sql_document_edit_error(error)).unwrap();
+            assert_eq!(response["ok"], false);
+            assert_eq!(response["error"]["kind"], "sql_document_edit");
+            assert_eq!(response["error"]["code"], expected_code);
+            assert_eq!(response["error"]["message"], error.to_string());
+        }
     }
 
     #[test]
