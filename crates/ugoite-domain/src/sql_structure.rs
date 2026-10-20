@@ -11,8 +11,7 @@ use sqlparser::ast::{
     FunctionArgumentList, FunctionArguments, GroupByExpr, Ident, JoinConstraint, JoinOperator,
     LimitClause, ObjectName, ObjectNamePart, OrderBy, OrderByExpr, OrderByKind, OrderByOptions,
     Query, Select, SelectFlavor, SelectItem, SetExpr, Spanned, Statement, TableFactor,
-    TableWithJoins, Value,
-    UnaryOperator,
+    TableWithJoins, UnaryOperator, Value,
 };
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
@@ -2513,8 +2512,7 @@ fn supported_analysis(
                 } else if !columns_available && !literal_projection_enabled {
                     Some(SqlStructureReason::InvalidContext)
                 } else {
-                    (!structured_projection)
-                        .then_some(SqlStructureReason::ProjectionUnsupported)
+                    (!structured_projection).then_some(SqlStructureReason::ProjectionUnsupported)
                 },
             ),
             filter: capability(
