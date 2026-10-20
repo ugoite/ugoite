@@ -7,7 +7,9 @@
 
 use rig_agent::agent::{AgentRun, AgentRunStep, ModelTurn, ModelTurnOutcome};
 use rig_agent::completion::{AssistantContent, Message, Usage};
-use rig_agent::core::completion::message::{CallId, ToolName, ToolResultContent, UserContent};
+use rig_agent::core::completion::message::{
+    AssistantMessage, CallId, ToolName, ToolResultContent, UserContent,
+};
 use rig_agent::core::message::Text;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -146,11 +148,13 @@ impl RigAgentRuntime {
             AgentRunStep::CallTools { calls } => self.queue_tool_calls(calls),
             AgentRunStep::Done(response) => {
                 let job_id = self.active_job_id()?.to_owned();
+                let summary = response.output();
+                let meaningful = !summary.trim().is_empty();
                 self.clear();
                 Ok(AgentAction::Complete(JobOutcome {
                     job_id,
-                    meaningful: !response.output.trim().is_empty(),
-                    summary: response.output,
+                    meaningful,
+                    summary,
                 }))
             }
         }
@@ -181,6 +185,12 @@ impl RigAgentRuntime {
             }
         }
         for call in result.tool_calls {
+            if !call.arguments.is_object() {
+                return Err(Self::error(
+                    "invalid_tool_arguments",
+                    "model tool arguments must be a JSON object",
+                ));
+            }
             let name = ToolName::new(call.name).map_err(|_| {
                 Self::error("invalid_tool_name", "model tool call must have a name")
             })?;
@@ -202,7 +212,7 @@ impl RigAgentRuntime {
             .as_mut()
             .ok_or_else(|| Self::error("inactive", "Rig runtime has no active AgentRun"))?
             .model_response(ModelTurn::new(
-                None,
+                AssistantMessage::default(),
                 choice,
                 Usage::default(),
                 tool_names.clone(),
@@ -317,13 +327,13 @@ impl RigAgentRuntime {
                 "Rig emitted a pre-resolved tool result",
             ));
         }
-        let arguments = call.tool_call.function.arguments;
-        let Value::Object(arguments) = arguments else {
+        if call.tool_call.function.invalid_arguments.is_some() {
             return Err(Self::error(
                 "invalid_tool_arguments",
                 "Rig tool arguments must be a JSON object",
             ));
-        };
+        }
+        let arguments = call.tool_call.function.arguments;
         let name = call.tool_call.function.name;
         let effect = self
             .tools
@@ -575,7 +585,8 @@ fn message_text(message: &Message) -> String {
             })
             .collect::<Vec<_>>()
             .join("\n"),
-        Message::Assistant { content, .. } => content
+        Message::Assistant(assistant) => assistant
+            .content
             .iter()
             .map(|item| match item {
                 AssistantContent::Text(Text { text, .. }) => text.clone(),
@@ -596,17 +607,17 @@ fn message_to_model(message: Message) -> ModelMessage {
                 .collect::<Vec<_>>()
                 .join("\n"),
         },
-        Message::Assistant { content, .. } => {
+        Message::Assistant(assistant) => {
             let mut text = Vec::new();
             let mut tool_calls = Vec::new();
-            for item in content {
+            for item in assistant.content {
                 match item {
                     AssistantContent::Text(Text { text: value, .. }) => text.push(value),
                     AssistantContent::ToolCall(call) => {
                         tool_calls.push(ugoite_konase::ModelToolCall {
                             id: call.id.wire().into_owned(),
                             name: call.function.name.to_string(),
-                            arguments: call.function.arguments,
+                            arguments: Value::Object(call.function.arguments),
                         })
                     }
                     other => text.push(serde_json::to_string(&other).unwrap_or_default()),
@@ -940,6 +951,36 @@ mod tests {
         assert!(runtime.pending.is_none());
         assert!(runtime.queued_tools.is_empty());
         assert_eq!(runtime.mcp_sequence, 0);
+    }
+
+    #[test]
+    fn non_object_model_arguments_fail_before_emitting_mcp_calls() {
+        for arguments in [
+            serde_json::Value::Null,
+            serde_json::Value::String(r#"{"query":"normalized object"}"#.into()),
+        ] {
+            let mut runtime = RigAgentRuntime::default();
+            let AgentAction::CallModel(model) = runtime.start(job(), context()).unwrap() else {
+                panic!("expected initial model call");
+            };
+
+            let error = runtime
+                .resume(AgentRuntimeInput::ModelCompleted(ModelResult {
+                    request_id: model.request_id,
+                    text: None,
+                    tool_calls: vec![ugoite_konase::ModelToolCall {
+                        id: "call-1".into(),
+                        name: "ugoite.search".into(),
+                        arguments,
+                    }],
+                }))
+                .expect_err("non-object arguments must be rejected before Rig normalizes them");
+
+            assert_eq!(error.kind, "invalid_tool_arguments");
+            assert!(runtime.pending.is_none());
+            assert!(runtime.queued_tools.is_empty());
+            assert_eq!(runtime.mcp_sequence, 0);
+        }
     }
 
     #[test]

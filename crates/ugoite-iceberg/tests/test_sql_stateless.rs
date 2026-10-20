@@ -27,6 +27,30 @@ use ugoite_iceberg::integrity::{IntegrityProvider, RealIntegrityProvider};
 use ugoite_iceberg::saved_sql::{SqlKind, SqlPayload};
 use ugoite_iceberg::service::UgoiteService;
 
+/// Serialize the byte representation used by historical Saved SQL entries
+/// before workspace feature unification enabled serde_json's preserve_order
+/// map implementation. Those persisted integrity values were based on
+/// recursively key-sorted JSON objects.
+fn historical_saved_sql_json(value: &Value) -> Result<String> {
+    fn sorted(value: &Value) -> Value {
+        match value {
+            Value::Object(fields) => {
+                let mut keys = fields.keys().collect::<Vec<_>>();
+                keys.sort_unstable();
+                let mut result = Map::new();
+                for key in keys {
+                    result.insert(key.clone(), sorted(&fields[key]));
+                }
+                Value::Object(result)
+            }
+            Value::Array(items) => Value::Array(items.iter().map(sorted).collect()),
+            scalar => scalar.clone(),
+        }
+    }
+
+    serde_json::to_string(&sorted(value)).context("serialize historical Saved SQL JSON")
+}
+
 struct SqlSpace {
     service: UgoiteService,
     space_id: String,
@@ -1004,7 +1028,7 @@ async fn synthetic_prebinding_revision_reads_and_runs_without_rewrite() -> Resul
         "sql": legacy_sql.clone(),
         "variables": legacy_variables.clone(),
     });
-    let canonical_payload = serde_json::to_string(&canonical_payload)?;
+    let canonical_payload = historical_saved_sql_json(&canonical_payload)?;
     let revision_integrity = IntegrityPayload {
         checksum: integrity.checksum(&canonical_payload),
         signature: integrity.signature(&canonical_payload),
@@ -1255,7 +1279,7 @@ async fn synthetic_prebinding_revision_rejections_fail_closed() -> Result<()> {
             "sql": signed_sql,
             "variables": variables,
         });
-        let serialized = serde_json::to_string(&payload)?;
+        let serialized = historical_saved_sql_json(&payload)?;
         let revision_integrity = IntegrityPayload {
             checksum: integrity.checksum(&serialized),
             signature: integrity.signature(&serialized),

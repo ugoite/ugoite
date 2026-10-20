@@ -546,6 +546,55 @@ mod variable_default_tests {
     }
 }
 
+/// Serializes JSON with lexicographically ordered object keys.
+///
+/// Saved SQL revision integrity predates workspace dependencies that enable
+/// `serde_json/preserve_order`. Its persisted hash contract must stay stable
+/// regardless of Cargo feature unification, including for nested JSON values.
+fn canonical_json_string(value: &Value) -> String {
+    fn write(value: &Value, output: &mut String) {
+        match value {
+            Value::Null => output.push_str("null"),
+            Value::Bool(value) => output.push_str(if *value { "true" } else { "false" }),
+            Value::Number(value) => output.push_str(&value.to_string()),
+            Value::String(value) => output.push_str(
+                &serde_json::to_string(value).expect("serializing a JSON string cannot fail"),
+            ),
+            Value::Array(values) => {
+                output.push('[');
+                for (index, value) in values.iter().enumerate() {
+                    if index > 0 {
+                        output.push(',');
+                    }
+                    write(value, output);
+                }
+                output.push(']');
+            }
+            Value::Object(values) => {
+                let mut keys: Vec<_> = values.keys().map(String::as_str).collect();
+                keys.sort_unstable();
+                output.push('{');
+                for (index, key) in keys.into_iter().enumerate() {
+                    if index > 0 {
+                        output.push(',');
+                    }
+                    output.push_str(
+                        &serde_json::to_string(key)
+                            .expect("serializing a JSON object key cannot fail"),
+                    );
+                    output.push(':');
+                    write(&values[key], output);
+                }
+                output.push('}');
+            }
+        }
+    }
+
+    let mut output = String::new();
+    write(value, &mut output);
+    output
+}
+
 fn sql_integrity_payload(
     integrity: &dyn IntegrityProvider,
     payload: &SqlPayload,
@@ -558,7 +607,7 @@ fn sql_integrity_payload(
         "sql": payload.sql,
         "variables": variables,
     });
-    let serialized = serde_json::to_string(&payload).unwrap_or_default();
+    let serialized = canonical_json_string(&payload);
     entry::IntegrityPayload {
         checksum: integrity.checksum(&serialized),
         signature: integrity.signature(&serialized),
@@ -1504,6 +1553,29 @@ mod name_field_tests {
         fields.insert("sql".to_string(), Value::String("SELECT 1".to_string()));
         fields.insert("variables".to_string(), Value::Array(Vec::new()));
         Value::Object(fields)
+    }
+
+    #[test]
+    fn saved_sql_integrity_canonicalizes_nested_json_object_keys() {
+        let variables_in_one_order = serde_json::json!({"z": {"y": 2, "x": 1}, "a": true});
+        let variables_in_another_order = serde_json::json!({"a": true, "z": {"x": 1, "y": 2}});
+        assert_eq!(
+            canonical_json_string(&variables_in_one_order),
+            r#"{"a":true,"z":{"x":1,"y":2}}"#
+        );
+
+        let payload = SqlPayload {
+            name: Some("ordered-integrity".into()),
+            kind: SqlKind::UserQuery,
+            metadata: None,
+            sql: "SELECT 1".into(),
+            variables: variables_in_one_order.clone(),
+        };
+        let integrity = FakeIntegrityProvider;
+        let first = sql_integrity_payload(&integrity, &payload, &variables_in_one_order);
+        let second = sql_integrity_payload(&integrity, &payload, &variables_in_another_order);
+        assert_eq!(first.checksum, second.checksum);
+        assert_eq!(first.signature, second.signature);
     }
 
     #[test]

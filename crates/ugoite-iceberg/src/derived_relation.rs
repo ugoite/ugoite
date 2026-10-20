@@ -2913,7 +2913,9 @@ fn detect_dispatch(name: &str, media_type: &str, bytes: &[u8]) -> Dispatch {
                 let mut has_slides = false;
                 for index in 0..archive.len() {
                     if let Ok(file) = archive.by_index(index) {
-                        let part = file.name();
+                        let Ok(part) = file.name() else {
+                            continue;
+                        };
                         has_document |= part == "word/document.xml";
                         has_workbook |= part.starts_with("xl/workbook") && part.ends_with(".xml");
                         has_slides |=
@@ -3522,7 +3524,7 @@ fn extract_ooxml_slides(
     let mut slide_index = 0usize;
     for index in 0..archive.len() {
         let mut file = archive.by_index(index).map_err(|_| "malformed_container")?;
-        let name = file.name().to_string();
+        let name = file.name().map_err(|_| "malformed_container")?.into_owned();
         if name.starts_with("ppt/slides/slide") && name.ends_with(".xml") {
             slide_index += 1;
             let xml = read_zip_entry(&mut file)?;
@@ -3560,7 +3562,7 @@ fn extract_ooxml_workbook_chunks(
     }
     for index in 0..archive.len() {
         let mut file = archive.by_index(index).map_err(|_| "malformed_container")?;
-        let name = file.name().to_string();
+        let name = file.name().map_err(|_| "malformed_container")?.into_owned();
         if name.starts_with("xl/worksheets/sheet") && name.ends_with(".xml") {
             sheet_index += 1;
             let xml = read_zip_entry(&mut file)?;
@@ -3599,6 +3601,7 @@ fn validate_zip_limits<R: Read + Seek>(
     let mut expanded = 0u64;
     for index in 0..archive.len() {
         let file = archive.by_index(index).map_err(|_| "malformed_container")?;
+        file.name().map_err(|_| "malformed_container")?;
         expanded = expanded.saturating_add(file.size());
         if expanded > MAX_ZIP_EXPANDED_BYTES {
             return Err("parser_limit");

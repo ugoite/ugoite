@@ -17,6 +17,7 @@ use std::{
 };
 use tokio::sync::Mutex;
 use ugoite_core::error::{AppError, ErrorCode};
+use ugoite_domain::derived_relation::canonical_json;
 
 const DEFAULT_AUDIT_LIMIT: usize = 100;
 const MAX_AUDIT_LIMIT: usize = 500;
@@ -225,9 +226,14 @@ fn now_iso() -> String {
 }
 
 fn event_hash(payload: &Value, prev_hash: &str) -> Result<String> {
-    let canonical = serde_json::to_string(payload)?;
-    let material = format!("{prev_hash}:{canonical}");
-    let digest = Sha256::digest(material.as_bytes());
+    // Audit event hashes are persisted. Keep their byte representation
+    // independent of serde_json's workspace-wide `preserve_order` feature.
+    let canonical = canonical_json(payload)?;
+    let mut material = Vec::with_capacity(prev_hash.len() + 1 + canonical.len());
+    material.extend_from_slice(prev_hash.as_bytes());
+    material.push(b':');
+    material.extend_from_slice(&canonical);
+    let digest = Sha256::digest(&material);
     Ok(hex::encode(digest))
 }
 
@@ -236,7 +242,7 @@ fn audit_event_fingerprint(value: &Value) -> Result<String> {
     let object = source
         .as_object()
         .ok_or_else(|| anyhow!("audit event fingerprint source must be an object"))?;
-    serde_json::to_string(&json!({
+    let fingerprint = json!({
         "action": object.get("action").cloned().unwrap_or(Value::Null),
         "space_uid": object.get("space_uid").cloned().unwrap_or(Value::Null),
         "challenge_id": object.get("challenge_id").cloned().unwrap_or(Value::Null),
@@ -285,8 +291,8 @@ fn audit_event_fingerprint(value: &Value) -> Result<String> {
             .unwrap_or(Value::Null),
         "request_id": object.get("request_id").cloned().unwrap_or(Value::Null),
         "metadata": object.get("metadata").cloned().unwrap_or_else(|| json!({})),
-    }))
-    .map_err(Into::into)
+    });
+    Ok(String::from_utf8(canonical_json(&fingerprint)?)?)
 }
 
 fn marker_is_final(marker: &Value) -> bool {
@@ -1922,6 +1928,35 @@ mod tests {
         // The largest protocol integer clamps to 500 without overflowing
         // before the cap applies.
         assert_eq!(normalize_audit_page(u64::MAX, u64::MAX), (500, usize::MAX));
+    }
+
+    #[test]
+    fn audit_event_hash_is_stable_for_nested_json_key_order() -> Result<()> {
+        let first = json!({"z": {"y": 2, "x": 1}, "a": true});
+        let second = json!({"a": true, "z": {"x": 1, "y": 2}});
+
+        assert_eq!(event_hash(&first, "root")?, event_hash(&second, "root")?);
+        Ok(())
+    }
+
+    #[test]
+    fn audit_event_fingerprint_is_stable_for_nested_metadata_key_order() -> Result<()> {
+        let first = json!({
+            "action": "entry.updated",
+            "space_uid": "space-1",
+            "metadata": {"z": {"y": 2, "x": 1}, "a": true}
+        });
+        let second = json!({
+            "metadata": {"a": true, "z": {"x": 1, "y": 2}},
+            "space_uid": "space-1",
+            "action": "entry.updated"
+        });
+
+        assert_eq!(
+            audit_event_fingerprint(&first)?,
+            audit_event_fingerprint(&second)?
+        );
+        Ok(())
     }
 
     #[tokio::test]
