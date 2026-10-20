@@ -132,7 +132,7 @@ pub enum SqlStructureOperation {
         filters: Vec<SqlStructureFilter>,
     },
     SetFilterExpression {
-        #[serde(default)]
+        #[serde(deserialize_with = "deserialize_required_nullable")]
         expression: Option<SqlStructureFilterExpression>,
     },
     SetSort {
@@ -147,6 +147,19 @@ pub enum SqlStructureOperation {
     SetDistinct {
         distinct: bool,
     },
+}
+
+/// Preserve explicit `null` as the request to clear a filter tree while
+/// rejecting a missing `expression` field. With a plain `Option<T>`, Serde
+/// otherwise treats an omitted field as `None`, which could clear WHERE.
+fn deserialize_required_nullable<'de, D, T>(
+    deserializer: D,
+) -> std::result::Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer)
 }
 
 /// A relation-free scalar literal that the SQL structure editor can rewrite.
@@ -4326,6 +4339,24 @@ mod tests {
         assert_eq!(
             analyze_sql_structure(&removed, &context()).status,
             SqlStructureStatus::Supported
+        );
+    }
+
+    #[test]
+    fn set_filter_expression_requires_field_but_allows_explicit_null() {
+        let missing = serde_json::from_value::<SqlStructureOperation>(serde_json::json!({
+            "kind": "set_filter_expression",
+        }));
+        assert!(missing.is_err(), "missing expression must not clear WHERE");
+
+        let explicit_null = serde_json::from_value::<SqlStructureOperation>(serde_json::json!({
+            "kind": "set_filter_expression",
+            "expression": null,
+        }))
+        .expect("explicit null means clear the filter tree");
+        assert_eq!(
+            explicit_null,
+            SqlStructureOperation::SetFilterExpression { expression: None }
         );
     }
 
