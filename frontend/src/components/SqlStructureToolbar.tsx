@@ -218,6 +218,35 @@ const filterDraftToExpression = (
   }
 };
 
+const filterDraftToFlatFilters = (
+  draft?: FilterDraft,
+): SqlStructureFilter[] | undefined => {
+  if (!draft) return [];
+  switch (draft.kind) {
+    case "predicate":
+      return [{
+        column: draft.column,
+        ...(draft.qualifier ? { qualifier: { ...draft.qualifier } } : {}),
+        operator: draft.operator,
+        ...(isNullOperator(draft.operator)
+          ? {}
+          : { parameter: draft.parameter }),
+      }];
+    case "and": {
+      const filters: SqlStructureFilter[] = [];
+      for (const child of draft.expressions) {
+        const childFilters = filterDraftToFlatFilters(child);
+        if (!childFilters) return undefined;
+        filters.push(...childFilters);
+      }
+      return filters;
+    }
+    case "or":
+    case "not":
+      return undefined;
+  }
+};
+
 const filterDraftLeaves = (draft?: FilterDraft): FilterPredicateDraft[] => {
   if (!draft) return [];
   switch (draft.kind) {
@@ -362,6 +391,9 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     }
     return current?.capabilities[action];
   };
+
+  const supportsFilterExpression = () =>
+    ready()?.analysis.capabilities.filter_expression?.enabled === true;
 
   const formOptions = () => {
     const seen = new Set<string>();
@@ -936,17 +968,71 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     return draft;
   };
 
+  const setFilterDraft = (
+    next:
+      | FilterDraft
+      | undefined
+      | (
+        (previous: FilterDraft | undefined) => FilterDraft | undefined
+      ),
+  ) => {
+    const active = typeof document === "undefined"
+      ? undefined
+      : document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : undefined;
+    const filterList = active?.closest<HTMLElement>(
+      ".sql-structure-filter-list",
+    );
+    if (!filterList) {
+      setFilters(next);
+      return;
+    }
+
+    const focusKey = active?.dataset.filterFocusKey;
+    const nodeIds: string[] = [];
+    let node = active?.closest<HTMLElement>("[data-filter-node]");
+    while (node) {
+      if (node.dataset.filterNode) nodeIds.push(node.dataset.filterNode);
+      node = node.parentElement?.closest<HTMLElement>("[data-filter-node]");
+    }
+    setFilters(next);
+    queueMicrotask(() => {
+      const dialog = filterList.closest<HTMLElement>('[role="dialog"]');
+      if (!dialog?.isConnected) return;
+      const controls = Array.from(
+        dialog.querySelectorAll<HTMLElement>("[data-filter-focus-key]"),
+      );
+      const target = controls.find((control) =>
+        control.dataset.filterFocusKey === focusKey
+      ) ?? nodeIds.map((id) => {
+        const retainedNode = Array.from(
+          dialog.querySelectorAll<HTMLElement>("[data-filter-node]"),
+        ).find((candidate) =>
+          candidate.dataset.filterNode === id
+        );
+        return retainedNode?.querySelector<HTMLElement>(
+          "[data-filter-focus-key]",
+        );
+      }).find((control) => control !== undefined) ?? controls[0];
+      target?.focus();
+    });
+  };
+
   const addFilter = () => {
     if (busy() || proposal()) return;
     const filter = makeFilterDraft();
     if (!filter) return;
     const current = filters();
     if (!current) {
-      setFilters(filter);
+      setFilterDraft(filter);
     } else if (current.kind === "and") {
-      setFilters({ ...current, expressions: [...current.expressions, filter] });
+      setFilterDraft({
+        ...current,
+        expressions: [...current.expressions, filter],
+      });
     } else {
-      setFilters({
+      setFilterDraft({
         kind: "and",
         id: createUniqueId(),
         expressions: [current, filter],
@@ -959,7 +1045,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     const filter = makeFilterDraft();
     const current = filters();
     if (!filter || !current) return;
-    setFilters(
+    setFilterDraft(
       updateFilterDraft(
         current,
         id,
@@ -980,9 +1066,9 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     };
     const current = filters();
     if (!current) {
-      setFilters(group);
+      setFilterDraft(group);
     } else if (parentId) {
-      setFilters(
+      setFilterDraft(
         updateFilterDraft(
           current,
           parentId,
@@ -993,9 +1079,12 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
         ),
       );
     } else if (current.kind === "and") {
-      setFilters({ ...current, expressions: [...current.expressions, group] });
+      setFilterDraft({
+        ...current,
+        expressions: [...current.expressions, group],
+      });
     } else {
-      setFilters({
+      setFilterDraft({
         kind: "and",
         id: createUniqueId(),
         expressions: [current, group],
@@ -1007,7 +1096,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     if (busy() || proposal()) return;
     const current = filters();
     if (!current) return;
-    setFilters(updateFilterDraft(current, id, (node) => ({
+    setFilterDraft(updateFilterDraft(current, id, (node) => ({
       kind: "not",
       id: createUniqueId(),
       expression: node,
@@ -1018,7 +1107,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     if (busy() || proposal()) return;
     const current = filters();
     if (!current) return;
-    setFilters(
+    setFilterDraft(
       updateFilterDraft(
         current,
         id,
@@ -1031,7 +1120,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     if (busy() || proposal()) return;
     const current = filters();
     if (!current) return;
-    setFilters(
+    setFilterDraft(
       updateFilterDraft(
         current,
         id,
@@ -1044,14 +1133,14 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   const removeFilter = (id: string) => {
     if (busy() || proposal()) return;
     const current = filters();
-    if (current) setFilters(removeFilterDraft(current, id));
+    if (current) setFilterDraft(removeFilterDraft(current, id));
   };
 
   const updateFilter = (id: string, update: Partial<FilterPredicateDraft>) => {
     if (busy() || proposal()) return;
     const current = filters();
     if (!current) return;
-    setFilters(updateFilterDraft(current, id, (item) => {
+    setFilterDraft(updateFilterDraft(current, id, (item) => {
       if (item.kind !== "predicate") return item;
       const next: FilterPredicateDraft = { ...item, ...update };
       const column = ready()?.context.parser.columns.find((entry) =>
@@ -1172,6 +1261,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
               <span>{t("sqlPage.structure.column")}</span>
               <select
                 class="ui-input"
+                data-filter-focus-key={`${filter.id}:column`}
                 value={selectedColumnChoice(filter.column, filter.qualifier)}
                 disabled={busy() || Boolean(proposal()) || !rowEditable()}
                 onChange={(event) => {
@@ -1198,6 +1288,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
               <span>{t("sqlPage.structure.operator")}</span>
               <select
                 class="ui-input"
+                data-filter-focus-key={`${filter.id}:operator`}
                 value={filter.operator}
                 disabled={busy() || Boolean(proposal()) || !rowEditable()}
                 onChange={(event) =>
@@ -1223,6 +1314,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                 <span>{t("sqlPage.structure.variable")}</span>
                 <select
                   class="ui-input"
+                  data-filter-focus-key={`${filter.id}:variable`}
                   value={filter.parameter}
                   disabled={busy() || Boolean(proposal()) || !rowEditable()}
                   onChange={(event) =>
@@ -1249,9 +1341,11 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
               <button
                 type="button"
                 class="ui-button ui-button-secondary"
+                data-filter-focus-key={`${filter.id}:negate`}
                 aria-label={t("sqlPage.structure.negateFilter")}
                 title={t("sqlPage.structure.negateFilter")}
-                disabled={busy() || Boolean(proposal())}
+                disabled={busy() || Boolean(proposal()) ||
+                  !supportsFilterExpression()}
                 onClick={() =>
                   addNot(filter.id)}
               >
@@ -1295,6 +1389,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
         <div class="sql-structure-filter-group-controls">
           <select
             class="ui-input"
+            data-filter-focus-key={`${filter.id}:operator`}
             aria-label={t("sqlPage.structure.filterGroupOperator")}
             value={filter.kind}
             disabled={busy() || Boolean(proposal())}
@@ -1305,11 +1400,14 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
               )}
           >
             <option value="and">AND</option>
-            <option value="or">OR</option>
+            <Show when={supportsFilterExpression()}>
+              <option value="or">OR</option>
+            </Show>
           </select>
           <button
             type="button"
             class="ui-button ui-button-secondary"
+            data-filter-focus-key={`${filter.id}:add-filter`}
             onClick={() => addFilterToGroup(filter.id)}
             disabled={busy() || Boolean(proposal()) || !canAddFilter()}
           >
@@ -1318,6 +1416,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
           <button
             type="button"
             class="ui-button ui-button-secondary"
+            data-filter-focus-key={`${filter.id}:add-group`}
             onClick={() => addGroup(filter.id)}
             disabled={busy() || Boolean(proposal())}
           >
@@ -1326,10 +1425,12 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
           <button
             type="button"
             class="ui-button ui-button-secondary"
+            data-filter-focus-key={`${filter.id}:negate`}
             aria-label={t("sqlPage.structure.negateFilter")}
             title={t("sqlPage.structure.negateFilter")}
             onClick={() => addNot(filter.id)}
-            disabled={busy() || Boolean(proposal())}
+            disabled={busy() || Boolean(proposal()) ||
+              !supportsFilterExpression()}
           >
             NOT
           </button>
@@ -1470,6 +1571,16 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
       !current || !action || action === "form" || actionDisabled(action) ||
       busy()
     ) return;
+    const legacyFilters = action === "filter" &&
+        !supportsFilterExpression()
+      ? filterDraftToFlatFilters(filters())
+      : undefined;
+    if (
+      action === "filter" && !supportsFilterExpression() && !legacyFilters
+    ) {
+      setError(unavailableReason());
+      return;
+    }
     const operation: SqlStructureOperation = action === "columns"
       ? current.context.parser.relation === ""
         ? { kind: "set_literal_projection", values: literalProjection() }
@@ -1492,10 +1603,12 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
         right_column: joinRightColumn(),
       }
       : action === "filter"
-      ? {
-        kind: "set_filter_expression" as const,
-        expression: filters() ? filterDraftToExpression(filters()!) : null,
-      }
+      ? supportsFilterExpression()
+        ? {
+          kind: "set_filter_expression" as const,
+          expression: filters() ? filterDraftToExpression(filters()!) : null,
+        }
+        : { kind: "set_filters", filters: legacyFilters! }
       : action === "sort"
       ? {
         kind: "set_sort",
@@ -2113,6 +2226,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                         <button
                           type="button"
                           class="ui-button ui-button-secondary"
+                          data-filter-focus-key="root:add-filter"
                           onClick={addFilter}
                           disabled={busy() || Boolean(proposal()) ||
                             !canAddFilter()}
@@ -2122,6 +2236,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                         <button
                           type="button"
                           class="ui-button ui-button-secondary"
+                          data-filter-focus-key="root:add-group"
                           onClick={() => addGroup()}
                           disabled={busy() || Boolean(proposal())}
                         >
