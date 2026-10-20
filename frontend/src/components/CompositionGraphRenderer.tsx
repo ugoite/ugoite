@@ -104,12 +104,28 @@ export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
                         props.draft.variables.find((value) =>
                           value.id === variableId()
                         );
+                      const valueLabel = () => {
+                        const valueNode = node();
+                        if (
+                          valueNode?.kind === "query" &&
+                          valueNode.query.kind === "saved_sql" &&
+                          valueNode.query.column
+                        ) return valueNode.query.column;
+                        if (
+                          valueNode?.kind === "query" &&
+                          valueNode.query.kind === "saved_sql"
+                        ) {
+                          return t("composition.studioMetricPreview");
+                        }
+                        return variableId() ?? "";
+                      };
                       const queryResult = () =>
                         variableId() &&
                           !props.blockedQueryIds.has(variableId()!)
                           ? props.evaluation?.query_results[variableId()!]
                           : undefined;
-                      const evaluated = () => queryResult()?.value;
+                      const evaluated = () =>
+                        queryResult()?.value;
                       const blocked = () =>
                         Boolean(
                           variableId() &&
@@ -246,9 +262,12 @@ export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
                                   return (
                                     <section
                                       class="compositionGraphMetric"
-                                      aria-label={variableId()}
+                                      aria-label={valueLabel()}
                                     >
                                       <UiIcon name="canvas-metric" />
+                                      <h2 class="compositionGraphMetricLabel">
+                                        {valueLabel()}
+                                      </h2>
                                       <strong>{displayValue}</strong>
                                     </section>
                                   );

@@ -138,6 +138,127 @@ describe("CompositionGraphRenderer", () => {
     expect(onPrevious).toHaveBeenCalledWith("rows");
   });
 
+  it("shows the selected Saved SQL output alias for a scalar metric", () => {
+    const variableId =
+      "query_018ff2a7-32d4-7b80-a57f-03010544ea9b_opaque_value";
+    const savedSqlDraft: CompositionGraphDraft = {
+      ...draft,
+      variables: draft.variables.map((node) =>
+        node.id === "total"
+          ? {
+            ...node,
+            id: variableId,
+            query: {
+              kind: "saved_sql",
+              entry_id: "018ff2a7-32d4-7b80-a57f-03010544ea9b",
+              revision_id: "2fbf7d50-5a29-4805-a936-41bf2702a908",
+              column: "total_amount",
+              arguments: [],
+            },
+          }
+          : node
+      ),
+      components: draft.components.map((component) =>
+        component.kind === "metric"
+          ? { ...component, variable: variableId }
+          : component
+      ),
+    };
+    const savedSqlEvaluation: CompositionEvaluationResponse = {
+      ...evaluation,
+      computed_query_ids: ["rows", variableId],
+      query_results: {
+        ...evaluation.query_results,
+        [variableId]: {
+          value: { kind: "scalar", value: { kind: "integer", value: 20 } },
+          has_more: false,
+        },
+      },
+    };
+
+    render(() => (
+      <CompositionGraphRenderer
+        draft={savedSqlDraft}
+        evaluation={savedSqlEvaluation}
+        rawInputs={{}}
+        inputStates={{}}
+        blockedQueryIds={new Set()}
+        previousPageQueryIds={new Set()}
+        pageBusy={false}
+        onInput={vi.fn()}
+        onNext={vi.fn()}
+        onPrevious={vi.fn()}
+      />
+    ));
+
+    expect(screen.getByRole("heading", { name: "total_amount", exact: true }))
+      .toBeVisible();
+    expect(screen.getByRole("region", { name: "total_amount", exact: true }))
+      .toHaveTextContent("20");
+    expect(screen.queryByRole("region", { name: variableId }))
+      .not.toBeInTheDocument();
+  });
+
+  it("does not expose a generated ID for a direct Saved SQL scalar metric", () => {
+    const variableId = "query_018ff2a7-32d4-7b80-a57f-03010544ea9b_value";
+    const directScalarDraft: CompositionGraphDraft = {
+      ...draft,
+      variables: draft.variables.map((node) =>
+        node.id === "total"
+          ? {
+            ...node,
+            id: variableId,
+            query: {
+              kind: "saved_sql",
+              entry_id: "018ff2a7-32d4-7b80-a57f-03010544ea9b",
+              revision_id: "2fbf7d50-5a29-4805-a936-41bf2702a908",
+              arguments: [],
+            },
+          }
+          : node
+      ),
+      components: draft.components.map((component) =>
+        component.kind === "metric"
+          ? { ...component, variable: variableId }
+          : component
+      ),
+    };
+    const directScalarEvaluation: CompositionEvaluationResponse = {
+      ...evaluation,
+      computed_query_ids: ["rows", variableId],
+      query_results: {
+        ...evaluation.query_results,
+        [variableId]: {
+          value: { kind: "scalar", value: { kind: "integer", value: 20 } },
+          has_more: false,
+        },
+      },
+    };
+
+    render(() => (
+      <CompositionGraphRenderer
+        draft={directScalarDraft}
+        evaluation={directScalarEvaluation}
+        rawInputs={{}}
+        inputStates={{}}
+        blockedQueryIds={new Set()}
+        previousPageQueryIds={new Set()}
+        pageBusy={false}
+        onInput={vi.fn()}
+        onNext={vi.fn()}
+        onPrevious={vi.fn()}
+      />
+    ));
+
+    expect(screen.getByRole("heading", { name: "Metric result", exact: true }))
+      .toBeVisible();
+    expect(screen.getByRole("region", { name: "Metric result", exact: true }))
+      .toHaveTextContent("20");
+    expect(screen.queryByText(variableId)).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: variableId })).not
+      .toBeInTheDocument();
+  });
+
   it("renders the current raw string input in text bindings before evaluation", () => {
     const textDraft: CompositionGraphDraft = {
       name: "Report",
