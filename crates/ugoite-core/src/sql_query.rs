@@ -257,6 +257,12 @@ pub struct SqlContinuation {
     pub saved_sql: Option<SavedSqlRevisionRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub binding_fingerprint: Option<String>,
+    /// Optional application-level scope for stateless continuations such as
+    /// a Composition query graph snapshot. Ordinary SQL continuations leave
+    /// this unset. The SQL service compares it with the trusted caller
+    /// context before reading the pinned publication.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_fingerprint: Option<String>,
 }
 
 impl SqlContinuation {
@@ -289,6 +295,7 @@ impl SqlContinuation {
             offset,
             saved_sql: None,
             binding_fingerprint: None,
+            context_fingerprint: None,
         })
     }
 

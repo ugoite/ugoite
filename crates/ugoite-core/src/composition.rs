@@ -222,6 +222,8 @@ pub struct InlineSqlQueryMetadata {
 pub struct SavedSqlRevisionMetadata {
     pub entry_id: String,
     pub revision_id: String,
+    /// SQL source read from this exact immutable revision after authorization.
+    pub sql_text: String,
     pub parameter_types: BTreeMap<String, VariableGraphScalarDescriptor>,
     pub form_bindings: Vec<VariableGraphFormBinding>,
     pub result_columns: Vec<VariableGraphColumn>,
@@ -273,6 +275,9 @@ pub struct ResolveInput<'a> {
 pub struct ResolvedQueryRequest {
     pub variable_id: String,
     pub request: Option<SqlQueryRequest>,
+    /// Exact source text for Saved SQL; absent for inline SQL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sql_text: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub deferred_arguments:
         Vec<crate::composition_query::VariableGraphQueryRequestDeferredArgument>,
@@ -380,6 +385,18 @@ pub fn resolve_composition_with_unset(
     input: ResolveInput<'_>,
     unset: &[String],
 ) -> Result<ResolvedCompositionPlan, Vec<CompositionDiagnostic>> {
+    resolve_composition_with_query_selection(input, unset, None)
+}
+
+/// Resolve a Composition plan for the selected query variables and their
+/// transitive query dependencies. Unselected query metadata is deliberately
+/// omitted from the plan; graph structure and component bindings are still
+/// validated against the complete graph.
+pub fn resolve_composition_with_query_selection(
+    input: ResolveInput<'_>,
+    unset: &[String],
+    selected_query_ids: Option<&BTreeSet<String>>,
+) -> Result<ResolvedCompositionPlan, Vec<CompositionDiagnostic>> {
     let (variable_values, queries, component_bindings, dependencies) = resolve_parts(
         input.execution_id,
         input.spec,
@@ -387,6 +404,8 @@ pub fn resolve_composition_with_unset(
         unset,
         input.current_queries,
         false,
+        false,
+        selected_query_ids,
     )?;
     Ok(ResolvedCompositionPlan {
         composition_revision: input.composition_revision,
@@ -422,8 +441,84 @@ pub fn resolve_composition_preview_with_unset(
     current_queries: &[CurrentQueryDescriptor<'_>],
     draft_fingerprint: String,
 ) -> Result<PreviewCompositionPlan, Vec<CompositionDiagnostic>> {
-    let (variable_values, queries, component_bindings, dependencies) =
-        resolve_parts(execution_id, spec, variables, unset, current_queries, true)?;
+    resolve_composition_preview_with_query_selection(
+        execution_id,
+        spec,
+        variables,
+        unset,
+        current_queries,
+        draft_fingerprint,
+        None,
+    )
+}
+
+/// Preview a selected query dependency subgraph while validating the full
+/// Composition graph and component bindings.
+pub fn resolve_composition_preview_with_query_selection(
+    execution_id: Uuid,
+    spec: &CompositionSpec,
+    variables: &BTreeMap<String, Value>,
+    unset: &[String],
+    current_queries: &[CurrentQueryDescriptor<'_>],
+    draft_fingerprint: String,
+    selected_query_ids: Option<&BTreeSet<String>>,
+) -> Result<PreviewCompositionPlan, Vec<CompositionDiagnostic>> {
+    resolve_composition_preview_with_query_selection_and_unset_inputs(
+        execution_id,
+        spec,
+        variables,
+        unset,
+        current_queries,
+        draft_fingerprint,
+        selected_query_ids,
+        false,
+    )
+}
+
+/// Authoring-only preview that resolves query metadata while Inputs remain
+/// unset. Such Inputs stay absent from returned values, and requests that
+/// would consume preview placeholders remain unexecutable (`None`).
+pub fn resolve_composition_authoring_preview_with_query_selection(
+    execution_id: Uuid,
+    spec: &CompositionSpec,
+    variables: &BTreeMap<String, Value>,
+    unset: &[String],
+    current_queries: &[CurrentQueryDescriptor<'_>],
+    draft_fingerprint: String,
+    selected_query_ids: Option<&BTreeSet<String>>,
+) -> Result<PreviewCompositionPlan, Vec<CompositionDiagnostic>> {
+    resolve_composition_preview_with_query_selection_and_unset_inputs(
+        execution_id,
+        spec,
+        variables,
+        unset,
+        current_queries,
+        draft_fingerprint,
+        selected_query_ids,
+        true,
+    )
+}
+
+fn resolve_composition_preview_with_query_selection_and_unset_inputs(
+    execution_id: Uuid,
+    spec: &CompositionSpec,
+    variables: &BTreeMap<String, Value>,
+    unset: &[String],
+    current_queries: &[CurrentQueryDescriptor<'_>],
+    draft_fingerprint: String,
+    selected_query_ids: Option<&BTreeSet<String>>,
+    allow_unset_inputs: bool,
+) -> Result<PreviewCompositionPlan, Vec<CompositionDiagnostic>> {
+    let (variable_values, queries, component_bindings, dependencies) = resolve_parts(
+        execution_id,
+        spec,
+        variables,
+        unset,
+        current_queries,
+        true,
+        allow_unset_inputs,
+        selected_query_ids,
+    )?;
     Ok(PreviewCompositionPlan {
         draft_fingerprint,
         variable_values,
@@ -440,6 +535,74 @@ type ResolvedCompositionParts = (
     CompositionDependencyIndex,
 );
 
+fn bind_authoring_preview_inputs(
+    variables: &[VariableGraphNode],
+    supplied: &BTreeMap<String, Value>,
+    unset: &[String],
+) -> Result<(VariableGraphBindings, BTreeSet<String>), Vec<CompositionDiagnostic>> {
+    let mut preview_variables = variables.to_vec();
+    for node in &mut preview_variables {
+        if let VariableGraphNodeKind::Input { required, .. } = &mut node.kind {
+            *required = false;
+        }
+    }
+    let bindings = bind_variables_with_unset(&preview_variables, supplied, unset);
+    if !bindings.diagnostics.is_empty() {
+        return Err(bindings.diagnostics);
+    }
+    let missing_inputs = preview_variables
+        .iter()
+        .filter(|node| {
+            matches!(node.kind, VariableGraphNodeKind::Input { .. })
+                && !bindings.values.contains_key(&node.id)
+        })
+        .map(|node| node.id.clone())
+        .collect();
+    Ok((bindings, missing_inputs))
+}
+
+fn authoring_preview_placeholder(scalar_type: VariableGraphScalarType) -> VariableGraphLiteral {
+    match scalar_type {
+        VariableGraphScalarType::String => VariableGraphLiteral::String(String::new()),
+        VariableGraphScalarType::Boolean => VariableGraphLiteral::Boolean(false),
+        VariableGraphScalarType::Integer => VariableGraphLiteral::Integer(0),
+        VariableGraphScalarType::Float => VariableGraphLiteral::Float(0.0),
+        VariableGraphScalarType::Decimal => VariableGraphLiteral::Decimal("0".to_owned()),
+        VariableGraphScalarType::Date => VariableGraphLiteral::Date("1970-01-01".to_owned()),
+        VariableGraphScalarType::Timestamp => {
+            VariableGraphLiteral::Timestamp("1970-01-01T00:00:00Z".to_owned())
+        }
+        VariableGraphScalarType::Json => VariableGraphLiteral::Json(Value::Bool(false)),
+    }
+}
+
+fn queries_blocked_by_unset_inputs(
+    graph: &VariableGraph,
+    query_order: &[String],
+    missing_inputs: &BTreeSet<String>,
+) -> BTreeSet<String> {
+    let nodes = graph
+        .variables
+        .iter()
+        .map(|node| (node.id.as_str(), node))
+        .collect::<BTreeMap<_, _>>();
+    let mut blocked = BTreeSet::new();
+    for variable_id in query_order {
+        let Some(node) = nodes.get(variable_id.as_str()) else {
+            continue;
+        };
+        let VariableGraphNodeKind::Query { query, .. } = &node.kind else {
+            continue;
+        };
+        if query.arguments.iter().any(|argument| {
+            missing_inputs.contains(&argument.variable) || blocked.contains(&argument.variable)
+        }) {
+            blocked.insert(variable_id.clone());
+        }
+    }
+    blocked
+}
+
 fn resolve_parts(
     execution_id: Uuid,
     spec: &CompositionSpec,
@@ -447,14 +610,21 @@ fn resolve_parts(
     unset: &[String],
     current_queries: &[CurrentQueryDescriptor<'_>],
     allow_draft_descriptors: bool,
+    allow_unset_inputs: bool,
+    selected_query_ids: Option<&BTreeSet<String>>,
 ) -> Result<ResolvedCompositionParts, Vec<CompositionDiagnostic>> {
     let graph = VariableGraph {
         variables: spec.variables.clone(),
     };
-    let bindings = bind_variables_with_unset(&spec.variables, variables, unset);
-    if !bindings.diagnostics.is_empty() {
-        return Err(bindings.diagnostics);
-    }
+    let (bindings, missing_inputs) = if allow_unset_inputs {
+        bind_authoring_preview_inputs(&spec.variables, variables, unset)?
+    } else {
+        let bindings = bind_variables_with_unset(&spec.variables, variables, unset);
+        if !bindings.diagnostics.is_empty() {
+            return Err(bindings.diagnostics);
+        }
+        (bindings, BTreeSet::new())
+    };
     let render_components = spec.components_in_render_order().map_err(|_| {
         vec![CompositionDiagnostic::without_variable(
             CompositionDiagnosticCode::InvalidComposition,
@@ -469,11 +639,35 @@ fn resolve_parts(
         .iter()
         .map(|node| node.id.clone())
         .collect::<BTreeSet<_>>();
+    if selected_query_ids.is_some_and(|selected| {
+        selected
+            .iter()
+            .any(|variable_id| !query_ids.contains(variable_id))
+    }) {
+        return Err(vec![CompositionDiagnostic::without_variable(
+            CompositionDiagnosticCode::InvalidComposition,
+        )]);
+    }
     let query_order = variable_graph_dependency_order(&graph).map_err(|_| {
         vec![CompositionDiagnostic::without_variable(
             CompositionDiagnosticCode::InvalidComposition,
         )]
     })?;
+    let blocked_by_unset_inputs =
+        queries_blocked_by_unset_inputs(&graph, &query_order, &missing_inputs);
+    let mut query_binding_values = bindings.values.clone();
+    if allow_unset_inputs {
+        for node in &spec.variables {
+            if missing_inputs.contains(&node.id) {
+                if let VariableGraphNodeKind::Input { value_type, .. } = &node.kind {
+                    query_binding_values.insert(
+                        node.id.clone(),
+                        authoring_preview_placeholder(value_type.scalar_type),
+                    );
+                }
+            }
+        }
+    }
     let mut current = BTreeMap::new();
     for descriptor in current_queries {
         if !query_ids.contains(descriptor.variable_id())
@@ -496,6 +690,7 @@ fn resolve_parts(
             Vec<VariableGraphColumn>,
             String,
             String,
+            Option<String>,
         ),
     >::new();
     let mut diagnostics = Vec::new();
@@ -510,6 +705,9 @@ fn resolve_parts(
         let VariableGraphNodeKind::Query { query, returns } = &mut node.kind else {
             continue;
         };
+        if selected_query_ids.is_some_and(|selected| !selected.contains(&node.id)) {
+            continue;
+        }
         let Some(descriptor) = current.get(node.id.as_str()).copied() else {
             diagnostics.push(CompositionDiagnostic::for_variable(
                 CompositionDiagnosticCode::QueryUnavailable,
@@ -595,6 +793,7 @@ fn resolve_parts(
                         metadata.result_columns.clone(),
                         metadata.schema_fingerprint.clone(),
                         fingerprint,
+                        None,
                     ),
                 );
             }
@@ -681,6 +880,7 @@ fn resolve_parts(
                         metadata.result_columns.clone(),
                         metadata.schema_fingerprint.clone(),
                         fingerprint,
+                        Some(metadata.sql_text.clone()),
                     ),
                 );
             }
@@ -696,13 +896,14 @@ fn resolve_parts(
 
     let requested = query_nodes
         .iter()
+        .filter(|node| selected_query_ids.is_none_or(|selected| selected.contains(&node.id)))
         .map(|node| node.id.clone())
         .collect::<Vec<_>>();
     let request_batch = crate::composition_query::compile_variable_graph_query_request_batch(
         &execution_graph,
         &requested,
         execution_id,
-        &bindings.values,
+        &query_binding_values,
     )
     .map_err(|errors| {
         errors
@@ -724,12 +925,19 @@ fn resolve_parts(
                 result_columns,
                 schema_fingerprint,
                 query_semantic_fingerprint,
+                sql_text,
             ) = derived
                 .remove(&item.variable_id)
                 .expect("every query descriptor was derived");
+            let request = if blocked_by_unset_inputs.contains(&item.variable_id) {
+                None
+            } else {
+                item.request
+            };
             ResolvedQueryRequest {
                 variable_id: item.variable_id,
-                request: item.request,
+                request,
+                sql_text,
                 deferred_arguments: item.deferred_arguments,
                 scalar_cardinality: matches!(returns, VariableGraphResultType::Scalar { .. })
                     .then_some(CompositionScalarCardinality::ExactlyOneRow),

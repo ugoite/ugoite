@@ -162,9 +162,14 @@ use ugoite_storage::{
 
 #[path = "service/composition_metric_query.rs"]
 mod composition_metric_query;
+mod composition_query_evaluation;
 mod composition_resolver;
 #[path = "service/sql_execution.rs"]
 pub(super) mod sql_execution;
+pub use composition_query_evaluation::{
+    CompositionGraphEvaluationPlan, CompositionGraphQueryResult, CompositionQueryEvaluationPage,
+    CompositionQueryEvaluationResponse, CompositionQueryEvaluationTarget,
+};
 pub use composition_resolver::CompositionPreview;
 pub use composition_resolver::CompositionResolution;
 
@@ -7114,6 +7119,42 @@ impl UgoiteService {
         principal_ids: &[Uuid],
         request: SqlQueryRequest,
     ) -> Result<SqlQueryPage> {
+        self.query_sql_authorized_with_context(space_id, principal_ids, request, None, None, None)
+            .await
+    }
+
+    /// Executes one SQL page for an authorized Composition evaluation. The
+    /// trusted Composition identity, publication, and graph fingerprint are
+    /// attached to a signed continuation and rechecked on every page.
+    pub(crate) async fn query_sql_authorized_for_composition(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        request: SqlQueryRequest,
+        composition_entry_id: Option<&str>,
+        publication: &PublicationRef,
+        context_fingerprint: &str,
+    ) -> Result<SqlQueryPage> {
+        self.query_sql_authorized_with_context(
+            space_id,
+            principal_ids,
+            request,
+            composition_entry_id,
+            Some(publication),
+            Some(context_fingerprint),
+        )
+        .await
+    }
+
+    async fn query_sql_authorized_with_context(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        request: SqlQueryRequest,
+        composition_entry_id: Option<&str>,
+        pinned_publication: Option<&PublicationRef>,
+        continuation_context_fingerprint: Option<&str>,
+    ) -> Result<SqlQueryPage> {
         request.validate().map_err(sql_query_contract_error)?;
         let request_fingerprint = if request.execution_id.is_some() {
             Some(
@@ -7187,6 +7228,7 @@ impl UgoiteService {
                             .as_ref()
                             .map(saved_sql_binding_fingerprint)
                             .transpose()?
+                    || cursor.context_fingerprint.as_deref() != continuation_context_fingerprint
                 {
                     return Err(AppError::invalid_input(
                         ErrorCode::InvalidInput,
@@ -7198,16 +7240,35 @@ impl UgoiteService {
                     .authorize(&authorization_fingerprint)
                     .map_err(sql_query_contract_error)?;
                 let publication = cursor.publication.clone();
+                if pinned_publication.is_some_and(|pinned| pinned != &publication) {
+                    return Err(AppError::invalid_input(
+                        ErrorCode::InvalidInput,
+                        "SQL continuation belongs to another Composition publication",
+                    )
+                    .into());
+                }
                 workspace.resolve_publication(&publication).await?;
                 (publication, cursor.offset)
             }
             None => {
-                let publication = workspace.current_publication().await?;
+                let publication = match pinned_publication {
+                    Some(publication) => publication.clone(),
+                    None => workspace.current_publication().await?,
+                };
                 (publication, 0)
             }
         };
         let checkpoint = workspace.resolve_publication(&publication).await?;
         let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
+        if let Some(composition_entry_id) = composition_entry_id {
+            let composition_scopes =
+                Self::authorized_form_entry_scopes_for_forms(&state, principal_ids, forms.clone())?;
+            require_composition_entry_read_scope(
+                &composition_scopes,
+                parse_entry_id(composition_entry_id)?,
+                composition_entry_id,
+            )?;
+        }
         let relation_scopes =
             sql_execution::authorized_relation_scopes(&state, principal_ids, &forms)?;
         let execution_sql = sql_execution::bind_sql_to_forms(&prepared, &forms, &relation_scopes)?;
@@ -7260,6 +7321,7 @@ impl UgoiteService {
                 .as_ref()
                 .map(saved_sql_binding_fingerprint)
                 .transpose()?;
+            cursor.context_fingerprint = continuation_context_fingerprint.map(str::to_owned);
             Some(cursor.encode(&signing_key)?)
         } else {
             None

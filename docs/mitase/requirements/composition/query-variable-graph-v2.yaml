@@ -39,7 +39,9 @@ requirements:
           Saved SQL query node pins one exact Entry and revision. Resolution
           rechecks current ACL, Publication, schema, and query revision; an
           unavailable identity fails closed without creating a partial query
-          variable or display component.
+          variable or display component. Authorized query metadata may expose
+          Saved SQL source text only from that exact pinned revision; it never
+          substitutes the latest revision.
         governed_by: [
           POL-000#rule.foundation-precedence,
           POL-004#rule.governance,
@@ -64,6 +66,18 @@ requirements:
           result schema, types, nullability, and scalar or table contract
           against the query's declared return descriptor. A rejected page is
           not retained or rendered, and accepted results remain transient Work.
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
+      - id: authoring-query-metadata-preview
+        kind: behavior
+        statement: >-
+          Authorized authoring preview can resolve query schema while Inputs
+          remain unset. Any placeholder used only to plan that preview is
+          omitted from returned values and executable requests. Runtime graph
+          evaluation still requires real supplied or default Input values and
+          reports missing required values.
         governed_by: [
           POL-000#rule.foundation-precedence,
           POL-004#rule.governance,
@@ -120,7 +134,7 @@ requirements:
       - id: query-result-validation-verification
         role: verification
         facet: verification
-        responsibility: Verify that Core exposes only fully validated SQL query results to a complete Composition preview and rejects pages outside the graph's request bindings or evaluation snapshot.
+        responsibility: Verify descriptor validation and stateless evaluation snapshots. Server-side dependency closure and executor exclusion have direct evidence; browser rejection of out-of-order responses remains unverified until the Studio reader is integrated.
         targets:
           - id: core-query-result-preview-boundary
             adapter: rust
@@ -170,3 +184,35 @@ requirements:
                     package: ugoite-core
                     harness: composition_query_evaluation
                     test: table_pages_are_validated_and_keep_bounded_continuation_metadata
+          - id: query-selection-closure
+            adapter: rust
+            path: crates/ugoite-core/tests/composition_query_evaluation.rs
+            selector:
+              kind: test
+              name: requested_queries_expand_dependencies_and_reject_unselected_or_unknown_nodes
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.query-results-validated-before-preview
+                covers: [FEAT-COMP-011#binding.query-result-validation/target.composition-query-evaluation]
+                runner:
+                  runner: cargo-test-integration
+                  arguments:
+                    package: ugoite-core
+                    harness: composition_query_evaluation
+                    test: requested_queries_expand_dependencies_and_reject_unselected_or_unknown_nodes
+          - id: unrelated-query-exclusion
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_preview.rs
+            selector:
+              kind: test
+              name: graph_evaluation_does_not_execute_an_unrequested_query_branch
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-011#binding.composition-graph-evaluation/target.stateless-query-evaluation]
+                runner:
+                  runner: cargo-test-integration
+                  arguments:
+                    package: ugoite-iceberg
+                    harness: test_composition_preview
+                    test: graph_evaluation_does_not_execute_an_unrequested_query_branch

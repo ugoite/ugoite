@@ -47,8 +47,15 @@ use tower_http::{
 use ugoite_api_client::{
     CompositionDeferredArgument, CompositionDependencyIndex as ApiCompositionDependencyIndex,
     CompositionDiagnosticCode as ApiCompositionDiagnosticCode, CompositionEntryIntegrity,
-    CompositionEntryMetadata, CompositionHistoryPage, CompositionLintError,
-    CompositionLintResponse, CompositionLintValue, CompositionListItem, CompositionListPage,
+    CompositionEntryMetadata,
+    CompositionEvaluationQueryDiagnostic as ApiCompositionEvaluationQueryDiagnostic,
+    CompositionEvaluationRequest as ApiCompositionEvaluationRequest,
+    CompositionEvaluationRequestDiagnostic as ApiCompositionEvaluationRequestDiagnostic,
+    CompositionEvaluationResponse as ApiCompositionEvaluationResponse,
+    CompositionEvaluationResultContractDiagnostic as ApiCompositionEvaluationResultContractDiagnostic,
+    CompositionEvaluationResultDiagnostic as ApiCompositionEvaluationResultDiagnostic,
+    CompositionHistoryPage, CompositionLintError, CompositionLintResponse, CompositionLintValue,
+    CompositionListItem, CompositionListPage,
     CompositionMetricPresentation as ApiCompositionMetricPresentation,
     CompositionMetricQueryDiagnostic as ApiCompositionMetricQueryDiagnostic,
     CompositionMetricQueryRequest, CompositionMetricQueryResponse,
@@ -104,7 +111,11 @@ use ugoite_iceberg::{
     },
     form, saved_sql,
     service::{
-        ApplyOperation, SpaceOnboardingState, SpacePermission, UgoiteService,
+        ApplyOperation, CompositionGraphEvaluationPlan as CoreCompositionGraphEvaluationPlan,
+        CompositionQueryEvaluationPage as CoreCompositionQueryEvaluationPage,
+        CompositionQueryEvaluationResponse as CoreCompositionQueryEvaluationResponse,
+        CompositionQueryEvaluationTarget as CoreCompositionQueryEvaluationTarget,
+        SpaceOnboardingState, SpacePermission, UgoiteService,
         MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS,
     },
     space,
@@ -1819,6 +1830,12 @@ fn protected_routes(state: AppState) -> Router<AppState> {
             "/spaces/{space_id}/compositions/preview",
             post(preview_composition_handler)
                 .layer(DefaultBodyLimit::max(COMPOSITION_PREVIEW_MAX_REQUEST_BYTES)),
+        )
+        .route(
+            "/spaces/{space_id}/compositions/evaluate",
+            post(composition_evaluation_handler).layer(DefaultBodyLimit::max(
+                COMPOSITION_EVALUATION_MAX_REQUEST_BYTES,
+            )),
         )
         .route(
             "/spaces/{space_id}/compositions/metric-query",
@@ -11418,6 +11435,7 @@ async fn composition_history(
 
 const COMPOSITION_RESOLVE_MAX_REQUEST_BYTES: usize = 256 * 1024;
 const COMPOSITION_PREVIEW_MAX_REQUEST_BYTES: usize = 256 * 1024;
+const COMPOSITION_EVALUATION_MAX_REQUEST_BYTES: usize = 256 * 1024;
 const COMPOSITION_METRIC_QUERY_MAX_REQUEST_BYTES: usize = 256 * 1024;
 
 async fn resolve_composition_handler(
@@ -11523,7 +11541,7 @@ async fn preview_composition_handler(
     let principals = authorization_principal_ids(&identity, principal_id);
     let preview = state
         .service
-        .preview_composition_authorized_for_principals_with_base(
+        .preview_composition_authoring_authorized_for_principals_with_base(
             &space_id,
             &request.yaml,
             &request.variables,
@@ -11551,6 +11569,129 @@ async fn preview_composition_handler(
             variable_definitions,
         )?)),
     }
+}
+
+async fn composition_evaluation_handler(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path(space_id): Path<String>,
+    request: Result<Json<ApiCompositionEvaluationRequest>, JsonRejection>,
+) -> ApiResult<Json<ApiCompositionEvaluationResponse>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    let Json(request) = request.map_err(|error| {
+        ApiError::new(
+            error.status(),
+            json!({
+                "code": "INVALID_INPUT",
+                "message": error.body_text(),
+            }),
+        )
+    })?;
+    let evaluation_id = Uuid::parse_str(&request.evaluation_id).map_err(|_| {
+        ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            json!({
+                "code": "INVALID_INPUT",
+                "message": "Composition evaluation_id must be a UUID",
+            }),
+        )
+    })?;
+    let base = match (
+        request.base_entry_id.as_deref(),
+        request.base_revision_id.as_deref(),
+    ) {
+        (None, None) => None,
+        (Some(entry_id), Some(revision_id)) => {
+            validate_id(entry_id, "base_entry_id")?;
+            validate_id(revision_id, "base_revision_id")?;
+            validate_composition_uuid(entry_id, "base entry ID")?;
+            validate_composition_uuid(revision_id, "base revision ID")?;
+            Some((entry_id, revision_id))
+        }
+        _ => {
+            return Err(ApiError::from_core(
+                AppError::invalid_input(
+                    ErrorCode::InvalidInput,
+                    "Composition evaluation base_entry_id and base_revision_id must be supplied together",
+                )
+                .into(),
+            ));
+        }
+    };
+    let target = match request.target {
+        ugoite_api_client::CompositionEvaluationTarget::SavedRevision {
+            composition_id,
+            revision_id,
+        } => {
+            if base.is_some() {
+                return Err(ApiError::from_core(
+                    AppError::invalid_input(
+                        ErrorCode::InvalidInput,
+                        "Composition evaluation base is only valid for a draft target",
+                    )
+                    .into(),
+                ));
+            }
+            validate_id(&composition_id, "composition_id")?;
+            validate_id(&revision_id, "revision_id")?;
+            validate_composition_uuid(&composition_id, "Composition ID")?;
+            validate_composition_uuid(&revision_id, "Composition revision ID")?;
+            CoreCompositionQueryEvaluationTarget::SavedRevision {
+                composition_id,
+                revision_id,
+            }
+        }
+        ugoite_api_client::CompositionEvaluationTarget::Draft { yaml } => {
+            CoreCompositionQueryEvaluationTarget::Draft { yaml }
+        }
+    };
+    let page = request
+        .page
+        .map(|page| {
+            if page.variable_id.trim().is_empty() || page.variable_id.len() > 128 {
+                return Err(ApiError::new(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    json!({
+                        "code": "INVALID_INPUT",
+                        "message": "Composition page variable_id must contain 1 to 128 bytes",
+                    }),
+                ));
+            }
+            if page.cursor.is_empty() {
+                return Err(ApiError::new(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    json!({
+                        "code": "INVALID_INPUT",
+                        "message": "Composition page cursor must not be empty",
+                    }),
+                ));
+            }
+            Ok(CoreCompositionQueryEvaluationPage {
+                variable_id: page.variable_id,
+                cursor: page.cursor,
+            })
+        })
+        .transpose()?;
+
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    let result = state
+        .service
+        .evaluate_composition_graph_authorized_for_principals(
+            &space_id,
+            &principals,
+            target,
+            evaluation_id,
+            base.map(|(entry_id, _)| entry_id),
+            base.map(|(_, revision_id)| revision_id),
+            &request.variables,
+            &request.unset_variables,
+            request.requested_queries.as_deref(),
+            page,
+        )
+        .await
+        .map_err(ApiError::from_core)?;
+    Ok(Json(api_composition_evaluation_response(result)?))
 }
 
 async fn composition_metric_query_handler(
@@ -11829,6 +11970,130 @@ fn api_composition_metric_query_response(
     })
 }
 
+fn api_composition_evaluation_response(
+    response: CoreCompositionQueryEvaluationResponse,
+) -> ApiResult<ApiCompositionEvaluationResponse> {
+    let mut composition_revision = None;
+    let mut draft_fingerprint = response.draft_fingerprint.clone();
+    let mut variable_values = BTreeMap::new();
+    let mut queries = Vec::new();
+    let mut component_bindings = Vec::new();
+    let mut dependencies = ApiCompositionDependencyIndex::default();
+    if let Some(plan) = response.plan {
+        let CoreCompositionGraphEvaluationPlan {
+            composition_revision: revision,
+            draft_fingerprint: draft,
+            variable_values: values,
+            queries: core_queries,
+            component_bindings: core_bindings,
+            dependencies: core_dependencies,
+        } = plan;
+        composition_revision = revision.map(|revision| CompositionRevisionReference {
+            entry_id: revision.entry_id.to_string(),
+            revision_id: revision.revision_id.to_string(),
+        });
+        draft_fingerprint = draft;
+        variable_values = values
+            .into_iter()
+            .map(|(id, value)| (id, api_composition_literal(&value)))
+            .collect();
+        (queries, component_bindings) =
+            api_composition_queries_and_bindings(core_queries, core_bindings)?;
+        dependencies = api_composition_dependency_index(core_dependencies);
+    }
+    let query_results = response
+        .query_results
+        .into_iter()
+        .map(|(variable_id, result)| {
+            let value = serde_json::to_value(result.result).map_err(|error| {
+                ApiError::new(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    json!({
+                        "code": "INTERNAL_ERROR",
+                        "message": format!("Could not encode Composition query result: {error}"),
+                    }),
+                )
+            })?;
+            Ok((
+                variable_id,
+                ugoite_api_client::CompositionGraphQueryResult {
+                    value,
+                    has_more: result.has_more,
+                    next: result.next,
+                },
+            ))
+        })
+        .collect::<ApiResult<BTreeMap<_, _>>>()?;
+    let diagnostics = response
+        .diagnostics
+        .into_iter()
+        .map(|diagnostic| {
+            Ok(CompositionResolveDiagnostic {
+                code: api_composition_diagnostic_code(diagnostic.code)?,
+                variable_id: diagnostic.variable_id,
+            })
+        })
+        .collect::<ApiResult<Vec<_>>>()?;
+    let query_diagnostics = response
+        .query_diagnostics
+        .into_iter()
+        .map(|diagnostic| ApiCompositionEvaluationQueryDiagnostic {
+            code: diagnostic.code.as_str().to_owned(),
+            variable_id: diagnostic.variable_id,
+            request_diagnostic: diagnostic.request_diagnostic.map(|request| {
+                ApiCompositionEvaluationRequestDiagnostic {
+                    code: request.code.as_str().to_owned(),
+                    argument_name: request.argument_name,
+                    reference_id: request.reference_id,
+                    domain_code: request.domain_code,
+                    cycle: request.cycle,
+                }
+            }),
+            result_diagnostic: diagnostic.result_diagnostic.map(|result| {
+                ApiCompositionEvaluationResultDiagnostic {
+                    code: result.code.as_str().to_owned(),
+                    variable_id: result.variable_id,
+                    column_name: result.column_name,
+                    result_diagnostic: result.result_diagnostic.map(|detail| {
+                        ApiCompositionEvaluationResultContractDiagnostic {
+                            code: detail.code.as_str().to_owned(),
+                            expected_count: detail.expected_count,
+                            observed_count: detail.observed_count,
+                            row_index: detail.row_index,
+                            column_index: detail.column_index,
+                            column_name: detail.column_name,
+                            expected_column_name: detail.expected_column_name,
+                            expected_value_type: detail
+                                .expected_value_type
+                                .map(api_composition_scalar_descriptor),
+                            observed_value_type: detail
+                                .observed_value_type
+                                .map(api_composition_scalar_descriptor),
+                        }
+                    }),
+                }
+            }),
+        })
+        .collect();
+    Ok(ApiCompositionEvaluationResponse {
+        evaluation_id: response.evaluation_id.to_string(),
+        ok: response.ok,
+        snapshot_fingerprint: response.snapshot_fingerprint,
+        publication_fingerprint: response.publication_fingerprint,
+        authorization_fingerprint: response.authorization_fingerprint,
+        composition_revision,
+        draft_fingerprint,
+        variable_values,
+        queries,
+        component_bindings,
+        dependencies,
+        query_results,
+        computed_query_ids: response.computed_query_ids,
+        diagnostics,
+        query_diagnostics,
+    })
+}
+
 fn composition_resolve_success_response(
     plan: ResolvedCompositionPlan,
     variable_definitions: Option<Vec<CompositionVariableDefinition>>,
@@ -11984,6 +12249,7 @@ fn api_composition_queries_and_bindings(
             Ok(CompositionResolvedQuery {
                 variable_id: query.variable_id,
                 request,
+                sql_text: query.sql_text,
                 deferred_arguments,
                 returns: api_composition_query_result_type(query.returns),
                 result_columns,
@@ -14680,6 +14946,12 @@ mod authentication_regression_tests {
                 "/spaces/{space_id}/compositions/preview",
                 post(preview_composition_handler)
                     .layer(DefaultBodyLimit::max(COMPOSITION_PREVIEW_MAX_REQUEST_BYTES)),
+            )
+            .route(
+                "/spaces/{space_id}/compositions/evaluate",
+                post(composition_evaluation_handler).layer(DefaultBodyLimit::max(
+                    COMPOSITION_EVALUATION_MAX_REQUEST_BYTES,
+                )),
             )
             .route(
                 "/spaces/{space_id}/compositions/metric-query",
