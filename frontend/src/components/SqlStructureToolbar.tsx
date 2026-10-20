@@ -15,6 +15,7 @@ import type { SQLWorkspaceAction } from "~/components/SQLWorkspace";
 import type { SqlStructureAdapterContext } from "~/lib/sql";
 import {
   analyzeSqlStructure,
+  applySqlDocumentEditTransaction,
   prepareSqlStructureParser,
   proposeSqlStructureOperation,
 } from "~/lib/ugoite-client";
@@ -1779,29 +1780,75 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     }
   };
 
-  const confirmProposal = () => {
+  const confirmProposal = async () => {
     const current = proposal();
+    const contextIdentity = proposalContextIdentity();
     if (
       !current || current.proposed_sql === undefined ||
       props.sql() !== current.base_sql || props.disabled?.() ||
-      !props.onSqlChange || ready()?.identity !== proposalContextIdentity()
+      !props.onSqlChange || ready()?.identity !== contextIdentity
     ) {
       setProposal(undefined);
       setActiveAction(null);
       return;
     }
-    const createdVariables = proposalVariables();
-    if (createdVariables.length > 0) {
-      if (props.onVariablesAdded?.(createdVariables) === false) {
+
+    const generation = ++proposalGeneration;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await applySqlDocumentEditTransaction(
+        current.base_sql,
+        {
+          expected_source: current.base_sql,
+          edits: [{
+            range: {
+              start: 0,
+              end: new TextEncoder().encode(current.base_sql).byteLength,
+            },
+            expected_text: current.base_sql,
+            replacement: current.proposed_sql,
+          }],
+        },
+      );
+
+      // SQL Document parsing validates and returns the exact draft only. It
+      // does not grant executor admission to a query.
+      if (
+        generation !== proposalGeneration || proposal() !== current ||
+        props.sql() !== current.base_sql || props.disabled?.() ||
+        ready()?.identity !== contextIdentity
+      ) {
+        return;
+      }
+      if (
+        result.document.status !== "parsed" ||
+        result.document.source !== current.proposed_sql
+      ) {
         setError(t("sqlPage.structureUnavailable"));
         return;
       }
+
+      const createdVariables = proposalVariables();
+      if (createdVariables.length > 0) {
+        if (props.onVariablesAdded?.(createdVariables) === false) {
+          setError(t("sqlPage.structureUnavailable"));
+          return;
+        }
+      }
+
+      props.onSqlChange(result.document.source);
+      setProposal(undefined);
+      setProposalVariables([]);
+      setProposalContextIdentity(undefined);
+      setActiveAction(null);
+    } catch {
+      if (generation === proposalGeneration) {
+        setError(t("sqlPage.structureUnavailable"));
+      }
+    } finally {
+      if (generation === proposalGeneration) setBusy(false);
     }
-    props.onSqlChange(current.proposed_sql);
-    setProposal(undefined);
-    setProposalVariables([]);
-    setProposalContextIdentity(undefined);
-    setActiveAction(null);
   };
 
   const close = () => {
