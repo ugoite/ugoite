@@ -153,10 +153,13 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-COMP-008#criterion.saved-sql-exact-revision-and-defaults
+          - id: composition-query-evaluation
+            adapter: rust
+            path: crates/ugoite-core/src/composition_query.rs
+            selector: { kind: symbol, name: VariableGraphQueryEvaluation }
+            claims:
               - kind: satisfies
                 criterion: REQ-COMP-008#criterion.scalar-metric-results
-              - kind: satisfies
-                criterion: REQ-COMP-008#criterion.stateless-bounded-execution
           - id: storage-composition-resolution
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs

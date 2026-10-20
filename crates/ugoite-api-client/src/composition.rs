@@ -16,10 +16,10 @@ pub enum CompositionDiagnosticCode {
     VariableUnknown,
     VariableMissing,
     VariableTypeMismatch,
-    SourceUnavailable,
+    QueryUnavailable,
     MissingField,
     FieldTypeChanged,
-    SourceSchemaChanged,
+    QuerySchemaChanged,
     MetricResultNotScalar,
     MetricResultTypeMismatch,
     MetricScalarNoRows,
@@ -36,10 +36,10 @@ impl CompositionDiagnosticCode {
             Self::VariableUnknown => "variable_unknown",
             Self::VariableMissing => "variable_missing",
             Self::VariableTypeMismatch => "variable_type_mismatch",
-            Self::SourceUnavailable => "source_unavailable",
+            Self::QueryUnavailable => "query_unavailable",
             Self::MissingField => "missing_field",
             Self::FieldTypeChanged => "field_type_changed",
-            Self::SourceSchemaChanged => "source_schema_changed",
+            Self::QuerySchemaChanged => "query_schema_changed",
             Self::MetricResultNotScalar => "metric_result_not_scalar",
             Self::MetricResultTypeMismatch => "metric_result_type_mismatch",
             Self::MetricScalarNoRows => "metric_scalar_no_rows",
@@ -56,10 +56,10 @@ impl CompositionDiagnosticCode {
             "variable_unknown" => Some(Self::VariableUnknown),
             "variable_missing" => Some(Self::VariableMissing),
             "variable_type_mismatch" => Some(Self::VariableTypeMismatch),
-            "source_unavailable" => Some(Self::SourceUnavailable),
+            "query_unavailable" => Some(Self::QueryUnavailable),
             "missing_field" => Some(Self::MissingField),
             "field_type_changed" => Some(Self::FieldTypeChanged),
-            "source_schema_changed" => Some(Self::SourceSchemaChanged),
+            "query_schema_changed" => Some(Self::QuerySchemaChanged),
             "metric_result_not_scalar" => Some(Self::MetricResultNotScalar),
             "metric_result_type_mismatch" => Some(Self::MetricResultTypeMismatch),
             "metric_scalar_no_rows" => Some(Self::MetricScalarNoRows),
@@ -278,6 +278,168 @@ pub struct CompositionPreviewResponse {
     pub diagnostics: Vec<CompositionResolveDiagnostic>,
 }
 
+/// Stored revision or unsaved draft evaluated as one immutable graph
+/// snapshot. Draft bases are optional and always identify an exact revision.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CompositionEvaluationTarget {
+    SavedRevision {
+        composition_id: String,
+        revision_id: String,
+    },
+    Draft {
+        yaml: String,
+    },
+}
+
+/// Selects a stateless continuation for one table query variable.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionEvaluationPage {
+    pub variable_id: String,
+    pub cursor: String,
+}
+
+/// Request to resolve and evaluate a typed Composition query graph.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionEvaluationRequest {
+    /// Caller-owned generation ID. Responses and page cursors echo/bind it so
+    /// clients can discard stale results without depending on cancellation.
+    pub evaluation_id: String,
+    pub target: CompositionEvaluationTarget,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_entry_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_revision_id: Option<String>,
+    #[serde(default)]
+    pub variables: BTreeMap<String, Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unset_variables: Vec<String>,
+    /// Query variable IDs whose results should be recomputed. Core expands
+    /// this list to include all query dependencies. Omission evaluates the
+    /// full graph; an empty list evaluates no query nodes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requested_queries: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page: Option<CompositionEvaluationPage>,
+}
+
+/// One graph query result. `value` is the tagged, descriptor-validated
+/// `scalar` or `table` result; it is keyed once by query variable ID even
+/// when multiple display components reference that variable.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionGraphQueryResult {
+    pub value: Value,
+    pub has_more: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next: Option<String>,
+}
+
+/// Query-graph execution failure scoped to one variable. `code` is the
+/// stable Core evaluation code; nested result codes preserve the Domain's
+/// scalar-cardinality and result-schema diagnostics.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionEvaluationQueryDiagnostic {
+    pub code: String,
+    pub variable_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_diagnostic: Option<CompositionEvaluationRequestDiagnostic>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_diagnostic: Option<CompositionEvaluationResultDiagnostic>,
+}
+
+/// Query request compilation details, when an evaluation failure originated
+/// in a graph-bound SQL argument or request.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionEvaluationRequestDiagnostic {
+    pub code: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub argument_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain_code: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cycle: Vec<String>,
+}
+
+/// Stable query-result validation failure, including the Domain result code
+/// that distinguishes scalar cardinality, column shape, and typed values.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionEvaluationResultDiagnostic {
+    pub code: String,
+    pub variable_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_diagnostic: Option<CompositionEvaluationResultContractDiagnostic>,
+}
+
+/// Exact Domain detail for an observed query-result mismatch.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionEvaluationResultContractDiagnostic {
+    pub code: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observed_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub row_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_column_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_value_type: Option<CompositionScalarDescriptor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observed_value_type: Option<CompositionScalarDescriptor>,
+}
+
+/// Stateless graph evaluation response. `evaluation_id` and both fingerprints
+/// identify the input, authorization, query, and Publication snapshot used.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionEvaluationResponse {
+    pub evaluation_id: String,
+    pub ok: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshot_fingerprint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publication_fingerprint: Option<String>,
+    /// Stable identity for the authorization state rechecked after execution.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authorization_fingerprint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub composition_revision: Option<CompositionRevisionReference>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft_fingerprint: Option<String>,
+    #[serde(default)]
+    pub variable_values: BTreeMap<String, Value>,
+    #[serde(default)]
+    pub queries: Vec<CompositionResolvedQuery>,
+    #[serde(default)]
+    pub component_bindings: Vec<CompositionResolvedComponentBinding>,
+    #[serde(default)]
+    pub dependencies: CompositionDependencyIndex,
+    #[serde(default)]
+    pub query_results: BTreeMap<String, CompositionGraphQueryResult>,
+    /// Query variables whose results were computed in this response, in
+    /// dependency order. Failed evaluations return an empty list.
+    pub computed_query_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<CompositionResolveDiagnostic>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub query_diagnostics: Vec<CompositionEvaluationQueryDiagnostic>,
+}
+
 /// Target of a bounded, read-only Composition Metric query.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -352,25 +514,27 @@ pub struct CompositionMetricQueryResponse {
 }
 
 /// Side-effect-free preview plan keyed by draft fingerprint instead of a
-/// stored revision reference. Source requests and component bindings reuse
-/// the existing portable resolve shapes.
+/// stored revision reference. Query descriptors and component references are
+/// derived from the strict variable graph and current authorized metadata.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompositionPreviewPlan {
     pub draft_fingerprint: String,
-    pub sources: Vec<CompositionResolvedSource>,
+    #[serde(default)]
+    pub variable_values: BTreeMap<String, Value>,
+    pub queries: Vec<CompositionResolvedQuery>,
     /// Stable display bindings in the resolver's layout row and item order.
     #[serde(default)]
     pub component_bindings: Vec<CompositionResolvedComponentBinding>,
-    /// Semantic variable/source edges derived by Core. Additive to the
+    /// Semantic graph dependency edges derived by Core. Additive to the
     /// existing portable plan so adapters can schedule reactive work without
     /// re-parsing the Composition document.
     #[serde(default, skip_serializing_if = "CompositionDependencyIndex::is_empty")]
     pub dependencies: CompositionDependencyIndex,
 }
 
-/// Request to resolve one exact Composition revision against current source
-/// metadata. Resolution does not execute any source query or create state.
+/// Request to resolve one exact Composition revision against current query
+/// metadata. Resolution does not execute any query or create state.
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompositionResolveRequest {
@@ -403,37 +567,39 @@ pub struct CompositionResolveResponse {
 #[serde(deny_unknown_fields)]
 pub struct CompositionVariableDefinition {
     pub id: String,
-    #[serde(rename = "type")]
-    pub variable_type: CompositionVariableType,
+    pub value_type: CompositionScalarDescriptor,
     pub required: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default: Option<Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub format: Option<CompositionVariableFormat>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CompositionVariableType {
+pub enum CompositionScalarType {
     String,
     Boolean,
     Integer,
     Float,
+    Decimal,
     Date,
     Timestamp,
+    Json,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum CompositionVariableFormat {
-    YearMonth,
+#[serde(deny_unknown_fields)]
+pub struct CompositionScalarDescriptor {
+    pub scalar_type: CompositionScalarType,
+    pub nullable: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompositionResolvePlan {
     pub composition_revision: CompositionRevisionReference,
-    pub sources: Vec<CompositionResolvedSource>,
+    #[serde(default)]
+    pub variable_values: BTreeMap<String, Value>,
+    pub queries: Vec<CompositionResolvedQuery>,
     /// Stable display bindings in the resolver's layout row and item order.
     #[serde(default)]
     pub component_bindings: Vec<CompositionResolvedComponentBinding>,
@@ -441,7 +607,7 @@ pub struct CompositionResolvePlan {
     pub dependencies: CompositionDependencyIndex,
 }
 
-/// Variable and source consumers derived by Core independently of layout
+/// Variable and component consumers derived by Core independently of layout
 /// order. The public variable input vocabulary remains unchanged in this
 /// adapter revision; the index is an additive plan capability.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -449,13 +615,11 @@ pub struct CompositionResolvePlan {
 pub struct CompositionDependencyIndex {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub variable_consumers: BTreeMap<String, CompositionVariableConsumers>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub source_consumers: BTreeMap<String, CompositionSourceConsumers>,
 }
 
 impl CompositionDependencyIndex {
     fn is_empty(&self) -> bool {
-        self.variable_consumers.is_empty() && self.source_consumers.is_empty()
+        self.variable_consumers.is_empty()
     }
 }
 
@@ -467,12 +631,7 @@ pub struct CompositionVariableConsumers {
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub text_component_ids: BTreeSet<String>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub source_ids: BTreeSet<String>,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct CompositionSourceConsumers {
+    pub query_variable_ids: BTreeSet<String>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub metric_component_ids: BTreeSet<String>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
@@ -519,15 +678,9 @@ pub enum CompositionResultFieldType {
 pub struct CompositionResolvedComponentBinding {
     pub component_id: String,
     pub kind: CompositionResolvedComponentKind,
-    /// The bound source for metric and table components. Text components
-    /// carry no source binding; the renderer joins them with their component
-    /// declaration by `component_id`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source_id: Option<String>,
+    /// The single typed graph value bound to this component.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variable_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub result_property_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expected_result_type: Option<CompositionResultFieldType>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -541,24 +694,52 @@ pub struct CompositionRevisionReference {
     pub revision_id: String,
 }
 
-/// A query request compiled by the Rust core resolver. SQL sources are
-/// forwarded through the existing stateless `sql.query` operation.
+/// A query request compiled by the Rust Core resolver. The descriptor is
+/// checked against the current planner schema; `request: None` indicates a
+/// query that waits for scalar query-variable dependencies.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionResolvedQuery {
+    pub variable_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<Value>,
+    /// Exact SQL source for an authorized pinned Saved SQL revision.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sql_text: Option<String>,
+    #[serde(default)]
+    pub deferred_arguments: Vec<CompositionDeferredArgument>,
+    pub returns: CompositionQueryResultType,
+    pub result_columns: Vec<CompositionResolvedResultColumn>,
+    pub form_bindings: Vec<CompositionResolvedFormBinding>,
+    pub schema_fingerprint: String,
+    pub query_semantic_fingerprint: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scalar_cardinality: Option<CompositionScalarCardinality>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionDeferredArgument {
+    pub argument_name: String,
+    pub variable_id: String,
+    pub value_type: CompositionScalarDescriptor,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum CompositionResolvedSource {
-    InlineSql {
-        source_id: String,
-        request: Value,
-        source_schema_fingerprint: String,
-        form_bindings: Vec<CompositionResolvedFormBinding>,
-        expected_result: Vec<CompositionResolvedResultColumn>,
+pub enum CompositionQueryResultType {
+    Scalar {
+        value_type: CompositionScalarDescriptor,
     },
-    SavedSql {
-        source_id: String,
-        request: Value,
-        source_schema_fingerprint: String,
-        expected_result: Vec<CompositionResolvedResultColumn>,
+    Table {
+        columns: Vec<CompositionResolvedResultColumn>,
     },
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompositionScalarCardinality {
+    ExactlyOneRow,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -572,8 +753,7 @@ pub struct CompositionResolvedFormBinding {
 #[serde(deny_unknown_fields)]
 pub struct CompositionResolvedResultColumn {
     pub name: String,
-    #[serde(rename = "type")]
-    pub result_type: CompositionResultFieldType,
+    pub value_type: CompositionScalarDescriptor,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

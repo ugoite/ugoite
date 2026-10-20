@@ -11,8 +11,8 @@ import {
   type CompositionVariableDefinition,
 } from "./composition-api";
 import {
-  parseCompositionVariableInputSync,
-  prepareCompositionVariableInputParser,
+  parseVariableGraphInputSync,
+  prepareVariableGraphInputParser,
 } from "./ugoite-client/protocol";
 
 export interface CompositionIdentity {
@@ -637,7 +637,7 @@ export function createCompositionQueryHandle(
     openController = controller;
     try {
       // Load the canonical Rust parser before any Input control is rendered.
-      await prepareCompositionVariableInputParser();
+      await prepareVariableGraphInputParser();
       const composition = await api.get(
         identity.spaceId,
         identity.compositionId,
@@ -679,7 +679,10 @@ export function createCompositionQueryHandle(
       item.id === variableId
     );
     if (!definition) return;
-    const parsed = parseCompositionVariableInputSync(definition.type, raw);
+    const parsed = parseVariableGraphInputSync(
+      { scalar_type: definition.type, nullable: false },
+      raw,
+    );
     const previous = variableInputs()[variableId];
     const next: CompositionVariableInputState = parsed.status === "valid"
       ? { raw, status: "valid", value: parsed.value }

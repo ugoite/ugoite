@@ -259,17 +259,23 @@ export type VariableGraphLiteral =
 
 export type VariableGraphArgumentBinding = {
   name: string;
-  value_type: VariableGraphScalarDescriptor;
   variable: string;
 };
 
-export type VariableGraphQueryDefinition =
-  | { kind: "inline_sql"; sql: string }
-  | {
-    kind: "saved_sql";
-    entry_id?: string | null;
-    revision_id?: string | null;
-    column?: string | null;
+export type VariableGraphQuery =
+  & (
+    | { kind: "inline_sql"; sql: string }
+    | {
+      kind: "saved_sql";
+      entry_id?: string | null;
+      revision_id?: string | null;
+      column?: string | null;
+    }
+  )
+  & {
+    arguments?: VariableGraphArgumentBinding[];
+    form_bindings?: { relation: string; form_id: string }[];
+    schema_fingerprint?: string;
   };
 
 export type VariableGraphResultType =
@@ -282,29 +288,26 @@ export type VariableGraphResultType =
     }[];
   };
 
-export type VariableGraphNodeKind =
+export type VariableGraphNode =
   | {
+    id: string;
     kind: "constant";
     value_type: VariableGraphScalarDescriptor;
     value: VariableGraphLiteral;
   }
   | {
+    id: string;
     kind: "input";
     value_type: VariableGraphScalarDescriptor;
     required: boolean;
     default?: VariableGraphLiteral | null;
   }
   | {
+    id: string;
     kind: "query";
     returns: VariableGraphResultType;
-    query: VariableGraphQueryDefinition;
-    arguments?: VariableGraphArgumentBinding[];
+    query: VariableGraphQuery;
   };
-
-export type VariableGraphNode = {
-  id: string;
-  kind: VariableGraphNodeKind;
-};
 
 /** Strict v1 graph payload accepted by the pure WASM Domain compiler. */
 export type VariableGraph = {
@@ -700,32 +703,26 @@ export type SqlStructureProposal = {
   added_stable_tie_breakers: string[];
 };
 
-export type CompositionVariableInputType =
-  | "string"
-  | "boolean"
-  | "integer"
-  | "float"
-  | "date"
-  | "timestamp";
-
-export type CompositionVariableInputValueByType = {
+export type VariableGraphInputValueByType = {
   string: string;
   boolean: boolean;
   integer: number;
   float: number;
+  decimal: string;
   date: string;
   timestamp: string;
+  json: unknown;
 };
 
-export type CompositionVariableInputParseResult<
-  T extends CompositionVariableInputType = CompositionVariableInputType,
+export type VariableGraphInputParseResult<
+  T extends VariableGraphScalarType = VariableGraphScalarType,
 > =
   | { status: "unset" }
-  | { status: "valid"; value: CompositionVariableInputValueByType[T] }
+  | { status: "valid"; value: VariableGraphInputValueByType[T] }
   | { status: "invalid" };
 
-/** Load the canonical parser before rendering interactive Composition Inputs. */
-export const prepareCompositionVariableInputParser = async (): Promise<
+/** Load the canonical parser before rendering graph-backed Input controls. */
+export const prepareVariableGraphInputParser = async (): Promise<
   void
 > => {
   await loadExports();
@@ -740,33 +737,33 @@ export const canonicalizeCompositionDocument = async (
     value: { document },
   });
 
-/** Parse raw Composition Input text using the shared Rust Domain contract. */
-export const parseCompositionVariableInput = async <
-  T extends CompositionVariableInputType,
+/** Parse raw variable text using the shared Rust variable-graph contract. */
+export const parseVariableGraphInput = async <
+  T extends VariableGraphScalarType,
 >(
-  type: T,
+  valueType: VariableGraphScalarDescriptor & { scalar_type: T },
   raw: string,
-): Promise<CompositionVariableInputParseResult<T>> =>
-  await invokeProtocol<CompositionVariableInputParseResult<T>>({
-    action: "domain.parse_composition_variable_input",
-    value: { type, raw },
+): Promise<VariableGraphInputParseResult<T>> =>
+  await invokeProtocol<VariableGraphInputParseResult<T>>({
+    action: "domain.parse_variable_graph_input",
+    value: { value_type: valueType, raw },
   });
 
-/** Parse synchronously after prepareCompositionVariableInputParser resolves. */
-export const parseCompositionVariableInputSync = <
-  T extends CompositionVariableInputType,
+/** Parse synchronously after prepareVariableGraphInputParser resolves. */
+export const parseVariableGraphInputSync = <
+  T extends VariableGraphScalarType,
 >(
-  type: T,
+  valueType: VariableGraphScalarDescriptor & { scalar_type: T },
   raw: string,
-): CompositionVariableInputParseResult<T> => {
+): VariableGraphInputParseResult<T> => {
   if (!loadedExports) {
-    throw new Error("Composition variable parser is not prepared");
+    throw new Error("Variable graph input parser is not prepared");
   }
-  return invokeProtocolWithExports<CompositionVariableInputParseResult<T>>(
+  return invokeProtocolWithExports<VariableGraphInputParseResult<T>>(
     loadedExports,
     {
-      action: "domain.parse_composition_variable_input",
-      value: { type, raw },
+      action: "domain.parse_variable_graph_input",
+      value: { value_type: valueType, raw },
     },
   );
 };

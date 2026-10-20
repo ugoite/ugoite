@@ -1,35 +1,34 @@
-//! Pure Composition variable binding and source compilation.
+//! Pure Composition variable graph planning.
 //!
-//! This module resolves typed Composition values into the existing stateless
-//! SQL query contract. It performs no storage reads,
-//! grants no authorization, and creates no persistent query state.
+//! Core compiles the strict typed graph into bounded SQL requests. Current
+//! query metadata is supplied by the storage-backed authorization boundary;
+//! this module performs no storage reads and grants no authorization.
 
-use crate::sql_query::{
-    SavedSqlRevisionRef, SqlQueryRequest, MAX_SQL_COLUMN_NAME_BYTES, MAX_SQL_OUTPUT_COLUMNS,
-};
+use crate::sql_query::{SqlQueryRequest, MAX_SQL_COLUMN_NAME_BYTES, MAX_SQL_OUTPUT_COLUMNS};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use ugoite_domain::composition::{
-    CompositionComponent, CompositionDiagnosticCode, CompositionFormBinding, CompositionLiteral,
-    CompositionMetricPresentation, CompositionResultColumn, CompositionResultFieldType,
-    CompositionSource, CompositionSpec, CompositionTextContent, CompositionValue,
-    CompositionVariable, CompositionVariableType,
+    variable_graph_dependency_order, CompositionComponent, CompositionDiagnosticCode,
+    CompositionMetricPresentation, CompositionResultFieldType, CompositionSpec,
+    CompositionTextContent, VariableGraph, VariableGraphColumn, VariableGraphFormBinding,
+    VariableGraphInputDiagnosticCode, VariableGraphLiteral, VariableGraphNode,
+    VariableGraphNodeKind, VariableGraphQueryDefinition, VariableGraphResultType,
+    VariableGraphScalarDescriptor, VariableGraphScalarType,
 };
-use ugoite_domain::composition_metric::validate_composition_metric_result_type;
 use ugoite_domain::id::{EntryId, RevisionId};
+use uuid::Uuid;
 
-/// Bounded default page size for Composition SQL sources.
-const DEFAULT_COMPOSITION_SQL_PAGE_LIMIT: usize = 100;
+/// Bounded page size for query variables returning a table.
+pub const DEFAULT_COMPOSITION_QUERY_PAGE_LIMIT: usize = 100;
 
-/// One stable diagnostic emitted while binding a variable or value template.
-///
-/// Variable identifiers are included for caller-value binding errors.
-/// Unknown or unset references embedded in a source template are code-only,
-/// so resolving them does not disclose a source's SQL variable names.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// One stable diagnostic from graph input or query planning.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CompositionDiagnostic {
     pub code: CompositionDiagnosticCode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variable_id: Option<String>,
 }
 
@@ -49,514 +48,1153 @@ impl CompositionDiagnostic {
     }
 }
 
-/// Bound values and deterministic diagnostics for one Composition request.
+/// Resolved scalar constants and caller inputs for one graph snapshot.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct VariableBindings {
-    /// Values supplied by the caller or selected from typed defaults.
-    pub values: BTreeMap<String, Value>,
-    /// Declared variables whose supplied value failed type validation.
-    /// Keeping this state prevents a source reference from misreporting a rejected
-    /// value as merely missing.
-    pub invalid_values: BTreeSet<String>,
-    /// Declared types, including optional variables that are currently unset.
-    pub variable_types: BTreeMap<String, CompositionVariableType>,
+pub struct VariableGraphBindings {
+    pub values: BTreeMap<String, VariableGraphLiteral>,
     pub diagnostics: Vec<CompositionDiagnostic>,
 }
 
-/// A value after resolving a literal or named Composition variable.
-#[derive(Clone, Debug, PartialEq)]
-pub struct BoundCompositionValue {
-    pub value: Value,
-    /// `None` means the value was a literal in the Composition document.
-    pub variable_type: Option<CompositionVariableType>,
-}
-
-/// Bind caller values and defaults against the document's variable schema.
-///
-/// Required variables without values produce `variable_missing`. Optional
-/// unset variables remain absent until a source actually references them.
-/// Unknown caller keys are reported in lexical order; declared variables are
-/// processed in document order, making the complete diagnostic list stable.
+/// Bind typed constants and input values. Query variables are never accepted
+/// from the caller; they enter the graph only through validated SQL results.
 pub fn bind_variables(
-    variables: &[CompositionVariable],
+    variables: &[VariableGraphNode],
     supplied: &BTreeMap<String, Value>,
-) -> VariableBindings {
+) -> VariableGraphBindings {
     bind_variables_with_unset(variables, supplied, &[])
 }
 
-/// Bind caller values and defaults while honoring variables explicitly left
-/// unset by an Input. Explicitly unset names override declaration defaults;
-/// omission from both collections continues to select the default.
+/// Bind typed values while allowing an Input to be explicitly unset, even if
+/// its document has a default. Unknown and non-Input values fail closed.
 pub fn bind_variables_with_unset(
-    variables: &[CompositionVariable],
+    variables: &[VariableGraphNode],
     supplied: &BTreeMap<String, Value>,
     unset_variables: &[String],
-) -> VariableBindings {
-    let mut bindings = VariableBindings::default();
-    let mut declared = BTreeSet::new();
-    let explicitly_unset = unset_variables.iter().cloned().collect::<BTreeSet<_>>();
-
-    for variable in variables {
-        if !declared.insert(variable.id.clone()) {
-            bindings
-                .diagnostics
-                .push(CompositionDiagnostic::without_variable(
-                    CompositionDiagnosticCode::InvalidComposition,
-                ));
-            return bindings;
+) -> VariableGraphBindings {
+    let mut graph = VariableGraph {
+        variables: variables.to_vec(),
+    };
+    let unset = unset_variables
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let mut diagnostics = Vec::new();
+    for id in &unset {
+        match graph.variables.iter_mut().find(|node| node.id == *id) {
+            Some(VariableGraphNode {
+                kind: VariableGraphNodeKind::Input { default, .. },
+                ..
+            }) => *default = None,
+            Some(_) => diagnostics.push(CompositionDiagnostic::for_variable(
+                CompositionDiagnosticCode::InvalidComposition,
+                id,
+            )),
+            None => diagnostics.push(CompositionDiagnostic::for_variable(
+                CompositionDiagnosticCode::VariableUnknown,
+                id,
+            )),
         }
-        if variable.default.as_ref().is_some_and(|default| {
-            !variable
-                .variable_type
-                .accepts_value(default.as_json_value())
-        }) {
-            bindings
-                .diagnostics
-                .push(CompositionDiagnostic::without_variable(
-                    CompositionDiagnosticCode::InvalidComposition,
-                ));
-            return bindings;
-        }
-        bindings
-            .variable_types
-            .insert(variable.id.clone(), variable.variable_type);
+    }
+    if !diagnostics.is_empty() {
+        return VariableGraphBindings {
+            values: BTreeMap::new(),
+            diagnostics,
+        };
     }
 
-    for variable in variables {
-        if explicitly_unset.contains(&variable.id) {
-            if supplied.contains_key(&variable.id) {
-                bindings.invalid_values.insert(variable.id.clone());
-                bindings
-                    .diagnostics
-                    .push(CompositionDiagnostic::for_variable(
-                        CompositionDiagnosticCode::VariableTypeMismatch,
-                        &variable.id,
-                    ));
-            } else if variable.required {
-                bindings
-                    .diagnostics
-                    .push(CompositionDiagnostic::for_variable(
-                        CompositionDiagnosticCode::VariableMissing,
-                        &variable.id,
-                    ));
-            }
-            continue;
-        }
-
-        let value = supplied.get(&variable.id).or_else(|| {
-            variable
-                .default
-                .as_ref()
-                .map(CompositionLiteral::as_json_value)
-        });
-        let Some(value) = value else {
-            if variable.required {
-                bindings
-                    .diagnostics
-                    .push(CompositionDiagnostic::for_variable(
-                        CompositionDiagnosticCode::VariableMissing,
-                        &variable.id,
-                    ));
-            }
+    let mut typed_supplied = BTreeMap::new();
+    let nodes = graph
+        .variables
+        .iter()
+        .map(|node| (node.id.as_str(), node))
+        .collect::<BTreeMap<_, _>>();
+    for (id, value) in supplied {
+        let Some(node) = nodes.get(id.as_str()) else {
+            diagnostics.push(CompositionDiagnostic::for_variable(
+                CompositionDiagnosticCode::VariableUnknown,
+                id,
+            ));
             continue;
         };
-
-        if variable.variable_type.accepts_value(value) {
-            bindings.values.insert(variable.id.clone(), value.clone());
-        } else {
-            bindings.invalid_values.insert(variable.id.clone());
-            bindings
-                .diagnostics
-                .push(CompositionDiagnostic::for_variable(
-                    CompositionDiagnosticCode::VariableTypeMismatch,
-                    &variable.id,
-                ));
+        let VariableGraphNodeKind::Input { value_type, .. } = node.kind else {
+            diagnostics.push(CompositionDiagnostic::for_variable(
+                CompositionDiagnosticCode::InvalidComposition,
+                id,
+            ));
+            continue;
+        };
+        match literal_from_json(value_type, value) {
+            Some(literal) => {
+                typed_supplied.insert(id.clone(), literal);
+            }
+            None => diagnostics.push(CompositionDiagnostic::for_variable(
+                CompositionDiagnosticCode::VariableTypeMismatch,
+                id,
+            )),
         }
     }
-
-    let unknown_names = supplied
-        .keys()
-        .cloned()
-        .chain(explicitly_unset.iter().cloned())
-        .filter(|name| !declared.contains(name))
-        .collect::<BTreeSet<_>>();
-    for name in unknown_names {
-        bindings
-            .diagnostics
-            .push(CompositionDiagnostic::for_variable(
-                CompositionDiagnosticCode::VariableUnknown,
-                &name,
-            ));
+    if !diagnostics.is_empty() {
+        return VariableGraphBindings {
+            values: BTreeMap::new(),
+            diagnostics,
+        };
     }
-
-    bindings
-}
-
-/// Resolve a source value without coercion or expression evaluation.
-pub fn resolve_value_template(
-    template: &CompositionValue,
-    bindings: &VariableBindings,
-) -> Result<BoundCompositionValue, CompositionDiagnostic> {
-    match template {
-        CompositionValue::Literal(value) => Ok(BoundCompositionValue {
-            value: value.as_json_value().clone(),
-            variable_type: None,
-        }),
-        CompositionValue::Variable(reference) => {
-            let Some(variable_type) = bindings.variable_types.get(&reference.variable).copied()
-            else {
-                return Err(CompositionDiagnostic::without_variable(
-                    CompositionDiagnosticCode::VariableUnknown,
-                ));
-            };
-            if bindings.invalid_values.contains(&reference.variable) {
-                return Err(CompositionDiagnostic::without_variable(
-                    CompositionDiagnosticCode::VariableTypeMismatch,
+    match ugoite_domain::composition::resolve_variable_graph_inputs(&graph, &typed_supplied) {
+        Ok(resolved) => VariableGraphBindings {
+            values: resolved.values,
+            diagnostics: Vec::new(),
+        },
+        Err(error) => {
+            let mut mapped = error
+                .inputs
+                .into_iter()
+                .map(|diagnostic| {
+                    let code = match diagnostic.code {
+                        VariableGraphInputDiagnosticCode::UnknownInput => {
+                            CompositionDiagnosticCode::VariableUnknown
+                        }
+                        VariableGraphInputDiagnosticCode::MissingRequiredInput => {
+                            CompositionDiagnosticCode::VariableMissing
+                        }
+                        VariableGraphInputDiagnosticCode::InputTypeMismatch => {
+                            CompositionDiagnosticCode::VariableTypeMismatch
+                        }
+                        VariableGraphInputDiagnosticCode::ValueForNonInput => {
+                            CompositionDiagnosticCode::InvalidComposition
+                        }
+                    };
+                    CompositionDiagnostic::for_variable(code, &diagnostic.variable_id)
+                })
+                .collect::<Vec<_>>();
+            if !error.graph.is_empty() {
+                mapped.push(CompositionDiagnostic::without_variable(
+                    CompositionDiagnosticCode::InvalidComposition,
                 ));
             }
-            let Some(value) = bindings.values.get(&reference.variable) else {
-                return Err(CompositionDiagnostic::without_variable(
-                    CompositionDiagnosticCode::VariableMissing,
-                ));
-            };
-            Ok(BoundCompositionValue {
-                value: value.clone(),
-                variable_type: Some(variable_type),
-            })
+            mapped.sort_by(|left, right| {
+                (left.code.as_str(), &left.variable_id)
+                    .cmp(&(right.code.as_str(), &right.variable_id))
+            });
+            mapped.dedup();
+            VariableGraphBindings {
+                values: BTreeMap::new(),
+                diagnostics: mapped,
+            }
         }
     }
 }
 
-fn value_matches_variable(value: &Value, variable_type: CompositionVariableType) -> bool {
-    variable_type.accepts_value(value)
+fn literal_from_json(
+    descriptor: VariableGraphScalarDescriptor,
+    value: &Value,
+) -> Option<VariableGraphLiteral> {
+    if value.is_null() {
+        return descriptor.nullable.then_some(VariableGraphLiteral::Null);
+    }
+    Some(match descriptor.scalar_type {
+        VariableGraphScalarType::String => VariableGraphLiteral::String(value.as_str()?.to_owned()),
+        VariableGraphScalarType::Boolean => VariableGraphLiteral::Boolean(value.as_bool()?),
+        VariableGraphScalarType::Integer => VariableGraphLiteral::Integer(value.as_i64()?),
+        VariableGraphScalarType::Float => VariableGraphLiteral::Float(value.as_f64()?),
+        VariableGraphScalarType::Decimal => {
+            VariableGraphLiteral::Decimal(value.as_str()?.to_owned())
+        }
+        VariableGraphScalarType::Date => VariableGraphLiteral::Date(value.as_str()?.to_owned()),
+        VariableGraphScalarType::Timestamp => {
+            VariableGraphLiteral::Timestamp(value.as_str()?.to_owned())
+        }
+        VariableGraphScalarType::Json => VariableGraphLiteral::Json(value.clone()),
+    })
 }
 
-/// Metadata produced by the server's SQL planner for the current inline SQL
-/// source. Core deliberately does not parse SQL: relation bindings, parameter
-/// names, planned output columns, and the stable relation rewrite all come from
-/// the authorized server boundary.
+/// Planner-derived schema for an inline query variable.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct InlineSqlSourceMetadata {
-    /// SQL after the server resolves Form relations to their stable internal IDs.
+pub struct InlineSqlQueryMetadata {
     pub bound_sql: String,
-    pub form_bindings: Vec<CompositionFormBinding>,
+    pub form_bindings: Vec<VariableGraphFormBinding>,
     pub parameter_names: BTreeSet<String>,
-    pub expected_result: Vec<CompositionResultColumn>,
+    pub result_columns: Vec<VariableGraphColumn>,
     pub schema_fingerprint: String,
 }
 
-/// Metadata for one exact Saved SQL revision, projected by the authorized
-/// storage boundary into the transport-neutral Core resolver input.
+/// Planner-derived schema for one exact Saved SQL revision.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SavedSqlRevisionMetadata {
-    pub id: String,
+    pub entry_id: String,
     pub revision_id: String,
-    pub variable_types: BTreeMap<String, String>,
-    pub expected_result: Vec<CompositionResultColumn>,
+    /// SQL source read from this exact immutable revision after authorization.
+    pub sql_text: String,
+    pub parameter_types: BTreeMap<String, VariableGraphScalarDescriptor>,
+    pub form_bindings: Vec<VariableGraphFormBinding>,
+    pub result_columns: Vec<VariableGraphColumn>,
     pub schema_fingerprint: String,
 }
 
-/// An inline SQL source compiled to the existing stateless SQL request.
-#[derive(Clone, Debug, PartialEq)]
-pub struct CompiledInlineSqlSource {
-    pub request: SqlQueryRequest,
-    pub form_bindings: Vec<CompositionFormBinding>,
-    pub expected_result: Vec<CompositionResultColumn>,
-    /// Composition variable IDs used by this source, sorted and deduplicated.
-    pub variable_dependencies: Vec<String>,
-    /// The schema fingerprint persisted with this source.
-    pub source_schema_fingerprint: String,
+/// Current query metadata read through the caller's authorization boundary.
+#[derive(Clone, Copy)]
+pub enum CurrentQueryDescriptor<'a> {
+    InlineSql {
+        variable_id: &'a str,
+        metadata: Option<&'a InlineSqlQueryMetadata>,
+    },
+    SavedSql {
+        variable_id: &'a str,
+        metadata: Option<&'a SavedSqlRevisionMetadata>,
+    },
 }
 
-/// Compile inline SQL against the server's current, authorized SQL plan.
-/// Stored Form bindings and result schema are snapshots, never instructions to
-/// rebind a relation. The request carries server-rewritten SQL; execution still
-/// repeats the ordinary SQL ACL and resource checks.
-pub fn compile_inline_sql_source(
-    source: &CompositionSource,
-    current_schema: Option<&InlineSqlSourceMetadata>,
-    bindings: &VariableBindings,
-    allow_incomplete_source_descriptors: bool,
-) -> Result<CompiledInlineSqlSource, Vec<CompositionDiagnostic>> {
-    let CompositionSource::InlineSql {
-        form_bindings,
-        expected_result,
-        schema_fingerprint,
-        ..
-    } = source
-    else {
-        return Err(vec![CompositionDiagnostic::without_variable(
-            CompositionDiagnosticCode::InvalidComposition,
-        )]);
-    };
-    let Some(current_schema) = current_schema else {
-        return Err(vec![CompositionDiagnostic::without_variable(
-            CompositionDiagnosticCode::SourceUnavailable,
-        )]);
-    };
-    if current_schema.bound_sql.trim().is_empty() {
-        return Err(vec![CompositionDiagnostic::without_variable(
-            CompositionDiagnosticCode::SourceUnavailable,
-        )]);
-    }
-    if !result_schema_is_well_formed(
-        &current_schema.expected_result,
-        &current_schema.schema_fingerprint,
-    ) || current_schema
-        .form_bindings
-        .iter()
-        .any(|binding| binding.relation.trim().is_empty())
-        || current_schema
-            .form_bindings
-            .iter()
-            .map(|binding| binding.relation.as_str())
-            .collect::<BTreeSet<_>>()
-            .len()
-            != current_schema.form_bindings.len()
-        || current_schema
-            .parameter_names
-            .iter()
-            .any(|name| name.trim().is_empty())
-    {
-        return Err(vec![CompositionDiagnostic::without_variable(
-            CompositionDiagnosticCode::SourceUnavailable,
-        )]);
-    }
-    let draft_placeholder =
-        form_bindings.is_empty() && expected_result.is_empty() && schema_fingerprint.is_empty();
-    if !(allow_incomplete_source_descriptors && draft_placeholder)
-        && (&current_schema.form_bindings != form_bindings
-            || &current_schema.expected_result != expected_result
-            || &current_schema.schema_fingerprint != schema_fingerprint)
-    {
-        return Err(vec![CompositionDiagnostic::without_variable(
-            CompositionDiagnosticCode::SourceSchemaChanged,
-        )]);
-    }
-
-    let mut parameters = serde_json::Map::new();
-    let mut parameter_types = BTreeMap::new();
-    let mut variable_dependencies = BTreeSet::new();
-    let mut diagnostics = Vec::new();
-    for variable_id in &current_schema.parameter_names {
-        let Some(variable_type) = bindings.variable_types.get(variable_id).copied() else {
-            diagnostics.push(CompositionDiagnostic::without_variable(
-                CompositionDiagnosticCode::VariableUnknown,
-            ));
-            continue;
-        };
-        let Some(value) = bindings.values.get(variable_id) else {
-            diagnostics.push(CompositionDiagnostic::without_variable(
-                CompositionDiagnosticCode::VariableMissing,
-            ));
-            continue;
-        };
-        if !value_matches_variable(value, variable_type) {
-            diagnostics.push(CompositionDiagnostic::without_variable(
-                CompositionDiagnosticCode::VariableTypeMismatch,
-            ));
-            continue;
+impl CurrentQueryDescriptor<'_> {
+    fn variable_id(&self) -> &str {
+        match self {
+            Self::InlineSql { variable_id, .. } | Self::SavedSql { variable_id, .. } => variable_id,
         }
-        variable_dependencies.insert(variable_id.clone());
-        parameters.insert(variable_id.clone(), value.clone());
-        parameter_types.insert(
-            variable_id.clone(),
-            sql_type_for_composition_variable(variable_type).to_owned(),
-        );
     }
-    if !diagnostics.is_empty() {
-        return Err(deduplicate_diagnostics(diagnostics));
-    }
+}
 
-    let request = SqlQueryRequest {
-        sql: current_schema.bound_sql.clone(),
-        parameters,
-        parameter_types,
-        include_exact_integer_values: false,
-        limit: DEFAULT_COMPOSITION_SQL_PAGE_LIMIT,
-        continuation: None,
-        execution_id: None,
-        saved_sql: None,
-    };
-    if request.validate().is_err() {
-        return Err(vec![CompositionDiagnostic::without_variable(
-            CompositionDiagnosticCode::InvalidComposition,
-        )]);
-    }
-    Ok(CompiledInlineSqlSource {
-        request,
-        form_bindings: current_schema.form_bindings.clone(),
-        expected_result: current_schema.expected_result.clone(),
-        variable_dependencies: variable_dependencies.into_iter().collect(),
-        source_schema_fingerprint: if draft_placeholder && allow_incomplete_source_descriptors {
-            current_schema.schema_fingerprint.clone()
-        } else {
-            schema_fingerprint.clone()
-        },
+/// Identity of the exact Composition revision being resolved.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionRevisionRef {
+    pub entry_id: EntryId,
+    pub revision_id: RevisionId,
+}
+
+/// Inputs for one pure graph resolution pass.
+pub struct ResolveInput<'a> {
+    pub composition_revision: CompositionRevisionRef,
+    /// The caller-owned identity for this immutable query plan snapshot.
+    pub execution_id: Uuid,
+    pub spec: &'a CompositionSpec,
+    pub variables: &'a BTreeMap<String, Value>,
+    pub current_queries: &'a [CurrentQueryDescriptor<'a>],
+}
+
+/// One bounded query request keyed by its graph variable ID.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResolvedQueryRequest {
+    pub variable_id: String,
+    pub request: Option<SqlQueryRequest>,
+    /// Exact source text for Saved SQL; absent for inline SQL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sql_text: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deferred_arguments:
+        Vec<crate::composition_query::VariableGraphQueryRequestDeferredArgument>,
+    /// Planner-confirmed output contract. In draft preview this may replace
+    /// an explicitly incomplete return descriptor; persistence always checks
+    /// the same contract before accepting the document.
+    pub returns: VariableGraphResultType,
+    /// Scalar query variables have an explicit one-row result contract.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scalar_cardinality: Option<CompositionScalarCardinality>,
+    pub result_columns: Vec<VariableGraphColumn>,
+    pub form_bindings: Vec<VariableGraphFormBinding>,
+    pub schema_fingerprint: String,
+    /// Stable identity for authoring-time reuse. Inline SQL hashes its exact
+    /// bound SQL and all bindings; Saved SQL also pins exact entry/revision.
+    pub query_semantic_fingerprint: String,
+}
+
+/// Cardinality promised by a scalar query variable's output contract.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompositionScalarCardinality {
+    ExactlyOneRow,
+}
+
+/// One variable's input, text, query, or visual consumers.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VariableConsumers {
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub input_component_ids: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub text_component_ids: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub query_variable_ids: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub metric_component_ids: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub table_component_ids: BTreeSet<String>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionDependencyIndex {
+    #[serde(default)]
+    pub variable_consumers: BTreeMap<String, VariableConsumers>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResolvedComponentKind {
+    Input,
+    Metric,
+    #[serde(rename = "table")]
+    Tabular,
+    Text,
+}
+
+/// Component reference resolved against the typed graph; every data component
+/// carries only its variable identity.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResolvedComponentBinding {
+    pub component_id: String,
+    pub kind: ResolvedComponentKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variable_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_result_type: Option<CompositionResultFieldType>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<CompositionMetricPresentation>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResolvedCompositionPlan {
+    pub composition_revision: CompositionRevisionRef,
+    pub variable_values: BTreeMap<String, VariableGraphLiteral>,
+    pub queries: Vec<ResolvedQueryRequest>,
+    #[serde(default)]
+    pub component_bindings: Vec<ResolvedComponentBinding>,
+    #[serde(default)]
+    pub dependencies: CompositionDependencyIndex,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PreviewCompositionPlan {
+    pub draft_fingerprint: String,
+    pub variable_values: BTreeMap<String, VariableGraphLiteral>,
+    pub queries: Vec<ResolvedQueryRequest>,
+    #[serde(default)]
+    pub component_bindings: Vec<ResolvedComponentBinding>,
+    #[serde(default)]
+    pub dependencies: CompositionDependencyIndex,
+}
+
+pub fn resolve_composition(
+    input: ResolveInput<'_>,
+) -> Result<ResolvedCompositionPlan, Vec<CompositionDiagnostic>> {
+    resolve_composition_with_unset(input, &[])
+}
+
+pub fn resolve_composition_with_unset(
+    input: ResolveInput<'_>,
+    unset: &[String],
+) -> Result<ResolvedCompositionPlan, Vec<CompositionDiagnostic>> {
+    resolve_composition_with_query_selection(input, unset, None)
+}
+
+/// Resolve a Composition plan for the selected query variables and their
+/// transitive query dependencies. Unselected query metadata is deliberately
+/// omitted from the plan; graph structure and component bindings are still
+/// validated against the complete graph.
+pub fn resolve_composition_with_query_selection(
+    input: ResolveInput<'_>,
+    unset: &[String],
+    selected_query_ids: Option<&BTreeSet<String>>,
+) -> Result<ResolvedCompositionPlan, Vec<CompositionDiagnostic>> {
+    let (variable_values, queries, component_bindings, dependencies) = resolve_parts(
+        input.execution_id,
+        input.spec,
+        input.variables,
+        unset,
+        input.current_queries,
+        false,
+        false,
+        selected_query_ids,
+    )?;
+    Ok(ResolvedCompositionPlan {
+        composition_revision: input.composition_revision,
+        variable_values,
+        queries,
+        component_bindings,
+        dependencies,
     })
 }
 
-/// An exact Saved SQL source compiled to the existing stateless SQL request.
-#[derive(Clone, Debug, PartialEq)]
-pub struct CompiledSavedSqlSource {
-    pub request: SqlQueryRequest,
-    pub expected_result: Vec<CompositionResultColumn>,
-    /// Composition variable IDs bound into this source, sorted and deduplicated.
-    pub variable_dependencies: Vec<String>,
-    /// The schema fingerprint pinned by this exact revision.
-    pub source_schema_fingerprint: String,
+pub fn resolve_composition_preview(
+    execution_id: Uuid,
+    spec: &CompositionSpec,
+    variables: &BTreeMap<String, Value>,
+    current_queries: &[CurrentQueryDescriptor<'_>],
+    draft_fingerprint: String,
+) -> Result<PreviewCompositionPlan, Vec<CompositionDiagnostic>> {
+    resolve_composition_preview_with_unset(
+        execution_id,
+        spec,
+        variables,
+        &[],
+        current_queries,
+        draft_fingerprint,
+    )
 }
 
-/// Compile a Composition Saved SQL source against metadata read for its exact
-/// pinned revision. Missing or concealed reads share one stable diagnostic.
-pub fn compile_saved_sql_source(
-    source: &CompositionSource,
-    current_revision: Option<&SavedSqlRevisionMetadata>,
-    bindings: &VariableBindings,
-) -> Result<CompiledSavedSqlSource, Vec<CompositionDiagnostic>> {
-    let CompositionSource::SavedSql {
-        entry_id,
-        revision_id,
-        expected_result,
-        schema_fingerprint,
+pub fn resolve_composition_preview_with_unset(
+    execution_id: Uuid,
+    spec: &CompositionSpec,
+    variables: &BTreeMap<String, Value>,
+    unset: &[String],
+    current_queries: &[CurrentQueryDescriptor<'_>],
+    draft_fingerprint: String,
+) -> Result<PreviewCompositionPlan, Vec<CompositionDiagnostic>> {
+    resolve_composition_preview_with_query_selection(
+        execution_id,
+        spec,
         variables,
-        ..
-    } = source
-    else {
+        unset,
+        current_queries,
+        draft_fingerprint,
+        None,
+    )
+}
+
+/// Preview a selected query dependency subgraph while validating the full
+/// Composition graph and component bindings.
+pub fn resolve_composition_preview_with_query_selection(
+    execution_id: Uuid,
+    spec: &CompositionSpec,
+    variables: &BTreeMap<String, Value>,
+    unset: &[String],
+    current_queries: &[CurrentQueryDescriptor<'_>],
+    draft_fingerprint: String,
+    selected_query_ids: Option<&BTreeSet<String>>,
+) -> Result<PreviewCompositionPlan, Vec<CompositionDiagnostic>> {
+    resolve_composition_preview_with_query_selection_and_unset_inputs(
+        execution_id,
+        spec,
+        variables,
+        unset,
+        current_queries,
+        draft_fingerprint,
+        selected_query_ids,
+        false,
+    )
+}
+
+/// Authoring-only preview that resolves query metadata while Inputs remain
+/// unset. Such Inputs stay absent from returned values, and requests that
+/// would consume preview placeholders remain unexecutable (`None`).
+pub fn resolve_composition_authoring_preview_with_query_selection(
+    execution_id: Uuid,
+    spec: &CompositionSpec,
+    variables: &BTreeMap<String, Value>,
+    unset: &[String],
+    current_queries: &[CurrentQueryDescriptor<'_>],
+    draft_fingerprint: String,
+    selected_query_ids: Option<&BTreeSet<String>>,
+) -> Result<PreviewCompositionPlan, Vec<CompositionDiagnostic>> {
+    resolve_composition_preview_with_query_selection_and_unset_inputs(
+        execution_id,
+        spec,
+        variables,
+        unset,
+        current_queries,
+        draft_fingerprint,
+        selected_query_ids,
+        true,
+    )
+}
+
+fn resolve_composition_preview_with_query_selection_and_unset_inputs(
+    execution_id: Uuid,
+    spec: &CompositionSpec,
+    variables: &BTreeMap<String, Value>,
+    unset: &[String],
+    current_queries: &[CurrentQueryDescriptor<'_>],
+    draft_fingerprint: String,
+    selected_query_ids: Option<&BTreeSet<String>>,
+    allow_unset_inputs: bool,
+) -> Result<PreviewCompositionPlan, Vec<CompositionDiagnostic>> {
+    let (variable_values, queries, component_bindings, dependencies) = resolve_parts(
+        execution_id,
+        spec,
+        variables,
+        unset,
+        current_queries,
+        true,
+        allow_unset_inputs,
+        selected_query_ids,
+    )?;
+    Ok(PreviewCompositionPlan {
+        draft_fingerprint,
+        variable_values,
+        queries,
+        component_bindings,
+        dependencies,
+    })
+}
+
+type ResolvedCompositionParts = (
+    BTreeMap<String, VariableGraphLiteral>,
+    Vec<ResolvedQueryRequest>,
+    Vec<ResolvedComponentBinding>,
+    CompositionDependencyIndex,
+);
+
+fn bind_authoring_preview_inputs(
+    variables: &[VariableGraphNode],
+    supplied: &BTreeMap<String, Value>,
+    unset: &[String],
+) -> Result<(VariableGraphBindings, BTreeSet<String>), Vec<CompositionDiagnostic>> {
+    let mut preview_variables = variables.to_vec();
+    for node in &mut preview_variables {
+        if let VariableGraphNodeKind::Input { required, .. } = &mut node.kind {
+            *required = false;
+        }
+    }
+    let bindings = bind_variables_with_unset(&preview_variables, supplied, unset);
+    if !bindings.diagnostics.is_empty() {
+        return Err(bindings.diagnostics);
+    }
+    let missing_inputs = preview_variables
+        .iter()
+        .filter(|node| {
+            matches!(node.kind, VariableGraphNodeKind::Input { .. })
+                && !bindings.values.contains_key(&node.id)
+        })
+        .map(|node| node.id.clone())
+        .collect();
+    Ok((bindings, missing_inputs))
+}
+
+fn authoring_preview_placeholder(scalar_type: VariableGraphScalarType) -> VariableGraphLiteral {
+    match scalar_type {
+        VariableGraphScalarType::String => VariableGraphLiteral::String(String::new()),
+        VariableGraphScalarType::Boolean => VariableGraphLiteral::Boolean(false),
+        VariableGraphScalarType::Integer => VariableGraphLiteral::Integer(0),
+        VariableGraphScalarType::Float => VariableGraphLiteral::Float(0.0),
+        VariableGraphScalarType::Decimal => VariableGraphLiteral::Decimal("0".to_owned()),
+        VariableGraphScalarType::Date => VariableGraphLiteral::Date("1970-01-01".to_owned()),
+        VariableGraphScalarType::Timestamp => {
+            VariableGraphLiteral::Timestamp("1970-01-01T00:00:00Z".to_owned())
+        }
+        VariableGraphScalarType::Json => VariableGraphLiteral::Json(Value::Bool(false)),
+    }
+}
+
+fn queries_blocked_by_unset_inputs(
+    graph: &VariableGraph,
+    query_order: &[String],
+    missing_inputs: &BTreeSet<String>,
+) -> BTreeSet<String> {
+    let nodes = graph
+        .variables
+        .iter()
+        .map(|node| (node.id.as_str(), node))
+        .collect::<BTreeMap<_, _>>();
+    let mut blocked = BTreeSet::new();
+    for variable_id in query_order {
+        let Some(node) = nodes.get(variable_id.as_str()) else {
+            continue;
+        };
+        let VariableGraphNodeKind::Query { query, .. } = &node.kind else {
+            continue;
+        };
+        if query.arguments.iter().any(|argument| {
+            missing_inputs.contains(&argument.variable) || blocked.contains(&argument.variable)
+        }) {
+            blocked.insert(variable_id.clone());
+        }
+    }
+    blocked
+}
+
+fn resolve_parts(
+    execution_id: Uuid,
+    spec: &CompositionSpec,
+    variables: &BTreeMap<String, Value>,
+    unset: &[String],
+    current_queries: &[CurrentQueryDescriptor<'_>],
+    allow_draft_descriptors: bool,
+    allow_unset_inputs: bool,
+    selected_query_ids: Option<&BTreeSet<String>>,
+) -> Result<ResolvedCompositionParts, Vec<CompositionDiagnostic>> {
+    let graph = VariableGraph {
+        variables: spec.variables.clone(),
+    };
+    let (bindings, missing_inputs) = if allow_unset_inputs {
+        bind_authoring_preview_inputs(&spec.variables, variables, unset)?
+    } else {
+        let bindings = bind_variables_with_unset(&spec.variables, variables, unset);
+        if !bindings.diagnostics.is_empty() {
+            return Err(bindings.diagnostics);
+        }
+        (bindings, BTreeSet::new())
+    };
+    let render_components = spec.components_in_render_order().map_err(|_| {
+        vec![CompositionDiagnostic::without_variable(
+            CompositionDiagnosticCode::InvalidComposition,
+        )]
+    })?;
+    let query_nodes = spec
+        .variables
+        .iter()
+        .filter(|node| matches!(node.kind, VariableGraphNodeKind::Query { .. }))
+        .collect::<Vec<_>>();
+    let query_ids = query_nodes
+        .iter()
+        .map(|node| node.id.clone())
+        .collect::<BTreeSet<_>>();
+    if selected_query_ids.is_some_and(|selected| {
+        selected
+            .iter()
+            .any(|variable_id| !query_ids.contains(variable_id))
+    }) {
         return Err(vec![CompositionDiagnostic::without_variable(
             CompositionDiagnosticCode::InvalidComposition,
         )]);
-    };
-    let Some(current_revision) = current_revision else {
-        return Err(vec![CompositionDiagnostic::without_variable(
-            CompositionDiagnosticCode::SourceUnavailable,
-        )]);
-    };
-
-    let expected_id = entry_id.to_string();
-    let expected_revision_id = revision_id.to_string();
-    if current_revision.id != expected_id || current_revision.revision_id != expected_revision_id {
-        return Err(vec![CompositionDiagnostic::without_variable(
-            CompositionDiagnosticCode::SourceUnavailable,
-        )]);
     }
-    if !result_schema_is_well_formed(
-        &current_revision.expected_result,
-        &current_revision.schema_fingerprint,
-    ) || current_revision.expected_result != *expected_result
-        || current_revision.schema_fingerprint != *schema_fingerprint
-    {
-        return Err(vec![CompositionDiagnostic::without_variable(
-            CompositionDiagnosticCode::SourceSchemaChanged,
-        )]);
+    let query_order = variable_graph_dependency_order(&graph).map_err(|_| {
+        vec![CompositionDiagnostic::without_variable(
+            CompositionDiagnosticCode::InvalidComposition,
+        )]
+    })?;
+    let blocked_by_unset_inputs =
+        queries_blocked_by_unset_inputs(&graph, &query_order, &missing_inputs);
+    let mut query_binding_values = bindings.values.clone();
+    if allow_unset_inputs {
+        for node in &spec.variables {
+            if missing_inputs.contains(&node.id) {
+                if let VariableGraphNodeKind::Input { value_type, .. } = &node.kind {
+                    query_binding_values.insert(
+                        node.id.clone(),
+                        authoring_preview_placeholder(value_type.scalar_type),
+                    );
+                }
+            }
+        }
+    }
+    let mut current = BTreeMap::new();
+    for descriptor in current_queries {
+        if !query_ids.contains(descriptor.variable_id())
+            || current
+                .insert(descriptor.variable_id(), descriptor)
+                .is_some()
+        {
+            return Err(vec![CompositionDiagnostic::without_variable(
+                CompositionDiagnosticCode::InvalidComposition,
+            )]);
+        }
     }
 
+    let mut execution_graph = graph.clone();
+    let mut derived = BTreeMap::<
+        String,
+        (
+            VariableGraphResultType,
+            Vec<VariableGraphFormBinding>,
+            Vec<VariableGraphColumn>,
+            String,
+            String,
+            Option<String>,
+        ),
+    >::new();
     let mut diagnostics = Vec::new();
-    let mut parameters = serde_json::Map::new();
-    let mut parameter_types = BTreeMap::new();
-    let mut variable_dependencies = BTreeSet::new();
-    for (variable_name, value_template) in variables {
-        let Some(sql_type_name) = current_revision.variable_types.get(variable_name) else {
-            diagnostics.push(CompositionDiagnostic::without_variable(
-                CompositionDiagnosticCode::SourceSchemaChanged,
+    for variable_id in query_order {
+        let Some(node) = execution_graph
+            .variables
+            .iter_mut()
+            .find(|node| node.id == variable_id)
+        else {
+            continue;
+        };
+        let VariableGraphNodeKind::Query { query, returns } = &mut node.kind else {
+            continue;
+        };
+        if selected_query_ids.is_some_and(|selected| !selected.contains(&node.id)) {
+            continue;
+        }
+        let Some(descriptor) = current.get(node.id.as_str()).copied() else {
+            diagnostics.push(CompositionDiagnostic::for_variable(
+                CompositionDiagnosticCode::QueryUnavailable,
+                &node.id,
             ));
             continue;
         };
-        let Some(variable_type) = composition_variable_type_for_sql(sql_type_name) else {
-            diagnostics.push(CompositionDiagnostic::without_variable(
-                CompositionDiagnosticCode::SourceSchemaChanged,
-            ));
-            continue;
-        };
-        let bound = match resolve_value_template(value_template, bindings) {
-            Ok(bound) => bound,
-            Err(diagnostic) => {
-                diagnostics.push(diagnostic);
-                continue;
+        match (&query.definition, descriptor) {
+            (
+                VariableGraphQueryDefinition::InlineSql { .. },
+                CurrentQueryDescriptor::InlineSql {
+                    metadata: Some(metadata),
+                    ..
+                },
+            ) => {
+                if !schema_is_well_formed(&metadata.result_columns, &metadata.schema_fingerprint)
+                    || metadata.bound_sql.trim().is_empty()
+                {
+                    diagnostics.push(CompositionDiagnostic::for_variable(
+                        CompositionDiagnosticCode::QueryUnavailable,
+                        &node.id,
+                    ));
+                    continue;
+                }
+                // Preview is an authorized planner boundary. Treat every
+                // client-supplied descriptor as untrusted, including nonempty
+                // or forged values, and replace it with planner output.
+                if !allow_draft_descriptors
+                    && (query.form_bindings != metadata.form_bindings
+                        || query.schema_fingerprint != metadata.schema_fingerprint)
+                {
+                    diagnostics.push(CompositionDiagnostic::for_variable(
+                        CompositionDiagnosticCode::QuerySchemaChanged,
+                        &node.id,
+                    ));
+                    continue;
+                }
+                let draft_returns = allow_draft_descriptors;
+                if !returns_match_schema(returns, &metadata.result_columns) && !draft_returns {
+                    diagnostics.push(CompositionDiagnostic::for_variable(
+                        CompositionDiagnosticCode::QuerySchemaChanged,
+                        &node.id,
+                    ));
+                    continue;
+                }
+                if draft_returns {
+                    match returns_from_schema(returns, &metadata.result_columns) {
+                        Some(inferred) => *returns = inferred,
+                        None => {
+                            diagnostics.push(CompositionDiagnostic::for_variable(
+                                CompositionDiagnosticCode::QuerySchemaChanged,
+                                &node.id,
+                            ));
+                            continue;
+                        }
+                    }
+                }
+                if let VariableGraphQueryDefinition::InlineSql { sql } = &mut query.definition {
+                    *sql = metadata.bound_sql.clone();
+                }
+                query.form_bindings = metadata.form_bindings.clone();
+                query.schema_fingerprint = metadata.schema_fingerprint.clone();
+                let returns = returns.clone();
+                let fingerprint = query_semantic_fingerprint(
+                    &query.definition,
+                    &query.arguments,
+                    &metadata.form_bindings,
+                    &returns,
+                    &metadata.result_columns,
+                    &metadata.schema_fingerprint,
+                )
+                .map_err(|_| {
+                    vec![CompositionDiagnostic::for_variable(
+                        CompositionDiagnosticCode::InvalidComposition,
+                        &node.id,
+                    )]
+                })?;
+                derived.insert(
+                    node.id.clone(),
+                    (
+                        returns,
+                        metadata.form_bindings.clone(),
+                        metadata.result_columns.clone(),
+                        metadata.schema_fingerprint.clone(),
+                        fingerprint,
+                        None,
+                    ),
+                );
+            }
+            (
+                VariableGraphQueryDefinition::SavedSql {
+                    entry_id: Some(entry_id),
+                    revision_id: Some(revision_id),
+                    ..
+                },
+                CurrentQueryDescriptor::SavedSql {
+                    metadata: Some(metadata),
+                    ..
+                },
+            ) => {
+                if &metadata.entry_id != entry_id
+                    || &metadata.revision_id != revision_id
+                    || !schema_is_well_formed(
+                        &metadata.result_columns,
+                        &metadata.schema_fingerprint,
+                    )
+                {
+                    diagnostics.push(CompositionDiagnostic::for_variable(
+                        CompositionDiagnosticCode::QueryUnavailable,
+                        &node.id,
+                    ));
+                    continue;
+                }
+                // Saved SQL metadata is also re-derived for each preview;
+                // client descriptors never establish a result contract.
+                if !allow_draft_descriptors
+                    && (query.form_bindings != metadata.form_bindings
+                        || query.schema_fingerprint != metadata.schema_fingerprint)
+                {
+                    diagnostics.push(CompositionDiagnostic::for_variable(
+                        CompositionDiagnosticCode::QuerySchemaChanged,
+                        &node.id,
+                    ));
+                    continue;
+                }
+                let draft_returns = allow_draft_descriptors;
+                if (!returns_match_schema(returns, &metadata.result_columns) && !draft_returns)
+                    || !saved_arguments_match(&query.arguments, &metadata.parameter_types)
+                {
+                    diagnostics.push(CompositionDiagnostic::for_variable(
+                        CompositionDiagnosticCode::QuerySchemaChanged,
+                        &node.id,
+                    ));
+                    continue;
+                }
+                if draft_returns {
+                    match returns_from_schema(returns, &metadata.result_columns) {
+                        Some(inferred) => *returns = inferred,
+                        None => {
+                            diagnostics.push(CompositionDiagnostic::for_variable(
+                                CompositionDiagnosticCode::QuerySchemaChanged,
+                                &node.id,
+                            ));
+                            continue;
+                        }
+                    }
+                }
+                query.form_bindings = metadata.form_bindings.clone();
+                query.schema_fingerprint = metadata.schema_fingerprint.clone();
+                let returns = returns.clone();
+                let fingerprint = query_semantic_fingerprint(
+                    &query.definition,
+                    &query.arguments,
+                    &metadata.form_bindings,
+                    &returns,
+                    &metadata.result_columns,
+                    &metadata.schema_fingerprint,
+                )
+                .map_err(|_| {
+                    vec![CompositionDiagnostic::for_variable(
+                        CompositionDiagnosticCode::InvalidComposition,
+                        &node.id,
+                    )]
+                })?;
+                derived.insert(
+                    node.id.clone(),
+                    (
+                        returns,
+                        metadata.form_bindings.clone(),
+                        metadata.result_columns.clone(),
+                        metadata.schema_fingerprint.clone(),
+                        fingerprint,
+                        Some(metadata.sql_text.clone()),
+                    ),
+                );
+            }
+            _ => diagnostics.push(CompositionDiagnostic::for_variable(
+                CompositionDiagnosticCode::QueryUnavailable,
+                &node.id,
+            )),
+        }
+    }
+    if !diagnostics.is_empty() {
+        return Err(diagnostics);
+    }
+
+    let requested = query_nodes
+        .iter()
+        .filter(|node| selected_query_ids.is_none_or(|selected| selected.contains(&node.id)))
+        .map(|node| node.id.clone())
+        .collect::<Vec<_>>();
+    let request_batch = crate::composition_query::compile_variable_graph_query_request_batch(
+        &execution_graph,
+        &requested,
+        execution_id,
+        &query_binding_values,
+    )
+    .map_err(|errors| {
+        errors
+            .into_iter()
+            .map(|error| {
+                CompositionDiagnostic::for_variable(
+                    CompositionDiagnosticCode::VariableTypeMismatch,
+                    &error.variable_id,
+                )
+            })
+            .collect::<Vec<_>>()
+    })?;
+    let queries = request_batch
+        .into_iter()
+        .map(|item| {
+            let (
+                returns,
+                form_bindings,
+                result_columns,
+                schema_fingerprint,
+                query_semantic_fingerprint,
+                sql_text,
+            ) = derived
+                .remove(&item.variable_id)
+                .expect("every query descriptor was derived");
+            let request = if blocked_by_unset_inputs.contains(&item.variable_id) {
+                None
+            } else {
+                item.request
+            };
+            ResolvedQueryRequest {
+                variable_id: item.variable_id,
+                request,
+                sql_text,
+                deferred_arguments: item.deferred_arguments,
+                scalar_cardinality: matches!(returns, VariableGraphResultType::Scalar { .. })
+                    .then_some(CompositionScalarCardinality::ExactlyOneRow),
+                returns,
+                result_columns,
+                form_bindings,
+                schema_fingerprint,
+                query_semantic_fingerprint,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let mut dependencies = CompositionDependencyIndex {
+        variable_consumers: spec
+            .variables
+            .iter()
+            .map(|node| (node.id.clone(), VariableConsumers::default()))
+            .collect(),
+    };
+    for node in &spec.variables {
+        if let VariableGraphNodeKind::Query { query, .. } = &node.kind {
+            for argument in &query.arguments {
+                if let Some(consumers) = dependencies.variable_consumers.get_mut(&argument.variable)
+                {
+                    consumers.query_variable_ids.insert(node.id.clone());
+                }
+            }
+        }
+    }
+    let mut component_bindings = Vec::with_capacity(render_components.len());
+    let nodes = execution_graph
+        .variables
+        .iter()
+        .map(|node| (node.id.as_str(), node))
+        .collect::<BTreeMap<_, _>>();
+    for component in render_components {
+        let component_id = component.id();
+        let variable_id = component.variable_id();
+        let binding = match component {
+            CompositionComponent::Text {
+                content: CompositionTextContent::Literal { .. },
+                ..
+            } => ResolvedComponentBinding {
+                component_id: component_id.to_owned(),
+                kind: ResolvedComponentKind::Text,
+                variable_id: None,
+                expected_result_type: None,
+                presentation: None,
+            },
+            CompositionComponent::Text {
+                content: CompositionTextContent::Variable { variable },
+                ..
+            } => {
+                if let Some(consumers) = dependencies.variable_consumers.get_mut(variable) {
+                    consumers.text_component_ids.insert(component_id.to_owned());
+                }
+                ResolvedComponentBinding {
+                    component_id: component_id.to_owned(),
+                    kind: ResolvedComponentKind::Text,
+                    variable_id: Some(variable.clone()),
+                    expected_result_type: None,
+                    presentation: None,
+                }
+            }
+            CompositionComponent::Input { variable, .. } => {
+                if let Some(consumers) = dependencies.variable_consumers.get_mut(variable) {
+                    consumers
+                        .input_component_ids
+                        .insert(component_id.to_owned());
+                }
+                ResolvedComponentBinding {
+                    component_id: component_id.to_owned(),
+                    kind: ResolvedComponentKind::Input,
+                    variable_id: Some(variable.clone()),
+                    expected_result_type: None,
+                    presentation: None,
+                }
+            }
+            CompositionComponent::Metric {
+                variable,
+                presentation,
+                ..
+            } => {
+                let node = nodes.get(variable.as_str()).copied().ok_or_else(|| {
+                    vec![CompositionDiagnostic::without_variable(
+                        CompositionDiagnosticCode::InvalidComposition,
+                    )]
+                })?;
+                let descriptor = scalar_descriptor(&node.kind)
+                    .or_else(|| query_scalar_descriptor(&node.kind))
+                    .ok_or_else(|| {
+                        vec![CompositionDiagnostic::for_variable(
+                            CompositionDiagnosticCode::MetricResultNotScalar,
+                            variable,
+                        )]
+                    })?;
+                if descriptor.scalar_type == VariableGraphScalarType::Json
+                    || (presentation.is_some()
+                        && !matches!(
+                            descriptor.scalar_type,
+                            VariableGraphScalarType::Integer
+                                | VariableGraphScalarType::Float
+                                | VariableGraphScalarType::Decimal
+                        ))
+                {
+                    return Err(vec![CompositionDiagnostic::for_variable(
+                        CompositionDiagnosticCode::MetricResultNotScalar,
+                        variable,
+                    )]);
+                }
+                if let Some(consumers) = dependencies.variable_consumers.get_mut(variable) {
+                    consumers
+                        .metric_component_ids
+                        .insert(component_id.to_owned());
+                }
+                ResolvedComponentBinding {
+                    component_id: component_id.to_owned(),
+                    kind: ResolvedComponentKind::Metric,
+                    variable_id: Some(variable.clone()),
+                    expected_result_type: Some(result_field_type(descriptor.scalar_type)),
+                    presentation: presentation.clone(),
+                }
+            }
+            CompositionComponent::Table { variable, .. } => {
+                let node = nodes.get(variable.as_str()).copied().ok_or_else(|| {
+                    vec![CompositionDiagnostic::without_variable(
+                        CompositionDiagnosticCode::InvalidComposition,
+                    )]
+                })?;
+                if !matches!(
+                    node.kind,
+                    VariableGraphNodeKind::Query {
+                        returns: VariableGraphResultType::Table { .. },
+                        ..
+                    }
+                ) {
+                    return Err(vec![CompositionDiagnostic::for_variable(
+                        CompositionDiagnosticCode::MetricResultNotScalar,
+                        variable,
+                    )]);
+                }
+                if let Some(consumers) = dependencies.variable_consumers.get_mut(variable) {
+                    consumers
+                        .table_component_ids
+                        .insert(component_id.to_owned());
+                }
+                ResolvedComponentBinding {
+                    component_id: component_id.to_owned(),
+                    kind: ResolvedComponentKind::Tabular,
+                    variable_id: variable_id.map(str::to_owned),
+                    expected_result_type: None,
+                    presentation: None,
+                }
             }
         };
-        if bound
-            .variable_type
-            .is_some_and(|bound_type| bound_type != variable_type)
-        {
-            diagnostics.push(CompositionDiagnostic::without_variable(
-                CompositionDiagnosticCode::VariableTypeMismatch,
-            ));
-            continue;
-        }
-        if (bound.value.is_null() && bound.variable_type.is_some())
-            || (!bound.value.is_null() && !value_matches_variable(&bound.value, variable_type))
-        {
-            diagnostics.push(CompositionDiagnostic::without_variable(
-                if bound.variable_type.is_some() {
-                    CompositionDiagnosticCode::VariableTypeMismatch
-                } else {
-                    CompositionDiagnosticCode::InvalidComposition
-                },
-            ));
-            continue;
-        }
-        if let CompositionValue::Variable(reference) = value_template {
-            variable_dependencies.insert(reference.variable.clone());
-        }
-        parameters.insert(variable_name.clone(), bound.value);
-        parameter_types.insert(variable_name.clone(), sql_type_name.clone());
+        component_bindings.push(binding);
     }
-    if current_revision
-        .variable_types
-        .keys()
-        .any(|name| !variables.contains_key(name))
-    {
-        diagnostics.push(CompositionDiagnostic::without_variable(
-            CompositionDiagnosticCode::VariableMissing,
-        ));
-    }
-    if !diagnostics.is_empty() {
-        return Err(deduplicate_diagnostics(diagnostics));
-    }
-
-    let request = SqlQueryRequest {
-        // Saved SQL text is owned by the exact immutable revision. Supplying an
-        // empty body prevents a second copy from becoming query authority.
-        sql: String::new(),
-        parameters,
-        parameter_types,
-        include_exact_integer_values: false,
-        limit: DEFAULT_COMPOSITION_SQL_PAGE_LIMIT,
-        continuation: None,
-        execution_id: None,
-        saved_sql: Some(SavedSqlRevisionRef {
-            id: expected_id,
-            revision_id: expected_revision_id,
-        }),
-    };
-    if request.validate().is_err() {
-        return Err(vec![CompositionDiagnostic::without_variable(
-            CompositionDiagnosticCode::InvalidComposition,
-        )]);
-    }
-
-    Ok(CompiledSavedSqlSource {
-        request,
-        expected_result: current_revision.expected_result.clone(),
-        variable_dependencies: variable_dependencies.into_iter().collect(),
-        source_schema_fingerprint: schema_fingerprint.clone(),
-    })
+    Ok((bindings.values, queries, component_bindings, dependencies))
 }
 
-fn composition_variable_type_for_sql(variable_type: &str) -> Option<CompositionVariableType> {
-    match variable_type {
-        "string" => Some(CompositionVariableType::String),
-        "boolean" => Some(CompositionVariableType::Boolean),
-        "integer" => Some(CompositionVariableType::Integer),
-        "float" => Some(CompositionVariableType::Float),
-        "date" => Some(CompositionVariableType::Date),
-        "timestamp" => Some(CompositionVariableType::Timestamp),
+fn scalar_descriptor(kind: &VariableGraphNodeKind) -> Option<VariableGraphScalarDescriptor> {
+    match kind {
+        VariableGraphNodeKind::Constant { value_type, .. }
+        | VariableGraphNodeKind::Input { value_type, .. } => Some(*value_type),
         _ => None,
     }
 }
 
-fn result_schema_is_well_formed(columns: &[CompositionResultColumn], fingerprint: &str) -> bool {
+fn query_scalar_descriptor(kind: &VariableGraphNodeKind) -> Option<VariableGraphScalarDescriptor> {
+    match kind {
+        VariableGraphNodeKind::Query {
+            returns: VariableGraphResultType::Scalar { value_type },
+            ..
+        } => Some(*value_type),
+        _ => None,
+    }
+}
+
+fn result_field_type(value_type: VariableGraphScalarType) -> CompositionResultFieldType {
+    match value_type {
+        VariableGraphScalarType::String => CompositionResultFieldType::String,
+        VariableGraphScalarType::Boolean => CompositionResultFieldType::Boolean,
+        VariableGraphScalarType::Integer => CompositionResultFieldType::Integer,
+        VariableGraphScalarType::Float => CompositionResultFieldType::Float,
+        VariableGraphScalarType::Decimal => CompositionResultFieldType::Decimal,
+        VariableGraphScalarType::Date => CompositionResultFieldType::Date,
+        VariableGraphScalarType::Timestamp => CompositionResultFieldType::Timestamp,
+        VariableGraphScalarType::Json => CompositionResultFieldType::Json,
+    }
+}
+
+fn saved_arguments_match(
+    arguments: &[ugoite_domain::composition::VariableGraphArgumentBinding],
+    parameter_types: &BTreeMap<String, VariableGraphScalarDescriptor>,
+) -> bool {
+    arguments.len() == parameter_types.len()
+        && arguments
+            .iter()
+            .all(|argument| parameter_types.contains_key(&argument.name))
+}
+
+/// Check whether a declared query result contract exactly matches planner
+/// output columns, including scalar nullability and table column order.
+pub fn returns_match_schema(
+    returns: &VariableGraphResultType,
+    columns: &[VariableGraphColumn],
+) -> bool {
+    match returns {
+        VariableGraphResultType::Scalar { value_type } => {
+            columns.len() == 1 && columns[0].value_type == *value_type
+        }
+        VariableGraphResultType::Table { columns: expected } => expected == columns,
+    }
+}
+
+/// Derive a query result contract from planner output while preserving the
+/// selected scalar or table result shape. Scalar queries require exactly one
+/// planner column.
+pub fn returns_from_schema(
+    intent: &VariableGraphResultType,
+    columns: &[VariableGraphColumn],
+) -> Option<VariableGraphResultType> {
+    match intent {
+        VariableGraphResultType::Scalar { .. } if columns.len() == 1 => {
+            Some(VariableGraphResultType::Scalar {
+                value_type: columns[0].value_type,
+            })
+        }
+        VariableGraphResultType::Table { .. } => Some(VariableGraphResultType::Table {
+            columns: columns.to_vec(),
+        }),
+        _ => None,
+    }
+}
+
+fn query_semantic_fingerprint(
+    definition: &VariableGraphQueryDefinition,
+    arguments: &[ugoite_domain::composition::VariableGraphArgumentBinding],
+    form_bindings: &[VariableGraphFormBinding],
+    returns: &VariableGraphResultType,
+    result_columns: &[VariableGraphColumn],
+    schema_fingerprint: &str,
+) -> Result<String, serde_json::Error> {
+    let mut arguments = arguments.to_vec();
+    arguments.sort_by(|left, right| left.name.cmp(&right.name));
+    let descriptor = serde_json::to_vec(&(
+        definition,
+        arguments,
+        form_bindings,
+        returns,
+        result_columns,
+        schema_fingerprint,
+    ))?;
+    Ok(hex::encode(Sha256::digest(descriptor)))
+}
+
+fn schema_is_well_formed(columns: &[VariableGraphColumn], fingerprint: &str) -> bool {
     !columns.is_empty()
         && columns.len() <= MAX_SQL_OUTPUT_COLUMNS
         && columns.iter().all(|column| {
@@ -574,1070 +1212,52 @@ fn result_schema_is_well_formed(columns: &[CompositionResultColumn], fingerprint
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-fn sql_type_for_composition_variable(variable_type: CompositionVariableType) -> &'static str {
-    match variable_type {
-        CompositionVariableType::String => "string",
-        CompositionVariableType::Boolean => "boolean",
-        CompositionVariableType::Integer => "integer",
-        CompositionVariableType::Float => "float",
-        CompositionVariableType::Date => "date",
-        CompositionVariableType::Timestamp => "timestamp",
-    }
-}
-
-fn deduplicate_diagnostics(diagnostics: Vec<CompositionDiagnostic>) -> Vec<CompositionDiagnostic> {
-    let mut seen = BTreeSet::new();
-    diagnostics
-        .into_iter()
-        .filter(|diagnostic| {
-            seen.insert((
-                diagnostic.code.as_str().to_owned(),
-                diagnostic.variable_id.clone(),
-            ))
-        })
-        .collect()
-}
-
-/// Identity of the exact Composition revision being resolved.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CompositionRevisionRef {
-    pub entry_id: EntryId,
-    pub revision_id: RevisionId,
-}
-
-/// Current source metadata obtained through the caller's current ACL boundary.
-/// `None` represents either absence or a concealed denial and compiles to the
-/// same `source_unavailable` diagnostic.
-#[derive(Clone, Copy)]
-pub enum CurrentSourceDescriptor<'a> {
-    InlineSql {
-        source_id: &'a str,
-        current_schema: Option<&'a InlineSqlSourceMetadata>,
-    },
-    SavedSql {
-        source_id: &'a str,
-        current_revision: Option<&'a SavedSqlRevisionMetadata>,
-    },
-}
-
-impl CurrentSourceDescriptor<'_> {
-    fn source_id(&self) -> &str {
-        match self {
-            Self::InlineSql { source_id, .. } | Self::SavedSql { source_id, .. } => source_id,
-        }
-    }
-}
-
-/// Inputs for one pure Composition resolution pass. The Composition has
-/// already been parsed and version-checked; every supplied current descriptor
-/// must have been read through the current authorization boundary.
-pub struct ResolveInput<'a> {
-    pub composition_revision: CompositionRevisionRef,
-    pub spec: &'a CompositionSpec,
-    pub variables: &'a BTreeMap<String, Value>,
-    /// Descriptors may arrive in any order; results always follow spec order.
-    pub current_sources: &'a [CurrentSourceDescriptor<'a>],
-}
-
-/// One source-local request compiled into an existing bounded query contract.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum ResolvedSourceRequest {
-    Sql {
-        source_id: String,
-        request: SqlQueryRequest,
-        source_schema_fingerprint: String,
-        form_bindings: Vec<CompositionFormBinding>,
-        expected_result: Vec<CompositionResultColumn>,
-    },
-}
-
-/// A variable's direct runtime consumers, independent of layout position.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct VariableConsumers {
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub input_component_ids: BTreeSet<String>,
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub text_component_ids: BTreeSet<String>,
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub source_ids: BTreeSet<String>,
-}
-
-/// One source's visual consumers, independent of layout position.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SourceConsumers {
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub metric_component_ids: BTreeSet<String>,
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub table_component_ids: BTreeSet<String>,
-}
-
-/// Typed variable-to-consumer and source-to-component edges for one plan.
-///
-/// These semantic edges are built by Core from the validated Composition
-/// definition. Browser adapters can schedule only affected work without
-/// reparsing YAML or inferring dependencies from component layout order.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CompositionDependencyIndex {
-    #[serde(default)]
-    pub variable_consumers: BTreeMap<String, VariableConsumers>,
-    #[serde(default)]
-    pub source_consumers: BTreeMap<String, SourceConsumers>,
-}
-
-/// Renderer-neutral component kind after the Composition layout has been
-/// validated and ordered.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ResolvedComponentKind {
-    Input,
-    Metric,
-    #[serde(rename = "table")]
-    Tabular,
-    Text,
-}
-
-/// One component's stable binding in deterministic layout render order.
-///
-/// Metric and table bindings carry their source request identity. Input and
-/// variable-backed Text bindings carry only their declared variable identity;
-/// neither creates a source request. Literal Text carries neither binding.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ResolvedComponentBinding {
-    pub component_id: String,
-    pub kind: ResolvedComponentKind,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub variable_id: Option<String>,
-    /// Selected SQL output column alias for a Metric component.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub result_property_key: Option<String>,
-    /// Portable logical result type for scalar metric components.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub expected_result_type: Option<CompositionResultFieldType>,
-    /// Display-only metric formatting carried through the resolution plan.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub presentation: Option<CompositionMetricPresentation>,
-}
-
-/// Complete plan for one immutable Composition revision.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ResolvedCompositionPlan {
-    pub composition_revision: CompositionRevisionRef,
-    /// The source order is the document order, regardless of descriptor order.
-    pub sources: Vec<ResolvedSourceRequest>,
-    /// The component order is the layout row and item order, regardless of declaration order.
-    #[serde(default)]
-    pub component_bindings: Vec<ResolvedComponentBinding>,
-    /// Optional on the portable plan when there are no reactive dependencies.
-    #[serde(default)]
-    pub dependencies: CompositionDependencyIndex,
-}
-
-/// Complete plan for one unsaved Composition draft.
-///
-/// Identity is the semantic draft fingerprint: there is no entry or revision
-/// reference, and the plan must never be stored, published, or given history.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PreviewCompositionPlan {
-    pub draft_fingerprint: String,
-    /// The source order is the document order, regardless of descriptor order.
-    pub sources: Vec<ResolvedSourceRequest>,
-    /// The component order is the layout row and item order, regardless of declaration order.
-    #[serde(default)]
-    pub component_bindings: Vec<ResolvedComponentBinding>,
-    /// Optional on the portable plan when there are no reactive dependencies.
-    #[serde(default)]
-    pub dependencies: CompositionDependencyIndex,
-}
-
-/// Resolve all sources as one all-or-nothing plan.
-///
-/// Caller variable diagnostics are a global gate: no source is compiled when
-/// any value is missing, unknown, or has the wrong type. Source diagnostics
-/// are then aggregated in Composition document order. No query is executed by
-/// this function; the returned requests still go through their ordinary ACL,
-/// bounds, and continuation checks when executed.
-pub fn resolve_composition(
-    input: ResolveInput<'_>,
-) -> Result<ResolvedCompositionPlan, Vec<CompositionDiagnostic>> {
-    resolve_composition_with_unset(input, &[])
-}
-
-/// Resolve a saved Composition while distinguishing explicit unset values
-/// from absent values that should use their declared defaults.
-pub fn resolve_composition_with_unset(
-    input: ResolveInput<'_>,
-    unset_variables: &[String],
-) -> Result<ResolvedCompositionPlan, Vec<CompositionDiagnostic>> {
-    let (sources, component_bindings, dependencies) = resolve_composition_parts(
-        input.spec,
-        input.variables,
-        unset_variables,
-        input.current_sources,
-        false,
-    )?;
-    Ok(ResolvedCompositionPlan {
-        composition_revision: input.composition_revision,
-        sources,
-        component_bindings,
-        dependencies,
-    })
-}
-
-/// Resolve one unsaved candidate document through the same semantics as a
-/// saved revision. Identity is the draft fingerprint, never a revision: the
-/// plan carries no entry or revision reference and must not be stored,
-/// published, or given history.
-pub fn resolve_composition_preview(
-    spec: &CompositionSpec,
-    variables: &BTreeMap<String, Value>,
-    current_sources: &[CurrentSourceDescriptor<'_>],
-    draft_fingerprint: String,
-) -> Result<PreviewCompositionPlan, Vec<CompositionDiagnostic>> {
-    resolve_composition_preview_with_unset(spec, variables, &[], current_sources, draft_fingerprint)
-}
-
-/// Resolve a draft Composition while distinguishing explicit unset values
-/// from absent values that should use their declared defaults.
-pub fn resolve_composition_preview_with_unset(
-    spec: &CompositionSpec,
-    variables: &BTreeMap<String, Value>,
-    unset_variables: &[String],
-    current_sources: &[CurrentSourceDescriptor<'_>],
-    draft_fingerprint: String,
-) -> Result<PreviewCompositionPlan, Vec<CompositionDiagnostic>> {
-    let (sources, component_bindings, dependencies) =
-        resolve_composition_parts(spec, variables, unset_variables, current_sources, true)?;
-    Ok(PreviewCompositionPlan {
-        draft_fingerprint,
-        sources,
-        component_bindings,
-        dependencies,
-    })
-}
-
-/// Shared plan-building core for saved revisions and unsaved drafts.
-fn resolve_composition_parts(
-    spec: &CompositionSpec,
-    variables: &BTreeMap<String, Value>,
-    unset_variables: &[String],
-    current_sources: &[CurrentSourceDescriptor<'_>],
-    allow_incomplete_source_descriptors: bool,
-) -> Result<
-    (
-        Vec<ResolvedSourceRequest>,
-        Vec<ResolvedComponentBinding>,
-        CompositionDependencyIndex,
-    ),
-    Vec<CompositionDiagnostic>,
-> {
-    let bindings = bind_variables_with_unset(&spec.variables, variables, unset_variables);
-    if !bindings.diagnostics.is_empty() {
-        return Err(bindings.diagnostics);
-    }
-
-    let render_components = spec
-        .components_in_render_order()
-        .map_err(|code| vec![CompositionDiagnostic::without_variable(code)])?;
-
-    let source_ids = spec
-        .sources
-        .iter()
-        .map(|source| source.id().to_owned())
-        .collect::<BTreeSet<_>>();
-    if source_ids.len() != spec.sources.len() {
-        return Err(vec![CompositionDiagnostic::without_variable(
-            CompositionDiagnosticCode::InvalidComposition,
-        )]);
-    }
-    let mut dependencies = CompositionDependencyIndex {
-        variable_consumers: spec
-            .variables
-            .iter()
-            .map(|variable| (variable.id.clone(), VariableConsumers::default()))
-            .collect(),
-        source_consumers: spec
-            .sources
-            .iter()
-            .map(|source| (source.id().to_owned(), SourceConsumers::default()))
-            .collect(),
-    };
-    let sources_by_id = spec
-        .sources
-        .iter()
-        .map(|source| (source.id(), source))
-        .collect::<BTreeMap<_, _>>();
-    let mut current_by_id = BTreeMap::new();
-    for descriptor in current_sources {
-        let source_id = descriptor.source_id();
-        if !source_ids.contains(source_id) || current_by_id.insert(source_id, descriptor).is_some()
-        {
-            return Err(vec![CompositionDiagnostic::without_variable(
-                CompositionDiagnosticCode::InvalidComposition,
-            )]);
-        }
-    }
-
-    let mut resolved_sources = Vec::with_capacity(spec.sources.len());
-    let mut diagnostics = Vec::new();
-    for source in &spec.sources {
-        let source_id = source.id();
-        match (source, current_by_id.get(source_id).copied()) {
-            (
-                CompositionSource::InlineSql { .. },
-                Some(CurrentSourceDescriptor::InlineSql { current_schema, .. }),
-            ) => match compile_inline_sql_source(
-                source,
-                *current_schema,
-                &bindings,
-                allow_incomplete_source_descriptors,
-            ) {
-                Ok(compiled) => {
-                    record_source_dependencies(
-                        &mut dependencies,
-                        source_id,
-                        &compiled.variable_dependencies,
-                    )
-                    .map_err(|diagnostic| vec![diagnostic])?;
-                    resolved_sources.push(ResolvedSourceRequest::Sql {
-                        source_id: source_id.to_owned(),
-                        request: compiled.request,
-                        source_schema_fingerprint: compiled.source_schema_fingerprint,
-                        form_bindings: compiled.form_bindings,
-                        expected_result: compiled.expected_result,
-                    });
-                }
-                Err(source_diagnostics) => diagnostics.extend(source_diagnostics),
-            },
-            (
-                CompositionSource::SavedSql { .. },
-                Some(CurrentSourceDescriptor::SavedSql {
-                    current_revision, ..
-                }),
-            ) => match compile_saved_sql_source(source, *current_revision, &bindings) {
-                Ok(compiled) => {
-                    record_source_dependencies(
-                        &mut dependencies,
-                        source_id,
-                        &compiled.variable_dependencies,
-                    )
-                    .map_err(|diagnostic| vec![diagnostic])?;
-                    resolved_sources.push(ResolvedSourceRequest::Sql {
-                        source_id: source_id.to_owned(),
-                        request: compiled.request,
-                        source_schema_fingerprint: compiled.source_schema_fingerprint,
-                        form_bindings: Vec::new(),
-                        expected_result: compiled.expected_result,
-                    });
-                }
-                Err(source_diagnostics) => diagnostics.extend(source_diagnostics),
-            },
-            _ => diagnostics.push(CompositionDiagnostic::without_variable(
-                CompositionDiagnosticCode::SourceUnavailable,
-            )),
-        }
-    }
-
-    if !diagnostics.is_empty() {
-        return Err(diagnostics);
-    }
-
-    let component_bindings =
-        resolve_component_bindings(&render_components, &sources_by_id, &mut dependencies)?;
-
-    Ok((resolved_sources, component_bindings, dependencies))
-}
-
-fn record_source_dependencies(
-    dependencies: &mut CompositionDependencyIndex,
-    source_id: &str,
-    variable_ids: &[String],
-) -> Result<(), CompositionDiagnostic> {
-    for variable_id in variable_ids {
-        let Some(consumers) = dependencies.variable_consumers.get_mut(variable_id) else {
-            return Err(CompositionDiagnostic::without_variable(
-                CompositionDiagnosticCode::InvalidComposition,
-            ));
-        };
-        consumers.source_ids.insert(source_id.to_owned());
-    }
-    Ok(())
-}
-
-fn resolve_component_bindings(
-    components: &[&CompositionComponent],
-    sources_by_id: &BTreeMap<&str, &CompositionSource>,
-    dependencies: &mut CompositionDependencyIndex,
-) -> Result<Vec<ResolvedComponentBinding>, Vec<CompositionDiagnostic>> {
-    let mut resolved = Vec::with_capacity(components.len());
-    for component in components {
-        let component_id = component.id();
-        match component {
-            CompositionComponent::Input { variable, .. } => {
-                let Some(consumers) = dependencies.variable_consumers.get_mut(variable) else {
-                    return Err(vec![CompositionDiagnostic::without_variable(
-                        CompositionDiagnosticCode::InvalidComposition,
-                    )]);
-                };
-                consumers
-                    .input_component_ids
-                    .insert(component_id.to_owned());
-                resolved.push(ResolvedComponentBinding {
-                    component_id: component_id.to_owned(),
-                    kind: ResolvedComponentKind::Input,
-                    source_id: None,
-                    variable_id: Some(variable.clone()),
-                    result_property_key: None,
-                    expected_result_type: None,
-                    presentation: None,
-                });
-            }
-            CompositionComponent::Text { content, .. } => {
-                let variable_id = match content {
-                    CompositionTextContent::Literal { .. } => None,
-                    CompositionTextContent::Variable { variable } => {
-                        let Some(consumers) = dependencies.variable_consumers.get_mut(variable)
-                        else {
-                            return Err(vec![CompositionDiagnostic::without_variable(
-                                CompositionDiagnosticCode::InvalidComposition,
-                            )]);
-                        };
-                        consumers.text_component_ids.insert(component_id.to_owned());
-                        Some(variable.clone())
-                    }
-                };
-                resolved.push(ResolvedComponentBinding {
-                    component_id: component_id.to_owned(),
-                    kind: ResolvedComponentKind::Text,
-                    source_id: None,
-                    variable_id,
-                    result_property_key: None,
-                    expected_result_type: None,
-                    presentation: None,
-                });
-            }
-            CompositionComponent::Metric {
-                source,
-                column,
-                presentation,
-                ..
-            } => {
-                let source_id = source.as_str();
-                let source_definition = sources_by_id.get(source_id).copied().ok_or_else(|| {
-                    vec![CompositionDiagnostic::without_variable(
-                        CompositionDiagnosticCode::InvalidComposition,
-                    )]
-                })?;
-                let expected_result = source_definition.expected_result();
-                let matching_columns = expected_result
-                    .iter()
-                    .filter(|result_column| result_column.name == *column)
-                    .collect::<Vec<_>>();
-                let result_column = match matching_columns.as_slice() {
-                    [] => {
-                        return Err(vec![CompositionDiagnostic::without_variable(
-                            CompositionDiagnosticCode::MetricResultColumnMissing,
-                        )]);
-                    }
-                    [result_column] => *result_column,
-                    _ => {
-                        return Err(vec![CompositionDiagnostic::without_variable(
-                            CompositionDiagnosticCode::MetricResultColumnAmbiguous,
-                        )]);
-                    }
-                };
-                validate_composition_metric_result_type(result_column.result_type)
-                    .map_err(|code| vec![CompositionDiagnostic::without_variable(code.into())])?;
-                if presentation.is_some()
-                    && !matches!(
-                        result_column.result_type,
-                        CompositionResultFieldType::Integer
-                            | CompositionResultFieldType::Float
-                            | CompositionResultFieldType::Decimal
-                    )
-                {
-                    return Err(vec![CompositionDiagnostic::without_variable(
-                        CompositionDiagnosticCode::MetricResultNotScalar,
-                    )]);
-                }
-                let Some(consumers) = dependencies.source_consumers.get_mut(source_id) else {
-                    return Err(vec![CompositionDiagnostic::without_variable(
-                        CompositionDiagnosticCode::InvalidComposition,
-                    )]);
-                };
-                consumers
-                    .metric_component_ids
-                    .insert(component_id.to_owned());
-                resolved.push(ResolvedComponentBinding {
-                    component_id: component_id.to_owned(),
-                    kind: ResolvedComponentKind::Metric,
-                    source_id: Some(source_id.to_owned()),
-                    variable_id: None,
-                    result_property_key: Some(column.clone()),
-                    expected_result_type: Some(result_column.result_type),
-                    presentation: presentation.clone(),
-                });
-            }
-            CompositionComponent::Table { source, .. } => {
-                let source_id = source.as_str();
-                if !sources_by_id.contains_key(source_id) {
-                    return Err(vec![CompositionDiagnostic::without_variable(
-                        CompositionDiagnosticCode::InvalidComposition,
-                    )]);
-                }
-                let Some(consumers) = dependencies.source_consumers.get_mut(source_id) else {
-                    return Err(vec![CompositionDiagnostic::without_variable(
-                        CompositionDiagnosticCode::InvalidComposition,
-                    )]);
-                };
-                consumers
-                    .table_component_ids
-                    .insert(component_id.to_owned());
-                resolved.push(ResolvedComponentBinding {
-                    component_id: component_id.to_owned(),
-                    kind: ResolvedComponentKind::Tabular,
-                    source_id: Some(source_id.to_owned()),
-                    variable_id: None,
-                    result_property_key: None,
-                    expected_result_type: None,
-                    presentation: None,
-                });
-            }
-        }
-    }
-    Ok(resolved)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{
-        bind_variables, compile_inline_sql_source, compile_saved_sql_source, resolve_composition,
-        resolve_composition_preview, CompositionRevisionRef, CurrentSourceDescriptor,
-        InlineSqlSourceMetadata, ResolveInput, ResolvedSourceRequest, SavedSqlRevisionMetadata,
-    };
-    use serde_json::{json, Value};
-    use std::collections::{BTreeMap, BTreeSet};
-    use ugoite_domain::composition::{
-        CompositionComponent, CompositionDiagnosticCode, CompositionFormBinding,
-        CompositionResultColumn, CompositionResultFieldType, CompositionSource, CompositionSpec,
-        CompositionVariable, CompositionVariableType, DashboardFlowLayout, FlowItem,
-        FlowLayoutKind, FlowRow,
-    };
-    use ugoite_domain::id::{EntryId, FormId, RevisionId};
+    use super::*;
 
-    fn result(name: &str, result_type: CompositionResultFieldType) -> Vec<CompositionResultColumn> {
-        vec![CompositionResultColumn {
-            name: name.to_owned(),
-            result_type,
-        }]
-    }
+    #[test]
+    fn query_semantic_fingerprint_includes_scalar_or_table_return_shape() {
+        let definition = VariableGraphQueryDefinition::InlineSql {
+            sql: "SELECT 1 AS value".to_owned(),
+        };
+        let descriptor = VariableGraphScalarDescriptor {
+            scalar_type: VariableGraphScalarType::Integer,
+            nullable: false,
+        };
+        let columns = vec![VariableGraphColumn {
+            name: "value".to_owned(),
+            value_type: descriptor,
+        }];
+        let scalar = VariableGraphResultType::Scalar {
+            value_type: descriptor,
+        };
+        let table = VariableGraphResultType::Table {
+            columns: columns.clone(),
+        };
+        let args = [];
+        let bindings = [];
+        let schema_fingerprint = "0".repeat(64);
 
-    fn form_binding(relation: &str) -> Vec<CompositionFormBinding> {
-        vec![CompositionFormBinding {
-            relation: relation.to_owned(),
-            form_id: FormId::from(uuid::Uuid::from_u128(42)),
-        }]
-    }
-
-    fn inline_source(
-        bindings: Vec<CompositionFormBinding>,
-        columns: Vec<CompositionResultColumn>,
-        fingerprint: &str,
-    ) -> CompositionSource {
-        CompositionSource::InlineSql {
-            id: "rows".to_owned(),
-            name: "Rows".to_owned(),
-            sql: "SELECT * FROM \"Records\"".to_owned(),
-            form_bindings: bindings,
-            expected_result: columns,
-            schema_fingerprint: fingerprint.to_owned(),
-        }
-    }
-
-    fn inline_metadata(
-        bindings: Vec<CompositionFormBinding>,
-        columns: Vec<CompositionResultColumn>,
-        fingerprint: &str,
-        parameter_names: &[&str],
-    ) -> InlineSqlSourceMetadata {
-        InlineSqlSourceMetadata {
-            bound_sql: "SELECT * FROM \"__form_42\"".to_owned(),
-            form_bindings: bindings,
-            parameter_names: parameter_names
-                .iter()
-                .map(|name| (*name).to_owned())
-                .collect(),
-            expected_result: columns,
-            schema_fingerprint: fingerprint.to_owned(),
-        }
-    }
-
-    fn variable(id: &str, variable_type: CompositionVariableType) -> CompositionVariable {
-        CompositionVariable {
-            id: id.to_owned(),
-            variable_type,
-            required: false,
-            default: None,
-            format: None,
-        }
-    }
-
-    fn bindings(
-        variables: &[CompositionVariable],
-        values: &[(&str, Value)],
-    ) -> super::VariableBindings {
-        let supplied = values
-            .iter()
-            .map(|(name, value)| ((*name).to_owned(), value.clone()))
-            .collect::<BTreeMap<_, _>>();
-        bind_variables(variables, &supplied)
-    }
-
-    fn composition_spec(
-        variables: Vec<CompositionVariable>,
-        source: CompositionSource,
-        components: Vec<CompositionComponent>,
-    ) -> CompositionSpec {
-        let items = components
-            .iter()
-            .map(|component| FlowItem::Component {
-                component: component.id().to_owned(),
-            })
-            .collect();
-        CompositionSpec {
-            variables,
-            sources: vec![source],
-            components,
-            layout: DashboardFlowLayout {
-                kind: FlowLayoutKind::Flow,
-                rows: vec![FlowRow {
-                    id: "main".to_owned(),
-                    items,
-                }],
-            },
-        }
-    }
-
-    fn source_revision() -> (EntryId, RevisionId) {
-        (
-            EntryId::from_uuid(uuid::Uuid::from_u128(100)),
-            RevisionId::from_uuid(uuid::Uuid::from_u128(200)),
+        let scalar_fingerprint = query_semantic_fingerprint(
+            &definition,
+            &args,
+            &bindings,
+            &scalar,
+            &columns,
+            &schema_fingerprint,
         )
-    }
+        .expect("scalar semantic fingerprint");
+        let table_fingerprint = query_semantic_fingerprint(
+            &definition,
+            &args,
+            &bindings,
+            &table,
+            &columns,
+            &schema_fingerprint,
+        )
+        .expect("table semantic fingerprint");
 
-    fn saved_source(
-        entry_id: EntryId,
-        revision_id: RevisionId,
-        columns: Vec<CompositionResultColumn>,
-        fingerprint: &str,
-        variables: BTreeMap<String, super::CompositionValue>,
-    ) -> CompositionSource {
-        CompositionSource::SavedSql {
-            id: "summary".to_owned(),
-            entry_id,
-            revision_id,
-            expected_result: columns,
-            schema_fingerprint: fingerprint.to_owned(),
-            variables,
-        }
-    }
-
-    fn saved_metadata(
-        entry_id: EntryId,
-        revision_id: RevisionId,
-        columns: Vec<CompositionResultColumn>,
-        fingerprint: &str,
-        variable_types: &[(&str, &str)],
-    ) -> SavedSqlRevisionMetadata {
-        SavedSqlRevisionMetadata {
-            id: entry_id.to_string(),
-            revision_id: revision_id.to_string(),
-            variable_types: variable_types
-                .iter()
-                .map(|(name, kind)| ((*name).to_owned(), (*kind).to_owned()))
-                .collect(),
-            expected_result: columns,
-            schema_fingerprint: fingerprint.to_owned(),
-        }
-    }
-
-    #[test]
-    fn inline_sql_uses_server_bound_sql_and_typed_parameters() {
-        let definitions = [variable("active", CompositionVariableType::Boolean)];
-        let bound = bindings(&definitions, &[("active", json!(true))]);
-        let columns = result("active", CompositionResultFieldType::Boolean);
-        let forms = form_binding("Records");
-        let source = inline_source(forms.clone(), columns.clone(), &"a".repeat(64));
-        let metadata = inline_metadata(forms, columns, &"a".repeat(64), &["active"]);
-
-        let compiled = compile_inline_sql_source(&source, Some(&metadata), &bound, false)
-            .expect("the current server plan matches the stored snapshot");
-
-        assert_eq!(compiled.request.sql, metadata.bound_sql);
-        assert_eq!(
-            Value::Object(compiled.request.parameters.clone()),
-            json!({"active": true})
-        );
-        assert_eq!(compiled.request.parameter_types["active"], "boolean");
-        assert!(compiled.request.saved_sql.is_none());
-        assert_eq!(compiled.variable_dependencies, ["active"]);
-        assert_eq!(compiled.source_schema_fingerprint, "a".repeat(64));
-    }
-
-    #[test]
-    fn inline_sql_rejects_stale_server_schema_and_unavailable_sources() {
-        let columns = result("record_id", CompositionResultFieldType::String);
-        let forms = form_binding("Records");
-        let source = inline_source(forms.clone(), columns.clone(), &"a".repeat(64));
-        let changed = inline_metadata(forms, columns, &"b".repeat(64), &[]);
-        let empty = bindings(&[], &[]);
-
-        assert_eq!(
-            compile_inline_sql_source(&source, Some(&changed), &empty, false).unwrap_err()[0].code,
-            CompositionDiagnosticCode::SourceSchemaChanged,
-        );
-        assert_eq!(
-            compile_inline_sql_source(&source, None, &empty, false).unwrap_err()[0].code,
-            CompositionDiagnosticCode::SourceUnavailable,
-        );
-    }
-
-    #[test]
-    fn inline_sql_reports_unknown_and_missing_typed_parameters() {
-        let definitions = [variable("active", CompositionVariableType::Boolean)];
-        let source = inline_source(
-            vec![],
-            result("active", CompositionResultFieldType::Boolean),
-            &"a".repeat(64),
-        );
-        let metadata = inline_metadata(
-            vec![],
-            result("active", CompositionResultFieldType::Boolean),
-            &"a".repeat(64),
-            &["missing"],
-        );
-
-        assert_eq!(
-            compile_inline_sql_source(
-                &source,
-                Some(&metadata),
-                &bindings(&definitions, &[]),
-                false
-            )
-            .unwrap_err()[0]
-                .code,
-            CompositionDiagnosticCode::VariableUnknown,
-        );
-
-        let metadata = inline_metadata(
-            vec![],
-            result("active", CompositionResultFieldType::Boolean),
-            &"a".repeat(64),
-            &["active"],
-        );
-        assert_eq!(
-            compile_inline_sql_source(
-                &source,
-                Some(&metadata),
-                &bindings(&definitions, &[]),
-                false
-            )
-            .unwrap_err()[0]
-                .code,
-            CompositionDiagnosticCode::VariableMissing,
-        );
-    }
-
-    #[test]
-    fn saved_sql_uses_exact_revision_and_keeps_parameters_stateless() {
-        let (entry_id, revision_id) = source_revision();
-        let columns = vec![
-            CompositionResultColumn {
-                name: "total".to_owned(),
-                result_type: CompositionResultFieldType::Integer,
-            },
-            CompositionResultColumn {
-                name: "currency".to_owned(),
-                result_type: CompositionResultFieldType::String,
-            },
-        ];
-        let fingerprint = "c".repeat(64);
-        let variables = BTreeMap::from([(
-            "minimum".to_owned(),
-            super::CompositionValue::Variable(
-                ugoite_domain::composition::CompositionVariableReference {
-                    variable: "min_total".to_owned(),
-                },
-            ),
-        )]);
-        let source = saved_source(
-            entry_id,
-            revision_id,
-            columns.clone(),
-            &fingerprint,
-            variables,
-        );
-        let metadata = saved_metadata(
-            entry_id,
-            revision_id,
-            columns,
-            &fingerprint,
-            &[("minimum", "integer")],
-        );
-        let definitions = [variable("min_total", CompositionVariableType::Integer)];
-        let bound = bindings(&definitions, &[("min_total", json!(3))]);
-
-        let compiled = compile_saved_sql_source(&source, Some(&metadata), &bound)
-            .expect("the exact revision and its schema match");
-
-        assert!(compiled.request.sql.is_empty());
-        assert_eq!(
-            compiled.request.saved_sql,
-            Some(crate::sql_query::SavedSqlRevisionRef {
-                id: entry_id.to_string(),
-                revision_id: revision_id.to_string(),
-            })
-        );
-        assert_eq!(
-            Value::Object(compiled.request.parameters.clone()),
-            json!({"minimum": 3})
-        );
-        assert_eq!(compiled.request.parameter_types["minimum"], "integer");
-        assert_eq!(compiled.variable_dependencies, ["min_total"]);
-        assert_eq!(compiled.source_schema_fingerprint, fingerprint);
-    }
-
-    #[test]
-    fn saved_sql_rejects_changed_schema_and_non_exact_revision() {
-        let (entry_id, revision_id) = source_revision();
-        let columns = result("total", CompositionResultFieldType::Integer);
-        let fingerprint = "c".repeat(64);
-        let source = saved_source(
-            entry_id,
-            revision_id,
-            columns.clone(),
-            &fingerprint,
-            BTreeMap::new(),
-        );
-        let changed = saved_metadata(
-            entry_id,
-            revision_id,
-            result("count", CompositionResultFieldType::Integer),
-            &fingerprint,
-            &[],
-        );
-        assert_eq!(
-            compile_saved_sql_source(&source, Some(&changed), &bindings(&[], &[])).unwrap_err()[0]
-                .code,
-            CompositionDiagnosticCode::SourceSchemaChanged,
-        );
-
-        let wrong_revision = saved_metadata(
-            entry_id,
-            RevisionId::from_uuid(uuid::Uuid::from_u128(201)),
-            columns,
-            &fingerprint,
-            &[],
-        );
-        assert_eq!(
-            compile_saved_sql_source(&source, Some(&wrong_revision), &bindings(&[], &[]),)
-                .unwrap_err()[0]
-                .code,
-            CompositionDiagnosticCode::SourceUnavailable,
-        );
-    }
-
-    #[test]
-    fn preview_resolves_an_empty_inline_descriptor_from_current_server_metadata() {
-        let source = CompositionSource::InlineSql {
-            id: "rows".to_owned(),
-            name: "Rows".to_owned(),
-            sql: "SELECT * FROM \"Records\"".to_owned(),
-            form_bindings: vec![],
-            expected_result: vec![],
-            schema_fingerprint: String::new(),
-        };
-        let spec = composition_spec(
-            vec![],
-            source,
-            vec![CompositionComponent::Table {
-                id: "records".to_owned(),
-                source: "rows".to_owned(),
-            }],
-        );
-        let columns = result("record_id", CompositionResultFieldType::String);
-        let metadata = inline_metadata(form_binding("Records"), columns, &"d".repeat(64), &[]);
-        let descriptors = [CurrentSourceDescriptor::InlineSql {
-            source_id: "rows",
-            current_schema: Some(&metadata),
-        }];
-
-        let preview =
-            resolve_composition_preview(&spec, &BTreeMap::new(), &descriptors, "draft".to_owned())
-                .expect("the exact empty draft placeholder may be planned");
-
-        assert_eq!(preview.sources.len(), 1);
-        let ResolvedSourceRequest::Sql {
-            request,
-            source_schema_fingerprint,
-            ..
-        } = &preview.sources[0];
-        assert_eq!(request.sql, metadata.bound_sql);
-        assert_eq!(source_schema_fingerprint, &"d".repeat(64));
-    }
-
-    #[test]
-    fn saved_resolution_rejects_incomplete_inline_snapshot() {
-        let source = CompositionSource::InlineSql {
-            id: "rows".to_owned(),
-            name: "Rows".to_owned(),
-            sql: "SELECT * FROM \"Records\"".to_owned(),
-            form_bindings: vec![],
-            expected_result: vec![],
-            schema_fingerprint: String::new(),
-        };
-        let spec = composition_spec(
-            vec![],
-            source,
-            vec![CompositionComponent::Table {
-                id: "records".to_owned(),
-                source: "rows".to_owned(),
-            }],
-        );
-        let metadata = inline_metadata(
-            form_binding("Records"),
-            result("record_id", CompositionResultFieldType::String),
-            &"d".repeat(64),
-            &[],
-        );
-        let descriptors = [CurrentSourceDescriptor::InlineSql {
-            source_id: "rows",
-            current_schema: Some(&metadata),
-        }];
-
-        assert_eq!(
-            resolve_composition(ResolveInput {
-                composition_revision: CompositionRevisionRef {
-                    entry_id: EntryId::from_uuid(uuid::Uuid::from_u128(1)),
-                    revision_id: RevisionId::from_uuid(uuid::Uuid::from_u128(2)),
-                },
-                spec: &spec,
-                variables: &BTreeMap::new(),
-                current_sources: &descriptors,
-            },)
-            .unwrap_err()[0]
-                .code,
-            CompositionDiagnosticCode::SourceSchemaChanged,
-        );
-    }
-
-    #[test]
-    fn resolver_returns_only_sql_requests_and_indexes_dependencies() {
-        let definitions = vec![variable("active", CompositionVariableType::Boolean)];
-        let forms = form_binding("Records");
-        let columns = result("active", CompositionResultFieldType::Boolean);
-        let source = inline_source(forms.clone(), columns.clone(), &"e".repeat(64));
-        let components = vec![
-            CompositionComponent::Input {
-                id: "active_input".to_owned(),
-                variable: "active".to_owned(),
-            },
-            CompositionComponent::Table {
-                id: "records".to_owned(),
-                source: "rows".to_owned(),
-            },
-        ];
-        let spec = composition_spec(definitions, source, components);
-        let metadata = inline_metadata(forms, columns, &"e".repeat(64), &["active"]);
-        let descriptors = [CurrentSourceDescriptor::InlineSql {
-            source_id: "rows",
-            current_schema: Some(&metadata),
-        }];
-        let variables = BTreeMap::from([("active".to_owned(), json!(false))]);
-
-        let plan = resolve_composition(ResolveInput {
-            composition_revision: CompositionRevisionRef {
-                entry_id: EntryId::from_uuid(uuid::Uuid::from_u128(1)),
-                revision_id: RevisionId::from_uuid(uuid::Uuid::from_u128(2)),
-            },
-            spec: &spec,
-            variables: &variables,
-            current_sources: &descriptors,
-        })
-        .expect("the SQL source and component graph are valid");
-
-        assert!(matches!(plan.sources[0], ResolvedSourceRequest::Sql { .. }));
-        assert_eq!(
-            plan.dependencies.variable_consumers["active"].source_ids,
-            BTreeSet::from(["rows".to_owned()]),
-        );
-        assert_eq!(
-            plan.dependencies.variable_consumers["active"].input_component_ids,
-            BTreeSet::from(["active_input".to_owned()]),
-        );
-        let wire = serde_json::to_value(&plan.component_bindings[0]).unwrap();
-        assert!(wire.get("label").is_none());
-    }
-
-    #[test]
-    fn metric_component_selects_one_typed_scalar_column_from_shared_source() {
-        let forms = form_binding("Records");
-        let columns = result("total", CompositionResultFieldType::Integer);
-        let source = inline_source(forms.clone(), columns.clone(), &"f".repeat(64));
-        let spec = composition_spec(
-            vec![],
-            source,
-            vec![
-                CompositionComponent::Metric {
-                    id: "total_metric".to_owned(),
-                    source: "rows".to_owned(),
-                    column: "total".to_owned(),
-                    presentation: None,
-                },
-                CompositionComponent::Table {
-                    id: "rows_table".to_owned(),
-                    source: "rows".to_owned(),
-                },
-            ],
-        );
-        let metadata = inline_metadata(forms.clone(), columns, &"f".repeat(64), &[]);
-        let descriptors = [CurrentSourceDescriptor::InlineSql {
-            source_id: "rows",
-            current_schema: Some(&metadata),
-        }];
-        let plan = resolve_composition(ResolveInput {
-            composition_revision: CompositionRevisionRef {
-                entry_id: EntryId::from_uuid(uuid::Uuid::from_u128(1)),
-                revision_id: RevisionId::from_uuid(uuid::Uuid::from_u128(2)),
-            },
-            spec: &spec,
-            variables: &BTreeMap::new(),
-            current_sources: &descriptors,
-        })
-        .expect("a selected integer output supports a metric alongside other columns");
-        assert_eq!(
-            plan.component_bindings
-                .iter()
-                .find(|binding| binding.component_id == "total_metric")
-                .and_then(|binding| binding.expected_result_type),
-            Some(CompositionResultFieldType::Integer),
-        );
-        assert_eq!(
-            plan.dependencies.source_consumers["rows"].metric_component_ids,
-            BTreeSet::from(["total_metric".to_owned()]),
-        );
-        assert_eq!(
-            plan.dependencies.source_consumers["rows"].table_component_ids,
-            BTreeSet::from(["rows_table".to_owned()]),
-        );
+        assert_ne!(scalar_fingerprint, table_fingerprint);
     }
 }

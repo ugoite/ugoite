@@ -9,9 +9,26 @@ type CompositionResultColumn = {
 type CompositionPreviewResponse = {
   ok: boolean;
   plan?: {
-    sources: Array<{
-      source_id: string;
-      source_schema_fingerprint: string;
+    queries: Array<{
+      variable_id: string;
+      returns:
+        | {
+          kind: "scalar";
+          value_type: { scalar_type: string; nullable: boolean };
+        }
+        | {
+          kind: "table";
+          columns: Array<{
+            name: string;
+            value_type: { scalar_type: string; nullable: boolean };
+          }>;
+        };
+      result_columns: Array<{
+        name: string;
+        value_type: { scalar_type: string; nullable: boolean };
+      }>;
+      form_bindings: Array<{ relation: string; form_id: string }>;
+      schema_fingerprint: string;
     }>;
   };
 };
@@ -165,7 +182,7 @@ export async function completeSavedSqlCompositionYaml(
   return lines.join("\n");
 }
 
-/** Complete the draft-only SQL source tuple with the server's current schema. */
+/** Complete a draft query variable with its authorized planner descriptors. */
 export async function completeInlineSqlCompositionYaml(
   request: APIRequestContext,
   spaceId: string,
@@ -184,10 +201,21 @@ export async function completeInlineSqlCompositionYaml(
   expect(response.status(), await response.text()).toBe(200);
   const preview = await response.json() as CompositionPreviewResponse;
   expect(preview.ok).toBe(true);
-  const resolved = preview.plan?.sources.find((item) =>
-    item.source_id === source.id
+  const resolved = preview.plan?.queries.find((item) =>
+    item.variable_id === source.id
   );
-  expect(resolved?.source_schema_fingerprint).toMatch(/^[0-9a-f]{64}$/);
+  expect(resolved?.schema_fingerprint).toMatch(/^[0-9a-f]{64}$/);
+  expect(resolved?.returns.kind).toBe("table");
+  expect(resolved?.form_bindings).toContainEqual({
+    relation: source.relation,
+    form_id: source.formId,
+  });
+  expect(
+    resolved?.result_columns.map(({ name, value_type }) => ({
+      name,
+      type: value_type.scalar_type,
+    })),
+  ).toEqual(source.expectedResult);
 
   let yaml = draftYaml;
   const replaceLine = (line: string, replacement: string) => {
@@ -195,24 +223,17 @@ export async function completeInlineSqlCompositionYaml(
     yaml = yaml.replace(line, replacement);
   };
   replaceLine(
-    "      form_bindings: []",
-    `      form_bindings: ${
-      JSON.stringify([{
-        relation: source.relation,
-        form_id: source.formId,
-      }])
-    }`,
+    "      returns: { kind: table, columns: [] }",
+    `      returns: ${JSON.stringify(resolved!.returns)}`,
   );
   replaceLine(
-    "      expected_result: []",
-    `      expected_result: ${JSON.stringify(source.expectedResult)}`,
+    "        form_bindings: []",
+    `        form_bindings: ${JSON.stringify(resolved!.form_bindings)}`,
   );
   replaceLine(
-    "      schema_fingerprint: ''",
-    `      schema_fingerprint: ${
-      JSON.stringify(
-        resolved!.source_schema_fingerprint,
-      )
+    "        schema_fingerprint: ''",
+    `        schema_fingerprint: ${
+      JSON.stringify(resolved!.schema_fingerprint)
     }`,
   );
   return yaml;
