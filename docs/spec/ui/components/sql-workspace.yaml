@@ -70,6 +70,13 @@ Rust parser can safely round-trip, with capability reasons in disabled
 actions' accessible names. `/sql/new`, Saved SQL detail/edit, and Composition
 inline SQL supply Form contexts together with a relation-free scalar context.
 
+The Filter action edits a Rust-derived boolean expression tree with typed
+predicate leaves and nested AND, OR, and NOT nodes. Its
+`set_filter_expression` operation validates every column, operator, and
+declared variable against the trusted Form context and rejects malformed or
+over-bound trees. The older `set_filters` operation remains limited to flat
+conjunctions; the UI does not flatten a boolean tree into that lossy shape.
+
 ## Preview and results
 
 Run Query, Count rows, and page continuation are explicit actions delegated to
