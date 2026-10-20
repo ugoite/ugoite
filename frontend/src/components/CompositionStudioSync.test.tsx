@@ -8,7 +8,11 @@ import {
   within,
 } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CompositionStudio } from "./CompositionStudio";
+import { createSignal } from "solid-js";
+import {
+  CompositionStudio,
+  type CompositionStudioSaveMode,
+} from "./CompositionStudio";
 import {
   type CompositionGraphDraft,
   createCompositionGraphDraft,
@@ -25,6 +29,7 @@ const {
   canonicalizeMock,
   parseInputMock,
   saveMock,
+  routePathMock,
 } = vi.hoisted(
   () => ({
     authSessionMock: vi.fn(),
@@ -36,11 +41,16 @@ const {
     canonicalizeMock: vi.fn(),
     parseInputMock: vi.fn(),
     saveMock: vi.fn(),
+    routePathMock: { value: "/spaces/space-1/compositions/new" },
   }),
 );
 
 vi.mock("@solidjs/router", () => ({
-  useLocation: () => ({ pathname: "/spaces/space-1/compositions/new" }),
+  useLocation: () => ({
+    get pathname() {
+      return routePathMock.value;
+    },
+  }),
   useNavigate: () => navigateMock,
   A: (props: { href: string; class?: string; children: unknown }) => (
     <a href={props.href} class={props.class}>{props.children as never}</a>
@@ -155,12 +165,15 @@ const plannedQuery = (
   };
 };
 
-const renderStudio = (initialDraft = draftWithTable()) =>
+const renderStudio = (
+  initialDraft = draftWithTable(),
+  saveMode: CompositionStudioSaveMode = { kind: "create" },
+) =>
   render(() => (
     <CompositionStudio
       spaceId="space-1"
       initialDraft={initialDraft}
-      saveMode={{ kind: "create" }}
+      saveMode={saveMode}
       backHref="/spaces/space-1/compositions"
       backLabel="Back to compositions"
     />
@@ -170,6 +183,7 @@ describe("CompositionStudio graph surface", () => {
   beforeEach(() => {
     setLocale("en");
     vi.clearAllMocks();
+    routePathMock.value = "/spaces/space-1/compositions/new";
     parseInputMock.mockImplementation(async (_type: unknown, raw: string) =>
       raw === "bad"
         ? { status: "invalid" }
@@ -348,6 +362,68 @@ describe("CompositionStudio graph surface", () => {
     ).toBe(true);
     fireEvent.click(retry);
 
+    await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(2));
+    expect(saveMock.mock.calls[1]).toEqual(saveMock.mock.calls[0]);
+    await waitFor(() =>
+      expect(navigateMock).toHaveBeenCalledWith(
+        "/spaces/space-1/compositions/composition-1/revision-1",
+      )
+    );
+  });
+
+  it("keeps an in-flight save bound to the route target captured before canonicalization", async () => {
+    let finishCanonicalize!: (result: { canonical_yaml: string }) => void;
+    canonicalizeMock.mockImplementationOnce(() =>
+      new Promise((resolve) => finishCanonicalize = resolve)
+    );
+    saveMock.mockRejectedValueOnce(
+      Object.assign(new Error("response lost"), {
+        mutationOutcome: "unknown",
+      }),
+    ).mockResolvedValueOnce({
+      composition_id: "composition-1",
+      revision_id: "revision-1",
+    });
+    const [saveMode, setSaveMode] = createSignal<CompositionStudioSaveMode>({
+      kind: "create",
+    });
+    render(() => (
+      <CompositionStudio
+        spaceId="space-1"
+        initialDraft={renderedDraftWithTable()}
+        saveMode={saveMode()}
+        backHref="/spaces/space-1/compositions"
+        backLabel="Back to compositions"
+      />
+    ));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+    await waitFor(() => expect(canonicalizeMock).toHaveBeenCalledOnce());
+    routePathMock.value = "/spaces/space-1/compositions/composition-2/edit";
+    setSaveMode({
+      kind: "update",
+      compositionId: "composition-2",
+      baseRevisionId: "revision-2",
+    });
+    finishCanonicalize({
+      canonical_yaml: JSON.stringify(canonicalizeMock.mock.calls[0][0]),
+    });
+
+    await waitFor(() => expect(saveMock).toHaveBeenCalledOnce());
+    expect(saveMock.mock.calls[0]).toEqual([
+      "space-1",
+      expect.any(String),
+      expect.any(String),
+      undefined,
+    ]);
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Retry" })).toBeNull()
+    );
+
+    routePathMock.value = "/spaces/space-1/compositions/new";
+    setSaveMode({ kind: "create" });
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    fireEvent.click(retry);
     await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(2));
     expect(saveMock.mock.calls[1]).toEqual(saveMock.mock.calls[0]);
     await waitFor(() =>

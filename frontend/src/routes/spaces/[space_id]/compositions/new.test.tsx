@@ -11,6 +11,7 @@ const { formsMock, savedSqlMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("@solidjs/router", () => ({
+  useLocation: () => ({ pathname: "/spaces/space-1/compositions/new" }),
   useParams: () => ({ space_id: "space-1" }),
   useSearchParams: () => [{}],
   useNavigate: () => vi.fn(),

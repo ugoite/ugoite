@@ -22,6 +22,12 @@ struct MetricExecutionAuthorization<'a> {
     query_limits_override: Option<&'a QueryLimits>,
 }
 
+struct AuthorizedScalarProbeOptions<'a> {
+    query_limits_override: Option<&'a QueryLimits>,
+    allow_inline_sql: bool,
+    publication_override: Option<&'a PublicationRef>,
+}
+
 struct MetricQueryPlan<'a> {
     queries: &'a [ResolvedQueryRequest],
     component_bindings: &'a [ResolvedComponentBinding],
@@ -475,9 +481,11 @@ impl UgoiteService {
             principal_ids,
             None,
             request,
-            None,
-            false,
-            None,
+            AuthorizedScalarProbeOptions {
+                query_limits_override: None,
+                allow_inline_sql: false,
+                publication_override: None,
+            },
         )
         .await
     }
@@ -495,9 +503,11 @@ impl UgoiteService {
             principal_ids,
             composition_id,
             request,
-            query_limits_override,
-            true,
-            None,
+            AuthorizedScalarProbeOptions {
+                query_limits_override,
+                allow_inline_sql: true,
+                publication_override: None,
+            },
         )
         .await
     }
@@ -515,9 +525,11 @@ impl UgoiteService {
             principal_ids,
             composition_id,
             request,
-            None,
-            true,
-            Some(publication),
+            AuthorizedScalarProbeOptions {
+                query_limits_override: None,
+                allow_inline_sql: true,
+                publication_override: Some(publication),
+            },
         )
         .await
     }
@@ -528,11 +540,9 @@ impl UgoiteService {
         principal_ids: &[Uuid],
         composition_id: Option<&str>,
         request: SqlQueryRequest,
-        query_limits_override: Option<&QueryLimits>,
-        allow_inline_sql: bool,
-        publication_override: Option<&PublicationRef>,
+        options: AuthorizedScalarProbeOptions<'_>,
     ) -> Result<SqlScalarProbeResult> {
-        validate_scalar_probe_request_with_inline(&request, allow_inline_sql)?;
+        validate_scalar_probe_request_with_inline(&request, options.allow_inline_sql)?;
         require_nonempty_authorized_principals(principal_ids)?;
         self.validate_complete_space(space_id).await?;
         let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
@@ -558,7 +568,7 @@ impl UgoiteService {
         self.validate_complete_space(space_id).await?;
         let workspace =
             iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
-        let publication = match publication_override {
+        let publication = match options.publication_override {
             Some(publication) => publication.clone(),
             None => workspace.current_publication().await?,
         };
@@ -577,7 +587,9 @@ impl UgoiteService {
             sql_execution::authorized_relation_scopes(&state, principal_ids, &forms)?;
         let execution_sql = sql_execution::bind_sql_to_forms(&prepared, &forms, &relation_scopes)?;
         let parameters = prepared.parameters;
-        let (columns, result_schema, rows) = if let Some(query_limits) = query_limits_override {
+        let (columns, result_schema, rows) = if let Some(query_limits) =
+            options.query_limits_override
+        {
             index::execute_sql_scalar_probe_authorized_by_form_at_checkpoint_stateless_with_limits(
                 &self.operator,
                 &self.workspace_path(space_id),

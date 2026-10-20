@@ -903,8 +903,8 @@ fn cli_sql_continuation_is_opaque_and_context_bound() {
         "changed parameter types must reset the continuation"
     );
     assert!(
-        String::from_utf8_lossy(&changed_types.stderr).contains("fingerprint"),
-        "changed parameter types must fail on the fingerprint: {}",
+        String::from_utf8_lossy(&changed_types.stderr).contains("continuation"),
+        "changed parameter types must be rejected as an invalid continuation: {}",
         String::from_utf8_lossy(&changed_types.stderr)
     );
 

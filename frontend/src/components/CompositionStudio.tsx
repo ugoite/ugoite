@@ -35,9 +35,11 @@ import {
 } from "~/lib/composition-save-error";
 import {
   clearPendingCompositionSaveAttempt,
+  type CompositionSaveTarget,
   getPendingCompositionSaveAttempt,
   markPendingCompositionSaveAttemptUncertain,
   type PendingCompositionSaveAttempt,
+  sameCompositionSaveIdentity,
   stagePendingCompositionSaveAttempt,
 } from "~/lib/composition-save-attempt";
 import {
@@ -50,9 +52,7 @@ import type { Form, SqlEntry } from "~/lib/types";
 import { buildSqlSchema } from "~/lib/sql";
 import type { SqlResultColumnType } from "~/lib/types";
 
-export type CompositionStudioSaveMode =
-  | { kind: "create" }
-  | { kind: "update"; compositionId: string; baseRevisionId: string };
+export type CompositionStudioSaveMode = CompositionSaveTarget;
 
 export interface CompositionStudioProps {
   spaceId: string;
@@ -152,12 +152,20 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const routeIdentity = () => ({
     spaceId: props.spaceId,
     routePath: location.pathname,
+    saveTarget: props.saveMode.kind === "update"
+      ? { ...props.saveMode }
+      : { kind: "create" as const },
   });
   let pendingSave: PendingCompositionSaveAttempt | undefined =
     getPendingCompositionSaveAttempt(routeIdentity())?.attempt;
   const [saveRetryAvailable, setSaveRetryAvailable] = createSignal(
     Boolean(getPendingCompositionSaveAttempt(routeIdentity())),
   );
+  createEffect(() => {
+    const stored = getPendingCompositionSaveAttempt(routeIdentity());
+    pendingSave = stored?.attempt;
+    setSaveRetryAvailable(stored?.state === "uncertain");
+  });
   const [saveError, setSaveError] = createSignal<string | null>(null);
   const [invalidEditorVariables, setInvalidEditorVariables] = createSignal(
     new Set<string>(),
@@ -680,17 +688,15 @@ export function CompositionStudio(props: CompositionStudioProps) {
         attempt.spaceId,
         attempt.yaml,
         attempt.idempotencyKey,
-        props.saveMode.kind === "update"
+        attempt.saveTarget.kind === "update"
           ? {
-            compositionId: props.saveMode.compositionId,
-            baseRevisionId: props.saveMode.baseRevisionId,
+            compositionId: attempt.saveTarget.compositionId,
+            baseRevisionId: attempt.saveTarget.baseRevisionId,
           }
           : undefined,
       );
-      if (attempt.routePath !== location.pathname) {
-        markPendingCompositionSaveAttemptUncertain(attempt, undefined);
-        pendingSave = attempt;
-        setSaveRetryAvailable(true);
+      if (!sameCompositionSaveIdentity(attempt, routeIdentity())) {
+        clearPendingCompositionSaveAttempt(attempt, "completed", undefined);
         return;
       }
       clearPendingCompositionSaveAttempt(attempt, "completed", undefined);
@@ -712,14 +718,18 @@ export function CompositionStudio(props: CompositionStudioProps) {
       const retryWasDenied = isRetry && (status === 401 || status === 403);
       if (outcome === "rejected" && !retryWasDenied) {
         clearPendingCompositionSaveAttempt(attempt, "rejected", undefined);
-        pendingSave = undefined;
-        setSaveRetryAvailable(false);
-        setSaveError(compositionSaveErrorMessage(error));
+        if (sameCompositionSaveIdentity(attempt, routeIdentity())) {
+          pendingSave = undefined;
+          setSaveRetryAvailable(false);
+          setSaveError(compositionSaveErrorMessage(error));
+        }
       } else {
         markPendingCompositionSaveAttemptUncertain(attempt, undefined);
-        pendingSave = attempt;
-        setSaveRetryAvailable(true);
-        setSaveError(t("composition.saveFailed"));
+        if (sameCompositionSaveIdentity(attempt, routeIdentity())) {
+          pendingSave = attempt;
+          setSaveRetryAvailable(true);
+          setSaveError(t("composition.saveFailed"));
+        }
       }
     }
   };
@@ -736,6 +746,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
       setSaveError(t("composition.studioInvalidDocument"));
       return;
     }
+    const saveIdentity = routeIdentity();
     const generation = saveGeneration() + 1;
     setSaveGeneration(generation);
     setSaving(true);
@@ -771,7 +782,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
       );
       if (generation !== saveGeneration()) return;
       const attempt: PendingCompositionSaveAttempt = {
-        ...routeIdentity(),
+        ...saveIdentity,
         name: current.name.trim(),
         yaml: canonical.canonical_yaml,
         idempotencyKey: crypto.randomUUID(),

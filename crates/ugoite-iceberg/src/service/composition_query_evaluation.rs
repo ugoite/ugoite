@@ -26,6 +26,7 @@ use ugoite_domain::id::{validate_entry_id, validate_revision_id, EntryId, Revisi
 use ugoite_domain::identity::Action;
 use uuid::Uuid;
 
+use super::composition_resolver::{CompositionPreviewOptions, CompositionQuerySelection};
 use super::{
     effective_actions_for_state, require_nonempty_authorized_principals,
     sql_query_authorization_fingerprint, sql_query_contract_error, validate_storage_id, Authorizer,
@@ -257,10 +258,12 @@ impl UgoiteService {
                             space_id,
                             &composition_id,
                             &revision_id,
-                            variables,
-                            unset_variables,
-                            principal_ids,
-                            requested_queries,
+                            CompositionQuerySelection {
+                                variables,
+                                unset_variables,
+                                principal_ids,
+                                requested_queries,
+                            },
                         )
                         .await?
                     }
@@ -305,11 +308,14 @@ impl UgoiteService {
                         self.preview_composition_authorized_for_principals_with_base_and_query_selection(
                             space_id,
                             &yaml,
-                            variables,
-                            unset_variables,
-                            principal_ids,
-                            base,
-                            requested_queries,
+                            CompositionPreviewOptions {
+                                variables,
+                                unset_variables,
+                                principal_ids: Some(principal_ids),
+                                base,
+                                requested_queries,
+                                allow_unset_inputs: false,
+                            },
                         )
                         .await?
                     }
@@ -801,19 +807,21 @@ impl UgoiteService {
             &current_authorization_fingerprint,
         )?;
         Ok(query_evaluation_diagnostics_response(
-            evaluation_id,
-            draft_fingerprint,
-            snapshot_fingerprint,
-            publication_fingerprint,
-            current_authorization_fingerprint,
-            variable_definitions,
-            plan,
-            query_diagnostics,
+            QueryEvaluationDiagnosticsResponse {
+                evaluation_id,
+                draft_fingerprint,
+                snapshot_fingerprint,
+                publication_fingerprint,
+                authorization_fingerprint: current_authorization_fingerprint,
+                variable_definitions,
+                plan,
+                query_diagnostics,
+            },
         ))
     }
 }
 
-fn query_evaluation_diagnostics_response(
+struct QueryEvaluationDiagnosticsResponse {
     evaluation_id: Uuid,
     draft_fingerprint: Option<String>,
     snapshot_fingerprint: String,
@@ -822,21 +830,25 @@ fn query_evaluation_diagnostics_response(
     variable_definitions: Option<Vec<VariableGraphNode>>,
     plan: CompositionGraphEvaluationPlan,
     query_diagnostics: Vec<VariableGraphQueryEvaluationDiagnostic>,
+}
+
+fn query_evaluation_diagnostics_response(
+    response: QueryEvaluationDiagnosticsResponse,
 ) -> CompositionQueryEvaluationResponse {
     CompositionQueryEvaluationResponse {
-        evaluation_id,
+        evaluation_id: response.evaluation_id,
         ok: false,
-        draft_fingerprint,
-        snapshot_fingerprint: Some(snapshot_fingerprint),
-        publication_fingerprint: Some(publication_fingerprint),
-        authorization_fingerprint: Some(authorization_fingerprint),
-        variable_definitions,
-        plan: Some(plan),
+        draft_fingerprint: response.draft_fingerprint,
+        snapshot_fingerprint: Some(response.snapshot_fingerprint),
+        publication_fingerprint: Some(response.publication_fingerprint),
+        authorization_fingerprint: Some(response.authorization_fingerprint),
+        variable_definitions: response.variable_definitions,
+        plan: Some(response.plan),
         // Never expose partial values from a failed evaluation as current data.
         query_results: BTreeMap::new(),
         computed_query_ids: Vec::new(),
         diagnostics: Vec::new(),
-        query_diagnostics,
+        query_diagnostics: response.query_diagnostics,
     }
 }
 
