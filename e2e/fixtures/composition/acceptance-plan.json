@@ -13,10 +13,11 @@
       "id": "A02",
       "requirement": "Form to SQL: selecting Form G generates SELECT * FROM \"G\"; SQL query limit=50 is separate from SQL text LIMIT.",
       "selectors": [
-        { "path": "frontend/src/components/CompositionSourcePicker.test.tsx", "kind": "file" },
-        { "path": "frontend/src/lib/composition-api.test.ts", "kind": "file" },
-        { "path": "crates/ugoite-domain/src/sql_structure.rs", "kind": "file" }
-      ]
+        { "path": "crates/ugoite-domain/src/sql_structure.rs", "kind": "test", "name": "relation_selection_builds_a_form_query_and_preserves_source_trivia" },
+        { "path": "crates/ugoite-iceberg/tests/test_composition_preview.rs", "kind": "test", "name": "draft_preview_resolves_without_publication" },
+        { "path": "crates/ugoite-core/src/sql_query.rs", "kind": "file" }
+      ],
+      "manual_evidence_gaps": ["Interactive Form-to-query insertion is not implemented in the vNext graph UI; browser verification of that flow and the separate 50-row preview limit is pending."]
     },
     {
       "id": "A03",
@@ -80,9 +81,9 @@
       "id": "A09",
       "requirement": "Metric: distinguish zero rows, one NULL row, zero, multiple rows, and type mismatch; derive headings from SQL result aliases; persist no label.",
       "selectors": [
-        { "path": "e2e/composition-scalar-state-journey.test.ts", "kind": "file" },
-        { "path": "e2e/composition-metric-journey.test.ts", "kind": "file" },
-        { "path": "frontend/src/components/CompositionRenderer.test.tsx", "kind": "file" }
+        { "path": "crates/ugoite-domain/src/composition/variable_graph.rs", "kind": "test", "name": "scalar_results_distinguish_cardinality_null_and_valid_values" },
+        { "path": "crates/ugoite-core/src/composition_query.rs", "kind": "test", "name": "validates_inline_planner_schema_before_exposing_scalar_values" },
+        { "path": "crates/ugoite-core/tests/composition_query_evaluation.rs", "kind": "test", "name": "only_descriptor_validated_query_values_reach_the_complete_preview" }
       ]
     },
     {

@@ -198,7 +198,7 @@ describe("composition variable list", () => {
         resolveParse = resolve;
       },
     );
-    vi.spyOn(variableProtocol, "parseCompositionVariableInput")
+    vi.spyOn(variableProtocol, "parseVariableGraphInput")
       .mockReturnValue(pendingParse as never);
 
     const [variables, setVariables] = createSignal<DraftVariable[]>([integer]);
