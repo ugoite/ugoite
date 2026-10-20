@@ -6,17 +6,12 @@ import {
   test,
 } from "@playwright/test";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
-import { completeSavedSqlCompositionYaml } from "./lib/composition.ts";
+import { completeCompositionGraphYaml } from "./lib/composition-graph.ts";
 import { openIsolatedPasskeyPage } from "./lib/security-context.ts";
 
-const SOURCE_UNAVAILABLE_DIAGNOSTIC = "A data source is unavailable.";
-const COMPOSITION_SOURCE_ID = "shared_query_source";
-const INPUT_COMPONENT_ID = "shared_query_input";
-const METRIC_COMPONENT_ID = "shared_result_metric";
-const TABLE_COMPONENT_ID = "shared_result_table";
 const VARIABLE_ID = "query_key";
-const SQL_VARIABLE_NAME = "query_key";
-const METRIC_QUERY_PATH = "/compositions/metric-query";
+const METRIC_QUERY_ID = "shared_metric";
+const TABLE_QUERY_ID = "shared_rows";
 
 type CompositionSeed = {
   spaceId: string;
@@ -25,21 +20,20 @@ type CompositionSeed = {
   savedSqlId: string;
   savedSqlRevisionId: string;
   savedSqlName: string;
-  savedSqlText: string;
   compositionId: string;
   compositionRevisionId: string;
   compositionName: string;
   protectedValue: string;
 };
 
-type MetricResponse = {
-  httpStatus?: number;
-  ok?: boolean;
-  result?: { component_id: string; value: unknown };
-  diagnostics?: Array<{ code: string }>;
-  code?: string;
-  message?: string;
+type EvaluationBody = {
+  ok: boolean;
+  query_results?: Record<string, unknown>;
+  diagnostics?: Array<{ code?: string }>;
+  query_diagnostics?: Array<{ variable_id: string; code?: string }>;
 };
+
+type SavedComposition = { composition_id?: string; revision_id?: string };
 
 function sqlIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
@@ -52,10 +46,7 @@ async function createSpace(
   const suffix = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
   const name = `Composition isolation ${label} ${suffix}`;
   const response = await request.post(getBackendUrl("/spaces"), {
-    data: {
-      slug: `composition-isolation-${label}-${suffix}`,
-      name,
-    },
+    data: { slug: `composition-isolation-${label}-${suffix}`, name },
   });
   expect([200, 201]).toContain(response.status());
   const spaceId = (await response.json() as { space_uid?: string }).space_uid;
@@ -63,7 +54,7 @@ async function createSpace(
   return { id: spaceId!, name };
 }
 
-async function seedSavedSqlMetric(
+async function seedGraph(
   request: APIRequestContext,
   options: {
     spaceId: string;
@@ -122,88 +113,81 @@ async function seedSavedSqlMetric(
   );
   expect(entryResponse.status()).toBe(201);
 
-  const savedSqlName = `Source ${options.compositionName}`;
+  const savedSqlName = `Protected lookup ${options.compositionName}`;
   const sql = `SELECT ${sqlIdentifier(protectedColumn!)} AS value FROM ${
     sqlIdentifier(relation!)
-  } WHERE ${sqlIdentifier(lookupColumn!)} = $${SQL_VARIABLE_NAME}`;
-  const sqlResponse = await request.post(
+  } WHERE ${sqlIdentifier(lookupColumn!)} = $query_key`;
+  const savedSqlResponse = await request.post(
     getBackendUrl(`/spaces/${options.spaceId}/sql`),
     {
       data: {
         name: savedSqlName,
         kind: "user-query",
         sql,
-        variables: [{
-          type: "string",
-          name: SQL_VARIABLE_NAME,
-          description: "Select the matching row.",
-        }],
+        variables: [{ name: "query_key", type: "string", description: "" }],
       },
     },
   );
-  expect([200, 201]).toContain(sqlResponse.status());
-  const savedSql = await sqlResponse.json() as {
+  expect([200, 201]).toContain(savedSqlResponse.status());
+  const savedSql = await savedSqlResponse.json() as {
     id?: string;
     revision_id?: string;
   };
   expect(savedSql.id).toBeTruthy();
   expect(savedSql.revision_id).toBeTruthy();
 
-  let yaml = [
-    "format: ugoite.composition",
-    "format_version: 1",
-    `name: ${options.compositionName}`,
-    "kind: dashboard",
-    "spec:",
-    "  variables:",
-    `    - id: ${VARIABLE_ID}`,
-    "      type: string",
-    "      required: true",
-    "      default: match",
-    "  sources:",
-    `    - id: ${COMPOSITION_SOURCE_ID}`,
-    "      kind: saved_sql",
-    `      entry_id: "${savedSql.id}"`,
-    `      revision_id: "${savedSql.revision_id}"`,
-    "      expected_result: []",
-    "      schema_fingerprint: ''",
-    "      variables:",
-    `        ${SQL_VARIABLE_NAME}:`,
-    `          variable: ${VARIABLE_ID}`,
-    "  components:",
-    `    - id: ${INPUT_COMPONENT_ID}`,
-    "      kind: input",
-    `      variable: ${VARIABLE_ID}`,
-    `    - id: ${METRIC_COMPONENT_ID}`,
-    "      kind: metric",
-    `      source: ${COMPOSITION_SOURCE_ID}`,
-    "      column: value",
-    `    - id: ${TABLE_COMPONENT_ID}`,
-    "      kind: table",
-    `      source: ${COMPOSITION_SOURCE_ID}`,
-    "  layout:",
-    "    kind: flow",
-    "    rows:",
-    "      - id: primary",
-    "        items:",
-    "          - kind: component",
-    `            component: ${INPUT_COMPONENT_ID}`,
-    "          - kind: component",
-    `            component: ${METRIC_COMPONENT_ID}`,
-    "          - kind: component",
-    `            component: ${TABLE_COMPONENT_ID}`,
-    "",
-  ].join("\n");
-  yaml = await completeSavedSqlCompositionYaml(
-    request,
-    options.spaceId,
-    yaml,
-    [{
-      id: COMPOSITION_SOURCE_ID,
-      savedSqlId: savedSql.id!,
-      savedSqlRevisionId: savedSql.revision_id!,
+  const argumentsForSavedSql = [{ name: "query_key", variable: VARIABLE_ID }];
+  const yaml = await completeCompositionGraphYaml(request, options.spaceId, {
+    name: options.compositionName,
+    variables: [
+      {
+        id: VARIABLE_ID,
+        kind: "input",
+        value_type: { scalar_type: "string", nullable: false },
+        required: true,
+        default: { kind: "string", value: "match" },
+      },
+      {
+        id: METRIC_QUERY_ID,
+        kind: "query",
+        returns: {
+          kind: "scalar",
+          value_type: { scalar_type: "string", nullable: true },
+        },
+        query: {
+          kind: "saved_sql",
+          entry_id: savedSql.id!,
+          revision_id: savedSql.revision_id!,
+          column: "value",
+          arguments: argumentsForSavedSql,
+        },
+      },
+      {
+        id: TABLE_QUERY_ID,
+        kind: "query",
+        returns: { kind: "table", columns: [] },
+        query: {
+          kind: "saved_sql",
+          entry_id: savedSql.id!,
+          revision_id: savedSql.revision_id!,
+          arguments: argumentsForSavedSql,
+        },
+      },
+    ],
+    components: [
+      { id: "query_input", kind: "input", variable: VARIABLE_ID },
+      { id: "result_metric", kind: "metric", variable: METRIC_QUERY_ID },
+      { id: "result_table", kind: "table", variable: TABLE_QUERY_ID },
+    ],
+    rows: [{
+      id: "primary",
+      items: [
+        { kind: "component", component: "query_input" },
+        { kind: "component", component: "result_metric" },
+        { kind: "component", component: "result_table" },
+      ],
     }],
-  );
+  });
   const compositionResponse = await request.post(
     getBackendUrl(`/spaces/${options.spaceId}/compositions`),
     {
@@ -212,10 +196,7 @@ async function seedSavedSqlMetric(
     },
   );
   expect([200, 201]).toContain(compositionResponse.status());
-  const composition = await compositionResponse.json() as {
-    composition_id?: string;
-    revision_id?: string;
-  };
+  const composition = await compositionResponse.json() as SavedComposition;
   expect(composition.composition_id).toBeTruthy();
   expect(composition.revision_id).toBeTruthy();
 
@@ -226,7 +207,6 @@ async function seedSavedSqlMetric(
     savedSqlId: savedSql.id!,
     savedSqlRevisionId: savedSql.revision_id!,
     savedSqlName,
-    savedSqlText: sql,
     compositionId: composition.composition_id!,
     compositionRevisionId: composition.revision_id!,
     compositionName: options.compositionName,
@@ -234,21 +214,9 @@ async function seedSavedSqlMetric(
   };
 }
 
-async function metricResponse(
-  page: import("@playwright/test").Page,
-): Promise<MetricResponse> {
-  const response = await page.waitForResponse((candidate) =>
-    candidate.url().includes(METRIC_QUERY_PATH)
-  );
-  return {
-    ...await response.json() as Omit<MetricResponse, "httpStatus">,
-    httpStatus: response.status(),
-  };
-}
-
-function sqlPageResponse(page: import("@playwright/test").Page) {
-  return page.waitForResponse((candidate) =>
-    new URL(candidate.url()).pathname.endsWith("/sql/query")
+function evaluationResponse(page: import("@playwright/test").Page) {
+  return page.waitForResponse((response) =>
+    new URL(response.url()).pathname.endsWith("/compositions/evaluate")
   );
 }
 
@@ -256,18 +224,38 @@ function compositionPath(seed: CompositionSeed): string {
   return `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/${seed.compositionRevisionId}`;
 }
 
-test.describe("Composition Saved SQL ACL and runtime isolation", () => {
+const evaluateExactRevision = (
+  request: APIRequestContext,
+  seed: CompositionSeed,
+) =>
+  request.post(
+    getBackendUrl(`/spaces/${seed.spaceId}/compositions/evaluate`),
+    {
+      data: {
+        evaluation_id: crypto.randomUUID(),
+        target: {
+          kind: "saved_revision",
+          composition_id: seed.compositionId,
+          revision_id: seed.compositionRevisionId,
+        },
+        variables: { [VARIABLE_ID]: "match" },
+        requested_queries: [METRIC_QUERY_ID, TABLE_QUERY_ID],
+      },
+    },
+  );
+
+test.describe("Composition graph ACL and runtime isolation", () => {
   test.beforeAll(async ({ request }) => await waitForServers(request));
 
-  test("Viewer Metric and Table clear after Form or Saved SQL Read is revoked", async ({ browser, context, request }) => {
+  test("evaluate rechecks Form and exact Saved SQL access after revocation", async ({ browser, context, request }) => {
     test.setTimeout(180_000);
     const space = await createSpace(request, "acl-revocation");
     const suffix = crypto.randomUUID().slice(0, 8);
-    const seed = await seedSavedSqlMetric(request, {
+    const seed = await seedGraph(request, {
       spaceId: space.id,
-      formName: `AclMetricSource${suffix}`,
-      compositionName: `Revoked source ${suffix}`,
-      protectedValue: `protected-sql-value-${suffix}`,
+      formName: `AclForm${suffix}`,
+      compositionName: `Revoked graph ${suffix}`,
+      protectedValue: `protected-value-${suffix}`,
     });
 
     const invitation = await request.post(
@@ -276,7 +264,8 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
     );
     expect(invitation.status()).toBe(201);
     const invitationUrl =
-      (await invitation.json() as { invitation_url?: string }).invitation_url;
+      (await invitation.json() as { invitation_url?: string })
+        .invitation_url;
     expect(invitationUrl).toBeTruthy();
 
     const { target: viewerContext, page, close } =
@@ -286,41 +275,22 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
       await page.getByRole("button", { name: "Accept invitation" }).click();
       await expect(page).toHaveURL(/\/spaces$/);
 
-      const membersResponse = await request.get(
-        getBackendUrl(`/spaces/${seed.spaceId}/members`),
-      );
-      expect(membersResponse.ok()).toBe(true);
-      const members = await membersResponse.json() as Array<{
-        principal: { principal_id: string; display_name: string };
-        role: string;
-      }>;
-      const viewer = members.find((member) =>
-        member.principal.display_name === `ACL viewer ${suffix}`
-      );
-      expect(viewer?.role).toBe("viewer");
-      expect(viewer?.principal.principal_id).toBeTruthy();
-
-      const initialMetricResponse = metricResponse(page);
-      const initialSqlPageResponse = sqlPageResponse(page);
+      const initialEvaluation = evaluationResponse(page);
       await page.goto(getFrontendUrl(compositionPath(seed)), {
         waitUntil: "domcontentloaded",
       });
       await expect(
         page.getByRole("heading", { level: 1, name: seed.compositionName }),
-      ).toBeVisible();
-      await expect(page.locator("output.compositionMetric")).toContainText(
-        seed.protectedValue,
-      );
+      )
+        .toBeVisible();
+      await expect(page.locator(".compositionGraphMetric strong"))
+        .toContainText(seed.protectedValue);
       await expect(page.getByRole("table")).toContainText(seed.protectedValue);
-      const initialBody = await initialMetricResponse;
-      const initialSqlResponse = await initialSqlPageResponse;
-      expect(initialBody.ok).toBe(true);
-      expect(initialBody.result).toMatchObject({
-        component_id: METRIC_COMPONENT_ID,
-        value: seed.protectedValue,
-      });
-      expect(initialSqlResponse.ok()).toBe(true);
-      const authorizedSqlRequest = initialSqlResponse.request().postDataJSON();
+      const authorized = await initialEvaluation;
+      expect(authorized.ok()).toBe(true);
+      const authorizedBody = await authorized.json() as EvaluationBody;
+      expect(authorizedBody.ok).toBe(true);
+      expect(JSON.stringify(authorizedBody)).toContain(seed.protectedValue);
 
       const compositionRead = await viewerContext.request.get(
         getBackendUrl(
@@ -329,89 +299,44 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
       );
       expect(compositionRead.ok()).toBe(true);
 
-      const assertSourceReadRevocation = async (
-        inputValue: string,
-        revokedRead: "form" | "saved_sql",
+      const assertRevokedEvaluation = async (
+        policyKind: "form" | "saved_sql",
+        resourceId: string,
       ) => {
-        // Replay the exact request captured while authorized. SQL execution
-        // must re-check current source access rather than trust an earlier plan.
-        const replayedSqlResponse = await viewerContext.request.post(
-          getBackendUrl(`/spaces/${seed.spaceId}/sql/query`),
-          { data: authorizedSqlRequest },
-        );
-        const replayedSqlBody = await replayedSqlResponse.text();
-        expect(replayedSqlResponse.ok()).toBe(false);
-
-        const compositionReadAfterRevocation = await viewerContext.request.get(
-          getBackendUrl(
-            `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/history/${seed.compositionRevisionId}`,
-          ),
-        );
-        expect(compositionReadAfterRevocation.ok()).toBe(true);
-
-        const revokedMetricResponse = metricResponse(page);
-        await page.getByRole("textbox").first().fill(inputValue);
-        await expect(page.locator("output.compositionMetric")).toHaveCount(0);
-        const deniedBody = await revokedMetricResponse;
-        await expect(page.getByRole("table")).toHaveCount(0);
-        await expect(page.locator("body")).not.toContainText(
-          seed.protectedValue,
-        );
-        // Metric-query denials use a sanitized diagnostic body for both
-        // revoked source types while returning no value.
-        expect(deniedBody).toMatchObject({
-          ok: false,
-          diagnostics: [{ code: "source_unavailable" }],
-        });
-        expect(deniedBody.result).toBeUndefined();
-
-        // Revisit the same revision. A revoked Saved SQL source or its bound
-        // Form is hidden during resolution with the same generic diagnostic.
-        await page.reload({ waitUntil: "domcontentloaded" });
-        const resolveResponse = await viewerContext.request.post(
-          getBackendUrl(
-            `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/resolve`,
-          ),
-          {
-            data: {
-              revision_id: seed.compositionRevisionId,
-              variables: { [VARIABLE_ID]: "match" },
-            },
-          },
-        );
-        expect(resolveResponse.ok()).toBe(true);
-        const resolveBody = await resolveResponse.json() as {
-          ok: boolean;
-          diagnostics?: Array<{ code: string }>;
-        };
-        expect(resolveBody).toMatchObject({
-          ok: false,
-          diagnostics: [{ code: "source_unavailable" }],
-        });
-        const deniedText = JSON.stringify([deniedBody, resolveBody]);
-        const concealedValues = [
-          seed.savedSqlText,
-          seed.protectedValue,
-          ...(revokedRead === "form" ? [seed.formId, seed.formName] : []),
-          ...(revokedRead === "saved_sql"
-            ? [seed.savedSqlId, seed.savedSqlRevisionId, seed.savedSqlName]
-            : []),
-        ];
-        for (const privateValue of concealedValues) {
-          expect(deniedText).not.toContain(privateValue);
-          expect(replayedSqlBody).not.toContain(privateValue);
-          await expect(page.locator("body")).not.toContainText(privateValue);
+        const denied = await evaluateExactRevision(viewerContext.request, seed);
+        const bodyText = await denied.text();
+        expect([200, 403]).toContain(denied.status());
+        expect(bodyText).not.toContain(seed.protectedValue);
+        if (denied.ok()) {
+          const body = JSON.parse(bodyText) as EvaluationBody;
+          expect(body.ok).toBe(false);
+          expect(body.query_results ?? {}).toEqual({});
         }
-        await expect(
-          page.getByRole("alert").filter({
-            hasText: SOURCE_UNAVAILABLE_DIAGNOSTIC,
-          }),
-        ).toBeVisible();
-        await expect(page.locator("output.compositionMetric")).toHaveCount(0);
-        await expect(page.getByRole("table")).toHaveCount(0);
+        expect(bodyText).not.toContain(resourceId);
+
+        const browserEvaluation = evaluationResponse(page);
+        await page.getByRole("textbox", { name: VARIABLE_ID }).fill("match-2");
+        const browserResponse = await browserEvaluation;
+        expect([200, 403]).toContain(browserResponse.status());
+        const browserBody = await browserResponse.text();
+        expect(browserBody).not.toContain(seed.protectedValue);
         await expect(page.locator("body")).not.toContainText(
           seed.protectedValue,
         );
+        await expect(page.locator(".compositionGraphMetric")).toHaveCount(0);
+        await expect(page.getByRole("table")).not.toContainText(
+          seed.protectedValue,
+        );
+
+        // Raw exact revision inspection remains available to the authorized
+        // Space member even when its query dependencies are no longer readable.
+        const raw = await viewerContext.request.get(getBackendUrl(
+          `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/history/${seed.compositionRevisionId}`,
+        ));
+        expect(raw.ok()).toBe(true);
+        const rawBody = await raw.text();
+        expect(rawBody).toContain(seed.compositionName);
+        expect(rawBody).toContain(policyKind);
       };
 
       const formPolicyResponse = await request.put(
@@ -425,9 +350,9 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
         },
       );
       expect(formPolicyResponse.status()).toBe(200);
-      await assertSourceReadRevocation("form-access-revoked", "form");
+      await assertRevokedEvaluation("form", seed.formId);
 
-      const restoreFormPolicyResponse = await request.put(
+      const restoreFormPolicy = await request.put(
         getBackendUrl(`/spaces/${seed.spaceId}/policies/form/${seed.formName}`),
         {
           data: {
@@ -437,18 +362,12 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
           },
         },
       );
-      expect(restoreFormPolicyResponse.status()).toBe(200);
-      const restoredMetricResponse = metricResponse(page);
-      const restoredSqlPageResponse = sqlPageResponse(page);
+      expect(restoreFormPolicy.status()).toBe(200);
+      const restoredEvaluation = evaluationResponse(page);
       await page.reload({ waitUntil: "domcontentloaded" });
-      await expect(page.locator("output.compositionMetric")).toContainText(
-        seed.protectedValue,
-      );
-      await expect(page.getByRole("table")).toContainText(seed.protectedValue);
-      expect((await restoredMetricResponse).result?.value).toBe(
-        seed.protectedValue,
-      );
-      expect((await restoredSqlPageResponse).ok()).toBe(true);
+      await expect(page.locator(".compositionGraphMetric strong"))
+        .toContainText(seed.protectedValue);
+      expect((await restoredEvaluation).ok()).toBe(true);
 
       const savedSqlPolicyResponse = await request.put(
         getBackendUrl(
@@ -463,25 +382,20 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
         },
       );
       expect(savedSqlPolicyResponse.status()).toBe(200);
-      await assertSourceReadRevocation("saved-sql-access-revoked", "saved_sql");
+      await assertRevokedEvaluation("saved_sql", seed.savedSqlId);
 
       const ownerContext = await browser.newContext({
         storageState: await context.storageState(),
       });
       try {
         const ownerPage = await ownerContext.newPage();
-        const ownerMetricResponse = metricResponse(ownerPage);
+        const ownerEvaluation = evaluationResponse(ownerPage);
         await ownerPage.goto(getFrontendUrl(compositionPath(seed)), {
           waitUntil: "domcontentloaded",
         });
-        await expect(ownerPage.locator("output.compositionMetric"))
+        await expect(ownerPage.locator(".compositionGraphMetric strong"))
           .toContainText(seed.protectedValue);
-        await expect(ownerPage.getByRole("table")).toContainText(
-          seed.protectedValue,
-        );
-        expect((await ownerMetricResponse).result?.value).toBe(
-          seed.protectedValue,
-        );
+        expect((await ownerEvaluation).ok()).toBe(true);
         await expect(page.locator("body")).not.toContainText(
           seed.protectedValue,
         );
@@ -493,97 +407,56 @@ test.describe("Composition Saved SQL ACL and runtime isolation", () => {
     }
   });
 
-  test("Space switching shows only the selected Metric result", async ({ browser, context, request }) => {
+  test("switching Spaces shows only the selected graph evaluation", async ({ browser, context, request }) => {
     test.setTimeout(180_000);
     const spaceA = await createSpace(request, "isolation-a");
     const spaceB = await createSpace(request, "isolation-b");
-    const compositionName = "Shared identifiers";
-    const formName = "IsolationSource";
-    const seedA = await seedSavedSqlMetric(request, {
+    const compositionName = "Shared graph identifiers";
+    const formName = "IsolationForm";
+    const seedA = await seedGraph(request, {
       spaceId: spaceA.id,
       compositionName,
       formName,
-      protectedValue: "space-a-protected-value",
+      protectedValue: "space-a-private-value",
     });
-    const seedB = await seedSavedSqlMetric(request, {
+    const seedB = await seedGraph(request, {
       spaceId: spaceB.id,
       compositionName,
       formName,
-      protectedValue: "space-b-protected-value",
+      protectedValue: "space-b-private-value",
     });
     expect(seedA.formName).toBe(seedB.formName);
 
-    const ownerState = await context.storageState();
     const ownerContext: BrowserContext = await browser.newContext({
-      storageState: ownerState,
+      storageState: await context.storageState(),
     });
     try {
       const page = await ownerContext.newPage();
-      const firstMetricResponse = metricResponse(page);
-      const firstSqlPageResponse = sqlPageResponse(page);
+      const firstEvaluation = evaluationResponse(page);
       await page.goto(getFrontendUrl(compositionPath(seedA)), {
         waitUntil: "domcontentloaded",
       });
-      await expect(page.locator("output.compositionMetric")).toContainText(
-        seedA.protectedValue,
-        { timeout: 15_000 },
-      );
+      await expect(page.locator(".compositionGraphMetric strong"))
+        .toContainText(seedA.protectedValue);
       await expect(page.getByRole("table")).toContainText(seedA.protectedValue);
-      await expect(
-        page.getByRole("textbox").first(),
-      ).toHaveValue("match");
-      expect((await firstMetricResponse).result?.value).toBe(
-        seedA.protectedValue,
-      );
-      expect((await firstSqlPageResponse).ok()).toBe(true);
+      await expect(page.getByRole("textbox", { name: VARIABLE_ID }))
+        .toHaveValue("match");
+      expect((await firstEvaluation).ok()).toBe(true);
 
       const spaceSelector = page.getByRole("combobox", { name: "Space" });
-      await expect(spaceSelector.getByRole("option", { name: spaceB.name }))
-        .toHaveCount(1);
       await spaceSelector.selectOption(seedB.spaceId);
       await expect(page).toHaveURL(
         new RegExp(`/spaces/${seedB.spaceId}/compositions$`),
       );
-      const secondMetricResponse = metricResponse(page);
-      const secondSqlPageResponse = sqlPageResponse(page);
+      const secondEvaluation = evaluationResponse(page);
       await page.getByRole("link", { name: new RegExp(`^${compositionName}`) })
         .click();
-      await expect(page.locator("output.compositionMetric")).toContainText(
-        seedB.protectedValue,
-        { timeout: 15_000 },
-      );
+      await expect(page.locator(".compositionGraphMetric strong"))
+        .toContainText(seedB.protectedValue);
       await expect(page.getByRole("table")).toContainText(seedB.protectedValue);
-      await expect(
-        page.getByRole("textbox").first(),
-      ).toHaveValue("match");
-      expect((await secondMetricResponse).result?.value).toBe(
-        seedB.protectedValue,
-      );
-      expect((await secondSqlPageResponse).ok()).toBe(true);
+      expect((await secondEvaluation).ok()).toBe(true);
       await expect(page.locator("body")).not.toContainText(
         seedA.protectedValue,
-      );
-
-      await page.getByRole("combobox", { name: "Space" })
-        .selectOption(seedA.spaceId);
-      await expect(page).toHaveURL(
-        new RegExp(`/spaces/${seedA.spaceId}/compositions$`),
-      );
-      const thirdMetricResponse = metricResponse(page);
-      const thirdSqlPageResponse = sqlPageResponse(page);
-      await page.getByRole("link", { name: new RegExp(`^${compositionName}`) })
-        .click();
-      await expect(page.locator("output.compositionMetric")).toContainText(
-        seedA.protectedValue,
-        { timeout: 15_000 },
-      );
-      await expect(page.getByRole("table")).toContainText(seedA.protectedValue);
-      expect((await thirdMetricResponse).result?.value).toBe(
-        seedA.protectedValue,
-      );
-      expect((await thirdSqlPageResponse).ok()).toBe(true);
-      await expect(page.locator("body")).not.toContainText(
-        seedB.protectedValue,
       );
     } finally {
       await ownerContext.close();

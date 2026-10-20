@@ -14,7 +14,7 @@ import {
   getFrontendUrl,
   waitForServers,
 } from "./lib/client.ts";
-import { completeInlineSqlCompositionYaml } from "./lib/composition.ts";
+import { completeCompositionGraphYaml } from "./lib/composition-graph.ts";
 
 type CompactControlSeed = {
   spaceId: string;
@@ -127,41 +127,6 @@ let seed: CompactControlSeed;
 let sqlCreated = false;
 let entryCreated = false;
 let compositionCreated = false;
-
-function compositionYaml(
-  name: string,
-  relation: string,
-  merchantColumn: string,
-) {
-  return [
-    "format: ugoite.composition",
-    "format_version: 1",
-    `name: ${name}`,
-    "kind: dashboard",
-    "spec:",
-    "  variables:",
-    "    - id: compact_rows",
-    "      kind: query",
-    "      returns: { kind: table, columns: [] }",
-    "      query:",
-    "        kind: inline_sql",
-    `        sql: SELECT \"${merchantColumn}\" AS merchant FROM \"${relation}\"`,
-    "        form_bindings: []",
-    "        schema_fingerprint: ''",
-    "  components:",
-    "    - id: rows",
-    "      kind: table",
-    "      variable: compact_rows",
-    "  layout:",
-    "    kind: flow",
-    "    rows:",
-    "      - id: main",
-    "        items:",
-    "          - kind: component",
-    "            component: rows",
-    "",
-  ].join("\n");
-}
 
 async function seedCompactControlSurfaces(
   request: APIRequestContext,
@@ -278,19 +243,29 @@ async function seedCompactControlSurfaces(
   };
   sqlCreated = true;
 
-  const completeYaml = await completeInlineSqlCompositionYaml(
+  const completeYaml = await completeCompositionGraphYaml(
     request,
     spaceId,
-    compositionYaml(
-      `Compact Controls ${suffix}`,
-      formName,
-      merchantColumn!,
-    ),
     {
-      id: "compact_rows",
-      relation: formName,
-      formId: form!.id!,
-      expectedResult: [{ name: "merchant", type: "string" }],
+      name: `Compact Controls ${suffix}`,
+      variables: [{
+        id: "compact_rows",
+        kind: "query",
+        returns: { kind: "table", columns: [] },
+        query: {
+          kind: "inline_sql",
+          sql:
+            `SELECT \"${merchantColumn!}\" AS merchant FROM \"${relation!}\"`,
+          arguments: [],
+          form_bindings: [],
+          schema_fingerprint: "",
+        },
+      }],
+      components: [{ id: "rows", kind: "table", variable: "compact_rows" }],
+      rows: [{
+        id: "main",
+        items: [{ kind: "component", component: "rows" }],
+      }],
     },
   );
   const compositionResponse = await request.post(
@@ -350,10 +325,10 @@ async function focusBackLinkWithKeyboard(page: Page, backLink: Locator) {
 function selectorsForSurface(surface: Surface) {
   if (surface.layout === "composition-studio") {
     return {
-      header: "header:has(> a.back-link)",
-      back: "header:has(> a.back-link) > a.back-link",
-      title: "header input[aria-label]",
-      actions: "header button, header a:not(.back-link)",
+      header: "header.screenHead",
+      back: "header.screenHead .screenHeadStart > a.back-link",
+      title: "header.screenHead input[aria-label]",
+      actions: "header.screenHead button, header.screenHead a:not(.back-link)",
     };
   }
   if (surface.layout === "entry-detail") {

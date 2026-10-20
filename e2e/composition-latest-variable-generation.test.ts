@@ -5,7 +5,10 @@ import {
   test,
 } from "@playwright/test";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
-import { completeSavedSqlCompositionYaml } from "./lib/composition.ts";
+import {
+  completeCompositionGraphYaml,
+  type CompositionGraphSeed,
+} from "./lib/composition-graph.ts";
 
 type SeedState = {
   spaceId: string;
@@ -109,58 +112,67 @@ async function seedRapidVariableComposition(
   expect(savedSql.id).toBeTruthy();
   expect(savedSql.revision_id).toBeTruthy();
 
-  let yaml = [
-    "format: ugoite.composition",
-    "format_version: 1",
-    `name: Latest generation ${suffix}`,
-    "kind: dashboard",
-    "spec:",
-    "  variables:",
-    "    - id: minimum",
-    "      type: float",
-    "      required: true",
-    "      default: 0",
-    "  sources:",
-    "    - id: totals",
-    "      kind: saved_sql",
-    `      entry_id: "${savedSql.id}"`,
-    `      revision_id: "${savedSql.revision_id}"`,
-    "      expected_result: []",
-    "      schema_fingerprint: ''",
-    "      variables:",
-    "        minimum:",
-    "          variable: minimum",
-    "  components:",
-    "    - id: minimum_input",
-    "      kind: input",
-    "      variable: minimum",
-    "    - id: total",
-    "      kind: metric",
-    "      source: totals",
-    "      column: total",
-    "    - id: totals_table",
-    "      kind: table",
-    "      source: totals",
-    "  layout:",
-    "    kind: flow",
-    "    rows:",
-    "      - id: controls",
-    "        items:",
-    "          - kind: component",
-    "            component: minimum_input",
-    "      - id: results",
-    "        items:",
-    "          - kind: component",
-    "            component: total",
-    "          - kind: component",
-    "            component: totals_table",
-    "",
-  ].join("\n");
-  yaml = await completeSavedSqlCompositionYaml(request, spaceId, yaml, [{
-    id: "totals",
-    savedSqlId: savedSql.id!,
-    savedSqlRevisionId: savedSql.revision_id!,
-  }]);
+  const graph: CompositionGraphSeed = {
+    name: `Latest generation ${suffix}`,
+    variables: [
+      {
+        id: "minimum",
+        kind: "input",
+        value_type: { scalar_type: "float", nullable: false },
+        required: true,
+        default: { kind: "float", value: 0 },
+      },
+      {
+        id: "total_value",
+        kind: "query",
+        returns: {
+          kind: "scalar",
+          value_type: { scalar_type: "float", nullable: true },
+        },
+        query: {
+          kind: "saved_sql",
+          entry_id: savedSql.id!,
+          revision_id: savedSql.revision_id!,
+          column: "total",
+          arguments: [{ name: "minimum", variable: "minimum" }],
+          form_bindings: [],
+          schema_fingerprint: "",
+        },
+      },
+      {
+        id: "totals_rows",
+        kind: "query",
+        returns: { kind: "table", columns: [] },
+        query: {
+          kind: "saved_sql",
+          entry_id: savedSql.id!,
+          revision_id: savedSql.revision_id!,
+          arguments: [{ name: "minimum", variable: "minimum" }],
+          form_bindings: [],
+          schema_fingerprint: "",
+        },
+      },
+    ],
+    components: [
+      { id: "minimum_input", kind: "input", variable: "minimum" },
+      { id: "total", kind: "metric", variable: "total_value" },
+      { id: "totals_table", kind: "table", variable: "totals_rows" },
+    ],
+    rows: [
+      {
+        id: "controls",
+        items: [{ kind: "component", component: "minimum_input" }],
+      },
+      {
+        id: "results",
+        items: [
+          { kind: "component", component: "total" },
+          { kind: "component", component: "totals_table" },
+        ],
+      },
+    ],
+  };
+  const yaml = await completeCompositionGraphYaml(request, spaceId, graph);
   const saveResponse = await request.post(
     getBackendUrl(`/spaces/${spaceId}/compositions`),
     {
@@ -185,7 +197,7 @@ async function seedRapidVariableComposition(
 
 async function readUi(page: Page): Promise<UiSnapshot> {
   return await page.evaluate(() => ({
-    metric: document.querySelector("output.compositionMetric")
+    metric: document.querySelector(".compositionGraphMetric strong")
       ?.textContent?.trim() ?? null,
     rows: Array.from(document.querySelectorAll("tbody tr td"))
       .map((cell) => cell.textContent?.trim() ?? ""),
@@ -271,13 +283,10 @@ test.describe("Composition latest variable generation", () => {
         } catch {
           return await nativeFetch(input, init);
         }
-        const kind: Kind | undefined = url.pathname ===
-            `/api/spaces/${spaceId}/compositions/metric-query`
-          ? "metric"
-          : url.pathname === `/api/spaces/${spaceId}/sql/query`
-          ? "table"
-          : undefined;
-        if (!kind) return await nativeFetch(input, init);
+        if (
+          url.pathname !==
+            `/api/spaces/${spaceId}/compositions/evaluate`
+        ) return await nativeFetch(input, init);
 
         let bodyText = typeof init?.body === "string" ? init.body : "";
         if (!bodyText && input instanceof Request) {
@@ -290,10 +299,7 @@ test.describe("Composition latest variable generation", () => {
           return await nativeFetch(input, init);
         }
         const variables = body.variables as Record<string, unknown> | undefined;
-        const parameters = body.parameters as
-          | Record<string, unknown>
-          | undefined;
-        const minimum = Number(variables?.minimum ?? parameters?.minimum);
+        const minimum = Number(variables?.minimum);
         const gate = gates.get(minimum);
         if (!gate) return await nativeFetch(input, init);
 
@@ -302,9 +308,13 @@ test.describe("Composition latest variable generation", () => {
         const response = input instanceof Request
           ? await nativeFetch(new Request(input, { signal: null }))
           : await nativeFetch(input, { ...init, signal: undefined });
-        probe.held[kind].push(minimum);
+        // One graph evaluation carries both the scalar and table query
+        // results for this exact input snapshot.
+        probe.held.metric.push(minimum);
+        probe.held.table.push(minimum);
         await gate.promise;
-        probe.delivered[kind].push(minimum);
+        probe.delivered.metric.push(minimum);
+        probe.delivered.table.push(minimum);
         return response;
       };
     }, seed.spaceId);
@@ -318,7 +328,9 @@ test.describe("Composition latest variable generation", () => {
 
     const minimumInput = page.getByRole("textbox").first();
     await expect(minimumInput).toHaveValue("0");
-    await expect(page.locator("output.compositionMetric")).toHaveText("6");
+    await expect(page.locator(".compositionGraphMetric strong")).toHaveText(
+      "6",
+    );
     await expect(page.getByRole("table")).toContainText("6");
     for (const minimum of [1, 2, 3]) {
       await minimumInput.fill(String(minimum));
@@ -333,7 +345,9 @@ test.describe("Composition latest variable generation", () => {
     await page.evaluate(() => {
       (window as ProbeWindow).__compositionGenerationProbe!.release(3);
     });
-    await expect(page.locator("output.compositionMetric")).toHaveText("3");
+    await expect(page.locator(".compositionGraphMetric strong")).toHaveText(
+      "3",
+    );
     await expect(page.getByRole("table")).toContainText("3");
     const latestResult = await readUi(page);
     expect(latestResult.metric).toBe("3");
@@ -359,7 +373,9 @@ test.describe("Composition latest variable generation", () => {
     const probe = await readProbe(page);
     expect(probe.delivered.metric).toEqual([3, 2, 1]);
     expect(probe.delivered.table).toEqual([3, 2, 1]);
-    await expect(page.locator("output.compositionMetric")).toHaveText("3");
+    await expect(page.locator(".compositionGraphMetric strong")).toHaveText(
+      "3",
+    );
     await expect(page.getByRole("table")).toContainText("3");
     await expect(page.getByRole("table")).not.toContainText("5");
     await expect(page.getByRole("table")).not.toContainText("6");

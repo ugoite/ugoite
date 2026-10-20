@@ -7,7 +7,10 @@ import {
   test,
 } from "@playwright/test";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
-import { completeSavedSqlCompositionYaml } from "./lib/composition.ts";
+import {
+  completeCompositionGraphYaml,
+  type CompositionGraphSeed,
+} from "./lib/composition-graph.ts";
 
 type SavedSqlRevision = {
   entryId: string;
@@ -21,14 +24,12 @@ type SeedState = {
   compositionName: string;
 };
 
-type SourceDefinition = {
+type ScalarQueryDefinition = {
   id: string;
   savedSql: SavedSqlRevision;
-};
-type MetricDefinition = {
-  id: string;
-  source: string;
   column: string;
+  scalarType: "integer" | "float";
+  nullable: boolean;
 };
 
 function sqlIdentifier(value: string): string {
@@ -69,60 +70,55 @@ async function createSavedSql(
   return { entryId: savedSql.id!, revisionId: savedSql.revision_id! };
 }
 
-function compositionYaml(
+function compositionGraph(
   name: string,
-  sources: SourceDefinition[],
-  metrics: MetricDefinition[],
-): string {
-  const lines = [
-    "format: ugoite.composition",
-    "format_version: 1",
-    `name: ${name}`,
-    "kind: dashboard",
-    "spec:",
-    "  sources:",
-  ];
-  for (const source of sources) {
-    lines.push(
-      `    - id: ${source.id}`,
-      "      kind: saved_sql",
-      `      entry_id: \"${source.savedSql.entryId}\"`,
-      `      revision_id: \"${source.savedSql.revisionId}\"`,
-      "      expected_result: []",
-      "      schema_fingerprint: ''",
-    );
-  }
-  lines.push("  components:");
-  for (const metric of metrics) {
-    lines.push(
-      `    - id: ${metric.id}`,
-      "      kind: metric",
-      `      source: ${metric.source}`,
-      `      column: ${metric.column}`,
-    );
-  }
-  lines.push(
-    "  layout:",
-    "    kind: flow",
-    "    rows:",
-    "      - id: aggregates",
-    "        items:",
-  );
-  for (const metric of metrics.slice(0, 4)) {
-    lines.push(
-      "          - kind: component",
-      `            component: ${metric.id}`,
-    );
-  }
-  lines.push("      - id: scalar_states", "        items:");
-  for (const metric of metrics.slice(4)) {
-    lines.push(
-      "          - kind: component",
-      `            component: ${metric.id}`,
-    );
-  }
-  lines.push("");
-  return lines.join("\n");
+  queries: ScalarQueryDefinition[],
+): CompositionGraphSeed {
+  const queryVariable = (query: ScalarQueryDefinition) => ({
+    id: query.id,
+    kind: "query" as const,
+    returns: {
+      kind: "scalar",
+      value_type: {
+        scalar_type: query.scalarType,
+        nullable: query.nullable,
+      },
+    },
+    query: {
+      kind: "saved_sql",
+      entry_id: query.savedSql.entryId,
+      revision_id: query.savedSql.revisionId,
+      column: query.column,
+      arguments: [],
+      form_bindings: [],
+      schema_fingerprint: "",
+    },
+  });
+  return {
+    name,
+    variables: queries.map(queryVariable),
+    components: queries.map((query) => ({
+      id: query.id,
+      kind: "metric",
+      variable: query.id,
+    })),
+    rows: [
+      {
+        id: "aggregates",
+        items: queries.slice(0, 4).map((query) => ({
+          kind: "component" as const,
+          component: query.id,
+        })),
+      },
+      {
+        id: "scalar_states",
+        items: queries.slice(4).map((query) => ({
+          kind: "component" as const,
+          component: query.id,
+        })),
+      },
+    ],
+  };
 }
 
 async function seedScalarStateComposition(
@@ -197,70 +193,61 @@ async function seedScalarStateComposition(
     `SELECT COUNT(*) AS value FROM ${table} WHERE ${amount} < 0`,
   );
 
-  const sources: SourceDefinition[] = [
-    {
-      id: "aggregate_source",
-      savedSql: aggregateSql,
-    },
-    {
-      id: "zero_rows_source",
-      savedSql: zeroRowsSql,
-    },
-    {
-      id: "null_source",
-      savedSql: nullSql,
-    },
-    {
-      id: "zero_source",
-      savedSql: zeroSql,
-    },
-  ];
-  const metrics: MetricDefinition[] = [
+  const queries: ScalarQueryDefinition[] = [
     {
       id: "all_rows",
-      source: "aggregate_source",
+      savedSql: aggregateSql,
       column: "row_count",
+      scalarType: "integer",
+      nullable: false,
     },
     {
       id: "rows_with_amount",
-      source: "aggregate_source",
+      savedSql: aggregateSql,
       column: "amount_count",
+      scalarType: "integer",
+      nullable: false,
     },
     {
       id: "amount_total",
-      source: "aggregate_source",
+      savedSql: aggregateSql,
       column: "amount_sum",
+      scalarType: "float",
+      nullable: true,
     },
     {
       id: "amount_average",
-      source: "aggregate_source",
+      savedSql: aggregateSql,
       column: "amount_average",
+      scalarType: "float",
+      nullable: true,
     },
     {
       id: "zero_rows",
-      source: "zero_rows_source",
+      savedSql: zeroRowsSql,
       column: "value",
+      scalarType: "float",
+      nullable: true,
     },
     {
       id: "null_result",
-      source: "null_source",
+      savedSql: nullSql,
       column: "value",
+      scalarType: "float",
+      nullable: true,
     },
     {
       id: "zero_result",
-      source: "zero_source",
+      savedSql: zeroSql,
       column: "value",
+      scalarType: "integer",
+      nullable: false,
     },
   ];
-  const yaml = await completeSavedSqlCompositionYaml(
+  const yaml = await completeCompositionGraphYaml(
     request,
     spaceId,
-    compositionYaml(compositionName, sources, metrics),
-    sources.map(({ id, savedSql }) => ({
-      id,
-      savedSqlId: savedSql.entryId,
-      savedSqlRevisionId: savedSql.revisionId,
-    })),
+    compositionGraph(compositionName, queries),
   );
   const compositionResponse = await request.post(
     getBackendUrl(`/spaces/${spaceId}/compositions`),
@@ -310,7 +297,7 @@ function metricSection(page: Page, componentIndex: number) {
 
 function metricOutput(page: Page, componentIndex: number) {
   return metricSection(page, componentIndex).locator(
-    "output.compositionMetric",
+    ".compositionGraphMetric strong",
   );
 }
 
@@ -372,7 +359,7 @@ test.describe("Composition scalar state journey", () => {
         ),
         { timeout: scalarResultTimeoutMs },
       );
-      await expect(zeroRowsSection.locator("output.compositionMetric"))
+      await expect(zeroRowsSection.locator(".compositionGraphMetric strong"))
         .toHaveCount(0, { timeout: scalarResultTimeoutMs });
 
       const nullOutput = metricOutput(page, 5);

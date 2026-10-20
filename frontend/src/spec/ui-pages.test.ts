@@ -205,9 +205,7 @@ describe("UI spec YAML registry", () => {
       components?: Array<Record<string, unknown>>;
     };
     const components = selection.components ?? [];
-    const spaces = components.find(({ id }) =>
-      id === "authorized-space-list"
-    );
+    const spaces = components.find(({ id }) => id === "authorized-space-list");
     const create = components.find(({ id }) => id === "create-space-form");
     const actions = components.find(({ id }) => id === "global-space-actions");
 
@@ -504,28 +502,34 @@ describe("UI spec YAML registry", () => {
     }
   });
 
-  it("REQ-FE-040: registers the SQL-first Composition and shared SQL Workspace contracts", () => {
+  it("REQ-FE-040: registers the graph Composition and shared SQL Workspace contracts", () => {
     const studioPath = path.join(componentsDir, "composition-studio.yaml");
     const studioContract = readFileSync(studioPath, "utf8");
     const sharedWorkspaceContract = readFileSync(
       path.join(componentsDir, "sql-workspace.yaml"),
       "utf8",
     );
-    const dataWorkspaceSource = readFileSync(
-      path.join(repoRoot, "frontend/src/components/CompositionDataWorkspace.tsx"),
+    const revisionRouteSource = readFileSync(
+      path.join(
+        repoRoot,
+        "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx",
+      ),
       "utf8",
     );
 
     expect(studioContract).toContain(
-      "**Status: implemented for the current prerelease model.**",
+      "**Status: implementation in progress; complete SQL grammar coverage remains a separate gate.**",
     );
-    expect(studioContract).toContain("The next unreleased target is [ADR-025]");
+    expect(studioContract).toContain(
+      "The normative next Composition model is [ADR-025]",
+    );
     expect(studioContract.replaceAll(/\s+/g, " ")).toContain(
-      "no EntryQuery is created",
+      "Table and Value share one BindingPicker with Variables, Forms, and Saved SQL tabs.",
     );
-    expect(dataWorkspaceSource).toContain("<SQLWorkspace");
+    expect(revisionRouteSource).toContain("compositionApi.evaluate");
+    expect(revisionRouteSource).toContain("<CompositionGraphRenderer");
     expect(sharedWorkspaceContract.replaceAll(/\s+/g, " ")).toContain(
-      "Composition inline SQL use the same Workspace component",
+      "Composition query variables use the same Workspace component",
     );
   });
 
@@ -549,7 +553,7 @@ describe("UI spec YAML registry", () => {
     }
   });
 
-  it("SQL-first Composition spec: keeps paging request-owned by the SQL query handle", () => {
+  it("REQ-COMP-009: keeps paging request-owned by the query variable", () => {
     const revision = loadPages().find(({ spec }) =>
       spec.page?.id === "space-composition-revision"
     );
@@ -558,7 +562,7 @@ describe("UI spec YAML registry", () => {
     );
     expect(compositionComponents).toMatchObject({
       pagination_owner:
-        "SQL query handle; continuation and explicit count stay in stateless query requests",
+        "server-owned stateless continuation for the query variable",
     });
   });
 
@@ -606,7 +610,7 @@ describe("UI spec YAML registry", () => {
       });
   });
 
-  it("REQ-COMP-008: keeps Composition variable declarations in Knowledge and values in transient Work", () => {
+  it("REQ-COMP-009: keeps Composition variable definitions in Knowledge and values in transient Work", () => {
     const revision = loadPages().find(({ spec }) =>
       spec.page?.id === "space-composition-revision"
     );
@@ -614,12 +618,12 @@ describe("UI spec YAML registry", () => {
       id === "composition-components"
     );
 
-    expect(revision?.spec.page?.contract_status).toBe("planned");
+    expect(revision?.spec.page?.contract_status).toBe("in_progress");
     expect(components).toMatchObject({
       variables:
-        "typed definitions/defaults are Knowledge; runtime values and raw input are transient Work",
+        "typed constants and definitions are Knowledge; input values and query results are transient Work",
       input_components:
-        "reference one variable and own no saved value; no display label is persisted",
+        "reference one input variable and own no saved runtime value",
     });
   });
 
@@ -1262,9 +1266,9 @@ describe("UI spec YAML registry", () => {
     const resultTable = parse(readFileSync(resultTablePath, "utf8")) as {
       components?: Array<Record<string, unknown>>;
     };
-    expect(resultTable.components?.find(({ id }) =>
-      id === "result-table-viewport"
-    )).toMatchObject({
+    expect(
+      resultTable.components?.find(({ id }) => id === "result-table-viewport"),
+    ).toMatchObject({
       implementations: {
         entry_query: "frontend/src/components/EntryResultTable.tsx",
         saved_sql: "frontend/src/components/SqlResultTable.tsx",
@@ -1314,17 +1318,21 @@ describe("UI spec YAML registry", () => {
     const sqlResults = loadPages().find(({ spec }) =>
       spec.page?.id === "space-sql-results"
     );
-    expect(sqlResults?.spec.components?.body?.find(({ id }) =>
-      id === "sql-results-table"
-    )).toMatchObject({
+    expect(
+      sqlResults?.spec.components?.body?.find(({ id }) =>
+        id === "sql-results-table"
+      ),
+    ).toMatchObject({
       result_presentation_reference: "../components/result-table.yaml",
     });
     const compositionRevision = loadPages().find(({ spec }) =>
       spec.page?.id === "space-composition-revision"
     );
-    expect(compositionRevision?.spec.components?.body?.find(({ id }) =>
-      id === "composition-components"
-    )?.table_presentation).toMatchObject({
+    expect(
+      compositionRevision?.spec.components?.body?.find(({ id }) =>
+        id === "composition-components"
+      )?.table_presentation,
+    ).toMatchObject({
       result_presentation_reference: "../components/result-table.yaml",
     });
     expect(readFileSync(path.join(repoRoot, "docs/spec/ui/index.md"), "utf8"))

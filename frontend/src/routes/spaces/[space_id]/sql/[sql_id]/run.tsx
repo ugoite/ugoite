@@ -11,15 +11,7 @@ import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { ResultPagination } from "~/components/ResultPagination";
 import { SqlResultTable } from "~/components/SqlResultTable";
 import { sqlApi } from "~/lib/ugoite-client";
-import {
-  canCreateSavedSqlComposition,
-  type CompositionResultType,
-  type CompositionVariableType,
-} from "~/lib/composition-api";
-import {
-  compositionResultSchemaFingerprint,
-  type CompositionStudioSeed,
-} from "~/lib/composition-draft";
+import { canCreateSavedSqlComposition } from "~/lib/composition-api";
 import { spaceCompositionNewPath } from "~/lib/space-path";
 import { t } from "~/lib/i18n";
 import { normalizeSqlVariables } from "~/lib/sql";
@@ -286,57 +278,15 @@ export default function SpaceSqlRunRoute() {
       new Set(result.columns).size === result.columns.length;
   };
 
-  const openInStudio = async () => {
-    if (!canSaveAsTool()) return;
+  const openInStudio = () => {
     const current = entry();
-    const result = visiblePage();
-    if (!current || !result) return;
-    try {
-      // The seed reuses the save-as-tool computation: the exact Saved SQL
-      // revision with server-owned column types from this result page
-      // (json fallback, unique columns required). Variable bindings and
-      // Composition inputs are authored explicitly in Studio.
-      const columns = [...result.columns];
-      if (
-        columns.length === 0 || new Set(columns).size !== columns.length
-      ) {
-        setSaveError(t("composition.saveFailed"));
-        return;
-      }
-      const schemaByName = new Map(
-        (result.result_schema ?? []).map((column) => [
-          column.name,
-          column.type,
-        ]),
-      );
-      const expectedResult = columns.map((column) => ({
-        name: column,
-        type: (schemaByName.get(column) ?? "json") as CompositionResultType,
-      }));
-      const seed: CompositionStudioSeed = {
-        kind: "saved_sql",
-        seed: {
-          entryId: current.id,
-          revisionId: current.revision_id,
-          name: displaySqlName(current),
-          expectedResult,
-          schemaFingerprint: await compositionResultSchemaFingerprint(
-            expectedResult,
-          ),
-          variables: {},
-          variableTypes: Object.fromEntries(
-            current.variables.map((variable) => [
-              variable.name,
-              variable.type as CompositionVariableType,
-            ]),
-          ),
-        },
-      };
-      setSaveError(null);
-      navigate(spaceCompositionNewPath(spaceId()), { state: { seed } });
-    } catch {
-      setSaveError(t("composition.saveFailed"));
-    }
+    if (!current || !canSaveAsTool()) return;
+    setSaveError(null);
+    const query = new URLSearchParams({
+      saved_sql_id: current.id,
+      saved_sql_revision: current.revision_id,
+    });
+    navigate(`${spaceCompositionNewPath(spaceId())}?${query.toString()}`);
   };
 
   return (

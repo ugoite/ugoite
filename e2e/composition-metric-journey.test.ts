@@ -6,7 +6,10 @@ import {
   test,
 } from "@playwright/test";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
-import { completeSavedSqlCompositionYaml } from "./lib/composition.ts";
+import {
+  completeCompositionGraphYaml,
+  type CompositionGraphSeed,
+} from "./lib/composition-graph.ts";
 
 const METRIC_SCALAR = 40;
 const SECOND_AMOUNT = 2;
@@ -120,43 +123,53 @@ async function seedMetricComposition(
   expect(savedSql.id).toBeTruthy();
   expect(savedSql.revision_id).toBeTruthy();
 
-  let yaml = [
-    "format: ugoite.composition",
-    "format_version: 1",
-    `name: ${compositionName}`,
-    "kind: dashboard",
-    "spec:",
-    "  sources:",
-    "    - id: metric_rows",
-    "      kind: saved_sql",
-    `      entry_id: "${savedSql.id}"`,
-    `      revision_id: "${savedSql.revision_id}"`,
-    "      expected_result: []",
-    "      schema_fingerprint: ''",
-    "  components:",
-    "    - id: total",
-    "      kind: metric",
-    "      source: metric_rows",
-    "      column: total",
-    "    - id: rows",
-    "      kind: table",
-    "      source: metric_rows",
-    "  layout:",
-    "    kind: flow",
-    "    rows:",
-    "      - id: main",
-    "        items:",
-    "          - kind: component",
-    "            component: total",
-    "          - kind: component",
-    "            component: rows",
-    "",
-  ].join("\n");
-  yaml = await completeSavedSqlCompositionYaml(request, spaceId, yaml, [{
-    id: "metric_rows",
-    savedSqlId: savedSql.id!,
-    savedSqlRevisionId: savedSql.revision_id!,
-  }]);
+  const graph: CompositionGraphSeed = {
+    name: compositionName,
+    variables: [
+      {
+        id: "total_value",
+        kind: "query",
+        returns: {
+          kind: "scalar",
+          value_type: { scalar_type: "float", nullable: false },
+        },
+        query: {
+          kind: "saved_sql",
+          entry_id: savedSql.id!,
+          revision_id: savedSql.revision_id!,
+          column: "total",
+          arguments: [],
+          form_bindings: [],
+          schema_fingerprint: "",
+        },
+      },
+      {
+        id: "metric_rows",
+        kind: "query",
+        returns: { kind: "table", columns: [] },
+        query: {
+          kind: "saved_sql",
+          entry_id: savedSql.id!,
+          revision_id: savedSql.revision_id!,
+          arguments: [],
+          form_bindings: [],
+          schema_fingerprint: "",
+        },
+      },
+    ],
+    components: [
+      { id: "total", kind: "metric", variable: "total_value" },
+      { id: "rows", kind: "table", variable: "metric_rows" },
+    ],
+    rows: [{
+      id: "main",
+      items: [
+        { kind: "component", component: "total" },
+        { kind: "component", component: "rows" },
+      ],
+    }],
+  };
+  const yaml = await completeCompositionGraphYaml(request, spaceId, graph);
   const saveResponse = await request.post(
     getBackendUrl(`/spaces/${spaceId}/compositions`),
     {
@@ -218,7 +231,7 @@ test.describe("Composition Metric Journey", () => {
         page.getByRole("heading", { level: 1, name: seed.compositionName }),
       ).toBeVisible();
 
-      const metric = page.locator("output.compositionMetric");
+      const metric = page.locator(".compositionGraphMetric strong");
       await expect(metric).toHaveText(String(METRIC_SCALAR));
       const table = page.getByRole("table");
       await expect(table.locator("tbody tr")).toHaveCount(1);
@@ -246,7 +259,9 @@ test.describe("Composition Metric Journey", () => {
       );
       await expect(page.getByRole("button", { name: "Edit", exact: true }))
         .toBeVisible();
-      await expect(page.locator("output.compositionMetric")).toHaveCount(0);
+      await expect(page.locator(".compositionGraphMetric strong")).toHaveCount(
+        0,
+      );
       await expect(table.locator("tbody tr")).toHaveCount(2);
     } finally {
       await freshContext.close();

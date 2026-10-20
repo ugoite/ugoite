@@ -6,6 +6,7 @@ import { AuthGate } from "~/components/AuthGate";
 import Nav from "~/components/Nav";
 import { primePortablePreferencesFromLocal } from "~/lib/preferences-store";
 import "./app.css";
+import "./composition-vnext.css";
 
 let clientPreferencesPrimed = false;
 

@@ -274,7 +274,7 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
       .not.toBeInTheDocument();
   });
 
-  it("navigates to the studio with the saved sql seed", async () => {
+  it("navigates to the studio with the exact saved sql revision", async () => {
     getMock.mockResolvedValue({
       id: "saved-query",
       name: "Monthly query",
@@ -306,26 +306,7 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
     await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(1));
     expect(navigateMock).toHaveBeenCalledTimes(1);
     expect(navigateMock).toHaveBeenCalledWith(
-      "/spaces/default/compositions/new",
-      {
-        state: {
-          seed: {
-            kind: "saved_sql",
-            seed: {
-              entryId: "saved-query",
-              revisionId: "sql-revision-8",
-              name: "Monthly query",
-              expectedResult: [
-                { name: "amount", type: "float" },
-                { name: "month", type: "date" },
-              ],
-              schemaFingerprint: expect.any(String),
-              variables: {},
-              variableTypes: { month_start: "date" },
-            },
-          },
-        },
-      },
+      "/spaces/default/compositions/new?saved_sql_id=saved-query&saved_sql_revision=sql-revision-8",
     );
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });

@@ -5,7 +5,10 @@ import {
   test,
 } from "@playwright/test";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
-import { completeSavedSqlCompositionYaml } from "./lib/composition.ts";
+import {
+  completeCompositionGraphYaml,
+  type CompositionGraphSeed,
+} from "./lib/composition-graph.ts";
 
 const FIRST_CUTOFF = "2026-03-10";
 const SECOND_CUTOFF = "2026-03-11";
@@ -47,47 +50,46 @@ async function createSpace(request: APIRequestContext): Promise<string> {
   return result.space_uid!;
 }
 
-function compositionYaml(
+function compositionGraph(
   name: string,
   savedSqlId: string,
   savedSqlRevisionId: string,
   cutoff: string,
-): string {
-  return [
-    "format: ugoite.composition",
-    "format_version: 1",
-    `name: ${name}`,
-    "kind: dashboard",
-    "spec:",
-    "  variables:",
-    "    - id: cutoff_date",
-    "      type: date",
-    "      required: true",
-    `      default: "${cutoff}"`,
-    "  sources:",
-    "    - id: total_rows",
-    "      kind: saved_sql",
-    `      entry_id: "${savedSqlId}"`,
-    `      revision_id: "${savedSqlRevisionId}"`,
-    "      expected_result: []",
-    "      schema_fingerprint: ''",
-    "      variables:",
-    "        start_date:",
-    "          variable: cutoff_date",
-    "  components:",
-    "    - id: total",
-    "      kind: metric",
-    "      source: total_rows",
-    "      column: total",
-    "  layout:",
-    "    kind: flow",
-    "    rows:",
-    "      - id: main",
-    "        items:",
-    "          - kind: component",
-    "            component: total",
-    "",
-  ].join("\n");
+): CompositionGraphSeed {
+  return {
+    name,
+    variables: [
+      {
+        id: "cutoff_date",
+        kind: "input",
+        value_type: { scalar_type: "date", nullable: false },
+        required: true,
+        default: { kind: "date", value: cutoff },
+      },
+      {
+        id: "total_value",
+        kind: "query",
+        returns: {
+          kind: "scalar",
+          value_type: { scalar_type: "float", nullable: false },
+        },
+        query: {
+          kind: "saved_sql",
+          entry_id: savedSqlId,
+          revision_id: savedSqlRevisionId,
+          column: "total",
+          arguments: [{ name: "start_date", variable: "cutoff_date" }],
+          form_bindings: [],
+          schema_fingerprint: "",
+        },
+      },
+    ],
+    components: [{ id: "total", kind: "metric", variable: "total_value" }],
+    rows: [{
+      id: "main",
+      items: [{ kind: "component", component: "total" }],
+    }],
+  };
 }
 
 async function seedRevisionPair(
@@ -169,35 +171,25 @@ async function seedRevisionPair(
   expect(savedSql.id).toBeTruthy();
   expect(savedSql.revision_id).toBeTruthy();
 
-  const firstYaml = await completeSavedSqlCompositionYaml(
+  const firstYaml = await completeCompositionGraphYaml(
     request,
     spaceId,
-    compositionYaml(
+    compositionGraph(
       compositionName,
       savedSql.id!,
       savedSql.revision_id!,
       FIRST_CUTOFF,
     ),
-    [{
-      id: "total_rows",
-      savedSqlId: savedSql.id!,
-      savedSqlRevisionId: savedSql.revision_id!,
-    }],
   );
-  const secondYaml = await completeSavedSqlCompositionYaml(
+  const secondYaml = await completeCompositionGraphYaml(
     request,
     spaceId,
-    compositionYaml(
+    compositionGraph(
       compositionName,
       savedSql.id!,
       savedSql.revision_id!,
       SECOND_CUTOFF,
     ),
-    [{
-      id: "total_rows",
-      savedSqlId: savedSql.id!,
-      savedSqlRevisionId: savedSql.revision_id!,
-    }],
   );
 
   const firstSaveResponse = await request.post(
@@ -306,7 +298,7 @@ test.describe("Composition revision stale response", () => {
           return await nativeFetch(input, init);
         }
         if (
-          url.pathname !== `/api/spaces/${spaceId}/compositions/metric-query`
+          url.pathname !== `/api/spaces/${spaceId}/compositions/evaluate`
         ) return await nativeFetch(input, init);
 
         let bodyText = typeof init?.body === "string" ? init.body : "";
@@ -334,9 +326,15 @@ test.describe("Composition revision stale response", () => {
           ? await nativeFetch(new Request(input, { signal: null }))
           : await nativeFetch(input, { ...init, signal: undefined });
         const payload = await response.clone().json().catch(() => undefined) as
-          | { result?: { value?: unknown } }
+          | {
+            query_results?: {
+              total_value?: { value?: { kind?: string; value?: unknown } };
+            };
+          }
           | undefined;
-        probe.oldValues.push(payload?.result?.value);
+        probe.oldValues.push(
+          payload?.query_results?.total_value?.value?.value,
+        );
         await gate;
         probe.delivered += 1;
         return response;
@@ -373,7 +371,7 @@ test.describe("Composition revision stale response", () => {
     await expect(secondRevisionLink).toBeVisible();
     await secondRevisionLink.click();
     await expect(page).toHaveURL(new RegExp(`${secondPath}$`));
-    await expect(page.locator("output.compositionMetric")).toHaveText(
+    await expect(page.locator(".compositionGraphMetric strong")).toHaveText(
       String(SECOND_TOTAL),
       { timeout: 15_000 },
     );
@@ -381,7 +379,8 @@ test.describe("Composition revision stale response", () => {
     await expect(page.locator("[role='status']")).toHaveCount(0);
     const currentBeforeRelease = {
       url: new URL(page.url()).pathname,
-      metric: await page.locator("output.compositionMetric").textContent(),
+      metric: await page.locator(".compositionGraphMetric strong")
+        .textContent(),
       alerts: await page.locator("[role='alert']").allTextContents(),
       loading: await page.locator("[role='status']").count(),
     };
@@ -409,7 +408,8 @@ test.describe("Composition revision stale response", () => {
 
     const currentAfterRelease = {
       url: new URL(page.url()).pathname,
-      metric: await page.locator("output.compositionMetric").textContent(),
+      metric: await page.locator(".compositionGraphMetric strong")
+        .textContent(),
       alerts: await page.locator("[role='alert']").allTextContents(),
       loading: await page.locator("[role='status']").count(),
     };

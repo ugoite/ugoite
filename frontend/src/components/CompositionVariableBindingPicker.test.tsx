@@ -119,6 +119,52 @@ describe("CompositionVariableBindingPicker", () => {
     );
   });
 
+  it("keeps the picker open when Saved SQL inspection finishes after a tab switch", async () => {
+    const onClose = vi.fn();
+    let finish!: (value: {
+      table: { variable: typeof formQuery };
+      scalars: [];
+    }) => void;
+    const pending = new Promise<{
+      table: { variable: typeof formQuery };
+      scalars: [];
+    }>((resolve) => finish = resolve);
+    const inspectSavedSql = vi.fn(() => pending);
+    const provider: CompositionBindingProvider = {
+      resolveForm: vi.fn(),
+      prepareSavedSql: vi.fn(),
+      inspectSavedSql,
+    };
+    renderPicker({
+      kind: "table",
+      provider,
+      savedSql: [{
+        entry_id: "saved-entry",
+        revision_id: "saved-revision",
+        name: "Saved table",
+        arguments: [],
+      }],
+      onCommit: vi.fn(),
+      onClose,
+    });
+    const dialog = screen.getByRole("dialog", { name: "Table" });
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Saved SQL" }));
+    await waitFor(() => expect(inspectSavedSql).toHaveBeenCalledOnce());
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Variables" }));
+
+    finish({ table: { variable: formQuery }, scalars: [] });
+    await pending;
+    await Promise.resolve();
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Table" })).toBeVisible();
+    expect(within(dialog).getByRole("tab", { name: "Variables" }))
+      .toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+  });
+
   it("requires explicit aggregate selection for a Form metric", async () => {
     const onCommit = vi.fn();
     const resolveForm = vi.fn(async () => ({ variable: metricQuery }));
