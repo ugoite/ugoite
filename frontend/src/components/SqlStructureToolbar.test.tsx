@@ -1180,7 +1180,7 @@ describe("SqlStructureToolbar adapter", () => {
       filter_expression: undefined,
       capabilities: {
         ...joinedAnalysis.capabilities,
-        filter_expression: undefined,
+        filter_expression: { enabled: false },
       },
     };
     proposeMock.mockImplementation(async (

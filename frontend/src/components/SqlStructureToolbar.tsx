@@ -385,9 +385,10 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     const current = ready()?.analysis;
     if (action === "filter") {
       // Older WASM adapters expose only the flat capability. Prefer the
-      // boolean-tree capability when it is available.
-      return current?.capabilities.filter_expression ??
-        current?.capabilities.filter;
+      // boolean-tree capability only when it is enabled; a disabled tree
+      // capability must not hide a usable flat conjunction editor.
+      const expression = current?.capabilities.filter_expression;
+      return expression?.enabled ? expression : current?.capabilities.filter;
     }
     return current?.capabilities[action];
   };
