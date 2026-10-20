@@ -21,6 +21,7 @@ const {
   sqlQueryMock,
   sqlCountMock,
   analyzeSqlStructureMock,
+  applySqlDocumentEditTransactionMock,
   prepareSqlStructureParserMock,
   proposeSqlStructureOperationMock,
 } = vi.hoisted(() => ({
@@ -30,6 +31,7 @@ const {
   sqlQueryMock: vi.fn(),
   sqlCountMock: vi.fn(),
   analyzeSqlStructureMock: vi.fn(),
+  applySqlDocumentEditTransactionMock: vi.fn(),
   prepareSqlStructureParserMock: vi.fn(),
   proposeSqlStructureOperationMock: vi.fn(),
 }));
@@ -146,6 +148,7 @@ vi.mock("~/lib/ugoite-client", () => ({
     count: sqlCountMock,
   },
   analyzeSqlStructure: analyzeSqlStructureMock,
+  applySqlDocumentEditTransaction: applySqlDocumentEditTransactionMock,
   prepareSqlStructureParser: prepareSqlStructureParserMock,
   proposeSqlStructureOperation: proposeSqlStructureOperationMock,
 }));
@@ -282,6 +285,17 @@ describe("/spaces/:space_id/sql/new", () => {
       result_schema: [{ name: "value", type: "integer" }],
     });
     sqlCountMock.mockReset().mockResolvedValue(1);
+    applySqlDocumentEditTransactionMock.mockReset().mockImplementation(
+      async (_source: string, transaction: {
+        edits: { replacement: string }[];
+      }) => ({
+        document: {
+          status: "parsed",
+          source: transaction.edits[0].replacement,
+        },
+        undo: transaction,
+      }),
+    );
     analyzeSqlStructureMock.mockReset().mockImplementation(
       async (_sql: string, context: { relation: string }) => ({
         ...(context.relation
