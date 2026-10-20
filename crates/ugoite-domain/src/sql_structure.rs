@@ -3726,12 +3726,12 @@ mod tests {
             .filter_map(serde_json::Value::as_str)
             .collect::<BTreeSet<_>>();
         assert!(projection_limits.contains(
-            &"simple Form-column projection aliases are inspected and edited independently by SQL-document-scoped projection slot identity"
+            &"simple Form-column projection aliases are inspected and editable with quoted semantics preserved when each source column occurs once"
         ));
         assert!(projection_limits
             .contains(&"alias edits that would change ORDER BY output-name binding fail closed"));
         assert!(projection_limits.contains(
-            &"repeated source columns remain editable, reorderable, and independently aliasable as projection slots"
+            &"repeated source columns remain editable, reorderable, and independently aliasable by projection slot"
         ));
         let declared_operations = editor["operations"]
             .as_array()
