@@ -77,7 +77,7 @@ const queryError = (
   return key ? t(key) : t("composition.queryFailed");
 };
 
-/** Render only the variable graph's validated values; no source or SQL reads occur here. */
+/** Render evaluated graph values and current raw input in directly bound Text; no source or SQL reads occur here. */
 export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
   const componentById = (id: string) =>
     props.draft.components.find((component) => component.id === id);
