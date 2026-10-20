@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow, bail};
+use anyhow::{anyhow, bail, Result};
 use chrono::{SecondsFormat, Utc};
 use fs2::FileExt;
 use futures::stream::{self, StreamExt, TryStreamExt};
@@ -6,7 +6,7 @@ use hmac::{Hmac, KeyInit, Mac};
 use opendal::Operator;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::sync::{Arc, OnceLock};
 use std::{
@@ -2144,11 +2144,9 @@ mod tests {
         new_node_store
             .create_if_absent(&key, foreign_checkpoint.value)
             .await?;
-        assert!(
-            read_audit_checkpoint(&new_node_config, "demo")
-                .await
-                .is_none()
-        );
+        assert!(read_audit_checkpoint(&new_node_config, "demo")
+            .await
+            .is_none());
 
         append_audit_events_with_checkpoint(&copied_op, "demo", &space_uid, &[], &new_node_config)
             .await?;
@@ -2297,8 +2295,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn audit_recovery_batch_chain_write_failure_with_duplicate_leaves_no_committed_marker()
-    -> Result<()> {
+    async fn audit_recovery_batch_chain_write_failure_with_duplicate_leaves_no_committed_marker(
+    ) -> Result<()> {
         let op = operator_from_uri("memory://audit-recovery-chain-write-failure")?;
         let first_id = uuid::Uuid::now_v7().to_string();
         let first = json!({
@@ -2389,8 +2387,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_req_sec_013_replay_with_same_event_id_but_different_payload_is_rejected()
-    -> Result<()> {
+    async fn test_req_sec_013_replay_with_same_event_id_but_different_payload_is_rejected(
+    ) -> Result<()> {
         let op = operator_from_uri("memory://audit-conflicting-replay")?;
         let event_id = uuid::Uuid::now_v7().to_string();
         let first = json!({
@@ -2483,11 +2481,9 @@ mod tests {
         let events = read_events(&op, "demo").await?;
         verify_chain(&events)?;
         assert_eq!(events.len(), 100);
-        assert!(
-            events
-                .iter()
-                .all(|event| event["event_id"] != retained_out_id)
-        );
+        assert!(events
+            .iter()
+            .all(|event| event["event_id"] != retained_out_id));
         let (marker, _) = read_event_marker(&op, "demo", &retained_out_id)
             .await?
             .expect("retention disposition marker");
