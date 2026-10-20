@@ -94,14 +94,22 @@ type AnalysisState =
   | { status: "ready"; value: AnalyzedStructure }
   | { status: "no_context" }
   | { status: "error" };
+type SqlHistoryEntry = {
+  sql: string;
+  variablesAdded: readonly { name: string; type: SqlStructureVariableType }[];
+};
 
 interface SqlStructureToolbarProps {
   sql: () => string;
+  /** Owner identity for transient undo/redo history in multi-document hosts. */
+  historyScopeKey?: () => string;
   contexts: () => readonly SqlStructureAdapterContext[];
-  onSqlChange?: (sql: string) => void;
+  onSqlChange?: (sql: string) => boolean | void;
   onVariablesAdded?: (
     variables: readonly { name: string; type: SqlStructureVariableType }[],
   ) => boolean | void;
+  /** Remove declarations created by the matching structure edit during undo. */
+  onVariablesRemoved?: (names: readonly string[]) => boolean | void;
   /** Names already owned by the host, including variables not yet used in SQL. */
   reservedVariableNames?: () => readonly string[];
   onActionsChange: (actions: readonly SQLWorkspaceAction[]) => void;
@@ -284,6 +292,8 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   );
   const [sqlDocument, setSqlDocument] = createSignal<SqlDocument>();
   const [sqlDocumentLoading, setSqlDocumentLoading] = createSignal(false);
+  const [undoSql, setUndoSql] = createSignal<SqlHistoryEntry[]>([]);
+  const [redoSql, setRedoSql] = createSignal<SqlHistoryEntry[]>([]);
   const [activeAction, setActiveAction] = createSignal<StructureAction | null>(
     null,
   );
@@ -313,6 +323,123 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   let proposalGeneration = 0;
   let documentGeneration = 0;
   let dialog: HTMLDivElement | undefined;
+  let observedHistorySql: string | undefined;
+  let observedHistoryScopeKey: string | undefined;
+  let expectedHistorySql: string | undefined;
+  let historyCurrentSql: string | undefined;
+
+  const clearSqlHistory = (currentSql: string) => {
+    setUndoSql([]);
+    setRedoSql([]);
+    historyCurrentSql = currentSql;
+    expectedHistorySql = undefined;
+  };
+
+  const commitStructuredSql = (
+    baseSql: string,
+    nextSql: string,
+    variablesAdded: readonly {
+      name: string;
+      type: SqlStructureVariableType;
+    }[] = [],
+  ) => {
+    if (baseSql === nextSql || props.sql() !== baseSql || !props.onSqlChange) {
+      return;
+    }
+    expectedHistorySql = nextSql;
+    historyCurrentSql = nextSql;
+    const accepted = props.onSqlChange(nextSql);
+    if (accepted === false) {
+      expectedHistorySql = baseSql;
+      historyCurrentSql = baseSql;
+      if (variablesAdded.length > 0) {
+        props.onVariablesRemoved?.(variablesAdded.map(({ name }) => name));
+      }
+      return false;
+    }
+    setUndoSql((history) =>
+      [...history, { sql: baseSql, variablesAdded }].slice(-20)
+    );
+    setRedoSql([]);
+    return true;
+  };
+
+  const undoStructuredSql = () => {
+    const currentSql = props.sql();
+    const history = undoSql();
+    const entry = history[history.length - 1];
+    if (
+      props.disabled?.() || !props.onSqlChange || !entry ||
+      historyCurrentSql !== currentSql
+    ) {
+      if (historyCurrentSql !== currentSql) clearSqlHistory(currentSql);
+      return;
+    }
+    const variableNames = entry.variablesAdded.map(({ name }) => name);
+    const previousSql = entry.sql;
+    expectedHistorySql = previousSql;
+    historyCurrentSql = previousSql;
+    if (props.onSqlChange(previousSql) === false) {
+      expectedHistorySql = currentSql;
+      historyCurrentSql = currentSql;
+      return;
+    }
+    if (
+      variableNames.length > 0 &&
+      (!props.onVariablesRemoved ||
+        props.onVariablesRemoved(variableNames) === false)
+    ) {
+      expectedHistorySql = currentSql;
+      historyCurrentSql = currentSql;
+      props.onSqlChange(currentSql);
+      return;
+    }
+    setUndoSql(history.slice(0, -1));
+    setRedoSql((redo) =>
+      [...redo, {
+        sql: currentSql,
+        variablesAdded: entry.variablesAdded,
+      }].slice(-20)
+    );
+  };
+
+  const redoStructuredSql = () => {
+    const currentSql = props.sql();
+    const history = redoSql();
+    const entry = history[history.length - 1];
+    if (
+      props.disabled?.() || !props.onSqlChange || !entry ||
+      historyCurrentSql !== currentSql
+    ) {
+      if (historyCurrentSql !== currentSql) clearSqlHistory(currentSql);
+      return;
+    }
+    if (
+      entry.variablesAdded.length > 0 &&
+      (!props.onVariablesAdded ||
+        props.onVariablesAdded(entry.variablesAdded) === false)
+    ) return;
+    const nextSql = entry.sql;
+    expectedHistorySql = nextSql;
+    historyCurrentSql = nextSql;
+    if (props.onSqlChange(nextSql) === false) {
+      expectedHistorySql = currentSql;
+      historyCurrentSql = currentSql;
+      if (entry.variablesAdded.length > 0) {
+        props.onVariablesRemoved?.(
+          entry.variablesAdded.map(({ name }) => name),
+        );
+      }
+      return;
+    }
+    setRedoSql(history.slice(0, -1));
+    setUndoSql((undo) =>
+      [...undo, {
+        sql: currentSql,
+        variablesAdded: entry.variablesAdded,
+      }].slice(-20)
+    );
+  };
 
   createEffect(() => {
     const sourceSql = props.sql();
@@ -331,7 +458,27 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   });
 
   createEffect(() => {
+    const historyScopeKey = props.historyScopeKey?.() ?? "";
     const sourceSql = props.sql();
+    const historyScopeChanged = observedHistoryScopeKey !== undefined &&
+      historyScopeKey !== observedHistoryScopeKey;
+    observedHistoryScopeKey = historyScopeKey;
+    const historyUpdate = !historyScopeChanged &&
+      expectedHistorySql !== undefined &&
+      expectedHistorySql === sourceSql;
+    if (observedHistorySql === undefined) {
+      observedHistorySql = sourceSql;
+      historyCurrentSql = sourceSql;
+    } else if (historyScopeChanged) {
+      clearSqlHistory(sourceSql);
+    } else if (sourceSql !== observedHistorySql && !historyUpdate) {
+      clearSqlHistory(sourceSql);
+    }
+    observedHistorySql = sourceSql;
+    if (historyUpdate) {
+      historyCurrentSql = sourceSql;
+      expectedHistorySql = undefined;
+    }
     const sql = normalizeSqlVariables(sourceSql).sql;
     const contexts = [...props.contexts()];
     const contextsKey = JSON.stringify(contexts);
@@ -342,7 +489,9 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     setProposal(undefined);
     setProposalVariables([]);
     setProposalContextIdentity(undefined);
-    if (untrack(activeAction) !== "join") setActiveAction(null);
+    if (untrack(activeAction) !== "join" && !historyUpdate) {
+      setActiveAction(null);
+    }
     setLiteralProjection([]);
     setProjectionSlots([]);
     setFilters(undefined);
@@ -1956,7 +2105,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
       // Rust resolves the node ID against the guarded source and returns the
       // exact replacement plus a parsed next view. Saving/running remains the
       // host's normal validated SQL path.
-      props.onSqlChange(result.document.source);
+      commitStructuredSql(baseSql, result.document.source);
       setSqlDocument(result.document);
     } catch {
       if (generation === proposalGeneration && props.sql() === baseSql) {
@@ -2024,7 +2173,11 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
         }
       }
 
-      props.onSqlChange(result.document.source);
+      commitStructuredSql(
+        current.base_sql,
+        result.document.source,
+        createdVariables,
+      );
       setProposal(undefined);
       setProposalVariables([]);
       setProposalContextIdentity(undefined);
@@ -2128,6 +2281,28 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
               <h2 id={dialogTitleId} class="ui-dialog-title">
                 {actionTitle()}
               </h2>
+              <Show when={props.onSqlChange}>
+                <IconButton
+                  icon="undo"
+                  label={t("sqlPage.structure.undo")}
+                  disabled={undoSql().length === 0 ||
+                    (Boolean(undoSql().at(-1)?.variablesAdded.length) &&
+                      !props.onVariablesRemoved) ||
+                    busy() ||
+                    Boolean(props.disabled?.())}
+                  onClick={undoStructuredSql}
+                />
+                <IconButton
+                  icon="redo"
+                  label={t("sqlPage.structure.redo")}
+                  disabled={redoSql().length === 0 ||
+                    (Boolean(redoSql().at(-1)?.variablesAdded.length) &&
+                      !props.onVariablesAdded) ||
+                    busy() ||
+                    Boolean(props.disabled?.())}
+                  onClick={redoStructuredSql}
+                />
+              </Show>
               <IconButton
                 icon="close"
                 label={t("common.close")}

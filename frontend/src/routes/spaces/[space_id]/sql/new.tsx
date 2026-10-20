@@ -93,6 +93,15 @@ export default function SpaceQueryCreateRoute() {
     }));
   };
 
+  const removeCreatedVariables = (names: readonly string[]) => {
+    const removed = new Set(names);
+    setCreatedVariableTypes((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([name]) => !removed.has(name)),
+      )
+    );
+  };
+
   // Line/column rendering for editor diagnostics. Offsets come from the
   // CodeMirror lint gutter; the list mirrors them as text so the error
   // position survives without pointer access.
@@ -175,6 +184,7 @@ export default function SpaceQueryCreateRoute() {
             )}
           onSqlChange={handleSqlChange}
           onVariablesAdded={registerCreatedVariables}
+          onVariablesRemoved={removeCreatedVariables}
           onActionsChange={setStructureActions}
           disabled={isSaving}
         />

@@ -141,6 +141,18 @@ export default function SpaceSqlDetailRoute() {
     setSavedVariables((current) => mergeSqlStructureVariables(current, added));
   };
 
+  const removeCreatedVariables = (names: readonly string[]) => {
+    const removed = new Set(names);
+    setSavedVariables((current) =>
+      current.filter((variable) => !removed.has(variable.name))
+    );
+    setDefaultDrafts((current) => {
+      const next = { ...current };
+      for (const name of names) delete next[name];
+      return next;
+    });
+  };
+
   const handleRun = () => {
     if (!entry() || isDirty() || variableCount() > 0) return;
     navigate(
@@ -405,6 +417,7 @@ export default function SpaceSqlDetailRoute() {
                       )}
                     onSqlChange={setSqlInput}
                     onVariablesAdded={registerCreatedVariables}
+                    onVariablesRemoved={removeCreatedVariables}
                     onActionsChange={setStructureActions}
                     disabled={() => busy() !== null}
                   />

@@ -20,6 +20,7 @@ import type {
   SqlStructureAnalysis,
   SqlStructureOperation,
   SqlStructureProposal,
+  SqlStructureVariableType,
 } from "~/lib/ugoite-client";
 import { SqlStructureToolbar } from "./SqlStructureToolbar";
 
@@ -256,6 +257,93 @@ describe("SqlStructureToolbar adapter", () => {
         replacement: "SELECT 2",
       }],
     });
+  });
+
+  it("scopes undo and redo to their document and drops history after direct SQL input", async () => {
+    const [sql, setSql] = createSignal("SELECT 1");
+    const [scopeKey, setScopeKey] = createSignal("source-a");
+    const onSqlChange = vi.fn((nextSql: string) => setSql(nextSql));
+    let actions: readonly SQLWorkspaceAction[] = [];
+
+    render(() => (
+      <SqlStructureToolbar
+        sql={sql}
+        historyScopeKey={scopeKey}
+        contexts={() => []}
+        onSqlChange={onSqlChange}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    const structureAction = await waitFor(() => {
+      const action = actions.find((item) => item.kind === "structure");
+      expect(action?.disabled).toBe(false);
+      return action!;
+    });
+    structureAction.onActivate();
+    const dialog = screen.getByRole("dialog");
+    const replacement = within(dialog).getByRole("textbox", {
+      name: "Proposed SQL",
+    });
+    fireEvent.input(replacement, { target: { value: "SELECT 2" } });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Apply change" }),
+    );
+    await waitFor(() => expect(sql()).toBe("SELECT 2"));
+
+    const undo = within(dialog).getByRole("button", {
+      name: "Undo structure edit",
+    });
+    expect(undo).toBeEnabled();
+    fireEvent.click(undo);
+    await waitFor(() => expect(sql()).toBe("SELECT 1"));
+
+    const redo = within(dialog).getByRole("button", {
+      name: "Redo structure edit",
+    });
+    expect(redo).toBeEnabled();
+    fireEvent.click(redo);
+    await waitFor(() => expect(sql()).toBe("SELECT 2"));
+
+    // The second source has identical SQL text. Its undo stack must start
+    // empty even though the editor instance is reused by the host.
+    setScopeKey("source-b");
+    expect(sql()).toBe("SELECT 2");
+    const secondDialog = screen.queryByRole("dialog") ?? (() => {
+      actions.find((item) => item.kind === "structure")!.onActivate();
+      return screen.getByRole("dialog");
+    })();
+    expect(
+      within(secondDialog).getByRole("button", {
+        name: "Undo structure edit",
+      }),
+    ).toBeDisabled();
+    expect(
+      within(secondDialog).getByRole("button", {
+        name: "Redo structure edit",
+      }),
+    ).toBeDisabled();
+
+    setSql("SELECT 3");
+    const thirdDialog = screen.queryByRole("dialog") ?? (() => {
+      actions.find((item) => item.kind === "structure")!.onActivate();
+      return screen.getByRole("dialog");
+    })();
+    await waitFor(() =>
+      expect(
+        within(thirdDialog).getByLabelText("Current SQL"),
+      ).toHaveTextContent("SELECT 3")
+    );
+    expect(
+      within(thirdDialog).getByRole("button", {
+        name: "Undo structure edit",
+      }),
+    ).toBeDisabled();
+    expect(onSqlChange.mock.calls.map(([nextSql]) => nextSql)).toEqual([
+      "SELECT 2",
+      "SELECT 1",
+      "SELECT 2",
+    ]);
   });
 
   it("keeps each edit entry point available through the SQL tree without Form context", async () => {
@@ -1939,8 +2027,28 @@ describe("SqlStructureToolbar adapter", () => {
       },
     };
     const sql = 'SELECT * FROM "Orders"';
-    const onSqlChange = vi.fn();
-    const onVariablesAdded = vi.fn();
+    let currentSql = sql;
+    let declaredVariables: {
+      name: string;
+      type: SqlStructureVariableType;
+    }[] = [];
+    const onSqlChange = vi.fn((nextSql: string) => {
+      currentSql = nextSql;
+    });
+    const onVariablesAdded = vi.fn((
+      added: readonly {
+        name: string;
+        type: string;
+      }[],
+    ) => {
+      declaredVariables = [...declaredVariables, ...added];
+    });
+    const onVariablesRemoved = vi.fn((names: readonly string[]) => {
+      const removed = new Set(names);
+      declaredVariables = declaredVariables.filter(({ name }) =>
+        !removed.has(name)
+      );
+    });
     proposeMock.mockResolvedValue(
       {
         contract_version: 3,
@@ -1955,10 +2063,11 @@ describe("SqlStructureToolbar adapter", () => {
 
     render(() => (
       <SqlStructureToolbar
-        sql={() => sql}
+        sql={() => currentSql}
         contexts={() => [emptyContext]}
         onSqlChange={onSqlChange}
         onVariablesAdded={onVariablesAdded}
+        onVariablesRemoved={onVariablesRemoved}
         onActionsChange={(next) => actions = next}
       />
     ));
@@ -2005,7 +2114,37 @@ describe("SqlStructureToolbar adapter", () => {
       expect(onSqlChange).toHaveBeenCalledWith(
         'SELECT * FROM "Orders" WHERE "amount" = $filter_amount',
       );
+      expect(declaredVariables).toEqual([{
+        name: "filter_amount",
+        type: "integer",
+      }]);
     });
+
+    actions.find((action) => action.kind === "filter")!.onActivate();
+    const historyDialog = screen.getByRole("dialog", { name: "Filter" });
+    const undo = within(historyDialog).getByRole("button", {
+      name: "Undo structure edit",
+    });
+    expect(undo).toBeEnabled();
+    fireEvent.click(undo);
+    await waitFor(() => expect(currentSql).toBe(sql));
+    expect(declaredVariables).toEqual([]);
+    expect(onVariablesRemoved).toHaveBeenCalledWith(["filter_amount"]);
+
+    const redo = within(historyDialog).getByRole("button", {
+      name: "Redo structure edit",
+    });
+    expect(redo).toBeEnabled();
+    fireEvent.click(redo);
+    await waitFor(() =>
+      expect(currentSql).toBe(
+        'SELECT * FROM "Orders" WHERE "amount" = $filter_amount',
+      )
+    );
+    expect(declaredVariables).toEqual([{
+      name: "filter_amount",
+      type: "integer",
+    }]);
   });
 
   it("keeps SQL unchanged when the host rejects a typed filter argument", async () => {
@@ -2023,7 +2162,9 @@ describe("SqlStructureToolbar adapter", () => {
       },
     };
     let currentSql = 'SELECT * FROM "Orders"';
-    const onSqlChange = vi.fn((sql: string) => currentSql = sql);
+    const onSqlChange = vi.fn((sql: string) => {
+      currentSql = sql;
+    });
     const onVariablesAdded = vi.fn(() => false);
     proposeMock.mockResolvedValue(
       {
