@@ -420,12 +420,25 @@ impl UgoiteService {
         space_id: &str,
         request: SqlQueryRequest,
     ) -> Result<SqlScalarProbeResult> {
+        self.probe_composition_sql_scalar_local_at_publication(space_id, request, None)
+            .await
+    }
+
+    pub(super) async fn probe_composition_sql_scalar_local_at_publication(
+        &self,
+        space_id: &str,
+        request: SqlQueryRequest,
+        publication_override: Option<&PublicationRef>,
+    ) -> Result<SqlScalarProbeResult> {
         validate_scalar_probe_request_with_inline(&request, true)?;
         let prepared = sql_execution::prepare_sql_request(self, space_id, &request, None).await?;
         self.validate_complete_space(space_id).await?;
         let workspace =
             iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
-        let publication = workspace.current_publication().await?;
+        let publication = match publication_override {
+            Some(publication) => publication.clone(),
+            None => workspace.current_publication().await?,
+        };
         let checkpoint = workspace.resolve_publication(&publication).await?;
         let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
         let relation_scopes = sql_execution::all_current_relation_scopes(&forms);

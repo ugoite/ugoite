@@ -6898,6 +6898,36 @@ impl UgoiteService {
         space_id: &str,
         request: SqlQueryRequest,
     ) -> Result<SqlQueryPage> {
+        self.query_sql_local_with_composition_context(space_id, request, None, None)
+            .await
+    }
+
+    /// Executes one stateless SQL page for a local graph evaluation. The
+    /// Publication and graph fingerprint are fixed by the evaluation and
+    /// carried by any continuation issued for this query variable.
+    pub(crate) async fn query_sql_local_for_composition(
+        &self,
+        space_id: &str,
+        request: SqlQueryRequest,
+        publication: &PublicationRef,
+        context_fingerprint: &str,
+    ) -> Result<SqlQueryPage> {
+        self.query_sql_local_with_composition_context(
+            space_id,
+            request,
+            Some(publication),
+            Some(context_fingerprint),
+        )
+        .await
+    }
+
+    async fn query_sql_local_with_composition_context(
+        &self,
+        space_id: &str,
+        request: SqlQueryRequest,
+        pinned_publication: Option<&PublicationRef>,
+        continuation_context_fingerprint: Option<&str>,
+    ) -> Result<SqlQueryPage> {
         const LOCAL_AUTHORIZATION_FINGERPRINT: &str = "local-operator";
 
         request.validate().map_err(sql_query_contract_error)?;
@@ -6951,10 +6981,11 @@ impl UgoiteService {
                             .as_ref()
                             .map(saved_sql_binding_fingerprint)
                             .transpose()?
+                    || cursor.context_fingerprint.as_deref() != continuation_context_fingerprint
                 {
                     return Err(AppError::invalid_input(
                         ErrorCode::InvalidInput,
-                        "SQL or parameter fingerprint does not match the continuation",
+                        "SQL, parameters, or graph snapshot does not match the continuation",
                     )
                     .into());
                 }
@@ -6966,10 +6997,20 @@ impl UgoiteService {
                 (publication, cursor.offset)
             }
             None => {
-                let publication = workspace.current_publication().await?;
+                let publication = match pinned_publication {
+                    Some(publication) => publication.clone(),
+                    None => workspace.current_publication().await?,
+                };
                 (publication, 0)
             }
         };
+        if pinned_publication.is_some_and(|pinned| pinned != &publication) {
+            return Err(AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "SQL continuation belongs to another Composition publication",
+            )
+            .into());
+        }
         let checkpoint = workspace.resolve_publication(&publication).await?;
         let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
         let relation_scopes = sql_execution::all_current_relation_scopes(&forms);
@@ -7023,6 +7064,7 @@ impl UgoiteService {
                 .as_ref()
                 .map(saved_sql_binding_fingerprint)
                 .transpose()?;
+            cursor.context_fingerprint = continuation_context_fingerprint.map(str::to_owned);
             Some(cursor.encode(&signing_key)?)
         } else {
             None

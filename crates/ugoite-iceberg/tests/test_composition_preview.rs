@@ -22,7 +22,9 @@ use ugoite_domain::composition::{
 use ugoite_domain::form::{sql_column_name, sql_relation_name};
 use ugoite_domain::id::{EntryId, FieldId, FormId, RevisionId};
 use ugoite_iceberg::saved_sql::{SqlKind, SqlPayload};
-use ugoite_iceberg::service::{CompositionQueryEvaluationTarget, UgoiteService};
+use ugoite_iceberg::service::{
+    CompositionQueryEvaluationPage, CompositionQueryEvaluationTarget, UgoiteService,
+};
 use uuid::Uuid;
 
 async fn setup_preview_space() -> Result<(UgoiteService, String, CompositionDocument, FormId)> {
@@ -347,6 +349,130 @@ async fn graph_evaluation_does_not_execute_an_unrequested_query_branch() -> Resu
         vec!["selected"]
     );
     assert!(response.authorization_fingerprint.is_some());
+    Ok(())
+}
+
+#[tokio::test]
+async fn local_graph_table_pages_keep_their_publication_snapshot() -> Result<()> {
+    let (service, space_id, mut document, _) = setup_preview_space().await?;
+    let rows = (0..101)
+        .map(|index| format!("SELECT 'page-row-{index:03}' AS title"))
+        .collect::<Vec<_>>()
+        .join(" UNION ALL ");
+    let VariableGraphNodeKind::Query { query, .. } = &mut document.spec.variables[0].kind else {
+        anyhow::bail!("fixture should contain one table query variable");
+    };
+    query.definition = VariableGraphQueryDefinition::InlineSql {
+        sql: format!("{rows} ORDER BY title"),
+    };
+    let saved = save_local_composition(&service, &space_id, document).await?;
+    let evaluation_id = Uuid::now_v7();
+    let requested_queries = ["source".to_owned()];
+    let target = || CompositionQueryEvaluationTarget::SavedRevision {
+        composition_id: saved.entry_id.to_string(),
+        revision_id: saved.revision_id.to_string(),
+    };
+
+    let first = service
+        .evaluate_composition_graph_local(
+            &space_id,
+            target(),
+            evaluation_id,
+            None,
+            None,
+            &BTreeMap::new(),
+            &[],
+            Some(&requested_queries),
+            None,
+        )
+        .await?;
+    assert!(first.ok, "{:?}", first.query_diagnostics);
+    let first_result = first
+        .query_results
+        .get("source")
+        .context("local graph query returns its first table page")?;
+    assert!(first_result.has_more);
+    let cursor = first_result
+        .next
+        .clone()
+        .context("first local graph page includes a continuation")?;
+
+    let second = service
+        .evaluate_composition_graph_local(
+            &space_id,
+            target(),
+            evaluation_id,
+            None,
+            None,
+            &BTreeMap::new(),
+            &[],
+            Some(&requested_queries),
+            Some(CompositionQueryEvaluationPage {
+                variable_id: "source".to_owned(),
+                cursor: cursor.clone(),
+            }),
+        )
+        .await?;
+    assert!(second.ok, "{:?}", second.query_diagnostics);
+    assert_eq!(second.snapshot_fingerprint, first.snapshot_fingerprint);
+    assert_eq!(
+        second.publication_fingerprint,
+        first.publication_fingerprint
+    );
+    let second_result = second
+        .query_results
+        .get("source")
+        .context("local graph query returns its continuation page")?;
+    assert!(!second_result.has_more);
+    let VariableGraphValidatedResult::Table { rows, .. } = &second_result.result else {
+        anyhow::bail!("local graph result should remain a table");
+    };
+    assert_eq!(
+        rows.len(),
+        1,
+        "only the last row from the pinned snapshot remains"
+    );
+    assert!(!rows.iter().flatten().any(|value| {
+        matches!(value, VariableGraphLiteral::String(value) if value == "after-snapshot")
+    }));
+
+    // A new Publication invalidates a continuation rather than mixing rows
+    // from two snapshots into one graph result.
+    service
+        .create_structured_entry_with_receipt(
+            &space_id,
+            "composition-preview-after-first-page",
+            "Composition-Preview".to_owned(),
+            Vec::new(),
+            BTreeMap::from([(
+                "title".to_string(),
+                Value::String("after-snapshot".to_owned()),
+            )]),
+            BTreeMap::new(),
+            "owner",
+        )
+        .await?;
+    let stale = service
+        .evaluate_composition_graph_local(
+            &space_id,
+            target(),
+            evaluation_id,
+            None,
+            None,
+            &BTreeMap::new(),
+            &[],
+            Some(&requested_queries),
+            Some(CompositionQueryEvaluationPage {
+                variable_id: "source".to_owned(),
+                cursor,
+            }),
+        )
+        .await;
+    assert!(stale.is_err(), "stale graph cursor should be rejected");
+    assert!(stale
+        .expect_err("stale graph cursor is rejected")
+        .to_string()
+        .contains("Publication changed during descriptor resolution"));
     Ok(())
 }
 
