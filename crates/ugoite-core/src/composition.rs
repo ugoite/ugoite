@@ -1178,7 +1178,7 @@ mod tests {
             )]
         );
 
-        let mut matching_spec = spec;
+        let mut matching_spec = spec.clone();
         matching_spec.variables[0].kind = VariableGraphNodeKind::Constant {
             value_type: integer,
             value: VariableGraphLiteral::Integer(10),
@@ -1188,6 +1188,52 @@ mod tests {
             &matching_spec,
             &BTreeMap::new(),
             &current_queries,
+            "draft".to_owned(),
+        )
+        .is_ok());
+
+        // A downstream Saved SQL query must see the planner-derived type of
+        // an upstream scalar query, even when that query's draft descriptor
+        // was stale.
+        let mut planner_derived_spec = spec;
+        planner_derived_spec.variables[0].kind = VariableGraphNodeKind::Query {
+            returns: VariableGraphResultType::Scalar { value_type: string },
+            query: VariableGraphQuery {
+                definition: VariableGraphQueryDefinition::InlineSql {
+                    sql: "SELECT 10 AS value".to_owned(),
+                },
+                arguments: Vec::new(),
+                form_bindings: Vec::new(),
+                schema_fingerprint: String::new(),
+            },
+        };
+        // The document order must not replace dependency order during preview.
+        planner_derived_spec.variables.swap(0, 1);
+        let inline_metadata = InlineSqlQueryMetadata {
+            bound_sql: "SELECT 10 AS value".to_owned(),
+            form_bindings: Vec::new(),
+            parameter_names: BTreeSet::new(),
+            result_columns: vec![VariableGraphColumn {
+                name: "value".to_owned(),
+                value_type: integer,
+            }],
+            schema_fingerprint: "a".repeat(64),
+        };
+        let planner_derived_queries = [
+            CurrentQueryDescriptor::InlineSql {
+                variable_id: "minimum",
+                metadata: Some(&inline_metadata),
+            },
+            CurrentQueryDescriptor::SavedSql {
+                variable_id: "count",
+                metadata: Some(&metadata),
+            },
+        ];
+        assert!(resolve_composition_preview(
+            Uuid::nil(),
+            &planner_derived_spec,
+            &BTreeMap::new(),
+            &planner_derived_queries,
             "draft".to_owned(),
         )
         .is_ok());
