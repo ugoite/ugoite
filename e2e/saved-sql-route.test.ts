@@ -380,19 +380,19 @@ test.describe("Saved SQL route", () => {
       await columns.click();
       const columnsDialog = page.getByRole("dialog", { name: "Columns" });
       await columnsDialog.getByLabel("Column 1", { exact: true })
-        .selectOption("_ugoite_id");
+        .selectOption("_ugoite_updated_at");
       await columnsDialog.getByRole("button", { name: "Review change" })
         .click();
       const columnsReviewDialog = page.getByRole("dialog", {
         name: "Review SQL change",
       });
       await expect(
-        columnsReviewDialog.getByText(/SELECT "_ugoite_id" FROM/),
+        columnsReviewDialog.getByText(/SELECT "_ugoite_updated_at" FROM/),
       ).toBeVisible();
       await columnsReviewDialog.getByRole("button", { name: "Apply change" })
         .click();
       await expect(page.locator(".ui-sql-editor")).toContainText(
-        `SELECT "_ugoite_id" FROM "${relation}"`,
+        `SELECT "_ugoite_updated_at" FROM "${relation}"`,
       );
 
       const editor = page.getByRole("textbox", { name: "SQL", exact: true });
