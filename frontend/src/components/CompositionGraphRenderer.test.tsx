@@ -137,6 +137,48 @@ describe("CompositionGraphRenderer", () => {
     expect(onPrevious).toHaveBeenCalledWith("rows");
   });
 
+  it("renders a one-row NULL scalar distinctly from zero rows", () => {
+    render(() => (
+      <CompositionGraphRenderer
+        draft={{
+          ...draft,
+          variables: draft.variables.map((node) =>
+            node.id === "total" && node.kind === "query"
+              ? {
+                ...node,
+                returns: {
+                  kind: "scalar",
+                  value_type: { scalar_type: "integer", nullable: true },
+                },
+              }
+              : node
+          ),
+        }}
+        evaluation={{
+          ...evaluation,
+          query_results: {
+            ...evaluation.query_results,
+            total: {
+              value: { kind: "scalar", value: { kind: "null" } },
+              has_more: false,
+            },
+          },
+        }}
+        rawInputs={{}}
+        inputStates={{}}
+        blockedQueryIds={new Set()}
+        previousPageQueryIds={new Set()}
+        pageBusy={false}
+        onInput={vi.fn()}
+        onNext={vi.fn()}
+        onPrevious={vi.fn()}
+      />
+    ));
+
+    expect(screen.getByLabelText("total")).toHaveTextContent("No data");
+    expect(screen.getByLabelText("total")).not.toHaveTextContent("0");
+  });
+
   it("surfaces a query diagnostic in its local component", () => {
     render(() => (
       <CompositionGraphRenderer

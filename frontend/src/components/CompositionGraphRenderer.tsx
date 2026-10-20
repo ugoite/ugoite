@@ -234,13 +234,16 @@ export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
                                         ...props.blockedQueryIds,
                                       ]),
                                     );
+                                  const displayValue = value === null
+                                    ? t("composition.metricNoData")
+                                    : safeText(value);
                                   return (
                                     <section
                                       class="compositionGraphMetric"
                                       aria-label={variableId()}
                                     >
                                       <UiIcon name="canvas-metric" />
-                                      <strong>{safeText(value)}</strong>
+                                      <strong>{displayValue}</strong>
                                     </section>
                                   );
                                 })()}

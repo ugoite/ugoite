@@ -634,8 +634,8 @@ test.describe("Composition Studio Journey", () => {
       expect(typeof savedSpec).toBe("string");
       const savedYaml = String(savedSpec);
       expect(savedYaml).toContain(`revision_id: ${seed.savedSqlRevisionId}`);
-      expect(savedYaml).toContain('"variable":"month_start"');
-      expect(savedYaml).toContain('"variable":"month_end"');
+      expect(savedYaml).toMatch(/^\s+variable: month_start\s*$/m);
+      expect(savedYaml).toMatch(/^\s+variable: month_end\s*$/m);
       expect(savedYaml).not.toMatch(/\bsource_id\b|\bsource:/);
     } finally {
       await buildContext.close();
@@ -971,11 +971,11 @@ test.describe("Composition Studio Journey", () => {
       await expect(page).toHaveURL(
         new RegExp(`/spaces/${seed.spaceId}/compositions/new(?:\\?.*)?$`),
       );
-      await page.getByLabel("Name", { exact: true }).fill(seed.toolName);
       const initialPicker = page.getByRole("dialog", { name: "Table" });
       await expect(initialPicker).toBeVisible();
       await page.keyboard.press("Escape");
       await expect(initialPicker).toHaveCount(0);
+      await page.getByLabel("Name", { exact: true }).fill(seed.toolName);
       await addStudioTypedInput(page, "minimum", "integer", "0");
       await addStudioInput(page, "minimum");
 
