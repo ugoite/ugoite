@@ -201,32 +201,28 @@ describe("portable Ugoite API protocol WASM", () => {
       variables: [
         {
           id: "total",
-          kind: {
-            kind: "query",
-            returns: { kind: "scalar", value_type: integer },
-            query: { kind: "inline_sql", sql: "SELECT $amount" },
+          kind: "query",
+          returns: { kind: "scalar", value_type: integer },
+          query: {
+            kind: "inline_sql",
+            sql: "SELECT $amount",
             arguments: [{
               name: "amount",
-              value_type: integer,
               variable: "amount",
             }],
           },
         },
         {
           id: "amount",
-          kind: {
-            kind: "input",
-            value_type: integer,
-            required: true,
-          },
+          kind: "input",
+          value_type: integer,
+          required: true,
         },
         {
           id: "independent",
-          kind: {
-            kind: "constant",
-            value_type: integer,
-            value: { kind: "integer", value: 1 },
-          },
+          kind: "constant",
+          value_type: integer,
+          value: { kind: "integer", value: 1 },
         },
       ],
     };
@@ -245,11 +241,12 @@ describe("portable Ugoite API protocol WASM", () => {
       variables: [
         {
           id: "amount",
-          kind: {
-            kind: "input",
-            value_type: { scalar_type: "string", nullable: false },
-            required: true,
+          kind: "query",
+          returns: {
+            kind: "table",
+            columns: [{ name: "value", value_type: integer }],
           },
+          query: { kind: "inline_sql", sql: "SELECT 1" },
         },
         graph.variables[0],
       ],

@@ -22,6 +22,14 @@ struct MetricExecutionAuthorization<'a> {
     query_limits_override: Option<&'a QueryLimits>,
 }
 
+struct MetricQueryPlan<'a> {
+    queries: &'a [ResolvedQueryRequest],
+    component_bindings: &'a [ResolvedComponentBinding],
+    variable_values: &'a std::collections::BTreeMap<String, VariableGraphLiteral>,
+    component_id: &'a str,
+    draft_fingerprint: Option<String>,
+}
+
 impl UgoiteService {
     /// Evaluate one metric through the local operator boundary.
     pub async fn query_composition_metric_local(
@@ -87,16 +95,18 @@ impl UgoiteService {
         if let Some((queries, component_bindings, variable_values)) = plan {
             self.query_composition_metric_from_plan(
                 space_id,
-                &queries,
-                &component_bindings,
-                &variable_values,
-                &request.component_id,
+                MetricQueryPlan {
+                    queries: &queries,
+                    component_bindings: &component_bindings,
+                    variable_values: &variable_values,
+                    component_id: &request.component_id,
+                    draft_fingerprint,
+                },
                 MetricExecutionAuthorization {
                     composition_id: None,
                     principal_ids: None,
                     query_limits_override: None,
                 },
-                draft_fingerprint,
             )
             .await
         } else {
@@ -210,16 +220,18 @@ impl UgoiteService {
         if let Some((queries, component_bindings, variable_values)) = plan {
             self.query_composition_metric_from_plan(
                 space_id,
-                &queries,
-                &component_bindings,
-                &variable_values,
-                &request.component_id,
+                MetricQueryPlan {
+                    queries: &queries,
+                    component_bindings: &component_bindings,
+                    variable_values: &variable_values,
+                    component_id: &request.component_id,
+                    draft_fingerprint,
+                },
                 MetricExecutionAuthorization {
                     composition_id,
                     principal_ids: Some(principal_ids),
                     query_limits_override,
                 },
-                draft_fingerprint,
             )
             .await
         } else {
@@ -233,13 +245,16 @@ impl UgoiteService {
     async fn query_composition_metric_from_plan(
         &self,
         space_id: &str,
-        queries: &[ResolvedQueryRequest],
-        component_bindings: &[ResolvedComponentBinding],
-        variable_values: &std::collections::BTreeMap<String, VariableGraphLiteral>,
-        component_id: &str,
+        plan: MetricQueryPlan<'_>,
         authorization: MetricExecutionAuthorization<'_>,
-        draft_fingerprint: Option<String>,
     ) -> Result<CompositionMetricQueryResponse> {
+        let MetricQueryPlan {
+            queries,
+            component_bindings,
+            variable_values,
+            component_id,
+            draft_fingerprint,
+        } = plan;
         let MetricExecutionAuthorization {
             composition_id,
             principal_ids,

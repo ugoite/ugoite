@@ -259,17 +259,23 @@ export type VariableGraphLiteral =
 
 export type VariableGraphArgumentBinding = {
   name: string;
-  value_type: VariableGraphScalarDescriptor;
   variable: string;
 };
 
-export type VariableGraphQueryDefinition =
-  | { kind: "inline_sql"; sql: string }
-  | {
-    kind: "saved_sql";
-    entry_id?: string | null;
-    revision_id?: string | null;
-    column?: string | null;
+export type VariableGraphQuery =
+  & (
+    | { kind: "inline_sql"; sql: string }
+    | {
+      kind: "saved_sql";
+      entry_id?: string | null;
+      revision_id?: string | null;
+      column?: string | null;
+    }
+  )
+  & {
+    arguments?: VariableGraphArgumentBinding[];
+    form_bindings?: { relation: string; form_id: string }[];
+    schema_fingerprint?: string;
   };
 
 export type VariableGraphResultType =
@@ -282,29 +288,26 @@ export type VariableGraphResultType =
     }[];
   };
 
-export type VariableGraphNodeKind =
+export type VariableGraphNode =
   | {
+    id: string;
     kind: "constant";
     value_type: VariableGraphScalarDescriptor;
     value: VariableGraphLiteral;
   }
   | {
+    id: string;
     kind: "input";
     value_type: VariableGraphScalarDescriptor;
     required: boolean;
     default?: VariableGraphLiteral | null;
   }
   | {
+    id: string;
     kind: "query";
     returns: VariableGraphResultType;
-    query: VariableGraphQueryDefinition;
-    arguments?: VariableGraphArgumentBinding[];
+    query: VariableGraphQuery;
   };
-
-export type VariableGraphNode = {
-  id: string;
-  kind: VariableGraphNodeKind;
-};
 
 /** Strict v1 graph payload accepted by the pure WASM Domain compiler. */
 export type VariableGraph = {

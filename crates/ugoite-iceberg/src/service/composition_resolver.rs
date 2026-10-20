@@ -732,6 +732,7 @@ impl UgoiteService {
                     entry_id: raw.revision.entry_id,
                     revision_id: raw.revision.revision_id,
                 },
+                execution_id: Uuid::new_v4(),
                 spec: &document.spec,
                 variables,
                 current_queries: &current_queries,
@@ -937,6 +938,7 @@ impl UgoiteService {
             .map(OwnedCurrentQueryDescriptor::as_current_query)
             .collect::<Vec<_>>();
         let result = resolve_composition_preview_with_unset(
+            Uuid::new_v4(),
             &document.spec,
             variables,
             unset_variables,
@@ -1261,25 +1263,30 @@ fn query_schema_fingerprint(columns: &[VariableGraphColumn]) -> Result<String> {
     Ok(hex::encode(Sha256::digest(canonical)))
 }
 
-#[cfg(test)]
-mod graph_metadata_tests {
-    use super::*;
-
-    #[test]
-    fn query_argument_sql_type_is_derived_from_graph_scalar_type() {
-        assert_eq!(
-            variable_graph_sql_type(VariableGraphScalarType::String),
-            "string"
-        );
-        assert_eq!(
-            variable_graph_sql_type(VariableGraphScalarType::Integer),
-            "integer"
-        );
-        assert_eq!(
-            variable_graph_sql_type(VariableGraphScalarType::Decimal),
-            "decimal"
-        );
+pub(super) fn reconcile_query_returns_with_schema(
+    returns: &mut VariableGraphResultType,
+    result_columns: &[VariableGraphColumn],
+    draft_descriptor: bool,
+) -> Result<()> {
+    let derived = ugoite_core::composition::returns_from_schema(returns, result_columns)
+        .ok_or_else(|| {
+            AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "Composition scalar query must resolve to exactly one result column",
+            )
+        })?;
+    if draft_descriptor {
+        *returns = derived;
+        return Ok(());
     }
+    if !ugoite_core::composition::returns_match_schema(returns, result_columns) {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            "Composition query result descriptor does not match current planner schema",
+        )
+        .into());
+    }
+    Ok(())
 }
 
 /// Expose declared variables with layout-placed controls first in layout
@@ -1315,5 +1322,124 @@ fn conceal_sql_query_lookup<T>(result: Result<T>, concealed_code: ErrorCode) -> 
             Ok(None)
         }
         Err(error) => Err(error),
+    }
+}
+
+#[cfg(test)]
+mod graph_metadata_tests {
+    use super::*;
+
+    fn form(id: FormId, name: &str) -> FormDefinition {
+        FormDefinition {
+            id,
+            version: ugoite_domain::form::FormVersion::new(1).expect("valid version"),
+            name: name.to_owned(),
+            description: None,
+            fields: Vec::new(),
+            allow_extra_attributes: false,
+            extension_metadata: BTreeMap::new(),
+        }
+    }
+
+    fn exact_base_with_form_binding(form_id: FormId) -> CompositionDocument {
+        CompositionDocument {
+            format: ugoite_domain::composition::CompositionFormat::UgoiteComposition,
+            format_version: 1,
+            kind: ugoite_domain::composition::CompositionKind::Dashboard,
+            name: "Base".to_owned(),
+            spec: ugoite_domain::composition::CompositionSpec {
+                variables: vec![VariableGraphNode {
+                    id: "rows".to_owned(),
+                    kind: VariableGraphNodeKind::Query {
+                        returns: VariableGraphResultType::Table {
+                            columns: Vec::new(),
+                        },
+                        query: ugoite_domain::composition::VariableGraphQuery {
+                            definition: VariableGraphQueryDefinition::InlineSql {
+                                sql: "SELECT * FROM \"Original\"".to_owned(),
+                            },
+                            arguments: Vec::new(),
+                            form_bindings: vec![VariableGraphFormBinding {
+                                relation: "Original".to_owned(),
+                                form_id,
+                            }],
+                            schema_fingerprint: "a".repeat(64),
+                        },
+                    },
+                }],
+                components: Vec::new(),
+                layout: ugoite_domain::composition::DashboardFlowLayout {
+                    kind: ugoite_domain::composition::FlowLayoutKind::Flow,
+                    rows: Vec::new(),
+                },
+            },
+        }
+    }
+
+    #[test]
+    fn exact_base_form_binding_survives_rename_and_fails_closed_after_recreate() {
+        let original_id = FormId::from_uuid(Uuid::from_u128(10));
+        let base = exact_base_with_form_binding(original_id);
+        let sql = "SELECT * FROM \"Original\"";
+
+        let renamed = form(original_id, "Renamed");
+        assert_eq!(
+            preview_inline_form_bindings("rows", sql, Some(&base), &[renamed])
+                .expect("rename resolution"),
+            Some(vec![VariableGraphFormBinding {
+                relation: "Original".to_owned(),
+                form_id: original_id,
+            }])
+        );
+
+        let recreated = form(FormId::from_uuid(Uuid::from_u128(11)), "Original");
+        assert_eq!(
+            preview_inline_form_bindings("rows", sql, Some(&base), &[recreated])
+                .expect("recreate resolution"),
+            None,
+            "a same-name replacement must not receive the exact base binding"
+        );
+    }
+
+    #[test]
+    fn scalar_query_result_must_have_exactly_one_planner_column() {
+        let value_type = VariableGraphScalarDescriptor {
+            scalar_type: VariableGraphScalarType::Integer,
+            nullable: false,
+        };
+        let mut returns = VariableGraphResultType::Scalar { value_type };
+        let result_columns = vec![
+            VariableGraphColumn {
+                name: "first".to_owned(),
+                value_type,
+            },
+            VariableGraphColumn {
+                name: "second".to_owned(),
+                value_type,
+            },
+        ];
+
+        let error = reconcile_query_returns_with_schema(&mut returns, &result_columns, true)
+            .expect_err("scalar result shape must not silently select a column");
+        assert_eq!(
+            error.downcast_ref::<AppError>().map(AppError::code),
+            Some(ErrorCode::InvalidInput)
+        );
+    }
+
+    #[test]
+    fn query_argument_sql_type_is_derived_from_graph_scalar_type() {
+        assert_eq!(
+            variable_graph_sql_type(VariableGraphScalarType::String),
+            "string"
+        );
+        assert_eq!(
+            variable_graph_sql_type(VariableGraphScalarType::Integer),
+            "integer"
+        );
+        assert_eq!(
+            variable_graph_sql_type(VariableGraphScalarType::Decimal),
+            "decimal"
+        );
     }
 }

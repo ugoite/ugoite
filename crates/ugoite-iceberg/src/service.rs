@@ -5360,11 +5360,15 @@ impl UgoiteService {
         let variables = request.document.spec.variables.clone();
         for node in &mut request.document.spec.variables {
             let source_for_planning = node.clone();
-            let ugoite_domain::composition::VariableGraphNodeKind::Query { query, .. } =
+            let ugoite_domain::composition::VariableGraphNodeKind::Query { query, returns } =
                 &mut node.kind
             else {
                 continue;
             };
+            // Form bindings are never trusted, even when a draft submits a
+            // nonempty spoof. An empty schema fingerprint marks the result
+            // descriptor incomplete and lets the planner fill it in.
+            let draft_descriptor = query.schema_fingerprint.is_empty();
             match &query.definition {
                 ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } => {
                     let candidate_bindings = composition_inline_form_bindings_for_save(
@@ -5389,6 +5393,11 @@ impl UgoiteService {
                                 "Composition query Form is not available",
                             )
                         })?;
+                    composition_resolver::reconcile_query_returns_with_schema(
+                        returns,
+                        &metadata.result_columns,
+                        draft_descriptor,
+                    )?;
                     query.form_bindings = metadata.form_bindings;
                     query.schema_fingerprint = metadata.schema_fingerprint;
                 }
@@ -5419,6 +5428,11 @@ impl UgoiteService {
                         &query.arguments,
                         &metadata.parameter_types,
                         &variables,
+                    )?;
+                    composition_resolver::reconcile_query_returns_with_schema(
+                        returns,
+                        &metadata.result_columns,
+                        draft_descriptor,
                     )?;
                     query.form_bindings = metadata.form_bindings;
                     query.schema_fingerprint = metadata.schema_fingerprint;

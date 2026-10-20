@@ -110,6 +110,7 @@ async fn save_local_composition(
     space_id: &str,
     document: CompositionDocument,
 ) -> Result<ugoite_iceberg::composition::CompositionSaveResult> {
+    let document = apply_preview_query_descriptors(service, space_id, document).await?;
     service
         .save_composition_local(
             space_id,
@@ -121,6 +122,35 @@ async fn save_local_composition(
             "preview-test",
         )
         .await
+}
+
+async fn apply_preview_query_descriptors(
+    service: &UgoiteService,
+    space_id: &str,
+    mut document: CompositionDocument,
+) -> Result<CompositionDocument> {
+    let canonical =
+        canonicalize_composition(&document).map_err(|code| anyhow::anyhow!(code.as_str()))?;
+    let preview = service
+        .preview_composition_local(space_id, &canonical.yaml, &BTreeMap::new(), &[])
+        .await?;
+    let Some(plan) = preview.plan else {
+        return Ok(document);
+    };
+    for node in &mut document.spec.variables {
+        let VariableGraphNodeKind::Query { query, returns } = &mut node.kind else {
+            continue;
+        };
+        let descriptor = plan
+            .queries
+            .iter()
+            .find(|query| query.variable_id == node.id)
+            .with_context(|| format!("preview omitted query variable {}", node.id))?;
+        *returns = descriptor.returns.clone();
+        query.form_bindings = descriptor.form_bindings.clone();
+        query.schema_fingerprint = descriptor.schema_fingerprint.clone();
+    }
+    Ok(document)
 }
 
 #[tokio::test]
@@ -138,9 +168,12 @@ async fn draft_preview_resolves_without_publication() -> Result<()> {
         preview.draft_fingerprint.as_deref(),
         Some(canonical.fingerprint.as_str())
     );
-    assert!(preview
+    let definitions = preview
         .variable_definitions
-        .is_some_and(|definitions| definitions.is_empty()));
+        .as_deref()
+        .context("preview exposes declared graph variables")?;
+    assert_eq!(definitions.len(), 1);
+    assert_eq!(definitions[0].id, "source");
     let plan = preview.plan.context("preview should return a plan")?;
     assert_eq!(plan.draft_fingerprint, canonical.fingerprint);
     assert_eq!(plan.queries.len(), 1);
@@ -350,18 +383,29 @@ async fn parameterized_saved_sql_placeholder_previews_and_saves_with_server_sche
                     },
                 },
             ],
-            components: vec![CompositionComponent::Metric {
-                id: "total".to_string(),
-                variable: "minimum_query".to_string(),
-                presentation: None,
-            }],
+            components: vec![
+                CompositionComponent::Input {
+                    id: "minimum_input".to_string(),
+                    variable: "minimum".to_string(),
+                },
+                CompositionComponent::Metric {
+                    id: "total".to_string(),
+                    variable: "minimum_query".to_string(),
+                    presentation: None,
+                },
+            ],
             layout: DashboardFlowLayout {
                 kind: FlowLayoutKind::Flow,
                 rows: vec![FlowRow {
                     id: "main".to_string(),
-                    items: vec![FlowItem::Component {
-                        component: "total".to_string(),
-                    }],
+                    items: vec![
+                        FlowItem::Component {
+                            component: "minimum_input".to_string(),
+                        },
+                        FlowItem::Component {
+                            component: "total".to_string(),
+                        },
+                    ],
                 }],
             },
         },
@@ -389,13 +433,15 @@ async fn parameterized_saved_sql_placeholder_previews_and_saves_with_server_sche
             && plan.queries[0].schema_fingerprint.len() == 64
     ));
 
+    let document_with_descriptors =
+        apply_preview_query_descriptors(&service, &space_id, document.clone()).await?;
     let authorized = service
         .save_composition_authorized_for_principals(
             &space_id,
             ugoite_iceberg::composition::CompositionSaveRequest {
                 entry_id: None,
                 base_revision_id: None,
-                document: document.clone(),
+                document: document_with_descriptors,
             },
             "owner",
             &[Uuid::from_u128(3_434_001)],
@@ -422,7 +468,67 @@ async fn parameterized_saved_sql_placeholder_previews_and_saves_with_server_sche
 }
 
 #[tokio::test]
-async fn preview_ignores_yaml_form_binding_spoof_and_keeps_exact_base_form() -> Result<()> {
+async fn saves_reject_forged_complete_query_result_descriptors() -> Result<()> {
+    let (service, space_id, document, _) = setup_preview_space().await?;
+    let mut forged = apply_preview_query_descriptors(&service, &space_id, document).await?;
+    let Some(VariableGraphNode {
+        kind: VariableGraphNodeKind::Query { returns, .. },
+        ..
+    }) = forged
+        .spec
+        .variables
+        .iter_mut()
+        .find(|node| node.id == "source")
+    else {
+        anyhow::bail!("fixture should include the source query variable");
+    };
+    let VariableGraphResultType::Table { columns } = returns else {
+        anyhow::bail!("fixture source should return a table");
+    };
+    columns[0].value_type = VariableGraphScalarDescriptor {
+        scalar_type: VariableGraphScalarType::Integer,
+        nullable: false,
+    };
+
+    let error = service
+        .save_composition_local(
+            &space_id,
+            ugoite_iceberg::composition::CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document: forged.clone(),
+            },
+            "preview-test",
+        )
+        .await
+        .expect_err("local save must reject a client-forged result schema");
+    assert_eq!(
+        error.downcast_ref::<AppError>().map(AppError::code),
+        Some(ErrorCode::InvalidInput)
+    );
+
+    let error = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            ugoite_iceberg::composition::CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document: forged,
+            },
+            "preview-test",
+            &[Uuid::from_u128(3_434_001)],
+        )
+        .await
+        .expect_err("authorized save must reject a client-forged result schema");
+    assert_eq!(
+        error.downcast_ref::<AppError>().map(AppError::code),
+        Some(ErrorCode::InvalidInput)
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn preview_ignores_yaml_form_binding_spoof_with_or_without_exact_base() -> Result<()> {
     let (service, space_id, document, original_form_id) = setup_preview_space().await?;
     let saved = save_local_composition(&service, &space_id, document).await?;
     let replacement = service
@@ -438,13 +544,32 @@ async fn preview_ignores_yaml_form_binding_spoof_and_keeps_exact_base_form() -> 
         .await?;
 
     // Form B has the same result schema, making its forged descriptor
-    // plausible. Only the exact saved base can establish the prior Form ID.
+    // plausible. Draft descriptors are never authoritative: without a base,
+    // the SQL relation resolves by its current Form identity; with a base,
+    // the exact saved Form ID remains pinned.
     let mut forged = saved.document.clone();
-    if let VariableGraphNodeKind::Query { query, .. } = &mut forged.spec.variables[0].kind {
+    let (expected_returns, expected_schema_fingerprint, expected_form_bindings) =
+        match &saved.document.spec.variables[0].kind {
+            VariableGraphNodeKind::Query { query, returns } => (
+                returns.clone(),
+                query.schema_fingerprint.clone(),
+                query.form_bindings.clone(),
+            ),
+            _ => anyhow::bail!("saved Composition should retain its query variable"),
+        };
+    if let VariableGraphNodeKind::Query { query, returns } = &mut forged.spec.variables[0].kind {
         query.form_bindings = vec![ugoite_domain::composition::VariableGraphFormBinding {
             relation: "Composition-Preview".to_owned(),
             form_id: replacement.form_id,
         }];
+        query.schema_fingerprint = "0".repeat(64);
+        let VariableGraphResultType::Table { columns } = returns else {
+            anyhow::bail!("saved query should retain its table result intent");
+        };
+        columns[0].value_type = VariableGraphScalarDescriptor {
+            scalar_type: VariableGraphScalarType::Integer,
+            nullable: false,
+        };
     }
     let forged_yaml = canonicalize_composition(&forged)
         .map_err(|code| anyhow::anyhow!(code.as_str()))?
@@ -455,14 +580,20 @@ async fn preview_ignores_yaml_form_binding_spoof_and_keeps_exact_base_form() -> 
         .await?;
     let new_plan = new_preview
         .plan
-        .context("new preview should resolve by current Form name")?;
+        .context("draft should resolve by its current Form relation")?;
     let expected_relation = sql_relation_name(original_form_id);
     let spoofed_relation = sql_relation_name(replacement.form_id);
     assert!(matches!(
         new_plan.queries[0].request.as_ref(),
-        Some(request) if request.sql.contains(&spoofed_relation)
-            && !request.sql.contains(&expected_relation)
+        Some(request) if request.sql.contains(&expected_relation)
+            && !request.sql.contains(&spoofed_relation)
     ));
+    assert_eq!(new_plan.queries[0].returns, expected_returns);
+    assert_eq!(
+        new_plan.queries[0].schema_fingerprint,
+        expected_schema_fingerprint
+    );
+    assert_eq!(new_plan.queries[0].form_bindings, expected_form_bindings);
 
     let preview = service
         .preview_composition_local_with_base(
@@ -484,6 +615,12 @@ async fn preview_ignores_yaml_form_binding_spoof_and_keeps_exact_base_form() -> 
         Some(request) if request.sql.contains(&expected_relation)
             && !request.sql.contains(&spoofed_relation)
     ));
+    assert_eq!(plan.queries[0].returns, expected_returns);
+    assert_eq!(
+        plan.queries[0].schema_fingerprint,
+        expected_schema_fingerprint
+    );
+    assert_eq!(plan.queries[0].form_bindings, expected_form_bindings);
     Ok(())
 }
 
@@ -510,6 +647,8 @@ async fn invalid_draft_preview_reports_diagnostics_without_identity() -> Result<
 async fn preview_exposes_variable_definitions_in_declaration_order() -> Result<()> {
     let (service, space_id, mut document, _) = setup_preview_space().await?;
     // Declaration order is region-first; Input placement order is month-first.
+    document.spec.components.clear();
+    document.spec.layout.rows.clear();
     document.spec.variables = vec![
         VariableGraphNode {
             id: "region".to_string(),

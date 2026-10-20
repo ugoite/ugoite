@@ -1028,25 +1028,23 @@ mod tests {
         let query = |id: &str, sql: &str, arguments: Value| {
             serde_json::json!({
                 "id": id,
-                "kind": {
-                    "kind": "query",
-                    "returns": {"kind": "scalar", "value_type": integer},
-                    "query": {"kind": "inline_sql", "sql": sql},
+                "kind": "query",
+                "returns": {"kind": "scalar", "value_type": integer},
+                "query": {
+                    "kind": "inline_sql",
+                    "sql": sql,
                     "arguments": arguments,
                 },
             })
         };
         let input = serde_json::json!({
             "id": "input",
-            "kind": {
-                "kind": "input",
-                "value_type": integer,
-                "required": true,
-            },
+            "kind": "input",
+            "value_type": integer,
+            "required": true,
         });
         let binding = serde_json::json!([{
             "name": "value",
-            "value_type": integer,
             "variable": "input",
         }]);
         let graph_value = serde_json::json!({
@@ -1094,29 +1092,22 @@ mod tests {
 
     #[test]
     fn variable_graph_protocol_returns_stable_reference_and_type_diagnostics() {
-        let query_graph = |reference: &str, input_type: &str| {
+        let query_graph = |reference: &str, input: Value| {
             serde_json::json!({
                 "variables": [
-                    {
-                        "id": "input",
-                        "kind": {
-                            "kind": "input",
-                            "value_type": {"scalar_type": input_type, "nullable": false},
-                            "required": true,
-                        },
-                    },
+                    input,
                     {
                         "id": "result",
-                        "kind": {
-                            "kind": "query",
-                            "returns": {
-                                "kind": "scalar",
-                                "value_type": {"scalar_type": "integer", "nullable": false},
-                            },
-                            "query": {"kind": "inline_sql", "sql": "SELECT $value"},
+                        "kind": "query",
+                        "returns": {
+                            "kind": "scalar",
+                            "value_type": {"scalar_type": "integer", "nullable": false},
+                        },
+                        "query": {
+                            "kind": "inline_sql",
+                            "sql": "SELECT $value",
                             "arguments": [{
                                 "name": "value",
-                                "value_type": {"scalar_type": "integer", "nullable": false},
                                 "variable": reference,
                             }],
                         },
@@ -1126,8 +1117,30 @@ mod tests {
         };
 
         for graph_value in [
-            query_graph("missing", "integer"),
-            query_graph("input", "string"),
+            query_graph(
+                "missing",
+                serde_json::json!({
+                    "id": "input",
+                    "kind": "input",
+                    "value_type": {"scalar_type": "integer", "nullable": false},
+                    "required": true,
+                }),
+            ),
+            query_graph(
+                "input",
+                serde_json::json!({
+                    "id": "input",
+                    "kind": "query",
+                    "returns": {
+                        "kind": "table",
+                        "columns": [{
+                            "name": "value",
+                            "value_type": {"scalar_type": "integer", "nullable": false},
+                        }],
+                    },
+                    "query": {"kind": "inline_sql", "sql": "SELECT 1"},
+                }),
+            ),
         ] {
             let graph = serde_json::from_value::<ugoite_domain::composition::VariableGraph>(
                 graph_value.clone(),
@@ -1201,20 +1214,22 @@ mod tests {
             "variables": [
                 {
                     "id": "alpha",
-                    "kind": {
-                        "kind": "query",
-                        "returns": {"kind": "scalar", "value_type": integer},
-                        "query": {"kind": "inline_sql", "sql": "SELECT $value"},
-                        "arguments": [{"name": "value", "value_type": integer, "variable": "beta"}],
+                    "kind": "query",
+                    "returns": {"kind": "scalar", "value_type": integer},
+                    "query": {
+                        "kind": "inline_sql",
+                        "sql": "SELECT $value",
+                        "arguments": [{"name": "value", "variable": "beta"}],
                     },
                 },
                 {
                     "id": "beta",
-                    "kind": {
-                        "kind": "query",
-                        "returns": {"kind": "scalar", "value_type": integer},
-                        "query": {"kind": "inline_sql", "sql": "SELECT $value"},
-                        "arguments": [{"name": "value", "value_type": integer, "variable": "alpha"}],
+                    "kind": "query",
+                    "returns": {"kind": "scalar", "value_type": integer},
+                    "query": {
+                        "kind": "inline_sql",
+                        "sql": "SELECT $value",
+                        "arguments": [{"name": "value", "variable": "alpha"}],
                     },
                 },
             ],
@@ -1261,7 +1276,7 @@ mod tests {
 
         let nested_unknown_request = serde_json::json!({
             "action": "domain.compile_variable_graph.v1",
-            "value": {"variables": [{"id": "x", "kind": {"kind": "input", "value_type": integer, "required": true, "future_field": 1}}]},
+            "value": {"variables": [{"id": "x", "kind": "input", "value_type": integer, "required": true, "future_field": 1}]},
         });
         let nested_unknown_response: Value =
             serde_json::from_str(&super::invoke_json(&nested_unknown_request.to_string())).unwrap();

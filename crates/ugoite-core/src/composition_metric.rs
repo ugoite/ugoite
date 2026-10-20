@@ -279,7 +279,7 @@ mod tests {
     }
 
     #[test]
-    fn sql_scalar_probe_rejects_ambiguous_columns_and_type_drift() {
+    fn sql_scalar_probe_rejects_invalid_schema_and_type_drift() {
         assert_eq!(
             evaluate_sql_metric_probe(
                 &binding(CompositionResultFieldType::Integer),
@@ -287,7 +287,7 @@ mod tests {
             )
             .unwrap_err()
             .code,
-            CompositionDiagnosticCode::MetricResultColumnAmbiguous
+            CompositionDiagnosticCode::InvalidComposition
         );
 
         assert_eq!(
