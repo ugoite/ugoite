@@ -562,9 +562,15 @@ export type SqlStructureAggregate = {
   alias?: SqlStructureAlias;
 };
 
+export type SqlStructureLiteral =
+  | { kind: "integer" | "string"; value: string }
+  | { kind: "boolean"; value: boolean }
+  | { kind: "null" };
+
 export type SqlStructureOperation =
   | { kind: "set_relation"; relation: string }
   | { kind: "set_columns"; columns: string[] }
+  | { kind: "set_literal_projection"; values: SqlStructureLiteral[] }
   | { kind: "set_filters"; filters: SqlStructureFilter[] }
   | { kind: "set_sort"; order_by: SqlStructureSort[] }
   | { kind: "set_aggregates"; aggregates: SqlStructureAggregate[] }
@@ -612,6 +618,7 @@ export type SqlStructureAnalysis = {
   status: "supported" | "invalid_sql" | "unsupported";
   reason?: SqlStructureReason;
   projection: string[];
+  literal_projection: SqlStructureLiteral[];
   filters: SqlStructureFilter[];
   aggregates: SqlStructureAggregate[];
   group_by: string[];

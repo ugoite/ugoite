@@ -166,6 +166,13 @@ Deno.test("SQL feature matrix aggregate catalog remains present in the typed UI 
       "aggregate_alias_parity",
     ],
   );
+  assertEquals(matrix.editor.literal_projection_operation, {
+    action: "columns",
+    protocol: "set_literal_projection",
+    sql: ["relation-free SELECT literal projection"],
+    coverage: "bounded",
+    values: ["integer", "string", "boolean", "null"],
+  });
   const aggregateParser = domainSql.slice(
     domainSql.indexOf("fn parse_aggregate("),
     domainSql.indexOf(

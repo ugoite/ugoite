@@ -77,6 +77,7 @@ export {
   type SqlStructureContext,
   type SqlStructureFilter,
   type SqlStructureFilterOperator,
+  type SqlStructureLiteral,
   type SqlStructureOperation,
   type SqlStructureProposal,
   type SqlStructureReason,

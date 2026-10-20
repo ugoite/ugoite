@@ -10,7 +10,7 @@ use sqlparser::ast::{
     BinaryOperator, Distinct, DuplicateTreatment, Expr, Function, FunctionArg, FunctionArgExpr,
     FunctionArgumentList, FunctionArguments, GroupByExpr, Ident, LimitClause, ObjectName,
     ObjectNamePart, OrderBy, OrderByExpr, OrderByKind, OrderByOptions, Query, Select, SelectFlavor,
-    SelectItem, SetExpr, Spanned, Statement, TableFactor, Value,
+    SelectItem, SetExpr, Spanned, Statement, TableFactor, UnaryOperator, Value,
 };
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
@@ -111,6 +111,9 @@ pub enum SqlStructureOperation {
     SetColumns {
         columns: Vec<String>,
     },
+    SetLiteralProjection {
+        values: Vec<SqlStructureLiteral>,
+    },
     SetFilters {
         filters: Vec<SqlStructureFilter>,
     },
@@ -126,6 +129,18 @@ pub enum SqlStructureOperation {
     SetDistinct {
         distinct: bool,
     },
+}
+
+/// A relation-free scalar literal that the SQL structure editor can rewrite.
+/// Integer values use decimal strings so the WASM protocol preserves all i64
+/// digits without passing through JavaScript floating point.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum SqlStructureLiteral {
+    Integer(String),
+    String(String),
+    Boolean(bool),
+    Null,
 }
 
 /// An aggregate projection that the bounded SQL structure parser can round-trip.
@@ -274,6 +289,8 @@ pub struct SqlStructureAnalysis {
     #[serde(default)]
     pub projection: Vec<String>,
     #[serde(default)]
+    pub literal_projection: Vec<SqlStructureLiteral>,
+    #[serde(default)]
     pub filters: Vec<SqlStructureFilter>,
     #[serde(default)]
     pub aggregates: Vec<SqlStructureAggregate>,
@@ -308,6 +325,7 @@ pub struct SqlStructureProposal {
 struct ParsedSqlStructure {
     query: Query,
     projection: Vec<String>,
+    literal_projection: Vec<SqlStructureLiteral>,
     filters: Vec<SqlStructureFilter>,
     aggregates: Vec<SqlStructureAggregate>,
     group_by: Vec<String>,
@@ -355,6 +373,12 @@ pub fn propose_sql_structure_operation(
                 Err(reason) => return rejected_proposal(base_sql, reason),
             }
         }
+        SqlStructureOperation::SetLiteralProjection { values } => {
+            match rewrite_literal_projection(&base_sql, &parsed.query, context, values) {
+                Ok(sql) => sql,
+                Err(reason) => return rejected_proposal(base_sql, reason),
+            }
+        }
         operation => {
             let mutation = match operation {
                 SqlStructureOperation::SetRelation { .. } => {
@@ -380,6 +404,9 @@ pub fn propose_sql_structure_operation(
                 }
                 SqlStructureOperation::SetColumns { .. } => unreachable!(
                     "SetColumns is handled by the source-preserving projection rewrite"
+                ),
+                SqlStructureOperation::SetLiteralProjection { .. } => unreachable!(
+                    "SetLiteralProjection is handled by the source-preserving projection rewrite"
                 ),
             };
             if let Err(reason) = mutation {
@@ -600,6 +627,12 @@ fn parse_supported_sql(
         context,
     )?;
 
+    let literal_projection = if context.relation.is_empty() {
+        parse_literal_projection(&select.projection)?
+    } else {
+        Vec::new()
+    };
+
     let referenced_variables = filters
         .iter()
         .filter_map(|filter| filter.parameter.clone())
@@ -618,6 +651,7 @@ fn parse_supported_sql(
     Ok(ParsedSqlStructure {
         query,
         projection,
+        literal_projection,
         filters,
         aggregates,
         group_by,
@@ -708,12 +742,48 @@ fn is_nonnegative_integer_literal(expression: &Expr) -> bool {
     !long && !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
 }
 
-fn supported_projection_literal(value: &Value) -> bool {
-    match value {
-        Value::Number(number, long) => !long && number.parse::<i64>().is_ok(),
-        Value::SingleQuotedString(_) | Value::Boolean(_) | Value::Null => true,
-        _ => false,
+fn supported_projection_literal(expression: &Expr) -> Option<SqlStructureLiteral> {
+    match expression {
+        Expr::Value(value) => match &value.value {
+            Value::Number(number, long) if !long && number.parse::<i64>().is_ok() => {
+                Some(SqlStructureLiteral::Integer(number.clone()))
+            }
+            Value::SingleQuotedString(value) => Some(SqlStructureLiteral::String(value.clone())),
+            Value::Boolean(value) => Some(SqlStructureLiteral::Boolean(*value)),
+            Value::Null => Some(SqlStructureLiteral::Null),
+            _ => None,
+        },
+        Expr::UnaryOp { op, expr } if matches!(*op, UnaryOperator::Minus | UnaryOperator::Plus) => {
+            let Expr::Value(value) = expr.as_ref() else {
+                return None;
+            };
+            let Value::Number(number, long) = &value.value else {
+                return None;
+            };
+            let signed = if *op == UnaryOperator::Minus {
+                format!("-{number}")
+            } else {
+                format!("+{number}")
+            };
+            (!long && signed.parse::<i64>().is_ok()).then_some(SqlStructureLiteral::Integer(signed))
+        }
+        _ => None,
     }
+}
+
+fn parse_literal_projection(
+    projection: &[SelectItem],
+) -> Result<Vec<SqlStructureLiteral>, SqlStructureReason> {
+    projection
+        .iter()
+        .map(|item| {
+            let SelectItem::UnnamedExpr(expression) = item else {
+                return Err(SqlStructureReason::ProjectionUnsupported);
+            };
+            supported_projection_literal(expression)
+                .ok_or(SqlStructureReason::ProjectionUnsupported)
+        })
+        .collect()
 }
 
 fn validate_select_shape(select: &Select) -> Result<(), SqlStructureReason> {
@@ -834,10 +904,11 @@ fn parse_projection(
                     .ok_or(SqlStructureReason::UnknownColumn)?;
                 columns.push(column.name.clone());
             }
-            SelectItem::UnnamedExpr(Expr::Value(value))
-                if context.relation.is_empty() && supported_projection_literal(&value.value) =>
-            {
-                columns.push(value.value.to_string());
+            SelectItem::UnnamedExpr(expression) if context.relation.is_empty() => {
+                if supported_projection_literal(expression).is_none() {
+                    return Err(SqlStructureReason::ProjectionUnsupported);
+                }
+                columns.push(expression.to_string());
             }
             SelectItem::UnnamedExpr(Expr::Function(function)) if !context.relation.is_empty() => {
                 aggregates.push(parse_aggregate(function, None, context)?);
@@ -1335,6 +1406,77 @@ fn rewrite_projection(
         .ok_or(SqlStructureReason::ProjectionUnsupported)
 }
 
+fn rewrite_literal_projection(
+    sql: &str,
+    query: &Query,
+    context: &SqlStructureContext,
+    values: Vec<SqlStructureLiteral>,
+) -> Result<String, SqlStructureReason> {
+    if !context.relation.is_empty() || values.is_empty() || values.len() > 256 {
+        return Err(SqlStructureReason::ProjectionUnsupported);
+    }
+    let SetExpr::Select(select) = query.body.as_ref() else {
+        return Err(SqlStructureReason::SetOperationUnsupported);
+    };
+    if !select.from.is_empty() {
+        return Err(SqlStructureReason::RelationUnsupported);
+    }
+    let source_range = literal_projection_source_range(sql, query)
+        .ok_or(SqlStructureReason::ProjectionUnsupported)?;
+    let replacement = values
+        .into_iter()
+        .map(|value| {
+            let sql_value = match value {
+                SqlStructureLiteral::Integer(value) => {
+                    if value.parse::<i64>().is_err() {
+                        return Err(SqlStructureReason::ProjectionUnsupported);
+                    }
+                    Value::Number(value, false)
+                }
+                SqlStructureLiteral::String(value) => Value::SingleQuotedString(value),
+                SqlStructureLiteral::Boolean(value) => Value::Boolean(value),
+                SqlStructureLiteral::Null => Value::Null,
+            };
+            Ok(sql_value.to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?
+        .join(", ");
+    replace_sql_source_range(sql, source_range, &replacement)
+        .ok_or(SqlStructureReason::ProjectionUnsupported)
+}
+
+fn literal_projection_source_range(sql: &str, query: &Query) -> Option<SqlSourceRange> {
+    let mut range = projection_source_range(sql, query)?;
+    let SetExpr::Select(select) = query.body.as_ref() else {
+        return None;
+    };
+    let SelectItem::UnnamedExpr(Expr::UnaryOp { op, .. }) = select.projection.first()? else {
+        return Some(range);
+    };
+    if !matches!(op, UnaryOperator::Minus | UnaryOperator::Plus) {
+        return Some(range);
+    }
+
+    // sqlparser's unary-expression span starts at the operand, so include the
+    // leading sign when replacing a projection such as `SELECT -1`.
+    let prefix = sql.get(..range.start)?;
+    let sign = prefix
+        .char_indices()
+        .rev()
+        .find(|(_, ch)| !ch.is_ascii_whitespace());
+    let (sign_start, sign_char) = sign?;
+    let expected = if *op == UnaryOperator::Minus {
+        '-'
+    } else {
+        '+'
+    };
+    if sign_char != expected {
+        return None;
+    }
+    range.start = sign_start;
+    Some(range)
+}
+
 fn projection_source_range(sql: &str, query: &Query) -> Option<SqlSourceRange> {
     let SetExpr::Select(select) = query.body.as_ref() else {
         return None;
@@ -1687,7 +1829,11 @@ fn supported_analysis(
 ) -> SqlStructureAnalysis {
     let columns_available = !context.columns.is_empty();
     let structured_projection = parsed.aggregates.is_empty() && parsed.group_by.is_empty();
-    let columns_enabled = columns_available && structured_projection;
+    let literal_projection_enabled = context.relation.is_empty()
+        && !parsed.literal_projection.is_empty()
+        && structured_projection;
+    let columns_enabled =
+        (columns_available || literal_projection_enabled) && structured_projection;
     let literal_projection = context.relation.is_empty()
         && !parsed.projection.is_empty()
         && parsed.aggregates.is_empty()
@@ -1711,6 +1857,7 @@ fn supported_analysis(
         status: SqlStructureStatus::Supported,
         reason: None,
         projection: parsed.projection,
+        literal_projection: parsed.literal_projection,
         filters: parsed.filters,
         aggregates: parsed.aggregates,
         group_by: parsed.group_by,
@@ -1721,7 +1868,7 @@ fn supported_analysis(
         capabilities: SqlStructureCapabilities {
             columns: capability(
                 columns_enabled,
-                (!columns_available)
+                (!columns_available && !literal_projection_enabled)
                     .then_some(SqlStructureReason::InvalidContext)
                     .or_else(|| {
                         (!structured_projection)
@@ -1801,6 +1948,7 @@ fn rejected_analysis(reason: SqlStructureReason) -> SqlStructureAnalysis {
         status,
         reason: Some(reason),
         projection: Vec::new(),
+        literal_projection: Vec::new(),
         filters: Vec::new(),
         aggregates: Vec::new(),
         group_by: Vec::new(),
@@ -1949,11 +2097,19 @@ mod tests {
                     .to_owned()
             })
             .collect::<BTreeSet<_>>();
+        let mut declared_operations = declared_operations;
+        declared_operations.insert(
+            editor["literal_projection_operation"]["protocol"]
+                .as_str()
+                .expect("literal projection operation must name its protocol kind")
+                .to_owned(),
+        );
         let protocol_operations = [
             SqlStructureOperation::SetRelation {
                 relation: "Task".to_owned(),
             },
             SqlStructureOperation::SetColumns { columns: vec![] },
+            SqlStructureOperation::SetLiteralProjection { values: vec![] },
             SqlStructureOperation::SetFilters { filters: vec![] },
             SqlStructureOperation::SetSort { order_by: vec![] },
             SqlStructureOperation::SetAggregates { aggregates: vec![] },
@@ -2184,7 +2340,7 @@ mod tests {
         assert_eq!(analysis.status, SqlStructureStatus::Supported);
         assert_eq!(analysis.projection, vec!["1"]);
         assert!(analysis.capabilities.distinct.enabled);
-        assert!(!analysis.capabilities.columns.enabled);
+        assert!(analysis.capabilities.columns.enabled);
         assert!(!analysis.capabilities.filter.enabled);
         assert!(!analysis.capabilities.sort.enabled);
         assert!(!analysis.capabilities.aggregate.enabled);
@@ -2199,6 +2355,120 @@ mod tests {
         assert!(proposal.requires_confirmation);
         assert_eq!(proposal.proposed_sql.as_deref(), Some("SELECT DISTINCT 1"));
         assert_eq!(sql, "SELECT 1");
+    }
+
+    #[test]
+    fn edits_typed_relation_free_literal_projection_without_adding_a_relation() {
+        let relation_free_context = SqlStructureContext {
+            relation: String::new(),
+            columns: Vec::new(),
+            variables: Vec::new(),
+            stable_key: Vec::new(),
+        };
+        let source = "-- keep\nSELECT 1";
+        let analysis = analyze_sql_structure(source, &relation_free_context);
+
+        assert_eq!(analysis.status, SqlStructureStatus::Supported);
+        assert_eq!(analysis.projection, vec!["1"]);
+        assert_eq!(
+            analysis.literal_projection,
+            vec![SqlStructureLiteral::Integer("1".to_owned())]
+        );
+        assert!(analysis.capabilities.columns.enabled);
+
+        let negative = analyze_sql_structure("SELECT -1", &relation_free_context);
+        assert_eq!(negative.status, SqlStructureStatus::Supported);
+        assert_eq!(
+            negative.literal_projection,
+            vec![SqlStructureLiteral::Integer("-1".to_owned())]
+        );
+
+        let proposal = propose_sql_structure_operation(
+            source,
+            &relation_free_context,
+            SqlStructureOperation::SetLiteralProjection {
+                values: vec![
+                    SqlStructureLiteral::Integer("42".to_owned()),
+                    SqlStructureLiteral::String("O'Reilly".to_owned()),
+                    SqlStructureLiteral::Boolean(false),
+                    SqlStructureLiteral::Null,
+                ],
+            },
+        );
+
+        assert_eq!(proposal.status, SqlStructureStatus::Supported);
+        assert_eq!(
+            proposal.proposed_sql.as_deref(),
+            Some("-- keep\nSELECT 42, 'O''Reilly', false, NULL")
+        );
+        let edited_sql = proposal.proposed_sql.expect("literal projection proposal");
+        let edited = analyze_sql_structure(&edited_sql, &relation_free_context);
+        assert_eq!(edited.status, SqlStructureStatus::Supported);
+        assert_eq!(
+            edited.literal_projection,
+            vec![
+                SqlStructureLiteral::Integer("42".to_owned()),
+                SqlStructureLiteral::String("O'Reilly".to_owned()),
+                SqlStructureLiteral::Boolean(false),
+                SqlStructureLiteral::Null,
+            ]
+        );
+        assert!(!edited_sql.to_ascii_uppercase().contains(" FROM "));
+
+        let negative_proposal = propose_sql_structure_operation(
+            "SELECT -1",
+            &relation_free_context,
+            SqlStructureOperation::SetLiteralProjection {
+                values: vec![SqlStructureLiteral::Integer("-2".to_owned())],
+            },
+        );
+        assert_eq!(
+            negative_proposal.status,
+            SqlStructureStatus::Supported,
+            "{negative_proposal:?}"
+        );
+        assert_eq!(negative_proposal.proposed_sql.as_deref(), Some("SELECT -2"));
+    }
+
+    #[test]
+    fn literal_projection_edit_rejects_invalid_values_and_relation_contexts() {
+        let relation_free_context = SqlStructureContext {
+            relation: String::new(),
+            columns: Vec::new(),
+            variables: Vec::new(),
+            stable_key: Vec::new(),
+        };
+        for (sql, operation) in [
+            (
+                "SELECT 1",
+                SqlStructureOperation::SetLiteralProjection {
+                    values: vec![SqlStructureLiteral::Integer(
+                        "9223372036854775808".to_owned(),
+                    )],
+                },
+            ),
+            (
+                "SELECT 1 /* retained */, 2",
+                SqlStructureOperation::SetLiteralProjection {
+                    values: vec![SqlStructureLiteral::Integer("2".to_owned())],
+                },
+            ),
+        ] {
+            let proposal = propose_sql_structure_operation(sql, &relation_free_context, operation);
+            assert_eq!(proposal.status, SqlStructureStatus::Unsupported, "{sql}");
+            assert!(proposal.proposed_sql.is_none(), "{sql}");
+        }
+
+        let form_context = context();
+        let proposal = propose_sql_structure_operation(
+            "SELECT 1 FROM \"Task\"",
+            &form_context,
+            SqlStructureOperation::SetLiteralProjection {
+                values: vec![SqlStructureLiteral::Integer("2".to_owned())],
+            },
+        );
+        assert_eq!(proposal.status, SqlStructureStatus::Unsupported);
+        assert!(proposal.proposed_sql.is_none());
     }
 
     #[test]
