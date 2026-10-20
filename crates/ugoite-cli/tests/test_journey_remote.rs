@@ -148,6 +148,188 @@ fn stdout_json(output: &Output, what: &str) -> serde_json::Value {
     serde_json::from_str(&stdout).unwrap_or_else(|_| panic!("{what} stdout is not JSON: {stdout}"))
 }
 
+fn normalize_composition_query_descriptor(mut query: serde_json::Value) -> serde_json::Value {
+    if query["request"].is_object() {
+        query["request"]["execution_id"] = serde_json::Value::Null;
+    }
+    query
+}
+
+fn graph_table_rows(result: &serde_json::Value) -> serde_json::Value {
+    let table = &result["value"];
+    assert_eq!(table["kind"], "table");
+    let columns = table["columns"]
+        .as_array()
+        .expect("graph table columns")
+        .iter()
+        .map(|column| {
+            column["name"]
+                .as_str()
+                .expect("graph table column name")
+                .to_owned()
+        })
+        .collect::<Vec<_>>();
+    let rows = table["rows"]
+        .as_array()
+        .expect("graph table rows")
+        .iter()
+        .map(|row| {
+            let cells = row.as_array().expect("graph table row");
+            assert_eq!(cells.len(), columns.len());
+            serde_json::Value::Object(
+                columns
+                    .iter()
+                    .zip(cells)
+                    .map(|(name, cell)| {
+                        (
+                            name.clone(),
+                            cell.get("value")
+                                .cloned()
+                                .unwrap_or(serde_json::Value::Null),
+                        )
+                    })
+                    .collect(),
+            )
+        })
+        .collect::<Vec<_>>();
+    serde_json::Value::Array(rows)
+}
+
+fn graph_table_columns(result: &serde_json::Value) -> serde_json::Value {
+    let columns = result["value"]["columns"]
+        .as_array()
+        .expect("graph table columns")
+        .iter()
+        .map(|column| {
+            json!({
+                "name": column["name"],
+                "type": column["value_type"]["scalar_type"],
+                "nullable": column["value_type"]["nullable"],
+            })
+        })
+        .collect::<Vec<_>>();
+    serde_json::Value::Array(columns)
+}
+
+fn composition_query_diagnostic_pairs(value: &serde_json::Value) -> Vec<(String, Option<String>)> {
+    let mut diagnostics = value["diagnostics"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|diagnostic| {
+            (
+                diagnostic["code"].as_str().unwrap_or_default().to_owned(),
+                diagnostic["variable_id"].as_str().map(str::to_owned),
+            )
+        })
+        .collect::<Vec<_>>();
+    diagnostics.extend(
+        value["query_diagnostics"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|diagnostic| {
+                (
+                    diagnostic["code"].as_str().unwrap_or_default().to_owned(),
+                    diagnostic["variable_id"].as_str().map(str::to_owned),
+                )
+            }),
+    );
+    diagnostics.sort();
+    diagnostics
+}
+
+fn assert_composition_query_semantics_match(core: &serde_json::Value, remote: &serde_json::Value) {
+    assert_eq!(core["ok"], remote["ok"]);
+    assert_eq!(
+        composition_query_diagnostic_pairs(core),
+        composition_query_diagnostic_pairs(remote),
+        "local and remote Composition query diagnostics should carry the same codes and variables"
+    );
+
+    let Some(plan) = core["plan"].as_object() else {
+        assert!(
+            remote["query_results"]
+                .as_object()
+                .is_none_or(serde_json::Map::is_empty),
+            "a failed local graph resolution must not expose remote query results"
+        );
+        assert!(remote["queries"].as_array().is_none_or(Vec::is_empty));
+        return;
+    };
+
+    assert_eq!(
+        plan.get("composition_revision").expect("local revision"),
+        &remote["composition_revision"]
+    );
+    assert_eq!(
+        plan.get("variable_values").expect("local variable values"),
+        &remote["variable_values"]
+    );
+    assert_eq!(
+        plan.get("component_bindings")
+            .expect("local component bindings"),
+        &remote["component_bindings"]
+    );
+    assert_eq!(
+        plan.get("dependencies").expect("local dependency index"),
+        &remote["dependencies"]
+    );
+
+    let local_queries = plan["queries"].as_array().expect("local query plan");
+    let remote_queries = remote["queries"].as_array().expect("remote query plan");
+    assert_eq!(local_queries.len(), remote_queries.len());
+    for (local, remote) in local_queries.iter().zip(remote_queries) {
+        let local = normalize_composition_query_descriptor(local.clone());
+        let remote = normalize_composition_query_descriptor(remote.clone());
+        assert_eq!(local, remote, "query descriptors should remain equivalent");
+    }
+
+    for local_query in core["queries"].as_array().expect("local query outputs") {
+        let Some(local_page) = local_query.get("page").filter(|page| !page.is_null()) else {
+            continue;
+        };
+        let variable_id = local_query["variable_id"]
+            .as_str()
+            .expect("local query variable ID");
+        let remote_result = &remote["query_results"][variable_id];
+        assert_eq!(
+            local_page["rows"],
+            graph_table_rows(remote_result),
+            "table row values should match for {variable_id}"
+        );
+        assert_eq!(
+            local_page["result_schema"],
+            graph_table_columns(remote_result)
+        );
+        assert_eq!(local_page["has_more"], remote_result["has_more"]);
+        assert_eq!(
+            local_page.get("next").unwrap_or(&serde_json::Value::Null),
+            remote_result
+                .get("next")
+                .unwrap_or(&serde_json::Value::Null)
+        );
+    }
+
+    for local_metric in core["metrics"].as_array().expect("local metric outputs") {
+        let component_id = local_metric["component_id"]
+            .as_str()
+            .expect("local Metric component ID");
+        let binding = remote["component_bindings"]
+            .as_array()
+            .expect("remote component bindings")
+            .iter()
+            .find(|binding| binding["component_id"] == component_id)
+            .expect("remote Metric binding");
+        let variable_id = binding["variable_id"]
+            .as_str()
+            .expect("remote Metric variable ID");
+        let result = &remote["query_results"][variable_id]["value"]["value"];
+        assert_eq!(local_metric["result_type"], binding["expected_result_type"]);
+        assert_eq!(local_metric["value"], result["value"]);
+    }
+}
+
 fn contains_string(value: &serde_json::Value, needle: &str) -> bool {
     match value {
         serde_json::Value::String(text) => text == needle,
@@ -1734,24 +1916,16 @@ spec:
         "--var",
         "month_end=2026-02-01",
     ];
-    let mut core_query = stdout_json(
+    let core_query = stdout_json(
         &run_cli(&core_config_path, &query_args).await,
         "Core parameterized Composition query",
     );
-    let mut remote_query = stdout_json(
+    let remote_query = stdout_json(
         &run_cli(&fixture.config_path, &query_args).await,
         "Remote parameterized Composition query",
     );
     assert_eq!(core_query["ok"], true, "Core query response: {core_query}");
-    for response in [&mut core_query, &mut remote_query] {
-        for query in response["plan"]["queries"]
-            .as_array_mut()
-            .expect("Composition query plan")
-        {
-            query["request"]["execution_id"] = serde_json::Value::Null;
-        }
-    }
-    assert_eq!(core_query, remote_query);
+    assert_composition_query_semantics_match(&core_query, &remote_query);
     assert_eq!(
         core_query["queries"][0]["page"]["rows"]
             .as_array()
@@ -1771,23 +1945,15 @@ spec:
         "--var",
         "month_end=2026-02-01",
     ];
-    let mut core_latest_query = stdout_json(
+    let core_latest_query = stdout_json(
         &run_cli(&core_config_path, &latest_query_args).await,
         "Core latest-revision Composition query",
     );
-    let mut remote_latest_query = stdout_json(
+    let remote_latest_query = stdout_json(
         &run_cli(&fixture.config_path, &latest_query_args).await,
         "Remote latest-revision Composition query",
     );
-    for response in [&mut core_latest_query, &mut remote_latest_query] {
-        for query in response["plan"]["queries"]
-            .as_array_mut()
-            .expect("latest Composition query plan")
-        {
-            query["request"]["execution_id"] = serde_json::Value::Null;
-        }
-    }
-    assert_eq!(core_latest_query, remote_latest_query);
+    assert_composition_query_semantics_match(&core_latest_query, &remote_latest_query);
     assert_eq!(
         core_latest_query["queries"][0]["page"]["rows"]
             .as_array()
@@ -1826,7 +1992,7 @@ spec:
         &run_cli(&fixture.config_path, &unknown_unset_args).await,
         "Remote unknown-variable explicit unset",
     );
-    assert_eq!(core_unknown_unset, remote_unknown_unset);
+    assert_composition_query_semantics_match(&core_unknown_unset, &remote_unknown_unset);
     assert_eq!(core_unknown_unset["ok"], false);
     let unknown_diagnostic = core_unknown_unset["diagnostics"]
         .as_array()
@@ -1856,7 +2022,7 @@ spec:
         &run_cli(&fixture.config_path, &explicit_unset_args).await,
         "Remote explicit-unset Composition query",
     );
-    assert_eq!(core_explicit_unset, remote_explicit_unset);
+    assert_composition_query_semantics_match(&core_explicit_unset, &remote_explicit_unset);
     assert_eq!(
         core_explicit_unset["ok"], false,
         "explicit unset must bypass the declared month_start default"
@@ -2157,7 +2323,7 @@ spec:
         &run_cli(&fixture.config_path, &query_args).await,
         "Remote schema-drift Composition query",
     );
-    assert_eq!(core_query, remote_query);
+    assert_composition_query_semantics_match(&core_query, &remote_query);
     assert_eq!(core_query["ok"], false);
     assert_eq!(
         core_query["diagnostics"],
@@ -2351,7 +2517,7 @@ async fn test_cli_composition_unsupported_version_recovery_matches_core_remote()
         &run_cli(&fixture.config_path, &query_args).await,
         "Remote future Composition query",
     );
-    assert_eq!(core_query, remote_query);
+    assert_composition_query_semantics_match(&core_query, &remote_query);
     assert_eq!(core_query["ok"], false);
     assert_eq!(
         core_query["diagnostics"],
