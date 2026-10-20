@@ -145,6 +145,26 @@ describe("/spaces/:space_id/assets/:asset_id", () => {
     expect(assetId).toBeVisible();
   });
 
+  it("REQ-UX-LIST-001: hides Asset ID in the zero-reference fallback until Advanced details opens", async () => {
+    vi.mocked(assetApi.list).mockResolvedValue([]);
+
+    render(() => <SpaceAssetDetailRoute />);
+
+    expect(
+      await screen.findByText("No current Entry references this asset."),
+    ).toBeInTheDocument();
+
+    const assetId = screen.getByText("01900000-0000-7000-8000-000000000001");
+    const advancedDetails = assetId.closest("details");
+    expect(advancedDetails).not.toBeNull();
+    if (!advancedDetails) throw new Error("Advanced details were not rendered");
+    expect(advancedDetails).not.toHaveAttribute("open");
+    expect(assetId).not.toBeVisible();
+
+    fireEvent.click(within(advancedDetails).getByText("Advanced details"));
+    expect(assetId).toBeVisible();
+  });
+
   it("PR6: blocks delete while a visible Entry references the asset", async () => {
     vi.mocked(assetApi.list).mockResolvedValue([item()]);
     vi.mocked(assetApi.delete).mockResolvedValue({
