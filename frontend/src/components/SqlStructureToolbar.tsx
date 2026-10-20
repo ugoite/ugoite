@@ -1228,7 +1228,10 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     return filter?.kind === "and" || filter?.kind === "or";
   };
 
-  const renderFilterNode = (filter: FilterDraft) => {
+  const filterIndentClass = (depth: number) =>
+    depth > 0 && depth <= 3 ? " sql-structure-filter--indented" : "";
+
+  const renderFilterNode = (filter: FilterDraft, depth = 0) => {
     if (filter.kind === "predicate") {
       const context = () => ready()?.context;
       const operators = () => operatorsForColumn(context(), filter.column);
@@ -1256,7 +1259,11 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
             operators().length > 0,
         );
       return (
-        <div class="sql-structure-filter-node" data-filter-node={filter.id}>
+        <div
+          class="sql-structure-filter-node"
+          data-filter-node={filter.id}
+          data-filter-depth={depth}
+        >
           <div class="sql-structure-filter-row">
             <label class="ui-field">
               <span>{t("sqlPage.structure.column")}</span>
@@ -1347,8 +1354,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                 title={t("sqlPage.structure.negateFilter")}
                 disabled={busy() || Boolean(proposal()) ||
                   !supportsFilterExpression()}
-                onClick={() =>
-                  addNot(filter.id)}
+                onClick={() => addNot(filter.id)}
               >
                 NOT
               </button>
@@ -1356,8 +1362,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                 icon="trash"
                 label={t("sqlPage.structure.removeFilter")}
                 disabled={busy() || Boolean(proposal())}
-                onClick={() =>
-                  removeFilter(filter.id)}
+                onClick={() => removeFilter(filter.id)}
               />
             </div>
           </div>
@@ -1367,9 +1372,13 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
 
     if (filter.kind === "not") {
       return (
-        <div class="sql-structure-filter-not" data-filter-node={filter.id}>
+        <div
+          class={`sql-structure-filter-not${filterIndentClass(depth)}`}
+          data-filter-node={filter.id}
+          data-filter-depth={depth}
+        >
           <span class="sql-structure-filter-operator">NOT</span>
-          {renderFilterNode(filter.expression)}
+          {renderFilterNode(filter.expression, depth + 1)}
           <IconButton
             icon="trash"
             label={t("sqlPage.structure.removeNot")}
@@ -1382,10 +1391,11 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
 
     return (
       <section
-        class="sql-structure-filter-group"
+        class={`sql-structure-filter-group${filterIndentClass(depth)}`}
         role="group"
         aria-label={t("sqlPage.structure.filterGroup")}
         data-filter-node={filter.id}
+        data-filter-depth={depth}
       >
         <div class="sql-structure-filter-group-controls">
           <select
@@ -1443,7 +1453,9 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
           />
         </div>
         <div class="sql-structure-filter-group-children">
-          <For each={filter.expressions}>{renderFilterNode}</For>
+          <For each={filter.expressions}>
+            {(child) => renderFilterNode(child, depth + 1)}
+          </For>
         </div>
       </section>
     );

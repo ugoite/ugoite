@@ -174,6 +174,139 @@ test.describe("Saved SQL route", () => {
     }
   });
 
+  test("keeps deep boolean filters usable at 320px", async ({ page, request }) => {
+    await ensureDefaultForm(request, spaceId);
+    const relation = await getDefaultFormRelation(request, spaceId);
+    const predicate = '"_ugoite_id" = $entry_id';
+    let expression = predicate;
+    for (let depth = 0; depth < 32; depth += 1) {
+      const operator = depth % 2 === 0 ? "AND" : "OR";
+      expression = `(${predicate} ${operator} (${expression}))`;
+    }
+    const createResponse = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/sql`),
+      {
+        data: {
+          name: `Deep Boolean Filter ${Date.now()}`,
+          kind: "user-query",
+          sql: `SELECT "_ugoite_id" FROM "${relation}" WHERE ${expression}`,
+          variables: [{
+            type: "string",
+            name: "entry_id",
+            description: "Select matching rows.",
+          }],
+        },
+      },
+    );
+    expect([200, 201]).toContain(createResponse.status());
+    const savedSqlId = (await createResponse.json() as { id: string }).id;
+
+    try {
+      await page.setViewportSize({ width: 320, height: 844 });
+      await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`), {
+        waitUntil: "domcontentloaded",
+      });
+      const filterAction = page.getByRole("group", { name: "SQL" })
+        .getByRole("button", { name: "Filter", exact: true });
+      await expect(filterAction).toBeEnabled();
+      await filterAction.click();
+
+      const dialog = page.getByRole("dialog", { name: "Filter" });
+      const groups = dialog.locator(".sql-structure-filter-group");
+      await expect(groups).toHaveCount(32);
+      const deepestGroup = groups.last();
+      const deepestActions = deepestGroup.getByRole("button", {
+        name: "Remove filter group",
+      });
+      await expect(deepestActions).toHaveCount(1);
+      const deepestPredicate = dialog.locator(
+        '.sql-structure-filter-node[data-filter-depth="32"]',
+      );
+      const predicateControls = deepestPredicate.getByRole("combobox");
+      await expect(predicateControls).toHaveCount(3);
+      await predicateControls.first().scrollIntoViewIfNeeded();
+      await expect(predicateControls.first()).toBeInViewport();
+      await deepestActions.scrollIntoViewIfNeeded();
+      await expect(deepestActions).toBeInViewport();
+
+      const dimensions = await dialog.evaluate((dialogElement) => {
+        const dialog = dialogElement as HTMLElement;
+        const list = dialog.querySelector<HTMLElement>(
+          ".sql-structure-filter-list",
+        );
+        if (!list) throw new Error("Filter list is missing");
+        const target = dialog.querySelector<HTMLElement>(
+          '[data-filter-depth="31"] .sql-structure-filter-group-controls .icononly',
+        );
+        if (!target) throw new Error("Deep filter group action is missing");
+        const deepestPredicate = dialog.querySelector<HTMLElement>(
+          '.sql-structure-filter-node[data-filter-depth="32"]',
+        );
+        if (!deepestPredicate) {
+          throw new Error("Deep filter predicate is missing");
+        }
+        const controls = Array.from(
+          deepestPredicate.querySelectorAll<HTMLElement>("select"),
+          (control) => {
+            const rect = control.getBoundingClientRect();
+            return {
+              width: rect.width,
+              height: rect.height,
+              left: rect.left,
+              right: rect.right,
+            };
+          },
+        );
+        const rect = target.getBoundingClientRect();
+        const dialogRect = dialog.getBoundingClientRect();
+        return {
+          documentWidth: document.documentElement.scrollWidth,
+          viewportWidth: document.documentElement.clientWidth,
+          dialogWidth: dialog.clientWidth,
+          dialogScrollWidth: dialog.scrollWidth,
+          listWidth: list.clientWidth,
+          listScrollWidth: list.scrollWidth,
+          targetWidth: rect.width,
+          targetHeight: rect.height,
+          targetLeft: rect.left,
+          targetRight: rect.right,
+          dialogLeft: dialogRect.left,
+          dialogRight: dialogRect.right,
+          controls,
+        };
+      });
+
+      expect(dimensions.documentWidth).toBeLessThanOrEqual(
+        dimensions.viewportWidth + 1,
+      );
+      expect(dimensions.dialogScrollWidth).toBeLessThanOrEqual(
+        dimensions.dialogWidth + 1,
+      );
+      expect(dimensions.listScrollWidth).toBeLessThanOrEqual(
+        dimensions.listWidth + 1,
+      );
+      expect(dimensions.targetWidth).toBeGreaterThanOrEqual(44);
+      expect(dimensions.targetHeight).toBeGreaterThanOrEqual(44);
+      expect(dimensions.targetLeft).toBeGreaterThanOrEqual(
+        dimensions.dialogLeft,
+      );
+      expect(dimensions.targetRight).toBeLessThanOrEqual(
+        dimensions.dialogRight + 1,
+      );
+      expect(dimensions.controls).toHaveLength(3);
+      for (const control of dimensions.controls) {
+        expect(control.width).toBeGreaterThanOrEqual(44);
+        expect(control.height).toBeGreaterThanOrEqual(44);
+        expect(control.left).toBeGreaterThanOrEqual(dimensions.dialogLeft);
+        expect(control.right).toBeLessThanOrEqual(dimensions.dialogRight + 1);
+      }
+    } finally {
+      await request.delete(
+        getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
+      );
+    }
+  });
+
   test("REQ-FE-063 @smoke: new saved SQL uses the shared structure actions and runs through Saved SQL", async ({ page, request }) => {
     const queryName = `Form-bound draft ${Date.now()}`;
     let savedSqlId: string | undefined;
