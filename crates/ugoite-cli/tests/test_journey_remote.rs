@@ -30,7 +30,6 @@ kind: dashboard
 name: Basic Composition
 spec:
   variables: []
-  sources: []
   components:
     - id: note
       kind: text
@@ -1576,24 +1575,27 @@ kind: dashboard
 spec:
   variables:
     - id: month_start
-      type: date
+      kind: input
+      value_type: {{ scalar_type: date, nullable: false }}
       required: true
-      default: "2026-01-01"
+      default: {{ kind: date, value: "2026-01-01" }}
     - id: month_end
-      type: date
+      kind: input
+      value_type: {{ scalar_type: date, nullable: false }}
       required: true
-  sources:
     - id: expense_rows
-      kind: inline_sql
-      name: Expense rows
-      sql: |
-        SELECT "field_101" AS "Date", "field_102" AS "Merchant", "field_103" AS "Amount"
-        FROM "{form_name}"
-        WHERE "field_101" >= $month_start AND "field_101" < $month_end
-        ORDER BY "field_101" ASC, "_ugoite_id"
-      form_bindings: []
-      expected_result: []
-      schema_fingerprint: ""
+      kind: query
+      returns: {{ kind: table, columns: [] }}
+      query:
+        kind: inline_sql
+        sql: |
+          SELECT "field_101" AS "Date", "field_102" AS "Merchant", "field_103" AS "Amount"
+          FROM "{form_name}"
+          WHERE "field_101" >= $month_start AND "field_101" < $month_end
+          ORDER BY "field_101" ASC, "_ugoite_id"
+        arguments:
+          - {{ name: month_start, variable: month_start }}
+          - {{ name: month_end, variable: month_end }}
   components:
     - id: month_start_input
       kind: input
@@ -1603,7 +1605,7 @@ spec:
       variable: month_end
     - id: transactions
       kind: table
-      source: expense_rows
+      variable: expense_rows
   layout:
     kind: flow
     rows:
@@ -1945,19 +1947,17 @@ format_version: 1
 name: CLI schema drift
 kind: dashboard
 spec:
-  variables: []
-  sources:
+  variables:
     - id: rows
-      kind: inline_sql
-      name: Salary rows
-      sql: SELECT * FROM "{form_name}"
-      form_bindings: []
-      expected_result: []
-      schema_fingerprint: ""
+      kind: query
+      returns: {{ kind: table, columns: [] }}
+      query:
+        kind: inline_sql
+        sql: SELECT * FROM "{form_name}"
   components:
     - id: salary_table
       kind: table
-      source: rows
+      variable: rows
   layout:
     kind: flow
     rows:
@@ -2145,7 +2145,7 @@ spec:
     assert_eq!(core_query["ok"], false);
     assert_eq!(
         core_query["diagnostics"],
-        json!([{"code": "source_schema_changed"}]),
+        json!([{"code": "query_schema_changed"}]),
         "changed source schemas must retain the stable drift diagnostic"
     );
 

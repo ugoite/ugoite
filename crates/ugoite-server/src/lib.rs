@@ -45,7 +45,7 @@ use tower_http::{
     trace::TraceLayer,
 };
 use ugoite_api_client::{
-    CompositionDependencyIndex as ApiCompositionDependencyIndex,
+    CompositionDeferredArgument, CompositionDependencyIndex as ApiCompositionDependencyIndex,
     CompositionDiagnosticCode as ApiCompositionDiagnosticCode, CompositionEntryIntegrity,
     CompositionEntryMetadata, CompositionHistoryPage, CompositionLintError,
     CompositionLintResponse, CompositionLintValue, CompositionListItem, CompositionListPage,
@@ -55,17 +55,16 @@ use ugoite_api_client::{
     CompositionMetricQueryTarget as ApiCompositionMetricQueryTarget,
     CompositionMetricQueryValue as ApiCompositionMetricQueryValue, CompositionPreviewPlan,
     CompositionPreviewRequest, CompositionPreviewResponse, CompositionPublicationReceipt,
-    CompositionRawRevision, CompositionResolveDiagnostic, CompositionResolvePlan,
-    CompositionResolveRequest, CompositionResolveResponse, CompositionResolvedComponentBinding,
-    CompositionResolvedComponentKind, CompositionResolvedFormBinding,
-    CompositionResolvedResultColumn, CompositionResolvedSource,
+    CompositionQueryResultType, CompositionRawRevision, CompositionResolveDiagnostic,
+    CompositionResolvePlan, CompositionResolveRequest, CompositionResolveResponse,
+    CompositionResolvedComponentBinding, CompositionResolvedComponentKind,
+    CompositionResolvedFormBinding, CompositionResolvedQuery, CompositionResolvedResultColumn,
     CompositionRestoreRequest as ApiCompositionRestoreRequest, CompositionRestoreResponse,
     CompositionResultFieldType as ApiCompositionResultFieldType, CompositionRevisionMetadata,
     CompositionRevisionReference, CompositionSaveRequest as ApiCompositionSaveRequest,
-    CompositionSaveResponse, CompositionSourceConsumers as ApiCompositionSourceConsumers,
-    CompositionVariableConsumers as ApiCompositionVariableConsumers, CompositionVariableDefinition,
-    CompositionVariableFormat as ApiCompositionVariableFormat,
-    CompositionVariableType as ApiCompositionVariableType,
+    CompositionSaveResponse, CompositionScalarCardinality, CompositionScalarDescriptor,
+    CompositionScalarType, CompositionVariableConsumers as ApiCompositionVariableConsumers,
+    CompositionVariableDefinition,
 };
 use ugoite_core::composition::{
     CompositionDependencyIndex as CoreCompositionDependencyIndex,
@@ -80,10 +79,8 @@ use ugoite_core::composition_metric::{
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
 use ugoite_domain::composition::{
     CompositionMetricPresentation as DomainCompositionMetricPresentation,
-    CompositionResultFieldType as DomainCompositionResultFieldType,
-    CompositionVariable as DomainCompositionVariable,
-    CompositionVariableFormat as DomainCompositionVariableFormat,
-    CompositionVariableType as DomainCompositionVariableType,
+    CompositionResultFieldType as DomainCompositionResultFieldType, VariableGraphLiteral,
+    VariableGraphNode, VariableGraphNodeKind, VariableGraphResultType, VariableGraphScalarType,
 };
 use ugoite_domain::id::{validate_decoded_space_id, validate_identifier, IdentifierKind};
 use ugoite_domain::identity::{
@@ -11470,7 +11467,7 @@ async fn resolve_composition_handler(
     let variable_definitions = resolution.variable_definitions.as_ref().map(|variables| {
         variables
             .iter()
-            .map(api_composition_variable_definition)
+            .filter_map(api_composition_variable_definition)
             .collect::<Vec<_>>()
     });
 
@@ -11550,7 +11547,7 @@ async fn preview_composition_handler(
     let variable_definitions = preview.variable_definitions.as_ref().map(|variables| {
         variables
             .iter()
-            .map(api_composition_variable_definition)
+            .filter_map(api_composition_variable_definition)
             .collect::<Vec<_>>()
     });
 
@@ -11682,26 +11679,79 @@ fn validate_composition_uuid(value: &str, label: &str) -> ApiResult<()> {
 }
 
 fn api_composition_variable_definition(
-    variable: &DomainCompositionVariable,
-) -> CompositionVariableDefinition {
-    CompositionVariableDefinition {
+    variable: &VariableGraphNode,
+) -> Option<CompositionVariableDefinition> {
+    let VariableGraphNodeKind::Input {
+        value_type,
+        required,
+        default,
+    } = &variable.kind
+    else {
+        return None;
+    };
+    Some(CompositionVariableDefinition {
         id: variable.id.clone(),
-        variable_type: match variable.variable_type {
-            DomainCompositionVariableType::String => ApiCompositionVariableType::String,
-            DomainCompositionVariableType::Boolean => ApiCompositionVariableType::Boolean,
-            DomainCompositionVariableType::Integer => ApiCompositionVariableType::Integer,
-            DomainCompositionVariableType::Float => ApiCompositionVariableType::Float,
-            DomainCompositionVariableType::Date => ApiCompositionVariableType::Date,
-            DomainCompositionVariableType::Timestamp => ApiCompositionVariableType::Timestamp,
+        value_type: api_composition_scalar_descriptor(*value_type),
+        required: *required,
+        default: default.as_ref().map(api_composition_literal),
+    })
+}
+
+fn api_composition_literal(value: &VariableGraphLiteral) -> serde_json::Value {
+    use serde_json::json;
+    match value {
+        VariableGraphLiteral::String(value)
+        | VariableGraphLiteral::Date(value)
+        | VariableGraphLiteral::Timestamp(value)
+        | VariableGraphLiteral::Decimal(value) => json!(value),
+        VariableGraphLiteral::Boolean(value) => json!(value),
+        VariableGraphLiteral::Integer(value) => json!(value),
+        VariableGraphLiteral::Float(value) => json!(value),
+        VariableGraphLiteral::Json(value) => value.clone(),
+        VariableGraphLiteral::Null => serde_json::Value::Null,
+    }
+}
+
+fn api_composition_scalar_descriptor(
+    descriptor: ugoite_domain::composition::VariableGraphScalarDescriptor,
+) -> CompositionScalarDescriptor {
+    CompositionScalarDescriptor {
+        scalar_type: match descriptor.scalar_type {
+            VariableGraphScalarType::String => CompositionScalarType::String,
+            VariableGraphScalarType::Boolean => CompositionScalarType::Boolean,
+            VariableGraphScalarType::Integer => CompositionScalarType::Integer,
+            VariableGraphScalarType::Float => CompositionScalarType::Float,
+            VariableGraphScalarType::Decimal => CompositionScalarType::Decimal,
+            VariableGraphScalarType::Date => CompositionScalarType::Date,
+            VariableGraphScalarType::Timestamp => CompositionScalarType::Timestamp,
+            VariableGraphScalarType::Json => CompositionScalarType::Json,
         },
-        required: variable.required,
-        default: variable
-            .default
-            .as_ref()
-            .map(|value| value.as_json_value().clone()),
-        format: variable.format.map(|format| match format {
-            DomainCompositionVariableFormat::YearMonth => ApiCompositionVariableFormat::YearMonth,
-        }),
+        nullable: descriptor.nullable,
+    }
+}
+
+fn api_composition_query_result_type(
+    returns: VariableGraphResultType,
+) -> CompositionQueryResultType {
+    match returns {
+        VariableGraphResultType::Scalar { value_type } => CompositionQueryResultType::Scalar {
+            value_type: api_composition_scalar_descriptor(value_type),
+        },
+        VariableGraphResultType::Table { columns } => CompositionQueryResultType::Table {
+            columns: columns
+                .into_iter()
+                .map(api_composition_variable_column)
+                .collect(),
+        },
+    }
+}
+
+fn api_composition_variable_column(
+    column: ugoite_domain::composition::VariableGraphColumn,
+) -> CompositionResolvedResultColumn {
+    CompositionResolvedResultColumn {
+        name: column.name,
+        value_type: api_composition_scalar_descriptor(column.value_type),
     }
 }
 
@@ -11792,15 +11842,21 @@ fn composition_resolve_success_response(
         entry_id: plan.composition_revision.entry_id.to_string(),
         revision_id: plan.composition_revision.revision_id.to_string(),
     };
-    let (sources, component_bindings) =
-        api_composition_sources_and_bindings(plan.sources, plan.component_bindings)?;
+    let variable_values = plan
+        .variable_values
+        .into_iter()
+        .map(|(id, value)| (id, api_composition_literal(&value)))
+        .collect();
+    let (queries, component_bindings) =
+        api_composition_queries_and_bindings(plan.queries, plan.component_bindings)?;
     let dependencies = api_composition_dependency_index(plan.dependencies);
     Ok(CompositionResolveResponse {
         ok: true,
         variable_definitions,
         plan: Some(CompositionResolvePlan {
             composition_revision,
-            sources,
+            variable_values,
+            queries,
             component_bindings,
             dependencies,
         }),
@@ -11813,8 +11869,13 @@ fn composition_preview_success_response(
     variable_definitions: Option<Vec<CompositionVariableDefinition>>,
 ) -> ApiResult<CompositionPreviewResponse> {
     let draft_fingerprint = plan.draft_fingerprint.clone();
-    let (sources, component_bindings) =
-        api_composition_sources_and_bindings(plan.sources, plan.component_bindings)?;
+    let variable_values = plan
+        .variable_values
+        .into_iter()
+        .map(|(id, value)| (id, api_composition_literal(&value)))
+        .collect();
+    let (queries, component_bindings) =
+        api_composition_queries_and_bindings(plan.queries, plan.component_bindings)?;
     let dependencies = api_composition_dependency_index(plan.dependencies);
     Ok(CompositionPreviewResponse {
         ok: true,
@@ -11822,7 +11883,8 @@ fn composition_preview_success_response(
         variable_definitions,
         plan: Some(CompositionPreviewPlan {
             draft_fingerprint,
-            sources,
+            variable_values,
+            queries,
             component_bindings,
             dependencies,
         }),
@@ -11866,18 +11928,7 @@ fn api_composition_dependency_index(
                     ApiCompositionVariableConsumers {
                         input_component_ids: consumers.input_component_ids,
                         text_component_ids: consumers.text_component_ids,
-                        source_ids: consumers.source_ids,
-                    },
-                )
-            })
-            .collect(),
-        source_consumers: dependencies
-            .source_consumers
-            .into_iter()
-            .map(|(id, consumers)| {
-                (
-                    id,
-                    ApiCompositionSourceConsumers {
+                        query_variable_ids: consumers.query_variable_ids,
                         metric_component_ids: consumers.metric_component_ids,
                         table_component_ids: consumers.table_component_ids,
                     },
@@ -11887,82 +11938,57 @@ fn api_composition_dependency_index(
     }
 }
 
-fn api_composition_sources_and_bindings(
-    sources: Vec<ugoite_core::composition::ResolvedSourceRequest>,
+fn api_composition_queries_and_bindings(
+    queries: Vec<ugoite_core::composition::ResolvedQueryRequest>,
     component_bindings: Vec<ugoite_core::composition::ResolvedComponentBinding>,
 ) -> ApiResult<(
-    Vec<CompositionResolvedSource>,
+    Vec<CompositionResolvedQuery>,
     Vec<CompositionResolvedComponentBinding>,
 )> {
-    let sources = sources
+    let queries = queries
         .into_iter()
-        .map(|source| match source {
-            ugoite_core::composition::ResolvedSourceRequest::Sql {
-                source_id,
+        .map(|query| {
+            let request = query
+                .request
+                .map(serde_json::to_value)
+                .transpose()
+                .map_err(|error| ApiError::from_core(anyhow!(error)))?;
+            let form_bindings = query
+                .form_bindings
+                .into_iter()
+                .map(|binding| CompositionResolvedFormBinding {
+                    relation: binding.relation,
+                    form_id: binding.form_id.to_string(),
+                })
+                .collect();
+            let result_columns = query
+                .result_columns
+                .into_iter()
+                .map(api_composition_variable_column)
+                .collect();
+            let scalar_cardinality =
+                matches!(&query.returns, VariableGraphResultType::Scalar { .. })
+                    .then_some(CompositionScalarCardinality::ExactlyOneRow);
+            let deferred_arguments = query
+                .deferred_arguments
+                .into_iter()
+                .map(|argument| CompositionDeferredArgument {
+                    argument_name: argument.argument_name,
+                    variable_id: argument.variable_id,
+                    value_type: api_composition_scalar_descriptor(argument.value_type),
+                })
+                .collect();
+            Ok(CompositionResolvedQuery {
+                variable_id: query.variable_id,
                 request,
-                source_schema_fingerprint,
+                deferred_arguments,
+                returns: api_composition_query_result_type(query.returns),
+                result_columns,
                 form_bindings,
-                expected_result,
-            } => {
-                let expected_result = expected_result
-                    .into_iter()
-                    .map(|column| CompositionResolvedResultColumn {
-                        name: column.name,
-                        result_type: match column.result_type {
-                            ugoite_domain::composition::CompositionResultFieldType::String => {
-                                ApiCompositionResultFieldType::String
-                            }
-                            ugoite_domain::composition::CompositionResultFieldType::Boolean => {
-                                ApiCompositionResultFieldType::Boolean
-                            }
-                            ugoite_domain::composition::CompositionResultFieldType::Integer => {
-                                ApiCompositionResultFieldType::Integer
-                            }
-                            ugoite_domain::composition::CompositionResultFieldType::Float => {
-                                ApiCompositionResultFieldType::Float
-                            }
-                            ugoite_domain::composition::CompositionResultFieldType::Decimal => {
-                                ApiCompositionResultFieldType::Decimal
-                            }
-                            ugoite_domain::composition::CompositionResultFieldType::Date => {
-                                ApiCompositionResultFieldType::Date
-                            }
-                            ugoite_domain::composition::CompositionResultFieldType::Timestamp => {
-                                ApiCompositionResultFieldType::Timestamp
-                            }
-                            ugoite_domain::composition::CompositionResultFieldType::Json => {
-                                ApiCompositionResultFieldType::Json
-                            }
-                        },
-                    })
-                    .collect::<Vec<_>>();
-                let form_bindings = form_bindings
-                    .into_iter()
-                    .map(|binding| CompositionResolvedFormBinding {
-                        relation: binding.relation,
-                        form_id: binding.form_id.to_string(),
-                    })
-                    .collect::<Vec<_>>();
-                let resolved_source = if request.saved_sql.is_some() {
-                    CompositionResolvedSource::SavedSql {
-                        source_id,
-                        request: serde_json::to_value(request)
-                            .map_err(|error| ApiError::from_core(anyhow!(error)))?,
-                        source_schema_fingerprint,
-                        expected_result,
-                    }
-                } else {
-                    CompositionResolvedSource::InlineSql {
-                        source_id,
-                        request: serde_json::to_value(request)
-                            .map_err(|error| ApiError::from_core(anyhow!(error)))?,
-                        source_schema_fingerprint,
-                        form_bindings,
-                        expected_result,
-                    }
-                };
-                Ok(resolved_source)
-            }
+                schema_fingerprint: query.schema_fingerprint,
+                query_semantic_fingerprint: query.query_semantic_fingerprint,
+                scalar_cardinality,
+            })
         })
         .collect::<ApiResult<Vec<_>>>()?;
     let component_bindings = component_bindings
@@ -11975,9 +12001,7 @@ fn api_composition_sources_and_bindings(
                 ResolvedComponentKind::Tabular => CompositionResolvedComponentKind::Table,
                 ResolvedComponentKind::Text => CompositionResolvedComponentKind::Text,
             },
-            source_id: binding.source_id,
             variable_id: binding.variable_id,
-            result_property_key: binding.result_property_key,
             expected_result_type: binding
                 .expected_result_type
                 .map(api_composition_result_field_type),
@@ -11986,7 +12010,7 @@ fn api_composition_sources_and_bindings(
                 .map(api_composition_metric_presentation),
         })
         .collect();
-    Ok((sources, component_bindings))
+    Ok((queries, component_bindings))
 }
 
 async fn lint_composition(
@@ -14696,19 +14720,9 @@ mod authentication_regression_tests {
         assert!(!value.contains("spaces/"));
     }
 
-    const BASIC_COMPOSITION_TEST_YAML: &str = "format: ugoite.composition\nformat_version: 1\nkind: dashboard\nname: Monthly expenses\nspec:\n  variables: []\n  sources: []\n  components:\n    - id: note\n      kind: text\n      content:\n        kind: literal\n        text: Note\n      style: body\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: component\n            component: note\n";
+    const BASIC_COMPOSITION_TEST_YAML: &str = "format: ugoite.composition\nformat_version: 1\nkind: dashboard\nname: Monthly expenses\nspec:\n  variables: []\n  components:\n    - id: note\n      kind: text\n      content:\n        kind: literal\n        text: Note\n      style: body\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: component\n            component: note\n";
     const SQL_FIRST_COMPOSITION_TEST_YAML: &str =
         include_str!("../../ugoite-domain/tests/fixtures/composition/sql-first.ugcomp.yaml");
-
-    fn composition_result_schema_fingerprint(
-        columns: &[ugoite_domain::composition::CompositionResultColumn],
-    ) -> String {
-        use sha2::Digest as _;
-
-        hex::encode(sha2::Sha256::digest(
-            serde_json::to_vec(columns).expect("Composition result columns serialize"),
-        ))
-    }
 
     #[tokio::test]
     async fn composition_list_returns_bounded_acl_authorized_summary_pages() -> anyhow::Result<()> {
@@ -14734,7 +14748,6 @@ mod authentication_regression_tests {
             kind: CompositionKind::Dashboard,
             spec: CompositionSpec {
                 variables: Vec::new(),
-                sources: Vec::new(),
                 components: vec![CompositionComponent::Text {
                     id: "note".to_string(),
                     content: ugoite_domain::composition::CompositionTextContent::Literal {
@@ -15210,40 +15223,36 @@ name: Mobile save regression
 spec:
   variables:
     - id: month_start
-      type: date
+      kind: input
+      value_type: {{ scalar_type: date, nullable: false }}
       required: true
-      default: 2026-01-01
+      default: {{ kind: date, value: '2026-01-01' }}
     - id: month_end
-      type: date
+      kind: input
+      value_type: {{ scalar_type: date, nullable: false }}
       required: true
-      default: 2026-02-01
-  sources:
+      default: {{ kind: date, value: '2026-02-01' }}
     - id: studio_rows
-      kind: saved_sql
-      entry_id: "{saved_sql_id}"
-      revision_id: "{saved_sql_revision_id}"
-      expected_result: []
-      schema_fingerprint: ''
-      variables:
-        month_start:
-          variable: month_start
-        month_end:
-          variable: month_end
+      kind: query
+      returns: {{ kind: table, columns: [] }}
+      query:
+        kind: saved_sql
+        entry_id: "{saved_sql_id}"
+        revision_id: "{saved_sql_revision_id}"
+        arguments:
+          - {{ name: month_start, variable: month_start }}
+          - {{ name: month_end, variable: month_end }}
+        form_bindings: []
+        schema_fingerprint: ''
   components:
-    - id: total
-      kind: metric
-      source: studio_rows
-      column: total
     - id: rows
       kind: table
-      source: studio_rows
+      variable: studio_rows
   layout:
     kind: flow
     rows:
       - id: main
         items:
-          - kind: component
-            component: total
           - kind: component
             component: rows
 "#
@@ -15262,22 +15271,28 @@ spec:
         let canonical_yaml = body["canonical_yaml"].as_str().expect("canonical YAML");
         let document = ugoite_domain::composition::parse_composition_yaml(canonical_yaml)
             .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
-        let [ugoite_domain::composition::CompositionSource::SavedSql {
-            expected_result,
-            schema_fingerprint,
+        let Some(ugoite_domain::composition::VariableGraphNode {
+            kind: ugoite_domain::composition::VariableGraphNodeKind::Query { returns, query },
             ..
-        }] = document.spec.sources.as_slice()
+        }) = document
+            .spec
+            .variables
+            .iter()
+            .find(|node| node.id == "studio_rows")
         else {
-            anyhow::bail!("save should persist the pinned Saved SQL source");
+            anyhow::bail!("save should persist the pinned Saved SQL query variable");
+        };
+        let ugoite_domain::composition::VariableGraphResultType::Table { columns } = returns else {
+            anyhow::bail!("Saved SQL should remain a table result");
         };
         assert_eq!(
-            expected_result
+            columns
                 .iter()
                 .map(|column| column.name.as_str())
                 .collect::<Vec<_>>(),
             ["total", "quantity"]
         );
-        assert_eq!(schema_fingerprint.len(), 64);
+        assert_eq!(query.schema_fingerprint.len(), 64);
         Ok(())
     }
 
@@ -15873,7 +15888,6 @@ spec:
             kind: CompositionKind::Dashboard,
             spec: CompositionSpec {
                 variables: Vec::new(),
-                sources: Vec::new(),
                 components: vec![CompositionComponent::Text {
                     id: "note".to_string(),
                     content: ugoite_domain::composition::CompositionTextContent::Literal {
@@ -15998,8 +16012,10 @@ spec:
     async fn composition_resolve_conceals_denied_inline_sql_form() -> anyhow::Result<()> {
         use ugoite_domain::{
             composition::{
-                CompositionComponent, CompositionDocument, CompositionKind, CompositionSource,
-                CompositionSpec, DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow,
+                CompositionComponent, CompositionDocument, CompositionKind, CompositionSpec,
+                DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow, VariableGraphNode,
+                VariableGraphNodeKind, VariableGraphQuery, VariableGraphQueryDefinition,
+                VariableGraphResultType,
             },
             id::FieldId,
         };
@@ -16066,19 +16082,24 @@ spec:
             name: "Denied source".to_string(),
             kind: CompositionKind::Dashboard,
             spec: CompositionSpec {
-                variables: Vec::new(),
-                sources: vec![CompositionSource::InlineSql {
-                    id: "private-source-id".to_string(),
-                    name: "Private source".to_string(),
-                    sql: "SELECT \"field_101\" AS \"salary_amount\" FROM \"ResolveSourceForm\""
-                        .to_string(),
-                    form_bindings: Vec::new(),
-                    expected_result: Vec::new(),
-                    schema_fingerprint: String::new(),
+                variables: vec![VariableGraphNode {
+                    id: "private-query-id".to_string(),
+                    kind: VariableGraphNodeKind::Query {
+                        returns: VariableGraphResultType::Table { columns: Vec::new() },
+                        query: VariableGraphQuery {
+                            definition: VariableGraphQueryDefinition::InlineSql {
+                                sql: "SELECT \"field_101\" AS \"salary_amount\" FROM \"ResolveSourceForm\""
+                                    .to_string(),
+                            },
+                            arguments: Vec::new(),
+                            form_bindings: Vec::new(),
+                            schema_fingerprint: String::new(),
+                        },
+                    },
                 }],
                 components: vec![CompositionComponent::Table {
                     id: "rows".to_string(),
-                    source: "private-source-id".to_string(),
+                    variable: "private-query-id".to_string(),
                 }],
                 layout: DashboardFlowLayout {
                     kind: FlowLayoutKind::Flow,
@@ -16146,10 +16167,10 @@ spec:
             json!({
                 "ok": false,
                 "variable_definitions": [],
-                "diagnostics": [{"code": "source_unavailable"}]
+                "diagnostics": [{"code": "query_unavailable"}]
             })
         );
-        assert!(!body.to_string().contains("private-source-id"));
+        assert!(!body.to_string().contains("private-query-id"));
         assert!(!body.to_string().contains(&source_form_id.to_string()));
         assert!(!body.to_string().contains(source_field_label));
         Ok(())
@@ -16159,8 +16180,10 @@ spec:
     async fn composition_resolve_requires_exact_saved_sql_revision_and_conceals_denial(
     ) -> anyhow::Result<()> {
         use ugoite_domain::composition::{
-            CompositionComponent, CompositionDocument, CompositionKind, CompositionSource,
-            CompositionSpec, DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow, TextStyle,
+            CompositionComponent, CompositionDocument, CompositionKind, CompositionSpec,
+            DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow, TextStyle, VariableGraphNode,
+            VariableGraphNodeKind, VariableGraphQuery, VariableGraphQueryDefinition,
+            VariableGraphResultType, VariableGraphScalarDescriptor, VariableGraphScalarType,
         };
 
         let state = AppState::new_for_tests(format!(
@@ -16215,11 +16238,6 @@ spec:
             .to_string();
         let saved_sql_uuid = Uuid::parse_str(&saved_sql_id)?;
         let exact_revision_id = exact_revision.parse::<Uuid>()?;
-        let expected_result = vec![ugoite_domain::composition::CompositionResultColumn {
-            name: "value".to_string(),
-            result_type: ugoite_domain::composition::CompositionResultFieldType::Integer,
-        }];
-        let schema_fingerprint = composition_result_schema_fingerprint(&expected_result);
         let save_document =
             |name: &str, source_entry_id: Uuid, revision_id: Uuid| CompositionDocument {
                 format: ugoite_domain::composition::CompositionFormat::UgoiteComposition,
@@ -16227,14 +16245,32 @@ spec:
                 name: name.to_string(),
                 kind: CompositionKind::Dashboard,
                 spec: CompositionSpec {
-                    variables: Vec::new(),
-                    sources: vec![CompositionSource::SavedSql {
-                        id: "private-sql-source".to_string(),
-                        entry_id: ugoite_domain::id::EntryId::from_uuid(source_entry_id),
-                        revision_id: ugoite_domain::id::RevisionId::from_uuid(revision_id),
-                        expected_result: expected_result.clone(),
-                        schema_fingerprint: schema_fingerprint.clone(),
-                        variables: BTreeMap::new(),
+                    variables: vec![VariableGraphNode {
+                        id: "private-sql-query".to_string(),
+                        kind: VariableGraphNodeKind::Query {
+                            returns: VariableGraphResultType::Scalar {
+                                value_type: VariableGraphScalarDescriptor {
+                                    scalar_type: VariableGraphScalarType::Integer,
+                                    nullable: false,
+                                },
+                            },
+                            query: VariableGraphQuery {
+                                definition: VariableGraphQueryDefinition::SavedSql {
+                                    entry_id: Some(
+                                        ugoite_domain::id::EntryId::from_uuid(source_entry_id)
+                                            .to_string(),
+                                    ),
+                                    revision_id: Some(
+                                        ugoite_domain::id::RevisionId::from_uuid(revision_id)
+                                            .to_string(),
+                                    ),
+                                    column: Some("value".to_string()),
+                                },
+                                arguments: Vec::new(),
+                                form_bindings: Vec::new(),
+                                schema_fingerprint: String::new(),
+                            },
+                        },
                     }],
                     components: vec![CompositionComponent::Text {
                         id: "note".to_string(),
@@ -16310,7 +16346,7 @@ spec:
         assert_eq!(exact_status, StatusCode::OK);
         assert_eq!(exact_body["ok"], true);
         assert_eq!(
-            exact_body["plan"]["sources"][0]["request"]["saved_sql"],
+            exact_body["plan"]["queries"][0]["request"]["saved_sql"],
             json!({"id": saved_sql_id, "revision_id": exact_revision})
         );
         Authorizer::new(state.service.operator().clone())
@@ -16338,11 +16374,11 @@ spec:
         let expected = json!({
             "ok": false,
             "variable_definitions": [],
-            "diagnostics": [{"code": "source_unavailable"}]
+            "diagnostics": [{"code": "query_unavailable"}]
         });
         assert_eq!(denied_status, StatusCode::OK);
         assert_eq!(denied_body, expected);
-        assert!(!denied_body.to_string().contains("private-sql-source"));
+        assert!(!denied_body.to_string().contains("private-sql-query"));
         assert!(!denied_body.to_string().contains(&saved_sql_id));
         Ok(())
     }
@@ -16352,10 +16388,10 @@ spec:
     ) -> anyhow::Result<()> {
         use ugoite_domain::composition::{
             CompositionComponent, CompositionDocument, CompositionFormat, CompositionKind,
-            CompositionMetricPresentation, CompositionResultColumn, CompositionResultFieldType,
-            CompositionSource, CompositionSpec, CompositionValue, CompositionVariable,
-            CompositionVariableReference, CompositionVariableType, DashboardFlowLayout, FlowItem,
-            FlowLayoutKind, FlowRow,
+            CompositionMetricPresentation, CompositionSpec, DashboardFlowLayout, FlowItem,
+            FlowLayoutKind, FlowRow, VariableGraphArgumentBinding, VariableGraphNode,
+            VariableGraphNodeKind, VariableGraphQuery, VariableGraphQueryDefinition,
+            VariableGraphResultType, VariableGraphScalarDescriptor, VariableGraphScalarType,
         };
         use ugoite_domain::id::{EntryId, RevisionId};
 
@@ -16412,68 +16448,78 @@ spec:
         )?);
         let sql_entry_id = EntryId::from_uuid(Uuid::parse_str(&sql_id)?);
 
-        let metric_document = |name: &str| {
-            let expected_result = vec![CompositionResultColumn {
-                name: "total".to_string(),
-                result_type: CompositionResultFieldType::Integer,
-            }];
-            CompositionDocument {
-                format: CompositionFormat::UgoiteComposition,
-                format_version: 1,
-                name: name.to_string(),
-                kind: CompositionKind::Dashboard,
-                spec: CompositionSpec {
-                    variables: vec![CompositionVariable {
+        let metric_document = |name: &str| CompositionDocument {
+            format: CompositionFormat::UgoiteComposition,
+            format_version: 1,
+            name: name.to_string(),
+            kind: CompositionKind::Dashboard,
+            spec: CompositionSpec {
+                variables: vec![
+                    VariableGraphNode {
                         id: "minimum".to_string(),
-                        variable_type: CompositionVariableType::Integer,
-                        required: true,
-                        default: None,
-                        format: None,
-                    }],
-                    sources: vec![CompositionSource::SavedSql {
-                        id: "metric_sql".to_string(),
-                        entry_id: sql_entry_id,
-                        revision_id: sql_revision_id,
-                        expected_result: expected_result.clone(),
-                        schema_fingerprint: composition_result_schema_fingerprint(&expected_result),
-                        variables: BTreeMap::from([(
-                            "minimum".to_string(),
-                            CompositionValue::Variable(CompositionVariableReference {
-                                variable: "minimum".to_string(),
-                            }),
-                        )]),
-                    }],
-                    components: vec![
-                        CompositionComponent::Input {
-                            id: "minimum_input".to_string(),
-                            variable: "minimum".to_string(),
+                        kind: VariableGraphNodeKind::Input {
+                            value_type: VariableGraphScalarDescriptor {
+                                scalar_type: VariableGraphScalarType::Integer,
+                                nullable: false,
+                            },
+                            required: true,
+                            default: None,
                         },
-                        CompositionComponent::Metric {
-                            id: "parameter_total".to_string(),
-                            source: "metric_sql".to_string(),
-                            column: "total".to_string(),
-                            presentation: Some(CompositionMetricPresentation::Number {
-                                unit: Some("USD".to_string()),
-                                fraction_digits: Some(2),
-                            }),
-                        },
-                    ],
-                    layout: DashboardFlowLayout {
-                        kind: FlowLayoutKind::Flow,
-                        rows: vec![FlowRow {
-                            id: "main".to_string(),
-                            items: vec![
-                                FlowItem::Component {
-                                    component: "minimum_input".to_string(),
-                                },
-                                FlowItem::Component {
-                                    component: "parameter_total".to_string(),
-                                },
-                            ],
-                        }],
                     },
+                    VariableGraphNode {
+                        id: "metric_sql".to_string(),
+                        kind: VariableGraphNodeKind::Query {
+                            returns: VariableGraphResultType::Scalar {
+                                value_type: VariableGraphScalarDescriptor {
+                                    scalar_type: VariableGraphScalarType::Integer,
+                                    nullable: true,
+                                },
+                            },
+                            query: VariableGraphQuery {
+                                definition: VariableGraphQueryDefinition::SavedSql {
+                                    entry_id: Some(sql_entry_id.to_string()),
+                                    revision_id: Some(sql_revision_id.to_string()),
+                                    column: Some("total".to_string()),
+                                },
+                                arguments: vec![VariableGraphArgumentBinding {
+                                    name: "minimum".to_string(),
+                                    variable: "minimum".to_string(),
+                                }],
+                                form_bindings: Vec::new(),
+                                schema_fingerprint: String::new(),
+                            },
+                        },
+                    },
+                ],
+                components: vec![
+                    CompositionComponent::Input {
+                        id: "minimum_input".to_string(),
+                        variable: "minimum".to_string(),
+                    },
+                    CompositionComponent::Metric {
+                        id: "parameter_total".to_string(),
+                        variable: "metric_sql".to_string(),
+                        presentation: Some(CompositionMetricPresentation::Number {
+                            unit: Some("USD".to_string()),
+                            fraction_digits: Some(2),
+                        }),
+                    },
+                ],
+                layout: DashboardFlowLayout {
+                    kind: FlowLayoutKind::Flow,
+                    rows: vec![FlowRow {
+                        id: "main".to_string(),
+                        items: vec![
+                            FlowItem::Component {
+                                component: "minimum_input".to_string(),
+                            },
+                            FlowItem::Component {
+                                component: "parameter_total".to_string(),
+                            },
+                        ],
+                    }],
                 },
-            }
+            },
         };
         let original = state
             .service
@@ -16502,7 +16548,6 @@ spec:
                         kind: CompositionKind::Dashboard,
                         spec: CompositionSpec {
                             variables: Vec::new(),
-                            sources: Vec::new(),
                             components: vec![CompositionComponent::Text {
                                 id: "note".to_string(),
                                 content:
@@ -16688,7 +16733,7 @@ spec:
         assert_eq!(denied_body["ok"], false);
         assert_eq!(
             denied_body["diagnostics"],
-            json!([{"code": "source_unavailable"}])
+            json!([{"code": "query_unavailable"}])
         );
         assert_eq!(denied_body["result"], Value::Null);
         assert!(!denied_body.to_string().contains(&sql_id));
@@ -16700,10 +16745,10 @@ spec:
     ) -> anyhow::Result<()> {
         use ugoite_domain::composition::{
             canonicalize_composition, CompositionComponent, CompositionDocument, CompositionFormat,
-            CompositionKind, CompositionResultColumn, CompositionResultFieldType,
-            CompositionSource, CompositionSpec, CompositionValue, CompositionVariable,
-            CompositionVariableReference, CompositionVariableType, DashboardFlowLayout, FlowItem,
-            FlowLayoutKind, FlowRow,
+            CompositionKind, CompositionSpec, DashboardFlowLayout, FlowItem, FlowLayoutKind,
+            FlowRow, VariableGraphArgumentBinding, VariableGraphLiteral, VariableGraphNode,
+            VariableGraphNodeKind, VariableGraphQuery, VariableGraphQueryDefinition,
+            VariableGraphResultType, VariableGraphScalarDescriptor, VariableGraphScalarType,
         };
         use ugoite_domain::id::{EntryId, RevisionId};
 
@@ -16759,54 +16804,62 @@ spec:
             kind: CompositionKind::Dashboard,
             spec: CompositionSpec {
                 variables: vec![
-                    CompositionVariable {
+                    VariableGraphNode {
                         id: "optional_value".to_string(),
-                        variable_type: CompositionVariableType::Integer,
-                        required: false,
-                        default: Some(serde_json::from_value(json!(11))?),
-                        format: None,
+                        kind: VariableGraphNodeKind::Input {
+                            value_type: VariableGraphScalarDescriptor {
+                                scalar_type: VariableGraphScalarType::Integer,
+                                nullable: false,
+                            },
+                            required: false,
+                            default: Some(VariableGraphLiteral::Integer(11)),
+                        },
                     },
-                    CompositionVariable {
+                    VariableGraphNode {
                         id: "required_value".to_string(),
-                        variable_type: CompositionVariableType::Integer,
-                        required: true,
-                        default: Some(serde_json::from_value(json!(13))?),
-                        format: None,
+                        kind: VariableGraphNodeKind::Input {
+                            value_type: VariableGraphScalarDescriptor {
+                                scalar_type: VariableGraphScalarType::Integer,
+                                nullable: false,
+                            },
+                            required: true,
+                            default: Some(VariableGraphLiteral::Integer(13)),
+                        },
+                    },
+                    VariableGraphNode {
+                        id: "metric_source".to_string(),
+                        kind: VariableGraphNodeKind::Query {
+                            returns: VariableGraphResultType::Scalar {
+                                value_type: VariableGraphScalarDescriptor {
+                                    scalar_type: VariableGraphScalarType::Integer,
+                                    nullable: true,
+                                },
+                            },
+                            query: VariableGraphQuery {
+                                definition: VariableGraphQueryDefinition::SavedSql {
+                                    entry_id: Some(sql_entry_id.to_string()),
+                                    revision_id: Some(sql_revision_id.to_string()),
+                                    column: Some("total".to_string()),
+                                },
+                                arguments: vec![
+                                    VariableGraphArgumentBinding {
+                                        name: "optional_value".to_string(),
+                                        variable: "optional_value".to_string(),
+                                    },
+                                    VariableGraphArgumentBinding {
+                                        name: "required_value".to_string(),
+                                        variable: "required_value".to_string(),
+                                    },
+                                ],
+                                form_bindings: Vec::new(),
+                                schema_fingerprint: String::new(),
+                            },
+                        },
                     },
                 ],
-                sources: vec![CompositionSource::SavedSql {
-                    id: "metric_source".to_string(),
-                    entry_id: sql_entry_id,
-                    revision_id: sql_revision_id,
-                    expected_result: vec![CompositionResultColumn {
-                        name: "total".to_string(),
-                        result_type: CompositionResultFieldType::Integer,
-                    }],
-                    schema_fingerprint: composition_result_schema_fingerprint(&[
-                        CompositionResultColumn {
-                            name: "total".to_string(),
-                            result_type: CompositionResultFieldType::Integer,
-                        },
-                    ]),
-                    variables: BTreeMap::from([
-                        (
-                            "optional_value".to_string(),
-                            CompositionValue::Variable(CompositionVariableReference {
-                                variable: "optional_value".to_string(),
-                            }),
-                        ),
-                        (
-                            "required_value".to_string(),
-                            CompositionValue::Variable(CompositionVariableReference {
-                                variable: "required_value".to_string(),
-                            }),
-                        ),
-                    ]),
-                }],
                 components: vec![CompositionComponent::Metric {
                     id: "total_metric".to_string(),
-                    source: "metric_source".to_string(),
-                    column: "total".to_string(),
+                    variable: "metric_source".to_string(),
                     presentation: None,
                 }],
                 layout: DashboardFlowLayout {
@@ -16964,10 +17017,11 @@ spec:
     async fn composition_resolve_uses_exact_requested_revision_with_newer_revision_available(
     ) -> anyhow::Result<()> {
         use ugoite_domain::composition::{
-            CompositionComponent, CompositionDocument, CompositionKind, CompositionResultColumn,
-            CompositionResultFieldType, CompositionSource, CompositionSpec, CompositionVariable,
-            CompositionVariableType, DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow,
-            TextStyle,
+            CompositionComponent, CompositionDocument, CompositionKind, CompositionSpec,
+            DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow, TextStyle,
+            VariableGraphArgumentBinding, VariableGraphNode, VariableGraphNodeKind,
+            VariableGraphQuery, VariableGraphQueryDefinition, VariableGraphResultType,
+            VariableGraphScalarDescriptor, VariableGraphScalarType,
         };
 
         let state = AppState::new_for_tests(format!(
@@ -17018,59 +17072,69 @@ spec:
             )
             .await?;
 
-        let document =
-            |name: &str, variables: Vec<CompositionVariable>, sources: Vec<CompositionSource>| {
-                let mut components = vec![CompositionComponent::Text {
-                    id: "note".to_string(),
-                    content: ugoite_domain::composition::CompositionTextContent::Literal {
-                        text: "Note".to_string(),
+        let document = |name: &str, variables: Vec<VariableGraphNode>| {
+            let mut components = vec![CompositionComponent::Text {
+                id: "note".to_string(),
+                content: ugoite_domain::composition::CompositionTextContent::Literal {
+                    text: "Note".to_string(),
+                },
+                style: TextStyle::Body,
+            }];
+            let mut items = vec![FlowItem::Component {
+                component: "note".to_string(),
+            }];
+            for variable in variables
+                .iter()
+                .filter(|variable| matches!(variable.kind, VariableGraphNodeKind::Input { .. }))
+            {
+                let component_id = format!("{}_input", variable.id);
+                components.push(CompositionComponent::Input {
+                    id: component_id.clone(),
+                    variable: variable.id.clone(),
+                });
+                items.push(FlowItem::Component {
+                    component: component_id,
+                });
+            }
+            CompositionDocument {
+                format: ugoite_domain::composition::CompositionFormat::UgoiteComposition,
+                format_version: 1,
+                name: name.to_string(),
+                kind: CompositionKind::Dashboard,
+                spec: CompositionSpec {
+                    variables,
+                    components,
+                    layout: DashboardFlowLayout {
+                        kind: FlowLayoutKind::Flow,
+                        rows: vec![FlowRow {
+                            id: "main".to_string(),
+                            items,
+                        }],
                     },
-                    style: TextStyle::Body,
-                }];
-                let mut items = vec![FlowItem::Component {
-                    component: "note".to_string(),
-                }];
-                if variables.iter().any(|variable| variable.id == "month") {
-                    components.push(CompositionComponent::Input {
-                        id: "month_input".to_string(),
-                        variable: "month".to_string(),
-                    });
-                    items.push(FlowItem::Component {
-                        component: "month_input".to_string(),
-                    });
-                }
-                CompositionDocument {
-                    format: ugoite_domain::composition::CompositionFormat::UgoiteComposition,
-                    format_version: 1,
-                    name: name.to_string(),
-                    kind: CompositionKind::Dashboard,
-                    spec: CompositionSpec {
-                        variables,
-                        sources,
-                        components,
-                        layout: DashboardFlowLayout {
-                            kind: FlowLayoutKind::Flow,
-                            rows: vec![FlowRow {
-                                id: "main".to_string(),
-                                items,
-                            }],
-                        },
-                    },
-                }
-            };
-        let month_parameter = || CompositionVariable {
-            id: "month".to_string(),
-            variable_type: CompositionVariableType::String,
-            required: true,
-            default: None,
-            format: None,
+                },
+            }
         };
-        let unlabelled_parameter = || CompositionVariable {
+        let month_parameter = || VariableGraphNode {
+            id: "month".to_string(),
+            kind: VariableGraphNodeKind::Input {
+                value_type: VariableGraphScalarDescriptor {
+                    scalar_type: VariableGraphScalarType::String,
+                    nullable: false,
+                },
+                required: true,
+                default: None,
+            },
+        };
+        let unlabelled_parameter = || VariableGraphNode {
             id: "region".to_string(),
-            variable_type: CompositionVariableType::String,
-            required: false,
-            default: None,
-            format: None,
+            kind: VariableGraphNodeKind::Input {
+                value_type: VariableGraphScalarDescriptor {
+                    scalar_type: VariableGraphScalarType::String,
+                    nullable: false,
+                },
+                required: false,
+                default: None,
+            },
         };
         let metric_sql = state
             .service
@@ -17087,30 +17151,52 @@ spec:
                 "owner",
             )
             .await?;
-        let older_metric_result = vec![CompositionResultColumn {
-            name: "total_amount".to_string(),
-            result_type: CompositionResultFieldType::Integer,
-        }];
-        let older_metric_source = CompositionSource::SavedSql {
+        let older_metric_source = VariableGraphNode {
             id: "older_summary".to_string(),
-            entry_id: serde_json::from_value(metric_sql["id"].clone())?,
-            revision_id: serde_json::from_value(metric_sql["revision_id"].clone())?,
-            expected_result: older_metric_result.clone(),
-            schema_fingerprint: composition_result_schema_fingerprint(&older_metric_result),
-            variables: BTreeMap::new(),
+            kind: VariableGraphNodeKind::Query {
+                returns: VariableGraphResultType::Scalar {
+                    value_type: VariableGraphScalarDescriptor {
+                        scalar_type: VariableGraphScalarType::Integer,
+                        nullable: false,
+                    },
+                },
+                query: VariableGraphQuery {
+                    definition: VariableGraphQueryDefinition::SavedSql {
+                        entry_id: metric_sql["id"].as_str().map(str::to_owned),
+                        revision_id: metric_sql["revision_id"].as_str().map(str::to_owned),
+                        column: Some("total_amount".to_string()),
+                    },
+                    arguments: Vec::new(),
+                    form_bindings: Vec::new(),
+                    schema_fingerprint: String::new(),
+                },
+            },
         };
-        let older_source = CompositionSource::InlineSql {
+        let older_source = VariableGraphNode {
             id: "older_entries".to_string(),
-            name: "Older entries".to_string(),
-            sql: "SELECT \"field_100\" AS \"month\", \"field_101\" AS \"total_amount\" FROM \"ResolveExactRevisionSource\" WHERE \"field_100\" = $month ORDER BY \"_ugoite_id\"".to_string(),
-            form_bindings: Vec::new(),
-            expected_result: Vec::new(),
-            schema_fingerprint: String::new(),
+            kind: VariableGraphNodeKind::Query {
+                returns: VariableGraphResultType::Table { columns: Vec::new() },
+                query: VariableGraphQuery {
+                    definition: VariableGraphQueryDefinition::InlineSql {
+                        sql: "SELECT \"field_100\" AS \"month\", \"field_101\" AS \"total_amount\" FROM \"ResolveExactRevisionSource\" WHERE \"field_100\" = $month ORDER BY \"_ugoite_id\"".to_string(),
+                    },
+                    arguments: vec![VariableGraphArgumentBinding {
+                        name: "month".to_string(),
+                        variable: "month".to_string(),
+                    }],
+                    form_bindings: Vec::new(),
+                    schema_fingerprint: String::new(),
+                },
+            },
         };
         let mut older_document = document(
             "Older exact revision",
-            vec![month_parameter(), unlabelled_parameter()],
-            vec![older_source, older_metric_source],
+            vec![
+                month_parameter(),
+                unlabelled_parameter(),
+                older_metric_source,
+                older_source,
+            ],
         );
         older_document.spec.components = vec![
             CompositionComponent::Input {
@@ -17119,13 +17205,12 @@ spec:
             },
             CompositionComponent::Metric {
                 id: "monthly_total".to_string(),
-                source: "older_summary".to_string(),
-                column: "total_amount".to_string(),
+                variable: "older_summary".to_string(),
                 presentation: None,
             },
             CompositionComponent::Table {
                 id: "rows".to_string(),
-                source: "older_entries".to_string(),
+                variable: "older_entries".to_string(),
             },
         ];
         older_document.spec.layout = DashboardFlowLayout {
@@ -17165,7 +17250,7 @@ spec:
                 ugoite_iceberg::composition::CompositionSaveRequest {
                     entry_id: Some(older.entry_id),
                     base_revision_id: Some(older.revision_id),
-                    document: document("Newer latest revision", Vec::new(), Vec::new()),
+                    document: document("Newer latest revision", Vec::new()),
                 },
                 &principal_id.to_string(),
                 &[principal_id],
@@ -17199,8 +17284,8 @@ spec:
         assert_eq!(
             missing_variable_body["variable_definitions"],
             json!([
-                {"id":"month", "type":"string", "required":true},
-                {"id":"region", "type":"string", "required":false}
+                {"id":"month", "value_type":{"scalar_type":"string","nullable":false}, "required":true},
+                {"id":"region", "value_type":{"scalar_type":"string","nullable":false}, "required":false}
             ])
         );
         assert_eq!(
@@ -17218,8 +17303,8 @@ spec:
         assert_eq!(
             older_body["variable_definitions"],
             json!([
-                {"id":"month", "type":"string", "required":true},
-                {"id":"region", "type":"string", "required":false}
+                {"id":"month", "value_type":{"scalar_type":"string","nullable":false}, "required":true},
+                {"id":"region", "value_type":{"scalar_type":"string","nullable":false}, "required":false}
             ])
         );
         assert_eq!(
@@ -17230,10 +17315,6 @@ spec:
             })
         );
         assert_eq!(
-            older_body["plan"]["sources"][0]["source_id"],
-            json!("older_entries")
-        );
-        assert_eq!(
             older_body["plan"]["component_bindings"],
             json!([
                 {
@@ -17241,12 +17322,11 @@ spec:
                     "kind":"input",
                     "variable_id":"month"
                 },
-                {"component_id":"rows", "kind":"table", "source_id":"older_entries"},
+                {"component_id":"rows", "kind":"table", "variable_id":"older_entries"},
                 {
                     "component_id":"monthly_total",
                     "kind":"metric",
-                    "source_id":"older_summary",
-                    "result_property_key":"total_amount",
+                    "variable_id":"older_summary",
                     "expected_result_type":"integer"
                 }
             ])
@@ -17256,20 +17336,35 @@ spec:
                 ["input_component_ids"],
             json!(["month_input"])
         );
-        assert_eq!(older_body["plan"]["sources"][0]["kind"], "inline_sql");
+        let inline_query = older_body["plan"]["queries"]
+            .as_array()
+            .and_then(|queries| {
+                queries
+                    .iter()
+                    .find(|query| query["variable_id"] == "older_entries")
+            })
+            .context("resolved plan should include its inline query variable")?;
         assert_eq!(
-            older_body["plan"]["sources"][0]["request"]["parameters"],
+            inline_query["request"]["parameters"],
             json!({"month": "October"})
         );
-        assert_eq!(older_body["plan"]["sources"][0]["request"]["limit"], 100);
-        assert!(older_body["plan"]["sources"][0]["request"]
-            .get("saved_sql")
-            .is_none());
+        assert_eq!(inline_query["request"]["limit"], 100);
+        assert!(inline_query["request"].get("saved_sql").is_none());
         assert_eq!(
-            older_body["plan"]["sources"][0]["source_schema_fingerprint"]
-                .as_str()
-                .map(str::len),
+            inline_query["schema_fingerprint"].as_str().map(str::len),
             Some(64)
+        );
+        let saved_query = older_body["plan"]["queries"]
+            .as_array()
+            .and_then(|queries| {
+                queries
+                    .iter()
+                    .find(|query| query["variable_id"] == "older_summary")
+            })
+            .context("resolved plan should include its pinned Saved SQL query variable")?;
+        assert_eq!(
+            saved_query["request"]["saved_sql"],
+            json!({"id": metric_sql["id"], "revision_id": metric_sql["revision_id"]})
         );
 
         let (latest_status, latest_body) = route_json(
@@ -17304,10 +17399,10 @@ spec:
             DomainCode::VariableUnknown,
             DomainCode::VariableMissing,
             DomainCode::VariableTypeMismatch,
-            DomainCode::SourceUnavailable,
+            DomainCode::QueryUnavailable,
             DomainCode::MissingField,
             DomainCode::FieldTypeChanged,
-            DomainCode::SourceSchemaChanged,
+            DomainCode::QuerySchemaChanged,
             DomainCode::MetricResultNotScalar,
             DomainCode::MetricResultTypeMismatch,
             DomainCode::MetricScalarNoRows,

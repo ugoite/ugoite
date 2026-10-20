@@ -1470,10 +1470,10 @@ fn openapi_documents_composition_lint_request_response_and_diagnostics() {
             "variable_unknown",
             "variable_missing",
             "variable_type_mismatch",
-            "source_unavailable",
+            "query_unavailable",
             "missing_field",
             "field_type_changed",
-            "source_schema_changed",
+            "query_schema_changed",
             "metric_result_not_scalar",
             "metric_result_type_mismatch",
             "metric_scalar_no_rows",
@@ -1656,8 +1656,8 @@ fn openapi_documents_composition_preview_without_publication() {
         .is_some());
     let plan = &snapshot["components"]["schemas"]["CompositionPreviewPlan"];
     assert_eq!(
-        plan["properties"]["sources"]["items"]["$ref"],
-        "#/components/schemas/CompositionResolvedSource"
+        plan["properties"]["queries"]["items"]["$ref"],
+        "#/components/schemas/CompositionResolvedQuery"
     );
     assert_eq!(
         plan["properties"]["component_bindings"]["items"]["$ref"],
@@ -1677,10 +1677,10 @@ fn openapi_documents_composition_preview_without_publication() {
             ["variable_consumers"]["additionalProperties"]["$ref"],
         "#/components/schemas/CompositionVariableConsumers"
     );
-    assert_eq!(
+    assert!(
         snapshot["components"]["schemas"]["CompositionDependencyIndex"]["properties"]
-            ["source_consumers"]["additionalProperties"]["$ref"],
-        "#/components/schemas/CompositionSourceConsumers"
+            .get("source_consumers")
+            .is_none()
     );
     assert!(plan["required"]
         .as_array()
@@ -1880,32 +1880,31 @@ fn openapi_documents_composition_resolve_metric_result_type() {
 }
 
 #[test]
-fn openapi_documents_sql_only_composition_sources_without_display_labels() {
+fn openapi_documents_graph_query_variables_and_variable_only_component_bindings() {
     let snapshot = ugoite_server::openapi_snapshot();
-    let sources = snapshot["components"]["schemas"]["CompositionResolvedSource"]["oneOf"]
+    let queries = &snapshot["components"]["schemas"]["CompositionResolvedQuery"];
+    assert!(queries["required"]
         .as_array()
-        .expect("resolved SQL sources");
-    assert_eq!(sources.len(), 2);
-    assert_eq!(sources[0]["properties"]["kind"]["const"], "inline_sql");
-    assert_eq!(sources[1]["properties"]["kind"]["const"], "saved_sql");
-    assert!(sources[0]["required"]
-        .as_array()
-        .expect("inline SQL source fields")
-        .contains(&serde_json::json!("form_bindings")));
+        .expect("resolved query fields")
+        .contains(&serde_json::json!("variable_id")));
     assert_eq!(
-        sources[0]["properties"]["form_bindings"]["items"]["$ref"],
+        queries["properties"]["form_bindings"]["items"]["$ref"],
         "#/components/schemas/CompositionResolvedFormBinding"
     );
-    for source in sources {
-        assert!(source["required"]
-            .as_array()
-            .expect("resolved SQL source fields")
-            .contains(&serde_json::json!("expected_result")));
-        assert_eq!(
-            source["properties"]["expected_result"]["items"]["$ref"],
-            "#/components/schemas/CompositionResolvedResultColumn"
-        );
-    }
+    assert_eq!(
+        queries["properties"]["returns"]["$ref"],
+        "#/components/schemas/CompositionQueryResultType"
+    );
+    assert_eq!(
+        queries["properties"]["result_columns"]["items"]["$ref"],
+        "#/components/schemas/CompositionResolvedResultColumn"
+    );
+    assert!(snapshot["components"]["schemas"]
+        .get("CompositionResolvedSource")
+        .is_none());
+    assert!(snapshot["components"]["schemas"]
+        .get("CompositionSourceConsumers")
+        .is_none());
     assert_eq!(
         snapshot["components"]["schemas"]["CompositionResolvedFormBinding"]["additionalProperties"],
         false
@@ -1916,20 +1915,23 @@ fn openapi_documents_sql_only_composition_sources_without_display_labels() {
         "uuid"
     );
     assert_eq!(
-        snapshot["components"]["schemas"]["CompositionResolvedResultColumn"]["properties"]["type"]
-            ["$ref"],
-        "#/components/schemas/CompositionResultFieldType"
+        snapshot["components"]["schemas"]["CompositionResolvedResultColumn"]["properties"]
+            ["value_type"]["$ref"],
+        "#/components/schemas/CompositionScalarDescriptor"
     );
-    for source in sources {
-        let request_description = source["properties"]["request"]["description"]
-            .as_str()
-            .expect("SQL request description");
-        assert!(request_description.contains("SQL query request"));
-    }
+    assert!(queries["properties"]["request"]["description"]
+        .as_str()
+        .unwrap()
+        .contains("stateless SQL query request"));
     let binding = &snapshot["components"]["schemas"]["CompositionResolvedComponentBinding"];
-    assert!(binding["properties"].get("label").is_none());
+    assert!(binding["properties"].get("source_id").is_none());
+    assert!(binding["properties"].get("result_property_key").is_none());
     let variable = &snapshot["components"]["schemas"]["CompositionVariableDefinition"];
-    assert!(variable["properties"].get("label").is_none());
+    assert_eq!(
+        variable["properties"]["value_type"]["$ref"],
+        "#/components/schemas/CompositionScalarDescriptor"
+    );
+    assert!(variable["properties"].get("type").is_none());
 }
 
 #[test]

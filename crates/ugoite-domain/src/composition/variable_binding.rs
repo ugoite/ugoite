@@ -344,7 +344,7 @@ mod tests {
     use super::*;
     use crate::composition::variable_graph::{
         VariableGraphArgumentBinding, VariableGraphColumn, VariableGraphLiteral, VariableGraphNode,
-        VariableGraphQueryDefinition, VariableGraphScalarDescriptor,
+        VariableGraphQuery, VariableGraphQueryDefinition, VariableGraphScalarDescriptor,
     };
     use serde_json::json;
 
@@ -392,10 +392,14 @@ mod tests {
                         value_type: scalar(VariableGraphScalarType::Integer),
                     }],
                 },
-                query: VariableGraphQueryDefinition::InlineSql {
-                    sql: "SELECT 1 AS id".to_owned(),
+                query: VariableGraphQuery {
+                    definition: VariableGraphQueryDefinition::InlineSql {
+                        sql: "SELECT 1 AS id".to_owned(),
+                    },
+                    arguments: Vec::<VariableGraphArgumentBinding>::new(),
+                    form_bindings: Vec::new(),
+                    schema_fingerprint: String::new(),
                 },
-                arguments: Vec::<VariableGraphArgumentBinding>::new(),
             },
         }
     }

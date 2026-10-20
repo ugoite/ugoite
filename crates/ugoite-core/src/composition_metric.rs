@@ -153,11 +153,6 @@ pub fn evaluate_sql_metric_probe(
     let expected_type = binding
         .expected_result_type
         .ok_or_else(|| diagnostic(CompositionDiagnosticCode::InvalidComposition))?;
-    let column_name = binding
-        .result_property_key
-        .as_deref()
-        .ok_or_else(|| diagnostic(CompositionDiagnosticCode::InvalidComposition))?;
-
     if probe.rows.is_empty() {
         return Err(diagnostic(CompositionDiagnosticCode::MetricScalarNoRows));
     }
@@ -167,37 +162,11 @@ pub fn evaluate_sql_metric_probe(
         ));
     }
 
-    let column_count = probe
-        .columns
-        .iter()
-        .filter(|column| column.as_str() == column_name)
-        .count();
-    if column_count == 0 {
-        return Err(diagnostic(
-            CompositionDiagnosticCode::MetricResultColumnMissing,
-        ));
+    if probe.columns.len() != 1 || probe.result_schema.len() != 1 {
+        return Err(diagnostic(CompositionDiagnosticCode::InvalidComposition));
     }
-    if column_count > 1 {
-        return Err(diagnostic(
-            CompositionDiagnosticCode::MetricResultColumnAmbiguous,
-        ));
-    }
-
-    let schema_columns = probe
-        .result_schema
-        .iter()
-        .filter(|column| column.name == column_name)
-        .collect::<Vec<_>>();
-    let Some(schema_column) = schema_columns.first() else {
-        return Err(diagnostic(
-            CompositionDiagnosticCode::MetricResultColumnMissing,
-        ));
-    };
-    if schema_columns.len() > 1 {
-        return Err(diagnostic(
-            CompositionDiagnosticCode::MetricResultColumnAmbiguous,
-        ));
-    }
+    let column_name = &probe.columns[0];
+    let schema_column = &probe.result_schema[0];
     if schema_column.column_type.as_str() != expected_type.as_str() {
         return Err(diagnostic(
             CompositionDiagnosticCode::MetricResultTypeMismatch,
@@ -230,9 +199,7 @@ mod tests {
         ResolvedComponentBinding {
             component_id: "total".to_owned(),
             kind: ResolvedComponentKind::Metric,
-            source_id: Some("monthly_sql".to_owned()),
-            variable_id: None,
-            result_property_key: Some("total".to_owned()),
+            variable_id: Some("total".to_owned()),
             expected_result_type: Some(result_type),
             presentation: None,
         }
@@ -257,7 +224,7 @@ mod tests {
     fn sql_scalar_probe_returns_one_typed_column_from_one_row() {
         let result = evaluate_sql_metric_probe(
             &binding(CompositionResultFieldType::Integer),
-            &probe(vec![json!({"total": 42, "other": 9})], &["total", "other"]),
+            &probe(vec![json!({"total": 42})], &["total"]),
         )
         .unwrap();
         assert_eq!(result, json!("42"));

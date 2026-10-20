@@ -12,10 +12,11 @@ use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use ugoite_core::composition::CompositionRevisionRef;
 use ugoite_domain::composition::{
-    canonicalize_composition, CompositionComponent, CompositionDocument, CompositionFormBinding,
-    CompositionFormat, CompositionKind, CompositionSource, CompositionSpec, CompositionValue,
-    CompositionVariable, CompositionVariableReference, CompositionVariableType,
-    DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow,
+    canonicalize_composition, CompositionComponent, CompositionDocument, CompositionFormat,
+    CompositionKind, CompositionSpec, DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow,
+    VariableGraphArgumentBinding, VariableGraphNode, VariableGraphNodeKind, VariableGraphQuery,
+    VariableGraphQueryDefinition, VariableGraphResultType, VariableGraphScalarDescriptor,
+    VariableGraphScalarType,
 };
 use ugoite_domain::form::{sql_column_name, sql_relation_name};
 use ugoite_domain::id::{EntryId, FieldId, FormId, RevisionId};
@@ -68,21 +69,26 @@ async fn setup_preview_space() -> Result<(UgoiteService, String, CompositionDocu
         kind: CompositionKind::Dashboard,
         name: "Preview draft".to_string(),
         spec: CompositionSpec {
-            variables: Vec::new(),
-            sources: vec![CompositionSource::InlineSql {
+            variables: vec![VariableGraphNode {
                 id: "source".to_string(),
-                name: "Preview rows".to_string(),
-                sql: format!(
-                    "SELECT \"{}\" FROM \"{form_name}\" ORDER BY \"_ugoite_updated_at\" DESC, \"_ugoite_id\"",
-                    sql_column_name(field_id)
-                ),
-                form_bindings: Vec::new(),
-                expected_result: Vec::new(),
-                schema_fingerprint: String::new(),
+                kind: VariableGraphNodeKind::Query {
+                    returns: VariableGraphResultType::Table { columns: Vec::new() },
+                    query: VariableGraphQuery {
+                        definition: VariableGraphQueryDefinition::InlineSql {
+                            sql: format!(
+                                "SELECT \"{}\" AS title FROM \"{form_name}\" ORDER BY \"_ugoite_updated_at\" DESC, \"_ugoite_id\"",
+                                sql_column_name(field_id)
+                            ),
+                        },
+                        arguments: Vec::new(),
+                        form_bindings: Vec::new(),
+                        schema_fingerprint: String::new(),
+                    },
+                },
             }],
             components: vec![CompositionComponent::Table {
                 id: "table".to_string(),
-                source: "source".to_string(),
+                variable: "source".to_string(),
             }],
             layout: DashboardFlowLayout {
                 kind: FlowLayoutKind::Flow,
@@ -136,22 +142,18 @@ async fn draft_preview_resolves_without_publication() -> Result<()> {
         .is_some_and(|definitions| definitions.is_empty()));
     let plan = preview.plan.context("preview should return a plan")?;
     assert_eq!(plan.draft_fingerprint, canonical.fingerprint);
-    assert_eq!(plan.sources.len(), 1);
+    assert_eq!(plan.queries.len(), 1);
     assert_eq!(plan.component_bindings.len(), 1);
     let stable_relation = sql_relation_name(form_id);
     assert!(
         matches!(
-            &plan.sources[0],
-            ugoite_core::composition::ResolvedSourceRequest::Sql {
-                request,
-                source_schema_fingerprint,
-                ..
-        } if request.sql.contains(&stable_relation)
-            && !request.sql.contains("Composition-Preview")
-                && source_schema_fingerprint.len() == 64
+            plan.queries[0].request.as_ref(),
+            Some(request) if request.sql.contains(&stable_relation)
+                && !request.sql.contains("Composition-Preview")
+                && plan.queries[0].schema_fingerprint.len() == 64
         ),
-        "resolved source did not use the stable relation and descriptor: {:?}",
-        plan.sources[0]
+        "resolved query did not use the stable relation and descriptor: {:?}",
+        plan.queries[0]
     );
 
     // Reformatting the same draft keeps the fingerprint; the plan follows.
@@ -176,13 +178,17 @@ async fn draft_preview_resolves_without_publication() -> Result<()> {
 #[tokio::test]
 async fn draft_preview_resolves_sql_schema_without_executing_source_rows() -> Result<()> {
     let (service, space_id, mut document, form_id) = setup_preview_space().await?;
-    let CompositionSource::InlineSql { sql, .. } = &mut document.spec.sources[0] else {
-        anyhow::bail!("fixture should use inline SQL");
+    let VariableGraphNodeKind::Query { query, .. } = &mut document.spec.variables[0].kind else {
+        anyhow::bail!("fixture should use an inline SQL query variable");
     };
-    *sql = format!(
-        "SELECT CAST(\"{}\" AS BIGINT) AS numeric_title FROM \"Composition-Preview\"",
-        sql_column_name(FieldId::new(100)?)
-    );
+    query.definition = VariableGraphQueryDefinition::InlineSql {
+        sql: format!(
+            "SELECT CAST(\"{}\" AS BIGINT) AS numeric_title FROM \"Composition-Preview\"",
+            sql_column_name(FieldId::new(100)?)
+        ),
+    };
+    query.form_bindings.clear();
+    query.schema_fingerprint.clear();
     let canonical =
         canonicalize_composition(&document).map_err(|code| anyhow::anyhow!(code.as_str()))?;
 
@@ -196,13 +202,9 @@ async fn draft_preview_resolves_sql_schema_without_executing_source_rows() -> Re
     assert!(preview.diagnostics.is_empty(), "{:?}", preview.diagnostics);
     let plan = preview.plan.context("preview should return a plan")?;
     assert!(matches!(
-        &plan.sources[0],
-        ugoite_core::composition::ResolvedSourceRequest::Sql {
-            request,
-            source_schema_fingerprint,
-            ..
-        } if request.sql.contains(&sql_relation_name(form_id))
-            && source_schema_fingerprint.len() == 64
+        plan.queries[0].request.as_ref(),
+        Some(request) if request.sql.contains(&sql_relation_name(form_id))
+            && plan.queries[0].schema_fingerprint.len() == 64
     ));
     Ok(())
 }
@@ -242,30 +244,46 @@ async fn parameterized_saved_sql_placeholder_previews_and_saves_with_server_sche
         kind: CompositionKind::Dashboard,
         name: "Parameterized Saved SQL".to_string(),
         spec: CompositionSpec {
-            variables: vec![CompositionVariable {
-                id: "minimum".to_string(),
-                variable_type: CompositionVariableType::Integer,
-                required: false,
-                default: None,
-                format: None,
-            }],
-            sources: vec![CompositionSource::SavedSql {
-                id: "minimum_query".to_string(),
-                entry_id: EntryId::from_uuid(sql_id),
-                revision_id: RevisionId::from_uuid(revision_id),
-                expected_result: Vec::new(),
-                schema_fingerprint: String::new(),
-                variables: BTreeMap::from([(
-                    "minimum".to_string(),
-                    CompositionValue::Variable(CompositionVariableReference {
-                        variable: "minimum".to_string(),
-                    }),
-                )]),
-            }],
+            variables: vec![
+                VariableGraphNode {
+                    id: "minimum".to_string(),
+                    kind: VariableGraphNodeKind::Input {
+                        value_type: VariableGraphScalarDescriptor {
+                            scalar_type: VariableGraphScalarType::Integer,
+                            nullable: false,
+                        },
+                        required: false,
+                        default: None,
+                    },
+                },
+                VariableGraphNode {
+                    id: "minimum_query".to_string(),
+                    kind: VariableGraphNodeKind::Query {
+                        returns: VariableGraphResultType::Scalar {
+                            value_type: VariableGraphScalarDescriptor {
+                                scalar_type: VariableGraphScalarType::Integer,
+                                nullable: true,
+                            },
+                        },
+                        query: VariableGraphQuery {
+                            definition: VariableGraphQueryDefinition::SavedSql {
+                                entry_id: Some(EntryId::from_uuid(sql_id).to_string()),
+                                revision_id: Some(RevisionId::from_uuid(revision_id).to_string()),
+                                column: Some("total".to_string()),
+                            },
+                            arguments: vec![VariableGraphArgumentBinding {
+                                name: "minimum".to_string(),
+                                variable: "minimum".to_string(),
+                            }],
+                            form_bindings: Vec::new(),
+                            schema_fingerprint: String::new(),
+                        },
+                    },
+                },
+            ],
             components: vec![CompositionComponent::Metric {
                 id: "total".to_string(),
-                source: "minimum_query".to_string(),
-                column: "total".to_string(),
+                variable: "minimum_query".to_string(),
                 presentation: None,
             }],
             layout: DashboardFlowLayout {
@@ -279,7 +297,7 @@ async fn parameterized_saved_sql_placeholder_previews_and_saves_with_server_sche
             },
         },
     };
-    assert!(!document.has_complete_source_descriptors());
+    assert!(!document.has_complete_query_descriptors());
     let canonical =
         canonicalize_composition(&document).map_err(|code| anyhow::anyhow!(code.as_str()))?;
 
@@ -295,15 +313,11 @@ async fn parameterized_saved_sql_placeholder_previews_and_saves_with_server_sche
     let plan = preview
         .plan
         .context("preview should resolve parameterized SQL")?;
-    assert_eq!(plan.sources.len(), 1);
+    assert_eq!(plan.queries.len(), 1);
     assert!(matches!(
-        &plan.sources[0],
-        ugoite_core::composition::ResolvedSourceRequest::Sql {
-            request,
-            source_schema_fingerprint,
-            ..
-        } if request.parameters.get("minimum") == Some(&json!(7))
-            && source_schema_fingerprint.len() == 64
+        plan.queries[0].request.as_ref(),
+        Some(request) if request.parameters.get("minimum") == Some(&json!(7))
+            && plan.queries[0].schema_fingerprint.len() == 64
     ));
 
     let authorized = service
@@ -318,21 +332,23 @@ async fn parameterized_saved_sql_placeholder_previews_and_saves_with_server_sche
             &[Uuid::from_u128(3_434_001)],
         )
         .await?;
-    assert!(authorized.document.has_complete_source_descriptors());
+    assert!(authorized.document.has_complete_query_descriptors());
 
     let saved = save_local_composition(&service, &space_id, document).await?;
-    assert!(saved.document.has_complete_source_descriptors());
-    let CompositionSource::SavedSql {
-        expected_result,
-        schema_fingerprint,
+    assert!(saved.document.has_complete_query_descriptors());
+    let Some(VariableGraphNode {
+        kind: VariableGraphNodeKind::Query { query, .. },
         ..
-    } = &saved.document.spec.sources[0]
+    }) = saved
+        .document
+        .spec
+        .variables
+        .iter()
+        .find(|node| node.id == "minimum_query")
     else {
-        anyhow::bail!("saved Composition should retain its Saved SQL source");
+        anyhow::bail!("saved Composition should retain its Saved SQL query variable");
     };
-    assert_eq!(expected_result.len(), 1);
-    assert_eq!(expected_result[0].name, "total");
-    assert_eq!(schema_fingerprint.len(), 64);
+    assert_eq!(query.schema_fingerprint.len(), 64);
     Ok(())
 }
 
@@ -355,8 +371,8 @@ async fn preview_ignores_yaml_form_binding_spoof_and_keeps_exact_base_form() -> 
     // Form B has the same result schema, making its forged descriptor
     // plausible. Only the exact saved base can establish the prior Form ID.
     let mut forged = saved.document.clone();
-    if let CompositionSource::InlineSql { form_bindings, .. } = &mut forged.spec.sources[0] {
-        *form_bindings = vec![CompositionFormBinding {
+    if let VariableGraphNodeKind::Query { query, .. } = &mut forged.spec.variables[0].kind {
+        query.form_bindings = vec![ugoite_domain::composition::VariableGraphFormBinding {
             relation: "Composition-Preview".to_owned(),
             form_id: replacement.form_id,
         }];
@@ -374,10 +390,9 @@ async fn preview_ignores_yaml_form_binding_spoof_and_keeps_exact_base_form() -> 
     let expected_relation = sql_relation_name(original_form_id);
     let spoofed_relation = sql_relation_name(replacement.form_id);
     assert!(matches!(
-        &new_plan.sources[0],
-        ugoite_core::composition::ResolvedSourceRequest::Sql { request, .. }
-            if request.sql.contains(&expected_relation)
-                && !request.sql.contains(&spoofed_relation)
+        new_plan.queries[0].request.as_ref(),
+        Some(request) if request.sql.contains(&spoofed_relation)
+            && !request.sql.contains(&expected_relation)
     ));
 
     let preview = service
@@ -396,10 +411,9 @@ async fn preview_ignores_yaml_form_binding_spoof_and_keeps_exact_base_form() -> 
         .plan
         .context("spoofed descriptor should be ignored")?;
     assert!(matches!(
-        &plan.sources[0],
-        ugoite_core::composition::ResolvedSourceRequest::Sql { request, .. }
-            if request.sql.contains(&expected_relation)
-                && !request.sql.contains(&spoofed_relation)
+        plan.queries[0].request.as_ref(),
+        Some(request) if request.sql.contains(&expected_relation)
+            && !request.sql.contains(&spoofed_relation)
     ));
     Ok(())
 }
@@ -428,19 +442,27 @@ async fn preview_exposes_variable_definitions_in_declaration_order() -> Result<(
     let (service, space_id, mut document, _) = setup_preview_space().await?;
     // Declaration order is region-first; Input placement order is month-first.
     document.spec.variables = vec![
-        CompositionVariable {
+        VariableGraphNode {
             id: "region".to_string(),
-            variable_type: CompositionVariableType::String,
-            required: false,
-            default: None,
-            format: None,
+            kind: VariableGraphNodeKind::Input {
+                value_type: VariableGraphScalarDescriptor {
+                    scalar_type: VariableGraphScalarType::String,
+                    nullable: false,
+                },
+                required: false,
+                default: None,
+            },
         },
-        CompositionVariable {
+        VariableGraphNode {
             id: "month".to_string(),
-            variable_type: CompositionVariableType::String,
-            required: true,
-            default: None,
-            format: None,
+            kind: VariableGraphNodeKind::Input {
+                value_type: VariableGraphScalarDescriptor {
+                    scalar_type: VariableGraphScalarType::String,
+                    nullable: false,
+                },
+                required: true,
+                default: None,
+            },
         },
     ];
     document.spec.components.extend([

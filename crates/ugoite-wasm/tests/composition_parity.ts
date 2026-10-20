@@ -70,27 +70,27 @@ function paddedCompositionYaml(yaml: string, targetBytes: number): string {
   return `${yaml}#${"x".repeat(targetBytes - currentBytes - 1)}`;
 }
 
-function compositionSourcesYaml(yaml: string, targetCount: number): string {
-  const sourcesBlock = yaml.split("  sources:\n")[1]?.split(
+function compositionVariablesYaml(yaml: string, targetCount: number): string {
+  const variablesBlock = yaml.split("  variables:\n")[1]?.split(
     "  components:\n",
   )[0];
-  if (!sourcesBlock) throw new Error("Could not find the Composition sources");
-  const existingCount = (sourcesBlock.match(/^    - id:/gm) ?? []).length;
+  if (!variablesBlock) throw new Error("Could not find the Composition variables");
+  const existingCount = (variablesBlock.match(/^    - id:/gm) ?? []).length;
   const additionalCount = targetCount - existingCount;
   if (additionalCount < 0) {
-    throw new Error("Requested source count is below the SQL-first fixture");
+    throw new Error("Requested variable count is below the SQL-first fixture");
   }
-  const additionalSources = Array.from(
+  const additionalQueries = Array.from(
     { length: additionalCount },
     (_, index) => {
       const id = `extra_${index}`;
-      return `    - id: ${id}\n      kind: inline_sql\n      name: ${id}\n      sql: SELECT 1\n      form_bindings: []\n      expected_result: []\n      schema_fingerprint: \"\"`;
+      return `    - id: ${id}\n      kind: query\n      returns:\n        kind: scalar\n        value_type:\n          scalar_type: integer\n          nullable: false\n      query:\n        kind: inline_sql\n        sql: SELECT 1`;
     },
   ).join("\n");
-  if (!additionalSources) return yaml;
+  if (!additionalQueries) return yaml;
   return yaml.replace(
     "  components:\n",
-    `${additionalSources}\n  components:\n`,
+    `${additionalQueries}\n  components:\n`,
   );
 }
 
@@ -223,7 +223,7 @@ async function main(): Promise<void> {
   const atCollectionLimit = await invokeWasm(
     instance.exports,
     compositionYamlResponse(
-      compositionSourcesYaml(yaml, MAX_COMPOSITION_COLLECTION_ITEMS),
+      compositionVariablesYaml(yaml, MAX_COMPOSITION_COLLECTION_ITEMS),
     ),
   );
   assertEqual(
@@ -234,7 +234,7 @@ async function main(): Promise<void> {
   const overCollectionLimit = await invokeWasm(
     instance.exports,
     compositionYamlResponse(
-      compositionSourcesYaml(yaml, MAX_COMPOSITION_COLLECTION_ITEMS + 1),
+      compositionVariablesYaml(yaml, MAX_COMPOSITION_COLLECTION_ITEMS + 1),
     ),
   );
   assertCompositionDiagnostic(
@@ -271,14 +271,15 @@ async function main(): Promise<void> {
   );
   const unnormalizedTypedDocument = structuredClone(typedDocument);
   const typedSpec = unnormalizedTypedDocument.spec as Record<string, unknown>;
-  const typedSources = typedSpec.sources as Record<string, unknown>[];
-  const inlineSqlSource = typedSources.find((source) =>
-    source.kind === "inline_sql"
+  const typedVariables = typedSpec.variables as Record<string, unknown>[];
+  const inlineSqlVariable = typedVariables.find((variable) =>
+    variable.id === "expense_rows"
   );
-  if (!inlineSqlSource || !Array.isArray(inlineSqlSource.form_bindings)) {
-    throw new Error("Typed fixture must contain an inline SQL source binding");
+  const inlineQuery = inlineSqlVariable?.query as Record<string, unknown>;
+  if (!inlineSqlVariable || !Array.isArray(inlineQuery.form_bindings)) {
+    throw new Error("Typed fixture must contain query-level Form bindings");
   }
-  const formBindings = inlineSqlSource.form_bindings as Record<
+  const formBindings = inlineQuery.form_bindings as Record<
     string,
     unknown
   >[];
@@ -290,22 +291,26 @@ async function main(): Promise<void> {
     string,
     unknown
   >;
-  const expectedTypedSources = expectedTypedSpec.sources as Record<
+  const expectedTypedVariables = expectedTypedSpec.variables as Record<
     string,
     unknown
   >[];
-  const expectedInlineSqlSource = expectedTypedSources.find((source) =>
-    source.kind === "inline_sql"
+  const expectedInlineSqlVariable = expectedTypedVariables.find((variable) =>
+    variable.id === "expense_rows"
   );
+  const expectedInlineQuery = expectedInlineSqlVariable?.query as Record<
+    string,
+    unknown
+  >;
   if (
-    !expectedInlineSqlSource ||
-    !Array.isArray(expectedInlineSqlSource.form_bindings)
+    !expectedInlineSqlVariable ||
+    !Array.isArray(expectedInlineQuery.form_bindings)
   ) {
     throw new Error(
-      "Normalized fixture must contain an inline SQL source binding",
+      "Normalized fixture must contain query-level Form bindings",
     );
   }
-  const expectedBindings = expectedInlineSqlSource.form_bindings as Record<
+  const expectedBindings = expectedInlineQuery.form_bindings as Record<
     string,
     unknown
   >[];
@@ -418,19 +423,19 @@ async function main(): Promise<void> {
     "unknown v1 typed document diagnostic code",
   );
 
-  const invalidMetricColumnYaml = yaml.replace(
-    "      source: month_total\n      column: total",
-    "      source: month_total\n      column: missing",
+  const invalidVariableReferenceYaml = yaml.replace(
+    "      variable: month_total",
+    "      variable: missing",
   );
-  if (invalidMetricColumnYaml === yaml) {
-    throw new Error("Could not build an invalid SQL Metric column fixture");
+  if (invalidVariableReferenceYaml === yaml) {
+    throw new Error("Could not build an invalid graph variable reference fixture");
   }
   const unsupportedOldSourceYaml = yaml.replace(
     "kind: inline_sql",
     "kind: entry_query",
   );
   if (unsupportedOldSourceYaml === yaml) {
-    throw new Error("Could not build the unsupported old source-kind fixture");
+    throw new Error("Could not build the unsupported old query-kind fixture");
   }
 
   // Keep version dispatch separate from complete v1 documents that fail
@@ -464,7 +469,7 @@ async function main(): Promise<void> {
   for (
     const [invalidYaml, expectedCode] of [
       [unsupportedOldSourceYaml, "invalid_composition"],
-      [invalidMetricColumnYaml, "invalid_composition"],
+      [invalidVariableReferenceYaml, "invalid_composition"],
       [unreferencedComponentYaml, "invalid_composition"],
     ] as const
   ) {
@@ -479,45 +484,44 @@ async function main(): Promise<void> {
   }
 
   const variableInputCases = [
-    { type: "string", raw: "", expected: { status: "unset" } },
+    { scalar_type: "string", raw: "", expected: { status: "unset" } },
     {
-      type: "string",
+      scalar_type: "string",
       raw: "日本語",
       expected: { status: "valid", value: "日本語" },
     },
     {
-      type: "string",
+      scalar_type: "string",
       raw: "\u0000",
       expected: { status: "invalid" },
     },
     {
-      type: "boolean",
+      scalar_type: "boolean",
       raw: "true",
       expected: { status: "valid", value: true },
     },
-    { type: "boolean", raw: "TRUE", expected: { status: "invalid" } },
+    { scalar_type: "boolean", raw: "TRUE", expected: { status: "invalid" } },
     {
-      type: "integer",
+      scalar_type: "integer",
       raw: "+9007199254740991",
       expected: { status: "valid", value: 9_007_199_254_740_991 },
     },
-    { type: "integer", raw: "1.0", expected: { status: "invalid" } },
+    { scalar_type: "integer", raw: "1.0", expected: { status: "invalid" } },
     {
-      type: "integer",
+      scalar_type: "integer",
       raw: "9007199254740992",
       expected: { status: "invalid" },
     },
-    { type: "float", raw: "1", expected: { status: "valid", value: 1 } },
-    { type: "float", raw: "1e-4000", expected: { status: "invalid" } },
-    { type: "float", raw: "1e309", expected: { status: "invalid" } },
+    { scalar_type: "float", raw: "1", expected: { status: "valid", value: 1 } },
+    { scalar_type: "float", raw: "1e309", expected: { status: "invalid" } },
     {
-      type: "date",
+      scalar_type: "date",
       raw: "2024-02-29",
       expected: { status: "valid", value: "2024-02-29" },
     },
-    { type: "date", raw: "2025-02-29", expected: { status: "invalid" } },
+    { scalar_type: "date", raw: "2025-02-29", expected: { status: "invalid" } },
     {
-      type: "timestamp",
+      scalar_type: "timestamp",
       raw: "2026-10-13T23:59:59.123456789+09:00",
       expected: {
         status: "valid",
@@ -525,27 +529,32 @@ async function main(): Promise<void> {
       },
     },
     {
-      type: "timestamp",
+      scalar_type: "timestamp",
       raw: "2026-10-13T14:59:59",
       expected: { status: "invalid" },
     },
+    { scalar_type: "decimal", raw: "123.4500", expected: { status: "valid", value: "123.4500" } },
+    { scalar_type: "json", raw: "{\"x\":1}", expected: { status: "valid", value: { x: 1 } } },
   ] as const;
-  for (const { type, raw, expected } of variableInputCases) {
+  for (const { scalar_type, raw, expected } of variableInputCases) {
     const response = await invokeWasm(instance.exports, {
-      action: "domain.parse_composition_variable_input",
-      value: { type, raw },
+      action: "domain.parse_variable_graph_input",
+      value: { value_type: { scalar_type, nullable: false }, raw },
     });
-    assertEqual(response.ok, true, `${type} Input parser envelope`);
+    assertEqual(response.ok, true, `${scalar_type} Input parser envelope`);
     assertJsonEqual(
       response.value,
       expected,
-      `${type} Input parser result for ${JSON.stringify(raw)}`,
+      `${scalar_type} Input parser result for ${JSON.stringify(raw)}`,
     );
   }
 
   const malformedVariableInput = await invokeWasm(instance.exports, {
-    action: "domain.parse_composition_variable_input",
-    value: { type: "integer", raw: 1 },
+    action: "domain.parse_variable_graph_input",
+    value: {
+      value_type: { scalar_type: "integer", nullable: false },
+      raw: 1,
+    },
   });
   const malformedVariableInputError = malformedVariableInput.error as Record<
     string,

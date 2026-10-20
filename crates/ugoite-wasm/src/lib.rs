@@ -352,28 +352,30 @@ fn invoke_domain(request: serde_json::Value) -> String {
                 )
                 .map_err(|error| error.to_string())
             }
-            "domain.parse_composition_variable_input" => {
-                let variable_type =
-                    serde_json::from_value::<ugoite_domain::composition::CompositionVariableType>(
-                        payload
-                            .get("type")
-                            .cloned()
-                            .ok_or_else(|| "type is required".to_string())?,
-                    )
-                    .map_err(|error| error.to_string())?;
+            "domain.parse_variable_graph_input" => {
+                let descriptor = serde_json::from_value::<
+                    ugoite_domain::composition::VariableGraphScalarDescriptor,
+                >(
+                    payload
+                        .get("value_type")
+                        .cloned()
+                        .ok_or_else(|| "value_type is required".to_string())?,
+                )
+                .map_err(|error| error.to_string())?;
                 let raw = payload
                     .get("raw")
                     .and_then(serde_json::Value::as_str)
                     .ok_or_else(|| "raw must be a string".to_string())?;
-                let outcome = variable_type.parse_input(raw);
+                let outcome =
+                    ugoite_domain::composition::parse_variable_graph_input(descriptor, raw);
                 Ok(match outcome {
-                    ugoite_domain::composition::CompositionVariableInputValue::Unset => {
+                    ugoite_domain::composition::VariableGraphInputValue::Unset => {
                         serde_json::json!({"status": "unset"})
                     }
-                    ugoite_domain::composition::CompositionVariableInputValue::Valid(value) => {
-                        serde_json::json!({"status": "valid", "value": value})
+                    ugoite_domain::composition::VariableGraphInputValue::Valid(value) => {
+                        serde_json::json!({"status": "valid", "value": value.to_json_value()})
                     }
-                    ugoite_domain::composition::CompositionVariableInputValue::Invalid => {
+                    ugoite_domain::composition::VariableGraphInputValue::Invalid => {
                         serde_json::json!({"status": "invalid"})
                     }
                 })
@@ -1929,7 +1931,7 @@ mod tests {
 
         let normalized_document = serde_json::to_value(&native.document).unwrap();
         let mut unnormalized_document = normalized_document.clone();
-        let bindings = unnormalized_document["spec"]["sources"][0]["form_bindings"]
+        let bindings = unnormalized_document["spec"]["variables"][2]["query"]["form_bindings"]
             .as_array_mut()
             .expect("the inline SQL source has Form bindings");
         let mut second_binding = bindings[0].clone();
@@ -1941,13 +1943,15 @@ mod tests {
             unnormalized_document.clone(),
         )
         .unwrap();
-        let ugoite_domain::composition::CompositionSource::InlineSql { form_bindings, .. } =
-            &native_typed.document.spec.sources[0]
+        let ugoite_domain::composition::VariableGraphNode {
+            kind: ugoite_domain::composition::VariableGraphNodeKind::Query { query, .. },
+            ..
+        } = &native_typed.document.spec.variables[2]
         else {
-            panic!("first source should be Inline SQL");
+            panic!("expense_rows should be a query variable");
         };
-        assert_eq!(form_bindings[0].relation, "Expense");
-        assert_eq!(form_bindings[1].relation, "Other");
+        assert_eq!(query.form_bindings[0].relation, "Other");
+        assert_eq!(query.form_bindings[1].relation, "Expense");
         let typed_request = serde_json::json!({
             "action": "domain.canonicalize_composition_document",
             "value": {"document": unnormalized_document},
@@ -1965,24 +1969,22 @@ mod tests {
             native_typed.fingerprint
         );
 
-        let invalid_metric_yaml = SQL_FIRST_COMPOSITION.replace(
-            "      source: month_total\n      column: total",
-            "      source: month_total\n      column: missing",
-        );
-        let native_invalid_metric =
-            ugoite_domain::composition::canonicalize_composition_yaml(&invalid_metric_yaml)
+        let invalid_reference_yaml =
+            SQL_FIRST_COMPOSITION.replace("      variable: month_total", "      variable: missing");
+        let native_invalid_reference =
+            ugoite_domain::composition::canonicalize_composition_yaml(&invalid_reference_yaml)
                 .unwrap_err();
         let invalid_metric_request = serde_json::json!({
             "action": "domain.canonicalize_composition",
-            "value": {"yaml": invalid_metric_yaml},
+            "value": {"yaml": invalid_reference_yaml},
         });
         let invalid_metric_response: Value =
             serde_json::from_str(&super::invoke_json(&invalid_metric_request.to_string())).unwrap();
-        assert_eq!(native_invalid_metric.as_str(), "invalid_composition");
+        assert_eq!(native_invalid_reference.as_str(), "invalid_composition");
         assert_eq!(invalid_metric_response["ok"], false);
         assert_eq!(
             invalid_metric_response["error"]["code"],
-            native_invalid_metric.as_str()
+            native_invalid_reference.as_str()
         );
 
         let invalid_typed_request = serde_json::json!({
@@ -2075,123 +2077,142 @@ mod tests {
     }
 
     #[test]
-    fn composition_variable_input_protocol_matches_native_domain_contract() {
-        use ugoite_domain::composition::{CompositionVariableInputValue, CompositionVariableType};
+    fn variable_graph_input_protocol_matches_native_domain_contract() {
+        use ugoite_domain::composition::{
+            parse_variable_graph_input, VariableGraphInputValue, VariableGraphScalarDescriptor,
+            VariableGraphScalarType,
+        };
 
         let cases = [
             (
-                CompositionVariableType::String,
+                VariableGraphScalarType::String,
                 "",
                 serde_json::json!({"status": "unset"}),
             ),
             (
-                CompositionVariableType::String,
+                VariableGraphScalarType::String,
                 "日本語",
                 serde_json::json!({"status": "valid", "value": "日本語"}),
             ),
             (
-                CompositionVariableType::String,
+                VariableGraphScalarType::String,
                 "\0",
                 serde_json::json!({"status": "invalid"}),
             ),
             (
-                CompositionVariableType::Boolean,
+                VariableGraphScalarType::Boolean,
                 "true",
                 serde_json::json!({"status": "valid", "value": true}),
             ),
             (
-                CompositionVariableType::Boolean,
+                VariableGraphScalarType::Boolean,
                 "TRUE",
                 serde_json::json!({"status": "invalid"}),
             ),
             (
-                CompositionVariableType::Integer,
+                VariableGraphScalarType::Integer,
                 "+9007199254740991",
                 serde_json::json!({"status": "valid", "value": 9_007_199_254_740_991_i64}),
             ),
             (
-                CompositionVariableType::Integer,
+                VariableGraphScalarType::Integer,
                 "1.0",
                 serde_json::json!({"status": "invalid"}),
             ),
             (
-                CompositionVariableType::Integer,
+                VariableGraphScalarType::Integer,
                 "9007199254740992",
                 serde_json::json!({"status": "invalid"}),
             ),
             (
-                CompositionVariableType::Float,
+                VariableGraphScalarType::Float,
                 "1",
                 serde_json::json!({"status": "valid", "value": 1.0}),
             ),
             (
-                CompositionVariableType::Float,
+                VariableGraphScalarType::Float,
                 "1e-4000",
                 serde_json::json!({"status": "invalid"}),
             ),
             (
-                CompositionVariableType::Float,
+                VariableGraphScalarType::Float,
                 "1e309",
                 serde_json::json!({"status": "invalid"}),
             ),
             (
-                CompositionVariableType::Date,
+                VariableGraphScalarType::Decimal,
+                "12.3400",
+                serde_json::json!({"status": "valid", "value": "12.3400"}),
+            ),
+            (
+                VariableGraphScalarType::Decimal,
+                "1e3",
+                serde_json::json!({"status": "invalid"}),
+            ),
+            (
+                VariableGraphScalarType::Date,
                 "2024-02-29",
                 serde_json::json!({"status": "valid", "value": "2024-02-29"}),
             ),
             (
-                CompositionVariableType::Date,
+                VariableGraphScalarType::Date,
                 "2025-02-29",
                 serde_json::json!({"status": "invalid"}),
             ),
             (
-                CompositionVariableType::Timestamp,
+                VariableGraphScalarType::Timestamp,
                 "2026-10-13T23:59:59.123456789+09:00",
-                serde_json::json!({
-                    "status": "valid",
-                    "value": "2026-10-13T23:59:59.123456789+09:00"
-                }),
+                serde_json::json!({"status": "valid", "value": "2026-10-13T23:59:59.123456789+09:00"}),
             ),
             (
-                CompositionVariableType::Timestamp,
+                VariableGraphScalarType::Timestamp,
                 "2026-10-13T14:59:59",
+                serde_json::json!({"status": "invalid"}),
+            ),
+            (
+                VariableGraphScalarType::Json,
+                "{\"n\":1}",
+                serde_json::json!({"status": "valid", "value": {"n": 1}}),
+            ),
+            (
+                VariableGraphScalarType::Json,
+                "null",
                 serde_json::json!({"status": "invalid"}),
             ),
         ];
 
-        for (variable_type, raw, expected) in cases {
-            let native = match variable_type.parse_input(raw) {
-                CompositionVariableInputValue::Unset => serde_json::json!({"status": "unset"}),
-                CompositionVariableInputValue::Valid(value) => {
-                    serde_json::json!({"status": "valid", "value": value})
+        for (scalar_type, raw, expected) in cases {
+            let value_type = VariableGraphScalarDescriptor {
+                scalar_type,
+                nullable: false,
+            };
+            let native = match parse_variable_graph_input(value_type, raw) {
+                VariableGraphInputValue::Unset => serde_json::json!({"status": "unset"}),
+                VariableGraphInputValue::Valid(value) => {
+                    serde_json::json!({"status": "valid", "value": value.to_json_value()})
                 }
-                CompositionVariableInputValue::Invalid => {
-                    serde_json::json!({"status": "invalid"})
-                }
+                VariableGraphInputValue::Invalid => serde_json::json!({"status": "invalid"}),
             };
             assert_eq!(
                 native, expected,
-                "native parser case {variable_type:?} {raw:?}"
+                "native parser case {scalar_type:?} {raw:?}"
             );
 
             let request = serde_json::json!({
-                "action": "domain.parse_composition_variable_input",
-                "value": {"type": variable_type, "raw": raw},
+                "action": "domain.parse_variable_graph_input",
+                "value": {"value_type": value_type, "raw": raw},
             });
             let response: Value =
                 serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
-            assert_eq!(
-                response["ok"], true,
-                "{variable_type:?} {raw:?}: {response}"
-            );
-            assert_eq!(response["value"], expected, "{variable_type:?} {raw:?}");
+            assert_eq!(response["ok"], true, "{scalar_type:?} {raw:?}: {response}");
+            assert_eq!(response["value"], expected, "{scalar_type:?} {raw:?}");
         }
 
         let oversized_string =
             "x".repeat(ugoite_domain::composition::MAX_COMPOSITION_VARIABLE_STRING_BYTES + 1);
         let oversized_request = serde_json::json!({
-            "action": "domain.parse_composition_variable_input",
-            "value": {"type": "string", "raw": oversized_string},
+            "action": "domain.parse_variable_graph_input",
+            "value": {"value_type": {"scalar_type": "string", "nullable": false}, "raw": oversized_string},
         });
         let oversized_response: Value =
             serde_json::from_str(&super::invoke_json(&oversized_request.to_string())).unwrap();
@@ -2203,11 +2224,11 @@ mod tests {
 
         for payload in [
             serde_json::json!({"raw": "1"}),
-            serde_json::json!({"type": "decimal", "raw": "1"}),
-            serde_json::json!({"type": "integer", "raw": 1}),
+            serde_json::json!({"value_type": {"scalar_type": "unknown", "nullable": false}, "raw": "1"}),
+            serde_json::json!({"value_type": {"scalar_type": "integer", "nullable": false}, "raw": 1}),
         ] {
             let request = serde_json::json!({
-                "action": "domain.parse_composition_variable_input",
+                "action": "domain.parse_variable_graph_input",
                 "value": payload,
             });
             let response: Value =

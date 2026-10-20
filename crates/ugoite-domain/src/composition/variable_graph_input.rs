@@ -7,6 +7,54 @@ use super::variable_graph::{
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Result of parsing one editor buffer against a typed input descriptor.
+#[derive(Debug, Clone, PartialEq)]
+pub enum VariableGraphInputValue {
+    Unset,
+    Valid(VariableGraphLiteral),
+    Invalid,
+}
+
+/// Parse an uncoerced text buffer using the graph's scalar contract.
+/// Empty text means unset so callers can preserve their raw draft separately.
+pub fn parse_variable_graph_input(
+    descriptor: super::variable_graph::VariableGraphScalarDescriptor,
+    raw: &str,
+) -> VariableGraphInputValue {
+    if raw.is_empty() {
+        return VariableGraphInputValue::Unset;
+    }
+    use super::variable_graph::{VariableGraphLiteral as Literal, VariableGraphScalarType as Type};
+    let literal = match descriptor.scalar_type {
+        Type::String => Literal::String(raw.to_owned()),
+        Type::Boolean => match raw {
+            "true" => Literal::Boolean(true),
+            "false" => Literal::Boolean(false),
+            _ => return VariableGraphInputValue::Invalid,
+        },
+        Type::Integer => match raw.parse::<i64>() {
+            Ok(value) => Literal::Integer(value),
+            Err(_) => return VariableGraphInputValue::Invalid,
+        },
+        Type::Float => match raw.parse::<f64>() {
+            Ok(value) => Literal::Float(value),
+            Err(_) => return VariableGraphInputValue::Invalid,
+        },
+        Type::Decimal => Literal::Decimal(raw.to_owned()),
+        Type::Date => Literal::Date(raw.to_owned()),
+        Type::Timestamp => Literal::Timestamp(raw.to_owned()),
+        Type::Json => match serde_json::from_str(raw) {
+            Ok(value) => Literal::Json(value),
+            Err(_) => return VariableGraphInputValue::Invalid,
+        },
+    };
+    if super::variable_graph::literal_matches(&descriptor, &literal) {
+        VariableGraphInputValue::Valid(literal)
+    } else {
+        VariableGraphInputValue::Invalid
+    }
+}
+
 /// Stable diagnostics for input values supplied to a variable graph.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -132,8 +180,8 @@ pub fn resolve_variable_graph_inputs(
 mod tests {
     use super::*;
     use crate::composition::variable_graph::{
-        VariableGraphNode, VariableGraphQueryDefinition, VariableGraphResultType,
-        VariableGraphScalarDescriptor, VariableGraphScalarType,
+        VariableGraphNode, VariableGraphQuery, VariableGraphQueryDefinition,
+        VariableGraphResultType, VariableGraphScalarDescriptor, VariableGraphScalarType,
     };
 
     fn descriptor(
@@ -339,10 +387,14 @@ mod tests {
                 returns: VariableGraphResultType::Scalar {
                     value_type: descriptor(VariableGraphScalarType::Integer, false),
                 },
-                query: VariableGraphQueryDefinition::InlineSql {
-                    sql: "SELECT 1".to_owned(),
+                query: VariableGraphQuery {
+                    definition: VariableGraphQueryDefinition::InlineSql {
+                        sql: "SELECT 1".to_owned(),
+                    },
+                    arguments: Vec::new(),
+                    form_bindings: Vec::new(),
+                    schema_fingerprint: String::new(),
                 },
-                arguments: Vec::new(),
             },
         };
         let error = resolve_variable_graph_inputs(

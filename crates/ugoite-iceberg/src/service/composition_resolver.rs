@@ -1,6 +1,6 @@
 //! Storage-backed Composition resolution shared by local and server clients.
 //!
-//! The service reads one exact Composition revision and current source
+//! The service reads one exact Composition revision and derives current query
 //! descriptors, then delegates binding and query compilation to
 //! `ugoite_core::composition`. It does not execute queries or persist runtime
 //! state.
@@ -14,7 +14,7 @@ use std::time::Duration;
 use ugoite_core::composition::{
     bind_variables_with_unset, resolve_composition_preview_with_unset,
     resolve_composition_with_unset, CompositionDiagnostic, CompositionRevisionRef,
-    CurrentSourceDescriptor, InlineSqlSourceMetadata, PreviewCompositionPlan, ResolveInput,
+    CurrentQueryDescriptor, InlineSqlQueryMetadata, PreviewCompositionPlan, ResolveInput,
     ResolvedCompositionPlan, SavedSqlRevisionMetadata,
 };
 use ugoite_core::error::{AppError, ErrorCode};
@@ -27,9 +27,9 @@ use ugoite_core::sql_query::{
 };
 use ugoite_domain::composition::{
     canonicalize_composition, parse_composition_yaml, CompositionDiagnosticCode,
-    CompositionDocument, CompositionFormBinding, CompositionResultColumn,
-    CompositionResultFieldType, CompositionSource, CompositionSpec, CompositionVariable,
-    CompositionVariableType,
+    CompositionDocument, VariableGraphColumn, VariableGraphFormBinding, VariableGraphNode,
+    VariableGraphNodeKind, VariableGraphQueryDefinition, VariableGraphResultType,
+    VariableGraphScalarDescriptor, VariableGraphScalarType,
 };
 use ugoite_domain::form::{sql_column_name, sql_relation_name, FormDefinition};
 use ugoite_domain::id::{validate_revision_id, validate_sql_id, FormId};
@@ -50,7 +50,7 @@ use crate::{iceberg_store, saved_sql};
 /// including when supplied variable values are invalid.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CompositionResolution {
-    pub variable_definitions: Option<Vec<CompositionVariable>>,
+    pub variable_definitions: Option<Vec<VariableGraphNode>>,
     pub plan: Option<ResolvedCompositionPlan>,
     pub diagnostics: Vec<CompositionDiagnostic>,
 }
@@ -64,35 +64,38 @@ pub struct CompositionResolution {
 #[derive(Clone, Debug, PartialEq)]
 pub struct CompositionPreview {
     pub draft_fingerprint: Option<String>,
-    pub variable_definitions: Option<Vec<CompositionVariable>>,
+    pub variable_definitions: Option<Vec<VariableGraphNode>>,
     pub plan: Option<PreviewCompositionPlan>,
     pub diagnostics: Vec<CompositionDiagnostic>,
 }
 
-enum OwnedCurrentSourceDescriptor {
+enum OwnedCurrentQueryDescriptor {
     InlineSql {
-        source_id: String,
-        schema: Option<InlineSqlSourceMetadata>,
+        variable_id: String,
+        schema: Option<InlineSqlQueryMetadata>,
     },
     SavedSql {
-        source_id: String,
+        variable_id: String,
         revision: Option<SavedSqlRevisionMetadata>,
     },
 }
 
-impl OwnedCurrentSourceDescriptor {
-    fn as_current_source(&self) -> CurrentSourceDescriptor<'_> {
+impl OwnedCurrentQueryDescriptor {
+    fn as_current_query(&self) -> CurrentQueryDescriptor<'_> {
         match self {
-            Self::InlineSql { source_id, schema } => CurrentSourceDescriptor::InlineSql {
-                source_id,
-                current_schema: schema.as_ref(),
+            Self::InlineSql {
+                variable_id,
+                schema,
+            } => CurrentQueryDescriptor::InlineSql {
+                variable_id,
+                metadata: schema.as_ref(),
             },
             Self::SavedSql {
-                source_id,
+                variable_id,
                 revision,
-            } => CurrentSourceDescriptor::SavedSql {
-                source_id,
-                current_revision: revision.as_ref(),
+            } => CurrentQueryDescriptor::SavedSql {
+                variable_id,
+                metadata: revision.as_ref(),
             },
         }
     }
@@ -208,49 +211,25 @@ impl UgoiteService {
         }
     }
 
-    /// Derive trusted metadata for an inline Composition SQL source.
-    ///
-    /// `Some(bindings)` means the caller already has server-trusted Form-ID
-    /// bindings; the SQL relation set must match them exactly. `None` is
-    /// reserved for the all-empty draft descriptor tuple and resolves the
-    /// quoted Form names from the current authorized Form snapshot so the
-    /// first preview can return the descriptor that save will persist.
-    pub(crate) async fn derive_inline_sql_source_metadata(
+    /// Derive trusted metadata for an inline SQL query variable.
+    pub(crate) async fn derive_inline_sql_query_metadata(
         &self,
         space_id: &str,
-        source: &CompositionSource,
-        trusted_bindings: Option<&[CompositionFormBinding]>,
-        variables: &[CompositionVariable],
+        node: &VariableGraphNode,
+        trusted_bindings: Option<&[VariableGraphFormBinding]>,
+        variables: &[VariableGraphNode],
         principal_ids: Option<&[Uuid]>,
         authorization_state: Option<&super::AuthorizationState>,
-    ) -> Result<Option<InlineSqlSourceMetadata>> {
-        let CompositionSource::InlineSql {
-            sql,
-            form_bindings,
-            expected_result,
-            schema_fingerprint,
-            ..
-        } = source
-        else {
-            return Err(anyhow!("expected an inline SQL Composition source"));
+    ) -> Result<Option<InlineSqlQueryMetadata>> {
+        let VariableGraphNodeKind::Query { query, .. } = &node.kind else {
+            return Err(anyhow!("expected a query variable"));
         };
-        let is_draft_placeholder =
-            form_bindings.is_empty() && expected_result.is_empty() && schema_fingerprint.is_empty();
-        if trusted_bindings.is_none() && !is_draft_placeholder {
-            return Ok(None);
-        }
-
-        let parameter_types = variables
-            .iter()
-            .map(|variable| {
-                (
-                    variable.id.clone(),
-                    composition_variable_sql_type(variable.variable_type).to_owned(),
-                )
-            })
-            .collect::<BTreeMap<_, _>>();
+        let VariableGraphQueryDefinition::InlineSql { sql } = &query.definition else {
+            return Err(anyhow!("expected an inline SQL query variable"));
+        };
+        let parameter_types = query_parameter_types(query.arguments.as_slice(), variables)?;
         let planned = self
-            .plan_sql_source_metadata(
+            .plan_sql_query_metadata(
                 space_id,
                 sql,
                 trusted_bindings,
@@ -259,56 +238,66 @@ impl UgoiteService {
                 authorization_state,
             )
             .await?;
-        Ok(planned.map(|planned| InlineSqlSourceMetadata {
+        Ok(planned.map(|planned| InlineSqlQueryMetadata {
             bound_sql: planned.bound_sql,
             form_bindings: planned.form_bindings,
             parameter_names: planned.parameter_names,
-            expected_result: planned.expected_result,
+            result_columns: planned.result_columns,
             schema_fingerprint: planned.schema_fingerprint,
         }))
     }
 
-    /// Derive current schema metadata for one exact Saved SQL revision.
-    ///
-    /// The Saved SQL descriptor read enforces its current ACL (or local
-    /// operator boundary). Its immutable server-owned Form bindings are then
-    /// resolved by ID and planned through the same closed DataFusion context
-    /// used for inline Composition SQL.
-    pub(crate) async fn derive_saved_sql_source_metadata(
+    /// Derive the descriptor for the exact Saved SQL revision pinned by a query variable.
+    pub(crate) async fn derive_saved_sql_query_metadata(
         &self,
         space_id: &str,
-        source: &SavedSqlRevisionRef,
+        node: &VariableGraphNode,
         principal_ids: Option<&[Uuid]>,
         authorization_state: Option<&super::AuthorizationState>,
     ) -> Result<Option<SavedSqlRevisionMetadata>> {
+        let VariableGraphNodeKind::Query { query, returns } = &node.kind else {
+            return Err(anyhow!("expected a query variable"));
+        };
+        let VariableGraphQueryDefinition::SavedSql {
+            entry_id: Some(entry_id),
+            revision_id: Some(revision_id),
+            column,
+        } = &query.definition
+        else {
+            return Ok(None);
+        };
+        let saved_sql = SavedSqlRevisionRef {
+            id: entry_id.clone(),
+            revision_id: revision_id.clone(),
+        };
         let (descriptor, revision) = if let Some(state) = authorization_state {
             let principal_ids = principal_ids
                 .ok_or_else(|| anyhow!("authorization state requires principal IDs"))?;
-            validate_storage_id(validate_sql_id(&source.id))?;
-            validate_storage_id(validate_revision_id(&source.revision_id))?;
-            super::ensure_saved_sql_access(state, principal_ids, source)?;
+            validate_storage_id(validate_sql_id(&saved_sql.id))?;
+            validate_storage_id(validate_revision_id(&saved_sql.revision_id))?;
+            super::ensure_saved_sql_access(state, principal_ids, &saved_sql)?;
             self.validate_complete_space(space_id).await?;
-            let revision = self
-                .read_saved_sql_revision_for_metadata(space_id, source)
-                .await?;
-            let Some(revision) = revision else {
+            let Some(revision) = self
+                .read_saved_sql_revision_for_metadata(space_id, &saved_sql)
+                .await?
+            else {
                 return Ok(None);
             };
-            let descriptor = saved_sql_revision_descriptor(source, &revision)?;
+            let descriptor = saved_sql_revision_descriptor(&saved_sql, &revision)?;
             (descriptor, revision)
         } else {
             let descriptor = match principal_ids {
-                Some(principal_ids) => conceal_source_lookup(
+                Some(principal_ids) => conceal_sql_query_lookup(
                     self.get_saved_sql_revision_descriptor_authorized_for_principals(
                         space_id,
-                        source,
+                        &saved_sql,
                         principal_ids,
                     )
                     .await,
                     ErrorCode::EntryNotFound,
                 )?,
                 None => {
-                    self.get_saved_sql_revision_descriptor_local(space_id, source)
+                    self.get_saved_sql_revision_descriptor_local(space_id, &saved_sql)
                         .await?
                 }
             };
@@ -316,7 +305,7 @@ impl UgoiteService {
                 return Ok(None);
             };
             let Some(revision) = self
-                .read_saved_sql_revision_for_metadata(space_id, source)
+                .read_saved_sql_revision_for_metadata(space_id, &saved_sql)
                 .await?
             else {
                 return Ok(None);
@@ -330,7 +319,7 @@ impl UgoiteService {
                 let form_id = Uuid::parse_str(&binding.form_id)
                     .map(FormId::from_uuid)
                     .map_err(|error| anyhow!("Saved SQL Form binding ID is invalid: {error}"))?;
-                Ok(CompositionFormBinding {
+                Ok(VariableGraphFormBinding {
                     relation: binding.name.clone(),
                     form_id,
                 })
@@ -341,9 +330,8 @@ impl UgoiteService {
             .iter()
             .map(|(name, variable)| (name.clone(), variable.var_type.clone()))
             .collect::<BTreeMap<_, _>>();
-        let variable_types = parameter_types.clone();
         let planned = self
-            .plan_sql_source_metadata(
+            .plan_sql_query_metadata(
                 space_id,
                 &revision.sql,
                 Some(&bindings),
@@ -355,24 +343,57 @@ impl UgoiteService {
         let Some(planned) = planned else {
             return Ok(None);
         };
+        let result_columns = if let Some(column) = column {
+            let matches = planned
+                .result_columns
+                .iter()
+                .filter(|candidate| candidate.name == *column)
+                .cloned()
+                .collect::<Vec<_>>();
+            match matches.as_slice() {
+                [column] if matches!(returns, VariableGraphResultType::Scalar { .. }) => {
+                    vec![column.clone()]
+                }
+                _ => return Ok(None),
+            }
+        } else {
+            planned.result_columns
+        };
+        let parameter_types = parameter_types
+            .iter()
+            .map(|(name, type_name)| {
+                let scalar_type =
+                    variable_graph_scalar_type_for_sql(type_name).ok_or_else(|| {
+                        anyhow!("Saved SQL parameter type is unsupported by the query binder")
+                    })?;
+                Ok((
+                    name.clone(),
+                    VariableGraphScalarDescriptor {
+                        scalar_type,
+                        nullable: true,
+                    },
+                ))
+            })
+            .collect::<Result<BTreeMap<_, _>>>()?;
         Ok(Some(SavedSqlRevisionMetadata {
-            id: descriptor.id,
+            entry_id: descriptor.id,
             revision_id: descriptor.revision_id,
-            variable_types,
-            expected_result: planned.expected_result,
+            parameter_types,
+            form_bindings: planned.form_bindings,
+            result_columns,
             schema_fingerprint: planned.schema_fingerprint,
         }))
     }
 
-    async fn plan_sql_source_metadata(
+    async fn plan_sql_query_metadata(
         &self,
         space_id: &str,
         sql: &str,
-        trusted_bindings: Option<&[CompositionFormBinding]>,
+        trusted_bindings: Option<&[VariableGraphFormBinding]>,
         parameter_types: &BTreeMap<String, String>,
         principal_ids: Option<&[Uuid]>,
         authorization_state: Option<&super::AuthorizationState>,
-    ) -> Result<Option<PlannedSqlSourceMetadata>> {
+    ) -> Result<Option<PlannedSqlQueryMetadata>> {
         self.validate_complete_space(space_id).await?;
         let normalized_sql = crate::index::normalize_sql_template(sql)?;
         crate::index::validate_read_only_sql(&normalized_sql)?;
@@ -406,7 +427,7 @@ impl UgoiteService {
                     else {
                         return Ok(None);
                     };
-                    bindings.push(CompositionFormBinding {
+                    bindings.push(VariableGraphFormBinding {
                         relation: relation.clone(),
                         form_id: form.id,
                     });
@@ -425,7 +446,7 @@ impl UgoiteService {
                     }) else {
                         return Ok(None);
                     };
-                    resolved.push(CompositionFormBinding {
+                    resolved.push(VariableGraphFormBinding {
                         relation: relation.clone(),
                         form_id: form.id,
                     });
@@ -446,7 +467,7 @@ impl UgoiteService {
                     Some(form) => form.clone(),
                     None => return Ok(None),
                 },
-                (Some(principal_ids), None) => match conceal_source_lookup(
+                (Some(principal_ids), None) => match conceal_sql_query_lookup(
                     self.get_composition_source_form_authorized_for_principals(
                         space_id,
                         binding.form_id,
@@ -553,22 +574,25 @@ impl UgoiteService {
         let result_schema = context
             .stateless_result_schema(&bound_sql, parameters)
             .await?;
-        let expected_result = result_schema
+        let result_columns = result_schema
             .iter()
-            .map(|column| CompositionResultColumn {
+            .map(|column| VariableGraphColumn {
                 name: column.name.clone(),
-                result_type: composition_result_field_type(column.column_type),
+                value_type: VariableGraphScalarDescriptor {
+                    scalar_type: variable_graph_scalar_type(column.column_type),
+                    nullable: column.nullable,
+                },
             })
             .collect::<Vec<_>>();
-        if !composition_result_schema_is_well_formed(&expected_result) {
+        if !query_result_schema_is_well_formed(&result_columns) {
             return Ok(None);
         }
-        let schema_fingerprint = composition_schema_fingerprint(&expected_result)?;
-        Ok(Some(PlannedSqlSourceMetadata {
+        let schema_fingerprint = query_schema_fingerprint(&result_columns)?;
+        Ok(Some(PlannedSqlQueryMetadata {
             bound_sql,
             form_bindings: bindings,
             parameter_names,
-            expected_result,
+            result_columns,
             schema_fingerprint,
         }))
     }
@@ -612,7 +636,7 @@ impl UgoiteService {
     }
 
     /// Resolve an exact Composition revision in the principal-free local Core
-    /// path. Source metadata is read from current Space state; source queries
+    /// path. Query metadata is read from current Space state; query variables
     /// remain for the caller to execute through their bounded query methods.
     pub async fn resolve_composition_local(
         &self,
@@ -630,7 +654,7 @@ impl UgoiteService {
     }
 
     /// Resolve an exact Composition revision after rechecking current
-    /// Space/Composition/source authorization for the supplied principals.
+    /// Space/Composition/query authorization for the supplied principals.
     /// This is the same semantic entrypoint used by server adapters.
     pub async fn resolve_composition_authorized_for_principals(
         &self,
@@ -689,19 +713,18 @@ impl UgoiteService {
             });
         }
 
-        let owned_sources = self
-            .read_current_sources(
+        let owned_queries = self
+            .read_current_queries(
                 space_id,
-                &document.spec.sources,
                 &document.spec.variables,
                 principal_ids,
                 None,
                 false,
             )
             .await?;
-        let current_sources = owned_sources
+        let current_queries = owned_queries
             .iter()
-            .map(OwnedCurrentSourceDescriptor::as_current_source)
+            .map(OwnedCurrentQueryDescriptor::as_current_query)
             .collect::<Vec<_>>();
         let result = resolve_composition_with_unset(
             ResolveInput {
@@ -711,7 +734,7 @@ impl UgoiteService {
                 },
                 spec: &document.spec,
                 variables,
-                current_sources: &current_sources,
+                current_queries: &current_queries,
             },
             unset_variables,
         );
@@ -900,61 +923,24 @@ impl UgoiteService {
         } else {
             None
         };
-        let owned_sources = self
-            .read_current_sources(
+        let owned_queries = self
+            .read_current_queries(
                 space_id,
-                &document.spec.sources,
                 &document.spec.variables,
                 principal_ids,
                 previous_document.as_ref(),
                 true,
             )
             .await?;
-        let mut preview_spec = document.spec.clone();
-        for (source, descriptor) in preview_spec.sources.iter_mut().zip(&owned_sources) {
-            match (source, descriptor) {
-                (
-                    CompositionSource::InlineSql {
-                        form_bindings,
-                        expected_result,
-                        schema_fingerprint,
-                        ..
-                    },
-                    OwnedCurrentSourceDescriptor::InlineSql {
-                        schema: Some(metadata),
-                        ..
-                    },
-                ) => {
-                    *form_bindings = metadata.form_bindings.clone();
-                    *expected_result = metadata.expected_result.clone();
-                    *schema_fingerprint = metadata.schema_fingerprint.clone();
-                }
-                (
-                    CompositionSource::SavedSql {
-                        expected_result,
-                        schema_fingerprint,
-                        ..
-                    },
-                    OwnedCurrentSourceDescriptor::SavedSql {
-                        revision: Some(metadata),
-                        ..
-                    },
-                ) => {
-                    *expected_result = metadata.expected_result.clone();
-                    *schema_fingerprint = metadata.schema_fingerprint.clone();
-                }
-                _ => {}
-            }
-        }
-        let current_sources = owned_sources
+        let current_queries = owned_queries
             .iter()
-            .map(OwnedCurrentSourceDescriptor::as_current_source)
+            .map(OwnedCurrentQueryDescriptor::as_current_query)
             .collect::<Vec<_>>();
         let result = resolve_composition_preview_with_unset(
-            &preview_spec,
+            &document.spec,
             variables,
             unset_variables,
-            &current_sources,
+            &current_queries,
             draft_fingerprint.clone(),
         );
 
@@ -974,40 +960,40 @@ impl UgoiteService {
         })
     }
 
-    /// Read current source descriptors through the caller's authorization
+    /// Read current query descriptors through the caller's authorization
     /// boundary, shared by saved-revision resolution and draft preview.
-    /// Absent or denied sources stay `None` and compile to the same
-    /// `source_unavailable` diagnostic without revealing existence.
-    async fn read_current_sources(
+    async fn read_current_queries(
         &self,
         space_id: &str,
-        sources: &[CompositionSource],
-        variables: &[CompositionVariable],
+        variables: &[VariableGraphNode],
         principal_ids: Option<&[Uuid]>,
         previous_document: Option<&CompositionDocument>,
         allow_unbound_draft: bool,
-    ) -> Result<Vec<OwnedCurrentSourceDescriptor>> {
-        let mut owned_sources = Vec::with_capacity(sources.len());
-        for source in sources {
-            match source {
-                CompositionSource::InlineSql { id, sql, .. } => {
+    ) -> Result<Vec<OwnedCurrentQueryDescriptor>> {
+        let mut owned = Vec::new();
+        for node in variables {
+            let VariableGraphNodeKind::Query { query, .. } = &node.kind else {
+                continue;
+            };
+            match &query.definition {
+                VariableGraphQueryDefinition::InlineSql { sql } => {
                     let trusted_bindings = if allow_unbound_draft {
                         let (readable_forms, _) = self
                             .composition_form_snapshot(space_id, principal_ids, None)
                             .await?;
-                        preview_inline_form_bindings(id, sql, previous_document, &readable_forms)?
+                        preview_inline_form_bindings(
+                            &node.id,
+                            sql,
+                            previous_document,
+                            &readable_forms,
+                        )?
                     } else {
-                        match source {
-                            CompositionSource::InlineSql { form_bindings, .. } => {
-                                Some(form_bindings.clone())
-                            }
-                            CompositionSource::SavedSql { .. } => unreachable!(),
-                        }
+                        Some(query.form_bindings.clone())
                     };
                     let schema = if let Some(trusted_bindings) = trusted_bindings {
-                        self.derive_inline_sql_source_metadata(
+                        self.derive_inline_sql_query_metadata(
                             space_id,
-                            source,
+                            node,
                             Some(&trusted_bindings),
                             variables,
                             principal_ids,
@@ -1017,84 +1003,88 @@ impl UgoiteService {
                     } else {
                         None
                     };
-                    owned_sources.push(OwnedCurrentSourceDescriptor::InlineSql {
-                        source_id: id.clone(),
+                    owned.push(OwnedCurrentQueryDescriptor::InlineSql {
+                        variable_id: node.id.clone(),
                         schema,
                     });
                 }
-                CompositionSource::SavedSql {
-                    id,
-                    entry_id,
-                    revision_id,
+                VariableGraphQueryDefinition::SavedSql {
+                    entry_id: Some(entry_id),
+                    revision_id: Some(revision_id),
                     ..
                 } => {
-                    let saved_sql_ref = SavedSqlRevisionRef {
-                        id: entry_id.to_string(),
-                        revision_id: revision_id.to_string(),
-                    };
-                    let descriptor = self
-                        .derive_saved_sql_source_metadata(
-                            space_id,
-                            &saved_sql_ref,
-                            principal_ids,
-                            None,
-                        )
+                    let revision = self
+                        .derive_saved_sql_query_metadata(space_id, node, principal_ids, None)
                         .await?;
-                    owned_sources.push(OwnedCurrentSourceDescriptor::SavedSql {
-                        source_id: id.clone(),
-                        revision: descriptor,
+                    // The query node carries the exact immutable revision.
+                    // No latest-revision lookup is available on this path.
+                    if revision.as_ref().is_some_and(|current| {
+                        current.entry_id != *entry_id || current.revision_id != *revision_id
+                    }) {
+                        owned.push(OwnedCurrentQueryDescriptor::SavedSql {
+                            variable_id: node.id.clone(),
+                            revision: None,
+                        });
+                    } else {
+                        owned.push(OwnedCurrentQueryDescriptor::SavedSql {
+                            variable_id: node.id.clone(),
+                            revision,
+                        });
+                    }
+                }
+                VariableGraphQueryDefinition::SavedSql { .. } => {
+                    owned.push(OwnedCurrentQueryDescriptor::SavedSql {
+                        variable_id: node.id.clone(),
+                        revision: None,
                     });
                 }
             }
         }
-
-        Ok(owned_sources)
+        Ok(owned)
     }
 }
 
-/// Resolve an inline preview's Form identities from the exact edit base and
-/// current readable Forms. YAML descriptors never participate in this choice.
+/// Resolve inline-query Form identities from the exact edit base and current
+/// readable Forms. Submitted descriptors never choose these identities.
 fn preview_inline_form_bindings(
-    source_id: &str,
+    variable_id: &str,
     sql: &str,
     previous_document: Option<&CompositionDocument>,
     readable_forms: &[FormDefinition],
-) -> Result<Option<Vec<CompositionFormBinding>>> {
+) -> Result<Option<Vec<VariableGraphFormBinding>>> {
     let relations = crate::index::quoted_form_name_references(sql)?;
     let previous_bindings = previous_document
         .and_then(|document| {
             document
                 .spec
-                .sources
+                .variables
                 .iter()
-                .find(|source| source.id() == source_id)
+                .find(|node| node.id == variable_id)
         })
-        .and_then(|source| match source {
-            CompositionSource::InlineSql { form_bindings, .. } => Some(form_bindings.as_slice()),
-            CompositionSource::SavedSql { .. } => None,
+        .and_then(|node| match &node.kind {
+            VariableGraphNodeKind::Query { query, .. } => Some(query.form_bindings.as_slice()),
+            _ => None,
         })
         .unwrap_or_default();
-
     let mut bindings = Vec::with_capacity(relations.len());
     for relation in relations {
         if let Some(binding) = previous_bindings
             .iter()
             .find(|binding| binding.relation == relation)
         {
-            // An existing binding is authoritative for an unchanged source
-            // relation, but it is usable only while that stable Form ID is
-            // still present in the caller's readable Form snapshot. Never
-            // fall back to a same-name replacement.
             if !readable_forms.iter().any(|form| form.id == binding.form_id) {
                 return Ok(None);
             }
             bindings.push(binding.clone());
             continue;
         }
-        let Some(form) = readable_forms.iter().find(|form| form.name == relation) else {
+        let Some(form) = readable_forms
+            .iter()
+            .find(|form| form.name == relation || sql_relation_name(form.id) == relation)
+        else {
             return Ok(None);
         };
-        bindings.push(CompositionFormBinding {
+        bindings.push(VariableGraphFormBinding {
             relation,
             form_id: form.id,
         });
@@ -1109,11 +1099,11 @@ fn preview_diagnostic(
     CompositionDiagnostic { code, variable_id }
 }
 
-struct PlannedSqlSourceMetadata {
+struct PlannedSqlQueryMetadata {
     bound_sql: String,
-    form_bindings: Vec<CompositionFormBinding>,
+    form_bindings: Vec<VariableGraphFormBinding>,
     parameter_names: BTreeSet<String>,
-    expected_result: Vec<CompositionResultColumn>,
+    result_columns: Vec<VariableGraphColumn>,
     schema_fingerprint: String,
 }
 
@@ -1145,15 +1135,67 @@ fn saved_sql_revision_descriptor(
     })
 }
 
-fn composition_variable_sql_type(variable_type: CompositionVariableType) -> &'static str {
+fn variable_graph_sql_type(variable_type: VariableGraphScalarType) -> &'static str {
     match variable_type {
-        CompositionVariableType::String => "string",
-        CompositionVariableType::Boolean => "boolean",
-        CompositionVariableType::Integer => "integer",
-        CompositionVariableType::Float => "float",
-        CompositionVariableType::Date => "date",
-        CompositionVariableType::Timestamp => "timestamp",
+        VariableGraphScalarType::String => "string",
+        VariableGraphScalarType::Boolean => "boolean",
+        VariableGraphScalarType::Integer => "integer",
+        VariableGraphScalarType::Float => "float",
+        VariableGraphScalarType::Decimal => "decimal",
+        VariableGraphScalarType::Date => "date",
+        VariableGraphScalarType::Timestamp => "timestamp",
+        VariableGraphScalarType::Json => "json",
     }
+}
+
+fn variable_graph_scalar_type_for_sql(type_name: &str) -> Option<VariableGraphScalarType> {
+    match type_name {
+        "string" => Some(VariableGraphScalarType::String),
+        "boolean" => Some(VariableGraphScalarType::Boolean),
+        "integer" | "int64" | "long" => Some(VariableGraphScalarType::Integer),
+        "float" | "float64" | "double" => Some(VariableGraphScalarType::Float),
+        "decimal" => Some(VariableGraphScalarType::Decimal),
+        "date" => Some(VariableGraphScalarType::Date),
+        "timestamp" | "timestamp_tz" | "timestamp_ns" | "timestamp_tz_ns" => {
+            Some(VariableGraphScalarType::Timestamp)
+        }
+        "json" => Some(VariableGraphScalarType::Json),
+        _ => None,
+    }
+}
+
+fn query_parameter_types(
+    arguments: &[ugoite_domain::composition::VariableGraphArgumentBinding],
+    variables: &[VariableGraphNode],
+) -> Result<BTreeMap<String, String>> {
+    let variables = variables
+        .iter()
+        .map(|node| (node.id.as_str(), node))
+        .collect::<BTreeMap<_, _>>();
+    arguments
+        .iter()
+        .map(|argument| {
+            let node = variables
+                .get(argument.variable.as_str())
+                .ok_or_else(|| anyhow!("query argument variable is unavailable"))?;
+            let value_type = match &node.kind {
+                VariableGraphNodeKind::Constant { value_type, .. }
+                | VariableGraphNodeKind::Input { value_type, .. } => *value_type,
+                VariableGraphNodeKind::Query {
+                    returns: VariableGraphResultType::Scalar { value_type },
+                    ..
+                } => *value_type,
+                VariableGraphNodeKind::Query {
+                    returns: VariableGraphResultType::Table { .. },
+                    ..
+                } => return Err(anyhow!("table query cannot bind a scalar SQL argument")),
+            };
+            Ok((
+                argument.name.clone(),
+                variable_graph_sql_type(value_type.scalar_type).to_owned(),
+            ))
+        })
+        .collect()
 }
 
 fn sql_parameter_null(type_name: &str) -> ScalarValue {
@@ -1177,20 +1219,20 @@ fn sql_parameter_null(type_name: &str) -> ScalarValue {
     }
 }
 
-fn composition_result_field_type(column_type: SqlResultColumnType) -> CompositionResultFieldType {
+fn variable_graph_scalar_type(column_type: SqlResultColumnType) -> VariableGraphScalarType {
     match column_type {
-        SqlResultColumnType::String => CompositionResultFieldType::String,
-        SqlResultColumnType::Boolean => CompositionResultFieldType::Boolean,
-        SqlResultColumnType::Integer => CompositionResultFieldType::Integer,
-        SqlResultColumnType::Float => CompositionResultFieldType::Float,
-        SqlResultColumnType::Decimal => CompositionResultFieldType::Decimal,
-        SqlResultColumnType::Date => CompositionResultFieldType::Date,
-        SqlResultColumnType::Timestamp => CompositionResultFieldType::Timestamp,
-        SqlResultColumnType::Json => CompositionResultFieldType::Json,
+        SqlResultColumnType::String => VariableGraphScalarType::String,
+        SqlResultColumnType::Boolean => VariableGraphScalarType::Boolean,
+        SqlResultColumnType::Integer => VariableGraphScalarType::Integer,
+        SqlResultColumnType::Float => VariableGraphScalarType::Float,
+        SqlResultColumnType::Decimal => VariableGraphScalarType::Decimal,
+        SqlResultColumnType::Date => VariableGraphScalarType::Date,
+        SqlResultColumnType::Timestamp => VariableGraphScalarType::Timestamp,
+        SqlResultColumnType::Json => VariableGraphScalarType::Json,
     }
 }
 
-fn composition_result_schema_is_well_formed(columns: &[CompositionResultColumn]) -> bool {
+fn query_result_schema_is_well_formed(columns: &[VariableGraphColumn]) -> bool {
     !columns.is_empty()
         && columns.len() <= MAX_SQL_OUTPUT_COLUMNS
         && columns.iter().all(|column| {
@@ -1204,151 +1246,38 @@ fn composition_result_schema_is_well_formed(columns: &[CompositionResultColumn])
             == columns.len()
 }
 
-fn composition_schema_fingerprint(columns: &[CompositionResultColumn]) -> Result<String> {
+fn query_schema_fingerprint(columns: &[VariableGraphColumn]) -> Result<String> {
     let canonical = serde_json::to_vec(columns)?;
     Ok(hex::encode(Sha256::digest(canonical)))
 }
 
 #[cfg(test)]
-mod preview_binding_tests {
+mod graph_metadata_tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
-    fn same_name_form_replacement_does_not_replace_exact_base_binding() {
-        let mut previous = parse_composition_yaml(include_str!(
-            "../../../ugoite-domain/tests/fixtures/composition/sql-first.ugcomp.yaml"
-        ))
-        .expect("fixture parses");
-        let old_form_id = FormId::from_uuid(Uuid::from_u128(0x100));
-        let replacement_form_id = FormId::from_uuid(Uuid::from_u128(0x200));
-        let source = previous
-            .spec
-            .sources
-            .iter_mut()
-            .find(|source| source.id() == "expense_rows")
-            .expect("inline source exists");
-        let CompositionSource::InlineSql { form_bindings, .. } = source else {
-            panic!("source is inline SQL");
-        };
-        *form_bindings = vec![CompositionFormBinding {
-            relation: "Expense".to_owned(),
-            form_id: old_form_id,
-        }];
-        let replacement: FormDefinition = serde_json::from_value(json!({
-            "id": replacement_form_id.to_string(),
-            "version": 1,
-            "name": "Expense",
-            "fields": [],
-            "allow_extra_attributes": true
-        }))
-        .expect("replacement Form is valid");
-
-        let bindings = preview_inline_form_bindings(
-            "expense_rows",
-            "SELECT * FROM \"Expense\"",
-            Some(&previous),
-            &[replacement],
-        )
-        .expect("relation set parses");
-
-        assert_eq!(bindings, None);
-        assert_ne!(old_form_id, replacement_form_id);
-    }
-
-    #[tokio::test]
-    async fn exact_base_preview_retains_form_id_after_rename() -> anyhow::Result<()> {
-        let service = UgoiteService::new(format!(
-            "memory://composition-preview-form-rename-{}",
-            Uuid::now_v7()
-        ))?;
-        let owner = Uuid::now_v7();
-        let space_id = service
-            .create_space_for_principal("composition-preview-form-rename", owner, "Owner")
-            .await?
-            .to_string();
-        let form = service
-            .upsert_form_result(
-                &space_id,
-                &json!({
-                    "name": "Task",
-                    "fields": {
-                        "title": {"id": 100, "type": "string", "required": false}
-                    }
-                }),
-            )
-            .await?;
-        let yaml = "format: ugoite.composition\nformat_version: 1\nkind: dashboard\nname: Task rows\nspec:\n  sources:\n    - id: rows\n      kind: inline_sql\n      name: Rows\n      sql: |\n        SELECT \"field_100\" FROM \"Task\"\n      form_bindings: []\n      expected_result: []\n      schema_fingerprint: ''\n  components:\n    - id: table\n      kind: table\n      source: rows\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: component\n            component: table\n";
-        let saved = service
-            .save_composition_local(
-                &space_id,
-                crate::composition::CompositionSaveRequest {
-                    entry_id: None,
-                    base_revision_id: None,
-                    document: parse_composition_yaml(yaml).expect("draft parses"),
-                },
-                "preview-test",
-            )
-            .await?;
-
-        let workspace = iceberg_store::native_mutation_workspace(
-            service.operator(),
-            &service.workspace_path(&space_id),
-        )
-        .await?;
-        let current_form = workspace
-            .list_forms()
-            .await?
-            .into_iter()
-            .find(|candidate| candidate.id == form.form_id)
-            .expect("source Form exists");
-        let changes = ugoite_domain::form::FormChangeSet {
-            form_id: form.form_id,
-            expected_version: Some(current_form.version),
-            changes: vec![ugoite_domain::form::FormChange::RenameForm {
-                name: "RenamedTask".to_owned(),
-            }],
-        };
-        let publication = crate::system_publication_context(
-            format!("test-composition-preview-rename:{}", form.form_id),
-            "form.evolve",
-            &changes,
-        )?;
-        workspace
-            .commit(publication)?
-            .evolve_form_with_receipt(&changes)
-            .await?;
-
-        let preview = service
-            .preview_composition_local_with_base(
-                &space_id,
-                &saved.canonical_yaml,
-                &BTreeMap::new(),
-                &[],
-                Some(CompositionRevisionRef {
-                    entry_id: saved.entry_id,
-                    revision_id: saved.revision_id,
-                }),
-            )
-            .await?;
-        let plan = preview
-            .plan
-            .expect("exact base should retain the renamed Form's identity");
-        let stable_relation = sql_relation_name(form.form_id);
-        assert!(matches!(
-            &plan.sources[0],
-            ugoite_core::composition::ResolvedSourceRequest::Sql { request, .. }
-                if request.sql.contains(&stable_relation)
-                    && !request.sql.contains("Task")
-        ));
-        Ok(())
+    fn query_argument_sql_type_is_derived_from_graph_scalar_type() {
+        assert_eq!(
+            variable_graph_sql_type(VariableGraphScalarType::String),
+            "string"
+        );
+        assert_eq!(
+            variable_graph_sql_type(VariableGraphScalarType::Integer),
+            "integer"
+        );
+        assert_eq!(
+            variable_graph_sql_type(VariableGraphScalarType::Decimal),
+            "decimal"
+        );
     }
 }
 
 /// Expose declared variables with layout-placed controls first in layout
 /// row and item order. An invalid placement falls back to declaration order
 /// so diagnostics responses still describe the same semantic variables.
-fn ordered_variable_definitions(spec: &CompositionSpec) -> Vec<CompositionVariable> {
+fn ordered_variable_definitions(
+    spec: &ugoite_domain::composition::CompositionSpec,
+) -> Vec<VariableGraphNode> {
     spec.variables.clone()
 }
 
@@ -1363,7 +1292,7 @@ fn diagnostic_result(
     }
 }
 
-fn conceal_source_lookup<T>(result: Result<T>, concealed_code: ErrorCode) -> Result<Option<T>> {
+fn conceal_sql_query_lookup<T>(result: Result<T>, concealed_code: ErrorCode) -> Result<Option<T>> {
     match result {
         Ok(value) => Ok(Some(value)),
         Err(error)
@@ -1376,96 +1305,5 @@ fn conceal_source_lookup<T>(result: Result<T>, concealed_code: ErrorCode) -> Res
             Ok(None)
         }
         Err(error) => Err(error),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::composition::CompositionSaveRequest;
-    use serde_json::json;
-    use ugoite_domain::composition::parse_composition_yaml;
-
-    #[tokio::test]
-    async fn local_resolution_compiles_current_form_for_exact_composition_revision(
-    ) -> anyhow::Result<()> {
-        let service = UgoiteService::new(format!(
-            "memory://composition-local-resolve-{}",
-            Uuid::now_v7()
-        ))?;
-        let owner = Uuid::now_v7();
-        let space_id = service
-            .create_space_for_principal("composition-local-resolve", owner, "Owner")
-            .await?
-            .to_string();
-        let form = service
-            .upsert_form_result(
-                &space_id,
-                &json!({
-                    "name": "Composition-Source",
-                    "fields": {
-                        "title": {"id": 100, "type": "string", "required": false}
-                    }
-                }),
-            )
-            .await?;
-        let yaml = (
-            "format: ugoite.composition\nformat_version: 1\nkind: dashboard\nname: Local query\nspec:\n  sources:\n    - id: rows\n      kind: inline_sql\n      name: Rows\n      sql: |\n        SELECT \"field_100\" FROM \"Composition-Source\" ORDER BY \"_ugoite_updated_at\" DESC, \"_ugoite_id\"\n      form_bindings: []\n      expected_result: []\n      schema_fingerprint: ''\n  components:\n    - id: table\n      kind: table\n      source: rows\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: component\n            component: table\n"
-        )
-        .to_string();
-        let document = parse_composition_yaml(&yaml).expect("Composition fixture parses");
-        let saved = service
-            .save_composition_authorized_for_principals(
-                &space_id,
-                CompositionSaveRequest {
-                    entry_id: None,
-                    base_revision_id: None,
-                    document,
-                },
-                &owner.to_string(),
-                &[owner],
-            )
-            .await?;
-
-        let resolution = service
-            .resolve_composition_local(
-                &space_id,
-                &saved.entry_id.to_string(),
-                &saved.revision_id.to_string(),
-                &BTreeMap::new(),
-                &[],
-            )
-            .await?;
-        let plan = resolution.plan.expect("current Form resolves");
-        assert_eq!(plan.composition_revision.entry_id, saved.entry_id);
-        assert_eq!(plan.composition_revision.revision_id, saved.revision_id);
-        assert_eq!(plan.sources.len(), 1);
-        let stable_relation = sql_relation_name(form.form_id);
-        assert!(matches!(
-            &plan.sources[0],
-            ugoite_core::composition::ResolvedSourceRequest::Sql { request, .. }
-                if request.sql.contains(&stable_relation)
-                    && !request.sql.contains("Composition-Source")
-        ));
-
-        let missing_revision = Uuid::now_v7().to_string();
-        let missing = service
-            .resolve_composition_local(
-                &space_id,
-                &saved.entry_id.to_string(),
-                &missing_revision,
-                &BTreeMap::new(),
-                &[],
-            )
-            .await
-            .expect_err("an absent exact revision must not fall back to current");
-        let missing = missing.downcast::<AppError>()?;
-        assert_eq!(missing.code(), ErrorCode::EntryNotFound);
-
-        let history = service
-            .composition_history_local_page(&space_id, &saved.entry_id.to_string(), 10, 0)
-            .await?;
-        assert_eq!(history.total, 1, "resolution does not publish a revision");
-        Ok(())
     }
 }

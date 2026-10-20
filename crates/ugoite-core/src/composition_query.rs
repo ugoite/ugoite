@@ -222,7 +222,8 @@ pub struct VariableGraphQueryRequestBatchItem {
 }
 
 /// One SQL argument that waits for a selected query variable to be evaluated.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct VariableGraphQueryRequestDeferredArgument {
     /// SQL parameter name declared by the dependent query.
     pub argument_name: String,
@@ -683,19 +684,14 @@ fn compile_validated_query_node_with_deferred_dependencies(
     ),
     Vec<VariableGraphQueryRequestDiagnostic>,
 > {
-    let VariableGraphNodeKind::Query {
-        query,
-        returns,
-        arguments,
-    } = &node.kind
-    else {
+    let VariableGraphNodeKind::Query { query, returns } = &node.kind else {
         return Err(vec![VariableGraphQueryRequestDiagnostic::for_node(
             VariableGraphQueryRequestDiagnosticCode::QueryNodeRequired,
             &node.id,
         )]);
     };
 
-    let (sql, saved_sql) = match query {
+    let (sql, saved_sql) = match &query.definition {
         VariableGraphQueryDefinition::InlineSql { sql } => {
             if sql.len() > MAX_SQL_QUERY_BYTES {
                 return Err(vec![VariableGraphQueryRequestDiagnostic::for_node(
@@ -757,7 +753,7 @@ fn compile_validated_query_node_with_deferred_dependencies(
         .iter()
         .map(|graph_node| (graph_node.id.as_str(), graph_node))
         .collect();
-    for argument in arguments {
+    for argument in &query.arguments {
         if !valid_argument_name(&argument.name) {
             diagnostics.push(VariableGraphQueryRequestDiagnostic::for_argument(
                 VariableGraphQueryRequestDiagnosticCode::InvalidArgumentName,
@@ -775,14 +771,6 @@ fn compile_validated_query_node_with_deferred_dependencies(
             continue;
         }
 
-        let Some(sql_type) = sql_type_for_graph_type(argument.value_type.scalar_type) else {
-            diagnostics.push(VariableGraphQueryRequestDiagnostic::for_argument(
-                VariableGraphQueryRequestDiagnosticCode::UnsupportedArgumentType,
-                &node.id,
-                argument,
-            ));
-            continue;
-        };
         let source_type = graph_nodes
             .get(argument.variable.as_str())
             .and_then(|source| scalar_descriptor_of(&source.kind));
@@ -794,21 +782,19 @@ fn compile_validated_query_node_with_deferred_dependencies(
             ));
             continue;
         };
-        if source_type.scalar_type != argument.value_type.scalar_type
-            || (source_type.nullable && !argument.value_type.nullable)
-        {
+        let Some(sql_type) = sql_type_for_graph_type(source_type.scalar_type) else {
             diagnostics.push(VariableGraphQueryRequestDiagnostic::for_argument(
-                VariableGraphQueryRequestDiagnosticCode::ArgumentTypeMismatch,
+                VariableGraphQueryRequestDiagnosticCode::UnsupportedArgumentType,
                 &node.id,
                 argument,
             ));
             continue;
-        }
+        };
         if deferred_query_variable_ids.contains(&argument.variable) {
             deferred_arguments.push(VariableGraphQueryRequestDeferredArgument {
                 argument_name: argument.name.clone(),
                 variable_id: argument.variable.clone(),
-                value_type: argument.value_type,
+                value_type: source_type,
             });
             parameter_types.insert(argument.name.clone(), sql_type.to_owned());
             continue;
@@ -837,7 +823,7 @@ fn compile_validated_query_node_with_deferred_dependencies(
             ));
             continue;
         }
-        let Some(value) = bind_literal(argument, value) else {
+        let Some(value) = bind_literal(source_type, value) else {
             diagnostics.push(VariableGraphQueryRequestDiagnostic::for_argument(
                 VariableGraphQueryRequestDiagnosticCode::InvalidArgumentValue,
                 &node.id,
@@ -1006,7 +992,7 @@ pub fn validate_variable_graph_sql_page(
         )]);
     };
 
-    let selected_column = match query {
+    let selected_column = match &query.definition {
         VariableGraphQueryDefinition::InlineSql { sql }
             if request.saved_sql.is_none() && request.sql == *sql =>
         {
@@ -1305,14 +1291,14 @@ fn literal_matches_descriptor(
 }
 
 fn bind_literal(
-    argument: &VariableGraphArgumentBinding,
+    descriptor: VariableGraphScalarDescriptor,
     literal: &VariableGraphLiteral,
 ) -> Option<Value> {
     if matches!(literal, VariableGraphLiteral::Null) {
-        return argument.value_type.nullable.then_some(Value::Null);
+        return descriptor.nullable.then_some(Value::Null);
     }
 
-    match (argument.value_type.scalar_type, literal) {
+    match (descriptor.scalar_type, literal) {
         (VariableGraphScalarType::String, VariableGraphLiteral::String(value)) => {
             Some(Value::String(value.clone()))
         }
@@ -1420,10 +1406,47 @@ mod tests {
     use super::*;
     use crate::sql_query::{SqlResultColumn, MAX_SQL_PARAMETER_BYTES};
     use serde_json::json;
+    use std::ops::{Deref, DerefMut};
     use ugoite_domain::composition::{
-        VariableGraphColumn, VariableGraphResultDiagnosticCode, VariableGraphResultType,
-        VariableGraphScalarDescriptor,
+        VariableGraphColumn, VariableGraphQuery, VariableGraphResultDiagnosticCode,
+        VariableGraphResultType, VariableGraphScalarDescriptor,
     };
+
+    #[derive(Clone)]
+    struct TestArgument {
+        name: String,
+        variable: String,
+        value_type: VariableGraphScalarDescriptor,
+    }
+
+    #[derive(Clone)]
+    struct TestQueryNode {
+        node: VariableGraphNode,
+        inputs: Vec<VariableGraphNode>,
+    }
+
+    impl Deref for TestQueryNode {
+        type Target = VariableGraphNode;
+
+        fn deref(&self) -> &Self::Target {
+            &self.node
+        }
+    }
+
+    impl DerefMut for TestQueryNode {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.node
+        }
+    }
+
+    impl From<VariableGraphNode> for TestQueryNode {
+        fn from(node: VariableGraphNode) -> Self {
+            Self {
+                node,
+                inputs: Vec::new(),
+            }
+        }
+    }
 
     fn scalar(
         value_type: VariableGraphScalarType,
@@ -1444,15 +1467,15 @@ mod tests {
         variable: &str,
         value_type: VariableGraphScalarType,
         nullable: bool,
-    ) -> VariableGraphArgumentBinding {
-        VariableGraphArgumentBinding {
+    ) -> TestArgument {
+        TestArgument {
             name: name.to_owned(),
-            value_type: scalar(value_type, nullable),
             variable: variable.to_owned(),
+            value_type: scalar(value_type, nullable),
         }
     }
 
-    fn inline_node(arguments: Vec<VariableGraphArgumentBinding>) -> VariableGraphNode {
+    fn inline_node(arguments: Vec<TestArgument>) -> TestQueryNode {
         let sql = if arguments.is_empty() {
             "SELECT 1".to_owned()
         } else {
@@ -1483,63 +1506,118 @@ mod tests {
                     .unwrap_or_else(|| scalar(VariableGraphScalarType::Integer, false)),
             }
         };
-        VariableGraphNode {
-            id: "rows".to_owned(),
-            kind: VariableGraphNodeKind::Query {
-                returns,
-                query: VariableGraphQueryDefinition::InlineSql { sql },
-                arguments,
-            },
-        }
+        query_node(
+            "rows",
+            VariableGraphQueryDefinition::InlineSql { sql },
+            returns,
+            arguments,
+        )
     }
 
-    fn scalar_query_node(
+    fn query_node(
         id: &str,
-        sql: &str,
-        arguments: Vec<VariableGraphArgumentBinding>,
-    ) -> VariableGraphNode {
-        VariableGraphNode {
-            id: id.to_owned(),
-            kind: VariableGraphNodeKind::Query {
-                returns: VariableGraphResultType::Scalar {
-                    value_type: scalar(VariableGraphScalarType::Integer, false),
+        definition: VariableGraphQueryDefinition,
+        returns: VariableGraphResultType,
+        arguments: Vec<TestArgument>,
+    ) -> TestQueryNode {
+        TestQueryNode {
+            node: VariableGraphNode {
+                id: id.to_owned(),
+                kind: VariableGraphNodeKind::Query {
+                    returns,
+                    query: VariableGraphQuery {
+                        definition,
+                        arguments: arguments
+                            .iter()
+                            .map(|argument| VariableGraphArgumentBinding {
+                                name: argument.name.clone(),
+                                variable: argument.variable.clone(),
+                            })
+                            .collect(),
+                        form_bindings: Vec::new(),
+                        schema_fingerprint: String::new(),
+                    },
                 },
-                query: VariableGraphQueryDefinition::InlineSql {
-                    sql: sql.to_owned(),
-                },
-                arguments,
             },
+            inputs: arguments
+                .into_iter()
+                .map(|argument| VariableGraphNode {
+                    id: argument.variable,
+                    kind: VariableGraphNodeKind::Input {
+                        value_type: argument.value_type,
+                        required: true,
+                        default: None,
+                    },
+                })
+                .collect(),
         }
     }
 
-    fn graph_for(node: VariableGraphNode) -> VariableGraph {
+    fn scalar_query_node(id: &str, sql: &str, arguments: Vec<TestArgument>) -> TestQueryNode {
+        query_node(
+            id,
+            VariableGraphQueryDefinition::InlineSql {
+                sql: sql.to_owned(),
+            },
+            VariableGraphResultType::Scalar {
+                value_type: scalar(VariableGraphScalarType::Integer, false),
+            },
+            arguments,
+        )
+    }
+
+    fn graph_for(node: impl Into<TestQueryNode>) -> VariableGraph {
+        graph_from_nodes([node])
+    }
+
+    fn graph_from_nodes(
+        nodes: impl IntoIterator<Item = impl Into<TestQueryNode>>,
+    ) -> VariableGraph {
+        let nodes: Vec<_> = nodes.into_iter().map(Into::into).collect();
         let mut variables = BTreeMap::new();
-        if let VariableGraphNodeKind::Query { arguments, .. } = &node.kind {
-            for argument in arguments {
+        for node in &nodes {
+            for input in &node.inputs {
                 variables
-                    .entry(argument.variable.clone())
-                    .or_insert_with(|| VariableGraphNode {
-                        id: argument.variable.clone(),
-                        kind: VariableGraphNodeKind::Input {
-                            value_type: argument.value_type,
-                            required: true,
-                            default: None,
-                        },
-                    });
+                    .entry(input.id.clone())
+                    .or_insert_with(|| input.clone());
             }
         }
-        variables.insert(node.id.clone(), node);
+        for node in nodes {
+            variables.insert(node.node.id.clone(), node.node);
+        }
         VariableGraph {
             variables: variables.into_values().collect(),
         }
     }
 
     fn compile_node(
-        node: &VariableGraphNode,
+        node: &impl CloneIntoTestQueryNode,
         resolved_values: &BTreeMap<String, VariableGraphLiteral>,
     ) -> Result<SqlQueryRequest, Vec<VariableGraphQueryRequestDiagnostic>> {
+        let node = node.clone_into_test_query_node();
         let graph = graph_for(node.clone());
-        compile_variable_graph_query_request(&graph, &node.id, Uuid::from_u128(1), resolved_values)
+        compile_variable_graph_query_request(
+            &graph,
+            &node.node.id,
+            Uuid::from_u128(1),
+            resolved_values,
+        )
+    }
+
+    trait CloneIntoTestQueryNode {
+        fn clone_into_test_query_node(&self) -> TestQueryNode;
+    }
+
+    impl CloneIntoTestQueryNode for TestQueryNode {
+        fn clone_into_test_query_node(&self) -> TestQueryNode {
+            self.clone()
+        }
+    }
+
+    impl CloneIntoTestQueryNode for VariableGraphNode {
+        fn clone_into_test_query_node(&self) -> TestQueryNode {
+            self.clone().into()
+        }
     }
 
     fn argument_diagnostic(
@@ -1574,15 +1652,8 @@ mod tests {
     fn result_node(
         query: VariableGraphQueryDefinition,
         returns: VariableGraphResultType,
-    ) -> VariableGraphNode {
-        VariableGraphNode {
-            id: "result".to_owned(),
-            kind: VariableGraphNodeKind::Query {
-                returns,
-                query,
-                arguments: Vec::new(),
-            },
-        }
+    ) -> TestQueryNode {
+        query_node("result", query, returns, Vec::new())
     }
 
     fn result_page(
@@ -2097,25 +2168,23 @@ mod tests {
 
     #[test]
     fn compiles_saved_sql_to_exact_revision_without_copying_sql_text() {
-        let node = VariableGraphNode {
-            id: "total".to_owned(),
-            kind: VariableGraphNodeKind::Query {
-                returns: VariableGraphResultType::Scalar {
-                    value_type: scalar(VariableGraphScalarType::Integer, false),
-                },
-                query: VariableGraphQueryDefinition::SavedSql {
-                    entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
-                    revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
-                    column: Some("total".to_owned()),
-                },
-                arguments: vec![argument(
-                    "day",
-                    "selected_day",
-                    VariableGraphScalarType::Date,
-                    false,
-                )],
+        let node = query_node(
+            "total",
+            VariableGraphQueryDefinition::SavedSql {
+                entry_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
+                revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
+                column: Some("total".to_owned()),
             },
-        };
+            VariableGraphResultType::Scalar {
+                value_type: scalar(VariableGraphScalarType::Integer, false),
+            },
+            vec![argument(
+                "day",
+                "selected_day",
+                VariableGraphScalarType::Date,
+                false,
+            )],
+        );
         let values = BTreeMap::from([(
             "selected_day".to_owned(),
             VariableGraphLiteral::Date("2026-10-18".to_owned()),
@@ -2257,57 +2326,51 @@ mod tests {
 
     #[test]
     fn rejects_invalid_query_definition_identity_and_argument_duplicates() {
-        let invalid_sql = VariableGraphNode {
-            id: "bad".to_owned(),
-            kind: VariableGraphNodeKind::Query {
-                returns: VariableGraphResultType::Scalar {
-                    value_type: scalar(VariableGraphScalarType::Integer, false),
-                },
-                query: VariableGraphQueryDefinition::InlineSql {
-                    sql: "DELETE FROM entries".to_owned(),
-                },
-                arguments: vec![],
+        let invalid_sql = query_node(
+            "bad",
+            VariableGraphQueryDefinition::InlineSql {
+                sql: "DELETE FROM entries".to_owned(),
             },
-        };
+            VariableGraphResultType::Scalar {
+                value_type: scalar(VariableGraphScalarType::Integer, false),
+            },
+            vec![],
+        );
         assert_eq!(
             compile_node(&invalid_sql, &BTreeMap::new()).expect_err("non-query inline SQL"),
             [graph_diagnostic("bad", "invalid_inline_sql")]
         );
 
-        let missing_saved_identity = VariableGraphNode {
-            id: "saved".to_owned(),
-            kind: VariableGraphNodeKind::Query {
-                returns: VariableGraphResultType::Scalar {
-                    value_type: scalar(VariableGraphScalarType::Integer, false),
-                },
-                query: VariableGraphQueryDefinition::SavedSql {
-                    entry_id: None,
-                    revision_id: None,
-                    column: None,
-                },
-                arguments: vec![],
+        let missing_saved_identity = query_node(
+            "saved",
+            VariableGraphQueryDefinition::SavedSql {
+                entry_id: None,
+                revision_id: None,
+                column: None,
             },
-        };
+            VariableGraphResultType::Scalar {
+                value_type: scalar(VariableGraphScalarType::Integer, false),
+            },
+            vec![],
+        );
         assert_eq!(
             compile_node(&missing_saved_identity, &BTreeMap::new())
                 .expect_err("exact Saved SQL identity required"),
             [graph_diagnostic("saved", "invalid_saved_sql_identity")]
         );
 
-        let invalid_saved_identity = VariableGraphNode {
-            id: "invalid_saved".to_owned(),
-            kind: VariableGraphNodeKind::Query {
-                returns: VariableGraphResultType::Scalar {
-                    value_type: scalar(VariableGraphScalarType::Integer, false),
-                },
-                query: VariableGraphQueryDefinition::SavedSql {
-                    entry_id: Some("not-a-uuid".to_owned()),
-                    revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
-                    column: None,
-                },
-                arguments: vec![],
+        let invalid_saved_identity = query_node(
+            "invalid_saved",
+            VariableGraphQueryDefinition::SavedSql {
+                entry_id: Some("not-a-uuid".to_owned()),
+                revision_id: Some("00000000-0000-0000-0000-000000000002".to_owned()),
+                column: None,
             },
-        };
+            VariableGraphResultType::Scalar {
+                value_type: scalar(VariableGraphScalarType::Integer, false),
+            },
+            vec![],
+        );
         assert_eq!(
             compile_node(&invalid_saved_identity, &BTreeMap::new())
                 .expect_err("invalid entry identity"),
@@ -2351,7 +2414,7 @@ mod tests {
         let VariableGraphNodeKind::Query { query, .. } = &mut oversized_sql.kind else {
             unreachable!("helper constructs a query node")
         };
-        *query = VariableGraphQueryDefinition::InlineSql {
+        query.definition = VariableGraphQueryDefinition::InlineSql {
             sql: format!("SELECT 1 /* {} */", "x".repeat(MAX_SQL_QUERY_BYTES + 1)),
         };
         assert_eq!(
@@ -2416,18 +2479,19 @@ mod tests {
         );
 
         let mut invalid_graph = graph_for(inline_node(vec![]));
-        invalid_graph.variables.push(VariableGraphNode {
-            id: "bad".to_owned(),
-            kind: VariableGraphNodeKind::Query {
-                returns: VariableGraphResultType::Scalar {
-                    value_type: scalar(VariableGraphScalarType::Integer, false),
-                },
-                query: VariableGraphQueryDefinition::InlineSql {
+        invalid_graph.variables.push(
+            query_node(
+                "bad",
+                VariableGraphQueryDefinition::InlineSql {
                     sql: "SELECT $missing".to_owned(),
                 },
-                arguments: vec![],
-            },
-        });
+                VariableGraphResultType::Scalar {
+                    value_type: scalar(VariableGraphScalarType::Integer, false),
+                },
+                vec![],
+            )
+            .node,
+        );
         assert_eq!(
             compile_variable_graph_query_request(
                 &invalid_graph,
@@ -2460,12 +2524,8 @@ mod tests {
                 false,
             )],
         );
-        let first_graph = VariableGraph {
-            variables: vec![downstream.clone(), upstream.clone()],
-        };
-        let reordered_graph = VariableGraph {
-            variables: vec![upstream, downstream],
-        };
+        let first_graph = graph_from_nodes(vec![downstream.clone(), upstream.clone()]);
+        let reordered_graph = graph_from_nodes(vec![upstream, downstream]);
         let values = BTreeMap::from([("upstream".to_owned(), VariableGraphLiteral::Integer(7))]);
         let requested = vec!["downstream".to_owned(), "upstream".to_owned()];
 
@@ -2538,9 +2598,7 @@ mod tests {
                 false,
             )],
         );
-        let graph = VariableGraph {
-            variables: vec![downstream, upstream],
-        };
+        let graph = graph_from_nodes(vec![downstream, upstream]);
         let requested = ["upstream".to_owned(), "downstream".to_owned()];
         let old_values =
             BTreeMap::from([("upstream".to_owned(), VariableGraphLiteral::Integer(7))]);
@@ -2643,9 +2701,7 @@ mod tests {
                 false,
             )],
         );
-        let graph = VariableGraph {
-            variables: vec![downstream, upstream],
-        };
+        let graph = graph_from_nodes(vec![downstream, upstream]);
         let values = BTreeMap::from([("upstream".to_owned(), VariableGraphLiteral::Integer(7))]);
 
         let deduplicated = compile_variable_graph_query_request_batch(
@@ -2694,19 +2750,18 @@ mod tests {
 
     #[test]
     fn batch_rejects_unknown_and_non_query_ids_without_partial_results() {
-        let graph = VariableGraph {
-            variables: vec![
-                scalar_query_node("query", "SELECT 1", vec![]),
-                VariableGraphNode {
-                    id: "input".to_owned(),
-                    kind: VariableGraphNodeKind::Input {
-                        value_type: scalar(VariableGraphScalarType::Integer, false),
-                        required: true,
-                        default: None,
-                    },
+        let graph = graph_from_nodes(vec![
+            scalar_query_node("query", "SELECT 1", vec![]),
+            VariableGraphNode {
+                id: "input".to_owned(),
+                kind: VariableGraphNodeKind::Input {
+                    value_type: scalar(VariableGraphScalarType::Integer, false),
+                    required: true,
+                    default: None,
                 },
-            ],
-        };
+            }
+            .into(),
+        ]);
         let diagnostics = compile_variable_graph_query_request_batch(
             &graph,
             &["query".to_owned(), "missing".to_owned(), "input".to_owned()],
@@ -2750,9 +2805,7 @@ mod tests {
             },
         };
         let good_query = scalar_query_node("good", "SELECT 1", vec![]);
-        let invalid_batch_graph = VariableGraph {
-            variables: vec![query, input, good_query],
-        };
+        let invalid_batch_graph = graph_from_nodes(vec![query, input.into(), good_query]);
         assert_eq!(
             compile_variable_graph_query_request_batch(
                 &invalid_batch_graph,
@@ -2771,25 +2824,21 @@ mod tests {
             }]
         );
 
-        let table = VariableGraphNode {
-            id: "table".to_owned(),
-            kind: VariableGraphNodeKind::Query {
-                returns: VariableGraphResultType::Table {
-                    columns: vec![VariableGraphColumn {
-                        name: "value".to_owned(),
-                        value_type: scalar(VariableGraphScalarType::Integer, false),
-                    }],
-                },
-                query: VariableGraphQueryDefinition::InlineSql {
-                    sql: "SELECT 1 AS value".to_owned(),
-                },
-                arguments: vec![],
+        let table = query_node(
+            "table",
+            VariableGraphQueryDefinition::InlineSql {
+                sql: "SELECT 1 AS value".to_owned(),
             },
-        };
+            VariableGraphResultType::Table {
+                columns: vec![VariableGraphColumn {
+                    name: "value".to_owned(),
+                    value_type: scalar(VariableGraphScalarType::Integer, false),
+                }],
+            },
+            vec![],
+        );
         let scalar = scalar_query_node("scalar", "SELECT 1", vec![]);
-        let valid_batch_graph = VariableGraph {
-            variables: vec![table, scalar],
-        };
+        let valid_batch_graph = graph_from_nodes(vec![table, scalar]);
         let requests = compile_variable_graph_query_request_batch(
             &valid_batch_graph,
             &["table".to_owned(), "scalar".to_owned()],
