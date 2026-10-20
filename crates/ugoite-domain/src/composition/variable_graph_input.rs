@@ -25,6 +25,13 @@ pub fn parse_variable_graph_input(
         return VariableGraphInputValue::Unset;
     }
     use super::variable_graph::{VariableGraphLiteral as Literal, VariableGraphScalarType as Type};
+    if matches!(
+        descriptor.scalar_type,
+        Type::Integer | Type::Float | Type::Decimal
+    ) && raw.len() > super::MAX_COMPOSITION_VARIABLE_NUMERIC_TOKEN_BYTES
+    {
+        return VariableGraphInputValue::Invalid;
+    }
     let literal = match descriptor.scalar_type {
         Type::String => Literal::String(raw.to_owned()),
         Type::Boolean => match raw {
@@ -213,6 +220,29 @@ mod tests {
         assert_eq!(
             parse_variable_graph_input(value_type, "0e-4000"),
             VariableGraphInputValue::Valid(VariableGraphLiteral::Float(0.0))
+        );
+    }
+
+    #[test]
+    fn numeric_inputs_enforce_the_shared_bounded_lexical_contract() {
+        let float_type = descriptor(VariableGraphScalarType::Float, false);
+        let maximum = "1".to_owned()
+            + &"0".repeat(super::super::MAX_COMPOSITION_VARIABLE_NUMERIC_TOKEN_BYTES - 1);
+        let too_long = maximum.clone() + "0";
+        assert!(matches!(
+            parse_variable_graph_input(float_type, &maximum),
+            VariableGraphInputValue::Valid(VariableGraphLiteral::Float(_))
+        ));
+        assert_eq!(
+            parse_variable_graph_input(float_type, &too_long),
+            VariableGraphInputValue::Invalid
+        );
+        assert_eq!(
+            parse_variable_graph_input(
+                descriptor(VariableGraphScalarType::Decimal, false),
+                &too_long
+            ),
+            VariableGraphInputValue::Invalid
         );
     }
 

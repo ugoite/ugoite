@@ -101,7 +101,14 @@ pub(super) fn normalize_composition_document(
         return Err(CompositionDiagnosticCode::InvalidComposition);
     }
 
-    let normalized = document.clone();
+    let mut normalized = document.clone();
+    for variable in &mut normalized.spec.variables {
+        if let VariableGraphNodeKind::Query { query, .. } = &mut variable.kind {
+            query
+                .form_bindings
+                .sort_by(|left, right| left.relation.cmp(&right.relation));
+        }
+    }
     Ok(normalized)
 }
 

@@ -68,7 +68,8 @@ use ugoite_api_client::{
 };
 use ugoite_core::composition::{
     CompositionDependencyIndex as CoreCompositionDependencyIndex,
-    CompositionDiagnostic as CoreCompositionDiagnostic, PreviewCompositionPlan,
+    CompositionDiagnostic as CoreCompositionDiagnostic,
+    CompositionScalarCardinality as CoreCompositionScalarCardinality, PreviewCompositionPlan,
     ResolvedComponentKind, ResolvedCompositionPlan,
 };
 use ugoite_core::composition_metric::{
@@ -11955,8 +11956,13 @@ fn api_composition_queries_and_bindings(
                 .map(api_composition_variable_column)
                 .collect();
             let scalar_cardinality =
-                matches!(&query.returns, VariableGraphResultType::Scalar { .. })
-                    .then_some(CompositionScalarCardinality::ExactlyOneRow);
+                query
+                    .scalar_cardinality
+                    .map(|cardinality| match cardinality {
+                        CoreCompositionScalarCardinality::ExactlyOneRow => {
+                            CompositionScalarCardinality::ExactlyOneRow
+                        }
+                    });
             let deferred_arguments = query
                 .deferred_arguments
                 .into_iter()

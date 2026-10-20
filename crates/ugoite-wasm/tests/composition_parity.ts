@@ -71,27 +71,27 @@ function paddedCompositionYaml(yaml: string, targetBytes: number): string {
 }
 
 function compositionVariablesYaml(yaml: string, targetCount: number): string {
-  const variablesBlock = yaml.split("  variables:\n")[1]?.split(
+  const variablesSection = yaml.split("  variables:\n")[1]?.split(
     "  components:\n",
   )[0];
-  if (!variablesBlock) throw new Error("Could not find the Composition variables");
-  const existingCount = (variablesBlock.match(/^    - id:/gm) ?? []).length;
-  const additionalCount = targetCount - existingCount;
-  if (additionalCount < 0) {
-    throw new Error("Requested variable count is below the SQL-first fixture");
+  if (!variablesSection) {
+    throw new Error("Could not find the Composition variables");
   }
-  const additionalQueries = Array.from(
-    { length: additionalCount },
+  const existingCount = (variablesSection.match(/^    - id:/gm) ?? []).length;
+  if (targetCount < existingCount) {
+    throw new Error("Cannot reduce the Composition variable count");
+  }
+  const constants = Array.from(
+    { length: targetCount - existingCount },
     (_, index) => {
-      const id = `extra_${index}`;
-      return `    - id: ${id}\n      kind: query\n      returns:\n        kind: scalar\n        value_type:\n          scalar_type: integer\n          nullable: false\n      query:\n        kind: inline_sql\n        sql: SELECT 1`;
+      const id = `extra_${existingCount + index}`;
+      return `    - id: ${id}\n      kind: constant\n      value_type:\n        scalar_type: integer\n        nullable: true\n      value:\n        kind: "null"`;
     },
   ).join("\n");
-  if (!additionalQueries) return yaml;
-  return yaml.replace(
-    "  components:\n",
-    `${additionalQueries}\n  components:\n`,
-  );
+  if (!yaml.includes("  components:\n")) {
+    throw new Error("Could not locate the Composition component collection");
+  }
+  return yaml.replace("  components:\n", `${constants}\n  components:\n`);
 }
 
 function nestedFutureCompositionYaml(depth: number): string {
@@ -220,10 +220,14 @@ async function main(): Promise<void> {
     "WASM parser rejects input over the byte limit",
   );
 
+  const collectionBoundaryYaml = compositionVariablesYaml(
+    yaml,
+    MAX_COMPOSITION_COLLECTION_ITEMS,
+  );
   const atCollectionLimit = await invokeWasm(
     instance.exports,
     compositionYamlResponse(
-      compositionVariablesYaml(yaml, MAX_COMPOSITION_COLLECTION_ITEMS),
+      collectionBoundaryYaml,
     ),
   );
   assertEqual(
@@ -428,7 +432,9 @@ async function main(): Promise<void> {
     "      variable: missing",
   );
   if (invalidVariableReferenceYaml === yaml) {
-    throw new Error("Could not build an invalid graph variable reference fixture");
+    throw new Error(
+      "Could not build an invalid graph variable reference fixture",
+    );
   }
   const unsupportedOldSourceYaml = yaml.replace(
     "kind: inline_sql",
@@ -533,8 +539,16 @@ async function main(): Promise<void> {
       raw: "2026-10-13T14:59:59",
       expected: { status: "invalid" },
     },
-    { scalar_type: "decimal", raw: "123.4500", expected: { status: "valid", value: "123.4500" } },
-    { scalar_type: "json", raw: "{\"x\":1}", expected: { status: "valid", value: { x: 1 } } },
+    {
+      scalar_type: "decimal",
+      raw: "123.4500",
+      expected: { status: "valid", value: "123.4500" },
+    },
+    {
+      scalar_type: "json",
+      raw: '{"x":1}',
+      expected: { status: "valid", value: { x: 1 } },
+    },
   ] as const;
   for (const { scalar_type, raw, expected } of variableInputCases) {
     const response = await invokeWasm(instance.exports, {
