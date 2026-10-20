@@ -58,6 +58,7 @@ type ColumnChoice = {
   value: string;
   label: string;
 };
+type ColumnAliasDraft = { name: string; quoted: boolean };
 type AnalyzedStructure = {
   context: SqlStructureAdapterContext;
   analysis: SqlStructureAnalysis;
@@ -145,6 +146,9 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   const [literalProjection, setLiteralProjection] = createSignal<
     SqlStructureLiteral[]
   >([]);
+  const [columnAliases, setColumnAliases] = createSignal<
+    Record<string, ColumnAliasDraft>
+  >({});
   const [filters, setFilters] = createSignal<FilterDraft[]>([]);
   const [sorts, setSorts] = createSignal<SortDraft[]>([]);
   const [aggregates, setAggregates] = createSignal<SqlStructureAggregate[]>([]);
@@ -180,6 +184,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     setActiveAction(null);
     setSelectedColumns([]);
     setLiteralProjection([]);
+    setColumnAliases({});
     setFilters([]);
     setSorts([]);
     setAggregates([]);
@@ -605,6 +610,18 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
         )
         : [...projection],
     );
+    const aliasesByColumn = Object.fromEntries(
+      current.analysis.projection_aliases.map(({ column, alias }) => [
+        column,
+        { name: alias?.name ?? "", quoted: alias?.quoted ?? false },
+      ]),
+    );
+    setColumnAliases(Object.fromEntries(
+      allColumns.map((column) => [
+        column,
+        aliasesByColumn[column] ?? { name: "", quoted: false },
+      ]),
+    ));
     setFilters(current.analysis.filters.map((filter) => ({
       column: filter.column,
       ...(filter.qualifier ? { qualifier: { ...filter.qualifier } } : {}),
@@ -915,7 +932,19 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     const operation: SqlStructureOperation = action === "columns"
       ? current.context.parser.relation === ""
         ? { kind: "set_literal_projection", values: literalProjection() }
-        : { kind: "set_columns", columns: selectedColumns() }
+        : {
+          kind: "set_columns",
+          columns: selectedColumns(),
+          aliases: selectedColumns().map((column) => {
+            const alias = columnAliases()[column];
+            return alias?.name.length
+              ? {
+                name: alias.name,
+                quoted: alias.quoted,
+              } satisfies SqlStructureAlias
+              : null;
+          }),
+        }
       : action === "join"
       ? {
         kind: "set_join",
@@ -1206,39 +1235,110 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                     <Show
                       when={ready()?.context.parser.relation === ""}
                       fallback={
-                        <fieldset class="sql-structure-column-list">
-                          <legend class="ui-sr-only">
-                            {t("sqlPage.structure.columns")}
-                          </legend>
-                          <For each={ready()?.context.parser.columns ?? []}>
-                            {(column) => (
-                              <label class="sql-structure-option">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedColumns().includes(
-                                    column.name,
-                                  )}
-                                  disabled={!ready()?.context
-                                    .columnCapabilities[
-                                      column.name
-                                    ]?.projectable &&
-                                    !selectedColumns().includes(column.name)}
-                                  onChange={(event) => {
-                                    const current = selectedColumns();
-                                    setSelectedColumns(
-                                      event.currentTarget.checked
-                                        ? [...current, column.name]
-                                        : current.filter((name) =>
-                                          name !== column.name
-                                        ),
-                                    );
-                                  }}
-                                />
-                                <span>{column.name}</span>
-                              </label>
-                            )}
-                          </For>
-                        </fieldset>
+                        <div class="sql-structure-columns-editor">
+                          <fieldset class="sql-structure-column-list">
+                            <legend class="ui-sr-only">
+                              {t("sqlPage.structure.columns")}
+                            </legend>
+                            <For each={ready()?.context.parser.columns ?? []}>
+                              {(column) => (
+                                <label class="sql-structure-option">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedColumns().includes(
+                                      column.name,
+                                    )}
+                                    disabled={!ready()?.context
+                                      .columnCapabilities[
+                                        column.name
+                                      ]?.projectable &&
+                                      !selectedColumns().includes(column.name)}
+                                    onChange={(event) => {
+                                      const current = selectedColumns();
+                                      setSelectedColumns(
+                                        event.currentTarget.checked
+                                          ? [...current, column.name]
+                                          : current.filter((name) =>
+                                            name !== column.name
+                                          ),
+                                      );
+                                    }}
+                                  />
+                                  <span>{column.name}</span>
+                                </label>
+                              )}
+                            </For>
+                          </fieldset>
+                          <Show
+                            when={ready()?.analysis.projection_aliases.length ||
+                              ready()?.analysis.projection.includes("*")}
+                          >
+                            <fieldset class="sql-structure-column-alias-list">
+                              <legend class="ui-sr-only">
+                                {t("sqlPage.structure.aliases")}
+                              </legend>
+                              <For each={selectedColumns()}>
+                                {(column) => (
+                                  <div class="sql-structure-column-alias-row">
+                                    <span class="sql-structure-column-alias-name">
+                                      {column}
+                                    </span>
+                                    <label class="ui-field">
+                                      <span class="ui-sr-only">
+                                        {t("sqlPage.structure.aliasFor", {
+                                          column,
+                                        })}
+                                      </span>
+                                      <input
+                                        class="ui-input"
+                                        type="text"
+                                        value={columnAliases()[column]?.name ??
+                                          ""}
+                                        aria-label={t(
+                                          "sqlPage.structure.aliasFor",
+                                          { column },
+                                        )}
+                                        onInput={(event) =>
+                                          setColumnAliases((current) => ({
+                                            ...current,
+                                            [column]: {
+                                              name: event.currentTarget.value,
+                                              quoted: current[column]?.quoted ??
+                                                false,
+                                            },
+                                          }))}
+                                      />
+                                    </label>
+                                    <label class="sql-structure-option sql-structure-column-alias-quoted">
+                                      <input
+                                        type="checkbox"
+                                        checked={columnAliases()[column]
+                                          ?.quoted ??
+                                          false}
+                                        aria-label={t(
+                                          "sqlPage.structure.quoteAliasFor",
+                                          { column },
+                                        )}
+                                        onChange={(event) =>
+                                          setColumnAliases((current) => ({
+                                            ...current,
+                                            [column]: {
+                                              name: current[column]?.name ?? "",
+                                              quoted:
+                                                event.currentTarget.checked,
+                                            },
+                                          }))}
+                                      />
+                                      <span>
+                                        {t("sqlPage.structure.quotedAlias")}
+                                      </span>
+                                    </label>
+                                  </div>
+                                )}
+                              </For>
+                            </fieldset>
+                          </Show>
+                        </div>
                       }
                     >
                       <fieldset class="sql-structure-literal-list">

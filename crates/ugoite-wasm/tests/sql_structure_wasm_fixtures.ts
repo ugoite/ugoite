@@ -423,6 +423,39 @@ async function main(): Promise<void> {
     ],
     stable_key: ["_ugoite_id"],
   };
+  const aliasSortSql =
+    'SELECT "amount" AS "title" FROM "Task" ORDER BY "title"';
+  const aliasSortRename = await invokeWasm(instance.exports, {
+    action: "domain.propose_sql_structure_operation",
+    value: {
+      sql: aliasSortSql,
+      context,
+      operation: {
+        kind: "set_columns",
+        columns: ["amount"],
+        aliases: [{ name: "total", quoted: false }],
+      },
+    },
+  });
+  assertEqual(aliasSortRename.ok, true, "alias sort protocol envelope");
+  const rejectedAliasSort = aliasSortRename.value as Record<string, unknown>;
+  assertEqual(
+    rejectedAliasSort.status,
+    "unsupported",
+    "alias edit that changes ORDER BY binding is rejected",
+  );
+  assertEqual(
+    rejectedAliasSort.reason,
+    "sort_unsupported",
+    "alias sort binding reason",
+  );
+  assertEqual(rejectedAliasSort.base_sql, aliasSortSql, "alias sort base SQL");
+  assertEqual(
+    rejectedAliasSort.proposed_sql,
+    undefined,
+    "unsafe alias sort has no proposed SQL",
+  );
+
   const sql =
     'SELECT * FROM "Task" WHERE "title" = $title ORDER BY "amount" DESC';
 

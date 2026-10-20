@@ -5387,6 +5387,31 @@ a.tool {
   min-width: 0;
 }
 
+.sql-structure-columns-editor,
+.sql-structure-column-alias-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sql-structure-column-alias-list {
+  max-height: min(35dvh, 320px);
+  overflow: auto;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md);
+}
+
+.sql-structure-column-alias-row {
+  display: grid;
+  grid-template-columns: minmax(3.5rem, 0.7fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .sql-structure-literal-row .ui-input,
 .sql-structure-literal-row .icononly,
 .sql-structure-literal-list .ui-button {
@@ -5394,6 +5419,21 @@ a.tool {
   min-height: 44px;
   min-width: 0;
   font-size: 16px;
+}
+
+.sql-structure-column-alias-name {
+  overflow-wrap: anywhere;
+}
+
+.sql-structure-column-alias-row .ui-input {
+  box-sizing: border-box;
+  min-height: 44px;
+  min-width: 0;
+  font-size: 16px;
+}
+
+.sql-structure-column-alias-quoted {
+  white-space: nowrap;
 }
 
 .sql-structure-option {
@@ -5511,6 +5551,18 @@ a.tool {
 }
 
 @media (max-width: 600px) {
+  .sql-structure-column-alias-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .sql-structure-column-alias-name {
+    grid-column: 1 / -1;
+  }
+
+  .sql-structure-column-alias-quoted {
+    justify-self: end;
+  }
+
   .sql-structure-filter-row {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
