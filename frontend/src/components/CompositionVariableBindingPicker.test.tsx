@@ -95,7 +95,7 @@ describe("CompositionVariableBindingPicker", () => {
       />
     ));
 
-  it("creates and inserts a Form table as one variable-only draft change", async () => {
+  it("inserts a Form table with only a variable reference", async () => {
     const onCommit = vi.fn();
     const provider: CompositionBindingProvider = {
       resolveForm: vi.fn(async () => ({ variable: formQuery })),
@@ -119,7 +119,7 @@ describe("CompositionVariableBindingPicker", () => {
     );
   });
 
-  it("requires an explicit aggregate choice before creating a Form metric", async () => {
+  it("requires explicit aggregate selection for a Form metric", async () => {
     const onCommit = vi.fn();
     const resolveForm = vi.fn(async () => ({ variable: metricQuery }));
     renderPicker({
