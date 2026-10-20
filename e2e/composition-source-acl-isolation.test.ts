@@ -24,6 +24,7 @@ type CompositionSeed = {
   savedSqlId: string;
   savedSqlRevisionId: string;
   savedSqlName: string;
+  protectedSql: string;
   compositionId: string;
   compositionRevisionId: string;
   compositionName: string;
@@ -211,6 +212,7 @@ async function seedGraph(
     savedSqlId: savedSql.id!,
     savedSqlRevisionId: savedSql.revision_id!,
     savedSqlName,
+    protectedSql: sql,
     compositionId: composition.composition_id!,
     compositionRevisionId: composition.revision_id!,
     compositionName: options.compositionName,
@@ -311,12 +313,15 @@ test.describe("Composition graph ACL and runtime isolation", () => {
         const bodyText = await denied.text();
         expect([200, 403]).toContain(denied.status());
         expect(bodyText).not.toContain(seed.protectedValue);
+        expect(bodyText).not.toContain(seed.protectedSql);
+        expect(bodyText).not.toContain(seed.savedSqlName);
         if (denied.ok()) {
           const body = JSON.parse(bodyText) as EvaluationBody;
           expect(body.ok).toBe(false);
           expect(body.query_results ?? {}).toEqual({});
         }
         expect(bodyText).not.toContain(resourceId);
+        expect(bodyText).not.toContain(seed.formName);
 
         const browserEvaluation = evaluationResponse(page);
         await page.getByRole("textbox", { name: VARIABLE_ID }).fill("match-2");
@@ -324,6 +329,10 @@ test.describe("Composition graph ACL and runtime isolation", () => {
         expect([200, 403]).toContain(browserResponse.status());
         const browserBody = await browserResponse.text();
         expect(browserBody).not.toContain(seed.protectedValue);
+        expect(browserBody).not.toContain(seed.protectedSql);
+        expect(browserBody).not.toContain(seed.savedSqlName);
+        expect(browserBody).not.toContain(seed.formName);
+        expect(browserBody).not.toContain(resourceId);
         await expect(page.locator("body")).not.toContainText(
           seed.protectedValue,
         );
