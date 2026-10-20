@@ -1534,17 +1534,16 @@ fn is_wildcard_projection(projection: &[SelectItem]) -> bool {
     )
 }
 
+type ParsedProjection = (
+    Vec<String>,
+    Vec<SqlStructureProjectionAlias>,
+    Vec<SqlStructureAggregate>,
+);
+
 fn parse_projection(
     projection: &[SelectItem],
     context: &SqlStructureContext,
-) -> Result<
-    (
-        Vec<String>,
-        Vec<SqlStructureProjectionAlias>,
-        Vec<SqlStructureAggregate>,
-    ),
-    SqlStructureReason,
-> {
+) -> Result<ParsedProjection, SqlStructureReason> {
     if projection.is_empty() || projection.len() > 384 {
         return Err(SqlStructureReason::ProjectionUnsupported);
     }
@@ -2641,7 +2640,7 @@ fn comment_follows_source_offset(sql: &str, offset: usize) -> Option<bool> {
 }
 
 fn apply_sql_source_edits(sql: &str, mut edits: Vec<(SqlSourceRange, String)>) -> Option<String> {
-    edits.sort_by(|(left, _), (right, _)| right.start.cmp(&left.start));
+    edits.sort_by_key(|(range, _)| std::cmp::Reverse(range.start));
     let mut result = sql.to_owned();
     let mut previous_start = sql.len().checked_add(1)?;
     for (range, replacement) in edits {
