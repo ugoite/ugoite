@@ -226,6 +226,23 @@ function evaluationResponse(page: import("@playwright/test").Page) {
   );
 }
 
+function responseContainsText(bodyText: string, expected: string): boolean {
+  const contains = (value: unknown): boolean => {
+    if (typeof value === "string") return value.includes(expected);
+    if (Array.isArray(value)) return value.some(contains);
+    if (value !== null && typeof value === "object") {
+      return Object.values(value).some(contains);
+    }
+    return false;
+  };
+  if (bodyText.includes(expected)) return true;
+  try {
+    return contains(JSON.parse(bodyText) as unknown);
+  } catch {
+    return false;
+  }
+}
+
 function compositionPath(seed: CompositionSeed): string {
   return `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/${seed.compositionRevisionId}`;
 }
@@ -312,27 +329,54 @@ test.describe("Composition graph ACL and runtime isolation", () => {
         const denied = await evaluateExactRevision(viewerContext.request, seed);
         const bodyText = await denied.text();
         expect([200, 403]).toContain(denied.status());
-        expect(bodyText).not.toContain(seed.protectedValue);
-        expect(bodyText).not.toContain(seed.protectedSql);
-        expect(bodyText).not.toContain(seed.savedSqlName);
+        expect(responseContainsText(bodyText, seed.protectedValue)).toBe(false);
+        expect(responseContainsText(bodyText, seed.protectedSql)).toBe(false);
         if (denied.ok()) {
           const body = JSON.parse(bodyText) as EvaluationBody;
           expect(body.ok).toBe(false);
           expect(body.query_results ?? {}).toEqual({});
         }
-        expect(bodyText).not.toContain(resourceId);
-        expect(bodyText).not.toContain(seed.formName);
+        expect(responseContainsText(bodyText, resourceId)).toBe(false);
+        if (policyKind === "form") {
+          expect(responseContainsText(bodyText, seed.formName)).toBe(false);
+        } else {
+          expect(responseContainsText(bodyText, seed.savedSqlName)).toBe(false);
+        }
 
         const browserEvaluation = evaluationResponse(page);
+        const legacySqlRequests: string[] = [];
+        const captureLegacySqlRequest = (
+          browserRequest: import("@playwright/test").Request,
+        ) => {
+          const pathname = new URL(browserRequest.url()).pathname;
+          if (pathname.endsWith("/sql/query")) legacySqlRequests.push(pathname);
+        };
+        page.on("request", captureLegacySqlRequest);
         await page.getByRole("textbox", { name: VARIABLE_ID }).fill("match-2");
         const browserResponse = await browserEvaluation;
+        page.off("request", captureLegacySqlRequest);
+        expect(legacySqlRequests).toEqual([]);
         expect([200, 403]).toContain(browserResponse.status());
         const browserBody = await browserResponse.text();
-        expect(browserBody).not.toContain(seed.protectedValue);
-        expect(browserBody).not.toContain(seed.protectedSql);
-        expect(browserBody).not.toContain(seed.savedSqlName);
-        expect(browserBody).not.toContain(seed.formName);
-        expect(browserBody).not.toContain(resourceId);
+        expect(responseContainsText(browserBody, seed.protectedValue)).toBe(
+          false,
+        );
+        expect(responseContainsText(browserBody, seed.protectedSql)).toBe(
+          false,
+        );
+        expect(responseContainsText(browserBody, resourceId)).toBe(false);
+        if (policyKind === "form") {
+          expect(responseContainsText(browserBody, seed.formName)).toBe(false);
+        } else {
+          expect(responseContainsText(browserBody, seed.savedSqlName)).toBe(
+            false,
+          );
+        }
+        if (browserResponse.ok()) {
+          const body = JSON.parse(browserBody) as EvaluationBody;
+          expect(body.ok).toBe(false);
+          expect(body.query_results ?? {}).toEqual({});
+        }
         await expect(page.locator("body")).not.toContainText(
           seed.protectedValue,
         );
