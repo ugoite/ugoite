@@ -1,5 +1,10 @@
 import { type APIRequestContext, expect, test } from "@playwright/test";
-import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
+import {
+  getBackendUrl,
+  getDefaultSpaceId,
+  getFrontendUrl,
+  waitForServers,
+} from "./lib/client.ts";
 import {
   completeCompositionGraphYaml,
   type CompositionGraphSeed,
@@ -19,17 +24,7 @@ function sqlIdentifier(value: string): string {
 }
 
 async function createSpace(request: APIRequestContext): Promise<string> {
-  const suffix = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
-  const response = await request.post(getBackendUrl("/spaces"), {
-    data: {
-      slug: `composition-page-metric-${suffix}`,
-      name: `Composition page metric ${suffix}`,
-    },
-  });
-  expect([200, 201]).toContain(response.status());
-  const result = await response.json() as { space_uid?: string };
-  expect(result.space_uid).toBeTruthy();
-  return result.space_uid!;
+  return await getDefaultSpaceId(request);
 }
 
 async function createSavedSql(

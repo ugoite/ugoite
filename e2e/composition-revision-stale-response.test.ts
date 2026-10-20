@@ -4,7 +4,12 @@ import {
   type Page,
   test,
 } from "@playwright/test";
-import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
+import {
+  getBackendUrl,
+  getDefaultSpaceId,
+  getFrontendUrl,
+  waitForServers,
+} from "./lib/client.ts";
 import {
   completeCompositionGraphYaml,
   type CompositionGraphSeed,
@@ -37,17 +42,7 @@ function sqlIdentifier(value: string): string {
 }
 
 async function createSpace(request: APIRequestContext): Promise<string> {
-  const suffix = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
-  const response = await request.post(getBackendUrl("/spaces"), {
-    data: {
-      slug: `composition-revision-race-${suffix}`,
-      name: `Composition Revision Race ${suffix}`,
-    },
-  });
-  expect([200, 201]).toContain(response.status());
-  const result = await response.json() as { space_uid?: string };
-  expect(result.space_uid).toBeTruthy();
-  return result.space_uid!;
+  return await getDefaultSpaceId(request);
 }
 
 function compositionGraph(
@@ -84,10 +79,16 @@ function compositionGraph(
         },
       },
     ],
-    components: [{ id: "total", kind: "metric", variable: "total_value" }],
+    components: [
+      { id: "cutoff", kind: "input", variable: "cutoff_date" },
+      { id: "total", kind: "metric", variable: "total_value" },
+    ],
     rows: [{
       id: "main",
-      items: [{ kind: "component", component: "total" }],
+      items: [
+        { kind: "component", component: "cutoff" },
+        { kind: "component", component: "total" },
+      ],
     }],
   };
 }

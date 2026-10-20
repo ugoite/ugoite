@@ -212,6 +212,95 @@ async fn draft_preview_resolves_without_publication() -> Result<()> {
 }
 
 #[tokio::test]
+async fn graph_evaluation_keeps_valid_results_when_an_independent_query_fails() -> Result<()> {
+    let (service, space_id, mut document, _) = setup_preview_space().await?;
+    for (id, sql, scalar_type, nullable) in [
+        (
+            "row_count",
+            "SELECT COUNT(*) AS value FROM \"Composition-Preview\"",
+            VariableGraphScalarType::Integer,
+            false,
+        ),
+        (
+            "empty_value",
+            "SELECT \"field_100\" AS value FROM \"Composition-Preview\" WHERE 1 = 0",
+            VariableGraphScalarType::String,
+            true,
+        ),
+    ] {
+        document.spec.variables.push(VariableGraphNode {
+            id: id.to_string(),
+            kind: VariableGraphNodeKind::Query {
+                returns: VariableGraphResultType::Scalar {
+                    value_type: VariableGraphScalarDescriptor {
+                        scalar_type,
+                        nullable,
+                    },
+                },
+                query: VariableGraphQuery {
+                    definition: VariableGraphQueryDefinition::InlineSql {
+                        sql: sql.to_string(),
+                    },
+                    arguments: Vec::new(),
+                    form_bindings: Vec::new(),
+                    schema_fingerprint: String::new(),
+                },
+            },
+        });
+        document.spec.components.push(CompositionComponent::Metric {
+            id: format!("{id}_metric"),
+            variable: id.to_string(),
+            presentation: None,
+        });
+        document.spec.layout.rows.push(FlowRow {
+            id: format!("{id}_row"),
+            items: vec![FlowItem::Component {
+                component: format!("{id}_metric"),
+            }],
+        });
+    }
+
+    let saved = save_local_composition(&service, &space_id, document).await?;
+    let response = service
+        .evaluate_composition_graph_local(
+            &space_id,
+            CompositionQueryEvaluationTarget::SavedRevision {
+                composition_id: saved.entry_id.to_string(),
+                revision_id: saved.revision_id.to_string(),
+            },
+            Uuid::now_v7(),
+            None,
+            None,
+            &BTreeMap::new(),
+            &[],
+            None,
+            None,
+        )
+        .await?;
+
+    assert!(!response.ok);
+    assert!(matches!(
+        response
+            .query_results
+            .get("row_count")
+            .map(|result| &result.result),
+        Some(VariableGraphValidatedResult::Scalar {
+            value: VariableGraphLiteral::Integer(3)
+        })
+    ));
+    assert!(!response.query_results.contains_key("empty_value"));
+    assert!(response.query_diagnostics.iter().any(|diagnostic| {
+        diagnostic.variable_id == "empty_value"
+            && diagnostic
+                .result_diagnostic
+                .as_ref()
+                .and_then(|result| result.result_diagnostic.as_ref())
+                .is_some_and(|result| result.code.as_str() == "scalar_no_rows")
+    }));
+    Ok(())
+}
+
+#[tokio::test]
 async fn preview_plans_query_arguments_with_server_derived_upstream_types() -> Result<()> {
     let (service, space_id, mut document, _) = setup_preview_space().await?;
     let forged_type = VariableGraphScalarDescriptor {

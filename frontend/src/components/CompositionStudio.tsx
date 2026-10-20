@@ -269,7 +269,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
     pageNumber: number,
   ): SQLWorkspacePreview => {
     const evaluated = evaluation.query_results[variableId];
-    if (!evaluation.ok || !evaluated) {
+    if (!evaluated) {
       const diagnostic = evaluation.query_diagnostics?.find((entry) =>
         entry.variable_id === variableId
       ) ?? evaluation.diagnostics?.find((entry) =>

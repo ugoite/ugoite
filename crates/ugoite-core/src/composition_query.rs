@@ -703,6 +703,15 @@ impl VariableGraphQueryEvaluation {
             query_results: self.validated_results.clone(),
         })
     }
+
+    /// Expose only query pages that passed validation, even when another
+    /// independent query in the same snapshot failed.
+    pub fn partial_preview(&self) -> VariableGraphQueryPreview {
+        VariableGraphQueryPreview {
+            execution_id: self.execution_id,
+            query_results: self.validated_results.clone(),
+        }
+    }
 }
 
 fn selected_query_dependency_closure(

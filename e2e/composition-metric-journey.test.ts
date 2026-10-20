@@ -5,7 +5,12 @@ import {
   expect,
   test,
 } from "@playwright/test";
-import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
+import {
+  getBackendUrl,
+  getDefaultSpaceId,
+  getFrontendUrl,
+  waitForServers,
+} from "./lib/client.ts";
 import {
   completeCompositionGraphYaml,
   type CompositionGraphSeed,
@@ -28,17 +33,7 @@ function sqlIdentifier(value: string): string {
 }
 
 async function createSpace(request: APIRequestContext): Promise<string> {
-  const suffix = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
-  const response = await request.post(getBackendUrl("/spaces"), {
-    data: {
-      slug: `composition-metric-${suffix}`,
-      name: `Composition Metric ${suffix}`,
-    },
-  });
-  expect([200, 201]).toContain(response.status());
-  const result = await response.json() as { space_uid?: string };
-  expect(result.space_uid).toBeTruthy();
-  return result.space_uid!;
+  return await getDefaultSpaceId(request);
 }
 
 async function seedMetricComposition(
@@ -257,7 +252,7 @@ test.describe("Composition Metric Journey", () => {
       await expect(page.getByRole("alert")).toContainText(
         MULTIPLE_ROWS_DIAGNOSTIC,
       );
-      await expect(page.getByRole("button", { name: "Edit", exact: true }))
+      await expect(page.getByRole("link", { name: "Edit", exact: true }))
         .toBeVisible();
       await expect(page.locator(".compositionGraphMetric strong")).toHaveCount(
         0,

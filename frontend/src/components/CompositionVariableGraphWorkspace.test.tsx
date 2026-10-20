@@ -62,6 +62,35 @@ describe("CompositionVariableGraphWorkspace", () => {
     expect(onDraftChange).toHaveBeenCalled();
   });
 
+  it("commits a variable rename while the ID field is edited", () => {
+    setLocale("en");
+    const [draft, setDraft] = createSignal<CompositionGraphDraft>(
+      createCompositionGraphDraft("Report"),
+    );
+    const [selected, setSelected] = createSignal<string | null>(null);
+    render(() => (
+      <CompositionVariableGraphWorkspace
+        draft={draft()}
+        selectedVariableId={selected()}
+        onSelect={setSelected}
+        onDraftChange={setDraft}
+        onRemove={() => {}}
+        sqlSchema={buildSqlSchema([])}
+      />
+    ));
+
+    fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
+    fireEvent.click(screen.getByRole("button", { name: "Input" }));
+    fireEvent.input(screen.getByRole("textbox", { name: "Variable ID" }), {
+      target: { value: "month_start" },
+    });
+
+    expect(draft().variables[0]?.id).toBe("month_start");
+    expect(selected()).toBe("month_start");
+    expect(screen.getByRole("button", { name: "month_start" }))
+      .toBeVisible();
+  });
+
   it("binds declared SQL arguments only to compatible graph variables", () => {
     setLocale("en");
     const draft = createCompositionGraphDraft("Report");

@@ -41,6 +41,7 @@ import { spaceRoute } from "~/lib/space-shell-route";
 export const route = spaceRoute({ navigation: "compositions" });
 
 interface RevisionDocument {
+  routeKey: string;
   name: string;
   draft: CompositionGraphDraft;
 }
@@ -70,6 +71,12 @@ export default function CompositionRevisionRoute() {
   const navigate = useNavigate();
   const historyHref = () =>
     spaceCompositionHistoryPath(params.space_id, params.composition_id);
+  const routeKey = () =>
+    JSON.stringify([
+      params.space_id,
+      params.composition_id,
+      params.revision_id,
+    ]);
 
   const [listing] = createResource(
     () => params.space_id,
@@ -100,23 +107,34 @@ export default function CompositionRevisionRoute() {
   };
 
   const [revision] = createResource(
-    () =>
-      params.space_id + "/" + params.composition_id + "/" +
-      params.revision_id,
-    async () => {
+    routeKey,
+    async (key) => {
+      const [spaceId, compositionId, revisionId] = JSON.parse(key) as [
+        string,
+        string,
+        string,
+      ];
       const raw = await compositionApi.get(
-        params.space_id,
-        params.composition_id,
-        params.revision_id,
+        spaceId,
+        compositionId,
+        revisionId,
       );
       const yaml = raw.fields.spec;
       if (typeof yaml !== "string") throw new Error("Missing Composition spec");
       const linted = await compositionApi.lint(yaml);
       if (!linted.ok || !linted.value) throw new Error("Invalid Composition");
       const draft = compositionGraphDraftFromDocument(linted.value.document);
-      return { name: draft.name, draft } satisfies RevisionDocument;
+      return {
+        routeKey: key,
+        name: draft.name,
+        draft,
+      } satisfies RevisionDocument;
     },
   );
+  const currentRevision = () => {
+    const document = revision();
+    return document?.routeKey === routeKey() ? document : undefined;
+  };
 
   const [rawInputs, setRawInputs] = createSignal<Record<string, string>>({});
   const [inputValues, setInputValues] = createSignal<Record<string, unknown>>(
@@ -170,12 +188,16 @@ export default function CompositionRevisionRoute() {
   };
 
   const evaluate = async (page?: { variable_id: string; cursor: string }) => {
-    if (!revision()) return;
+    if (!currentRevision()) return;
     if (
       Object.values(inputStates()).some((state) =>
         state === "pending" || state === "invalid"
       )
     ) return;
+    const routeScope = routeKey();
+    const spaceId = params.space_id;
+    const compositionId = params.composition_id;
+    const revisionId = params.revision_id;
     const generation = ++evaluationGeneration;
     let evaluationId = page ? activeEvaluationId : crypto.randomUUID();
     if (!page) activeEvaluationId = evaluationId;
@@ -203,12 +225,12 @@ export default function CompositionRevisionRoute() {
     }));
     try {
       const request = (id: string, requested?: string[]) =>
-        compositionApi.evaluate(params.space_id, {
+        compositionApi.evaluate(spaceId, {
           evaluation_id: id,
           target: {
             kind: "saved_revision",
-            composition_id: params.composition_id,
-            revision_id: params.revision_id,
+            composition_id: compositionId,
+            revision_id: revisionId,
           },
           variables: values.variables,
           ...(values.unset.length ? { unset_variables: values.unset } : {}),
@@ -217,16 +239,19 @@ export default function CompositionRevisionRoute() {
         });
       let response = await request(evaluationId, requestedQueries);
       if (
+        routeScope !== routeKey() ||
         generation !== evaluationGeneration ||
         response.evaluation_id !== evaluationId
       ) return;
 
       let reusablePrevious = previous;
+      const responseIdentity = compositionEvaluationIdentity(response);
       if (
         !page && requestedQueries !== undefined && previous &&
+        responseIdentity &&
         !sameCompositionEvaluationIdentity(
           previousIdentity,
-          compositionEvaluationIdentity(response),
+          responseIdentity,
         )
       ) {
         // ACL, publication, or revision changed. Discard every retained value
@@ -237,6 +262,7 @@ export default function CompositionRevisionRoute() {
         setEvaluation({ status: "loading", evaluationId });
         response = await request(evaluationId);
         if (
+          routeScope !== routeKey() ||
           generation !== evaluationGeneration ||
           response.evaluation_id !== evaluationId
         ) return;
@@ -302,7 +328,9 @@ export default function CompositionRevisionRoute() {
           : t("composition.queryFailed"),
       });
     } catch (error) {
-      if (generation !== evaluationGeneration) return;
+      if (routeScope !== routeKey() || generation !== evaluationGeneration) {
+        return;
+      }
       setEvaluation({
         status: "error",
         evaluationId,
@@ -317,7 +345,7 @@ export default function CompositionRevisionRoute() {
 
   const handleInput = (variableId: string, raw: string) => {
     setRawInputs((current) => ({ ...current, [variableId]: raw }));
-    const node = revision()?.draft.variables.find((item) =>
+    const node = currentRevision()?.draft.variables.find((item) =>
       item.id === variableId && item.kind === "input"
     );
     if (!node || node.kind !== "input") return;
@@ -388,8 +416,25 @@ export default function CompositionRevisionRoute() {
   };
 
   createEffect(() => {
-    const ready = revision();
-    if (!ready) return;
+    const currentRouteKey = routeKey();
+    const ready = currentRevision();
+    if (!ready) {
+      evaluationGeneration++;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = undefined;
+      activeEvaluationId = "";
+      lastEvaluatedInputs = undefined;
+      setRawInputs({});
+      setInputValues({});
+      setUnsetInputs([]);
+      setInputStates({});
+      setBlockedQueryIds(new Set());
+      setTablePages({});
+      parseGenerations.clear();
+      setEvaluation({ status: "loading" });
+      return;
+    }
+    if (ready.routeKey !== currentRouteKey) return;
     setRawInputs(
       Object.fromEntries(
         ready.draft.variables.flatMap((node) =>
@@ -498,7 +543,7 @@ export default function CompositionRevisionRoute() {
   return (
     <>
       <div class="flex items-center gap-2">
-        <h1>{compositionDisplayName(revision()?.name)}</h1>
+        <h1>{compositionDisplayName(currentRevision()?.name)}</h1>
         <IconLink
           icon="edit"
           label={t("composition.studioEdit")}
@@ -561,7 +606,7 @@ export default function CompositionRevisionRoute() {
       <Show when={evaluation().error}>
         <p class="ui-text-danger" role="alert">{evaluation().error}</p>
       </Show>
-      <Show when={revision()}>
+      <Show when={currentRevision()}>
         {(document) => (
           <CompositionGraphRenderer
             draft={document().draft}

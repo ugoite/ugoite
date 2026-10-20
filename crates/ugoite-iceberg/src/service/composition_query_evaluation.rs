@@ -496,6 +496,7 @@ impl UgoiteService {
             .map(|query| (query.variable_id.as_str(), query))
             .collect::<BTreeMap<_, _>>();
 
+        let mut query_diagnostics = Vec::new();
         for variable_id in &computed_query_ids {
             let Some(query) = queries_by_id.get(variable_id.as_str()).copied() else {
                 continue;
@@ -508,23 +509,9 @@ impl UgoiteService {
                 selected_cursor.map(|page| page.cursor.as_str()),
             ) {
                 Ok(request) => request,
-                Err(query_diagnostics) => {
-                    return self
-                        .query_evaluation_diagnostics_response_for_access(
-                            space_id,
-                            principal_ids,
-                            base_acl_entry.as_deref(),
-                            &publication,
-                            &authorization_fingerprint,
-                            evaluation_id,
-                            draft_fingerprint,
-                            snapshot_fingerprint,
-                            publication_fingerprint,
-                            variable_definitions,
-                            plan,
-                            query_diagnostics,
-                        )
-                        .await;
+                Err(diagnostics) => {
+                    query_diagnostics.extend(diagnostics);
+                    continue;
                 }
             };
             let query_context = query_snapshot_fingerprint(
@@ -593,48 +580,23 @@ impl UgoiteService {
                     }
                 }
             };
-            if let Err(query_diagnostics) =
-                evaluation.accept_page(variable_id, &request, &page_result)
-            {
-                return self
-                    .query_evaluation_diagnostics_response_for_access(
-                        space_id,
-                        principal_ids,
-                        base_acl_entry.as_deref(),
-                        &publication,
-                        &authorization_fingerprint,
-                        evaluation_id,
-                        draft_fingerprint,
-                        snapshot_fingerprint,
-                        publication_fingerprint,
-                        variable_definitions,
-                        plan,
-                        query_diagnostics,
-                    )
-                    .await;
+            if let Err(diagnostics) = evaluation.accept_page(variable_id, &request, &page_result) {
+                query_diagnostics.extend(diagnostics);
             }
         }
 
-        let preview = match evaluation.preview() {
-            Ok(preview) => preview,
-            Err(query_diagnostics) => {
-                return self
-                    .query_evaluation_diagnostics_response_for_access(
-                        space_id,
-                        principal_ids,
-                        base_acl_entry.as_deref(),
-                        &publication,
-                        &authorization_fingerprint,
-                        evaluation_id,
-                        draft_fingerprint,
-                        snapshot_fingerprint,
-                        publication_fingerprint,
-                        variable_definitions,
-                        plan,
-                        query_diagnostics,
-                    )
-                    .await;
+        query_diagnostics.sort();
+        query_diagnostics.dedup();
+        let preview = if query_diagnostics.is_empty() {
+            match evaluation.preview() {
+                Ok(preview) => preview,
+                Err(diagnostics) => {
+                    query_diagnostics = diagnostics;
+                    evaluation.partial_preview()
+                }
             }
+        } else {
+            evaluation.partial_preview()
         };
         let (current_authorization_fingerprint, _) = self
             .capture_graph_snapshot(
@@ -665,7 +627,7 @@ impl UgoiteService {
 
         Ok(CompositionQueryEvaluationResponse {
             evaluation_id,
-            ok: true,
+            ok: query_diagnostics.is_empty(),
             draft_fingerprint,
             snapshot_fingerprint: Some(snapshot_fingerprint),
             publication_fingerprint: Some(publication_fingerprint),
@@ -675,7 +637,7 @@ impl UgoiteService {
             query_results,
             computed_query_ids,
             diagnostics: Vec::new(),
-            query_diagnostics: Vec::new(),
+            query_diagnostics,
         })
     }
 
@@ -852,7 +814,7 @@ fn query_evaluation_diagnostics_response(
         authorization_fingerprint: Some(response.authorization_fingerprint),
         variable_definitions: response.variable_definitions,
         plan: Some(response.plan),
-        // Never expose partial values from a failed evaluation as current data.
+        // This path handles graph/input failures before query execution starts.
         query_results: BTreeMap::new(),
         computed_query_ids: Vec::new(),
         diagnostics: Vec::new(),

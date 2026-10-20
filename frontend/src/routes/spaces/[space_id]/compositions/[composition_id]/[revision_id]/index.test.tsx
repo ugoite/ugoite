@@ -6,26 +6,53 @@ import {
   screen,
   waitFor,
 } from "@solidjs/testing-library";
+import { createSignal } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import CompositionRevisionRoute from "./index";
 import { setLocale } from "~/lib/i18n";
 
-const { getMock, lintMock, listMock, evaluateMock, navigateMock, parseMock } =
-  vi.hoisted(() => ({
+const {
+  getMock,
+  lintMock,
+  listMock,
+  evaluateMock,
+  navigateMock,
+  parseMock,
+  routeParams,
+} = vi.hoisted(() => {
+  let getRouteParams = () => ({
+    space_id: "space-1",
+    composition_id: "comp-1",
+    revision_id: "rev-1",
+  });
+  return {
     getMock: vi.fn(),
     lintMock: vi.fn(),
     listMock: vi.fn(),
     evaluateMock: vi.fn(),
     navigateMock: vi.fn(),
     parseMock: vi.fn(),
-  }));
+    routeParams: {
+      get: () => getRouteParams(),
+      set: (get: typeof getRouteParams) => getRouteParams = get,
+    },
+  };
+});
+
+type RouteParams = {
+  space_id: string;
+  composition_id: string;
+  revision_id: string;
+};
+
+let updateRouteParams: (params: RouteParams) => void;
 
 vi.mock("@solidjs/router", () => ({
-  useParams: () => ({
-    space_id: "space-1",
-    composition_id: "comp-1",
-    revision_id: "rev-1",
-  }),
+  useParams: () =>
+    new Proxy({}, {
+      get: (_target, property) =>
+        routeParams.get()[property as keyof RouteParams],
+    }),
   useNavigate: () => navigateMock,
   A: (props: { href: string; children: unknown }) => (
     <a href={props.href}>{props.children as never}</a>
@@ -230,6 +257,13 @@ const tableWithInputGraphDocument = {
 
 describe("Composition saved revision graph evaluation", () => {
   beforeEach(() => {
+    const [params, setParams] = createSignal<RouteParams>({
+      space_id: "space-1",
+      composition_id: "comp-1",
+      revision_id: "rev-1",
+    });
+    routeParams.set(params);
+    updateRouteParams = (next) => setParams(next);
     setLocale("en");
     vi.clearAllMocks();
     getMock.mockResolvedValue({ fields: { spec: "graph yaml" } });
@@ -356,6 +390,86 @@ describe("Composition saved revision graph evaluation", () => {
       "Waiting for input…",
     );
     expect(screen.getByLabelText("stable")).toHaveTextContent("10");
+  });
+
+  it("drops late evaluations when a dynamic route changes Space", async () => {
+    let resolveSpaceOneEvaluation!: () => void;
+    let resolveSpaceTwoDocument!: () => void;
+    evaluateMock
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        Promise.resolve({
+          ...evaluation(request.evaluation_id, "auth-1", {
+            rows: 1,
+            stable: 10,
+          }),
+        })
+      )
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        new Promise((resolve) => {
+          resolveSpaceOneEvaluation = () =>
+            resolve({
+              ...evaluation(request.evaluation_id, "auth-1", {
+                rows: 99,
+                stable: 999,
+              }),
+            });
+        })
+      )
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        Promise.resolve({
+          ...evaluation(request.evaluation_id, "auth-2", {
+            rows: 2,
+            stable: 20,
+          }),
+        })
+      );
+    getMock.mockImplementation((spaceId: string) => {
+      if (spaceId === "space-2") {
+        return new Promise((resolve) => {
+          resolveSpaceTwoDocument = () =>
+            resolve({ fields: { spec: "graph yaml" } });
+        });
+      }
+      return Promise.resolve({ fields: { spec: "graph yaml" } });
+    });
+
+    render(() => <CompositionRevisionRoute />);
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledOnce());
+    await screen.findByText("10");
+
+    fireEvent.input(screen.getByLabelText("day"), {
+      target: { value: "2026-10-21" },
+    });
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(2));
+
+    updateRouteParams({
+      space_id: "space-2",
+      composition_id: "comp-1",
+      revision_id: "rev-1",
+    });
+    await waitFor(() =>
+      expect(getMock).toHaveBeenCalledWith("space-2", "comp-1", "rev-1")
+    );
+    expect(screen.queryByText("10")).not.toBeInTheDocument();
+
+    resolveSpaceOneEvaluation();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByText("99")).not.toBeInTheDocument();
+    expect(screen.queryByText("999")).not.toBeInTheDocument();
+
+    resolveSpaceTwoDocument();
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(3));
+    await screen.findByText("20");
+    expect(screen.queryByText("999")).not.toBeInTheDocument();
   });
 
   it("renders the typed table result returned for its query variable", async () => {
@@ -503,23 +617,30 @@ describe("Composition saved revision graph evaluation", () => {
         variable_consumers: { day: { query_variable_ids: ["filtered_count"] } },
       },
       query_results: {
-        ...(computedQueryIds.includes("rows") ? {
-          rows: {
-            value: {
-              kind: "table",
-              columns: tableQuery.returns.columns,
-              rows: labels.map((label) => [{ kind: "string", value: label }]),
+        ...(computedQueryIds.includes("rows")
+          ? {
+            rows: {
+              value: {
+                kind: "table",
+                columns: tableQuery.returns.columns,
+                rows: labels.map((label) => [{ kind: "string", value: label }]),
+              },
+              has_more: hasMore,
+              ...(next ? { next } : {}),
             },
-            has_more: hasMore,
-            ...(next ? { next } : {}),
-          },
-        } : {}),
-        ...(count !== undefined ? {
-          filtered_count: {
-            value: { kind: "scalar", value: { kind: "integer", value: count } },
-            has_more: false,
-          },
-        } : {}),
+          }
+          : {}),
+        ...(count !== undefined
+          ? {
+            filtered_count: {
+              value: {
+                kind: "scalar",
+                value: { kind: "integer", value: count },
+              },
+              has_more: false,
+            },
+          }
+          : {}),
       },
     });
     evaluateMock.mockImplementation((
@@ -538,10 +659,19 @@ describe("Composition saved revision graph evaluation", () => {
         );
       }
       if (request.requested_queries) {
-        return Promise.resolve(result(request, ["filtered_count"], [], false, undefined, 2));
+        return Promise.resolve(
+          result(request, ["filtered_count"], [], false, undefined, 2),
+        );
       }
       return Promise.resolve(
-        result(request, ["rows", "filtered_count"], ["alpha row", "beta row"], true, "rows-cursor-1", 1),
+        result(
+          request,
+          ["rows", "filtered_count"],
+          ["alpha row", "beta row"],
+          true,
+          "rows-cursor-1",
+          1,
+        ),
       );
     });
 
@@ -660,5 +790,61 @@ describe("Composition saved revision graph evaluation", () => {
     await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(3));
 
     expect(evaluateMock.mock.calls[2][1].requested_queries).toEqual(["rows"]);
+  });
+
+  it("retries a partial failure when its evaluation identity changed", async () => {
+    evaluateMock
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        Promise.resolve({
+          ...evaluation("eval-1", "auth-1", { rows: 1, stable: 10 }),
+          evaluation_id: request.evaluation_id,
+        })
+      )
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) => {
+        const partial = evaluation(
+          "partial",
+          "auth-2",
+          { rows: 2, stable: 10 },
+          ["rows"],
+        );
+        partial.query_results = {};
+        return Promise.resolve({
+          ...partial,
+          evaluation_id: request.evaluation_id,
+          ok: false,
+          diagnostics: [{ code: "query_failed" }],
+          query_diagnostics: [{ code: "sql_error", variable_id: "rows" }],
+        });
+      })
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        Promise.resolve({
+          ...evaluation("eval-3", "auth-2", { rows: 2, stable: 20 }),
+          evaluation_id: request.evaluation_id,
+        })
+      );
+    render(() => <CompositionRevisionRoute />);
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledOnce());
+    await screen.findByText("10");
+
+    fireEvent.input(screen.getByLabelText("day"), {
+      target: { value: "2026-10-20" },
+    });
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(3));
+
+    expect(evaluateMock.mock.calls[1][1].requested_queries).toEqual(["rows"]);
+    expect(evaluateMock.mock.calls[2][1]).not.toHaveProperty(
+      "requested_queries",
+    );
+    await screen.findByText("20");
+    expect(screen.queryByText("10")).not.toBeInTheDocument();
   });
 });

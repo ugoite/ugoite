@@ -433,7 +433,7 @@ export function CompositionVariableGraphWorkspace(
                   class="ui-input compositionVariableName"
                   aria-label={t("composition.studioVariableId")}
                   value={node().id}
-                  onChange={(event) =>
+                  onInput={(event) =>
                     rename(node(), event.currentTarget.value)}
                 />
                 <IconButton
