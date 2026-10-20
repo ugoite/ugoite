@@ -11753,7 +11753,10 @@ fn composition_resolve_diagnostics_response(
         .map(|diagnostic| {
             Ok(CompositionResolveDiagnostic {
                 code: api_composition_diagnostic_code(diagnostic.code)?,
-                variable_id: diagnostic.variable_id,
+                variable_id: api_composition_diagnostic_variable_id(
+                    diagnostic.code,
+                    diagnostic.variable_id,
+                ),
             })
         })
         .collect::<ApiResult<Vec<_>>>()?;
@@ -11811,7 +11814,10 @@ fn api_composition_metric_query_response(
             Ok(ApiCompositionMetricQueryDiagnostic {
                 code: api_composition_diagnostic_code(diagnostic.code)?,
                 component_id: diagnostic.component_id,
-                variable_id: diagnostic.variable_id,
+                variable_id: api_composition_diagnostic_variable_id(
+                    diagnostic.code,
+                    diagnostic.variable_id,
+                ),
             })
         })
         .collect::<ApiResult<Vec<_>>>()?;
@@ -11891,7 +11897,10 @@ fn composition_preview_diagnostics_response(
         .map(|diagnostic| {
             Ok(CompositionResolveDiagnostic {
                 code: api_composition_diagnostic_code(diagnostic.code)?,
-                variable_id: diagnostic.variable_id,
+                variable_id: api_composition_diagnostic_variable_id(
+                    diagnostic.code,
+                    diagnostic.variable_id,
+                ),
             })
         })
         .collect::<ApiResult<Vec<_>>>()?;
@@ -12058,6 +12067,15 @@ fn api_composition_diagnostic_code(
             "Composition diagnostic is missing from the portable API contract"
         ))
     })
+}
+
+fn api_composition_diagnostic_variable_id(
+    code: ugoite_domain::composition::CompositionDiagnosticCode,
+    variable_id: Option<String>,
+) -> Option<String> {
+    (code != ugoite_domain::composition::CompositionDiagnosticCode::QueryUnavailable)
+        .then_some(variable_id)
+        .flatten()
 }
 
 #[derive(Deserialize)]
@@ -17197,6 +17215,10 @@ spec:
                 id: "month_input".to_string(),
                 variable: "month".to_string(),
             },
+            CompositionComponent::Input {
+                id: "region_input".to_string(),
+                variable: "region".to_string(),
+            },
             CompositionComponent::Metric {
                 id: "monthly_total".to_string(),
                 variable: "older_summary".to_string(),
@@ -17214,6 +17236,9 @@ spec:
                 items: vec![
                     FlowItem::Component {
                         component: "month_input".to_string(),
+                    },
+                    FlowItem::Component {
+                        component: "region_input".to_string(),
                     },
                     FlowItem::Component {
                         component: "rows".to_string(),
@@ -17315,6 +17340,11 @@ spec:
                     "component_id":"month_input",
                     "kind":"input",
                     "variable_id":"month"
+                },
+                {
+                    "component_id":"region_input",
+                    "kind":"input",
+                    "variable_id":"region"
                 },
                 {"component_id":"rows", "kind":"table", "variable_id":"older_entries"},
                 {
