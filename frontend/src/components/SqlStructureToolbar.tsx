@@ -609,6 +609,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
       "count",
       "sum",
       "avg",
+      "mean",
       "min",
       "max",
     ];
@@ -617,16 +618,41 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     );
   };
 
+  const aggregateColumnsOf = (aggregate: SqlStructureAggregate) => [
+    ...(aggregate.column ? [aggregate.column] : []),
+    ...(aggregate.arguments ?? []),
+  ];
+
+  const aggregateWithColumns = (
+    aggregate: SqlStructureAggregate,
+    columns: string[],
+  ): SqlStructureAggregate => {
+    const next = { ...aggregate };
+    if (columns.length > 0) next.column = columns[0];
+    else delete next.column;
+    if (columns.length > 1) next.arguments = columns.slice(1);
+    else delete next.arguments;
+    return next;
+  };
+
   const aggregateIsEditable = (aggregate: SqlStructureAggregate) => {
-    if (!aggregate.column) {
-      return aggregate.function === "count" && !aggregate.distinct;
+    const columns = aggregateColumnsOf(aggregate);
+    if (aggregate.arguments?.length && aggregate.function !== "count") {
+      return false;
     }
-    const capability = columnCapability(aggregate.column);
-    return Boolean(
-      capability?.projectable &&
-        capability.aggregateFunctions.includes(aggregate.function) &&
-        (!aggregate.distinct || capability.distinctable),
-    );
+    if (aggregate.distinct && columns.length > 1) return false;
+    if (columns.length === 0) {
+      return aggregate.function === "count" && !aggregate.arguments?.length;
+    }
+    if (aggregate.function !== "count" && columns.length !== 1) return false;
+    return columns.every((column) => {
+      const capability = columnCapability(column);
+      return Boolean(
+        capability?.projectable &&
+          capability.aggregateFunctions.includes(aggregate.function) &&
+          (!aggregate.distinct || capability.distinctable),
+      );
+    });
   };
 
   const groupableColumns = () =>
@@ -1542,46 +1568,76 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     setAggregates((items) =>
       items.map((item, itemIndex) => {
         if (index !== itemIndex) return item;
-        let column = item.column;
+        const columns = aggregateColumnsOf(item);
         let distinct = item.distinct;
-        const validColumns = aggregateColumnsFor(fn, distinct);
-        if (
-          (!column && fn !== "count") ||
-          (column &&
-            !validColumns.some((candidate) => candidate.name === column))
-        ) {
-          const fallback = validColumns[0] ??
-            (distinct ? aggregateColumnsFor(fn)[0] : undefined);
-          column = fallback?.name;
-          if (distinct && !fallback?.distinctable) distinct = false;
+        if (fn === "count") {
+          if (distinct && columns.length > 1) distinct = false;
+        } else {
+          const validColumns = aggregateColumnsFor(fn, distinct);
+          const retained = columns.find((column) =>
+            validColumns.some((candidate) => candidate.name === column)
+          );
+          const fallback = retained ?? validColumns[0]?.name;
+          columns.splice(0, columns.length, ...(fallback ? [fallback] : []));
+          if (distinct && !fallback) distinct = false;
         }
-        if (fn === "count" && !column) distinct = false;
-        const next: SqlStructureAggregate = {
-          ...item,
-          function: fn,
-          distinct,
-        };
-        if (column) next.column = column;
-        else delete next.column;
-        return next;
+        if (distinct && columns.length > 1) distinct = false;
+        return { ...aggregateWithColumns(item, columns), function: fn, distinct };
       })
     );
   };
 
-  const updateAggregateColumn = (index: number, columnName: string) => {
-    const column = columnName || undefined;
+  const updateAggregateArgument = (
+    index: number,
+    argumentIndex: number,
+    value: string,
+  ) => {
     setAggregates((items) =>
       items.map((item, itemIndex) => {
         if (index !== itemIndex) return item;
-        const next: SqlStructureAggregate = {
-          ...item,
-          distinct: item.distinct && Boolean(
-            column && columnCapability(column)?.distinctable,
-          ),
+        const columns = aggregateColumnsOf(item);
+        if (columns.length === 0) columns.push("");
+        if (columns.length === 1 && columns[0] === "") {
+          if (value) columns[0] = value;
+        } else if (value) columns[argumentIndex] = value;
+        else columns.splice(argumentIndex, 1);
+        const nextColumns = columns.filter(Boolean);
+        const distinctAllowed = nextColumns.length === 0
+          ? item.function === "count"
+          : nextColumns.length === 1 && Boolean(
+            columnCapability(nextColumns[0])?.distinctable,
+          );
+        return {
+          ...aggregateWithColumns(item, nextColumns),
+          distinct: item.distinct && distinctAllowed,
         };
-        if (column) next.column = column;
-        else delete next.column;
-        return next;
+      })
+    );
+  };
+
+  const addAggregateArgument = (index: number) => {
+    const existingColumns = aggregateColumnsOf(aggregates()[index]);
+    const column = aggregateColumnsFor("count").find((candidate) =>
+      !existingColumns.includes(candidate.name)
+    ) ?? aggregateColumnsFor("count")[0];
+    if (!column) return;
+    setAggregates((items) =>
+      items.map((item, itemIndex) => {
+        if (index !== itemIndex || item.function !== "count") return item;
+        const columns = aggregateColumnsOf(item).filter(Boolean);
+        columns.push(column.name);
+        return { ...aggregateWithColumns(item, columns), distinct: false };
+      })
+    );
+  };
+
+  const removeAggregateArgument = (index: number, argumentIndex: number) => {
+    setAggregates((items) =>
+      items.map((item, itemIndex) => {
+        if (index !== itemIndex || item.function !== "count") return item;
+        const columns = aggregateColumnsOf(item);
+        columns.splice(argumentIndex, 1);
+        return { ...aggregateWithColumns(item, columns), distinct: false };
       })
     );
   };
@@ -1590,14 +1646,15 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     setAggregates((items) =>
       items.map((item, itemIndex) => {
         if (index !== itemIndex) return item;
-        const capability = item.column
-          ? columnCapability(item.column)
-          : undefined;
+        const columns = aggregateColumnsOf(item);
+        const allowed = columns.length === 0
+          ? item.function === "count"
+          : columns.length === 1 && Boolean(
+            columnCapability(columns[0])?.distinctable,
+          );
         return {
           ...item,
-          distinct: Boolean(
-            distinct && item.column && capability?.distinctable,
-          ),
+          distinct: Boolean(distinct && allowed),
         };
       })
     );
@@ -2454,26 +2511,34 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                                 aggregate.function,
                                 ...aggregateFunctionsAvailable(),
                               ];
-                          const columns = () => {
+                          const columns = (column?: string) => {
                             const allowed = aggregateColumnsFor(
                               aggregate.function,
                               aggregate.distinct,
                             ).map((column) => column.name);
-                            return aggregate.column &&
-                                !allowed.includes(aggregate.column)
-                              ? [aggregate.column, ...allowed]
+                            return column && !allowed.includes(column)
+                              ? [column, ...allowed]
                               : allowed;
                           };
-                          const distinctable = () =>
-                            Boolean(
-                              aggregate.column &&
-                                columnCapability(aggregate.column)
-                                  ?.distinctable,
+                          const distinctable = () => {
+                            const aggregateColumns = aggregateColumnsOf(aggregate);
+                            if (aggregateColumns.length === 0) {
+                              return aggregate.function === "count";
+                            }
+                            return aggregateColumns.length === 1 && Boolean(
+                              columnCapability(aggregateColumns[0])?.distinctable,
                             );
+                          };
+                          const argumentsForEditor = () => {
+                            const aggregateColumns = aggregateColumnsOf(aggregate);
+                            return aggregateColumns.length > 0
+                              ? aggregateColumns
+                              : [""];
+                          };
                           return (
                             <div
                               class={`sql-structure-aggregate-row${
-                                aggregate.column
+                                aggregateColumnsOf(aggregate).length > 0
                                   ? ""
                                   : " sql-structure-aggregate-row--count-all"
                               }`}
@@ -2499,32 +2564,66 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                                   </For>
                                 </select>
                               </label>
-                              <label class="ui-field">
-                                <span>{t("sqlPage.structure.column")}</span>
-                                <select
-                                  class="ui-input"
-                                  value={aggregate.column ?? ""}
-                                  disabled={aggregate.function !== "count" &&
-                                    columns().length === 0}
-                                  onChange={(event) =>
-                                    updateAggregateColumn(
-                                      index(),
-                                      event.currentTarget.value,
-                                    )}
-                                >
-                                  <Show when={aggregate.function === "count"}>
-                                    <option value="">
-                                      {t("sqlPage.structure.allRows")}
-                                    </option>
-                                  </Show>
-                                  <For each={columns()}>
-                                    {(name) => (
-                                      <option value={name}>{name}</option>
-                                    )}
-                                  </For>
-                                </select>
-                              </label>
-                              <Show when={aggregate.column}>
+                              <div class="sql-structure-aggregate-arguments">
+                                <For each={argumentsForEditor()}>
+                                  {(column, argumentIndex) => (
+                                    <div class="sql-structure-aggregate-argument">
+                                      <label class="ui-field">
+                                        <span>{t("sqlPage.structure.column")}</span>
+                                        <select
+                                          class="ui-input"
+                                          value={aggregateColumnsOf(aggregate)[
+                                            argumentIndex()
+                                          ] ?? ""}
+                                          disabled={aggregate.function !== "count" &&
+                                            columns(column).length === 0}
+                                          onChange={(event) =>
+                                            updateAggregateArgument(
+                                              index(),
+                                              argumentIndex(),
+                                              event.currentTarget.value,
+                                            )}
+                                        >
+                                          <Show when={aggregate.function === "count"}>
+                                            <option value="">
+                                              {t("sqlPage.structure.allRows")}
+                                            </option>
+                                          </Show>
+                                          <For each={columns(column)}>
+                                            {(name) => (
+                                              <option value={name}>{name}</option>
+                                            )}
+                                          </For>
+                                        </select>
+                                      </label>
+                                      <Show when={aggregate.function === "count" &&
+                                        aggregateColumnsOf(aggregate).length > 0}
+                                      >
+                                        <IconButton
+                                          icon="trash"
+                                          label={t("sqlPage.structure.removeAggregateArgument")}
+                                          onClick={() =>
+                                            removeAggregateArgument(
+                                              index(),
+                                              argumentIndex(),
+                                            )}
+                                        />
+                                      </Show>
+                                    </div>
+                                  )}
+                                </For>
+                              </div>
+                              <Show when={aggregate.function === "count"}>
+                                <IconButton
+                                  icon="plus"
+                                  label={t("sqlPage.structure.addAggregateArgument")}
+                                  disabled={aggregateColumnsFor("count").length === 0}
+                                  onClick={() => addAggregateArgument(index())}
+                                />
+                              </Show>
+                              <Show when={aggregate.function === "count" ||
+                                aggregateColumnsOf(aggregate).length === 1}
+                              >
                                 <label class="sql-structure-option sql-structure-aggregate-distinct">
                                   <input
                                     type="checkbox"

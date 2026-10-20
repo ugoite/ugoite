@@ -562,6 +562,7 @@ export type SqlStructureAggregateFunction =
   | "count"
   | "sum"
   | "avg"
+  | "mean"
   | "min"
   | "max";
 
@@ -595,6 +596,8 @@ export type SqlStructureAggregate = {
   function: SqlStructureAggregateFunction;
   /** Omitted only for COUNT(*). */
   column?: string;
+  /** Additional column names after `column` for variadic COUNT. */
+  arguments?: string[];
   distinct: boolean;
   alias?: SqlStructureAlias;
 };

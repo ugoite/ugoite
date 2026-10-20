@@ -66,7 +66,7 @@ const context: SqlStructureAdapterContext = {
       filterable: true,
       sortable: true,
       supportedOperators: ["eq", "gt"],
-      aggregateFunctions: ["count", "sum", "avg", "min", "max"],
+      aggregateFunctions: ["count", "sum", "avg", "mean", "min", "max"],
       groupable: true,
       distinctable: true,
     },
@@ -2217,6 +2217,86 @@ describe("SqlStructureToolbar adapter", () => {
         }],
       },
     );
+  });
+
+  it("edits COUNT(DISTINCT *) and multi-column COUNT arguments", async () => {
+    const sql = 'SELECT * FROM "Orders"';
+    let actions: readonly SQLWorkspaceAction[] = [];
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [context]}
+        onSqlChange={vi.fn()}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "aggregate")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "aggregate")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Aggregate" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add aggregate" }),
+    );
+    fireEvent.click(within(dialog).getByLabelText("Distinct values"));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(proposeMock).toHaveBeenCalledWith(sql, context.parser, {
+      kind: "set_aggregates",
+      aggregates: [{
+        function: "count",
+        distinct: true,
+      }],
+    });
+  });
+
+  it("adds multiple COUNT arguments from the aggregate editor", async () => {
+    const sql = 'SELECT * FROM "Orders"';
+    let actions: readonly SQLWorkspaceAction[] = [];
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [context]}
+        onSqlChange={vi.fn()}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "aggregate")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "aggregate")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Aggregate" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add aggregate" }),
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add aggregate argument" }),
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add aggregate argument" }),
+    );
+    expect(within(dialog).getAllByLabelText("Column")).toHaveLength(2);
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    const operation = proposeMock.mock.calls[0][2] as {
+      aggregates: Array<{
+        column?: string;
+        arguments?: string[];
+        distinct: boolean;
+      }>;
+    };
+    expect(operation.aggregates[0].column).toBeTruthy();
+    expect(operation.aggregates[0].arguments).toHaveLength(1);
+    expect(operation.aggregates[0].distinct).toBe(false);
   });
 
   it("proposes only capability-approved GROUP BY keys and SELECT DISTINCT", async () => {

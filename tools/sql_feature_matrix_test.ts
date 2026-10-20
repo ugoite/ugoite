@@ -237,25 +237,26 @@ Deno.test("SQL feature matrix aggregate catalog remains present in the typed UI 
     /"([a-z_]+)"/g,
   )].map(([, name]) => name);
 
-  assertEquals(editorFunctions, backendFunctions);
+  const guiFunctions = [
+    ...backendFunctions,
+    ...Object.keys(backendAggregateAliases),
+  ].sort();
+  assertEquals(editorFunctions?.slice().sort(), guiFunctions);
   assertEquals(registryFunctions, backendFunctions);
   assertEquals(backendAggregateAliases, registryAliases);
-  assertEquals(frontendFunctions, backendFunctions);
+  assertEquals(frontendFunctions.slice().sort(), guiFunctions);
   assertEquals(
     matrix.editor.aggregate_contract.checked,
-    "name_catalog_only",
+    "registry_signature_and_gui_roundtrip",
   );
   assertEquals(
     matrix.editor.aggregate_contract.known_editor_rejections,
-    ["COUNT(DISTINCT *)", "MEAN"],
+    [],
   );
   assertEquals(
     matrix.editor.aggregate_contract.verification_gaps,
     [
-      "runtime_structure_frontend_signature_and_type_parity",
-      "supported_aggregate_modifier_parity",
-      "count_distinct_wildcard_execution_semantics",
-      "aggregate_alias_parity",
+      "aggregate_expression_arguments_outside_form_columns",
     ],
   );
   assertEquals(matrix.editor.literal_projection_operation, {
