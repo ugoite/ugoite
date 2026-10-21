@@ -27,6 +27,7 @@ const {
   previewGraphMock,
   evaluateMock,
   canonicalizeMock,
+  parseSqlDocumentMock,
   parseInputMock,
   saveMock,
   routePathMock,
@@ -39,6 +40,7 @@ const {
     previewGraphMock: vi.fn(),
     evaluateMock: vi.fn(),
     canonicalizeMock: vi.fn(),
+    parseSqlDocumentMock: vi.fn().mockResolvedValue(undefined),
     parseInputMock: vi.fn(),
     saveMock: vi.fn(),
     routePathMock: { value: "/spaces/space-1/compositions/new" },
@@ -61,6 +63,7 @@ vi.mock("~/lib/ugoite-client", () => ({
   authApi: { getSession: (...args: unknown[]) => authSessionMock(...args) },
   formApi: { list: (...args: unknown[]) => formsMock(...args) },
   sqlApi: { list: (...args: unknown[]) => savedSqlMock(...args) },
+  parseSqlDocument: (...args: unknown[]) => parseSqlDocumentMock(...args),
   parseVariableGraphInput: (...args: unknown[]) => parseInputMock(...args),
 }));
 
