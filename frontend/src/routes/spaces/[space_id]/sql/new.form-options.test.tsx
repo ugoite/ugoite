@@ -93,10 +93,10 @@ describe("/spaces/:space_id/sql/new Form loading", () => {
     }));
     prepareSqlStructureParserMock.mockReset().mockResolvedValue(undefined);
     analyzeSqlStructureMock.mockReset().mockImplementation(
-      (_sql: string, context: { relation: string }) =>
+      (_sql: string, _context: { relation: string }) =>
         Promise.resolve({
           contract_version: 1,
-          status: context.relation ? "supported" : "unsupported",
+          status: "unsupported",
           projection: ["*"],
           filters: [],
           aggregates: [],

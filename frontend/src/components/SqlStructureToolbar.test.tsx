@@ -1726,6 +1726,54 @@ describe("SqlStructureToolbar adapter", () => {
     expect(onSqlChange).not.toHaveBeenCalled();
   });
 
+  it("keeps malformed SQL unchanged when the Rust Form proposal rejects it", async () => {
+    const sql = 'SELECT FROM "Orders"';
+    parseDocumentMock.mockResolvedValueOnce({
+      contract_version: 1,
+      source: sql,
+      status: "invalid_sql",
+      diagnostics: [{
+        code: "parse_failed",
+        message: "Expected an expression after SELECT.",
+        range: null,
+      }],
+      tokens: [],
+      nodes: [],
+    });
+    proposeMock.mockResolvedValueOnce({
+      contract_version: 5,
+      status: "invalid_sql",
+      base_sql: sql,
+      requires_confirmation: false,
+      added_stable_tie_breakers: [],
+    });
+    const onSqlChange = vi.fn();
+    let actions: readonly SQLWorkspaceAction[] = [];
+
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [context]}
+        onSqlChange={onSqlChange}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "form")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "form")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Form" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Orders" }));
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "This SQL structure cannot be changed here.",
+    );
+    expect(onSqlChange).not.toHaveBeenCalled();
+  });
+
   it("discards a proposal and closes its dialog when SQL context changes", async () => {
     const initialSql = 'SELECT * FROM "Orders" ORDER BY "_ugoite_id"';
     const [sql, setSql] = createSignal(initialSql);
