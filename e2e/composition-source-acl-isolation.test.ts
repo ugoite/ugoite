@@ -4,7 +4,7 @@ import {
   expect,
   test,
 } from "@playwright/test";
-import { getBackendUrl, waitForServers } from "./lib/client.ts";
+import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
 import { completeCompositionGraphYaml } from "./lib/composition-graph.ts";
 import { openIsolatedPasskeyPage } from "./lib/security-context.ts";
 import {
@@ -470,6 +470,10 @@ test.describe("Composition graph ACL and runtime isolation", () => {
     );
     expect(savedSqlPolicyResponse.status()).toBe(200);
 
+    await page.goto(getFrontendUrl(`/spaces/${seed.spaceId}/dashboard`), {
+      waitUntil: "domcontentloaded",
+    });
+    await expect(page.getByRole("button", { name: "Account" })).toBeVisible();
     await page.getByRole("button", { name: "Account" }).click();
     await page.getByRole("menuitem", { name: "Sign out" }).click();
     await expect(page).toHaveURL(/\/login$/);
