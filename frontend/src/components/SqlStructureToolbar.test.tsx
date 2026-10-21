@@ -373,7 +373,11 @@ describe("SqlStructureToolbar adapter", () => {
 
     await waitFor(() => expect(actions).toHaveLength(8));
     await waitFor(() =>
-      expect(actions.every((action) => !action.disabled))
+      expect(
+        actions.filter((action) => action.kind !== "form").every((action) =>
+          !action.disabled
+        ) && actions.find((action) => action.kind === "form")?.disabled,
+      )
         .toBe(true)
     );
 

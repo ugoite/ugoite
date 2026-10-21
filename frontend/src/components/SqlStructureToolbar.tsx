@@ -597,6 +597,10 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
 
   const actionDisabled = (action: StructureAction) => {
     if (props.disabled?.() || !props.onSqlChange) return true;
+    if (action === "form") {
+      return sqlDocumentLoading() || analysisState().status === "loading" ||
+        formOptions().length === 0;
+    }
     if (action === "join") {
       return sqlDocumentLoading() || sqlDocument()?.status !== "parsed";
     }
@@ -610,9 +614,13 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
       return t("sqlPage.structureReadOnly");
     }
     if (action === "form") {
+      if (sqlDocumentLoading()) return t("sqlPage.structureAnalyzing");
       if (sqlDocument()?.status === "parsed") {
-        return analysisState().status === "loading"
-          ? t("sqlPage.structureAnalyzing")
+        if (analysisState().status === "loading") {
+          return t("sqlPage.structureAnalyzing");
+        }
+        return formOptions().length === 0
+          ? t("sqlPage.structureUnavailable")
           : undefined;
       }
       const state = analysisState();
@@ -2374,7 +2382,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                 <div class="sql-structure-dialog-content">
                   <Show
                     when={activeAction() === "form" &&
-                      structuredEditorAvailable("form")}
+                      formOptions().length > 0}
                   >
                     <div class="sql-structure-form-list">
                       <For each={formOptions()}>

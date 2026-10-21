@@ -22,6 +22,9 @@ const {
   sqlCountMock,
   analyzeSqlStructureMock,
   applySqlDocumentEditTransactionMock,
+  applySqlDocumentNodeEditTransactionMock,
+  applySqlDocumentReplacementTransactionMock,
+  parseSqlDocumentMock,
   prepareSqlStructureParserMock,
   proposeSqlStructureOperationMock,
 } = vi.hoisted(() => ({
@@ -32,6 +35,9 @@ const {
   sqlCountMock: vi.fn(),
   analyzeSqlStructureMock: vi.fn(),
   applySqlDocumentEditTransactionMock: vi.fn(),
+  applySqlDocumentNodeEditTransactionMock: vi.fn(),
+  applySqlDocumentReplacementTransactionMock: vi.fn(),
+  parseSqlDocumentMock: vi.fn(),
   prepareSqlStructureParserMock: vi.fn(),
   proposeSqlStructureOperationMock: vi.fn(),
 }));
@@ -149,6 +155,9 @@ vi.mock("~/lib/ugoite-client", () => ({
   },
   analyzeSqlStructure: analyzeSqlStructureMock,
   applySqlDocumentEditTransaction: applySqlDocumentEditTransactionMock,
+  applySqlDocumentNodeEditTransaction: applySqlDocumentNodeEditTransactionMock,
+  applySqlDocumentReplacementTransaction: applySqlDocumentReplacementTransactionMock,
+  parseSqlDocument: parseSqlDocumentMock,
   prepareSqlStructureParser: prepareSqlStructureParserMock,
   proposeSqlStructureOperation: proposeSqlStructureOperationMock,
 }));
@@ -187,6 +196,14 @@ describe("/spaces/:space_id/sql/new", () => {
   beforeEach(() => {
     setLocale("en");
     navigateMock.mockReset();
+    parseSqlDocumentMock.mockReset().mockImplementation(async (source: string) => ({
+      contract_version: 1,
+      source,
+      status: "parsed",
+      diagnostics: [],
+      tokens: [],
+      nodes: [],
+    }));
     formApiListMock.mockResolvedValue([
       {
         id: "sql-form",
@@ -294,6 +311,18 @@ describe("/spaces/:space_id/sql/new", () => {
           source: transaction.edits[0].replacement,
         },
         undo: transaction,
+      }),
+    );
+    applySqlDocumentNodeEditTransactionMock.mockReset().mockImplementation(
+      async (_source: string, transaction: { edits: { replacement: string }[] }) => ({
+        document: await parseSqlDocumentMock(transaction.edits[0].replacement),
+        undo: transaction,
+      }),
+    );
+    applySqlDocumentReplacementTransactionMock.mockReset().mockImplementation(
+      async (_source: string, replacementSource: string) => ({
+        document: await parseSqlDocumentMock(replacementSource),
+        undo: { expected_source: replacementSource, edits: [] },
       }),
     );
     analyzeSqlStructureMock.mockReset().mockImplementation(
@@ -451,8 +480,10 @@ describe("/spaces/:space_id/sql/new", () => {
     expect(screen.queryByRole("button", { name: "Generate aggregate SQL" }))
       .not.toBeInTheDocument();
     expect(screen.getByRole("group", { name: "SQL" })).toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: "Form" }))
-      .toBeInTheDocument();
+    await waitFor(() => expect(formApiListMock).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Form" })).toBeEnabled()
+    );
     fireEvent.input(editor, { target: { value: "SELECT 1" } });
     fireEvent.input(screen.getByLabelText("Query name"), {
       target: { value: "Relation-free draft" },

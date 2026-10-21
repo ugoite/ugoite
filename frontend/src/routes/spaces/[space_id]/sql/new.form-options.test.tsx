@@ -15,12 +15,14 @@ const {
   analyzeSqlStructureMock,
   formApiListMock,
   navigateMock,
+  parseSqlDocumentMock,
   prepareSqlStructureParserMock,
   proposeSqlStructureOperationMock,
 } = vi.hoisted(() => ({
   analyzeSqlStructureMock: vi.fn(),
   formApiListMock: vi.fn(),
   navigateMock: vi.fn(),
+  parseSqlDocumentMock: vi.fn(),
   prepareSqlStructureParserMock: vi.fn(),
   proposeSqlStructureOperationMock: vi.fn(),
 }));
@@ -62,6 +64,10 @@ vi.mock("~/components/SQLWorkspace", () => ({
 
 vi.mock("~/lib/ugoite-client", () => ({
   analyzeSqlStructure: analyzeSqlStructureMock,
+  applySqlDocumentEditTransaction: vi.fn(),
+  applySqlDocumentNodeEditTransaction: vi.fn(),
+  applySqlDocumentReplacementTransaction: vi.fn(),
+  parseSqlDocument: parseSqlDocumentMock,
   prepareSqlStructureParser: prepareSqlStructureParserMock,
   proposeSqlStructureOperation: proposeSqlStructureOperationMock,
   formApi: { list: formApiListMock },
@@ -77,6 +83,14 @@ describe("/spaces/:space_id/sql/new Form loading", () => {
     setLocale("en");
     navigateMock.mockReset();
     formApiListMock.mockReset();
+    parseSqlDocumentMock.mockReset().mockImplementation(async (source: string) => ({
+      contract_version: 1,
+      source,
+      status: "parsed",
+      diagnostics: [],
+      tokens: [],
+      nodes: [],
+    }));
     prepareSqlStructureParserMock.mockReset().mockResolvedValue(undefined);
     analyzeSqlStructureMock.mockReset().mockImplementation(
       (_sql: string, context: { relation: string }) =>
