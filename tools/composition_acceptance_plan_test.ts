@@ -50,7 +50,7 @@ Deno.test(
     assertEquals(plan.schema, "ugoite/composition-acceptance-plan/v1");
     assertEquals(
       plan.source,
-      "attached SQL-first implementation plan, section 7",
+      "2026-10-21 implementation directive: PR1 pauses incomplete Composition browser routes; PR3 restores the completed Studio",
     );
     assertEquals(plan.criteria.map(({ id }) => id), EXPECTED_IDS);
     assertEquals(
@@ -80,37 +80,47 @@ Deno.test(
 
     assertEquals(
       plan.criteria.find(({ id }) => id === "A10")?.manual_evidence_gaps,
-      ["Actual browser 200% zoom and iPhone Safari device verification"],
+      [
+        "Composition browser routes are paused until PR3; browser UI gates have no route-level evidence.",
+        "Actual browser 200% zoom and iPhone Safari device verification",
+      ],
     );
     assertEquals(
       plan.criteria.find(({ id }) => id === "A02")?.manual_evidence_gaps,
-      ["The browser tests do not independently verify the 50-row preview cap versus SQL text LIMIT."],
+      [
+        "Composition browser routes are paused until PR3; Form authoring E2E will be restored there.",
+        "Browser verification of the preview cap versus SQL text LIMIT is deferred.",
+      ],
     );
     assert(
-      plan.criteria.find(({ id }) => id === "A02")?.selectors.some((
-        selector,
-      ) =>
-        selector.path === "e2e/composition-studio-journey.test.ts" &&
+      plan.criteria.find(({ id }) => id === "A09")?.selectors.some((selector) =>
+        selector.path === "e2e/composition-metric-journey.test.ts" &&
         selector.kind === "test" &&
         selector.name ===
-          "Form bindings create variable-backed displays with explicit aggregation"
+          "API evaluates an exact Saved SQL revision and reports scalar cardinality failures"
       ),
-      "A02 must include the interactive Form binding journey",
+      "A09 must retain request-level exact revision and cardinality evidence",
     );
+    const removedRouteTests = new Set([
+      "e2e/composition-golden-journey.test.ts",
+      "e2e/composition-invalid-variable-input.test.ts",
+      "e2e/composition-revision-stale-response.test.ts",
+      "e2e/composition-studio-journey.test.ts",
+    ]);
     assert(
-      plan.criteria.find(({ id }) => id === "A09")?.selectors.some((
-        selector,
-      ) =>
-        selector.path === "e2e/composition-studio-journey.test.ts" &&
-        selector.kind === "test" &&
-        selector.name ===
-          "Form bindings create variable-backed displays with explicit aggregation"
+      plan.criteria.every((criterion) =>
+        criterion.selectors.every((selector) =>
+          !removedRouteTests.has(selector.path)
+        )
       ),
-      "A09 must include the explicit Form aggregate selection journey",
+      "paused Composition UI tests must not be presented as current evidence",
     );
     assertEquals(
       plan.criteria.find(({ id }) => id === "A12")?.manual_evidence_gaps,
-      ["VoiceOver and NVDA device verification"],
+      [
+        "Composition browser routes are paused until PR3; dialog and drawer browser behavior is not currently available for verification.",
+        "VoiceOver and NVDA device verification",
+      ],
     );
     assert(
       plan.criteria.every((criterion) =>

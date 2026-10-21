@@ -77,7 +77,7 @@ async function findCli(directory: string): Promise<string | undefined> {
 const assetKey = `${Deno.build.os}-${Deno.build.arch}`;
 const asset = assets[assetKey];
 if (!asset) {
-  throw new Error(`v0.2.1 downgrade check does not support ${assetKey}`);
+  throw new Error(`v0.2.1 older-CLI check does not support ${assetKey}`);
 }
 
 const releaseBase =
@@ -116,7 +116,7 @@ const archiveBytes = await fetchVerified(
   `${RELEASE_TAG} CLI archive`,
 );
 const temporaryRoot = await Deno.makeTempDir({
-  prefix: "ugoite-composition-downgrade-",
+  prefix: "ugoite-older-cli-knowledge-",
 });
 try {
   const archivePath = `${temporaryRoot}/v0.2.1-cli.tar.gz`;
@@ -141,9 +141,9 @@ try {
       "-p",
       "ugoite-iceberg",
       "--test",
-      "test_composition_downgrade",
+      "test_older_cli_knowledge_preservation",
       "--",
-      "v021_reader_writer_preserves_composition_and_unrelated_knowledge",
+      "older_cli_updates_unrelated_knowledge_without_rewriting_composition",
       "--exact",
       "--ignored",
     ],
@@ -153,11 +153,11 @@ try {
   }).output();
   if (test.code !== 0) {
     throw new Error(
-      `Composition downgrade integration test failed with ${test.code}`,
+      `Older-CLI Knowledge preservation integration test failed with ${test.code}`,
     );
   }
   console.log(
-    `Composition downgrade verified with ${RELEASE_TAG} CLI from ${RELEASE_SOURCE_SHA}`,
+    `Older-CLI Knowledge preservation verified with ${RELEASE_TAG} CLI from ${RELEASE_SOURCE_SHA}`,
   );
 } finally {
   await Deno.remove(temporaryRoot, { recursive: true });

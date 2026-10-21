@@ -5,7 +5,7 @@ category: Frontend route, component, and interaction requirements
 requirements:
   - id: REQ-FE-040
     title: UI Specification Registry Validation
-    description: Declarative frontend UI page and shared component contracts remain consistent with their supported vocabulary, implemented routes, and shared Space chrome.
+    description: Declarative frontend UI page and shared component contracts remain consistent with their supported vocabulary, registered routes, explicitly unavailable pages, and shared Space chrome.
     priority: high
     status: implemented
     criteria:
@@ -15,7 +15,7 @@ requirements:
         governed_by: [POL-006#rule.governance, POL-008#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
       - id: route-coverage
         kind: quality
-        statement: Every documented UI page maps to an implemented frontend route, every implemented Space route is documented, and implemented page declarations do not retain placeholder route content.
+        statement: Every documented UI page marked implemented, in-progress, or unimplemented maps to a registered frontend route; every temporarily unavailable page has no registered route; every registered Space route is documented; and implemented page declarations do not retain placeholder route content.
         governed_by: [POL-006#rule.governance, POL-008#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
       - id: shared-chrome
         kind: behavior
@@ -166,14 +166,14 @@ requirements:
           - id: composition-sql-contract-registry
             adapter: typescript
             path: frontend/src/spec/ui-pages.test.ts
-            selector: { kind: test, name: "REQ-FE-040: registers the graph Composition and shared SQL Workspace contracts" }
+            selector: { kind: test, name: "REQ-FE-040: keeps unfinished Composition routes unavailable" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-040#criterion.registry-shape
                 covers:
                   - FEAT-FE-013#binding.frontend/target.component-composition-studio
                   - FEAT-FE-013#binding.frontend/target.component-shared-sql-workspace
-                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: registers the graph Composition and shared SQL Workspace contracts" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: keeps unfinished Composition routes unavailable" } }
           - id: page-links
             adapter: typescript
             path: frontend/src/spec/ui-pages.test.ts
@@ -215,7 +215,7 @@ requirements:
           - id: documented-routes
             adapter: typescript
             path: frontend/src/spec/ui-pages.test.ts
-            selector: { kind: test, name: "REQ-FE-040: validates docs pages map to implemented routes" }
+            selector: { kind: test, name: "REQ-FE-040: validates documented page availability against routes" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-040#criterion.route-coverage
@@ -241,8 +241,6 @@ requirements:
                   - FEAT-FE-013#binding.frontend/target.page-space-sql-detail
                   - FEAT-FE-013#binding.frontend/target.page-space-sql
                   - FEAT-FE-013#binding.frontend/target.page-space-test-connection
-                  - FEAT-FE-013#binding.frontend/target.route-compositions
-                  - FEAT-FE-013#binding.frontend/target.route-composition-revision
                   - FEAT-FE-013#binding.frontend/target.route-assets
                   - FEAT-FE-013#binding.frontend/target.route-dashboard
                   - FEAT-FE-013#binding.frontend/target.route-space-entry-list
@@ -265,7 +263,7 @@ requirements:
                   - FEAT-FE-013#binding.frontend/target.route-sql-detail
                   - FEAT-FE-013#binding.frontend/target.route-sql-index
                   - FEAT-FE-013#binding.frontend/target.route-test-connection
-                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: validates docs pages map to implemented routes" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: validates documented page availability against routes" } }
           - id: implemented-routes
             adapter: typescript
             path: frontend/src/spec/ui-pages.test.ts
@@ -276,8 +274,6 @@ requirements:
                 covers:
                   - FEAT-FE-013#binding.frontend/target.page-registry
                   - FEAT-FE-013#binding.frontend/target.route-asset-detail
-                  - FEAT-FE-013#binding.frontend/target.route-compositions
-                  - FEAT-FE-013#binding.frontend/target.route-composition-revision
                 runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: validates implemented routes are documented" } }
           - id: placeholder-routes
             adapter: typescript

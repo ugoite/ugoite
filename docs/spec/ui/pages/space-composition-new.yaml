@@ -1,10 +1,11 @@
 version: "0.1"
-updated: "2026-10-20"
+updated: "2026-10-21"
 page:
   id: space-composition-new
   title: New tool
   route: /spaces/{space_id}/compositions/new
-  implementation: implemented
+  implementation: temporarily-unavailable
+  availability: No browser route is registered until the Composition UI gates are complete.
   contract_status: in_progress
 components:
   shared:

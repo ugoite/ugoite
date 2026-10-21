@@ -16115,6 +16115,26 @@ spec:
                             },
                         },
                     },
+                    VariableGraphNode {
+                        id: "empty_query".to_string(),
+                        kind: VariableGraphNodeKind::Query {
+                            returns: VariableGraphResultType::Scalar {
+                                value_type: VariableGraphScalarDescriptor {
+                                    scalar_type: VariableGraphScalarType::Integer,
+                                    nullable: true,
+                                },
+                            },
+                            query: VariableGraphQuery {
+                                definition: VariableGraphQueryDefinition::InlineSql {
+                                    sql: "SELECT CAST(1 AS BIGINT) AS value WHERE 1 = 0"
+                                        .to_string(),
+                                },
+                                arguments: Vec::new(),
+                                form_bindings: Vec::new(),
+                                schema_fingerprint: String::new(),
+                            },
+                        },
+                    },
                 ],
                 components: vec![
                     CompositionComponent::Metric {
@@ -16129,6 +16149,11 @@ spec:
                         id: "rows_table".to_string(),
                         variable: "rows_query".to_string(),
                     },
+                    CompositionComponent::Metric {
+                        id: "empty_metric".to_string(),
+                        variable: "empty_query".to_string(),
+                        presentation: None,
+                    },
                 ],
                 layout: DashboardFlowLayout {
                     kind: FlowLayoutKind::Flow,
@@ -16140,6 +16165,9 @@ spec:
                             },
                             FlowItem::Component {
                                 component: "rows_table".to_string(),
+                            },
+                            FlowItem::Component {
+                                component: "empty_metric".to_string(),
                             },
                         ],
                     }],
@@ -16174,7 +16202,7 @@ spec:
                         "composition_id": saved.entry_id.to_string(),
                         "revision_id": saved.revision_id.to_string()
                     },
-                    "requested_queries": ["total_query", "rows_query"]
+                    "requested_queries": ["total_query", "rows_query", "empty_query"]
                 })
                 .to_string(),
             ))?;
@@ -16182,10 +16210,10 @@ spec:
 
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["evaluation_id"], evaluation_id);
-        assert_eq!(body["ok"], true, "{body}");
+        assert_eq!(body["ok"], false, "{body}");
         assert_eq!(
             body["computed_query_ids"],
-            json!(["rows_query", "total_query"])
+            json!(["empty_query", "rows_query", "total_query"])
         );
         assert_eq!(
             body["query_results"]["total_query"]["value"],
@@ -16213,6 +16241,14 @@ spec:
             body["query_results"]["rows_query"]["exact_integer_rows"],
             json!([["9007199254740991"]])
         );
+        assert!(body["query_results"].get("empty_query").is_none());
+        assert!(body["query_diagnostics"]
+            .as_array()
+            .is_some_and(|diagnostics| diagnostics.iter().any(|diagnostic| {
+                diagnostic["variable_id"] == "empty_query"
+                    && diagnostic["result_diagnostic"]["result_diagnostic"]["code"]
+                        == "scalar_no_rows"
+            })));
         Ok(())
     }
 

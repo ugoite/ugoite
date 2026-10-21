@@ -229,40 +229,6 @@ requirements:
                     package: ugoite-iceberg
                     harness: test_composition_preview
                     test: graph_evaluation_does_not_execute_an_unrequested_query_branch
-          - id: stale-browser-evaluation
-            adapter: typescript
-            path: e2e/composition-stale-response.test.ts
-            selector:
-              kind: test
-              name: a late evaluation for an earlier input cannot replace current graph values
-            claims:
-              - kind: verifies
-                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
-                covers: [
-                  FEAT-COMP-011#binding.composition-graph-evaluation/target.stateless-query-evaluation,
-                ]
-                runner:
-                  runner: e2e-playwright
-                  arguments:
-                    file: e2e/composition-stale-response.test.ts
-                    test: a late evaluation for an earlier input cannot replace current graph values
-          - id: browser-principal-isolation
-            adapter: typescript
-            path: e2e/composition-source-acl-isolation.test.ts
-            selector:
-              kind: test
-              name: switching principal in one BrowserContext clears prior graph results
-            claims:
-              - kind: verifies
-                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
-                covers: [
-                  FEAT-COMP-011#binding.composition-graph-evaluation/target.stateless-query-evaluation,
-                ]
-                runner:
-                  runner: e2e-playwright
-                  arguments:
-                    file: e2e/composition-source-acl-isolation.test.ts
-                    test: switching principal in one BrowserContext clears prior graph results
           - id: browser-source-revocation
             adapter: typescript
             path: e2e/composition-source-acl-isolation.test.ts
@@ -280,3 +246,21 @@ requirements:
                   arguments:
                     file: e2e/composition-source-acl-isolation.test.ts
                     test: evaluate rechecks Form and exact Saved SQL access after revocation
+          - id: saved-form-schema-drift
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_preview.rs
+            selector:
+              kind: test
+              name: saved_graph_fails_closed_when_form_schema_changes
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.exact-query-identities
+                covers: [
+                  FEAT-COMP-011#binding.composition-graph-evaluation/target.stateless-query-evaluation,
+                ]
+                runner:
+                  runner: cargo-test-integration
+                  arguments:
+                    package: ugoite-iceberg
+                    harness: test_composition_preview
+                    test: saved_graph_fails_closed_when_form_schema_changes

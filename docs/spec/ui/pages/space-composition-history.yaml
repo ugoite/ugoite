@@ -1,10 +1,11 @@
 version: "0.1"
-updated: "2026-10-06"
+updated: "2026-10-21"
 page:
   id: space-composition-history
   title: Saved tool history
   route: /spaces/{space_id}/compositions/{composition_id}/history
-  implementation: implemented
+  implementation: temporarily-unavailable
+  availability: No browser route is registered until the Composition UI gates are complete.
 components:
   shared:
     - id: space-shell

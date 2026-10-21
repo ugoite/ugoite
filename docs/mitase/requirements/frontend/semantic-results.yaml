@@ -307,12 +307,12 @@ requirements:
           - id: result-surface-narrow-sql-one-column
             adapter: typescript
             path: e2e/result-surface-narrow.test.ts
-            selector: { kind: test, name: "REQ-FE-068: Saved SQL 1-column keeps Count and Save-as-tool operable at narrow widths" }
+            selector: { kind: test, name: "REQ-FE-068: Saved SQL 1-column keeps Count operable at narrow widths" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-068#criterion.local-horizontal-overflow
                 covers: [FEAT-FE-007#binding.frontend/target.sql-result-table]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/result-surface-narrow.test.ts, test: "REQ-FE-068: Saved SQL 1-column keeps Count and Save-as-tool operable at narrow widths" } }
+                runner: { runner: e2e-playwright, arguments: { file: e2e/result-surface-narrow.test.ts, test: "REQ-FE-068: Saved SQL 1-column keeps Count operable at narrow widths" } }
           - id: result-surface-narrow-sql-many-column
             adapter: typescript
             path: e2e/result-surface-narrow.test.ts

@@ -1,14 +1,7 @@
-import {
-  type APIRequestContext,
-  type Browser,
-  type BrowserContext,
-  expect,
-  test,
-} from "@playwright/test";
+import { type APIRequestContext, expect, test } from "@playwright/test";
 import {
   getBackendUrl,
   getDefaultSpaceId,
-  getFrontendUrl,
   waitForServers,
 } from "./lib/client.ts";
 import {
@@ -18,14 +11,24 @@ import {
 
 const METRIC_SCALAR = 40;
 const SECOND_AMOUNT = 2;
-const MULTIPLE_ROWS_DIAGNOSTIC = "The metric returned more than one row.";
+type EvaluationBody = {
+  ok: boolean;
+  composition_revision?: { entry_id: string; revision_id: string };
+  query_results: Record<string, {
+    value: { kind: string; rows?: unknown[][]; value?: unknown };
+    has_more: boolean;
+  }>;
+  query_diagnostics: Array<{
+    variable_id: string;
+    result_diagnostic?: { result_diagnostic?: { code?: string } };
+  }>;
+};
 
 type SeedState = {
   spaceId: string;
   formName: string;
   compositionId: string;
   revisionId: string;
-  compositionName: string;
 };
 
 function sqlIdentifier(value: string): string {
@@ -185,15 +188,7 @@ async function seedMetricComposition(
     formName,
     compositionId: saved.composition_id!,
     revisionId: saved.revision_id!,
-    compositionName,
   };
-}
-
-async function openOwnerContext(
-  browser: Browser,
-  storageState: Awaited<ReturnType<BrowserContext["storageState"]>>,
-) {
-  return await browser.newContext({ storageState });
 }
 
 test.describe("Composition Metric Journey", () => {
@@ -205,61 +200,71 @@ test.describe("Composition Metric Journey", () => {
     seed = await seedMetricComposition(request);
   });
 
-  test("Browser reopens a Saved SQL metric at its exact revision and reports multiple matching rows", async ({ browser, context, request }) => {
+  test("API evaluates an exact Saved SQL revision and reports scalar cardinality failures", async ({ request }) => {
     test.setTimeout(120_000);
-    const storageState = await context.storageState();
-    const freshContext = await openOwnerContext(browser, storageState);
-    try {
-      const page = await freshContext.newPage();
-      const path =
-        `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/${seed.revisionId}`;
-      await page.goto(getFrontendUrl(`/spaces/${seed.spaceId}/dashboard`), {
-        waitUntil: "domcontentloaded",
-      });
-      const link = page.getByRole("link", {
-        name: new RegExp(`^${seed.compositionName} Dashboard`),
-      });
-      await expect(link).toHaveAttribute("href", path);
-      await link.click();
-      await expect(page).toHaveURL(new RegExp(`${path}$`));
-      await expect(
-        page.getByRole("heading", { level: 1, name: seed.compositionName }),
-      ).toBeVisible();
-
-      const metric = page.locator(".compositionGraphMetric strong");
-      await expect(metric).toHaveText(String(METRIC_SCALAR));
-      const table = page.getByRole("table");
-      await expect(table.locator("tbody tr")).toHaveCount(1);
-      await expect(table).toContainText("Metric-One");
-
-      const secondEntryResponse = await request.post(
-        getBackendUrl(`/spaces/${seed.spaceId}/entries`),
+    const evaluate = () =>
+      request.post(
+        getBackendUrl("/spaces/" + seed.spaceId + "/compositions/evaluate"),
         {
           data: {
-            form: seed.formName,
-            fields: {
-              Date: "2026-04-11",
-              Merchant: "Metric-Two",
-              Amount: SECOND_AMOUNT,
+            evaluation_id: crypto.randomUUID(),
+            target: {
+              kind: "saved_revision",
+              composition_id: seed.compositionId,
+              revision_id: seed.revisionId,
             },
+            requested_queries: ["total_value", "metric_rows"],
           },
         },
       );
-      expect(secondEntryResponse.status()).toBe(201);
 
-      await page.reload({ waitUntil: "domcontentloaded" });
-      await expect(page).toHaveURL(new RegExp(`${path}$`));
-      await expect(page.getByRole("alert")).toContainText(
-        MULTIPLE_ROWS_DIAGNOSTIC,
-      );
-      await expect(page.getByRole("link", { name: "Edit", exact: true }))
-        .toBeVisible();
-      await expect(page.locator(".compositionGraphMetric strong")).toHaveCount(
-        0,
-      );
-      await expect(table.locator("tbody tr")).toHaveCount(2);
-    } finally {
-      await freshContext.close();
-    }
+    const firstResponse = await evaluate();
+    const firstBody = await firstResponse.json() as EvaluationBody;
+    expect(firstResponse.ok(), JSON.stringify(firstBody)).toBe(true);
+    expect(firstBody.ok).toBe(true);
+    expect(firstBody.composition_revision).toEqual({
+      entry_id: seed.compositionId,
+      revision_id: seed.revisionId,
+    });
+    expect(firstBody.query_results.total_value.value.value).toBeDefined();
+    expect(JSON.stringify(firstBody.query_results.total_value.value))
+      .toContain(String(METRIC_SCALAR));
+    expect(firstBody.query_results.metric_rows.value.rows).toHaveLength(1);
+    expect(JSON.stringify(firstBody.query_results.metric_rows.value.rows))
+      .toContain("Metric-One");
+
+    const secondEntryResponse = await request.post(
+      getBackendUrl("/spaces/" + seed.spaceId + "/entries"),
+      {
+        data: {
+          form: seed.formName,
+          fields: {
+            Date: "2026-04-11",
+            Merchant: "Metric-Two",
+            Amount: SECOND_AMOUNT,
+          },
+        },
+      },
+    );
+    expect(secondEntryResponse.status()).toBe(201);
+
+    const secondResponse = await evaluate();
+    const secondBody = await secondResponse.json() as EvaluationBody;
+    expect(secondResponse.ok(), JSON.stringify(secondBody)).toBe(true);
+    expect(secondBody.ok).toBe(false);
+    expect(secondBody.query_results.total_value).toBeUndefined();
+    expect(secondBody.query_results.metric_rows.value.rows).toHaveLength(2);
+    expect(JSON.stringify(secondBody.query_results.metric_rows.value.rows))
+      .toContain("Metric-Two");
+    expect(secondBody.query_diagnostics).toContainEqual(
+      expect.objectContaining({
+        variable_id: "total_value",
+        result_diagnostic: expect.objectContaining({
+          result_diagnostic: expect.objectContaining({
+            code: "scalar_multiple_rows",
+          }),
+        }),
+      }),
+    );
   });
 });

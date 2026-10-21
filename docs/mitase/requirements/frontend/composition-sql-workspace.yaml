@@ -167,7 +167,7 @@ requirements:
       - id: graph-draft-and-atomic-bindings
         role: verification
         facet: verification
-        responsibility: Verify strict graph-only serialization, typed bindings, atomic Form and Saved SQL insertion, explicit aggregate choice, and reference-only rebinding. The broader Composition SQL argument requirement remains unverified because no current test covers host-side variable and Input creation in the same draft update.
+        responsibility: Verify strict graph-only serialization, typed bindings, atomic Form and Saved SQL insertion, explicit aggregate choice, and reference-only rebinding. The broader Composition SQL argument requirement remains unverified because no current test covers host-side variable and Input creation in the same draft update. Composition runtime-input accessibility also remains unverified while the browser Composition routes are unavailable during the staged UI cutover.
         targets:
           - id: graph-draft-shape
             adapter: typescript
@@ -250,12 +250,3 @@ requirements:
                 criterion: REQ-FE-079#criterion.composition-mobile-overlays-are-exclusive
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "keeps one modal owner and restores focus after Escape" } }
-          - id: runtime-input-mobile-accessibility
-            adapter: typescript
-            path: e2e/composition-invalid-variable-input.test.ts
-            selector: { kind: test, name: "invalid_raw_input_blocks_query_and_stale_result" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-runtime-input-accessibility
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-result-renderer]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-invalid-variable-input.test.ts, test: "invalid_raw_input_blocks_query_and_stale_result" } }

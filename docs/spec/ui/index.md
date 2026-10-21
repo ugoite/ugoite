@@ -56,14 +56,15 @@ without changing context ownership. The unauthenticated root route offers a
 single Login action; `/login` owns authentication methods, authentication state,
 and recovery. Space selection follows authentication. Product overview lives in
 Docs, the single documentation authority; `/about` redirects there. The
-Space-scoped shell groups Assets, Forms, and Saved tools under Knowledge on
-desktop, with Saved tools in the mobile More menu. Route behavior, API calls,
+Space-scoped shell groups Assets and Forms under Knowledge on desktop. Saved
+tools navigation and Composition browser routes are temporarily unavailable
+until the Composition UI gates are complete. Route behavior, API calls,
 loading/error states remain authoritative in the corresponding TSX files and
 tests.
 
-Implemented page routes include Space home/dashboard and saved Composition
-list/revision views, Form-first New Entry, Entries and history/restore, the
-list-only Forms list with form-scoped Entry lists and column types,
+Implemented page routes include Space home/dashboard, Form-first New Entry,
+Entries and raw history/restore, the list-only Forms list with form-scoped Entry
+lists and column types,
 keyword/advanced search, saved SQL and saved queries, the Form-owned Asset
 reference workspace, persistent Settings sections, and connection testing.
 
