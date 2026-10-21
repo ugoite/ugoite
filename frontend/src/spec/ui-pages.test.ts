@@ -1,6 +1,6 @@
 /* @vitest-environment node */
 import { describe, expect, it } from "vitest";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
@@ -465,9 +465,12 @@ describe("UI spec YAML registry", () => {
       expect(spec.page?.title, filePath).toBeTruthy();
       expect(spec.page?.route, filePath).toBeTruthy();
       expect(spec.page?.implementation, filePath).toBeTruthy();
-      expect(["unimplemented", "implemented", "in-progress"]).toContain(
-        spec.page?.implementation,
-      );
+      expect([
+        "unimplemented",
+        "implemented",
+        "in-progress",
+        "temporarily-unavailable",
+      ]).toContain(spec.page?.implementation);
     }
   });
 
@@ -503,23 +506,24 @@ describe("UI spec YAML registry", () => {
     }
   });
 
-  it("REQ-FE-040: registers the graph Composition and shared SQL Workspace contracts", () => {
+  it("REQ-FE-040: keeps unfinished Composition routes unavailable", () => {
     const studioPath = path.join(componentsDir, "composition-studio.yaml");
     const studioContract = readFileSync(studioPath, "utf8");
     const sharedWorkspaceContract = readFileSync(
       path.join(componentsDir, "sql-workspace.yaml"),
       "utf8",
     );
-    const revisionRouteSource = readFileSync(
-      path.join(
-        repoRoot,
-        "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx",
-      ),
-      "utf8",
-    );
+    const compositionRouteFiles = [
+      "compositions/index.tsx",
+      "compositions/new.tsx",
+      "compositions/[composition_id]/[revision_id].tsx",
+      "compositions/[composition_id]/[revision_id]/index.tsx",
+      "compositions/[composition_id]/[revision_id]/edit.tsx",
+      "compositions/[composition_id]/history.tsx",
+    ];
 
     expect(studioContract).toContain(
-      "**Status: implementation in progress; complete SQL grammar coverage remains a separate gate.**",
+      "**Status: browser routes are temporarily unavailable until PR3 completes the Studio gates.",
     );
     expect(studioContract).toContain(
       "The normative next Composition model is [ADR-025]",
@@ -527,10 +531,13 @@ describe("UI spec YAML registry", () => {
     expect(studioContract.replaceAll(/\s+/g, " ")).toContain(
       "Table and Value share one BindingPicker with Variables, Forms, and Saved SQL tabs.",
     );
-    expect(revisionRouteSource).toContain("compositionApi.evaluate");
-    expect(revisionRouteSource).toContain("<CompositionGraphRenderer");
+    expect(
+      compositionRouteFiles.every((file) =>
+        !existsSync(path.join(routesDir, file))
+      ),
+    ).toBe(true);
     expect(sharedWorkspaceContract.replaceAll(/\s+/g, " ")).toContain(
-      "Composition query variables use the same Workspace component",
+      "Composition integration is temporarily unavailable while its browser routes are paused.",
     );
   });
 
@@ -738,15 +745,22 @@ describe("UI spec YAML registry", () => {
     }
   });
 
-  it("REQ-FE-040: validates docs pages map to implemented routes", () => {
+  it("REQ-FE-040: validates documented page availability against routes", () => {
     const pages = loadPages();
     const routes = new Set(loadRoutes().map(({ route }) => route));
     for (const { spec, filePath } of pages) {
       const route = spec.page?.route;
       expect(route, `${filePath} missing route`).toBeTruthy();
+      if (spec.page?.implementation === "temporarily-unavailable") {
+        expect(
+          routes.has(String(route)),
+          `${filePath} is unavailable but its route is registered`,
+        ).toBe(false);
+        continue;
+      }
       expect(
         routes.has(String(route)),
-        `${filePath} route not implemented: ${String(route)}`,
+        `${filePath} route not registered: ${String(route)}`,
       ).toBe(
         true,
       );
@@ -839,7 +853,6 @@ describe("UI spec YAML registry", () => {
         "Home",
         "Assets",
         "Forms",
-        "Saved tools",
         "Search",
         "History",
         "Settings",
@@ -851,7 +864,7 @@ describe("UI spec YAML registry", () => {
       height: "66px",
       breakpoint: "900px",
       items: ["Home", "Forms", "Search", "History", "More"],
-      more_items: ["Assets", "Saved tools", "Settings"],
+      more_items: ["Assets", "Settings"],
     });
     const globalMobileNavigation = components.find((component) =>
       component.id === "global-mobile-bottom-navigation"

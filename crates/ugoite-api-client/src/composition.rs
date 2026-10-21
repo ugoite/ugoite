@@ -304,8 +304,9 @@ pub struct CompositionEvaluationPage {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompositionEvaluationRequest {
-    /// Caller-owned generation ID. Responses and page cursors echo/bind it so
-    /// clients can discard stale results without depending on cancellation.
+    /// Caller-owned generation ID echoed by responses so clients can discard
+    /// stale results without depending on cancellation. Table continuation
+    /// cursors are instead bound to the selected query snapshot.
     pub evaluation_id: String,
     pub target: CompositionEvaluationTarget,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -436,8 +437,9 @@ pub struct CompositionEvaluationResponse {
     pub dependencies: CompositionDependencyIndex,
     #[serde(default)]
     pub query_results: BTreeMap<String, CompositionGraphQueryResult>,
-    /// Query variables whose results were computed in this response, in
-    /// dependency order. Failed evaluations return an empty list.
+    /// Query variables selected for recomputation, in dependency order.
+    /// This includes queries that produced diagnostics; `query_results` only
+    /// contains successful, validated results.
     pub computed_query_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub diagnostics: Vec<CompositionDiagnostic>,

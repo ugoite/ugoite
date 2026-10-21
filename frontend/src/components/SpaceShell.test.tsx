@@ -81,12 +81,9 @@ describe("v5 SpaceShell", () => {
         expect(link).toHaveAttribute("href", href);
       }
     }
-    expect(screen.getAllByRole("link", { name: "Saved tools" })[0])
-      .toHaveAttribute("href", "/spaces/my-space-uid/compositions");
-    const savedToolsInMore = container.querySelector(
-      '.bottomNav .moreMenuItems a[href="/spaces/my-space-uid/compositions"]',
-    );
-    expect(savedToolsInMore).toHaveTextContent("Saved tools");
+    expect(screen.queryByRole("link", { name: "Saved tools" }))
+      .not.toBeInTheDocument();
+    expect(container.querySelector('a[href*="/compositions"]')).toBeNull();
     // Forms is a primary destination: desktop sidebar plus the mobile
     // bottom navigation each link to the Forms workspace.
     const bottomNav = container.querySelector(".bottomNav");
@@ -112,43 +109,6 @@ describe("v5 SpaceShell", () => {
     for (const link of screen.getAllByRole("link", { name: "Forms" })) {
       expect(link).toHaveClass("active");
     }
-  });
-  it("REQ-FE-073: exposes Saved tools in Knowledge and mobile More navigation", () => {
-    const { container } = render(() => (
-      <SpaceShell spaceId="my-space-uid" activeNavigation="compositions">
-        <p>Content</p>
-      </SpaceShell>
-    ));
-
-    const savedTools = screen.getAllByRole("link", { name: "Saved tools" })[0];
-    expect(savedTools).toHaveAttribute(
-      "href",
-      "/spaces/my-space-uid/compositions",
-    );
-    expect(savedTools.closest(".navGroup")).toHaveTextContent("Knowledge");
-    expect(
-      container.querySelector(
-        '.bottomNav .moreMenuItems a[href="/spaces/my-space-uid/compositions"]',
-      ),
-    ).toHaveTextContent("Saved tools");
-    expect(savedTools).toHaveClass("active");
-  });
-  it("REQ-FE-073: preserves Saved tools while switching Spaces", () => {
-    render(() => (
-      <SpaceShell spaceId="my-space-uid" activeNavigation="compositions">
-        <p>Content</p>
-      </SpaceShell>
-    ));
-
-    expect(screen.getAllByRole("link", { name: "Saved tools" })[0])
-      .toHaveClass("active");
-    fireEvent.change(screen.getByRole("combobox", { name: "Space" }), {
-      target: { value: "other-space-uid" },
-    });
-
-    expect(spaceStoreState.navigate).toHaveBeenCalledWith(
-      "/spaces/other-space-uid/compositions",
-    );
   });
   it("encodes Space segments across desktop and mobile targets", () => {
     render(() => (
@@ -316,8 +276,10 @@ describe("v5 SpaceShell", () => {
     ));
     expect(screen.getAllByRole("link", { name: "ホーム" }).length)
       .toBeGreaterThan(0);
-    expect(screen.getAllByRole("link", { name: "保存したツール" }).length)
-      .toBeGreaterThan(0);
+    expect(screen.queryByRole("link", { name: "保存したツール" }))
+      .not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Saved tools" }))
+      .not.toBeInTheDocument();
   });
   it("keeps shell and children mounted without a global loading bar", () => {
     const { container } = render(() => (

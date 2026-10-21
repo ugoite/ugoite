@@ -315,20 +315,6 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.route-coverage
-          - id: route-compositions
-            adapter: typescript
-            path: "frontend/src/routes/spaces/[space_id]/compositions/index.tsx"
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-040#criterion.route-coverage
-          - id: route-composition-revision
-            adapter: typescript
-            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx"
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-040#criterion.route-coverage
           - id: route-space-entry-list
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/entries.tsx

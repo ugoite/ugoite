@@ -1,11 +1,10 @@
 import {
   type APIRequestContext,
   type Browser,
-  type BrowserContext,
   expect,
   test,
 } from "@playwright/test";
-import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
+import { getBackendUrl, waitForServers } from "./lib/client.ts";
 import { completeCompositionGraphYaml } from "./lib/composition-graph.ts";
 import { openIsolatedPasskeyPage } from "./lib/security-context.ts";
 import {
@@ -220,12 +219,6 @@ async function seedGraph(
   };
 }
 
-function evaluationResponse(page: import("@playwright/test").Page) {
-  return page.waitForResponse((response) =>
-    new URL(response.url()).pathname.endsWith("/compositions/evaluate")
-  );
-}
-
 function responseContainsText(bodyText: string, expected: string): boolean {
   const contains = (value: unknown): boolean => {
     if (typeof value === "string") return value.includes(expected);
@@ -241,10 +234,6 @@ function responseContainsText(bodyText: string, expected: string): boolean {
   } catch {
     return false;
   }
-}
-
-function compositionPath(seed: CompositionSeed): string {
-  return `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/${seed.compositionRevisionId}`;
 }
 
 const evaluateExactRevision = (
@@ -270,7 +259,7 @@ const evaluateExactRevision = (
 test.describe("Composition graph ACL and runtime isolation", () => {
   test.beforeAll(async ({ request }) => await waitForServers(request));
 
-  test("evaluate rechecks Form and exact Saved SQL access after revocation", async ({ browser, context, request }) => {
+  test("evaluate rechecks Form and exact Saved SQL access after revocation", async ({ browser, request }) => {
     test.setTimeout(180_000);
     const space = await createSpace(request, "acl-revocation");
     const suffix = crypto.randomUUID().slice(0, 8);
@@ -298,18 +287,10 @@ test.describe("Composition graph ACL and runtime isolation", () => {
       await page.getByRole("button", { name: "Accept invitation" }).click();
       await expect(page).toHaveURL(/\/spaces$/);
 
-      const initialEvaluation = evaluationResponse(page);
-      await page.goto(getFrontendUrl(compositionPath(seed)), {
-        waitUntil: "domcontentloaded",
-      });
-      await expect(
-        page.getByRole("heading", { level: 1, name: seed.compositionName }),
-      )
-        .toBeVisible();
-      await expect(page.locator(".compositionGraphMetric strong"))
-        .toContainText(seed.protectedValue);
-      await expect(page.getByRole("table")).toContainText(seed.protectedValue);
-      const authorized = await initialEvaluation;
+      const authorized = await evaluateExactRevision(
+        viewerContext.request,
+        seed,
+      );
       expect(authorized.ok()).toBe(true);
       const authorizedBody = await authorized.json() as EvaluationBody;
       expect(authorizedBody.ok).toBe(true);
@@ -342,47 +323,6 @@ test.describe("Composition graph ACL and runtime isolation", () => {
         } else {
           expect(responseContainsText(bodyText, seed.savedSqlName)).toBe(false);
         }
-
-        const browserEvaluation = evaluationResponse(page);
-        const legacySqlRequests: string[] = [];
-        const captureLegacySqlRequest = (
-          browserRequest: import("@playwright/test").Request,
-        ) => {
-          const pathname = new URL(browserRequest.url()).pathname;
-          if (pathname.endsWith("/sql/query")) legacySqlRequests.push(pathname);
-        };
-        page.on("request", captureLegacySqlRequest);
-        await page.getByRole("textbox", { name: VARIABLE_ID }).fill("match-2");
-        const browserResponse = await browserEvaluation;
-        page.off("request", captureLegacySqlRequest);
-        expect(legacySqlRequests).toEqual([]);
-        expect([200, 403]).toContain(browserResponse.status());
-        const browserBody = await browserResponse.text();
-        expect(responseContainsText(browserBody, seed.protectedValue)).toBe(
-          false,
-        );
-        expect(responseContainsText(browserBody, seed.protectedSql)).toBe(
-          false,
-        );
-        expect(responseContainsText(browserBody, resourceId)).toBe(false);
-        if (policyKind === "form") {
-          expect(responseContainsText(browserBody, seed.formName)).toBe(false);
-        } else {
-          expect(responseContainsText(browserBody, seed.savedSqlName)).toBe(
-            false,
-          );
-        }
-        if (browserResponse.ok()) {
-          const body = JSON.parse(browserBody) as EvaluationBody;
-          expect(body.ok).toBe(false);
-          expect(body.query_results ?? {}).toEqual({});
-        }
-        await expect(page.locator("body")).not.toContainText(
-          seed.protectedValue,
-        );
-        await expect(page.locator(".compositionGraphMetric strong"))
-          .toHaveCount(0);
-        await expect(page.getByRole("table")).toHaveCount(0);
 
         // Raw exact revision inspection remains available to the authorized
         // Space member even when its query dependencies are no longer readable.
@@ -419,11 +359,11 @@ test.describe("Composition graph ACL and runtime isolation", () => {
         },
       );
       expect(restoreFormPolicy.status()).toBe(200);
-      const restoredEvaluation = evaluationResponse(page);
-      await page.reload({ waitUntil: "domcontentloaded" });
-      await expect(page.locator(".compositionGraphMetric strong"))
-        .toContainText(seed.protectedValue);
-      expect((await restoredEvaluation).ok()).toBe(true);
+      const restoredEvaluation = await evaluateExactRevision(request, seed);
+      expect(restoredEvaluation.ok()).toBe(true);
+      expect(JSON.stringify(await restoredEvaluation.json())).toContain(
+        seed.protectedValue,
+      );
 
       const savedSqlPolicyResponse = await request.put(
         getBackendUrl(
@@ -439,31 +379,12 @@ test.describe("Composition graph ACL and runtime isolation", () => {
       );
       expect(savedSqlPolicyResponse.status()).toBe(200);
       await assertRevokedEvaluation("saved_sql", seed.savedSqlId);
-
-      const ownerContext = await browser.newContext({
-        storageState: await context.storageState(),
-      });
-      try {
-        const ownerPage = await ownerContext.newPage();
-        const ownerEvaluation = evaluationResponse(ownerPage);
-        await ownerPage.goto(getFrontendUrl(compositionPath(seed)), {
-          waitUntil: "domcontentloaded",
-        });
-        await expect(ownerPage.locator(".compositionGraphMetric strong"))
-          .toContainText(seed.protectedValue);
-        expect((await ownerEvaluation).ok()).toBe(true);
-        await expect(page.locator("body")).not.toContainText(
-          seed.protectedValue,
-        );
-      } finally {
-        await ownerContext.close();
-      }
     } finally {
       await close();
     }
   });
 
-  test("switching Spaces shows only the selected graph evaluation", async ({ browser, context, request }) => {
+  test("Space evaluations never mix results for matching graph identifiers", async ({ request }) => {
     test.setTimeout(180_000);
     const spaceA = await createSpace(request, "isolation-a");
     const spaceB = await createSpace(request, "isolation-b");
@@ -483,43 +404,20 @@ test.describe("Composition graph ACL and runtime isolation", () => {
     });
     expect(seedA.formName).toBe(seedB.formName);
 
-    const ownerContext: BrowserContext = await browser.newContext({
-      storageState: await context.storageState(),
-    });
-    try {
-      const page = await ownerContext.newPage();
-      const firstEvaluation = evaluationResponse(page);
-      await page.goto(getFrontendUrl(compositionPath(seedA)), {
-        waitUntil: "domcontentloaded",
-      });
-      await expect(page.locator(".compositionGraphMetric strong"))
-        .toContainText(seedA.protectedValue);
-      await expect(page.getByRole("table")).toContainText(seedA.protectedValue);
-      await expect(page.getByRole("textbox", { name: VARIABLE_ID }))
-        .toHaveValue("match");
-      expect((await firstEvaluation).ok()).toBe(true);
+    const evaluationA = await evaluateExactRevision(request, seedA);
+    const bodyA = await evaluationA.text();
+    expect(evaluationA.ok(), bodyA).toBe(true);
+    expect(bodyA).toContain(seedA.protectedValue);
+    expect(bodyA).not.toContain(seedB.protectedValue);
 
-      const spaceSelector = page.getByRole("combobox", { name: "Space" });
-      await spaceSelector.selectOption(seedB.spaceId);
-      await expect(page).toHaveURL(
-        new RegExp(`/spaces/${seedB.spaceId}/compositions$`),
-      );
-      const secondEvaluation = evaluationResponse(page);
-      await page.getByRole("link", { name: new RegExp(`^${compositionName}`) })
-        .click();
-      await expect(page.locator(".compositionGraphMetric strong"))
-        .toContainText(seedB.protectedValue);
-      await expect(page.getByRole("table")).toContainText(seedB.protectedValue);
-      expect((await secondEvaluation).ok()).toBe(true);
-      await expect(page.locator("body")).not.toContainText(
-        seedA.protectedValue,
-      );
-    } finally {
-      await ownerContext.close();
-    }
+    const evaluationB = await evaluateExactRevision(request, seedB);
+    const bodyB = await evaluationB.text();
+    expect(evaluationB.ok(), bodyB).toBe(true);
+    expect(bodyB).toContain(seedB.protectedValue);
+    expect(bodyB).not.toContain(seedA.protectedValue);
   });
 
-  test("switching principal in one BrowserContext clears prior graph results", async ({ context, page, request }) => {
+  test("switching principal in one BrowserContext revokes graph evaluation access", async ({ context, page, request }) => {
     test.setTimeout(180_000);
     const space = await createSpace(request, "principal-switch");
     const suffix = crypto.randomUUID().slice(0, 8);
@@ -554,14 +452,9 @@ test.describe("Composition graph ACL and runtime isolation", () => {
       (await invitation.json() as { invitation_url?: string }).invitation_url;
     expect(invitationUrl).toBeTruthy();
 
-    const ownerEvaluation = evaluationResponse(page);
-    await page.goto(getFrontendUrl(compositionPath(seed)), {
-      waitUntil: "domcontentloaded",
-    });
-    await expect(page.locator(".compositionGraphMetric strong"))
-      .toContainText(seed.protectedValue);
-    await expect(page.getByRole("table")).toContainText(seed.protectedValue);
-    expect((await ownerEvaluation).ok()).toBe(true);
+    const ownerEvaluation = await evaluateExactRevision(context.request, seed);
+    expect(ownerEvaluation.ok()).toBe(true);
+    expect(await ownerEvaluation.text()).toContain(seed.protectedValue);
 
     const savedSqlPolicyResponse = await request.put(
       getBackendUrl(
@@ -615,13 +508,10 @@ test.describe("Composition graph ACL and runtime isolation", () => {
       );
       expect(viewerSpace.status()).toBe(200);
 
-      const viewerEvaluation = evaluationResponse(page);
-      await page.goto(getFrontendUrl(compositionPath(seed)), {
-        waitUntil: "domcontentloaded",
-      });
-      await expect(
-        page.getByRole("heading", { level: 1, name: seed.compositionName }),
-      ).toBeVisible();
+      const viewerEvaluation = await evaluateExactRevision(
+        context.request,
+        seed,
+      );
       const denied = await viewerEvaluation;
       expect([200, 403]).toContain(denied.status());
       const deniedBody = await denied.text();
@@ -632,11 +522,6 @@ test.describe("Composition graph ACL and runtime isolation", () => {
         expect(body.ok).toBe(false);
         expect(body.query_results ?? {}).toEqual({});
       }
-      await expect(page.locator("body")).not.toContainText(
-        seed.protectedValue,
-      );
-      await expect(page.locator(".compositionGraphMetric strong")).toBeEmpty();
-      await expect(page.getByRole("table")).toHaveCount(0);
 
       const rawRevision = await context.request.get(
         getBackendUrl(

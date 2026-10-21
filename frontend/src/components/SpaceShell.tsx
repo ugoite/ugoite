@@ -11,16 +11,15 @@ import { spaceUid } from "~/lib/space-list";
 import { spacePath, spaceSettingsPath } from "~/lib/space-path";
 
 // Form-first navigation: Forms is the entry point to a Form's Entries.
-// Desktop: Home / Knowledge(Assets, Forms, Saved tools) / Explore(Search)
+// Desktop: Home / Knowledge(Assets, Forms) / Explore(Search)
 //   / Recovery(History) / Settings.
 // Mobile bottom nav: Home, Forms, Search, History, More — More contains
-// Assets, Saved tools, Settings. Both surfaces expose the same seven destinations;
+// Assets, Settings. Both surfaces expose the same destinations;
 // Entries is not an independent destination.
 export type SpaceNavigation =
   | "home"
   | "assets"
   | "forms"
-  | "compositions"
   | "search"
   | "history"
   | "settings";
@@ -60,12 +59,6 @@ export const SPACE_NAV_ITEMS: SpaceNavItem[] = [
     labelKey: "spaceShell.nav.forms",
   },
   {
-    id: "compositions",
-    icon: "columns",
-    path: "compositions",
-    labelKey: "spaceShell.nav.compositions",
-  },
-  {
     id: "search",
     icon: "search",
     path: "search",
@@ -94,7 +87,6 @@ export const MOBILE_PRIMARY_NAV: SpaceNavigation[] = [
 
 export const MOBILE_MORE_NAV: SpaceNavigation[] = [
   "assets",
-  "compositions",
   "settings",
 ];
 
@@ -107,7 +99,7 @@ export const DESKTOP_NAV_GROUPS: SpaceNavGroup[] = [
   { labelKey: null, items: ["home"] },
   {
     labelKey: "spaceShell.nav.knowledge",
-    items: ["assets", "forms", "compositions"],
+    items: ["assets", "forms"],
   },
   { labelKey: "spaceShell.nav.explore", items: ["search"] },
   { labelKey: "spaceShell.nav.recovery", items: ["history"] },
@@ -131,7 +123,6 @@ export function inferSpaceNavigation(pathname: string): SpaceNavigation {
     pathname.includes("/search") || pathname.includes("/sql")
   ) return "search";
   if (pathname.includes("/assets")) return "assets";
-  if (pathname.includes("/compositions")) return "compositions";
   if (pathname.includes("/forms")) return "forms";
   // Entry detail, creation, and history routes live under Forms: Forms is
   // the entry point to a Form's Entries.

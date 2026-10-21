@@ -160,12 +160,7 @@ inventory:
         - frontend/src/routes/spaces/[space_id]/entries/new.test.tsx
         - e2e/entries.test.ts
         - e2e/knowledge-journey.test.ts
-        - e2e/composition-golden-journey.test.ts
-        - e2e/composition-stale-response.test.ts
-        - e2e/composition-studio-journey.test.ts
         - e2e/composition-metric-journey.test.ts
-        - e2e/composition-scalar-state-journey.test.ts
-        - e2e/composition-table-metric-pagination.test.ts
         - e2e/composition-source-acl-isolation.test.ts
         - frontend/src/routes/spaces/[space_id]/entries/[entry_id].tsx
         - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history.tsx
@@ -188,14 +183,6 @@ inventory:
         - frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
         - frontend/src/routes/spaces/[space_id]/assets/[asset_id].tsx
         - frontend/src/routes/spaces/[space_id]/assets/[asset_id].test.tsx
-        - frontend/src/routes/spaces/[space_id]/compositions/index.tsx
-        - frontend/src/routes/spaces/[space_id]/compositions/new.tsx
-        - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id].tsx
-        - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx
-        - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.tsx
-        - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.tsx
-        - frontend/src/lib/composition-space-navigation.test.ts
-        - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx
         - frontend/src/routes/spaces/[space_id]/entries.tsx
         - frontend/src/routes/spaces/[space_id]/assets.tsx
         - frontend/src/routes/spaces/[space_id]/forms.tsx
@@ -254,7 +241,6 @@ inventory:
         - tools/release_verify.ts
         - tools/release_verify_test.ts
         - tools/workspace_test.ts
-        - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
         - crates/ugoite-wasm/tests/composition_parity.ts
         - crates/ugoite-wasm/tests/sql_structure_wasm_fixtures.ts
         - frontend/src/lib/composition-api.ts
@@ -297,16 +283,12 @@ inventory:
         - frontend/src/components/CompositionVariableList.tsx
         - frontend/src/components/CompositionVariableList.test.tsx
         - frontend/src/lib/composition-variable-name.ts
-        - frontend/src/routes/spaces/[space_id]/compositions/new.tsx
-        - frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
         - frontend/src/components/CompositionStudio.tsx
         - frontend/src/lib/composition-studio-sync.ts
         - frontend/src/lib/composition-studio-sync.test.ts
         - frontend/src/components/CompositionStudioSync.test.tsx
         - frontend/src/components/CompositionInspectorSheet.tsx
         - frontend/src/components/CompositionStudioMobile.test.tsx
-        - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.tsx
-        - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx
     openapi:
       roots:
         - crates/ugoite-server/src/openapi.json

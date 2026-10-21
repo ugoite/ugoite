@@ -15429,7 +15429,7 @@
           "evaluation_id": {
             "type": "string",
             "format": "uuid",
-            "description": "Caller-owned generation identifier echoed by the response and bound into every table continuation."
+            "description": "Caller-owned generation identifier echoed by the response so clients can discard stale results. Table continuation cursors are bound to the selected query snapshot, not this generation identifier."
           },
           "target": {
             "$ref": "#/components/schemas/CompositionEvaluationTarget"
@@ -15688,14 +15688,14 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/CompositionGraphQueryResult"
             },
-            "description": "Only results computed by this evaluation, keyed by query variable ID; components sharing a variable share its value."
+            "description": "Only successfully evaluated and validated results, keyed by query variable ID; components sharing a variable share its value. When ok is false, this map may contain successful independent results while failed query variables appear in query_diagnostics."
           },
           "computed_query_ids": {
             "type": "array",
             "items": {
               "type": "string"
             },
-            "description": "Query variables evaluated in this response, in dependency order."
+            "description": "Query variables selected for recomputation, in dependency order, including query variables that produced diagnostics."
           },
           "diagnostics": {
             "type": "array",
@@ -15708,7 +15708,7 @@
             "items": {
               "$ref": "#/components/schemas/CompositionEvaluationQueryDiagnostic"
             },
-            "description": "Variable-scoped query failures. Failed evaluations return no query_results."
+            "description": "Variable-scoped query failures. When ok is false, query_results may contain successful independent results; failed query variables have no result entry."
           }
         },
         "additionalProperties": false

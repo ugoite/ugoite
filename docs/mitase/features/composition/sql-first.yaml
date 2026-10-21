@@ -222,20 +222,6 @@ features:
                 criterion: REQ-FE-079#criterion.composition-insertion-completes-before-edit
               - kind: satisfies
                 criterion: REQ-FE-079#criterion.composition-table-source-change-is-explicit
-          - id: composition-revision-route
-            adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx
-            selector: { kind: symbol, name: CompositionRevisionRoute }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-079#criterion.composition-binding-identifiers-stay-internal
-          - id: composition-history-route
-            adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.tsx
-            selector: { kind: symbol, name: CompositionHistoryRoute }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-079#criterion.composition-history-hides-revision-identifiers
           - id: composition-text-inspector
             adapter: typescript
             path: frontend/src/components/CompositionGraphDesignCanvas.tsx
