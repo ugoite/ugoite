@@ -2,12 +2,14 @@
 title: "ADR-025 — Composition query variable graph and complete SQL Workspace"
 ---
 
-**Status: Accepted; graph implementation is in progress.** This decision
-replaces the unreleased Composition grammar and authoring model recorded in
-[ADR-024](adr-024-composition-sql-first.md). The active change implements the
-strict graph, stateless evaluation, and graph-based Studio; complete SQL
-document and executor-to-GUI coverage remains a separate open gate. This
-decision does not authorize release preparation or publication.
+**Status: Accepted; strict graph evaluation is implemented, SQL GUI and Studio
+completion remain in progress.** This decision replaces the unreleased
+Composition grammar and authoring model recorded in
+[ADR-024](adr-024-composition-sql-first.md). The strict graph and stateless
+evaluation are implemented in `main`; the browser Composition routes are
+temporarily unavailable while complete SQL document and executor-to-GUI
+coverage and Design/runtime parity remain open gates. This decision does not
+authorize release preparation or publication.
 
 ## Context
 
@@ -181,9 +183,11 @@ reader or migration.
 
 ## Implementation status
 
-The strict typed graph, stateless evaluation, and graph-based Studio cutover
-are implemented in the active change. Complete SQL executor-to-GUI coverage
-remains open: the shared editor still needs the lossless SQL document contract
-and paired fixtures for every admitted construct. Keep that coverage gate
-explicit until its parser, editor, and CI evidence are complete. No release
-preparation, version update, candidate creation, or publication is included.
+The strict typed graph and stateless evaluation are implemented in `main`.
+Composition browser routes are temporarily unavailable while the shared SQL
+editor, Design/runtime renderer parity, and browser acceptance gates are
+completed. Complete SQL executor-to-GUI coverage remains open: the shared
+editor still needs the lossless SQL document contract and paired fixtures for
+every admitted construct. Keep these gates explicit until their implementation
+and CI evidence are complete. No release preparation, version update, candidate
+creation, or publication is included.

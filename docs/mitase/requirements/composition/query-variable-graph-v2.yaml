@@ -246,3 +246,21 @@ requirements:
                   arguments:
                     file: e2e/composition-source-acl-isolation.test.ts
                     test: evaluate rechecks Form and exact Saved SQL access after revocation
+          - id: saved-form-schema-drift
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_preview.rs
+            selector:
+              kind: test
+              name: saved_graph_fails_closed_when_form_schema_changes
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.exact-query-identities
+                covers: [
+                  FEAT-COMP-011#binding.composition-graph-evaluation/target.stateless-query-evaluation,
+                ]
+                runner:
+                  runner: cargo-test-integration
+                  arguments:
+                    package: ugoite-iceberg
+                    harness: test_composition_preview
+                    test: saved_graph_fails_closed_when_form_schema_changes

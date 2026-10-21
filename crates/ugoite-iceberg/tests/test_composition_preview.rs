@@ -13,11 +13,12 @@ use std::collections::BTreeMap;
 use ugoite_core::composition::CompositionRevisionRef;
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::composition::{
-    canonicalize_composition, CompositionComponent, CompositionDocument, CompositionFormat,
-    CompositionKind, CompositionSpec, DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow,
-    VariableGraphArgumentBinding, VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind,
-    VariableGraphQuery, VariableGraphQueryDefinition, VariableGraphResultType,
-    VariableGraphScalarDescriptor, VariableGraphScalarType, VariableGraphValidatedResult,
+    canonicalize_composition, CompositionComponent, CompositionDiagnosticCode, CompositionDocument,
+    CompositionFormat, CompositionKind, CompositionSpec, DashboardFlowLayout, FlowItem,
+    FlowLayoutKind, FlowRow, VariableGraphArgumentBinding, VariableGraphLiteral, VariableGraphNode,
+    VariableGraphNodeKind, VariableGraphQuery, VariableGraphQueryDefinition,
+    VariableGraphResultType, VariableGraphScalarDescriptor, VariableGraphScalarType,
+    VariableGraphValidatedResult,
 };
 use ugoite_domain::form::{sql_column_name, sql_relation_name};
 use ugoite_domain::id::{EntryId, FieldId, FormId, RevisionId};
@@ -296,6 +297,59 @@ async fn graph_evaluation_keeps_valid_results_when_an_independent_query_fails() 
                 .as_ref()
                 .and_then(|result| result.result_diagnostic.as_ref())
                 .is_some_and(|result| result.code.as_str() == "scalar_no_rows")
+    }));
+    Ok(())
+}
+
+#[tokio::test]
+async fn saved_graph_fails_closed_when_form_schema_changes() -> Result<()> {
+    let (service, space_id, mut document, _) = setup_preview_space().await?;
+    let VariableGraphNodeKind::Query { query, .. } = &mut document.spec.variables[0].kind else {
+        anyhow::bail!("fixture should use an inline SQL query variable");
+    };
+    query.definition = VariableGraphQueryDefinition::InlineSql {
+        sql: "SELECT * FROM \"Composition-Preview\"".to_owned(),
+    };
+    let saved = save_local_composition(&service, &space_id, document).await?;
+
+    // Adding a field changes the stored SELECT * result descriptor. A saved
+    // graph must not silently adopt that new schema during evaluation.
+    service
+        .upsert_form_result(
+            &space_id,
+            &json!({
+                "name": "Composition-Preview",
+                "fields": {
+                    "title": {"id": 100, "type": "string", "required": false},
+                    "note": {"id": 101, "type": "string", "required": false}
+                }
+            }),
+        )
+        .await?;
+
+    let response = service
+        .evaluate_composition_graph_local(
+            &space_id,
+            CompositionQueryEvaluationTarget::SavedRevision {
+                composition_id: saved.entry_id.to_string(),
+                revision_id: saved.revision_id.to_string(),
+            },
+            Uuid::now_v7(),
+            None,
+            None,
+            &BTreeMap::new(),
+            &[],
+            None,
+            None,
+        )
+        .await?;
+
+    assert!(!response.ok);
+    assert!(response.plan.is_none());
+    assert!(response.query_results.is_empty());
+    assert!(response.diagnostics.iter().any(|diagnostic| {
+        diagnostic.variable_id.as_deref() == Some("source")
+            && diagnostic.code == CompositionDiagnosticCode::QuerySchemaChanged
     }));
     Ok(())
 }
