@@ -33,6 +33,7 @@ const scalarTypes: CompositionScalarType[] = [
   "json",
 ];
 export interface CompositionVariableGraphWorkspaceProps {
+  historyScopeId: string;
   draft: CompositionGraphDraft;
   selectedVariableId: string | null;
   onSelect: (id: string) => void;
@@ -685,7 +686,8 @@ export function CompositionVariableGraphWorkspace(
                       <Show when={query.query.kind === "inline_sql"}>
                         <SqlStructureToolbar
                           sql={() => sql}
-                          historyScopeKey={() => query.id}
+                          historyScopeKey={() =>
+                            `${props.historyScopeId}:${query.id}`}
                           contexts={structureContexts}
                           onSqlChange={(nextSql) =>
                             props.onQueryChange?.(query.id, nextSql)}

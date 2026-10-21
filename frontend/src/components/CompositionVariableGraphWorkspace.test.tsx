@@ -26,7 +26,55 @@ vi.mock("~/lib/ugoite-client", async (importOriginal) => {
   };
 });
 
+vi.mock("./SqlStructureToolbar", () => ({
+  SqlStructureToolbar: (props: { historyScopeKey: () => string }) => (
+    <output data-testid="sql-history-scope">{props.historyScopeKey()}</output>
+  ),
+}));
+
 describe("CompositionVariableGraphWorkspace", () => {
+  it("scopes SQL structure history to the active Composition session", async () => {
+    setLocale("en");
+    const [historyScopeId, setHistoryScopeId] = createSignal("session-a");
+    const draft: CompositionGraphDraft = {
+      ...createCompositionGraphDraft("Report"),
+      variables: [{
+        id: "query_1",
+        kind: "query",
+        returns: {
+          kind: "scalar",
+          value_type: { scalar_type: "integer", nullable: false },
+        },
+        query: {
+          kind: "inline_sql",
+          sql: "SELECT 1",
+          arguments: [],
+        },
+      }],
+    };
+
+    render(() => (
+      <CompositionVariableGraphWorkspace
+        historyScopeId={historyScopeId()}
+        draft={draft}
+        selectedVariableId="query_1"
+        onSelect={() => {}}
+        onDraftChange={() => {}}
+        onRemove={() => {}}
+        sqlSchema={buildSqlSchema([])}
+      />
+    ));
+
+    expect(await screen.findByTestId("sql-history-scope"))
+      .toHaveTextContent("session-a:query_1");
+
+    setHistoryScopeId("session-b");
+    await waitFor(() =>
+      expect(screen.getByTestId("sql-history-scope"))
+        .toHaveTextContent("session-b:query_1")
+    );
+  });
+
   it("adds typed graph nodes through the variable rail", () => {
     setLocale("en");
     const [draft, setDraft] = createSignal<CompositionGraphDraft>(
@@ -36,6 +84,7 @@ describe("CompositionVariableGraphWorkspace", () => {
     const onDraftChange = vi.fn(setDraft);
     render(() => (
       <CompositionVariableGraphWorkspace
+        historyScopeId="test-session"
         draft={draft()}
         selectedVariableId={selected()}
         onSelect={setSelected}
@@ -91,6 +140,7 @@ describe("CompositionVariableGraphWorkspace", () => {
     });
     render(() => (
       <CompositionVariableGraphWorkspace
+        historyScopeId="test-session"
         draft={draft()}
         selectedVariableId="input_1"
         onSelect={() => {}}
@@ -145,6 +195,7 @@ describe("CompositionVariableGraphWorkspace", () => {
     });
     render(() => (
       <CompositionVariableGraphWorkspace
+        historyScopeId="test-session"
         draft={draft()}
         selectedVariableId="minimum"
         onSelect={() => {}}
@@ -180,6 +231,7 @@ describe("CompositionVariableGraphWorkspace", () => {
     const [selected, setSelected] = createSignal<string | null>(null);
     render(() => (
       <CompositionVariableGraphWorkspace
+        historyScopeId="test-session"
         draft={draft()}
         selectedVariableId={selected()}
         onSelect={setSelected}
@@ -234,6 +286,7 @@ describe("CompositionVariableGraphWorkspace", () => {
     const onDraftChange = vi.fn();
     render(() => (
       <CompositionVariableGraphWorkspace
+        historyScopeId="test-session"
         draft={draft}
         selectedVariableId="query_1"
         onSelect={() => {}}
@@ -273,6 +326,7 @@ describe("CompositionVariableGraphWorkspace", () => {
     render(() => (
       <div id="app">
         <CompositionVariableGraphWorkspace
+          historyScopeId="test-session"
           draft={draft}
           selectedVariableId={null}
           onSelect={() => {}}

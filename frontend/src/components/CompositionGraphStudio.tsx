@@ -28,6 +28,7 @@ export interface CompositionGraphStudioProps {
   savedSqlLoading?: boolean;
   savedSqlSeedUnavailable?: boolean;
   initialSavedSqlBinding?: CompositionSavedSqlRevisionRef;
+  historyScopeId: string;
   provider: CompositionBindingProvider;
   session: CompositionBindingSession;
   getPrincipalGeneration: () => Promise<string>;
@@ -193,6 +194,7 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
       </section>
       <section hidden={mode() !== "variables"}>
         <CompositionVariableGraphWorkspace
+          historyScopeId={props.historyScopeId}
           draft={props.draft}
           selectedVariableId={selectedVariableId()}
           onSelect={setSelectedVariableId}

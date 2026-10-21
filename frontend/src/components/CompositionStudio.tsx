@@ -989,6 +989,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
           savedSqlLoading={sqlResource.loading}
           savedSqlSeedUnavailable={savedSqlSeedUnavailable()}
           initialSavedSqlBinding={props.initialSavedSqlBinding}
+          historyScopeId={`${session.session_id}:${props.spaceId}:${props.saveMode.kind}:${
+            props.saveMode.kind === "update"
+              ? `${props.saveMode.compositionId}:${props.saveMode.baseRevisionId}`
+              : "new"
+          }`}
           provider={provider}
           session={session}
           getPrincipalGeneration={getPrincipalGeneration}
