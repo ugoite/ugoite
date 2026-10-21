@@ -191,6 +191,44 @@ export const compositionGraphDraftFromDocument = (
   } as CompositionGraphDraft;
 };
 
+/** Remove only unbound inline SQL arguments created by an editor undo. */
+export const removeUnboundSqlArguments = (
+  draft: CompositionGraphDraft,
+  queryId: string,
+  argumentNames: readonly string[],
+): CompositionGraphDraft | undefined => {
+  const names = new Set(argumentNames);
+  if (!names.size || names.size !== argumentNames.length) return undefined;
+  const query = draft.variables.find((node) =>
+    node.id === queryId && node.kind === "query"
+  );
+  if (!query || query.query.kind !== "inline_sql") return undefined;
+  const matching = query.query.arguments.filter((argument) =>
+    names.has(argument.name)
+  );
+  if (
+    matching.length !== names.size ||
+    matching.some((argument) => argument.variable !== "")
+  ) return undefined;
+  return {
+    ...draft,
+    variables: draft.variables.map((node) =>
+      node.id === queryId && node.kind === "query" &&
+        node.query.kind === "inline_sql"
+        ? {
+          ...node,
+          query: {
+            ...node.query,
+            arguments: node.query.arguments.filter((argument) =>
+              !names.has(argument.name)
+            ),
+          },
+        }
+        : node
+    ),
+  };
+};
+
 export type BindingComponentKind = "table" | "metric";
 
 export interface CompositionFormChoice {

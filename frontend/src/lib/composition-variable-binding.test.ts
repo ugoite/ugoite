@@ -8,6 +8,7 @@ import {
   type CompositionVariableNode,
   createCompositionGraphDraft,
   rebindResolvedCompositionComponent,
+  removeUnboundSqlArguments,
   renameCompositionVariable,
   setCompositionComponentVariable,
 } from "./composition-variable-binding";
@@ -41,6 +42,64 @@ const scalarNode: CompositionVariableNode = {
 };
 
 describe("strict variable-only Composition bindings", () => {
+  it("removes unbound query arguments atomically during structure undo", () => {
+    const draft = {
+      ...createCompositionGraphDraft("Report"),
+      variables: [{
+        ...tableNode,
+        query: {
+          ...tableNode.query,
+          arguments: [
+            { name: "filter_amount", variable: "" },
+            { name: "owner_id", variable: "owner" },
+          ],
+        },
+      }],
+    };
+
+    const next = removeUnboundSqlArguments(
+      draft,
+      "rows",
+      ["filter_amount"],
+    );
+
+    expect(next?.variables[0]).toMatchObject({
+      query: {
+        arguments: [{ name: "owner_id", variable: "owner" }],
+      },
+    });
+    expect(draft.variables[0]).toMatchObject({
+      query: {
+        arguments: [
+          { name: "filter_amount", variable: "" },
+          { name: "owner_id", variable: "owner" },
+        ],
+      },
+    });
+  });
+
+  it("keeps a SQL argument when the binding changed after creation", () => {
+    const draft = {
+      ...createCompositionGraphDraft("Report"),
+      variables: [{
+        ...tableNode,
+        query: {
+          ...tableNode.query,
+          arguments: [{ name: "filter_amount", variable: "threshold" }],
+        },
+      }],
+    };
+
+    expect(
+      removeUnboundSqlArguments(draft, "rows", ["filter_amount"]),
+    ).toBeUndefined();
+    expect(draft.variables[0]).toMatchObject({
+      query: {
+        arguments: [{ name: "filter_amount", variable: "threshold" }],
+      },
+    });
+  });
+
   it.each([
     ["legacy source list", { sources: [] }],
     ["legacy source reference", {

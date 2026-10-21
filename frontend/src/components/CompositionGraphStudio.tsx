@@ -11,6 +11,7 @@ import {
   type CompositionSavedSqlRevisionRef,
   type CompositionSqlArgumentType,
   type CompositionVariableNode,
+  removeUnboundSqlArguments,
 } from "~/lib/composition-variable-binding";
 import type {
   SQLWorkspaceAction,
@@ -243,6 +244,27 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
                   : node
               ),
             });
+            return true;
+          }}
+          onVariablesRemoved={(variableId, names) => {
+            const next = removeUnboundSqlArguments(
+              props.draft,
+              variableId,
+              names,
+            );
+            if (!next) return false;
+            setUnboundArgumentTypes((current) => {
+              const queryTypes = { ...current[variableId] };
+              for (const name of names) delete queryTypes[name];
+              const remaining = { ...current };
+              if (Object.keys(queryTypes).length) {
+                remaining[variableId] = queryTypes;
+              } else {
+                delete remaining[variableId];
+              }
+              return remaining;
+            });
+            props.onDraftChange(next);
             return true;
           }}
           actionsForQuery={props.actionsForQuery}

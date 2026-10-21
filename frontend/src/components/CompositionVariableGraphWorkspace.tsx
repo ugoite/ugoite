@@ -62,6 +62,10 @@ export interface CompositionVariableGraphWorkspaceProps {
     variableId: string,
     variables: readonly { name: string; type: CompositionSqlArgumentType }[],
   ) => boolean | void;
+  onVariablesRemoved?: (
+    variableId: string,
+    names: readonly string[],
+  ) => boolean | void;
   onEditValidityChange?: (
     variableId: string,
     valid: boolean | undefined,
@@ -681,11 +685,14 @@ export function CompositionVariableGraphWorkspace(
                       <Show when={query.query.kind === "inline_sql"}>
                         <SqlStructureToolbar
                           sql={() => sql}
+                          historyScopeKey={() => query.id}
                           contexts={structureContexts}
                           onSqlChange={(nextSql) =>
                             props.onQueryChange?.(query.id, nextSql)}
                           onVariablesAdded={(variables) =>
                             props.onVariablesAdded?.(query.id, variables)}
+                          onVariablesRemoved={(names) =>
+                            props.onVariablesRemoved?.(query.id, names)}
                           reservedVariableNames={() =>
                             query.query.arguments.map((argument) =>
                               argument.name

@@ -18,9 +18,13 @@ import { setLocale } from "~/lib/i18n";
 
 const { parseInputMock } = vi.hoisted(() => ({ parseInputMock: vi.fn() }));
 
-vi.mock("~/lib/ugoite-client", () => ({
-  parseVariableGraphInput: (...args: unknown[]) => parseInputMock(...args),
-}));
+vi.mock("~/lib/ugoite-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/ugoite-client")>();
+  return {
+    ...actual,
+    parseVariableGraphInput: (...args: unknown[]) => parseInputMock(...args),
+  };
+});
 
 describe("CompositionVariableGraphWorkspace", () => {
   it("adds typed graph nodes through the variable rail", () => {
