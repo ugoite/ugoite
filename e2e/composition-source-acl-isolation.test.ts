@@ -381,7 +381,7 @@ test.describe("Composition graph ACL and runtime isolation", () => {
           seed.protectedValue,
         );
         await expect(page.locator(".compositionGraphMetric strong"))
-          .toBeEmpty();
+          .toHaveCount(0);
         await expect(page.getByRole("table")).toHaveCount(0);
 
         // Raw exact revision inspection remains available to the authorized
