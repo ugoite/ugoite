@@ -549,11 +549,68 @@ async function main(): Promise<void> {
   assertEqual(analysis.ok, true, "analysis protocol envelope");
   const analyzed = analysis.value as Record<string, unknown>;
   assertEqual(analyzed.status, "supported", "analysis status");
+  assertEqual(analyzed.contract_version, 5, "SQL structure contract version");
   assertEqual(analyzed.stable_pagination, false, "stable pagination state");
   const capabilities = analyzed.capabilities as Record<string, unknown>;
+  const rowLimitCapability = capabilities.row_limit as Record<string, unknown>;
+  assertEqual(rowLimitCapability.enabled, true, "row limit capability");
   const pagination = capabilities.stable_pagination as Record<string, unknown>;
   assertEqual(pagination.enabled, false, "stable pagination capability");
   assertEqual(pagination.reason, "stable_order_required", "pagination reason");
+
+  const rowLimitSql = `${sql}; -- trailing comment`;
+  const rowLimitProposal = await invokeWasm(instance.exports, {
+    action: "domain.propose_sql_structure_operation",
+    value: {
+      sql: rowLimitSql,
+      context,
+      operation: { kind: "set_row_limit", limit: "25", offset: "4" },
+    },
+  });
+  assertEqual(rowLimitProposal.ok, true, "row limit operation envelope");
+  const rowLimited = rowLimitProposal.value as Record<string, unknown>;
+  assertEqual(
+    rowLimited.status,
+    "supported",
+    `row limit proposal status (${JSON.stringify(rowLimited)})`,
+  );
+  assertEqual(
+    rowLimited.proposed_sql,
+    `${sql} LIMIT 25 OFFSET 4; -- trailing comment`,
+    "row limit preserves existing SQL and trailing comment",
+  );
+
+  const limitAllSql = 'SELECT * FROM "Task" LIMIT ALL';
+  const limitAllAnalysis = await invokeWasm(instance.exports, {
+    action: "domain.analyze_sql_structure",
+    value: { sql: limitAllSql, context },
+  });
+  assertEqual(limitAllAnalysis.ok, true, "LIMIT ALL analysis envelope");
+  const limitAllAnalysisValue = limitAllAnalysis.value as Record<string, unknown>;
+  assertEqual(limitAllAnalysisValue.status, "supported", "LIMIT ALL is supported");
+  const limitAllRow = limitAllAnalysisValue.row_limit as Record<string, unknown>;
+  assertEqual(limitAllRow.limit_all, true, "LIMIT ALL state");
+
+  const limitAllReplacement = await invokeWasm(instance.exports, {
+    action: "domain.propose_sql_structure_operation",
+    value: {
+      sql: limitAllSql,
+      context,
+      operation: {
+        kind: "set_row_limit",
+        limit: "12",
+        offset: null,
+        limit_all: false,
+      },
+    },
+  });
+  assertEqual(limitAllReplacement.ok, true, "LIMIT ALL replacement envelope");
+  const limitAllChanged = limitAllReplacement.value as Record<string, unknown>;
+  assertEqual(
+    limitAllChanged.proposed_sql,
+    'SELECT * FROM "Task" LIMIT 12',
+    "LIMIT ALL is replaced instead of duplicated",
+  );
 
   const proposal = await invokeWasm(instance.exports, {
     action: "domain.propose_sql_structure_operation",

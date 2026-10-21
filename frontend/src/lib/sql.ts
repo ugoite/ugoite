@@ -737,7 +737,9 @@ export function sqlLintDiagnostics(query: string): Diagnostic[] {
     const limitValue = limitMatch[1];
     const isPlaceholder = /^\$[A-Za-z_][A-Za-z0-9_]*$/.test(limitValue) ||
       /^\{\{\s*[A-Za-z_][A-Za-z0-9_]*\s*\}\}$/.test(limitValue);
-    if (Number.isNaN(Number(limitValue)) && !isPlaceholder) {
+    const limitAllAllowed = lintRules.limit_all_allowed === true &&
+      limitValue.toUpperCase() === "ALL";
+    if (Number.isNaN(Number(limitValue)) && !isPlaceholder && !limitAllAllowed) {
       const from = limitMatch.index + limitMatch[0].indexOf(limitValue);
       diagnostics.push({
         from,

@@ -29,7 +29,7 @@ null checks, and column ordering remain bound to Form metadata. It reports
 stable reason codes for unsupported SQL and never makes direct SQL unavailable.
 The checked backend-admission and current structure-editor coverage inventory
 is recorded in the [SQL feature matrix contract](../../../architecture/contracts/sql-gui-feature-matrix.md).
-Its version 3 aggregate analysis uses the Domain aggregate registry for names,
+The SQL structure analysis uses the Domain aggregate registry for names,
 aliases, arity, DISTINCT, and wildcard validation. The existing `column` field
 continues to represent single-column and wildcard forms; optional `arguments`
 carries additional COUNT column names and is omitted for existing forms. The
@@ -75,6 +75,14 @@ predicate leaves and nested AND, OR, and NOT nodes. Its
 declared variable against the trusted Form context and rejects malformed or
 over-bound trees. The older `set_filters` operation remains limited to flat
 conjunctions; the UI does not flatten a boolean tree into that lossy shape.
+
+The shared `Structure` action provides Join and Rows modes. Rows edits the
+explicit SQL `LIMIT`/`OFFSET`, including `LIMIT ALL`, with non-negative integer
+literals bounded to `u64::MAX`. It preserves source outside the clause and
+shows invalid bounds beside the inputs. When a query has no editable Join, the
+action opens Rows directly and keeps Join unavailable. Comments inside the
+clause being rewritten fail closed; trailing comments remain attached to the
+SQL source.
 
 ## Preview and results
 

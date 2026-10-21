@@ -1684,7 +1684,7 @@ mod tests {
         .to_string();
         let analysis: Value = serde_json::from_str(&super::invoke_json(&analysis_request)).unwrap();
         assert_eq!(analysis["ok"], true, "{analysis}");
-        assert_eq!(analysis["value"]["contract_version"], 3);
+        assert_eq!(analysis["value"]["contract_version"], 5);
         assert_eq!(
             analysis["value"]["projection_aliases"]
                 .as_array()

@@ -20,12 +20,12 @@ use sqlparser::tokenizer::Span;
 use std::collections::BTreeSet;
 
 use crate::sql_document::{
-    has_comment_token_in_range, parse_sql_document, source_range_from_span, SqlDocumentStatus,
-    SqlDocumentTokenKind, SqlSourceRange,
+    has_comment_token_in_range, parse_sql_document, source_range_from_span, SqlDocumentNodeKind,
+    SqlDocumentStatus, SqlDocumentTokenKind, SqlSourceRange,
 };
 
 /// The parser/capability contract version exposed through the WASM adapter.
-pub const SQL_STRUCTURE_CONTRACT_VERSION: u32 = 3;
+pub const SQL_STRUCTURE_CONTRACT_VERSION: u32 = 5;
 
 /// Keep SQL parsing within the same bound as the stateless SQL request.
 pub const MAX_SQL_STRUCTURE_QUERY_BYTES: usize = 256 * 1024;
@@ -155,6 +155,14 @@ pub enum SqlStructureOperation {
     },
     SetDistinct {
         distinct: bool,
+    },
+    SetRowLimit {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        offset: Option<String>,
+        #[serde(default)]
+        limit_all: bool,
     },
 }
 
@@ -307,6 +315,18 @@ pub struct SqlStructureSort {
     pub direction: SqlStructureSortDirection,
 }
 
+/// Numeric SQL row bounds exposed to the shared structure editor.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SqlStructureRowLimit {
+    #[serde(default)]
+    pub limit_all: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset: Option<String>,
+}
+
 /// The bounded relation shape recognized by the structure editor. `relation`
 /// is a self-join of the selected Form; the runtime SQL planner remains the
 /// authority for whether the query can execute.
@@ -367,6 +387,7 @@ pub enum SqlStructureReason {
     AggregateTypeUnsupported,
     GroupByUnsupported,
     DistinctUnsupported,
+    RowLimitUnsupported,
     RoundTripFailed,
 }
 
@@ -392,6 +413,7 @@ pub struct SqlStructureCapabilities {
     pub aggregate: SqlStructureActionCapability,
     pub group_by: SqlStructureActionCapability,
     pub distinct: SqlStructureActionCapability,
+    pub row_limit: SqlStructureActionCapability,
     pub stable_pagination: SqlStructureActionCapability,
 }
 
@@ -418,6 +440,8 @@ pub struct SqlStructureAnalysis {
     #[serde(default)]
     pub group_by: Vec<String>,
     pub distinct: bool,
+    #[serde(default)]
+    pub row_limit: SqlStructureRowLimit,
     #[serde(default)]
     pub order_by: Vec<SqlStructureSort>,
     #[serde(default)]
@@ -455,6 +479,8 @@ struct ParsedSqlStructure {
     aggregates: Vec<SqlStructureAggregate>,
     group_by: Vec<String>,
     distinct: bool,
+    row_limit: SqlStructureRowLimit,
+    row_limit_range: Option<SqlSourceRange>,
     order_by: Vec<SqlStructureSort>,
     joins: Vec<SqlStructureJoin>,
     can_add_join: bool,
@@ -495,6 +521,21 @@ pub fn propose_sql_structure_operation(
         Ok(parsed) => parsed,
         Err(reason) => return rejected_proposal(base_sql, reason),
     };
+    if let SqlStructureOperation::SetRowLimit {
+        limit,
+        offset,
+        limit_all,
+    } = &operation
+    {
+        return propose_sql_row_limit_edit(
+            base_sql,
+            &parsed,
+            context,
+            limit.clone(),
+            offset.clone(),
+            *limit_all,
+        );
+    }
 
     let serialized_edit_reason = match &operation {
         SqlStructureOperation::SetFilters { .. } => Some(SqlStructureReason::FilterUnsupported),
@@ -599,6 +640,9 @@ pub fn propose_sql_structure_operation(
                 Err(reason) => return rejected_proposal(base_sql, reason),
             }
         }
+        SqlStructureOperation::SetRowLimit { .. } => {
+            unreachable!("row limit edits use a source-ranged clause replacement")
+        }
         operation => {
             let mutation = match operation {
                 SqlStructureOperation::SetRelation { .. } => {
@@ -628,6 +672,9 @@ pub fn propose_sql_structure_operation(
                 }
                 SqlStructureOperation::SetDistinct { .. } => {
                     unreachable!("distinct edits use a source-ranged keyword edit")
+                }
+                SqlStructureOperation::SetRowLimit { .. } => {
+                    unreachable!("row limit edits use a source-ranged clause replacement")
                 }
                 SqlStructureOperation::SetColumns { .. } => unreachable!(
                     "SetColumns is handled by the source-preserving projection rewrite"
@@ -895,6 +942,185 @@ fn propose_sql_join_edit(
     finish_structure_proposal(base_sql, proposed_sql, context)
 }
 
+fn propose_sql_row_limit_edit(
+    base_sql: String,
+    parsed: &ParsedSqlStructure,
+    context: &SqlStructureContext,
+    limit: Option<String>,
+    offset: Option<String>,
+    limit_all: bool,
+) -> SqlStructureProposal {
+    if (limit_all && limit.is_some())
+        || limit
+            .as_deref()
+            .is_some_and(|value| !valid_row_limit_value(value))
+        || offset
+            .as_deref()
+            .is_some_and(|value| !valid_row_limit_value(value))
+    {
+        return rejected_proposal(base_sql, SqlStructureReason::RowLimitUnsupported);
+    }
+
+    let next = SqlStructureRowLimit {
+        limit_all,
+        limit,
+        offset,
+    };
+    if next == parsed.row_limit {
+        return finish_structure_proposal(base_sql.clone(), base_sql, context);
+    }
+
+    let clause = match (next.limit_all, &next.limit, &next.offset) {
+        (true, None, Some(offset)) => format!("LIMIT ALL OFFSET {offset}"),
+        (true, None, None) => "LIMIT ALL".to_owned(),
+        (true, Some(_), _) => {
+            return rejected_proposal(base_sql, SqlStructureReason::RowLimitUnsupported);
+        }
+        (false, Some(limit), Some(offset)) => format!("LIMIT {limit} OFFSET {offset}"),
+        (false, Some(limit), None) => format!("LIMIT {limit}"),
+        (false, None, Some(offset)) => format!("OFFSET {offset}"),
+        (false, None, None) => String::new(),
+    };
+
+    let document = parse_sql_document(&base_sql);
+    if document.status != SqlDocumentStatus::Parsed {
+        return rejected_proposal(base_sql, SqlStructureReason::RowLimitUnsupported);
+    }
+    let existing_range = parsed.row_limit_range.or_else(|| {
+        document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::RowLimitClause)
+            .and_then(|node| node.range)
+    });
+
+    let proposed_sql = if let Some(range) = existing_range {
+        if has_comment_token_in_range(&base_sql, range) != Some(false) {
+            return rejected_proposal(base_sql, SqlStructureReason::RowLimitUnsupported);
+        }
+        let Some(rewritten) = replace_sql_source_range(&base_sql, range, &clause) else {
+            return rejected_proposal(base_sql, SqlStructureReason::RowLimitUnsupported);
+        };
+        rewritten
+    } else if clause.is_empty() {
+        base_sql.clone()
+    } else {
+        let Some(insertion_offset) = last_top_level_query_token_end(&document) else {
+            return rejected_proposal(base_sql, SqlStructureReason::RowLimitUnsupported);
+        };
+        let Some(before) = base_sql.get(..insertion_offset) else {
+            return rejected_proposal(base_sql, SqlStructureReason::RowLimitUnsupported);
+        };
+        let Some(after) = base_sql.get(insertion_offset..) else {
+            return rejected_proposal(base_sql, SqlStructureReason::RowLimitUnsupported);
+        };
+        let separator = if before.chars().next_back().is_some_and(char::is_whitespace) {
+            ""
+        } else {
+            " "
+        };
+        format!("{before}{separator}{clause}{after}")
+    };
+
+    finish_structure_proposal(base_sql, proposed_sql, context)
+}
+
+fn valid_row_limit_value(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 20
+        && value.bytes().all(|byte| byte.is_ascii_digit())
+        && value.parse::<u64>().is_ok()
+}
+
+fn limit_all_clause_range(document: &crate::sql_document::SqlDocument) -> Option<SqlSourceRange> {
+    let next_significant = |start: usize| {
+        document
+            .tokens
+            .iter()
+            .enumerate()
+            .skip(start)
+            .find(|(_, token)| {
+                !matches!(
+                    token.kind,
+                    SqlDocumentTokenKind::Trivia | SqlDocumentTokenKind::Comment
+                )
+            })
+    };
+    let mut depth = 0_usize;
+
+    for (index, token) in document.tokens.iter().enumerate() {
+        let text = document.source_slice(token.range)?;
+        if token.kind == SqlDocumentTokenKind::Punctuation && text == ")" {
+            depth = depth.checked_sub(1)?;
+        }
+        if depth == 0
+            && token.kind == SqlDocumentTokenKind::Word
+            && text.eq_ignore_ascii_case("LIMIT")
+        {
+            let Some((all_index, all_token)) = next_significant(index + 1) else {
+                continue;
+            };
+            let all_text = document.source_slice(all_token.range)?;
+            if all_token.kind != SqlDocumentTokenKind::Word || !all_text.eq_ignore_ascii_case("ALL")
+            {
+                continue;
+            }
+
+            let mut end = all_token.range.end;
+            if let Some((offset_index, offset_token)) = next_significant(all_index + 1) {
+                let offset_text = document.source_slice(offset_token.range)?;
+                if offset_token.kind == SqlDocumentTokenKind::Word
+                    && offset_text.eq_ignore_ascii_case("OFFSET")
+                {
+                    if let Some((value_index, value_token)) = next_significant(offset_index + 1) {
+                        end = value_token.range.end;
+                        if let Some((_, rows_token)) = next_significant(value_index + 1) {
+                            let rows_text = document.source_slice(rows_token.range)?;
+                            if rows_token.kind == SqlDocumentTokenKind::Word
+                                && (rows_text.eq_ignore_ascii_case("ROW")
+                                    || rows_text.eq_ignore_ascii_case("ROWS"))
+                            {
+                                end = rows_token.range.end;
+                            }
+                        }
+                    }
+                }
+            }
+            return Some(SqlSourceRange {
+                start: token.range.start,
+                end,
+            });
+        }
+        if token.kind == SqlDocumentTokenKind::Punctuation && text == "(" {
+            depth = depth.checked_add(1)?;
+        }
+    }
+    None
+}
+
+fn last_top_level_query_token_end(document: &crate::sql_document::SqlDocument) -> Option<usize> {
+    let mut nesting_depth = 0_usize;
+    let mut query_end = None;
+    for token in &document.tokens {
+        let source = document.source_slice(token.range)?;
+        if token.kind == SqlDocumentTokenKind::Punctuation {
+            match source {
+                ";" if nesting_depth == 0 => break,
+                "(" | "[" | "{" => nesting_depth = nesting_depth.checked_add(1)?,
+                ")" | "]" | "}" => nesting_depth = nesting_depth.checked_sub(1)?,
+                _ => {}
+            }
+        }
+        if !matches!(
+            token.kind,
+            SqlDocumentTokenKind::Trivia | SqlDocumentTokenKind::Comment
+        ) {
+            query_end = Some(token.range.end);
+        }
+    }
+    query_end
+}
+
 fn finish_structure_proposal(
     base_sql: String,
     proposed_sql: String,
@@ -1052,6 +1278,19 @@ fn parse_supported_sql(
         Some(Distinct::Distinct) => true,
         Some(Distinct::On(_)) => return Err(SqlStructureReason::DistinctUnsupported),
     };
+    let document = parse_sql_document(sql);
+    if document.status != SqlDocumentStatus::Parsed {
+        return Err(SqlStructureReason::ParseFailed);
+    }
+    let limit_all_range = limit_all_clause_range(&document);
+    let row_limit = parse_row_limit(query.limit_clause.as_ref(), limit_all_range.is_some())?;
+    let row_limit_range = limit_all_range.or_else(|| {
+        document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::RowLimitClause)
+            .and_then(|node| node.range)
+    });
     let filter_expression = select
         .selection
         .as_ref()
@@ -1134,6 +1373,8 @@ fn parse_supported_sql(
         aggregates,
         group_by,
         distinct,
+        row_limit,
+        row_limit_range,
         order_by,
         joins,
         can_add_join,
@@ -1212,6 +1453,47 @@ fn safe_limit_clause(limit: Option<&LimitClause>) -> bool {
     }
 }
 
+fn parse_row_limit(
+    limit: Option<&LimitClause>,
+    limit_all: bool,
+) -> Result<SqlStructureRowLimit, SqlStructureReason> {
+    let Some(limit) = limit else {
+        return Ok(SqlStructureRowLimit {
+            limit_all,
+            ..SqlStructureRowLimit::default()
+        });
+    };
+    let row_limit = match limit {
+        LimitClause::LimitOffset { limit, offset, .. } => SqlStructureRowLimit {
+            limit_all,
+            limit: limit.as_ref().and_then(integer_literal_text),
+            offset: offset
+                .as_ref()
+                .and_then(|offset| integer_literal_text(&offset.value)),
+        },
+        LimitClause::OffsetCommaLimit { offset, limit } => SqlStructureRowLimit {
+            limit_all,
+            limit: integer_literal_text(limit),
+            offset: integer_literal_text(offset),
+        },
+    };
+    if !row_limit.limit_all && row_limit.limit.is_none() && row_limit.offset.is_none() {
+        return Err(SqlStructureReason::RowLimitUnsupported);
+    }
+    Ok(row_limit)
+}
+
+fn integer_literal_text(expression: &Expr) -> Option<String> {
+    let Expr::Value(value) = expression else {
+        return None;
+    };
+    let Value::Number(number, long) = &value.value else {
+        return None;
+    };
+    (!long && !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit()))
+        .then(|| number.clone())
+}
+
 fn is_nonnegative_integer_literal(expression: &Expr) -> bool {
     let Expr::Value(value) = expression else {
         return false;
@@ -1219,7 +1501,7 @@ fn is_nonnegative_integer_literal(expression: &Expr) -> bool {
     let Value::Number(number, long) = &value.value else {
         return false;
     };
-    !long && !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
+    !long && valid_row_limit_value(number)
 }
 
 fn supported_projection_literal(expression: &Expr) -> Option<SqlStructureLiteral> {
@@ -4003,6 +4285,7 @@ fn supported_analysis(
         aggregates: parsed.aggregates,
         group_by: parsed.group_by,
         distinct: parsed.distinct,
+        row_limit: parsed.row_limit,
         order_by: parsed.order_by,
         joins: parsed.joins,
         referenced_variables: parsed.referenced_variables,
@@ -4061,6 +4344,7 @@ fn supported_analysis(
                 distinct_enabled && !has_join,
                 has_join.then_some(SqlStructureReason::JoinUnsupported),
             ),
+            row_limit: capability(true, None),
             stable_pagination: capability(parsed.stable_pagination, pagination_reason),
         },
     }
@@ -4128,6 +4412,7 @@ fn rejected_analysis(reason: SqlStructureReason) -> SqlStructureAnalysis {
         aggregates: Vec::new(),
         group_by: Vec::new(),
         distinct: false,
+        row_limit: SqlStructureRowLimit::default(),
         order_by: Vec::new(),
         joins: Vec::new(),
         referenced_variables: Vec::new(),
@@ -4141,6 +4426,7 @@ fn rejected_analysis(reason: SqlStructureReason) -> SqlStructureAnalysis {
             aggregate: disabled.clone(),
             group_by: disabled.clone(),
             distinct: disabled.clone(),
+            row_limit: disabled.clone(),
             stable_pagination: disabled,
         },
     }
@@ -4246,6 +4532,201 @@ mod tests {
         }
     }
 
+    fn row_limit_operation(limit: Option<&str>, offset: Option<&str>) -> SqlStructureOperation {
+        SqlStructureOperation::SetRowLimit {
+            limit: limit.map(str::to_owned),
+            offset: offset.map(str::to_owned),
+            limit_all: false,
+        }
+    }
+
+    fn all_rows_operation(offset: Option<&str>) -> SqlStructureOperation {
+        SqlStructureOperation::SetRowLimit {
+            limit: None,
+            offset: offset.map(str::to_owned),
+            limit_all: true,
+        }
+    }
+
+    #[test]
+    fn row_limit_editor_adds_updates_and_removes_clauses_without_rewriting_other_source() {
+        let base = "SELECT \"field_101\" FROM \"Task\" /* kept */ ORDER BY \"field_102\"; -- tail";
+        let added = propose_sql_structure_operation(
+            base,
+            &context(),
+            row_limit_operation(Some("25"), Some("4")),
+        );
+        assert_eq!(added.proposed_sql.as_deref(), Some("SELECT \"field_101\" FROM \"Task\" /* kept */ ORDER BY \"field_102\" LIMIT 25 OFFSET 4; -- tail"));
+        assert!(added.requires_confirmation);
+
+        let base = "SELECT \"field_101\" FROM \"Task\" LIMIT 3 OFFSET 2 -- tail";
+        let analysis = analyze_sql_structure(base, &context());
+        assert_eq!(analysis.row_limit.limit.as_deref(), Some("3"));
+        assert_eq!(analysis.row_limit.offset.as_deref(), Some("2"));
+        assert!(analysis.capabilities.row_limit.enabled);
+
+        let updated =
+            propose_sql_structure_operation(base, &context(), row_limit_operation(Some("9"), None));
+        assert_eq!(
+            updated.proposed_sql.as_deref(),
+            Some("SELECT \"field_101\" FROM \"Task\" LIMIT 9 -- tail")
+        );
+
+        let removed = propose_sql_structure_operation(
+            "SELECT \"field_101\" FROM \"Task\" LIMIT 9;",
+            &context(),
+            row_limit_operation(None, None),
+        );
+        assert_eq!(
+            removed.proposed_sql.as_deref(),
+            Some("SELECT \"field_101\" FROM \"Task\" ;")
+        );
+    }
+
+    #[test]
+    fn row_limit_editor_handles_relation_free_sql_and_rejects_unsafe_values_or_clause_comments() {
+        let relation_free = SqlStructureContext {
+            relation: String::new(),
+            columns: Vec::new(),
+            variables: Vec::new(),
+            stable_key: Vec::new(),
+        };
+        let added = propose_sql_structure_operation(
+            "SELECT 1; -- tail",
+            &relation_free,
+            row_limit_operation(None, Some("2")),
+        );
+        assert_eq!(
+            added.proposed_sql.as_deref(),
+            Some("SELECT 1 OFFSET 2; -- tail")
+        );
+
+        for value in ["", "-1", "+1", "1.2", "18446744073709551616"] {
+            let rejected = propose_sql_structure_operation(
+                "SELECT 1",
+                &relation_free,
+                row_limit_operation(Some(value), None),
+            );
+            assert_eq!(
+                rejected.reason,
+                Some(SqlStructureReason::RowLimitUnsupported)
+            );
+            assert!(!rejected.requires_confirmation);
+        }
+
+        let commented_clause = propose_sql_structure_operation(
+            "SELECT \"field_101\" FROM \"Task\" LIMIT /* keep */ 3",
+            &context(),
+            row_limit_operation(Some("4"), None),
+        );
+        assert_eq!(
+            commented_clause.reason,
+            Some(SqlStructureReason::RowLimitUnsupported)
+        );
+    }
+
+    #[test]
+    fn row_limit_editor_recognizes_and_replaces_limit_all_source() {
+        let base = "SELECT \"field_101\" FROM \"Task\" LIMIT ALL";
+        let analysis = analyze_sql_structure(base, &context());
+        assert_eq!(analysis.status, SqlStructureStatus::Supported);
+        assert!(analysis.row_limit.limit_all);
+        assert_eq!(analysis.row_limit.limit, None);
+
+        let numeric = propose_sql_structure_operation(
+            base,
+            &context(),
+            row_limit_operation(Some("12"), None),
+        );
+        assert_eq!(
+            numeric.proposed_sql.as_deref(),
+            Some("SELECT \"field_101\" FROM \"Task\" LIMIT 12")
+        );
+
+        let switched_to_all = propose_sql_structure_operation(
+            "SELECT \"field_101\" FROM \"Task\" LIMIT 12",
+            &context(),
+            all_rows_operation(None),
+        );
+        assert_eq!(
+            switched_to_all.proposed_sql.as_deref(),
+            Some("SELECT \"field_101\" FROM \"Task\" LIMIT ALL")
+        );
+
+        let all_with_offset = "SELECT \"field_101\" FROM \"Task\" LIMIT ALL OFFSET 2";
+        let analysis = analyze_sql_structure(all_with_offset, &context());
+        assert_eq!(analysis.status, SqlStructureStatus::Supported);
+        assert!(analysis.row_limit.limit_all);
+        assert_eq!(analysis.row_limit.offset.as_deref(), Some("2"));
+
+        let changed = propose_sql_structure_operation(
+            all_with_offset,
+            &context(),
+            row_limit_operation(Some("5"), Some("2")),
+        );
+        assert_eq!(
+            changed.proposed_sql.as_deref(),
+            Some("SELECT \"field_101\" FROM \"Task\" LIMIT 5 OFFSET 2")
+        );
+
+        let removed =
+            propose_sql_structure_operation(base, &context(), row_limit_operation(None, None));
+        assert_eq!(
+            removed.proposed_sql.as_deref(),
+            Some("SELECT \"field_101\" FROM \"Task\" ")
+        );
+
+        let trailing = "SELECT \"field_101\" FROM \"Task\" LIMIT ALL; -- keep this comment";
+        let trailing_edit = propose_sql_structure_operation(
+            trailing,
+            &context(),
+            row_limit_operation(Some("7"), None),
+        );
+        assert_eq!(
+            trailing_edit.proposed_sql.as_deref(),
+            Some("SELECT \"field_101\" FROM \"Task\" LIMIT 7; -- keep this comment")
+        );
+
+        for commented in [
+            "SELECT \"field_101\" FROM \"Task\" LIMIT /* keep */ ALL OFFSET 2",
+            "SELECT \"field_101\" FROM \"Task\" LIMIT ALL OFFSET /* keep */ 2",
+        ] {
+            let rejected = propose_sql_structure_operation(
+                commented,
+                &context(),
+                row_limit_operation(Some("7"), Some("2")),
+            );
+            assert_eq!(
+                rejected.reason,
+                Some(SqlStructureReason::RowLimitUnsupported)
+            );
+            assert_eq!(rejected.proposed_sql, None);
+        }
+    }
+
+    #[test]
+    fn row_limit_editor_rejects_existing_values_above_u64_max() {
+        let supported = analyze_sql_structure(
+            "SELECT \"field_101\" FROM \"Task\" LIMIT 18446744073709551615",
+            &context(),
+        );
+        assert_eq!(supported.status, SqlStructureStatus::Supported);
+        assert_eq!(
+            supported.row_limit.limit.as_deref(),
+            Some("18446744073709551615")
+        );
+
+        let unsupported = analyze_sql_structure(
+            "SELECT \"field_101\" FROM \"Task\" LIMIT 18446744073709551616",
+            &context(),
+        );
+        assert_eq!(unsupported.status, SqlStructureStatus::Unsupported);
+        assert_eq!(
+            unsupported.reason,
+            Some(SqlStructureReason::QueryClauseUnsupported)
+        );
+    }
+
     #[test]
     fn shared_sql_feature_matrix_matches_structure_protocol_and_aggregate_types() {
         let matrix: serde_json::Value =
@@ -4343,6 +4824,11 @@ mod tests {
             SqlStructureOperation::SetAggregates { aggregates: vec![] },
             SqlStructureOperation::SetGroupBy { columns: vec![] },
             SqlStructureOperation::SetDistinct { distinct: false },
+            SqlStructureOperation::SetRowLimit {
+                limit: Some("5".to_owned()),
+                offset: None,
+                limit_all: false,
+            },
         ]
         .into_iter()
         .map(|operation| {
@@ -4353,6 +4839,15 @@ mod tests {
         })
         .collect::<BTreeSet<_>>();
         assert_eq!(declared_operations, protocol_operations);
+
+        let row_limit = editor["operations"]
+            .as_array()
+            .expect("feature matrix operations must be an array")
+            .iter()
+            .find(|operation| operation["action"] == "row_limit")
+            .expect("row limit operation must be present");
+        assert_eq!(row_limit["protocol"], "set_row_limit");
+        assert_eq!(row_limit["coverage"], "bounded");
 
         let aggregate_function_names = [
             SqlStructureAggregateFunction::Count,

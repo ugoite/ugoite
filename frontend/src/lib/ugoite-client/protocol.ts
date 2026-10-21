@@ -684,7 +684,13 @@ export type SqlStructureOperation =
   | { kind: "set_sort"; order_by: SqlStructureSort[] }
   | { kind: "set_aggregates"; aggregates: SqlStructureAggregate[] }
   | { kind: "set_group_by"; columns: string[] }
-  | { kind: "set_distinct"; distinct: boolean };
+  | { kind: "set_distinct"; distinct: boolean }
+  | {
+    kind: "set_row_limit";
+    limit: string | null;
+    offset: string | null;
+    limit_all: boolean;
+  };
 
 export type SqlStructureReason =
   | "invalid_context"
@@ -715,7 +721,14 @@ export type SqlStructureReason =
   | "aggregate_type_unsupported"
   | "group_by_unsupported"
   | "distinct_unsupported"
+  | "row_limit_unsupported"
   | "round_trip_failed";
+
+export type SqlStructureRowLimit = {
+  limit_all?: boolean;
+  limit?: string;
+  offset?: string;
+};
 
 export type SqlStructureActionCapability = {
   enabled: boolean;
@@ -734,6 +747,7 @@ export type SqlStructureAnalysis = {
   aggregates: SqlStructureAggregate[];
   group_by: string[];
   distinct: boolean;
+  row_limit?: SqlStructureRowLimit;
   order_by: SqlStructureSort[];
   joins: SqlStructureJoin[];
   referenced_variables: string[];
@@ -747,6 +761,7 @@ export type SqlStructureAnalysis = {
     aggregate: SqlStructureActionCapability;
     group_by: SqlStructureActionCapability;
     distinct: SqlStructureActionCapability;
+    row_limit?: SqlStructureActionCapability;
     stable_pagination: SqlStructureActionCapability;
   };
 };

@@ -51,6 +51,7 @@ type StructureAction =
   | "aggregate"
   | "group_by"
   | "distinct";
+type StructureEditorMode = "join" | "row_limit";
 type FilterPredicateDraft = {
   kind: "predicate";
   id: string;
@@ -309,6 +310,14 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   const [aggregates, setAggregates] = createSignal<SqlStructureAggregate[]>([]);
   const [groupByColumns, setGroupByColumns] = createSignal<string[]>([]);
   const [selectDistinct, setSelectDistinct] = createSignal(false);
+  const [structureEditorMode, setStructureEditorMode] =
+    createSignal<StructureEditorMode>("join");
+  const [rowLimitDraft, setRowLimitDraft] = createSignal("");
+  const [rowOffsetDraft, setRowOffsetDraft] = createSignal("");
+  const [rowLimitAllDraft, setRowLimitAllDraft] = createSignal(false);
+  const [rowLimitDraftIdentity, setRowLimitDraftIdentity] = createSignal<
+    string
+  >();
   const [joinLeftColumn, setJoinLeftColumn] = createSignal("");
   const [joinRightColumn, setJoinRightColumn] = createSignal("");
   const [proposal, setProposal] = createSignal<SqlStructureProposal>();
@@ -780,6 +789,23 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     );
   };
 
+  const validRowLimitDraftValue = (value: string) => {
+    if (value === "") return true;
+    if (!/^\d{1,20}$/.test(value)) return false;
+    return BigInt(value) <= 18_446_744_073_709_551_615n;
+  };
+
+  const rowLimitDraftValid = () =>
+    (rowLimitAllDraft() || validRowLimitDraftValue(rowLimitDraft())) &&
+    validRowLimitDraftValue(rowOffsetDraft());
+
+  const rowLimitDraftChanged = () => {
+    const current = ready()?.analysis.row_limit;
+    return rowLimitAllDraft() !== (current?.limit_all === true) ||
+      (!rowLimitAllDraft() && rowLimitDraft() !== (current?.limit ?? "")) ||
+      rowOffsetDraft() !== (current?.offset ?? "");
+  };
+
   const aggregateColumnsFor = (
     fn: SqlStructureAggregateFunction,
     distinct = false,
@@ -964,7 +990,8 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     if (!current) return false;
     if (action === "join") {
       const columns = joinableColumns();
-      return columns.some((left) =>
+      return current.analysis.capabilities.join?.enabled === true &&
+        columns.some((left) =>
         columns.some((right) => left.type === right.type)
       );
     }
@@ -1016,7 +1043,10 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     const current = ready();
     if (!current || current.analysis.status !== "supported") return false;
     if (action === "form") return formOptions().length > 0;
-    if (action === "join") return hasEditableCapabilities("join");
+    if (action === "join") {
+      return hasEditableCapabilities("join") ||
+        current.analysis.capabilities.row_limit?.enabled === true;
+    }
     return Boolean(
       capability(action)?.enabled && hasEditableCapabilities(action),
     );
@@ -1049,8 +1079,12 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
       setError(null);
       setProposal(undefined);
       setProposalContextIdentity(undefined);
-      setActiveAction(action);
+      setRowLimitDraftIdentity(undefined);
       const current = ready();
+      setStructureEditorMode(
+        !current || hasEditableCapabilities("join") ? "join" : "row_limit",
+      );
+      setActiveAction(action);
       if (current?.analysis.status === "supported") {
         const available = current.context.parser.columns.find((column) =>
           [
@@ -1122,6 +1156,22 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     );
     setActiveAction(action);
   };
+
+  createEffect(() => {
+    if (activeAction() !== "join") return;
+    const current = ready();
+    if (current?.analysis.status !== "supported") return;
+    if (rowLimitDraftIdentity() === current.identity) return;
+    setRowLimitDraft(current.analysis.row_limit?.limit ?? "");
+    setRowOffsetDraft(current.analysis.row_limit?.offset ?? "");
+    setRowLimitAllDraft(current.analysis.row_limit?.limit_all === true);
+    setRowLimitDraftIdentity(current.identity);
+    if (
+      structureEditorMode() === "join" && !hasEditableCapabilities("join")
+    ) {
+      setStructureEditorMode("row_limit");
+    }
+  });
 
   const variablesFor = (columnName: string) => {
     const current = ready();
@@ -1924,7 +1974,15 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
       setError(unavailableReason());
       return;
     }
-    const operation: SqlStructureOperation = action === "columns"
+    const operation: SqlStructureOperation = action === "join" &&
+        structureEditorMode() === "row_limit"
+      ? {
+        kind: "set_row_limit",
+        limit: rowLimitAllDraft() ? null : rowLimitDraft() || null,
+        offset: rowOffsetDraft() || null,
+        limit_all: rowLimitAllDraft(),
+      }
+      : action === "columns"
       ? current.context.parser.relation === ""
         ? { kind: "set_literal_projection", values: literalProjection() }
         : {
@@ -1967,7 +2025,10 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
       : { kind: "set_distinct", distinct: selectDistinct() };
     if (
       action === "columns" && !projectionEditValid() ||
-      action === "join" && !joinOperationValid() ||
+      action === "join" && structureEditorMode() === "join" &&
+        !joinOperationValid() ||
+      action === "join" && structureEditorMode() === "row_limit" &&
+        (!rowLimitDraftValid() || !rowLimitDraftChanged()) ||
       action === "filter" && !filterRowsValid() ||
       action === "sort" && !sortRowsValid() ||
       action === "aggregate" && !aggregateOperationValid() ||
@@ -2210,6 +2271,12 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     if (activeAction() === "group_by" && !groupByRowsValid()) {
       return t("sqlPage.structure.groupProjectedColumns");
     }
+    if (
+      activeAction() === "join" && structureEditorMode() === "row_limit" &&
+      !rowLimitDraftValid()
+    ) {
+      return t("sqlPage.structure.invalidRowLimit");
+    }
     return undefined;
   };
 
@@ -2341,8 +2408,87 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                   </Show>
 
                   <Show when={activeAction() === "join"}>
+                    <div
+                      class="sql-structure-editor-modes"
+                      role="group"
+                      aria-label={t("sqlPage.structure.structure")}
+                    >
+                      <button
+                        type="button"
+                        class="ui-button ui-button-secondary"
+                        aria-pressed={structureEditorMode() === "join"}
+                        disabled={!hasEditableCapabilities("join")}
+                        onClick={() => {
+                          setStructureEditorMode("join");
+                          setProposal(undefined);
+                        }}
+                      >
+                        {t("sqlPage.structure.join")}
+                      </button>
+                      <button
+                        type="button"
+                        class="ui-button ui-button-secondary"
+                        aria-pressed={structureEditorMode() === "row_limit"}
+                        onClick={() => {
+                          setStructureEditorMode("row_limit");
+                          setProposal(undefined);
+                        }}
+                      >
+                        {t("sqlPage.structure.rowLimit")}
+                      </button>
+                    </div>
+                    <Show when={structureEditorMode() === "row_limit"}>
+                      <div class="sql-structure-row-limit">
+                        <label class="ui-field sql-structure-limit-all">
+                          <input
+                            type="checkbox"
+                            checked={rowLimitAllDraft()}
+                            disabled={busy() || Boolean(proposal())}
+                            onChange={(event) =>
+                              setRowLimitAllDraft(event.currentTarget.checked)}
+                          />
+                          <span>LIMIT ALL</span>
+                        </label>
+                        <Show when={!rowLimitAllDraft()}>
+                          <label class="ui-field">
+                            <span>LIMIT</span>
+                            <input
+                              class="ui-input"
+                              type="text"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              maxLength={20}
+                              value={rowLimitDraft()}
+                              disabled={busy() || Boolean(proposal())}
+                              onInput={(event) =>
+                                setRowLimitDraft(event.currentTarget.value)}
+                            />
+                          </label>
+                        </Show>
+                        <label class="ui-field">
+                          <span>OFFSET</span>
+                          <input
+                            class="ui-input"
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            maxLength={20}
+                            value={rowOffsetDraft()}
+                            disabled={busy() || Boolean(proposal())}
+                            onInput={(event) =>
+                              setRowOffsetDraft(event.currentTarget.value)}
+                          />
+                        </label>
+                      </div>
+                      <Show when={!rowLimitDraftValid()}>
+                        <p class="ui-text-danger" role="alert">
+                          {t("sqlPage.structure.invalidRowLimit")}
+                        </p>
+                      </Show>
+                    </Show>
+                    <Show when={structureEditorMode() === "join"}>
                     <Show
-                      when={structuredEditorAvailable("join")}
+                      when={hasEditableCapabilities("join")}
                     >
                       <div class="sql-structure-join-fields">
                         <label class="ui-field">
@@ -2414,6 +2560,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                           </select>
                         </label>
                       </div>
+                    </Show>
                     </Show>
                   </Show>
 
@@ -3124,7 +3271,13 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                         activeAction() === "columns" &&
                         !projectionEditValid()
                       ) ||
-                        (activeAction() === "join" && !joinOperationValid()) ||
+                        (activeAction() === "join" &&
+                          structureEditorMode() === "join" &&
+                          !joinOperationValid()) ||
+                        (activeAction() === "join" &&
+                          structureEditorMode() === "row_limit" &&
+                          (!rowLimitDraftValid() ||
+                            !rowLimitDraftChanged())) ||
                         (activeAction() === "filter" && !filterRowsValid()) ||
                         (activeAction() === "sort" && !sortRowsValid()) ||
                         (activeAction() === "aggregate" &&

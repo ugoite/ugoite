@@ -107,7 +107,7 @@ const context: SqlStructureAdapterContext = {
 };
 
 const analysis: SqlStructureAnalysis = {
-  contract_version: 3,
+  contract_version: 5,
   status: "supported",
   projection: ["*"],
   literal_projection: [],
@@ -116,6 +116,7 @@ const analysis: SqlStructureAnalysis = {
   aggregates: [],
   group_by: [],
   distinct: false,
+  row_limit: {},
   order_by: [{ column: "_ugoite_id", direction: "asc" }],
   joins: [],
   referenced_variables: [],
@@ -129,6 +130,7 @@ const analysis: SqlStructureAnalysis = {
     aggregate: { enabled: true },
     group_by: { enabled: true },
     distinct: { enabled: true },
+    row_limit: { enabled: true },
     stable_pagination: { enabled: true },
   },
 };
@@ -217,7 +219,7 @@ describe("SqlStructureToolbar adapter", () => {
       }),
     );
     proposeMock.mockImplementation(async (baseSql: string) => ({
-      contract_version: 3,
+      contract_version: 5,
       status: "supported",
       base_sql: baseSql,
       proposed_sql: 'SELECT "amount" FROM "Orders" ORDER BY "_ugoite_id" ASC',
@@ -472,7 +474,7 @@ describe("SqlStructureToolbar adapter", () => {
     const onSqlChange = vi.fn((nextSql: string) => setSql(nextSql));
     let actions: readonly SQLWorkspaceAction[] = [];
     proposeMock.mockResolvedValue({
-      contract_version: 3,
+      contract_version: 5,
       status: "supported",
       base_sql: initialSql,
       proposed_sql: proposedSql,
@@ -532,7 +534,7 @@ describe("SqlStructureToolbar adapter", () => {
     const onVariablesAdded = vi.fn();
     let actions: readonly SQLWorkspaceAction[] = [];
     proposeMock.mockResolvedValue({
-      contract_version: 3,
+      contract_version: 5,
       status: "supported",
       base_sql: sql,
       proposed_sql: proposedSql,
@@ -938,7 +940,7 @@ describe("SqlStructureToolbar adapter", () => {
     const proposedSql =
       'SELECT * FROM "Orders" AS "_ugoite_left" INNER JOIN "Orders" AS "_ugoite_right" ON "_ugoite_left"."amount" = "_ugoite_right"."amount"';
     proposeMock.mockResolvedValue({
-      contract_version: 3,
+      contract_version: 5,
       status: "supported",
       base_sql: sql,
       proposed_sql: proposedSql,
@@ -999,6 +1001,169 @@ describe("SqlStructureToolbar adapter", () => {
     await waitFor(() => expect(onSqlChange).toHaveBeenCalledWith(proposedSql));
   });
 
+  it("edits LIMIT and OFFSET inside the shared Structure action", async () => {
+    const sql = 'SELECT * FROM "Orders"';
+    const proposedSql = `${sql} LIMIT 25 OFFSET 4`;
+    proposeMock.mockResolvedValue({
+      contract_version: 5,
+      status: "supported",
+      base_sql: sql,
+      proposed_sql: proposedSql,
+      requires_confirmation: true,
+      added_stable_tie_breakers: [],
+    });
+    const onSqlChange = vi.fn();
+    let actions: readonly SQLWorkspaceAction[] = [];
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [context]}
+        onSqlChange={onSqlChange}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "structure")?.disabled)
+        .toBe(false)
+    );
+    await waitFor(() => expect(analyzeMock).toHaveBeenCalled());
+    actions.find((action) => action.kind === "structure")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Structure" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Rows" }));
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Review change" }),
+      ).toBeInTheDocument()
+    );
+    fireEvent.input(within(dialog).getByLabelText("LIMIT"), {
+      target: { value: "25" },
+    });
+    fireEvent.input(within(dialog).getByLabelText("OFFSET"), {
+      target: { value: "4" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(proposeMock.mock.calls[0][2]).toEqual({
+      kind: "set_row_limit",
+      limit: "25",
+      offset: "4",
+      limit_all: false,
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Apply change" }),
+    );
+    await waitFor(() => expect(onSqlChange).toHaveBeenCalledWith(proposedSql));
+  });
+
+  it("replaces LIMIT ALL through the shared Structure action", async () => {
+    const sql = 'SELECT * FROM "Orders" LIMIT ALL';
+    const proposedSql = 'SELECT * FROM "Orders" LIMIT 12';
+    analyzeMock.mockResolvedValue({
+      ...analysis,
+      row_limit: { limit_all: true },
+    });
+    proposeMock.mockResolvedValue({
+      contract_version: 5,
+      status: "supported",
+      base_sql: sql,
+      proposed_sql: proposedSql,
+      requires_confirmation: true,
+      added_stable_tie_breakers: [],
+    });
+    const onSqlChange = vi.fn();
+    let actions: readonly SQLWorkspaceAction[] = [];
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [context]}
+        onSqlChange={onSqlChange}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "structure")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "structure")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Structure" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Rows" }));
+    await waitFor(() =>
+      expect(within(dialog).getByLabelText("LIMIT ALL")).toBeChecked()
+    );
+    fireEvent.click(within(dialog).getByLabelText("LIMIT ALL"));
+    fireEvent.input(within(dialog).getByLabelText("LIMIT"), {
+      target: { value: "12" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Review change" }),
+    );
+
+    await waitFor(() => expect(proposeMock).toHaveBeenCalledOnce());
+    expect(proposeMock.mock.calls[0][2]).toEqual({
+      kind: "set_row_limit",
+      limit: "12",
+      offset: null,
+      limit_all: false,
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Apply change" }),
+    );
+    await waitFor(() => expect(onSqlChange).toHaveBeenCalledWith(proposedSql));
+  });
+
+  it("opens Rows when JOIN is unavailable and shows invalid bounds inline", async () => {
+    const sql = 'SELECT * FROM "Orders"';
+    analyzeMock.mockResolvedValue({
+      ...analysis,
+      capabilities: {
+        ...analysis.capabilities,
+        join: { enabled: false, reason: "join_unsupported" },
+      },
+    });
+    let actions: readonly SQLWorkspaceAction[] = [];
+    render(() => (
+      <SqlStructureToolbar
+        sql={() => sql}
+        contexts={() => [context]}
+        onSqlChange={vi.fn()}
+        onActionsChange={(next) => actions = next}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(actions.find((action) => action.kind === "structure")?.disabled)
+        .toBe(false)
+    );
+    actions.find((action) => action.kind === "structure")!.onActivate();
+    const dialog = screen.getByRole("dialog", { name: "Structure" });
+    await waitFor(() =>
+      expect(within(dialog).getByRole("button", { name: "Rows" }))
+        .toHaveAttribute("aria-pressed", "true")
+    );
+    expect(within(dialog).getByRole("button", { name: "Join" })).toBeDisabled();
+    fireEvent.input(within(dialog).getByLabelText("LIMIT"), {
+      target: { value: "18446744073709551616" },
+    });
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "Use non-negative whole numbers",
+    );
+    expect(
+      within(dialog).getByRole("button", { name: /Review change/ }),
+    ).toBeDisabled();
+
+    fireEvent.input(within(dialog).getByLabelText("LIMIT"), {
+      target: { value: "12" },
+    });
+    await waitFor(() =>
+      expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument()
+    );
+  });
+
   it("edits a projection column and alias while preserving its slot id", async () => {
     const sql =
       'SELECT "amount" AS "Total Amount" FROM "Orders" ORDER BY "_ugoite_id"';
@@ -1011,7 +1176,7 @@ describe("SqlStructureToolbar adapter", () => {
       }],
     });
     proposeMock.mockResolvedValue({
-      contract_version: 3,
+      contract_version: 5,
       status: "supported",
       base_sql: sql,
       proposed_sql:
@@ -1078,7 +1243,7 @@ describe("SqlStructureToolbar adapter", () => {
       projection_aliases: [],
     });
     proposeMock.mockResolvedValue({
-      contract_version: 3,
+      contract_version: 5,
       status: "supported",
       base_sql: sql,
       proposed_sql:
@@ -1151,7 +1316,7 @@ describe("SqlStructureToolbar adapter", () => {
       ],
     });
     proposeMock.mockResolvedValue({
-      contract_version: 3,
+      contract_version: 5,
       status: "supported",
       base_sql: sql,
       proposed_sql:
@@ -1215,7 +1380,7 @@ describe("SqlStructureToolbar adapter", () => {
     const sql = "SELECT 1";
     const contexts = buildSqlStructureContexts([], [], "new-sql");
     const scalarAnalysis: SqlStructureAnalysis = {
-      contract_version: 3,
+      contract_version: 5,
       status: "supported",
       projection: ["1"],
       literal_projection: [{ kind: "integer", value: "1" }],
@@ -1224,6 +1389,7 @@ describe("SqlStructureToolbar adapter", () => {
       aggregates: [],
       group_by: [],
       distinct: false,
+      row_limit: {},
       order_by: [],
       joins: [],
       referenced_variables: [],
@@ -1236,6 +1402,7 @@ describe("SqlStructureToolbar adapter", () => {
         aggregate: { enabled: false },
         group_by: { enabled: false },
         distinct: { enabled: true },
+        row_limit: { enabled: true },
         stable_pagination: {
           enabled: false,
           reason: "stable_key_unavailable",
@@ -1244,7 +1411,7 @@ describe("SqlStructureToolbar adapter", () => {
     };
     analyzeMock.mockResolvedValue(scalarAnalysis);
     proposeMock.mockResolvedValue({
-      contract_version: 3,
+      contract_version: 5,
       status: "supported",
       base_sql: sql,
       proposed_sql: "SELECT DISTINCT 1",
@@ -1395,7 +1562,7 @@ describe("SqlStructureToolbar adapter", () => {
       )
     );
     proposeMock.mockResolvedValue({
-      contract_version: 3,
+      contract_version: 5,
       status: "supported",
       base_sql: sql,
       proposed_sql: proposedSql,
@@ -1515,7 +1682,7 @@ describe("SqlStructureToolbar adapter", () => {
       new Promise<void>((resolve) => resolveParser = resolve)
     );
     proposeMock.mockResolvedValue({
-      contract_version: 3,
+      contract_version: 5,
       status: "supported",
       base_sql: sql,
       proposed_sql: 'SELECT * FROM "Orders"',
@@ -1590,7 +1757,7 @@ describe("SqlStructureToolbar adapter", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
     resolveProposal?.({
-      contract_version: 3,
+      contract_version: 5,
       status: "supported",
       base_sql: initialSql,
       proposed_sql: 'SELECT "amount" FROM "Orders"',
@@ -2051,7 +2218,7 @@ describe("SqlStructureToolbar adapter", () => {
     });
     proposeMock.mockResolvedValue(
       {
-        contract_version: 3,
+        contract_version: 5,
         status: "supported",
         base_sql: sql,
         proposed_sql: 'SELECT * FROM "Orders" WHERE "amount" = $filter_amount',
@@ -2168,7 +2335,7 @@ describe("SqlStructureToolbar adapter", () => {
     const onVariablesAdded = vi.fn(() => false);
     proposeMock.mockResolvedValue(
       {
-        contract_version: 3,
+        contract_version: 5,
         status: "supported",
         base_sql: currentSql,
         proposed_sql: 'SELECT * FROM "Orders" WHERE "amount" = $filter_amount',
@@ -2239,7 +2406,7 @@ describe("SqlStructureToolbar adapter", () => {
     let actions: readonly SQLWorkspaceAction[] = [];
     proposeMock.mockResolvedValue(
       {
-        contract_version: 3,
+        contract_version: 5,
         status: "supported",
         base_sql: sql,
         proposed_sql:
@@ -2365,7 +2532,7 @@ describe("SqlStructureToolbar adapter", () => {
     ).toBeDisabled();
 
     resolveProposal({
-      contract_version: 3,
+      contract_version: 5,
       status: "supported",
       base_sql: sql,
       proposed_sql: 'SELECT * FROM "Orders" WHERE "amount" = $filter_amount',
@@ -2638,7 +2805,7 @@ describe("SqlStructureToolbar adapter", () => {
       '-- report\nSELECT "amount" FROM "Orders" WHERE "amount" > $threshold GROUP BY "amount" ORDER BY "amount" DESC';
     analyzeMock.mockResolvedValue({ ...analysis, projection: ["*"] });
     proposeMock.mockResolvedValue({
-      contract_version: 3,
+      contract_version: 5,
       status: "supported",
       base_sql: sql,
       proposed_sql: proposedSql,

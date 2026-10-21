@@ -92,9 +92,18 @@ Deno.test("SQL feature matrix binds the read-only gate and current UI actions", 
     /type StructureAction\s*=([\s\S]*?);/,
   )?.[1]?.match(/"([a-z_]+)"/g)?.map((action) => action.slice(1, -1)) ?? [];
   const matrixActions = matrix.editor.operations.map((
-    operation: { action: string },
-  ) => operation.action);
-  assertEquals([...matrixActions].sort(), [...toolbarActions].sort());
+    operation: { action: string; toolbar_action?: string },
+  ) => operation.toolbar_action ?? operation.action);
+  assertEquals(
+    [...new Set(matrixActions)].sort(),
+    [...new Set(toolbarActions)].sort(),
+  );
+  assertEquals(
+    matrix.editor.operations.find((operation: { action: string }) =>
+      operation.action === "row_limit"
+    )?.toolbar_action,
+    "join",
+  );
 
   const constructs = matrix.editor.constructs as Array<{
     id: string;

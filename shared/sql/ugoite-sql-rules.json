@@ -17,6 +17,7 @@
     "ORDER",
     "BY",
     "LIMIT",
+    "ALL",
     "AND",
     "OR",
     "NOT"
@@ -25,7 +26,8 @@
     "require_select": true,
     "require_from": false,
     "single_statement_only": true,
-    "limit_requires_number": true
+    "limit_requires_number": true,
+    "limit_all_allowed": true
   },
   "feature_matrix": {
     "version": 2,
@@ -155,6 +157,13 @@
           "protocol": "set_distinct",
           "sql": ["SELECT DISTINCT"],
           "coverage": "bounded"
+        },
+        {
+          "action": "row_limit",
+          "toolbar_action": "join",
+          "protocol": "set_row_limit",
+          "sql": ["LIMIT", "OFFSET"],
+          "coverage": "bounded"
         }
       ],
       "literal_projection_operation": {
@@ -240,10 +249,11 @@
           "id": "row_limit",
           "sql": "LIMIT/OFFSET",
           "backend_admission": "planner_decides",
-          "editor_coverage": "preserved_only",
+          "editor_coverage": "bounded",
           "limits": [
-            "the structure parser recognizes non-negative integer literals",
-            "there is no edit operation"
+            "LIMIT accepts ALL or a non-negative integer literal up to u64::MAX; OFFSET accepts a non-negative integer literal up to u64::MAX",
+            "the editor can add, update, and remove LIMIT and OFFSET without rewriting other SQL source",
+            "FETCH and percent/with-ties forms remain outside the structured editor"
           ]
         },
         {

@@ -29,6 +29,12 @@ describe("sql helpers", () => {
     expect(diagnostics).toHaveLength(0);
   });
 
+  it("accepts LIMIT ALL under the shared SQL rules", () => {
+    expect(sqlLintDiagnostics('SELECT * FROM "Orders" LIMIT ALL')).toEqual(
+      [],
+    );
+  });
+
   it("accepts a read-only scalar SELECT without a FROM clause", () => {
     expect(sqlLintDiagnostics("SELECT 1")).toEqual([]);
   });

@@ -82,6 +82,14 @@ uses the existing group-by icon; it is not a separate plus action. Aggregate,
 group-by, and distinct controls remain separately surfaced during this
 transition, so the planned compact six-action toolbar is not complete.
 
+The shared `Structure` action also edits the explicit `LIMIT`/`OFFSET` clause.
+It supports `LIMIT ALL` and non-negative integer literals through `u64::MAX`;
+`OFFSET` uses the same integer bound. The row-limit proposal replaces only the
+clause source span, preserving trailing comments and semicolons. Comments
+inside that span fail closed rather than being discarded. This SQL-level bound
+is distinct from preview paging, which remains an adapter-owned stateless
+request and does not add or rewrite `LIMIT`.
+
 Simple Form-column projections expose each output alias in the Columns editor.
 The editor assigns a transient slot identity from each projection's ordinal in
 the exact SQL snapshot, so repeated source columns can be reordered and aliased
