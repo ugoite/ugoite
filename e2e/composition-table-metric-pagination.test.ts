@@ -1,9 +1,14 @@
 import { type APIRequestContext, expect, test } from "@playwright/test";
-import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
 import {
-  completeInlineSqlCompositionYaml,
-  completeSavedSqlCompositionYaml,
-} from "./lib/composition.ts";
+  getBackendUrl,
+  getDefaultSpaceId,
+  getFrontendUrl,
+  waitForServers,
+} from "./lib/client.ts";
+import {
+  completeCompositionGraphYaml,
+  type CompositionGraphSeed,
+} from "./lib/composition-graph.ts";
 
 type SavedSqlRevision = { entryId: string; revisionId: string };
 
@@ -19,17 +24,7 @@ function sqlIdentifier(value: string): string {
 }
 
 async function createSpace(request: APIRequestContext): Promise<string> {
-  const suffix = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
-  const response = await request.post(getBackendUrl("/spaces"), {
-    data: {
-      slug: `composition-page-metric-${suffix}`,
-      name: `Composition page metric ${suffix}`,
-    },
-  });
-  expect([200, 201]).toContain(response.status());
-  const result = await response.json() as { space_uid?: string };
-  expect(result.space_uid).toBeTruthy();
-  return result.space_uid!;
+  return await getDefaultSpaceId(request);
 }
 
 async function createSavedSql(
@@ -140,78 +135,74 @@ async function seedComposition(
     } >= $minimum`,
   );
 
-  let yaml = [
-    "format: ugoite.composition",
-    "format_version: 1",
-    `name: ${compositionName}`,
-    "kind: dashboard",
-    "spec:",
-    "  variables:",
-    "    - id: minimum_amount",
-    "      type: float",
-    "      required: true",
-    "      default: 1",
-    "  sources:",
-    "    - id: paged_rows",
-    "      kind: inline_sql",
-    "      name: Paged rows",
-    `      sql: SELECT ${sqlIdentifier(amountColumn!)} AS amount, ${
-      sqlIdentifier(merchantColumn!)
-    } AS merchant FROM ${sqlIdentifier(relation!)} WHERE ${
-      sqlIdentifier(amountColumn!)
-    } >= $minimum_amount ORDER BY ${sqlIdentifier(amountColumn!)} ASC`,
-    "      form_bindings: []",
-    "      expected_result: []",
-    "      schema_fingerprint: ''",
-    "    - id: matching_count_source",
-    "      kind: saved_sql",
-    `      entry_id: "${metricSql.entryId}"`,
-    `      revision_id: "${metricSql.revisionId}"`,
-    "      expected_result: []",
-    "      schema_fingerprint: ''",
-    "      variables:",
-    "        minimum:",
-    "          variable: minimum_amount",
-    "  components:",
-    "    - id: minimum_input",
-    "      kind: input",
-    "      variable: minimum_amount",
-    "    - id: matching_count",
-    "      kind: metric",
-    "      source: matching_count_source",
-    "      column: matching_count",
-    "    - id: rows",
-    "      kind: table",
-    "      source: paged_rows",
-    "  layout:",
-    "    kind: flow",
-    "    rows:",
-    "      - id: controls",
-    "        items:",
-    "          - kind: component",
-    "            component: minimum_input",
-    "      - id: results",
-    "        items:",
-    "          - kind: component",
-    "            component: matching_count",
-    "          - kind: component",
-    "            component: rows",
-    "",
-  ].join("\n");
-  yaml = await completeInlineSqlCompositionYaml(request, spaceId, yaml, {
-    id: "paged_rows",
-    relation: relation!,
-    formId: form!.id!,
-    expectedResult: [
-      { name: "amount", type: "float" },
-      { name: "merchant", type: "string" },
+  const graph: CompositionGraphSeed = {
+    name: compositionName,
+    variables: [
+      {
+        id: "minimum_amount",
+        kind: "input",
+        value_type: { scalar_type: "float", nullable: false },
+        required: true,
+        default: { kind: "float", value: 1 },
+      },
+      {
+        id: "paged_rows",
+        kind: "query",
+        returns: { kind: "table", columns: [] },
+        query: {
+          kind: "inline_sql",
+          sql: `SELECT ${sqlIdentifier(amountColumn!)} AS amount, ${
+            sqlIdentifier(merchantColumn!)
+          } AS merchant FROM ${sqlIdentifier(relation!)} WHERE ${
+            sqlIdentifier(amountColumn!)
+          } >= $minimum_amount ORDER BY ${sqlIdentifier(amountColumn!)} ASC`,
+          arguments: [{ name: "minimum_amount", variable: "minimum_amount" }],
+          form_bindings: [],
+          schema_fingerprint: "",
+        },
+      },
+      {
+        id: "matching_count_value",
+        kind: "query",
+        returns: {
+          kind: "scalar",
+          value_type: { scalar_type: "integer", nullable: false },
+        },
+        query: {
+          kind: "saved_sql",
+          entry_id: metricSql.entryId,
+          revision_id: metricSql.revisionId,
+          column: "matching_count",
+          arguments: [{ name: "minimum", variable: "minimum_amount" }],
+          form_bindings: [],
+          schema_fingerprint: "",
+        },
+      },
     ],
-  });
-  yaml = await completeSavedSqlCompositionYaml(request, spaceId, yaml, [{
-    id: "matching_count_source",
-    savedSqlId: metricSql.entryId,
-    savedSqlRevisionId: metricSql.revisionId,
-  }]);
+    components: [
+      { id: "minimum_input", kind: "input", variable: "minimum_amount" },
+      {
+        id: "matching_count",
+        kind: "metric",
+        variable: "matching_count_value",
+      },
+      { id: "rows", kind: "table", variable: "paged_rows" },
+    ],
+    rows: [
+      {
+        id: "controls",
+        items: [{ kind: "component", component: "minimum_input" }],
+      },
+      {
+        id: "results",
+        items: [
+          { kind: "component", component: "matching_count" },
+          { kind: "component", component: "rows" },
+        ],
+      },
+    ],
+  };
+  const yaml = await completeCompositionGraphYaml(request, spaceId, graph);
   const compositionResponse = await request.post(
     getBackendUrl(`/spaces/${spaceId}/compositions`),
     {
@@ -240,8 +231,9 @@ test.describe("Composition Table and Metric pagination", () => {
 
   test.beforeAll(async ({ request }) => {
     // The fixture publishes 102 Entry revisions over the direct API before
-    // it can exercise the 100-row SQL page boundary.
-    test.setTimeout(300_000);
+    // it can exercise the 100-row SQL page boundary. Hosted filesystem
+    // latency can make this seed exceed five minutes.
+    test.setTimeout(420_000);
     await waitForServers(request);
     seed = await seedComposition(request);
   });
@@ -252,33 +244,30 @@ test.describe("Composition Table and Metric pagination", () => {
     // 102 Entries. Keep those async page assertions bounded without using the
     // five-second default for this larger fixture.
     const uiExpect = expect.configure({ timeout: 20_000 });
-    let metricQueryCount = 0;
+    let fullEvaluationCount = 0;
     page.on("request", (request) => {
       const url = new URL(request.url());
       if (
         request.method() === "POST" &&
-        url.pathname.endsWith(
-          `/spaces/${seed.spaceId}/compositions/metric-query`,
-        )
+        url.pathname.endsWith(`/spaces/${seed.spaceId}/compositions/evaluate`)
       ) {
-        metricQueryCount += 1;
+        const body = request.postDataJSON() as { page?: unknown };
+        if (!body.page) fullEvaluationCount += 1;
       }
     });
 
     const path =
       `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/${seed.revisionId}`;
-    await page.goto(getFrontendUrl(`/spaces/${seed.spaceId}/dashboard`), {
+    await page.goto(getFrontendUrl(`/spaces/${seed.spaceId}/compositions`), {
       waitUntil: "domcontentloaded",
     });
-    const link = page.getByRole("link", {
-      name: new RegExp(`^${seed.compositionName} Dashboard`),
-    });
-    await uiExpect(link).toHaveAttribute("href", path);
+    const link = page.locator(`a[href="${path}"]`);
+    await uiExpect(link).toBeVisible();
     await link.click();
     await uiExpect(page).toHaveURL(new RegExp(`${path}$`));
 
     const input = page.getByLabel("minimum_amount", { exact: true });
-    const metric = page.locator("output.compositionMetric");
+    const metric = page.locator(".compositionGraphMetric strong");
     const table = page.getByRole("table");
     await uiExpect(input).toHaveValue("1");
     await uiExpect(metric).toHaveText("101");
@@ -286,16 +275,16 @@ test.describe("Composition Table and Metric pagination", () => {
     await uiExpect(table).toContainText("Pager-001");
     await uiExpect(page.getByRole("button", { name: "Next", exact: true }))
       .toBeEnabled();
-    const initialMetricQueries = metricQueryCount;
-    expect(initialMetricQueries).toBeGreaterThan(0);
+    const initialEvaluations = fullEvaluationCount;
+    expect(initialEvaluations).toBeGreaterThan(0);
 
     await input.fill("0");
     await uiExpect(metric).toHaveText("102");
     await uiExpect(table.locator("tbody tr")).toHaveCount(100);
     await uiExpect(table).toContainText("Pager-000");
-    const metricQueriesAfterInputChange = metricQueryCount;
-    expect(metricQueriesAfterInputChange).toBeGreaterThan(
-      initialMetricQueries,
+    const evaluationsAfterInputChange = fullEvaluationCount;
+    expect(evaluationsAfterInputChange).toBeGreaterThan(
+      initialEvaluations,
     );
 
     await page.getByRole("button", { name: "Next", exact: true }).click();
@@ -303,13 +292,13 @@ test.describe("Composition Table and Metric pagination", () => {
     await uiExpect(table).toContainText("Pager-100");
     await uiExpect(input).toHaveValue("0");
     await uiExpect(metric).toHaveText("102");
-    expect(metricQueryCount).toBe(metricQueriesAfterInputChange);
+    expect(fullEvaluationCount).toBe(evaluationsAfterInputChange);
 
     await page.getByRole("button", { name: "Previous", exact: true }).click();
     await uiExpect(table.locator("tbody tr")).toHaveCount(100);
     await uiExpect(table).toContainText("Pager-000");
     await uiExpect(input).toHaveValue("0");
     await uiExpect(metric).toHaveText("102");
-    expect(metricQueryCount).toBe(metricQueriesAfterInputChange);
+    expect(fullEvaluationCount).toBe(evaluationsAfterInputChange);
   });
 });

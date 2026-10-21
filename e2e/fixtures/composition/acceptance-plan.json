@@ -6,44 +6,54 @@
       "id": "A01",
       "requirement": "Composition schema: entry_query, tags, and every label field make YAML invalid; there is no compatibility parser.",
       "selectors": [
-        { "path": "crates/ugoite-domain/src/composition.rs", "kind": "test", "name": "old_composition_v1_grammar_and_display_fields_fail_closed" }
+        { "path": "crates/ugoite-domain/src/composition/yaml.rs", "kind": "test", "name": "rejects_source_shaped_documents_and_unknown_graph_fields" }
       ]
     },
     {
       "id": "A02",
       "requirement": "Form to SQL: selecting Form G generates SELECT * FROM \"G\"; SQL query limit=50 is separate from SQL text LIMIT.",
       "selectors": [
-        { "path": "frontend/src/components/CompositionSourcePicker.test.tsx", "kind": "file" },
-        { "path": "frontend/src/lib/composition-api.test.ts", "kind": "file" },
-        { "path": "crates/ugoite-domain/src/sql_structure.rs", "kind": "file" }
-      ]
+        { "path": "crates/ugoite-domain/src/sql_structure.rs", "kind": "test", "name": "relation_selection_builds_a_form_query_and_preserves_source_trivia" },
+        { "path": "crates/ugoite-iceberg/tests/test_composition_preview.rs", "kind": "test", "name": "draft_preview_resolves_without_publication" },
+        { "path": "crates/ugoite-core/src/sql_query.rs", "kind": "file" },
+        { "path": "frontend/src/components/CompositionVariableBindingPicker.test.tsx", "kind": "file" },
+        { "path": "e2e/composition-studio-journey.test.ts", "kind": "test", "name": "Form bindings create variable-backed displays with explicit aggregation" }
+      ],
+      "manual_evidence_gaps": ["The browser tests do not independently verify the 50-row preview cap versus SQL text LIMIT."]
     },
     {
       "id": "A03",
       "requirement": "Source binding: Form rename follows immutable identity; same-name Form replacement fails; ACL revocation or a missing Form stops with source_unavailable.",
       "selectors": [
-        { "path": "crates/ugoite-iceberg/src/service/composition_resolver.rs", "kind": "test", "name": "same_name_form_replacement_does_not_replace_exact_base_binding" },
-        { "path": "crates/ugoite-iceberg/src/service/composition_resolver.rs", "kind": "test", "name": "exact_base_preview_retains_form_id_after_rename" },
-        { "path": "e2e/composition-source-acl-isolation.test.ts", "kind": "test", "name": "Viewer Metric and Table clear after Form or Saved SQL Read is revoked" }
-      ]
+        { "path": "crates/ugoite-iceberg/tests/test_composition_preview.rs", "kind": "test", "name": "preview_ignores_yaml_form_binding_spoof_with_or_without_exact_base" },
+        { "path": "crates/ugoite-iceberg/tests/test_composition_query_authorization.rs", "kind": "test", "name": "authorized_composition_metrics_recheck_current_entry_and_saved_sql_access" },
+        { "path": "e2e/composition-source-acl-isolation.test.ts", "kind": "test", "name": "evaluate rechecks Form and exact Saved SQL access after revocation" }
+      ],
+      "manual_evidence_gaps": ["Form rename and same-name replacement identity behavior are not covered by the vNext tests selected here"]
     },
     {
       "id": "A04",
       "requirement": "Saved SQL: pin an exact revision with no latest fallback, silent rebind, or mutation; duplication creates inline SQL.",
       "selectors": [
-        { "path": "crates/ugoite-core/src/composition.rs", "kind": "test", "name": "saved_sql_uses_exact_revision_and_keeps_parameters_stateless" },
-        { "path": "crates/ugoite-core/src/composition.rs", "kind": "test", "name": "saved_sql_rejects_changed_schema_and_non_exact_revision" },
-        { "path": "frontend/src/components/CompositionSourcePicker.test.tsx", "kind": "file" }
-      ]
+        { "path": "crates/ugoite-core/src/composition_query.rs", "kind": "test", "name": "compiles_saved_sql_to_exact_revision_without_copying_sql_text" },
+        { "path": "crates/ugoite-iceberg/tests/test_composition_preview.rs", "kind": "test", "name": "parameterized_saved_sql_placeholder_previews_and_saves_with_server_schema" },
+        { "path": "crates/ugoite-core/tests/composition_query_evaluation.rs", "kind": "test", "name": "evaluation_rejects_requests_with_unbound_parameters_or_stale_snapshot_ids" }
+      ],
+      "manual_evidence_gaps": ["Saved SQL duplication into inline SQL is not covered by the vNext tests selected here"]
     },
     {
       "id": "A05",
       "requirement": "Variables: Composition defaults match their type; required, unset, and invalid values remain distinct; SQL is never interpolated. Saved SQL defaults are typed in standalone preview.",
       "selectors": [
-        { "path": "crates/ugoite-core/src/composition.rs", "kind": "test", "name": "inline_sql_reports_unknown_and_missing_typed_parameters" },
-        { "path": "crates/ugoite-domain/src/composition.rs", "kind": "test", "name": "typed_input_parser_enforces_the_pinned_lexical_contract" },
-        { "path": "e2e/composition-invalid-variable-input.test.ts", "kind": "test", "name": "invalid_raw_input_blocks_query_and_stale_result" }
-      ]
+        { "path": "crates/ugoite-core/src/composition_query.rs", "kind": "test", "name": "missing_values_and_type_mismatches_are_stable" },
+        { "path": "crates/ugoite-core/src/composition_query.rs", "kind": "test", "name": "compiles_inline_sql_with_explicit_names_and_typed_values" },
+        { "path": "crates/ugoite-domain/src/composition/variable_graph.rs", "kind": "test", "name": "inline_parameter_binding_ignores_comments_literals_and_repeated_uses" },
+        { "path": "crates/ugoite-domain/src/composition/variable_graph_input.rs", "kind": "test", "name": "resolves_constants_defaults_and_supplied_values_without_coercion" },
+        { "path": "crates/ugoite-iceberg/tests/test_composition_preview.rs", "kind": "test", "name": "parameterized_saved_sql_placeholder_previews_and_saves_with_server_schema" },
+        { "path": "e2e/composition-invalid-variable-input.test.ts", "kind": "test", "name": "invalid_raw_input_blocks_query_and_stale_result" },
+        { "path": "e2e/composition-revision-stale-response.test.ts", "kind": "test", "name": "discard a delayed metric response after navigating to another exact revision" }
+      ],
+      "manual_evidence_gaps": ["Standalone-preview handling of Saved SQL defaults is not verified by the vNext tests selected here"]
     },
     {
       "id": "A06",
@@ -75,9 +85,10 @@
       "id": "A09",
       "requirement": "Metric: distinguish zero rows, one NULL row, zero, multiple rows, and type mismatch; derive headings from SQL result aliases; persist no label.",
       "selectors": [
-        { "path": "e2e/composition-scalar-state-journey.test.ts", "kind": "file" },
-        { "path": "e2e/composition-metric-journey.test.ts", "kind": "file" },
-        { "path": "frontend/src/components/CompositionRenderer.test.tsx", "kind": "file" }
+        { "path": "crates/ugoite-domain/src/composition/variable_graph.rs", "kind": "test", "name": "scalar_results_distinguish_cardinality_null_and_valid_values" },
+        { "path": "crates/ugoite-core/src/composition_query.rs", "kind": "test", "name": "validates_inline_planner_schema_before_exposing_scalar_values" },
+        { "path": "crates/ugoite-core/tests/composition_query_evaluation.rs", "kind": "test", "name": "only_descriptor_validated_query_values_reach_the_complete_preview" },
+        { "path": "e2e/composition-studio-journey.test.ts", "kind": "test", "name": "Form bindings create variable-backed displays with explicit aggregation" }
       ]
     },
     {

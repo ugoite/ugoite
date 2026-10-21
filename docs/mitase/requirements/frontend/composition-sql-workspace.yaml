@@ -1,376 +1,261 @@
 schema: mitase/authoring/v2
 kind: requirements
 namespace: frontend
-category: SQL-first Composition Studio interactions
+category: Typed variable graph Composition Studio
 requirements:
   - id: REQ-FE-079
-    title: SQL-first Composition Studio
-    description: The SQL-first Composition Studio uses the shared SQL Workspace while expressing Composition-specific structure and accessible controls through meaningful names rather than persisted label fields.
+    title: Composition Studio graph interactions
+    description: The Composition Studio presents a strict typed variable graph, uses the shared SQL Workspace for query variables, and keeps design bindings accessible and structure-first.
     priority: high
-    status: implemented
+    status: planned
     criteria:
       - id: composition-uses-shared-workspace
         kind: behavior
         statement: >-
-          Composition inline SQL uses the shared SQL Workspace defined by
-          REQ-FE-080 with a Composition-owned persistence adapter. An exact
-          Saved SQL source is read-only in Composition; its referenced name or
-          the existing localized untitled representation is shown without a
-          second name or alias. Editing requires an explicit inline copy or an
-          explicit Saved SQL revision update.
+          Every Composition query variable uses the shared SQL Workspace with
+          the same action and diagnostic behavior as Saved SQL authoring. The
+          query node owns one SQL string; the host supplies authorized schema,
+          evaluation, and parameter binding state.
         governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
       - id: composition-no-label-or-tag-fields
         kind: behavior
         statement: >-
-          The replacement Composition editor has no tags or user-editable
-          display-label fields for sources, variables, or components. The
-          inline SQL object name is semantic and editable independently from
-          source ID. A Saved SQL source uses its referenced name without a
-          second name or alias. Other names come from the SQL output alias,
-          variable ID, or Text body. The primary Save action retains a visible
-          text label.
+          Composition has one typed variable graph and no source collection,
+          component source reference, tags, or user-editable labels. Table,
+          Metric, Text, and Input store only their compatible variable
+          reference or literal Text content. Save keeps a visible text label.
         governed_by: [POL-UI-002#rule.governance, POL-UI-003#rule.governance]
       - id: composition-structure-first-steady-state
-        kind: quality
+        kind: behavior
         statement: >-
-          The steady-state Composition data surface has no explanatory
-          paragraphs, duplicate current-object heading, or decorative cards.
-          Desktop source selection uses a plain rail with full-row activation.
-        governed_by: [POL-UI-002#rule.governance, POL-UI-003#rule.governance, POL-UI-006#rule.governance]
+          The Studio exposes only Design and Variables modes. The selected mode
+          owns its visible name; the panel does not repeat it as a heading.
+          The Variables panel presents the typed graph and selected editor
+          without explanatory paragraphs or decorative cards.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-003#rule.governance]
       - id: form-selection-creates-inline-sql
         kind: behavior
         statement: >-
-          Selecting a Form creates an editable inline SQL source, initially
-          named from the Form and generated as SQL such as SELECT * FROM
-          "G". It does not create an EntryQuery source or silently add a row
-          LIMIT to SQL text.
-        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+          Choosing a Form for a Table resolves or exactly reuses a query
+          variable equivalent to SELECT * FROM that Form and atomically adds a
+          Table that references only the new variable. The Form ID binding and
+          result descriptor are server-derived.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-006#rule.governance]
       - id: sql-toolbar-keeps-query-meanings
         kind: behavior
         statement: >-
-          In the shared Workspace, Columns changes the SQL SELECT projection,
-          Filter changes WHERE, and Sort changes ORDER BY. Structure opens
-          secondary SQL operations for supported aggregates, grouping, joins,
-          and DISTINCT. These controls are enabled only when the shared SQL
-          capability model can safely represent the operation; direct SQL
-          remains available for other read-only SELECT syntax.
+          Query variables expose the shared Form/relation, columns, filter,
+          sort, structure, and arguments actions. Creating or editing one
+          action preserves the meaning of unrelated SQL clauses and does not
+          silently replace the SQL document.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+      - id: sql-filter-adds-typed-parameter
+        kind: behavior
+        statement: >-
+          Filtering a fresh Form query can create a typed SQL parameter, and
+          supplies its generated name and scalar type to the host before the
+          SQL edit is applied.
         governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
       - id: composition-filter-can-add-sql-arguments
         kind: behavior
         statement: >-
-          In the Composition SQL Filter flow, a user can add a typed SQL
-          argument even when the query has no existing arguments. The host
-          creates the required Composition variable and Input component in
-          one draft update, and rejects a conflicting existing variable type
-          without changing the SQL draft.
+          SQL arguments can be added from an empty query and from an expression
+          that needs one. SQL parameter names bind explicitly to compatible
+          graph variables; unused, missing, or incompatible bindings block
+          save and execution with a local diagnostic.
         governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
       - id: design-components-use-semantic-values
         kind: behavior
         statement: >-
-          Design inserts Input, Text, Table, and Metric components without a
-          separate label step. Input refers to a Composition variable; Text
-          content is its displayed value; Table uses its SQL source; Metric
-          uses one declared SQL output column. A Metric's optional numeric
-          presentation is formatting metadata, not a display label.
+          Input references an input variable, Text contains literal content or
+          a string scalar reference, Table references a table result, and
+          Metric references a display-compatible scalar. Domain validation
+          rechecks these bindings when saving.
         governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
       - id: composition-insertion-completes-before-edit
         kind: behavior
         statement: >-
-          Inserting Text, Input, Table, or Metric places one component and
-          returns to the canvas with the new component unselected and its
-          Inspector closed. Selecting a placed component later opens its
-          Inspector. The insertion flow returns focus to the placed block or
-          its insertion position.
+          Inserting a component commits its placement, closes the picker, and
+          leaves the canvas visible without opening an Inspector. This applies
+          to Form and Saved SQL query-variable creation as well as literal
+          Text and Input.
         governed_by: [POL-UI-002#rule.governance, POL-UI-005#rule.governance]
       - id: composition-table-source-change-is-explicit
         kind: behavior
         statement: >-
-          A Table Inspector offers an explicit Change source action and does
-          not render a persistent source selector. Choosing a source updates
-          the existing Table component; it does not insert another Table.
-        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+          Selecting a placed Table or Metric exposes one variable-reference
+          action. Changing it opens the same Variables, Forms, and Saved SQL
+          picker and updates only that component reference; it never mutates a
+          shared query variable.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
       - id: composition-table-and-metric-use-sql-results
         kind: behavior
         statement: >-
-          Table displays a bounded page from its SQL source. Metric selects one
-          declared scalar SQL output column and uses the server-evaluated
-          result; no-row, one-row NULL, zero, multiple rows, type mismatch,
-          unavailable source, and execution failure remain distinct. Browser
-          code does not aggregate fetched rows or add LIMIT to user SQL.
+          Table renders a bounded table<Row> variable. Metric renders a
+          compatible scalar variable whose query result was validated by Core.
+          Empty, NULL, cardinality, unavailable, and execution-error states
+          remain distinct; the browser does not aggregate pages.
         governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
       - id: composition-binding-identifiers-stay-internal
         kind: quality
         statement: >-
-          Stable source, component, and variable identifiers used only for
-          binding do not appear as ordinary primary-path names. The Composition
-          name, SQL object name, SQL output aliases, variable identifiers,
-          Form field names, Text content, and accessible names remain visible
-          where they carry their own meaning.
+          Binding-only component and query identifiers stay out of ordinary
+          primary-path labels. Meaningful variable names, Form field names,
+          SQL output aliases, Text content, and accessible names remain visible
+          where they identify the value or operation.
         governed_by: [POL-UI-002#rule.governance, POL-UI-005#rule.governance]
       - id: composition-mobile-workspace-accessibility
         kind: quality
         statement: >-
-          At 320px, 375px, and 390px viewport widths, the Composition source
-          list uses a keyboard-operable overlay drawer. Its control has an
-          accessible name, Escape closes the drawer, and focus is restored when
-          it closes. Drawer actions have visible focus and at least 44px
-          targets. The primary Save action keeps visible text.
+          At 320px, 375px, and 390px widths, variable selection uses a
+          keyboard-operable drawer. Escape closes it, focus returns to its
+          opener, icon actions have accessible names and visible focus, and
+          interactive targets are at least 44px. Save keeps visible text.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-005#rule.governance, POL-UI-007#rule.governance]
+      - id: composition-runtime-input-accessibility
+        kind: quality
+        statement: >-
+          At a 390px viewport, runtime Input components keep their visible and
+          accessible variable names, provide at least 44px controls, follow
+          component order during keyboard navigation, and cause no page-level
+          horizontal overflow.
         governed_by: [POL-UI-002#rule.governance, POL-UI-005#rule.governance, POL-UI-007#rule.governance]
       - id: composition-mode-context-singular
         kind: quality
         statement: >-
-          The selected Design or Data mode control is the only visible owner
-          of that mode name. Its content does not repeat the mode as a visible
-          heading. Data tabs remain associated with their panels through
-          accessible names, and Split gives both panes accessible names
-          without a visible pane heading.
+          Design and Variables tab controls are the only visible owners of
+          those mode names. Their panels do not repeat the selected mode as a
+          visible heading and retain accessible tab relationships.
         governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
       - id: composition-source-rows-show-name-once
         kind: quality
         statement: >-
-          A Composition source row presents its semantic source name once,
-          uses full-row selection, and has no common SQL icon or SQL-kind
-          subtitle. The selected inline SQL name is absent from its editor
-          until the user activates an accessible rename action. Activating the
-          currently selected row preserves selection.
-        governed_by: [POL-UI-002#rule.governance, POL-UI-006#rule.governance, POL-UI-007#rule.governance]
+          The variable rail presents each variable name once with its minimal
+          kind icon. It does not add a common SQL subtitle, repeated type label,
+          UUID, or explanatory row copy.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-006#rule.governance]
       - id: composition-mobile-overlays-are-exclusive
         kind: behavior
         statement: >-
-          The mobile source drawer, source picker, display picker, and
-          Inspector sheet are mutually exclusive Studio overlays. Opening the
-          source picker from the drawer closes the drawer in the same
-          transition. Escape or Cancel closes the picker without reopening
-          the drawer, clears modal inert state, and restores focus to a
-          visible control. Selecting a source from the drawer always closes
-          it.
+          The binding picker and variable drawer have one modal focus owner.
+          Opening one closes the other in the same transition. Escape or
+          Cancel removes modal inert state, closes the overlay, and restores
+          focus to a visible control.
         governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
       - id: composition-history-hides-revision-identifiers
         kind: behavior
         statement: >-
           Composition History shows operation, timestamp, and current-revision
-          state without rendering Revision ID values or a Technical details
-          disclosure. Exact revision identity stays in the internal route
-          target and the selected revision opens exactly.
+          state without rendering revision IDs or technical-detail disclosures.
+          Exact revision identity stays in the internal route target.
         governed_by: [POL-UI-005#rule.governance]
       - id: composition-text-inspector-literal-editing
         kind: behavior
         statement: >-
-          The Text Inspector edits literal content in a multiline body field
-          and keeps the style control available without a Content selector.
-          The body has an accessible name without repeating the Inspector's
-          visible title. A variable-binding action and chooser appear only
-          when at least one string Composition variable exists.
+          Selecting a Text component exposes a multiline literal editor and
+          style control without a redundant Content selector or repeated
+          visible heading.
         governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
       - id: composition-text-inspector-variable-binding
         kind: behavior
         statement: >-
-          Text variable binding starts only after an explicit action, accepts
-          only string Composition variables, shows the selected variable name
-          once, and provides an explicit return to literal editing. The
-          canonical TextContent literal-or-variable union is preserved.
+          Text can explicitly reference only a string scalar variable and can
+          return to literal editing. The selected variable name appears once;
+          it is never inferred from matching names.
         governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
     bindings:
-      - id: sql-first-studio-verification
+      - id: graph-draft-and-atomic-bindings
         role: verification
         facet: verification
-        responsibility: Verify source serialization, Form-to-SQL creation, the shared SQL Workspace, structure-first authoring, server-backed Metric results, exact Composition History, and the accessible mobile source drawer through focused frontend tests.
+        responsibility: Verify strict graph-only serialization, typed bindings, atomic Form and Saved SQL insertion, explicit aggregate choice, and reference-only rebinding. The broader Composition SQL argument requirement remains unverified because no current test covers host-side variable and Input creation in the same draft update.
         targets:
-          - id: composition-document-shape
+          - id: graph-draft-shape
             adapter: typescript
-            path: frontend/src/lib/composition-draft.test.ts
-            selector: { kind: test, name: "serializes only SQL source kinds and contains no persisted display labels or tags" }
+            path: frontend/src/lib/composition-variable-binding.test.ts
+            selector: { kind: test, name: "serializes only the strict Composition document envelope and spec" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-079#criterion.composition-no-label-or-tag-fields
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-draft]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "serializes only SQL source kinds and contains no persisted display labels or tags" } }
-          - id: structure-first-authoring
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-variable-binding.test.ts, test: "serializes only the strict Composition document envelope and spec" } }
+          - id: form-table-picker
             adapter: typescript
-            path: frontend/src/components/CompositionStudioSync.test.tsx
-            selector: { kind: test, name: "opens Text or Data insertion from a blank canvas" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-structure-first-steady-state
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "opens Text or Data insertion from a blank canvas" } }
-          - id: canvas-insertion-completes-before-edit
-            adapter: typescript
-            path: frontend/src/components/CompositionStudioMobile.test.tsx
-            selector: { kind: test, name: "returns to the canvas after inserting a table and opens its sheet only on selection" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-insertion-completes-before-edit
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "returns to the canvas after inserting a table and opens its sheet only on selection" } }
-          - id: text-input-insertion-completes-before-edit
-            adapter: typescript
-            path: frontend/src/components/CompositionStudioMobile.test.tsx
-            selector: { kind: test, name: "returns to the canvas after text and input insertion until a block is selected" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-insertion-completes-before-edit
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "returns to the canvas after text and input insertion until a block is selected" } }
-          - id: table-source-change-is-explicit
-            adapter: typescript
-            path: frontend/src/components/CompositionStudioMobile.test.tsx
-            selector: { kind: test, name: "changes a Table source only from its explicit action and keeps one block" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-table-source-change-is-explicit
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "changes a Table source only from its explicit action and keeps one block" } }
-          - id: form-source-insertion-completes-on-canvas
-            adapter: typescript
-            path: frontend/src/components/CompositionStudioMobile.test.tsx
-            selector: { kind: test, name: "creates one source and one Table from a Form without opening an inspector" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-insertion-completes-before-edit
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "creates one source and one Table from a Form without opening an inspector" } }
-          - id: metric-insertion-completes-after-preview
-            adapter: typescript
-            path: frontend/src/components/CompositionStudioMobile.test.tsx
-            selector: { kind: test, name: "previews a Metric before insertion and returns to the canvas" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-insertion-completes-before-edit
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "previews a Metric before insertion and returns to the canvas" } }
-          - id: form-selection-source
-            adapter: typescript
-            path: frontend/src/components/CompositionSourcePicker.test.tsx
-            selector: { kind: test, name: "creates editable inline SQL when a Form is selected" }
+            path: frontend/src/components/CompositionVariableBindingPicker.test.tsx
+            selector: { kind: test, name: "inserts a Form table with only a variable reference" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-079#criterion.form-selection-creates-inline-sql
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "creates editable inline SQL when a Form is selected" } }
-          - id: composition-filter-adds-sql-arguments
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-variable-binding-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableBindingPicker.test.tsx, test: "inserts a Form table with only a variable reference" } }
+          - id: form-metric-picker
             adapter: typescript
-            path: frontend/src/lib/composition-draft.test.ts
-            selector: { kind: test, name: "adds typed SQL arguments together with placed Input components" }
+            path: frontend/src/components/CompositionVariableBindingPicker.test.tsx
+            selector: { kind: test, name: "requires explicit aggregate selection for a Form metric" }
             claims:
               - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-filter-can-add-sql-arguments
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-draft]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "adds typed SQL arguments together with placed Input components" } }
-          - id: composition-filter-hosts-sql-arguments
+                criterion: REQ-FE-079#criterion.form-selection-creates-inline-sql
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-variable-binding-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableBindingPicker.test.tsx, test: "requires explicit aggregate selection for a Form metric" } }
+          - id: saved-sql-picker
             adapter: typescript
-            path: frontend/src/components/CompositionDataWorkspace.test.tsx
-            selector: { kind: test, name: "passes SQL-created arguments to the Composition host and reserves existing variable IDs" }
+            path: frontend/src/components/CompositionVariableBindingPicker.test.tsx
+            selector: { kind: test, name: "pins exact Saved SQL revision and chosen scalar column" }
             claims:
               - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-filter-can-add-sql-arguments
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "passes SQL-created arguments to the Composition host and reserves existing variable IDs" } }
-          - id: saved-sql-read-only-source
+                criterion: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-variable-binding-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableBindingPicker.test.tsx, test: "pins exact Saved SQL revision and chosen scalar column" } }
+          - id: query-workspace-and-evaluation
             adapter: typescript
-            path: frontend/src/components/CompositionDataWorkspace.test.tsx
-            selector: { kind: test, name: "keeps Saved SQL read-only at its exact revision and links to explicit editing" }
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: "runs the selected query through the graph evaluator" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-079#criterion.composition-uses-shared-workspace
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "keeps Saved SQL read-only at its exact revision and links to explicit editing" } }
-          - id: source-drawer-accessibility
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "runs the selected query through the graph evaluator" } }
+          - id: composition-filter-creates-typed-sql-arguments
             adapter: typescript
-            path: frontend/src/components/CompositionDataWorkspace.test.tsx
-            selector: { kind: test, name: "shows an accessible mobile source drawer and restores focus when it closes" }
+            path: frontend/src/components/SqlStructureToolbar.test.tsx
+            selector: { kind: test, name: "creates a typed argument when filtering a fresh Form query" }
             claims:
               - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-mobile-workspace-accessibility
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "shows an accessible mobile source drawer and restores focus when it closes" } }
-          - id: composition-mode-context
+                criterion: REQ-FE-079#criterion.sql-filter-adds-typed-parameter
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.sql-structure-toolbar]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlStructureToolbar.test.tsx, test: "creates a typed argument when filtering a fresh Form query" } }
+          - id: mode-and-insertion
             adapter: typescript
             path: frontend/src/components/CompositionStudioSync.test.tsx
-            selector: { kind: test, name: "separates Data sources and Variables into tabs in Data mode" }
+            selector: { kind: test, name: "offers only Design and Variables and inserts a Table without opening an Inspector" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-079#criterion.composition-mode-context-singular
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "separates Data sources and Variables into tabs in Data mode" } }
-          - id: composition-source-row-name
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "offers only Design and Variables and inserts a Table without opening an Inspector" } }
+          - id: reference-rebinding
             adapter: typescript
-            path: frontend/src/components/CompositionDataWorkspace.test.tsx
-            selector: { kind: test, name: "shows each SQL source name once and keeps rename behind an explicit action" }
+            path: frontend/src/components/CompositionVariableBindingPicker.test.tsx
+            selector: { kind: test, name: "uses the same picker to change only an existing component reference" }
             claims:
               - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-source-rows-show-name-once
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "shows each SQL source name once and keeps rename behind an explicit action" } }
-          - id: composition-source-row-idempotent
+                criterion: REQ-FE-079#criterion.composition-table-source-change-is-explicit
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-variable-binding-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableBindingPicker.test.tsx, test: "uses the same picker to change only an existing component reference" } }
+          - id: narrow-focus-restoration
             adapter: typescript
             path: frontend/src/components/CompositionStudioMobile.test.tsx
-            selector: { kind: test, name: "keeps the selected source selected when its drawer row is activated again" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-source-rows-show-name-once
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "keeps the selected source selected when its drawer row is activated again" } }
-          - id: composition-mobile-overlay-transition
-            adapter: typescript
-            path: frontend/src/components/CompositionStudioMobile.test.tsx
-            selector: { kind: test, name: "closes the mobile source drawer before opening the source picker" }
+            selector: { kind: test, name: "keeps one modal owner and restores focus after Escape" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-079#criterion.composition-mobile-overlays-are-exclusive
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "closes the mobile source drawer before opening the source picker" } }
-          - id: composition-display-picker-focus-return
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "keeps one modal owner and restores focus after Escape" } }
+          - id: runtime-input-mobile-accessibility
             adapter: typescript
-            path: frontend/src/components/CompositionStudioMobile.test.tsx
-            selector: { kind: test, name: "returns focus to the canvas after choosing an existing Metric source" }
+            path: e2e/composition-invalid-variable-input.test.ts
+            selector: { kind: test, name: "invalid_raw_input_blocks_query_and_stale_result" }
             claims:
               - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-mobile-overlays-are-exclusive
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "returns focus to the canvas after choosing an existing Metric source" } }
-          - id: metric-result-rendering
-            adapter: typescript
-            path: frontend/src/components/CompositionRenderer.test.tsx
-            selector: { kind: test, name: "queries an exact integer metric through the bounded server operation" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-table-and-metric-use-sql-results
+                criterion: REQ-FE-079#criterion.composition-runtime-input-accessibility
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-result-renderer]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: "queries an exact integer metric through the bounded server operation" } }
-          - id: composition-revision-identifiers
-            adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
-            selector: { kind: test, name: "owns the tool name once and links a single edit action" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-binding-identifiers-stay-internal
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-revision-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: "owns the tool name once and links a single edit action" } }
-          - id: composition-history-identifiers
-            adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx
-            selector: { kind: test, name: "lists revisions with human labels and opens the exact revision" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-history-hides-revision-identifiers
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-history-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx", test: "lists revisions with human labels and opens the exact revision" } }
-          - id: composition-text-inspector-literal
-            adapter: typescript
-            path: frontend/src/components/CompositionInspector.test.tsx
-            selector: { kind: test, name: "shows a multiline Text body and Style without a content selector when no string variables exist" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-text-inspector-literal-editing
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-text-inspector]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionInspector.test.tsx, test: "shows a multiline Text body and Style without a content selector when no string variables exist" } }
-          - id: composition-text-inspector-variable
-            adapter: typescript
-            path: frontend/src/components/CompositionInspector.test.tsx
-            selector: { kind: test, name: "binds Text to a string variable only after explicit choice and returns to literal editing" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-079#criterion.composition-text-inspector-variable-binding
-                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-text-inspector]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionInspector.test.tsx, test: "binds Text to a string variable only after explicit choice and returns to literal editing" } }
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-invalid-variable-input.test.ts, test: "invalid_raw_input_blocks_query_and_stale_result" } }

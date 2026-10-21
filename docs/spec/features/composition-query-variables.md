@@ -2,13 +2,12 @@
 title: 'Composition query variables'
 ---
 
-**Status: accepted target; not implemented.** This specification records the
+**Status: accepted target; implementation in progress.** This specification records the
 unreleased Composition grammar approved by
 [ADR-025](../../architecture/contracts/adr-025-composition-query-variable-graph.md).
-The current prerelease implementation still follows ADR-024. This target is a
-replacement for that unreleased Composition grammar, not a new reader mode or a
-compatibility layer. Its presence does not authorize release preparation or
-publication.
+The current main branch follows ADR-024 while the active change implements the
+replacement. This is not a new reader mode or compatibility layer. Its presence
+does not authorize release preparation or publication.
 
 ## Knowledge model
 
@@ -95,9 +94,10 @@ executable under the replacement grammar.
 
 This Composition-only cutover does not change the existing Space, Form, Entry,
 Saved SQL, SQL API, authorization, Publication, or append-only history
-contracts. Runtime and client integration is tracked separately from this
-documentation slice; the target must remain visibly incomplete until its
-implementation and verification gates pass.
+contracts. The graph runtime and client integration are implemented in the active
+cutover and have focused validation. Complete SQL executor-to-GUI grammar
+coverage remains explicitly incomplete until its parser, editor, and CI
+evidence gates pass.
 
 See [ADR-025](../../architecture/contracts/adr-025-composition-query-variable-graph.md)
 for the SQL editor matrix, Design picker behavior, interaction rules, and

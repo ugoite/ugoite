@@ -1,18 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  buildSavedSqlCompositionDocument,
   canCreateSavedSqlComposition,
   compositionApi,
-  type CompositionResolvedSource,
+  type CompositionEvaluationRequest,
   type CompositionSaveResponse,
 } from "./composition-api";
-import { sqlApi } from "./sql-api";
 import { canonicalizeCompositionDocument } from "./ugoite-client";
 import { protocolFetch } from "./ugoite-client/protocol";
 
-vi.mock("./sql-api", () => ({
-  sqlApi: { query: vi.fn(), count: vi.fn() },
-}));
 vi.mock("./ugoite-client/protocol", () => ({
   protocolFetch: vi.fn(),
   canonicalizeCompositionDocument: vi.fn(),
@@ -20,40 +15,10 @@ vi.mock("./ugoite-client/protocol", () => ({
 
 const signal = new AbortController().signal;
 
-const inlineSource = {
-  kind: "inline_sql" as const,
-  source_id: "expenses",
-  source_schema_fingerprint: "fingerprint",
-  form_bindings: [{ relation: "expenses", form_id: "form-1" }],
-  expected_result: [{ name: "amount", type: "decimal" as const }],
-  request: {
-    sql: 'SELECT "amount" FROM "expenses"',
-    parameters: {},
-    parameter_types: {},
-    limit: 100,
-  },
-} satisfies CompositionResolvedSource;
-
-const sqlSource = {
-  kind: "saved_sql" as const,
-  source_id: "total",
-  source_schema_fingerprint: "sql-fingerprint",
-  expected_result: [{ name: "total", type: "float" as const }],
-  request: {
-    sql: "SELECT total",
-    parameters: { month: "2026-03-01" },
-    parameter_types: { month: "date" },
-    limit: 1,
-    saved_sql: { id: "sql-1", revision_id: "sql-rev-1" },
-  },
-};
-
 describe("compositionApi", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
+  beforeEach(() => vi.clearAllMocks());
 
-  it("uses bounded portable list and exact-revision get operations", async () => {
+  it("uses bounded list and exact-revision get operations", async () => {
     vi.mocked(protocolFetch)
       .mockResolvedValueOnce({
         items: [],
@@ -94,11 +59,11 @@ describe("compositionApi", () => {
     );
   });
 
-  it("saves canonical YAML through the portable operation with its retry key", async () => {
+  it("saves and updates strict graph YAML with retry and base revision identity", async () => {
     const response = {
       composition_id: "tool-1",
       revision_id: "revision-2",
-      canonical_yaml: "canonical yaml",
+      canonical_yaml: "canonical graph yaml",
       receipt: {
         command_id: "command-1",
         catalog_generation: 4,
@@ -112,69 +77,18 @@ describe("compositionApi", () => {
 
     const saved = await compositionApi.save(
       "space-1",
-      "canonical yaml",
+      "canonical graph yaml",
       "attempt-1",
-      undefined,
+      { compositionId: "tool-1", baseRevisionId: "revision-1" },
       signal,
     );
 
-    expect(typeof saved.receipt.snapshot_id).toBe("number");
-    expect(saved.receipt.snapshot_id).toBe(42);
-
-    expect(protocolFetch).toHaveBeenCalledWith(
-      "composition.save",
-      { space_id: "space-1", idempotency_key: "attempt-1" },
-      { yaml: "canonical yaml" },
-      { signal },
-    );
-  });
-
-  it("lints stored YAML through the portable operation", async () => {
-    vi.mocked(protocolFetch).mockResolvedValue({
-      ok: true,
-      value: {
-        document: {},
-        canonical_yaml: "canonical yaml",
-        fingerprint: "fingerprint",
-      },
-    });
-
-    const linted = await compositionApi.lint("raw yaml", signal);
-
-    expect(linted.ok).toBe(true);
-    expect(protocolFetch).toHaveBeenCalledWith(
-      "composition.lint",
-      {},
-      { yaml: "raw yaml" },
-      { signal },
-    );
-  });
-
-  it("saves an update with the exact composition and base revision identity", async () => {
-    vi.mocked(protocolFetch).mockResolvedValue({
-      composition_id: "tool-1",
-      revision_id: "revision-2",
-      canonical_yaml: "canonical yaml",
-      receipt: {
-        command_id: "command-1",
-        catalog_generation: 4,
-        snapshot_id: 42,
-        committed_revision_ids: ["revision-2"],
-        committed_at_micros: 1,
-        data_file_count: 1,
-      },
-    });
-
-    await compositionApi.save("space-1", "canonical yaml", "attempt-1", {
-      compositionId: "tool-1",
-      baseRevisionId: "revision-1",
-    }, signal);
-
+    expect(saved.receipt.committed_revision_ids).toEqual(["revision-2"]);
     expect(protocolFetch).toHaveBeenCalledWith(
       "composition.save",
       { space_id: "space-1", idempotency_key: "attempt-1" },
       {
-        yaml: "canonical yaml",
+        yaml: "canonical graph yaml",
         composition_id: "tool-1",
         base_revision_id: "revision-1",
       },
@@ -182,7 +96,7 @@ describe("compositionApi", () => {
     );
   });
 
-  it("canonicalizes a typed document through the shared Rust domain bridge", async () => {
+  it("lints a graph document and canonicalizes it through the Rust domain bridge", async () => {
     const document = {
       format: "ugoite.composition" as const,
       format_version: 1 as const,
@@ -190,277 +104,142 @@ describe("compositionApi", () => {
       name: "Tool",
       spec: {
         variables: [],
-        sources: [],
         components: [],
-        layout: { kind: "flow", rows: [] },
+        layout: { kind: "flow" as const, rows: [] },
       },
-    };
-    vi.mocked(canonicalizeCompositionDocument).mockResolvedValue({
-      document,
-      canonical_yaml: "canonical yaml",
-      fingerprint: "fingerprint",
-    });
-
-    await compositionApi.canonicalizeDocument(document);
-
-    expect(canonicalizeCompositionDocument).toHaveBeenCalledWith(document);
-  });
-
-  it("resolves variables against the exact revision through the portable operation", async () => {
-    vi.mocked(protocolFetch).mockResolvedValue({ ok: true });
-
-    await compositionApi.resolve(
-      "space-1",
-      "composition-1",
-      "revision-2",
-      { month_start: "2026-03-01" },
-      signal,
-    );
-
-    expect(protocolFetch).toHaveBeenCalledWith(
-      "composition.resolve",
-      { space_id: "space-1", composition_id: "composition-1" },
-      { revision_id: "revision-2", variables: { month_start: "2026-03-01" } },
-      { signal },
-    );
-  });
-
-  it("sends an explicit unset separately from typed variable values", async () => {
-    vi.mocked(protocolFetch).mockResolvedValue({ ok: false });
-
-    await compositionApi.resolve(
-      "space-1",
-      "composition-1",
-      "revision-2",
-      { limit: null, label: "ready" },
-      signal,
-    );
-
-    expect(protocolFetch).toHaveBeenCalledWith(
-      "composition.resolve",
-      { space_id: "space-1", composition_id: "composition-1" },
-      {
-        revision_id: "revision-2",
-        variables: { label: "ready" },
-        unset_variables: ["limit"],
-      },
-      { signal },
-    );
-  });
-
-  it("queries one metric through the bounded portable operation", async () => {
-    const request = {
-      target: {
-        kind: "draft" as const,
-        yaml: "format: ugoite.composition\n",
-      },
-      component_id: "sql_total",
-      variables: { month: null },
     };
     vi.mocked(protocolFetch).mockResolvedValue({
       ok: true,
-      draft_fingerprint: "draft-fingerprint",
-      result: {
-        component_id: "sql_total",
-        result_type: "decimal",
-        value: "12345678901234567890.012300",
+      value: {
+        document,
+        canonical_yaml: "canonical graph yaml",
+        fingerprint: "f",
       },
     });
+    vi.mocked(canonicalizeCompositionDocument).mockResolvedValue({
+      document,
+      canonical_yaml: "canonical graph yaml",
+      fingerprint: "f",
+    });
 
-    const result = await compositionApi.queryMetric("space-1", request, signal);
+    await compositionApi.lint("strict graph yaml", signal);
+    await compositionApi.canonicalizeDocument(document);
+
+    expect(protocolFetch).toHaveBeenCalledWith(
+      "composition.lint",
+      {},
+      { yaml: "strict graph yaml" },
+      { signal },
+    );
+    expect(canonicalizeCompositionDocument).toHaveBeenCalledWith(document);
+  });
+
+  it("evaluates an exact saved revision with typed values and requested query roots", async () => {
+    const request: CompositionEvaluationRequest = {
+      evaluation_id: "evaluation-1",
+      target: {
+        kind: "saved_revision",
+        composition_id: "comp-1",
+        revision_id: "rev-2",
+      },
+      variables: { minimum: 3 },
+      requested_queries: ["rows", "total"],
+    };
+    vi.mocked(protocolFetch).mockResolvedValue({
+      evaluation_id: "evaluation-1",
+      ok: true,
+      computed_query_ids: ["rows", "total"],
+    });
+
+    const result = await compositionApi.evaluate("space-1", request, signal);
 
     expect(result.ok).toBe(true);
     expect(protocolFetch).toHaveBeenCalledWith(
-      "composition.metric.query",
+      "composition.evaluate",
+      { space_id: "space-1" },
+      request,
+      { signal },
+    );
+  });
+
+  it("sends table continuation using the evaluation and variable identity", async () => {
+    const request: CompositionEvaluationRequest = {
+      evaluation_id: "evaluation-2",
+      target: {
+        kind: "saved_revision",
+        composition_id: "comp-1",
+        revision_id: "rev-2",
+      },
+      variables: {},
+      page: { variable_id: "rows", cursor: "cursor-1" },
+    };
+    vi.mocked(protocolFetch).mockResolvedValue({
+      evaluation_id: "evaluation-2",
+      ok: true,
+      computed_query_ids: ["rows"],
+    });
+
+    await compositionApi.evaluate("space-1", request, signal);
+
+    expect(protocolFetch).toHaveBeenCalledWith(
+      "composition.evaluate",
+      { space_id: "space-1" },
+      request,
+      { signal },
+    );
+  });
+
+  it("keeps the exact edit base on graph preview and separates unset values", async () => {
+    vi.mocked(protocolFetch).mockResolvedValue({ ok: false, diagnostics: [] });
+
+    await compositionApi.previewGraph(
+      "space-1",
+      "strict graph yaml",
+      { optional_date: null, label: "ready" },
+      { entryId: "composition-1", revisionId: "revision-4" },
+      signal,
+    );
+
+    expect(protocolFetch).toHaveBeenCalledWith(
+      "composition.preview",
       { space_id: "space-1" },
       {
-        target: request.target,
-        component_id: request.component_id,
-        variables: {},
-        unset_variables: ["month"],
+        yaml: "strict graph yaml",
+        base_entry_id: "composition-1",
+        base_revision_id: "revision-4",
+        variables: { label: "ready" },
+        unset_variables: ["optional_date"],
       },
       { signal },
     );
   });
 
-  it("builds a typed table tool bound to the exact Saved SQL revision", () => {
-    const entry = {
-      id: "sql-1",
-      name: "Monthly expenses",
-      kind: "user-query" as const,
-      sql: "SELECT amount FROM expenses WHERE day >= :month_start",
-      variables: [
-        { name: "month_start", type: "date", description: "" },
-        { name: "include_zero", type: "boolean", description: "" },
-      ],
-      created_at: "2026-10-01T00:00:00Z",
-      updated_at: "2026-10-02T00:00:00Z",
-      revision_id: "sql-revision-3",
-    };
-    expect(canCreateSavedSqlComposition(entry)).toBe(true);
-
-    const document = buildSavedSqlCompositionDocument(
-      entry,
-      "Monthly expenses",
-      ["amount", "day"],
-    );
-
-    expect(document.spec.variables).toEqual([]);
-    expect(document.spec.sources).toEqual([{
-      id: "sql_results",
-      kind: "saved_sql",
-      entry_id: "sql-1",
-      revision_id: "sql-revision-3",
-      expected_result: [
-        { name: "amount", type: "json" },
-        { name: "day", type: "json" },
-      ],
-      variables: {},
-    }]);
-    expect(document.spec.components).toEqual([{
-      id: "results_table",
-      kind: "table",
-      source: "sql_results",
-    }]);
-    expect(document.spec.layout.rows[0].items).toEqual([
-      { kind: "component", component: "results_table" },
-    ]);
-  });
-
-  it("stores the server-owned column types unchanged and never infers from rows", () => {
-    const entry = {
-      id: "sql-1",
-      name: "Monthly expenses",
-      kind: "user-query" as const,
-      sql: "SELECT total, label FROM monthly",
-      variables: [],
-      created_at: "2026-10-01T00:00:00Z",
-      updated_at: "2026-10-02T00:00:00Z",
-      revision_id: "sql-revision-3",
-    };
-
-    const document = buildSavedSqlCompositionDocument(
-      entry,
-      "Monthly expenses",
-      ["total", "label", "note"],
-      [
-        { name: "total", type: "float" },
-        { name: "label", type: "string" },
-      ],
-    );
-
-    expect(document.spec.sources[0].expected_result).toEqual([
-      { name: "total", type: "float" },
-      { name: "label", type: "string" },
-      // Columns absent from the server descriptor keep the json fallback.
-      { name: "note", type: "json" },
-    ]);
-  });
-
-  it("preserves Decimal SQL result types in Composition sources", () => {
-    const entry = {
-      id: "sql-1",
-      name: "Exact total",
-      kind: "user-query" as const,
-      sql: "SELECT total FROM monthly",
-      variables: [],
-      created_at: "2026-10-01T00:00:00Z",
-      updated_at: "2026-10-02T00:00:00Z",
-      revision_id: "sql-revision-3",
-    };
-
-    const document = buildSavedSqlCompositionDocument(
-      entry,
-      "Exact total",
-      ["total"],
-      [{ name: "total", type: "decimal" }],
-    );
-
-    expect(document.spec.sources[0].expected_result).toEqual([
-      { name: "total", type: "decimal" },
-    ]);
-  });
-
-  it("does not offer save-as for search history or unsupported parameter types", () => {
-    const base = {
-      id: "sql-1",
-      name: "Saved SQL",
-      sql: "SELECT 1",
-      variables: [],
-      created_at: "2026-10-01T00:00:00Z",
-      updated_at: "2026-10-02T00:00:00Z",
-      revision_id: "sql-revision-1",
-    };
-    expect(canCreateSavedSqlComposition({ ...base, kind: "search-history" }))
-      .toBe(false);
-    expect(canCreateSavedSqlComposition({
-      ...base,
-      kind: "user-query",
-      variables: [{ name: "v", type: "unknown", description: "" }],
-    })).toBe(false);
-  });
-
-  it("reads bounded composition history through the portable operation", async () => {
-    vi.mocked(protocolFetch).mockResolvedValue({
-      entry_id: "composition-1",
-      revisions: [],
-      total: 0,
-      offset: 20,
-      limit: 50,
-      has_more: false,
-    });
-
-    await compositionApi.history("space-1", "composition-1", 50, 20, signal);
-
-    expect(protocolFetch).toHaveBeenCalledWith(
-      "composition.history",
-      {
-        space_id: "space-1",
-        composition_id: "composition-1",
-        limit: 50,
+  it("reads bounded history and restores an exact revision with a retry key", async () => {
+    vi.mocked(protocolFetch)
+      .mockResolvedValueOnce({
+        entry_id: "comp-1",
+        revisions: [],
+        total: 0,
         offset: 20,
-      },
-      undefined,
-      { signal },
-    );
-  });
+        limit: 50,
+        has_more: false,
+      })
+      .mockResolvedValueOnce({
+        composition_id: "tool-1",
+        revision_id: "revision-3",
+        restored_from_revision_id: "revision-1",
+        canonical_yaml: "canonical graph yaml",
+        receipt: {
+          command_id: "command-2",
+          catalog_generation: 5,
+          snapshot_id: 43,
+          committed_revision_ids: ["revision-3"],
+          committed_at_micros: 2,
+          data_file_count: 1,
+        },
+      });
 
-  it("reads composition history without paging arguments by default", async () => {
-    vi.mocked(protocolFetch).mockResolvedValue({
-      entry_id: "composition-1",
-      revisions: [],
-      total: 0,
-      offset: 0,
-      limit: 100,
-      has_more: false,
-    });
-
-    await compositionApi.history("space-1", "composition-1");
-
-    expect(protocolFetch).toHaveBeenCalledWith(
-      "composition.history",
-      { space_id: "space-1", composition_id: "composition-1" },
-      undefined,
-      {},
-    );
-  });
-
-  it("restores an exact revision with source base and retry key", async () => {
-    vi.mocked(protocolFetch).mockResolvedValue({
-      composition_id: "tool-1",
-      revision_id: "revision-3",
-      restored_from_revision_id: "revision-1",
-      canonical_yaml: "canonical yaml",
-      receipt: {
-        command_id: "command-1",
-        catalog_generation: 4,
-        snapshot_id: 42,
-        committed_revision_ids: ["revision-3"],
-        committed_at_micros: 1,
-        data_file_count: 1,
-      },
-    });
-
+    await compositionApi.history("space-1", "comp-1", 50, 20, signal);
     const restored = await compositionApi.restore(
       "space-1",
       "tool-1",
@@ -471,7 +250,15 @@ describe("compositionApi", () => {
     );
 
     expect(restored.restored_from_revision_id).toBe("revision-1");
-    expect(protocolFetch).toHaveBeenCalledWith(
+    expect(protocolFetch).toHaveBeenNthCalledWith(
+      1,
+      "composition.history",
+      { space_id: "space-1", composition_id: "comp-1", limit: 50, offset: 20 },
+      undefined,
+      { signal },
+    );
+    expect(protocolFetch).toHaveBeenNthCalledWith(
+      2,
       "composition.restore",
       {
         space_id: "space-1",
@@ -482,85 +269,26 @@ describe("compositionApi", () => {
       { signal },
     );
   });
-  it("forwards both SQL source kinds through the existing stateless query operation", async () => {
-    vi.mocked(sqlApi.query).mockResolvedValue({
-      columns: ["total"],
-      rows: [],
-      has_more: false,
-    });
 
-    await compositionApi.querySource(
-      "space-1",
-      inlineSource,
-      "inline-cursor",
-      signal,
+  it("offers Saved SQL only when its kind and argument types are supported", () => {
+    const base = {
+      id: "sql-1",
+      name: "Saved SQL",
+      sql: "SELECT 1",
+      variables: [],
+      created_at: "2026-10-01T00:00:00Z",
+      updated_at: "2026-10-02T00:00:00Z",
+      revision_id: "sql-revision-1",
+    };
+    expect(canCreateSavedSqlComposition({ ...base, kind: "user-query" })).toBe(
+      true,
     );
-    await compositionApi.querySource(
-      "space-1",
-      sqlSource,
-      "sql-cursor",
-      signal,
-    );
-
-    expect(sqlApi.query).toHaveBeenNthCalledWith(
-      1,
-      "space-1",
-      {
-        ...inlineSource.request,
-        include_exact_integer_values: true,
-        continuation: "inline-cursor",
-      },
-      signal,
-    );
-    expect(sqlApi.query).toHaveBeenNthCalledWith(
-      2,
-      "space-1",
-      {
-        ...sqlSource.request,
-        include_exact_integer_values: true,
-        continuation: "sql-cursor",
-      },
-      signal,
-    );
-    expect(sqlApi.query).toHaveBeenCalledTimes(2);
-  });
-
-  it("keeps the exact edit base on a draft preview request", async () => {
-    vi.mocked(protocolFetch).mockResolvedValue({ ok: false, diagnostics: [] });
-    await compositionApi.preview(
-      "space-1",
-      "candidate yaml",
-      {},
-      signal,
-      { entryId: "composition-1", revisionId: "revision-4" },
-    );
-    expect(protocolFetch).toHaveBeenCalledWith(
-      "composition.preview",
-      { space_id: "space-1" },
-      {
-        yaml: "candidate yaml",
-        base_entry_id: "composition-1",
-        base_revision_id: "revision-4",
-        variables: {},
-      },
-      { signal },
-    );
-  });
-
-  it("counts the resolved SQL source through the existing count operation", async () => {
-    vi.mocked(sqlApi.count).mockResolvedValue(12);
-    await expect(
-      compositionApi.countSource("space-1", sqlSource, signal),
-    ).resolves.toBe(12);
-    expect(sqlApi.count).toHaveBeenCalledWith(
-      "space-1",
-      {
-        sql: sqlSource.request.sql,
-        parameters: sqlSource.request.parameters,
-        parameter_types: sqlSource.request.parameter_types,
-        saved_sql: sqlSource.request.saved_sql,
-      },
-      signal,
-    );
+    expect(canCreateSavedSqlComposition({ ...base, kind: "search-history" }))
+      .toBe(false);
+    expect(canCreateSavedSqlComposition({
+      ...base,
+      kind: "user-query",
+      variables: [{ name: "value", type: "decimal", description: "" }],
+    })).toBe(false);
   });
 });

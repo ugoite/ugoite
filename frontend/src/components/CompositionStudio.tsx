@@ -3,932 +3,786 @@ import {
   createEffect,
   createResource,
   createSignal,
-  For,
   onCleanup,
-  onMount,
   Show,
 } from "solid-js";
 import { BackLink } from "~/components/BackLink";
-import {
-  CompositionDiagnostics,
-  type CompositionMetricQueryContext,
-} from "~/components/CompositionRenderer";
-import {
-  CompositionDesignCanvas,
-  designBlockIdForComponent,
-} from "~/components/CompositionDesignCanvas";
-import { CompositionDataWorkspace } from "~/components/CompositionDataWorkspace";
-import {
-  CompositionInspector,
-  type CompositionInspectorDataJump,
-} from "~/components/CompositionInspector";
-import { CompositionInspectorSheet } from "~/components/CompositionInspectorSheet";
-import {
-  CompositionDisplayPicker,
-  type CompositionDisplaySeed,
-} from "~/components/CompositionDisplayPicker";
-import { CompositionVariableList } from "~/components/CompositionVariableList";
-import {
-  CompositionSourcePicker,
-  type CompositionSourceSeed,
-} from "~/components/CompositionSourcePicker";
+import { CompositionGraphStudio } from "~/components/CompositionGraphStudio";
+import type { SQLWorkspacePreview } from "~/components/SQLWorkspace";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
-import { UiIcon } from "~/components/UiIcon";
-import {
-  addInlineSqlSource,
-  addMetricDisplay,
-  addSavedSqlSource,
-  addSqlArgumentVariables as addSqlArgumentVariablesToDraft,
-  addTableDisplay,
-  addVariable,
-  canonicalizeDraft,
-  type CompositionDraft,
-  createEmptyDraft,
-  createMetricPreviewDraft,
-  defaultVariableValues,
-  type DraftInsertTarget,
-  draftMetricsReady,
-  type DraftSaveBlockedReason,
-  draftSaveReadiness,
-  type DraftVariable,
-  moveSource,
-  removeDisplay,
-  removeInputComponent,
-  removeSource,
-  removeVariable,
-  savedSqlVariableTypesFromFields,
-  setDraftName,
-  setInlineSql,
-  setInlineSqlDescriptor,
-  setInlineSqlName,
-  setSavedSqlVariableTypes,
-  setTableSource,
-  upsertVariable,
-} from "~/lib/composition-draft";
 import {
   compositionApi,
-  type CompositionVariableType,
+  type CompositionEvaluationResponse,
+  type CompositionGraphPreviewResponse,
 } from "~/lib/composition-api";
-import { buildSqlSchema } from "~/lib/sql";
-import type { Form } from "~/lib/types";
-import { createCompositionPreviewHandle } from "~/lib/composition-preview-handle";
 import {
-  blockIdsUsingSource,
-  sourceDraftIdForBlock,
-  STUDIO_MODES,
-  STUDIO_SHEET_GATE_MEDIA,
-  STUDIO_SPLIT_GATE_MEDIA,
-  type StudioMode,
-  visibleComponentSourceIds,
-} from "~/lib/composition-studio-sync";
-import type { CompositionSourcePageState } from "~/lib/composition-query-handle";
+  compositionBindingDiagnostics,
+  type CompositionBindingProvider,
+  type CompositionBindingSession,
+  type CompositionComponent,
+  type CompositionFormChoice,
+  compositionGraphDocumentDraft,
+  type CompositionGraphDraft,
+  type CompositionLiteral,
+  type CompositionQueryDefinition,
+  type CompositionQueryReturn,
+  type CompositionResolvedBinding,
+  type CompositionSavedSqlChoice,
+  type CompositionSavedSqlRevisionRef,
+  type CompositionScalarDescriptor,
+  type CompositionVariableNode,
+  createCompositionGraphDraft,
+  sameResolvedQueryMeaning,
+} from "~/lib/composition-variable-binding";
+import { t } from "~/lib/i18n";
 import {
   compositionCanonicalizeErrorMessage,
   compositionSaveErrorMessage,
 } from "~/lib/composition-save-error";
 import {
   clearPendingCompositionSaveAttempt,
+  type CompositionSaveTarget,
+  getPendingCompositionSaveAttempt,
   markPendingCompositionSaveAttemptUncertain,
   type PendingCompositionSaveAttempt,
+  sameCompositionSaveIdentity,
   stagePendingCompositionSaveAttempt,
+  subscribeToPendingCompositionSaveAttempt,
 } from "~/lib/composition-save-attempt";
-import { t } from "~/lib/i18n";
-import { compositionFormFieldName } from "~/lib/composition-field-name";
+import {
+  changedCompositionQueryIds,
+  dependentCompositionQueryIds,
+} from "~/lib/composition-evaluation";
 import { spaceCompositionRevisionPath } from "~/lib/space-path";
-import { entryApi, formApi } from "~/lib/ugoite-client";
-import type { SqlStructureVariableType } from "~/lib/ugoite-client";
+import { authApi, formApi, sqlApi } from "~/lib/ugoite-client";
+import type { Form, SqlEntry } from "~/lib/types";
+import { buildSqlSchema } from "~/lib/sql";
+import type { SqlResultColumnType } from "~/lib/types";
 
-export type CompositionStudioSaveMode =
-  | { kind: "create" }
-  | { kind: "update"; compositionId: string; baseRevisionId: string };
+export type CompositionStudioSaveMode = CompositionSaveTarget;
 
 export interface CompositionStudioProps {
   spaceId: string;
-  initialDraft?: CompositionDraft;
+  initialDraft?: CompositionGraphDraft;
+  initialSavedSqlBinding?: CompositionSavedSqlRevisionRef;
   saveMode: CompositionStudioSaveMode;
   backHref: string;
   backLabel: string;
 }
 
-const PREVIEW_DEBOUNCE_MS = 400;
+const quoteIdentifier = (identifier: string) =>
+  `"${identifier.replaceAll('"', '""')}"`;
 
-type StudioOverlay =
-  | { kind: "none" }
-  | { kind: "source-drawer" }
-  | { kind: "source-picker"; intent: "data" }
-  | {
-    kind: "source-picker";
-    intent: "insert";
-    componentKind: "table" | "metric";
-    target?: DraftInsertTarget;
+const draftQuery = (
+  kind: "inline_sql" | "saved_sql",
+  details: Record<string, unknown>,
+  arguments_: Array<{ name: string; variable: string }> = [],
+  returns: CompositionQueryReturn = { kind: "table", columns: [] },
+): CompositionVariableNode & { kind: "query" } => ({
+  id: "__binding_candidate",
+  kind: "query",
+  returns,
+  query: {
+    kind,
+    ...details,
+    arguments: arguments_,
+    form_bindings: [],
+    schema_fingerprint: "",
+  } as CompositionQueryDefinition,
+});
+
+const inputDefaultValue = (node: CompositionVariableNode): unknown => {
+  if (node.kind === "input" && node.default) {
+    return node.default.kind === "null" ? null : node.default.value;
   }
-  | {
-    kind: "source-picker";
-    intent: "change-table-source";
-    componentId: string;
+  return undefined;
+};
+
+const scalarFor = (
+  type: string,
+  nullable = false,
+): CompositionScalarDescriptor => ({
+  scalar_type: type as CompositionScalarDescriptor["scalar_type"],
+  nullable,
+});
+
+const variableSlug = (value: string): string =>
+  value.normalize("NFKD").toLowerCase()
+    .replace(/\p{M}/gu, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+const formScalarType = (
+  type: string,
+): CompositionScalarDescriptor["scalar_type"] | undefined => {
+  switch (type) {
+    case "string":
+    case "boolean":
+    case "integer":
+    case "float":
+    case "decimal":
+    case "date":
+    case "timestamp":
+    case "json":
+      return type;
+    case "long":
+      return "integer";
+    case "markdown":
+    case "sql":
+    case "row_reference":
+      return "string";
+    case "timestamp_tz":
+    case "timestamp_ns":
+    case "timestamp_tz_ns":
+      return "timestamp";
+    case "double":
+      return "float";
+    default:
+      return undefined;
   }
-  | {
-    kind: "display-picker";
-    componentKind: "table" | "metric";
-    sourceDraftId: string | null;
-    target?: DraftInsertTarget;
+};
+
+const formChoice = (form: Form): CompositionFormChoice | undefined => {
+  if (!form.id || !form.sql_relation?.trim()) return undefined;
+  return {
+    id: form.id,
+    name: form.name,
+    relation: form.sql_relation,
+    fields: Object.entries(form.fields ?? {}).flatMap(([name, field]) => {
+      const type = field.type ? formScalarType(field.type) : undefined;
+      if (!type) return [];
+      return [{
+        name,
+        column: field.sql_column?.trim() || name,
+        type,
+      }];
+    }),
+  };
+};
+
+const savedSqlChoice = (
+  entry: SqlEntry,
+): CompositionSavedSqlChoice | undefined => {
+  if (entry.kind !== "user-query" || !entry.revision_id) return undefined;
+  const types = new Set([
+    "string",
+    "boolean",
+    "integer",
+    "float",
+    "date",
+    "timestamp",
+  ]);
+  if (entry.variables.some((argument) => !types.has(argument.type))) {
+    return undefined;
   }
-  | { kind: "block-inspector"; componentId: string };
+  return {
+    entry_id: entry.id,
+    revision_id: entry.revision_id,
+    name: entry.name?.trim() || entry.id,
+    arguments: entry.variables.map(({ name, type }) => ({
+      name,
+      type: type as CompositionSavedSqlChoice["arguments"][number]["type"],
+    })),
+  };
+};
 
 export function CompositionStudio(props: CompositionStudioProps) {
-  const location = useLocation();
   const navigate = useNavigate();
-  const spaceId = () => props.spaceId;
-  const textLiteralCache = new Map<string, string>();
-
-  const [draft, setDraft] = createSignal<CompositionDraft>(
-    props.initialDraft ?? createEmptyDraft(),
+  const location = useLocation();
+  const [draft, setDraft] = createSignal<CompositionGraphDraft>(
+    props.initialDraft ?? createCompositionGraphDraft(),
   );
-  const [overlay, setOverlay] = createSignal<StudioOverlay>({ kind: "none" });
-  const [sourcePickerReturnFocus, setSourcePickerReturnFocus] = createSignal<
-    (() => HTMLElement | null) | undefined
-  >();
-  const [dataPanel, setDataPanel] = createSignal<"sources" | "variables">(
-    "sources",
-  );
-  const [expandedId, setExpandedId] = createSignal<string | null>(null);
-  // Transient canvas Work: selected block identity for the inspector and
-  // the pending insertion target for the display picker.
-  const [selectedId, setSelectedId] = createSignal<string | null>(null);
-  // Transient workspace Work: Design | Data | Split arrangement only. Draft,
-  // preview, and selection state stay shared and continuous across modes;
-  // Split pairs the canvas with the Data pane and is never persisted.
-  const [mode, setMode] = createSignal<StudioMode>("design");
-  // Transient viewport Work: narrow flags mirror the Studio CSS gates so no
-  // JS path can leave a narrow viewport stuck in Split or rendering the
-  // wrong inspector container. The overlay union owns sheet visibility while
-  // `selectedId` remains the canvas selection owner.
-  const [belowSplitGate, setBelowSplitGate] = createSignal(false);
-  const [sheetViewport, setSheetViewport] = createSignal(false);
-
-  // RA9 mobile: the Split option hides below the Split gate in CSS, and the
-  // same gate is enforced here so resizing into a narrow viewport while in
-  // Split returns to Design instead of keeping a stacked Split. The sheet
-  // gate mirrors the inspector stacking breakpoint: below it the Design
-  // inspector renders as a bottom sheet. Both flags stay viewport-derived
-  // transient Work and never persist.
-  onMount(() => {
-    if (
-      typeof window === "undefined" ||
-      typeof window.matchMedia !== "function"
-    ) {
-      return;
-    }
-    const splitQuery = window.matchMedia(STUDIO_SPLIT_GATE_MEDIA);
-    const sheetQuery = window.matchMedia(STUDIO_SHEET_GATE_MEDIA);
-    const update = () => {
-      setBelowSplitGate(splitQuery.matches);
-      setSheetViewport(sheetQuery.matches);
-    };
-    update();
-    if (typeof splitQuery.addEventListener === "function") {
-      splitQuery.addEventListener("change", update);
-      sheetQuery.addEventListener("change", update);
-      onCleanup(() => {
-        splitQuery.removeEventListener("change", update);
-        sheetQuery.removeEventListener("change", update);
-      });
-    } else {
-      splitQuery.addListener(update);
-      sheetQuery.addListener(update);
-      onCleanup(() => {
-        splitQuery.removeListener(update);
-        sheetQuery.removeListener(update);
-      });
-    }
-  });
-
-  createEffect(() => {
-    if (belowSplitGate() && mode() === "split") setMode("design");
-  });
-  createEffect(() => {
-    if (
-      overlay().kind === "source-drawer" &&
-      (mode() !== "data" || dataPanel() !== "sources")
-    ) {
-      setOverlay({ kind: "none" });
-    }
-  });
-
-  // A dismissed or viewport-orphaned sheet returns focus to the invoking
-  // block's select control. Block identities are compared literally so
-  // Component ids are compared literally, never parsed as selectors.
-  const blockSelectControl = (blockId: string | null): HTMLElement | null => {
-    if (!blockId || typeof document === "undefined") return null;
-    const blocks = document.querySelectorAll("[data-block-id]");
-    for (const block of blocks) {
-      if (block.getAttribute("data-block-id") !== blockId) continue;
-      const control = block.querySelector("button");
-      if (control instanceof HTMLElement) return control;
-    }
-    return null;
-  };
-
-  const focusBlockSelect = (blockId: string | null): boolean => {
-    const control = blockSelectControl(blockId);
-    if (!control) return false;
-    control.focus();
-    return true;
-  };
-
-  const insertPositionControl = (
-    target: DraftInsertTarget | undefined,
-  ): HTMLElement | null => {
-    if (!target || typeof document === "undefined") return null;
-    for (
-      const control of document.querySelectorAll<HTMLElement>(
-        ".designAdd[data-insert-row-id]",
-      )
-    ) {
-      if (
-        control.dataset.insertRowId === (target.rowId ?? "") &&
-        control.dataset.insertRowIndex === String(target.rowIndex) &&
-        control.dataset.insertItemIndex === String(target.itemIndex)
-      ) return control;
-    }
-    return null;
-  };
-
-  const closeSheetKeepSelection = () => {
-    const current = overlay();
-    if (current.kind !== "block-inspector") return;
-    const invoking = current.componentId;
-    setOverlay({ kind: "none" });
-    // Focus after disposal: the sheet lifts `inert` in its own cleanup, so
-    // returning focus in a microtask never races the inert removal.
-    queueMicrotask(() => focusBlockSelect(invoking));
-  };
-
-  // User dismissal (Escape, backdrop, Close) clears the transient selection
-  // too, so reopening the inspector for the same block stays a single tap.
-  // The Data selection is kept: only the canvas selection clears.
-  const dismissSheet = () => {
-    const current = overlay();
-    if (current.kind !== "block-inspector") return;
-    const invoking = current.componentId;
-    setOverlay({ kind: "none" });
-    setSelectedId(null);
-    queueMicrotask(() => focusBlockSelect(invoking));
-  };
-
-  const removeSelectedBlock = () => {
-    const blockId = selectedId();
-    if (!blockId) return;
-    const result = draft().inputs.some((input) => input.draftId === blockId)
-      ? removeInputComponent(draft(), blockId)
-      : removeDisplay(draft(), blockId);
-    if (!result.ok) return;
-
-    setDraft(result.draft);
-    setSelectedId(null);
-    setOverlay({ kind: "none" });
-    queueMicrotask(() => {
-      const canvas = document.querySelector(".designCanvas");
-      const firstBlock = canvas?.querySelector<HTMLElement>(
-        "[data-block-id] button",
-      );
-      if (firstBlock) {
-        firstBlock.focus();
-        return;
-      }
-      canvas?.querySelector<HTMLElement>(".designAdd")?.focus();
-    });
-  };
-
-  // Leaving the sheet viewport unmounts the sheet; an orphaned open sheet
-  // returns focus to its invoking block, which stays selected inline.
-  createEffect(() => {
-    if (!sheetViewport() && overlay().kind === "block-inspector") {
-      closeSheetKeepSelection();
-    }
-  });
-  const [paletteTarget, setPaletteTarget] = createSignal<
-    DraftInsertTarget | null
-  >(null);
-  const [saving, setSaving] = createSignal(false);
-  const [saveError, setSaveError] = createSignal<string | null>(null);
-  const [saveRetryAvailable, setSaveRetryAvailable] = createSignal(false);
-
-  // SQL schema completion uses authorized Form metadata.
-  const [forms] = createResource(
-    () =>
-      draft().sources.some((source) => source.kind === "inline_sql")
-        ? props.spaceId
-        : undefined,
-    (spaceId) => formApi.list(spaceId).catch(() => []),
-  );
-  const previewHandle = createCompositionPreviewHandle();
-  onCleanup(previewHandle.dispose);
-
-  const completeDisplayInsert = (
-    nextDraft: CompositionDraft,
-    componentId: string,
-    sourceDraftId: string,
-  ) => {
-    setDraft(nextDraft);
-    setExpandedId(sourceDraftId);
-    previewHandle.ensureSource(sourceDraftId);
-    setSelectedId(null);
-    setOverlay({ kind: "none" });
-    setSourcePickerReturnFocus(undefined);
-    queueMicrotask(() => focusBlockSelect(componentId));
-  };
-  const previewBase = () =>
-    props.saveMode.kind === "update"
-      ? {
-        entryId: props.saveMode.compositionId,
-        revisionId: props.saveMode.baseRevisionId,
-      }
-      : undefined;
-
-  // Saved composition documents pin revisions and bindings, while the
-  // variable type schema remains owned by that Saved SQL revision. Hydrate
-  // it from the exact revision before allowing an edited draft to save.
-  const schemaReads = new Set<string>();
-  let schemaHydrationActive = true;
-  onCleanup(() => {
-    schemaHydrationActive = false;
-  });
-  createEffect(() => {
-    const currentSpaceId = spaceId();
-    for (const source of draft().sources) {
-      if (source.kind !== "saved_sql" || source.variableTypes !== undefined) {
-        continue;
-      }
-      const key = `${currentSpaceId}:${source.entryId}:${source.revisionId}`;
-      if (schemaReads.has(key)) continue;
-      schemaReads.add(key);
-      void entryApi.getRevision(
-        currentSpaceId,
-        source.entryId,
-        source.revisionId,
-      ).then((revision) => {
-        if (!schemaHydrationActive) return;
-        const latest = draft().sources.find((entry) =>
-          entry.draftId === source.draftId
-        );
-        if (
-          latest?.kind !== "saved_sql" ||
-          latest.revisionId !== source.revisionId ||
-          latest.variableTypes !== undefined
-        ) return;
-        const variableTypes = savedSqlVariableTypesFromFields(
-          revision.fields,
-        );
-        const typed = setSavedSqlVariableTypes(
-          draft(),
-          source.draftId,
-          variableTypes,
-        );
-        if (typed.ok) setDraft(typed.draft);
-      }).catch(() => {
-        schemaReads.delete(key);
-      });
-    }
-  });
-
-  let previewTimer: ReturnType<typeof setTimeout> | undefined;
-  let previewGeneration = 0;
-
-  let pendingSave: PendingCompositionSaveAttempt | undefined;
-
-  const saveRoute = () => ({
-    spaceId: spaceId(),
+  const routeIdentity = () => ({
+    spaceId: props.spaceId,
     routePath: location.pathname,
+    saveTarget: props.saveMode.kind === "update"
+      ? { ...props.saveMode }
+      : { kind: "create" as const },
   });
-  const isCurrentSaveRoute = (attempt: PendingCompositionSaveAttempt) =>
-    attempt.spaceId === spaceId() && attempt.routePath === location.pathname;
-  // Save readiness mirrors the shared canonical contract: a non-empty name,
-  // complete Metric definitions, valid refs with exactly-once placement and
-  // no dangling refs, and at least one layout item. A source-only draft
-  // reports `layout` and cannot save. Canonical parsing stays async below.
-  const readiness = () => draftSaveReadiness(draft());
-  const canSave = () => readiness().ready && !saving();
-  const saveBlockedReason = (): DraftSaveBlockedReason | undefined =>
-    readiness().reason;
-  // A disabled Save carries its reason in the accessible name and title,
-  // mirroring the source-picker navigation pattern. No prose paragraphs
-  // explain steady-state blocks.
-  const saveReasonText = (): string | undefined => {
-    switch (saveBlockedReason()) {
-      case "name":
-        return t("composition.studioSaveNeedsName");
-      case "sources":
-        return t("composition.studioSaveNeedsData");
-      case "layout":
-        return t("composition.studioSaveNeedsBlock");
-      case "refs":
-        return t("composition.studioSaveNeedsRefs");
-      case "metric":
-        return t("composition.studioSaveNeedsMetric");
-      default:
-        return undefined;
-    }
-  };
-  const saveLabel = (): string => {
-    const reason = canSave() ? undefined : saveReasonText();
-    return reason
-      ? `${t("composition.save")}, ${reason}`
-      : t("composition.save");
-  };
-
-  onCleanup(() => {
-    previewGeneration += 1;
-    if (previewTimer !== undefined) clearTimeout(previewTimer);
-  });
-
-  // Keep the exact draft object that produced the current preview. The
-  // resolver's server-owned SQL descriptors are copied back only when this
-  // same snapshot is still current; the preview's own canonicalization is
-  // enough to establish that correspondence.
-  let previewSnapshot: CompositionDraft | undefined;
-  const schedulePreview = (snapshot: CompositionDraft) => {
-    const generation = ++previewGeneration;
-    if (previewTimer !== undefined) clearTimeout(previewTimer);
-    previewTimer = undefined;
-    previewTimer = setTimeout(() => {
-      previewTimer = undefined;
-      void (async () => {
-        if (generation !== previewGeneration) return;
-        if (!draftMetricsReady(snapshot) || !draftMetricsReady(draft())) {
-          previewHandle.invalidate();
-          return;
-        }
-        try {
-          const canonical = await canonicalizeDraft(snapshot);
-          if (generation !== previewGeneration) return;
-          if (!draftMetricsReady(snapshot) || !draftMetricsReady(draft())) {
-            previewHandle.invalidate();
-            return;
-          }
-          // Scope resolves against the latest draft at fire time so block,
-          // source, and mode changes during an in-flight preview never
-          // resurrect a stale fetch set; the generation guard drops the
-          // stale response itself.
-          previewSnapshot = snapshot;
-          await previewHandle.preview(
-            spaceId(),
-            canonical.canonical_yaml,
-            defaultVariableValues(snapshot),
-            {
-              visibleSourceIds: visibleComponentSourceIds(draft()),
-              selectedSourceId: expandedId(),
-            },
-            previewBase(),
-          );
-        } catch {
-          // canonicalizeDraft rejects only on WASM transport failure;
-          // contract diagnostics arrive through the preview response.
-        }
-      })();
-    }, PREVIEW_DEBOUNCE_MS);
-  };
-
-  const previewScope = () => ({
-    visibleSourceIds: visibleComponentSourceIds(draft()),
-    selectedSourceId: expandedId(),
-  });
-
-  const retryPreview = () => {
-    if (!draftMetricsReady(draft())) return;
-    const current = previewHandle.state();
-    if (!current.yaml || !current.spaceId) return;
-    previewGeneration += 1;
-    if (previewTimer !== undefined) clearTimeout(previewTimer);
-    previewTimer = undefined;
-    previewSnapshot = draft();
-    void previewHandle.preview(current.spaceId, current.yaml, {
-      ...previewHandle.variables(),
-    }, previewScope());
-  };
-
-  // Live preview follows the draft with a bounded debounce. Partial layout
-  // and naming states remain previewable, but incomplete Metrics never reach
-  // canonicalization; prior preview state is invalidated until they are fixed.
+  const initialPending = getPendingCompositionSaveAttempt(routeIdentity());
+  let pendingSave: PendingCompositionSaveAttempt | undefined = initialPending
+    ?.attempt;
+  const [saving, setSaving] = createSignal(
+    initialPending?.state === "in_flight",
+  );
+  const [saveRetryAvailable, setSaveRetryAvailable] = createSignal(
+    initialPending?.state === "uncertain",
+  );
   createEffect(() => {
-    const snapshot = draft();
-    if (snapshot.sources.length === 0 || !draftMetricsReady(snapshot)) {
-      previewGeneration += 1;
-      if (previewTimer !== undefined) {
-        clearTimeout(previewTimer);
-        previewTimer = undefined;
-      }
-      previewHandle.invalidate();
-      return;
-    }
-    schedulePreview(snapshot);
-  });
-
-  const addSourceSeed = (seed: CompositionSourceSeed) => {
-    const added = seed.kind === "saved_sql"
-      ? addSavedSqlSource(draft(), seed.seed)
-      : addInlineSqlSource(draft(), seed.seed);
-    return { draft: added.draft, draftId: added.draftId };
-  };
-
-  const openDataSourcePicker = (returnFocus?: () => HTMLElement | null) => {
-    setSelectedId(null);
-    setSourcePickerReturnFocus(() =>
-      typeof returnFocus === "function" ? returnFocus : undefined
+    const identity = routeIdentity();
+    const stored = getPendingCompositionSaveAttempt(identity);
+    pendingSave = stored?.attempt;
+    setSaving(stored?.state === "in_flight");
+    setSaveRetryAvailable(stored?.state === "uncertain");
+    const unsubscribe = subscribeToPendingCompositionSaveAttempt(
+      identity,
+      (event) => {
+        if (event.type === "pending") {
+          pendingSave = event.stored.attempt;
+          setSaving(event.stored.state === "in_flight");
+          setSaveRetryAvailable(event.stored.state === "uncertain");
+        } else if (pendingSave?.idempotencyKey === event.idempotencyKey) {
+          pendingSave = undefined;
+          setSaving(false);
+          setSaveRetryAvailable(false);
+        }
+      },
     );
-    setOverlay({ kind: "source-picker", intent: "data" });
-  };
-
-  const openTableSourcePicker = (componentId: string) => {
-    setSourcePickerReturnFocus(() => () => blockSelectControl(componentId));
-    setSelectedId(null);
-    setOverlay({
-      kind: "source-picker",
-      intent: "change-table-source",
-      componentId,
+    onCleanup(unsubscribe);
+  });
+  const [saveError, setSaveError] = createSignal<string | null>(null);
+  const [invalidEditorVariables, setInvalidEditorVariables] = createSignal(
+    new Set<string>(),
+  );
+  const editorValid = () => invalidEditorVariables().size === 0;
+  const [saveGeneration, setSaveGeneration] = createSignal(0);
+  const [queryPreviews, setQueryPreviews] = createSignal<
+    Record<string, SQLWorkspacePreview>
+  >({});
+  const [queryEvaluations, setQueryEvaluations] = createSignal<
+    Record<string, {
+      evaluationId: string;
+      yaml: string;
+      next?: string;
+      pageNumber: number;
+    }>
+  >({});
+  const runGenerations = new Map<string, number>();
+  const [formsResource] = createResource(
+    () => props.spaceId,
+    (spaceId) => formApi.list(spaceId),
+  );
+  const [sqlResource] = createResource(
+    () => props.spaceId,
+    (spaceId) => sqlApi.list(spaceId),
+  );
+  const forms = () =>
+    (formsResource() ?? []).flatMap((form) => {
+      const choice = formChoice(form);
+      return choice ? [choice] : [];
     });
+  const savedSql = () =>
+    (sqlResource() ?? []).flatMap((entry) => {
+      const choice = savedSqlChoice(entry);
+      return choice ? [choice] : [];
+    });
+  const savedSqlForPicker = () => {
+    const exact = props.initialSavedSqlBinding;
+    return exact
+      ? savedSql().filter((entry) =>
+        entry.entry_id === exact.entry_id &&
+        entry.revision_id === exact.revision_id
+      )
+      : savedSql();
   };
+  const savedSqlSeedUnavailable = () =>
+    Boolean(
+      props.initialSavedSqlBinding && !sqlResource.loading &&
+        !sqlResource.error && savedSqlForPicker().length === 0,
+    );
+  let seedNameApplied = false;
+  createEffect(() => {
+    const exact = props.initialSavedSqlBinding;
+    if (
+      !exact || seedNameApplied || sqlResource.loading || sqlResource.error
+    ) return;
+    const entry = (sqlResource() ?? []).find((candidate) =>
+      candidate.id === exact.entry_id &&
+      candidate.revision_id === exact.revision_id
+    );
+    if (!entry) return;
+    seedNameApplied = true;
+    const name = entry.name?.trim() || entry.id;
+    setDraft((current) => current.name.trim() ? current : { ...current, name });
+  });
+  const sqlSchema = () => buildSqlSchema(formsResource() ?? []);
 
-  const addDataSource = (seed: CompositionSourceSeed) => {
-    const { draft: sourceDraft, draftId } = addSourceSeed(seed);
-    setDraft(sourceDraft);
-    setExpandedId(draftId);
-    previewHandle.ensureSource(draftId);
-    setOverlay({ kind: "none" });
-  };
+  const literalValue = (literal: { kind: string; value?: unknown }) =>
+    literal.kind === "null" ? null : literal.value;
 
-  const selectSource = (sourceDraftId: string) => {
-    setExpandedId(sourceDraftId);
-    previewHandle.ensureSource(sourceDraftId);
-  };
-
-  const moveDraftSource = (sourceDraftId: string, direction: "up" | "down") => {
-    const result = moveSource(draft(), sourceDraftId, direction);
-    if (result.ok) setDraft(result.draft);
-  };
-
-  const removeDraftSource = (sourceDraftId: string) => {
-    const result = removeSource(draft(), sourceDraftId);
-    if (result.ok) {
-      setDraft(result.draft);
-      setExpandedId((current) => current === sourceDraftId ? null : current);
-    }
-  };
-
-  const addDisplaySeed = (seed: CompositionDisplaySeed) => {
-    // The display picker survives only as the canvas insertion delegate and
-    // lands at the recorded canvas target.
-    const activeOverlay = overlay();
-    if (activeOverlay.kind !== "display-picker") return;
-    const target = activeOverlay.target;
-    const added = seed.kind === "table"
-      ? addTableDisplay(draft(), seed.sourceDraftId, target)
-      : addMetricDisplay(
-        draft(),
-        seed.sourceDraftId,
-        seed.column,
-        target,
+  const workspacePage = (
+    evaluation: CompositionEvaluationResponse,
+    variableId: string,
+    pageNumber: number,
+  ): SQLWorkspacePreview => {
+    const evaluated = evaluation.query_results[variableId];
+    if (!evaluated) {
+      const diagnostic = evaluation.query_diagnostics?.find((entry) =>
+        entry.variable_id === variableId
+      ) ?? evaluation.diagnostics?.find((entry) =>
+        entry.variable_id === variableId
       );
-    if (added.ok && added.draftId) {
-      completeDisplayInsert(added.draft, added.draftId, seed.sourceDraftId);
-    } else {
-      setOverlay({ kind: "none" });
-    }
-  };
-
-  const previewMetric = async (seed: {
-    sourceDraftId: string;
-    column: string;
-  }) => {
-    try {
-      const snapshot = draft();
-      const scratch = createMetricPreviewDraft(snapshot, seed.sourceDraftId);
-      if (!scratch) {
-        return { ok: false, error: t("composition.metricUnavailable") };
-      }
-
-      // Canonicalize an isolated one-metric draft so unfinished inspector
-      // edits elsewhere cannot block the explicit picker preview.
-      const metric = addMetricDisplay(
-        scratch,
-        seed.sourceDraftId,
-        seed.column,
-      );
-      if (!metric.ok || !metric.draftId) {
-        return { ok: false, error: t("composition.metricUnavailable") };
-      }
-
-      const canonical = await canonicalizeDraft(metric.draft);
-      const availableValues = {
-        ...defaultVariableValues(snapshot),
-        ...previewHandle.variables(),
+      return {
+        status: "error",
+        isCurrent: true,
+        error: diagnostic?.code || t("composition.queryFailed"),
       };
-      const variables = Object.fromEntries(
-        metric.draft.variables.flatMap((variable) => {
-          const value = availableValues[variable.id];
-          return value === undefined ? [] : [[variable.id, value]];
-        }),
-      );
-      const response = await compositionApi.queryMetric(spaceId(), {
-        target: { kind: "draft", yaml: canonical.canonical_yaml },
-        ...(previewBase()
+    }
+    const result = evaluated.value;
+    const columns = result.kind === "table"
+      ? result.columns.map((column) => column.name)
+      : ["value"];
+    const columnTypes = result.kind === "table"
+      ? result.columns.map((column) =>
+        column.value_type.scalar_type as SqlResultColumnType
+      )
+      : [result.value.kind as SqlResultColumnType];
+    const literalRows = result.kind === "table"
+      ? result.rows
+      : [[result.value]];
+    const rows = literalRows.map((row) =>
+      row.map((literal) => literalValue(literal))
+    );
+    const exactIntegerRows = literalRows.map((row) =>
+      row.map((literal, index) =>
+        columnTypes[index] === "integer" && literal.kind === "integer"
+          ? String(literal.value)
+          : null
+      )
+    );
+    return {
+      status: "success",
+      isCurrent: true,
+      page: {
+        columns,
+        columnTypes,
+        rows,
+        exactIntegerRows,
+        pageIdentity: `${evaluation.evaluation_id}:${variableId}:${pageNumber}`,
+        pageNumber,
+        canNext: evaluated.has_more && Boolean(evaluated.next),
+      },
+    };
+  };
+
+  const runQuery = async (variableId: string, cursor?: string) => {
+    const generation = (runGenerations.get(variableId) ?? 0) + 1;
+    runGenerations.set(variableId, generation);
+    const previous = queryEvaluations()[variableId];
+    const isContinuation = Boolean(cursor && previous);
+    setQueryPreviews((current) => ({
+      ...current,
+      [variableId]: { status: "loading", isCurrent: false },
+    }));
+    try {
+      let yaml: string;
+      let evaluationId: string;
+      let pageNumber: number;
+      if (isContinuation && previous) {
+        ({ yaml, evaluationId } = {
+          yaml: previous.yaml,
+          evaluationId: previous.evaluationId,
+        });
+        pageNumber = previous.pageNumber + 1;
+      } else {
+        yaml = (await compositionApi.canonicalizeDocument(
+          compositionGraphDocumentDraft(draft()),
+        )).canonical_yaml;
+        evaluationId = crypto.randomUUID();
+        pageNumber = 1;
+      }
+      const evaluation = await compositionApi.evaluate(props.spaceId, {
+        evaluation_id: evaluationId,
+        target: { kind: "draft", yaml },
+        ...(props.saveMode.kind === "update"
           ? {
-            base_entry_id: previewBase()!.entryId,
-            base_revision_id: previewBase()!.revisionId,
+            base_entry_id: props.saveMode.compositionId,
+            base_revision_id: props.saveMode.baseRevisionId,
           }
           : {}),
-        component_id: metric.draftId,
-        variables,
+        variables: {},
+        ...(!cursor ? { requested_queries: [variableId] } : {}),
+        ...(cursor ? { page: { variable_id: variableId, cursor } } : {}),
       });
-      if (
-        !response.ok || !response.result ||
-        response.draft_fingerprint !== canonical.fingerprint
-      ) {
-        return { ok: false, error: t("composition.metricUnavailable") };
+      if (runGenerations.get(variableId) !== generation) return;
+      const evaluated = evaluation.query_results[variableId];
+      if (!isContinuation) {
+        setQueryEvaluations((current) => ({
+          ...current,
+          [variableId]: {
+            evaluationId,
+            yaml,
+            next: evaluated?.next,
+            pageNumber,
+          },
+        }));
+      } else {
+        setQueryEvaluations((current) => ({
+          ...current,
+          [variableId]: {
+            evaluationId,
+            yaml,
+            next: evaluated?.next,
+            pageNumber,
+          },
+        }));
       }
-      return { ok: true, value: response.result.value };
+      setQueryPreviews((current) => ({
+        ...current,
+        [variableId]: workspacePage(evaluation, variableId, pageNumber),
+      }));
     } catch {
-      return { ok: false, error: t("composition.metricUnavailable") };
+      if (runGenerations.get(variableId) === generation) {
+        setQueryPreviews((current) => ({
+          ...current,
+          [variableId]: {
+            status: "error",
+            isCurrent: true,
+            error: t("composition.queryFailed"),
+          },
+        }));
+      }
+    }
+  };
+  const session: CompositionBindingSession = {
+    session_id: crypto.randomUUID(),
+    space_id: props.spaceId,
+    document_revision: props.saveMode.kind === "update"
+      ? props.saveMode.baseRevisionId
+      : null,
+    principal_generation: "not-captured",
+  };
+  const getPrincipalGeneration = async () => {
+    const authSession = await authApi.getSession();
+    if (!authSession.authenticated) return "anonymous";
+    const accountId = authSession.account?.account_id.trim();
+    if (!accountId) throw new Error("Authenticated account is unavailable");
+    return `account:${accountId}`;
+  };
+  const isSessionCurrent = async (value: CompositionBindingSession) => {
+    if (
+      value.session_id !== session.session_id ||
+      value.space_id !== props.spaceId ||
+      value.document_revision !== session.document_revision
+    ) return false;
+    try {
+      return value.principal_generation === await getPrincipalGeneration();
+    } catch {
+      return false;
     }
   };
 
-  const chooseSourceForDisplay = (kind: "table" | "metric") => {
-    const activeOverlay = overlay();
-    if (activeOverlay.kind !== "display-picker") return;
-    setSourcePickerReturnFocus(() => () =>
-      insertPositionControl(activeOverlay.target)
+  const previewCandidate = async (
+    candidate: CompositionGraphDraft,
+  ): Promise<CompositionGraphPreviewResponse> => {
+    const document = compositionGraphDocumentDraft(candidate);
+    return await compositionApi.previewGraph(
+      props.spaceId,
+      JSON.stringify(document),
+      Object.fromEntries(candidate.variables.flatMap((node) => {
+        if (node.kind !== "input") return [];
+        const value = inputDefaultValue(node);
+        return value === undefined ? [] : [[node.id, value]];
+      })),
+      props.saveMode.kind === "update"
+        ? {
+          entryId: props.saveMode.compositionId,
+          revisionId: props.saveMode.baseRevisionId,
+        }
+        : undefined,
     );
-    setOverlay({
-      kind: "source-picker",
-      intent: "insert",
-      componentKind: kind,
-      target: activeOverlay.target,
-    });
   };
 
-  const addSourceForDisplay = (seed: CompositionSourceSeed) => {
-    const activeOverlay = overlay();
-    if (activeOverlay.kind !== "source-picker") return;
-    if (activeOverlay.intent === "data") {
-      addDataSource(seed);
-      return;
-    }
-    if (activeOverlay.intent === "change-table-source") {
-      const { draft: sourceDraft, draftId } = addSourceSeed(seed);
-      const changed = setTableSource(
-        sourceDraft,
-        activeOverlay.componentId,
-        draftId,
-      );
-      if (!changed.ok) return;
-      setDraft(changed.draft);
-      setExpandedId(draftId);
-      previewHandle.ensureSource(draftId);
-      setSelectedId(null);
-      setSourcePickerReturnFocus(undefined);
-      setOverlay({ kind: "none" });
-      queueMicrotask(() => focusBlockSelect(activeOverlay.componentId));
-      return;
-    }
-    const { draft: sourceDraft, draftId } = addSourceSeed(seed);
-    if (activeOverlay.componentKind === "table") {
-      const table = addTableDisplay(
-        sourceDraft,
-        draftId,
-        activeOverlay.target,
-      );
-      if (!table.ok || !table.draftId) return;
-      completeDisplayInsert(table.draft, table.draftId, draftId);
-      return;
-    }
-    // Add the SQL source, then choose and preview a result column before it
-    // enters the canvas layout.
-    setDraft(sourceDraft);
-    setOverlay({
-      kind: "display-picker",
-      componentKind: "metric",
-      sourceDraftId: draftId,
-      target: activeOverlay.target,
+  const bindFromPreview = async (
+    candidate: CompositionGraphDraft,
+    candidateNode: CompositionVariableNode & { kind: "query" },
+    expectedKind: CompositionQueryReturn["kind"],
+  ): Promise<CompositionResolvedBinding> => {
+    const componentKind = expectedKind === "table" ? "table" : "metric";
+    const componentIds = new Set(candidate.components.map(({ id }) => id));
+    let componentIndex = 0;
+    const previewComponents: CompositionComponent[] = [];
+    const makePreviewComponent = (): CompositionComponent => {
+      let id = `__binding_preview_${componentIndex++}`;
+      while (componentIds.has(id)) id = `__binding_preview_${componentIndex++}`;
+      componentIds.add(id);
+      return { id, kind: componentKind, variable: candidateNode.id };
+    };
+    const rows = candidate.layout.rows.length > 0
+      ? candidate.layout.rows
+      : [{ id: "__binding_preview_row", items: [] }];
+    let placedProbe = false;
+    const previewRows = rows.map((row) => {
+      if (row.items.length > 0 && placedProbe) return row;
+      const component = makePreviewComponent();
+      previewComponents.push(component);
+      placedProbe = true;
+      return {
+        ...row,
+        items: [...row.items, {
+          kind: "component" as const,
+          component: component.id,
+        }],
+      };
     });
-  };
-
-  const selectExistingSource = (sourceDraftId: string) => {
-    const activeOverlay = overlay();
-    if (activeOverlay.kind !== "source-picker") return;
-    if (activeOverlay.intent === "data") {
-      setExpandedId(sourceDraftId);
-      previewHandle.ensureSource(sourceDraftId);
-      setOverlay({ kind: "none" });
-      return;
-    }
-    if (activeOverlay.intent === "change-table-source") {
-      const changed = setTableSource(
-        draft(),
-        activeOverlay.componentId,
-        sourceDraftId,
-      );
-      if (!changed.ok) return;
-      setDraft(changed.draft);
-      setExpandedId(sourceDraftId);
-      previewHandle.ensureSource(sourceDraftId);
-      setSelectedId(null);
-      setSourcePickerReturnFocus(undefined);
-      setOverlay({ kind: "none" });
-      queueMicrotask(() => focusBlockSelect(activeOverlay.componentId));
-      return;
+    // Empty rows all receive a probe while existing nonempty rows stay intact.
+    const withCandidate: CompositionGraphDraft = {
+      ...candidate,
+      variables: [...candidate.variables, candidateNode],
+      components: [...candidate.components, ...previewComponents],
+      layout: { ...candidate.layout, rows: previewRows },
+    };
+    const response = await previewCandidate(withCandidate);
+    const planned = response.plan?.queries.find((query) =>
+      query.variable_id === candidateNode.id
+    );
+    if (!response.ok || !planned) throw new Error("query preview rejected");
+    if (expectedKind && planned.returns.kind !== expectedKind) {
+      throw new Error("query result shape does not fit component");
     }
     if (
-      activeOverlay.intent === "insert" &&
-      activeOverlay.componentKind === "metric"
-    ) {
-      setOverlay({
-        kind: "display-picker",
-        componentKind: "metric",
-        sourceDraftId,
-        target: activeOverlay.target,
-      });
-      return;
-    }
-    const table = addTableDisplay(
-      draft(),
-      sourceDraftId,
-      activeOverlay.target,
+      planned.returns.kind === "scalar" &&
+      planned.scalar_cardinality !== "exactly_one_row"
+    ) throw new Error("scalar query must return exactly one row");
+    const variable: CompositionVariableNode & { kind: "query" } = {
+      ...candidateNode,
+      returns: planned.returns,
+      query: {
+        ...candidateNode.query,
+        form_bindings: planned.form_bindings,
+        schema_fingerprint: planned.schema_fingerprint,
+      },
+    };
+    const match = candidate.variables.find((node) =>
+      sameResolvedQueryMeaning(node, variable)
     );
-    if (table.ok && table.draftId) {
-      completeDisplayInsert(table.draft, table.draftId, sourceDraftId);
-      return;
-    }
+    return {
+      variable,
+      ...(match ? { reuse_variable_id: match.id } : {}),
+    };
   };
 
-  // Data workspace edits flow through narrow draft updaters into the shared
-  // debounced preview. Each returns whether the edit was accepted so the
-  // editor can surface a rejection without inventing query grammar.
-  const updateInlineSql = (sourceDraftId: string, sql: string): boolean => {
-    const result = setInlineSql(draft(), sourceDraftId, sql);
-    if (result.ok) setDraft(result.draft);
-    return result.ok;
-  };
-
-  const updateInlineSqlName = (
-    sourceDraftId: string,
-    name: string,
-  ): boolean => {
-    const result = setInlineSqlName(draft(), sourceDraftId, name);
-    if (result.ok) setDraft(result.draft);
-    return result.ok;
-  };
-
-  const savedSqlEditHref = (entryId: string) =>
-    `/spaces/${encodeURIComponent(spaceId())}/sql/${
-      encodeURIComponent(entryId)
-    }`;
-
-  // Inspector data jump: select the block's source in the Data workspace
-  // navigator, scroll it into view, and focus its activation control. The
-  // navigator row is the jump target on desktop; on mobile the selected
-  // source detail is shown after the navigator closes, so focus its toggle.
-  // RA7 split sync reuses the same typed jump payload.
-  const sourceRowEls = new Map<string, HTMLDivElement>();
-  const registerSourceRow = (
-    sourceDraftId: string,
-    el: HTMLDivElement | null,
-  ) => {
-    if (el) sourceRowEls.set(sourceDraftId, el);
-    else sourceRowEls.delete(sourceDraftId);
-  };
-  const focusSourceRow = (sourceDraftId: string) => {
-    const row = sourceRowEls.get(sourceDraftId);
-    if (!row || !row.isConnected) return;
-    if (typeof row.scrollIntoView === "function") {
-      try {
-        row.scrollIntoView({ block: "nearest" });
-      } catch {
-        // Keep the expanded selection when scrolling is unavailable.
+  const provider: CompositionBindingProvider = {
+    resolveForm: async ({ form_id, component, aggregate, draft: current }) => {
+      const form = forms().find((candidate) => candidate.id === form_id);
+      if (!form) throw new Error("Form unavailable");
+      const relation = quoteIdentifier(form.relation);
+      let sql = `SELECT * FROM ${relation}`;
+      let returns: CompositionQueryReturn = { kind: "table", columns: [] };
+      if (component === "metric") {
+        if (!aggregate) throw new Error("Aggregate selection required");
+        if (aggregate.kind === "count") {
+          sql = `SELECT COUNT(*) AS value FROM ${relation}`;
+        } else {
+          if (!aggregate.column) throw new Error("Aggregate column required");
+          const field = form.fields.find((candidate) =>
+            candidate.column === aggregate.column
+          );
+          if (!field) throw new Error("Aggregate field unavailable");
+          sql = `SELECT ${aggregate.kind.toUpperCase()}(${
+            quoteIdentifier(field.column)
+          }) AS value FROM ${relation}`;
+        }
+        returns = {
+          kind: "scalar",
+          value_type: scalarFor(
+            "integer",
+            aggregate.kind === "sum" || aggregate.kind === "avg",
+          ),
+        };
       }
-    }
-    row.querySelector("button")?.focus();
-  };
-  const jumpToSource = (jump: CompositionInspectorDataJump) => {
-    setExpandedId(jump.sourceDraftId);
-    previewHandle.ensureSource(jump.sourceDraftId);
-    // From the narrow bottom sheet dismiss the sheet and show the Data
-    // workspace. Its mobile navigator closes around the selected detail and
-    // moves focus to the control that can reopen the source list.
-    if (sheetViewport() && overlay().kind === "block-inspector") {
-      setOverlay({ kind: "none" });
-      setSelectedId(null);
-      setMode("data");
-      return;
-    }
-    focusSourceRow(jump.sourceDraftId);
-  };
-
-  // Design block selection owns the inspector. Metric/table blocks also
-  // auto-select their source in the Data workspace, reusing the RA5 jump
-  // handoff (expand + scroll + focus only where the target row is
-  // rendered; in Split the right pane shows it directly). Text blocks and
-  // Input components carry no source, so the Data selection is kept and
-  // never invented. Selection changes never refetch the preview. On narrow
-  // viewports selecting a block opens the inspector bottom sheet; clearing
-  // the selection dismisses it.
-  const handleSelectBlock = (blockId: string | null) => {
-    setSelectedId(blockId);
-    if (!blockId) {
-      setOverlay({ kind: "none" });
-    } else if (sheetViewport()) {
-      setOverlay({ kind: "block-inspector", componentId: blockId });
-    } else if (overlay().kind === "block-inspector") {
-      setOverlay({ kind: "none" });
-    }
-    const sourceDraftId = sourceDraftIdForBlock(draft(), blockId);
-    if (!sourceDraftId) return;
-    setExpandedId(sourceDraftId);
-    previewHandle.ensureSource(sourceDraftId);
-    focusSourceRow(sourceDraftId);
-  };
-
-  const handleInsertBlock = (blockId: string) => {
-    setSelectedId(null);
-    if (overlay().kind === "block-inspector") setOverlay({ kind: "none" });
-    queueMicrotask(() => focusBlockSelect(blockId));
-  };
-
-  // Data source selection soft-highlights the Design blocks that use it.
-  // Highlight is visual only; the selection owner stays selectedId.
-  const highlightedBlockIds = () =>
-    new Set(blockIdsUsingSource(draft(), expandedId()));
-
-  const addDraftVariable = (variable: DraftVariable) => {
-    const result = addVariable(draft(), variable);
-    if (result.ok) setDraft(result.draft);
-  };
-
-  const addSqlArgumentVariables = (
-    added: readonly { name: string; type: SqlStructureVariableType }[],
-  ): boolean => {
-    const current = draft();
-    const result = addSqlArgumentVariablesToDraft(current, added);
-    if (!result.ok) return false;
-    if (result.draft !== current) setDraft(result.draft);
-    return true;
-  };
-
-  const updateDraftVariable = (variable: DraftVariable) => {
-    const result = upsertVariable(draft(), variable);
-    if (result.ok) setDraft(result.draft);
-  };
-
-  const removeDraftVariable = (variableId: string): string | undefined => {
-    const result = removeVariable(draft(), variableId);
-    if (result.ok) {
-      setDraft(result.draft);
-      return undefined;
-    }
-    if (result.error === "variable-referenced") {
-      return t("composition.studioVariableReferenced");
-    }
-    return t("composition.studioCannotRemoveVariable");
+      const formSlug = variableSlug(form.name);
+      const formPrefix = /^[a-z]/.test(formSlug)
+        ? formSlug
+        : formSlug
+        ? `form_${formSlug}`
+        : "form";
+      const aggregateField = component === "metric" && aggregate?.column
+        ? form.fields.find((field) => field.column === aggregate.column)
+        : undefined;
+      const aggregateFieldSlug = aggregateField
+        ? variableSlug(aggregateField.name)
+        : "";
+      const variableSuffix = component === "table" ? "rows" : aggregate!.kind +
+        (aggregateFieldSlug ? `_${aggregateFieldSlug}` : "");
+      const id = `${formPrefix}_${variableSuffix}`;
+      const candidate = draftQuery("inline_sql", { sql }, [], returns);
+      const uniqueId = (base: string) => {
+        let value = base;
+        let suffix = 2;
+        while (current.variables.some((node) => node.id === value)) {
+          value = `${base}_${suffix++}`;
+        }
+        return value;
+      };
+      const resolved = await bindFromPreview(current, {
+        ...candidate,
+        id: uniqueId(id),
+      }, component === "table" ? "table" : "scalar");
+      return resolved;
+    },
+    prepareSavedSql: async (
+      {
+        entry_id,
+        revision_id,
+        component,
+        arguments: arguments_,
+        draft: current,
+      },
+    ) => {
+      const entry = savedSql().find((candidate) =>
+        candidate.entry_id === entry_id && candidate.revision_id === revision_id
+      );
+      if (!entry) throw new Error("Saved SQL revision unavailable");
+      if (arguments_.some((argument) => !argument.variable)) {
+        throw new Error("Saved SQL arguments must be explicitly bound");
+      }
+      const args = entry.arguments.map((argument) =>
+        arguments_.find((item) => item.name === argument.name) ??
+          { name: argument.name, variable: "" }
+      );
+      const base = draftQuery("saved_sql", {
+        entry_id,
+        revision_id,
+      }, args);
+      const withId = (column?: string) => ({
+        ...base,
+        id: (() => {
+          const stem = `query_${entry_id.replace(/[^a-zA-Z0-9_-]/g, "_")}_${
+            column ?? (component === "table" ? "table" : "value")
+          }`;
+          let value = stem;
+          let suffix = 2;
+          while (current.variables.some((node) => node.id === value)) {
+            value = `${stem}_${suffix++}`;
+          }
+          return value;
+        })(),
+        query: { ...base.query, ...(column ? { column } : {}) },
+      });
+      if (component === "table") {
+        try {
+          return { table: await bindFromPreview(current, withId(), "table") };
+        } catch (tableError) {
+          try {
+            return {
+              scalars: [{
+                column: "value",
+                binding: await bindFromPreview(current, withId(), "scalar"),
+              }],
+            };
+          } catch {
+            throw tableError;
+          }
+        }
+      }
+      let descriptor: CompositionResolvedBinding;
+      try {
+        descriptor = await bindFromPreview(current, withId(), "scalar");
+      } catch {
+        // The Saved SQL revision can return either a scalar or a table. Probe
+        // each shape through the same typed preview contract before offering
+        // a Metric binding; no shape is inferred from SQL text in the client.
+        descriptor = await bindFromPreview(current, withId(), "table");
+      }
+      if (descriptor.variable.returns.kind !== "table") {
+        if (component === "table") throw new Error("Saved SQL is not a table");
+        if (descriptor.variable.returns.kind !== "scalar") {
+          throw new Error("Saved SQL has no scalar result");
+        }
+        return {
+          scalars: [{ column: "value", binding: descriptor }],
+        };
+      }
+      if (component === "table") {
+        return { table: descriptor };
+      }
+      const columns = descriptor.variable.returns.columns;
+      const scalars = await Promise.all(columns.map(async (column) => {
+        const scalarQuery = withId(column.name);
+        scalarQuery.returns = {
+          kind: "scalar",
+          value_type: scalarFor(
+            column.value_type.scalar_type,
+            column.value_type.nullable,
+          ),
+        };
+        return {
+          column: column.name,
+          binding: await bindFromPreview(current, scalarQuery, "scalar"),
+        };
+      }));
+      return { scalars };
+    },
+    inspectSavedSql: async ({
+      session: _session,
+      entry_id,
+      revision_id,
+      component,
+      draft: current,
+    }) => {
+      const entry = savedSql().find((candidate) =>
+        candidate.entry_id === entry_id && candidate.revision_id === revision_id
+      );
+      if (!entry) throw new Error("Saved SQL revision unavailable");
+      const added: CompositionVariableNode[] = [];
+      const arguments_ = entry.arguments.map((argument, index) => {
+        const stem = `__saved_sql_probe_${index}`;
+        let variable = stem;
+        let suffix = 2;
+        while (
+          current.variables.some((node) => node.id === variable) ||
+          added.some((node) => node.id === variable)
+        ) variable = `${stem}_${suffix++}`;
+        const sample: Record<string, unknown> = {
+          string: "",
+          boolean: false,
+          integer: 0,
+          float: 0,
+          date: "1970-01-01",
+          timestamp: "1970-01-01T00:00:00Z",
+        };
+        added.push({
+          id: variable,
+          kind: "constant",
+          value_type: { scalar_type: argument.type, nullable: false },
+          value: {
+            kind: argument.type,
+            value: sample[argument.type],
+          } as CompositionLiteral,
+        });
+        return { name: argument.name, variable };
+      });
+      return await provider.prepareSavedSql({
+        session: _session,
+        entry_id,
+        revision_id,
+        component,
+        arguments: arguments_,
+        draft: { ...current, variables: [...current.variables, ...added] },
+      });
+    },
   };
 
   const saveRequest = async (
     attempt: PendingCompositionSaveAttempt,
     isRetry: boolean,
   ) => {
-    // In-memory attempt only: never persisted to browser storage or shared
-    // across server requests. The idempotency key stays stable across
-    // retries of the same attempt.
     stagePendingCompositionSaveAttempt(attempt, undefined);
     try {
-      // Create saves keep the original three-argument call; updates carry
-      // the exact composition and base revision identity.
-      const response = props.saveMode.kind === "update"
-        ? await compositionApi.save(
-          attempt.spaceId,
-          attempt.yaml,
-          attempt.idempotencyKey,
-          {
-            compositionId: props.saveMode.compositionId,
-            baseRevisionId: props.saveMode.baseRevisionId,
-          },
-        )
-        : await compositionApi.save(
-          attempt.spaceId,
-          attempt.yaml,
-          attempt.idempotencyKey,
-        );
-      if (!isCurrentSaveRoute(attempt)) {
-        markPendingCompositionSaveAttemptUncertain(attempt, undefined);
+      const saved = await compositionApi.save(
+        attempt.spaceId,
+        attempt.yaml,
+        attempt.idempotencyKey,
+        attempt.saveTarget.kind === "update"
+          ? {
+            compositionId: attempt.saveTarget.compositionId,
+            baseRevisionId: attempt.saveTarget.baseRevisionId,
+          }
+          : undefined,
+      );
+      if (!sameCompositionSaveIdentity(attempt, routeIdentity())) {
+        clearPendingCompositionSaveAttempt(attempt, "completed", undefined);
         return;
       }
       clearPendingCompositionSaveAttempt(attempt, "completed", undefined);
       pendingSave = undefined;
-      navigate(
-        spaceCompositionRevisionPath(
-          spaceId(),
-          response.composition_id,
-          response.revision_id,
-        ),
-      );
+      setSaveRetryAvailable(false);
+      navigate(spaceCompositionRevisionPath(
+        props.spaceId,
+        saved.composition_id,
+        saved.revision_id,
+      ));
     } catch (error) {
       const outcome = error && typeof error === "object" &&
           "mutationOutcome" in error
@@ -940,553 +794,247 @@ export function CompositionStudio(props: CompositionStudioProps) {
       const retryWasDenied = isRetry && (status === 401 || status === 403);
       if (outcome === "rejected" && !retryWasDenied) {
         clearPendingCompositionSaveAttempt(attempt, "rejected", undefined);
-        setSaveError(compositionSaveErrorMessage(error));
+        if (sameCompositionSaveIdentity(attempt, routeIdentity())) {
+          pendingSave = undefined;
+          setSaveRetryAvailable(false);
+          setSaveError(compositionSaveErrorMessage(error));
+        }
       } else {
         markPendingCompositionSaveAttemptUncertain(attempt, undefined);
-        setSaveError(t("composition.saveFailed"));
-        setSaveRetryAvailable(true);
+        if (sameCompositionSaveIdentity(attempt, routeIdentity())) {
+          pendingSave = attempt;
+          setSaveRetryAvailable(true);
+          setSaveError(t("composition.saveFailed"));
+        }
       }
     }
   };
 
-  const handleSave = async () => {
-    // Fail closed without a save attempt when the readiness gate blocks:
-    // surface the allowlisted invalid-composition summary for structural
-    // blocks (empty layout, dangling refs) instead of a generic crash. The
-    // idempotency-key and retry-same-payload semantics below stay untouched.
-    if (!canSave()) {
-      if (!saving() && !readiness().ready) {
-        setSaveError(t("composition.diagnostic.invalid_composition"));
-      }
+  const save = async () => {
+    if (saving() || saveRetryAvailable() || pendingSave || !editorValid()) {
       return;
     }
-    const snapshot = draft();
-    pendingSave = undefined;
-    setSaveError(null);
-    setSaveRetryAvailable(false);
+    const current = draft();
+    if (!current.name.trim() || current.components.length === 0) {
+      setSaveError(t("composition.studioInvalidDocument"));
+      return;
+    }
+    const localDiagnostics = compositionBindingDiagnostics(current);
+    if (localDiagnostics.length > 0) {
+      setSaveError(t("composition.studioInvalidDocument"));
+      return;
+    }
+    const saveIdentity = routeIdentity();
+    const generation = saveGeneration() + 1;
+    setSaveGeneration(generation);
     setSaving(true);
+    setSaveError(null);
+    let attempt: PendingCompositionSaveAttempt = {
+      ...saveIdentity,
+      name: current.name.trim(),
+      yaml: "",
+      idempotencyKey: crypto.randomUUID(),
+    };
+    pendingSave = attempt;
+    stagePendingCompositionSaveAttempt(attempt, undefined);
     try {
-      const canonical = await canonicalizeDraft(snapshot);
-      const attempt: PendingCompositionSaveAttempt = {
-        ...saveRoute(),
-        name: snapshot.name.trim(),
-        yaml: canonical.canonical_yaml,
-        idempotencyKey: crypto.randomUUID(),
+      const checked = await previewCandidate(current);
+      if (!checked.ok || !checked.plan) {
+        throw new Error("Composition preview failed");
+      }
+      const queryMap = new Map(checked.plan.queries.map((query) => [
+        query.variable_id,
+        query,
+      ]));
+      const verified: CompositionGraphDraft = {
+        ...current,
+        variables: current.variables.map((node) => {
+          if (node.kind !== "query") return node;
+          const query = queryMap.get(node.id);
+          if (!query) throw new Error("Query descriptor missing");
+          return {
+            ...node,
+            returns: query.returns,
+            query: {
+              ...node.query,
+              form_bindings: query.form_bindings,
+              schema_fingerprint: query.schema_fingerprint,
+            },
+          };
+        }),
       };
+      const canonical = await compositionApi.canonicalizeDocument(
+        compositionGraphDocumentDraft(verified),
+      );
+      if (generation !== saveGeneration()) return;
+      attempt = { ...attempt, yaml: canonical.canonical_yaml };
       pendingSave = attempt;
       await saveRequest(attempt, false);
     } catch (error) {
-      // Canonicalize failures carry shared-contract diagnostics (e.g. an
-      // empty layout reaching canonicalization); allowlisted codes resolve
-      // to the localized summary, anything else to the generic failure.
-      setSaveError(compositionCanonicalizeErrorMessage(error));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleRetrySave = async () => {
-    if (saving() || !saveRetryAvailable() || !pendingSave) return;
-    setSaveError(null);
-    setSaving(true);
-    try {
-      await saveRequest(pendingSave, true);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const previewState = () => previewHandle.state();
-  // Preview selectors stay empty while the draft has no sources, so a
-  // removed last source never leaves a stale preview on screen.
-  const hasSources = () => draft().sources.length > 0;
-  const readySources = (): Record<string, CompositionSourcePageState> => {
-    const current = previewState();
-    return current.preview?.ok && hasSources() && draftMetricsReady(draft())
-      ? current.sources
-      : {};
-  };
-  const readyPlan = () => {
-    const current = previewState();
-    if (
-      !current.preview?.ok || !hasSources() || !draftMetricsReady(draft())
-    ) return undefined;
-    return {
-      sources: current.preview.plan?.sources ?? [],
-      component_bindings: current.preview.plan?.component_bindings ?? [],
-    };
-  };
-  let descriptorSyncGeneration = 0;
-  createEffect(() => {
-    const snapshot = draft();
-    const current = previewState();
-    const preview = current.preview;
-    if (
-      !preview?.ok || !preview.plan || !current.yaml ||
-      previewSnapshot !== snapshot
-    ) return;
-    const generation = ++descriptorSyncGeneration;
-    if (generation !== descriptorSyncGeneration || draft() !== snapshot) return;
-    const latest = previewState();
-    if (latest.yaml !== current.yaml || latest.preview !== preview) return;
-    let next = snapshot;
-    let changed = false;
-    for (const source of preview.plan.sources) {
-      if (source.kind !== "inline_sql") continue;
-      const updated = setInlineSqlDescriptor(next, source.source_id, {
-        formBindings: source.form_bindings,
-        expectedResult: source.expected_result,
-        schemaFingerprint: source.source_schema_fingerprint,
-      });
-      if (updated.ok && updated.draft !== next) {
-        next = updated.draft;
-        changed = true;
+      clearPendingCompositionSaveAttempt(attempt, "rejected", undefined);
+      if (sameCompositionSaveIdentity(attempt, routeIdentity())) {
+        pendingSave = undefined;
+        setSaveRetryAvailable(false);
       }
+      if (generation === saveGeneration()) {
+        setSaveError(compositionCanonicalizeErrorMessage(error));
+      }
+    } finally {
+      if (generation === saveGeneration()) setSaving(false);
     }
-    if (changed) setDraft(next);
-  });
-  const metricQueryContext = (): CompositionMetricQueryContext | undefined => {
-    const current = previewState();
-    if (
-      !current.preview?.ok || !current.spaceId || !current.yaml ||
-      !current.identity || !draftMetricsReady(draft())
-    ) return undefined;
-    return {
-      spaceId: current.spaceId,
-      target: { kind: "draft", yaml: current.yaml },
-      draftFingerprint: current.identity.fingerprint,
-      ...(previewBase()
-        ? {
-          base_entry_id: previewBase()!.entryId,
-          base_revision_id: previewBase()!.revisionId,
-        }
-        : {}),
-      variables: { ...previewHandle.variables() },
-      dependencies: current.preview.plan?.dependencies,
-    };
   };
-  const previewDiagnostics = () => {
-    const current = previewState();
-    return !current.preview?.ok && hasSources() && draftMetricsReady(draft())
-      ? current.preview?.diagnostics
-      : undefined;
+
+  const retrySave = async () => {
+    const attempt = pendingSave;
+    if (saving() || !saveRetryAvailable() || !attempt) return;
+    const generation = saveGeneration() + 1;
+    setSaveGeneration(generation);
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await saveRequest(attempt, true);
+    } finally {
+      if (generation === saveGeneration()) setSaving(false);
+    }
   };
-  // Text blocks render from draft declarations with no source binding, so
-  // the canvas fills preview-pending text bindings locally instead of
-  // waiting for (or triggering) a second preview path.
-  const canvasPlan = () => {
-    const plan = readyPlan();
-    const bindings = plan?.component_bindings ?? [];
-    const known = new Set(
-      bindings.map((binding) => binding.component_id),
+
+  const markQueryPreviewsStale = (invalidated: readonly string[]) => {
+    if (!invalidated.length) return;
+    for (const variableId of invalidated) {
+      runGenerations.set(
+        variableId,
+        (runGenerations.get(variableId) ?? 0) + 1,
+      );
+    }
+    setQueryPreviews((current) => {
+      const updated = { ...current };
+      for (const variableId of invalidated) {
+        updated[variableId] = { status: "idle", isCurrent: false };
+      }
+      return updated;
+    });
+    setQueryEvaluations((current) => {
+      const updated = { ...current };
+      for (const variableId of invalidated) delete updated[variableId];
+      return updated;
+    });
+  };
+
+  const invalidateQueryPreviews = (variableIds: ReadonlySet<string>) => {
+    markQueryPreviewsStale(
+      dependentCompositionQueryIds(draft(), variableIds),
     );
-    const pendingTexts = draft().displays
-      .filter((display) =>
-        display.kind === "text" && !known.has(display.draftId)
-      )
-      .map((display) => ({
-        component_id: display.draftId,
-        kind: "text" as const,
-      }));
-    const pendingInputs = draft().inputs
-      .filter((input) => !known.has(input.draftId))
-      .map((input) => ({
-        component_id: input.draftId,
-        kind: "input" as const,
-        variable_id: input.variable,
-      }));
-    return {
-      sources: plan?.sources ?? [],
-      component_bindings: [...bindings, ...pendingTexts, ...pendingInputs],
-    };
   };
-  const isPreviewing = () => hasSources() && previewState().previewing;
-  const previewFailed = () =>
-    hasSources() &&
-    previewState().previewError !== undefined &&
-    previewState().preview === undefined;
 
-  const designHeadingId = "studio-mode-design";
-  const variablesHeadingId = "studio-data-variables-tab";
-  const sourceTabId = "studio-data-sources-tab";
-  const nameInputId = "studio-name";
-
-  const modeIcon = (entry: StudioMode): "canvas-table" | "sql" | "columns" =>
-    entry === "design" ? "canvas-table" : entry === "data" ? "sql" : "columns";
-  const modeLabel = (entry: StudioMode): string =>
-    entry === "design"
-      ? t("composition.studioDesign")
-      : entry === "data"
-      ? t("composition.studioData")
-      : t("composition.studioSplit");
-
-  // Shared workspace fragments: modes switch the arrangement only, so the
-  // Data workspace and the Design canvas render from the same draft,
-  // preview, and selection state in every mode without refetching.
-  // The bottom sheet owns the selected block identity on narrow viewports;
-  // clearing the selection (or leaving the sheet viewport) dismisses it.
-  const sheetSelection = (): string | null =>
-    sheetViewport() && overlay().kind === "block-inspector"
-      ? overlay().componentId
-      : null;
-  const sourcePickerOverlay = () =>
-    overlay().kind === "source-picker" ? overlay() : undefined;
-  const displayPickerOverlay = () =>
-    overlay().kind === "display-picker" ? overlay() : undefined;
-  const mobileDrawerOpen = () => overlay().kind === "source-drawer";
-  const onMobileDrawerOpenChange = (open: boolean) => {
-    if (open) setOverlay({ kind: "source-drawer" });
-    else if (overlay().kind === "source-drawer") setOverlay({ kind: "none" });
+  const onEditorValidityChange = (
+    variableId: string,
+    valid: boolean | undefined,
+  ) => {
+    if (valid === false) invalidateQueryPreviews(new Set([variableId]));
+    setInvalidEditorVariables((current) => {
+      const next = new Set(current);
+      if (valid === false) next.add(variableId);
+      else next.delete(variableId);
+      return next;
+    });
   };
-  const renderDataWorkspace = (
-    headingId = "studio-mode-data",
-    collapsible = false,
-  ) => (
-    <CompositionDataWorkspace
-      draft={draft()}
-      headingId={headingId}
-      selectedSourceId={expandedId()}
-      collapsible={collapsible}
-      mobileDrawerOpen={mobileDrawerOpen()}
-      onMobileDrawerOpenChange={onMobileDrawerOpenChange}
-      onSelectSource={selectSource}
-      onAddSource={openDataSourcePicker}
-      onMoveSource={moveDraftSource}
-      onRemoveSource={removeDraftSource}
-      onInlineSql={updateInlineSql}
-      onInlineSqlName={updateInlineSqlName}
-      onVariablesAdded={addSqlArgumentVariables}
-      variables={draft().variables}
-      variableValues={previewHandle.variables()}
-      savedSqlEditHref={savedSqlEditHref}
-      sqlSchema={buildSqlSchema((forms() || []) as Form[])}
-      forms={(forms() || []) as Form[]}
-      planSources={readyPlan()?.sources ?? []}
-      sourceStates={readySources()}
-      sourceCounts={previewState().counts}
-      previewActive={isPreviewing()}
-      onNext={(sourceId) => previewHandle.next(sourceId)}
-      onPrevious={(sourceId) => previewHandle.previous(sourceId)}
-      onRetry={(sourceId) => previewHandle.retry(sourceId)}
-      onCount={(sourceId) => void previewHandle.count(sourceId)}
-      registerSourceRow={registerSourceRow}
-    />
-  );
-  // The diagnostics strip replaces the removed Preview section: resolve
-  // and preview diagnostics render through the shared CompositionDiagnostics
-  // (structural alert roles, existing copy only) above the mode content in
-  // every mode. The Design canvas already previews blocks inline through the
-  // shared debounced handle, so no second preview path remains.
-  const renderDiagnosticsStrip = () => (
-    <>
-      <Show when={isPreviewing()}>
-        <LocalBusyIndicator label={t("composition.queryLoading")} />
+
+  const onDraftChange = (next: CompositionGraphDraft) => {
+    if (saving() || saveRetryAvailable()) return;
+    const invalidated = changedCompositionQueryIds(draft(), next);
+    markQueryPreviewsStale(invalidated);
+    const remainingEditorIds = new Set(
+      next.variables
+        .filter((node) => node.kind === "constant" || node.kind === "input")
+        .map((node) => node.id),
+    );
+    setInvalidEditorVariables((current) =>
+      new Set([...current].filter((id) => remainingEditorIds.has(id)))
+    );
+    setDraft(next);
+    setSaveError(null);
+  };
+
+  return (
+    <div
+      class="compositionGraphStudioRoot"
+      aria-busy={saving() ? "true" : "false"}
+    >
+      <div
+        class="compositionGraphStudioEditor"
+        inert={saving() || saveRetryAvailable()}
+      >
+        <header class="screenHead">
+          <div class="screenHeadStart">
+            <BackLink href={props.backHref} label={props.backLabel} />
+            <input
+              class="ui-input compositionGraphName"
+              aria-label={t("composition.name")}
+              value={draft().name}
+              onInput={(event) =>
+                onDraftChange({
+                  ...draft(),
+                  name: event.currentTarget.value,
+                })}
+            />
+          </div>
+        </header>
+        <Show when={formsResource.loading || sqlResource.loading}>
+          <LocalBusyIndicator label={t("common.loading")} />
+        </Show>
+        <CompositionGraphStudio
+          draft={draft()}
+          forms={forms()}
+          savedSql={savedSqlForPicker()}
+          savedSqlLoading={sqlResource.loading}
+          savedSqlSeedUnavailable={savedSqlSeedUnavailable()}
+          initialSavedSqlBinding={props.initialSavedSqlBinding}
+          provider={provider}
+          session={session}
+          getPrincipalGeneration={getPrincipalGeneration}
+          isSessionCurrent={isSessionCurrent}
+          sqlSchema={sqlSchema()}
+          sqlForms={formsResource() ?? []}
+          previewForQuery={(variableId) =>
+            queryPreviews()[variableId] ?? {
+              status: "idle",
+              isCurrent: false,
+            }}
+          onRunQuery={(variableId) => void runQuery(variableId)}
+          onNextQuery={(variableId) => {
+            const evaluation = queryEvaluations()[variableId];
+            if (evaluation?.next) void runQuery(variableId, evaluation.next);
+          }}
+          onDraftChange={onDraftChange}
+          onQueryChange={(variableId, sql) => {
+            onDraftChange({
+              ...draft(),
+              variables: draft().variables.map((node) =>
+                node.id === variableId && node.kind === "query" &&
+                  node.query.kind === "inline_sql"
+                  ? { ...node, query: { ...node.query, sql } }
+                  : node
+              ),
+            });
+          }}
+          onSave={save}
+          saveDisabled={!editorValid() || !draft().name.trim() ||
+            draft().components.length === 0 || saveRetryAvailable()}
+          saving={saving()}
+          onEditorValidityChange={onEditorValidityChange}
+        />
+      </div>
+      <Show when={saveError()}>
+        <p class="ui-text-danger" role="alert">{saveError()}</p>
       </Show>
-      <Show when={previewFailed()}>
-        <p class="ui-text-danger" role="alert">
-          {t("composition.queryFailed")}
-        </p>
+      <Show when={saveRetryAvailable() && !saving()}>
         <button
           class="ui-button ui-button-secondary"
           type="button"
-          aria-label={t("composition.studioRetryPreview")}
-          onClick={retryPreview}
+          onClick={() => void retrySave()}
         >
           {t("composition.retry")}
         </button>
-      </Show>
-      <Show when={previewDiagnostics()}>
-        {(diagnostics) => (
-          <>
-            <CompositionDiagnostics
-              diagnostics={diagnostics()}
-              variableDefinitions={draft().variables}
-            />
-            <button
-              class="ui-button ui-button-secondary"
-              type="button"
-              aria-label={t("composition.studioRetryPreview")}
-              onClick={retryPreview}
-            >
-              {t("composition.retry")}
-            </button>
-          </>
-        )}
-      </Show>
-    </>
-  );
-  const renderDesignWorkspace = () => (
-    <div class="studioDesignWorkspace">
-      <div class="studioDesign">
-        <CompositionDesignCanvas
-          draft={draft()}
-          plan={canvasPlan()}
-          metricQueryContext={metricQueryContext()}
-          variableValues={{
-            ...defaultVariableValues(draft()),
-            ...previewHandle.variables(),
-          }}
-          sources={readySources()}
-          selectedId={selectedId()}
-          highlightedIds={highlightedBlockIds()}
-          onSelect={handleSelectBlock}
-          onInsert={handleInsertBlock}
-          onDraftChange={setDraft}
-          onRequestDisplayPicker={(target) => {
-            setSelectedId(null);
-            setOverlay({
-              kind: "display-picker",
-              componentKind: "table",
-              sourceDraftId: null,
-              target,
-            });
-          }}
-          onNext={(sourceId) => previewHandle.next(sourceId)}
-          onPrevious={(sourceId) => previewHandle.previous(sourceId)}
-          onRetry={(sourceId) => previewHandle.retry(sourceId)}
-          paletteTarget={paletteTarget()}
-          onPaletteTarget={setPaletteTarget}
-        />
-        {
-          /* The inspector renders exactly once: inline beside the canvas on
-            wide viewports, or as a bottom sheet on narrow ones. */
-        }
-        <Show when={!sheetViewport()}>
-          <CompositionInspector
-            draft={draft()}
-            textLiteralCache={textLiteralCache}
-            selectedId={selectedId()}
-            onDraftChange={setDraft}
-            onRemove={removeSelectedBlock}
-            onDataJump={jumpToSource}
-            onChangeTableSource={openTableSourcePicker}
-          />
-        </Show>
-      </div>
-      <Show when={sheetSelection()}>
-        {(activeId) => (
-          <CompositionInspectorSheet
-            draft={draft()}
-            textLiteralCache={textLiteralCache}
-            selectedId={activeId()}
-            onDraftChange={setDraft}
-            onRemove={removeSelectedBlock}
-            onDataJump={jumpToSource}
-            onChangeTableSource={openTableSourcePicker}
-            onClose={dismissSheet}
-          />
-        )}
-      </Show>
-    </div>
-  );
-
-  return (
-    <div>
-      <h1 class="ui-sr-only">
-        {draft().name.trim() || t("composition.name")}
-      </h1>
-      <header class="flex items-center gap-2" inert={mobileDrawerOpen()}>
-        <BackLink
-          href={props.backHref}
-          label={props.backLabel}
-        />
-        <input
-          id={nameInputId}
-          class="ui-input"
-          aria-label={t("composition.name")}
-          value={draft().name}
-          onInput={(event) =>
-            setDraft(setDraftName(draft(), event.currentTarget.value))}
-        />
-        {/* Visible text Save: the icon-button hid the primary mutation. */}
-        <button
-          class="ui-button"
-          type="button"
-          aria-label={saveLabel()}
-          title={canSave() ? undefined : saveLabel()}
-          disabled={!canSave()}
-          onClick={() => void handleSave()}
-        >
-          {t("composition.save")}
-        </button>
-      </header>
-      <div
-        class="studioMode"
-        role="radiogroup"
-        aria-label={t("composition.studioMode")}
-        inert={mobileDrawerOpen()}
-      >
-        <For each={STUDIO_MODES}>
-          {(entry) => (
-            <button
-              type="button"
-              role="radio"
-              aria-checked={mode() === entry}
-              id={entry === "design"
-                ? designHeadingId
-                : entry === "data"
-                ? "studio-mode-data"
-                : "studio-mode-split"}
-              class="studioModeOption"
-              classList={{
-                "studioModeOption--active": mode() === entry,
-                studioModeSplit: entry === "split",
-              }}
-              onClick={() => setMode(entry)}
-            >
-              <UiIcon name={modeIcon(entry)} />
-              <span>{modeLabel(entry)}</span>
-            </button>
-          )}
-        </For>
-      </div>
-      <div inert={mobileDrawerOpen()}>
-        <Show when={saveError()}>
-          <p class="ui-text-danger" role="alert">{saveError()}</p>
-        </Show>
-        <Show when={saveRetryAvailable() && !saving()}>
-          <button
-            class="ui-button ui-button-secondary"
-            type="button"
-            onClick={() => void handleRetrySave()}
-          >
-            {t("composition.retry")}
-          </button>
-        </Show>
-      </div>
-
-      <div inert={mobileDrawerOpen()}>{renderDiagnosticsStrip()}</div>
-
-      <Show when={mode() === "data"}>
-        <section class="section" aria-labelledby="studio-mode-data">
-          <div
-            class="tabs studioDataTabs"
-            role="tablist"
-            aria-label={t("composition.studioData")}
-            inert={mobileDrawerOpen()}
-          >
-            <button
-              type="button"
-              id={sourceTabId}
-              role="tab"
-              aria-selected={dataPanel() === "sources"}
-              aria-controls="studio-data-sources-panel"
-              class="tab"
-              classList={{ active: dataPanel() === "sources" }}
-              onClick={() => {
-                setDataPanel("sources");
-                if (overlay().kind === "source-drawer") {
-                  setOverlay({ kind: "none" });
-                }
-              }}
-            >
-              {t("composition.studioSources")}
-            </button>
-            <button
-              type="button"
-              id="studio-data-variables-tab"
-              role="tab"
-              aria-selected={dataPanel() === "variables"}
-              aria-controls="studio-data-variables-panel"
-              class="tab"
-              classList={{ active: dataPanel() === "variables" }}
-              onClick={() => {
-                setDataPanel("variables");
-                if (overlay().kind === "source-drawer") {
-                  setOverlay({ kind: "none" });
-                }
-              }}
-            >
-              {t("composition.studioVariables")}
-            </button>
-          </div>
-          <div
-            id="studio-data-sources-panel"
-            role="tabpanel"
-            aria-labelledby={sourceTabId}
-            hidden={dataPanel() !== "sources"}
-          >
-            {renderDataWorkspace(sourceTabId)}
-          </div>
-          <section
-            id="studio-data-variables-panel"
-            role="tabpanel"
-            aria-labelledby="studio-data-variables-tab"
-            hidden={dataPanel() !== "variables"}
-            class="section"
-            inert={mobileDrawerOpen()}
-          >
-            <CompositionVariableList
-              variables={draft().variables}
-              headingId={variablesHeadingId}
-              onAdd={addDraftVariable}
-              onUpdate={updateDraftVariable}
-              onRemove={removeDraftVariable}
-            />
-          </section>
-        </section>
-      </Show>
-
-      <Show when={mode() === "design"}>
-        <section class="section" aria-labelledby={designHeadingId}>
-          {renderDesignWorkspace()}
-        </section>
-      </Show>
-
-      <Show when={mode() === "split"}>
-        <section class="section" aria-label={t("composition.studioMode")}>
-          <div class="studioSplit">
-            <div role="region" aria-label={t("composition.studioDesign")}>
-              {renderDesignWorkspace()}
-            </div>
-            <div
-              class="studioSplitPane"
-              role="region"
-              aria-label={t("composition.studioData")}
-            >
-              {renderDataWorkspace("studio-mode-data", true)}
-            </div>
-          </div>
-        </section>
-      </Show>
-
-      {
-        /* The legacy Display list lived here through RA7; the Design canvas
-          plus inspector own display add/remove/reorder/label now, and the
-          display picker survives only as the canvas insertion delegate. The
-          legacy Preview section is gone too: the canvas previews blocks
-          inline through the shared debounced handle, per-source results page
-          inside the Data workspace, and resolve diagnostics render in the
-          strip above. Variables edit in Data mode only. */
-      }
-
-      <Show when={sourcePickerOverlay()}>
-        <CompositionSourcePicker
-          spaceId={spaceId()}
-          returnFocus={sourcePickerReturnFocus()}
-          existingSources={draft().sources}
-          onSelectExisting={selectExistingSource}
-          onSelect={addSourceForDisplay}
-          onClose={() => {
-            setOverlay({ kind: "none" });
-            setSourcePickerReturnFocus(undefined);
-          }}
-        />
-      </Show>
-
-      <Show when={displayPickerOverlay()}>
-        {(activePicker) => (
-          <CompositionDisplayPicker
-            draft={draft()}
-            initialKind={activePicker().componentKind}
-            initialSourceDraftId={activePicker().sourceDraftId}
-            returnFocus={() => insertPositionControl(activePicker().target)}
-            onAdd={addDisplaySeed}
-            onPreview={previewMetric}
-            onChooseSource={chooseSourceForDisplay}
-            onClose={() => setOverlay({ kind: "none" })}
-          />
-        )}
       </Show>
     </div>
   );

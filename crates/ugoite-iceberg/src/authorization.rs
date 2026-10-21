@@ -397,24 +397,24 @@ impl AuthorizationLease {
     /// dropping an in-flight storage future would make a committed-or-unknown
     /// mutation impossible to reconcile. The latched pre/post checks instead
     /// fail closed and force callers to treat the outcome as retryable.
-    pub async fn run_while_held<T, F, Fut>(&self, operation: F) -> std::result::Result<T, ()>
+    pub async fn run_while_held<T, F, Fut>(&self, operation: F) -> Result<T>
     where
         F: FnOnce() -> Fut,
         Fut: Future<Output = T>,
     {
-        self.prepare_mutation().await.map_err(|_| ())?;
+        self.prepare_mutation().await?;
         if self.inherited_fence.is_some() {
-            ensure_authorization_write_fence().await.map_err(|_| ())?;
+            ensure_authorization_write_fence().await?;
             let value = operation().await;
-            ensure_authorization_write_fence().await.map_err(|_| ())?;
+            ensure_authorization_write_fence().await?;
             return Ok(value);
         }
         let Some(durable) = self.durable.as_ref() else {
             return Ok(operation().await);
         };
-        durable.ensure_held().map_err(|_| ())?;
+        durable.ensure_held()?;
         let value = operation().await;
-        durable.ensure_held().map_err(|_| ())?;
+        durable.ensure_held()?;
         Ok(value)
     }
 }

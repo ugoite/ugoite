@@ -12116,99 +12116,10 @@
         "description": "Returns the latest stored Composition carrier without requiring the current Composition format parser."
       }
     },
-    "/spaces/{space_id}/compositions/{entry_id}/resolve": {
-      "post": {
-        "summary": "Resolve an exact Composition revision",
-        "description": "Parses the exact authorized raw Composition revision, reads current source descriptors through current ACL checks, and compiles each source into an existing stateless SQL query request. It does not execute source queries or create persistent state. Missing and denied source references share the source_unavailable diagnostic.",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/SpaceId"
-          },
-          {
-            "$ref": "#/components/parameters/EntryId"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CompositionResolveRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Resolved plan or stable Composition diagnostics",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CompositionResolveResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid JSON request body",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized"
-          },
-          "403": {
-            "description": "Forbidden"
-          },
-          "404": {
-            "description": "Composition revision not found or concealed by current authorization"
-          },
-          "413": {
-            "description": "The JSON request body exceeds the 256 KiB bound"
-          },
-          "415": {
-            "description": "Request Content-Type must be application/json"
-          },
-          "422": {
-            "description": "Invalid identifiers or request shape",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/spaces/{space_id}/compositions/preview": {
       "post": {
         "summary": "Preview an unsaved Composition draft",
-        "description": "Parses a candidate Composition document, reads current source descriptors through current ACL checks, and compiles each source into an existing stateless SQL query request. It creates no registry, history, or publication state. Missing and denied source references share the source_unavailable diagnostic.",
+        "description": "Parses a candidate Composition graph, validates current source authorization, and returns typed query descriptors without executing queries or creating registry, history, or Publication state.",
         "parameters": [
           {
             "$ref": "#/components/parameters/SpaceId"
@@ -12267,6 +12178,89 @@
           },
           "422": {
             "description": "Invalid identifiers or request shape",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/spaces/{space_id}/compositions/evaluate": {
+      "post": {
+        "summary": "Evaluate a Composition query graph",
+        "description": "Resolves and evaluates each typed query variable once in dependency order against one immutable Publication and current authorization snapshot. Results are transient. The caller-provided evaluation_id and snapshot fingerprints let clients discard stale responses; table continuations are signed and bound to the exact Composition, query variable, inputs, authorization, and Publication.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SpaceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompositionEvaluationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Typed graph results keyed by query variable ID, or stable Composition diagnostics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompositionEvaluationResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Ugoite-Key-Id": {
+                "$ref": "#/components/headers/X-Ugoite-Key-Id"
+              },
+              "X-Ugoite-Signature": {
+                "$ref": "#/components/headers/X-Ugoite-Signature"
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "413": {
+            "description": "The JSON request body exceeds the 256 KiB bound"
+          },
+          "415": {
+            "description": "Request Content-Type must be application/json"
+          },
+          "422": {
+            "description": "Invalid identifiers, graph target, or page cursor",
             "content": {
               "application/json": {
                 "schema": {
@@ -12783,89 +12777,6 @@
           }
         },
         "description": "Returns only the requested stored Composition revision; it never falls back to the latest revision or requires the current Composition format parser."
-      }
-    },
-    "/spaces/{space_id}/compositions/metric-query": {
-      "post": {
-        "summary": "Query one Composition Metric",
-        "description": "Resolves the exact stored Composition revision or unsaved draft through current authorization, then evaluates one already-bound SQL metric. Draft edits may supply both base_entry_id and base_revision_id to retain unchanged Form bindings from that exact revision; supplying only one is invalid. Saved SQL uses its exact revision; inline SQL uses server-derived Form ID bindings. The bounded probe materializes at most two rows at an authorized publication checkpoint. No table page, continuation, caller SQL, Browser aggregation, or automatic LIMIT 1 is used.",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/SpaceId"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CompositionMetricQueryRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "One typed metric value or stable metric diagnostics",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CompositionMetricQueryResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid JSON request body",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized"
-          },
-          "403": {
-            "description": "Forbidden"
-          },
-          "413": {
-            "description": "The JSON request body exceeds the 256 KiB bound"
-          },
-          "415": {
-            "description": "Request Content-Type must be application/json"
-          },
-          "422": {
-            "description": "Invalid identifiers or request shape",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
       }
     }
   },
@@ -15287,10 +15198,10 @@
           "variable_unknown",
           "variable_missing",
           "variable_type_mismatch",
-          "source_unavailable",
+          "query_unavailable",
           "missing_field",
           "field_type_changed",
-          "source_schema_changed",
+          "query_schema_changed",
           "metric_result_not_scalar",
           "metric_result_type_mismatch",
           "metric_scalar_no_rows",
@@ -15390,34 +15301,6 @@
           }
         ]
       },
-      "CompositionResolveRequest": {
-        "type": "object",
-        "required": [
-          "revision_id"
-        ],
-        "properties": {
-          "revision_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "Exact Composition revision to resolve; no latest fallback."
-          },
-          "variables": {
-            "type": "object",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            },
-            "default": {}
-          },
-          "unset_variables": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Variable names explicitly left unset. Omission from both fields uses a declared default; an unset name must not also appear in variables."
-          }
-        },
-        "additionalProperties": false
-      },
       "CompositionPreviewRequest": {
         "type": "object",
         "dependentRequired": {
@@ -15463,33 +15346,407 @@
         },
         "additionalProperties": false
       },
+      "CompositionEvaluationTarget": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "composition_id",
+              "revision_id"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "saved_revision"
+              },
+              "composition_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "revision_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "yaml"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "draft"
+              },
+              "yaml": {
+                "type": "string",
+                "maxLength": 65536
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "CompositionEvaluationPage": {
+        "type": "object",
+        "required": [
+          "variable_id",
+          "cursor"
+        ],
+        "properties": {
+          "variable_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "cursor": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Opaque signed SQL continuation bound to the Composition graph snapshot and query variable."
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompositionEvaluationRequest": {
+        "type": "object",
+        "dependentRequired": {
+          "base_entry_id": [
+            "base_revision_id"
+          ],
+          "base_revision_id": [
+            "base_entry_id"
+          ]
+        },
+        "required": [
+          "evaluation_id",
+          "target"
+        ],
+        "properties": {
+          "evaluation_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Caller-owned generation identifier echoed by the response and bound into every table continuation."
+          },
+          "target": {
+            "$ref": "#/components/schemas/CompositionEvaluationTarget"
+          },
+          "base_entry_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "base_revision_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "variables": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "default": {}
+          },
+          "unset_variables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Variables explicitly left unset. Omission from both fields uses a declared default."
+          },
+          "requested_queries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Query variable IDs to recompute. The server expands each selection to its transitive query dependencies. Omission evaluates the full graph; an empty list evaluates no query nodes."
+          },
+          "page": {
+            "$ref": "#/components/schemas/CompositionEvaluationPage"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompositionGraphQueryResult": {
+        "type": "object",
+        "required": [
+          "value",
+          "has_more"
+        ],
+        "properties": {
+          "value": {
+            "$ref": "#/components/schemas/JsonValue",
+            "description": "Tagged scalar or table value validated against the query variable's returns descriptor."
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "next": {
+            "type": "string",
+            "description": "Opaque continuation for the same query variable and immutable graph snapshot."
+          },
+          "exact_integer_rows": {
+            "type": "array",
+            "description": "For table results, exact base-10 integer strings aligned with rows and columns; null marks non-integer cells.",
+            "items": {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompositionEvaluationQueryDiagnostic": {
+        "type": "object",
+        "required": [
+          "code",
+          "variable_id"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable Core query-evaluation diagnostic code."
+          },
+          "variable_id": {
+            "type": "string"
+          },
+          "request_diagnostic": {
+            "$ref": "#/components/schemas/CompositionEvaluationRequestDiagnostic"
+          },
+          "result_diagnostic": {
+            "$ref": "#/components/schemas/CompositionEvaluationResultDiagnostic"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompositionEvaluationRequestDiagnostic": {
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable Core query-request diagnostic code."
+          },
+          "argument_name": {
+            "type": "string"
+          },
+          "reference_id": {
+            "type": "string"
+          },
+          "domain_code": {
+            "type": "string"
+          },
+          "cycle": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompositionEvaluationResultDiagnostic": {
+        "type": "object",
+        "required": [
+          "code",
+          "variable_id"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable Core query-result diagnostic code."
+          },
+          "variable_id": {
+            "type": "string"
+          },
+          "column_name": {
+            "type": "string"
+          },
+          "result_diagnostic": {
+            "$ref": "#/components/schemas/CompositionEvaluationResultContractDiagnostic"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompositionEvaluationResultContractDiagnostic": {
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable Domain result code, including scalar_no_rows, scalar_multiple_rows, and scalar_column_count_mismatch."
+          },
+          "expected_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "observed_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "row_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "column_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "column_name": {
+            "type": "string"
+          },
+          "expected_column_name": {
+            "type": "string"
+          },
+          "expected_value_type": {
+            "$ref": "#/components/schemas/CompositionScalarDescriptor"
+          },
+          "observed_value_type": {
+            "$ref": "#/components/schemas/CompositionScalarDescriptor"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompositionEvaluationResponse": {
+        "type": "object",
+        "required": [
+          "evaluation_id",
+          "ok",
+          "variable_values",
+          "queries",
+          "component_bindings",
+          "dependencies",
+          "query_results",
+          "computed_query_ids"
+        ],
+        "properties": {
+          "evaluation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "snapshot_fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "publication_fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "authorization_fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Current authorization identity, returned only after the post-evaluation ACL recheck."
+          },
+          "composition_revision": {
+            "$ref": "#/components/schemas/CompositionRevisionReference"
+          },
+          "draft_fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "variable_values": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            }
+          },
+          "queries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CompositionQuery"
+            }
+          },
+          "component_bindings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CompositionComponentBinding"
+            }
+          },
+          "dependencies": {
+            "$ref": "#/components/schemas/CompositionDependencyIndex"
+          },
+          "query_results": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CompositionGraphQueryResult"
+            },
+            "description": "Only results computed by this evaluation, keyed by query variable ID; components sharing a variable share its value."
+          },
+          "computed_query_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Query variables evaluated in this response, in dependency order."
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CompositionDiagnostic"
+            }
+          },
+          "query_diagnostics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CompositionEvaluationQueryDiagnostic"
+            },
+            "description": "Variable-scoped query failures. Failed evaluations return no query_results."
+          }
+        },
+        "additionalProperties": false
+      },
       "CompositionPreviewPlan": {
         "type": "object",
         "required": [
           "draft_fingerprint",
-          "sources"
+          "queries"
         ],
         "properties": {
           "draft_fingerprint": {
             "type": "string",
             "description": "Semantic draft fingerprint; preview identity, never a revision."
           },
-          "sources": {
+          "variable_values": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "default": {}
+          },
+          "queries": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/CompositionResolvedSource"
+              "$ref": "#/components/schemas/CompositionQuery"
             }
           },
           "component_bindings": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/CompositionResolvedComponentBinding"
+              "$ref": "#/components/schemas/CompositionComponentBinding"
             },
             "default": []
           },
           "dependencies": {
             "$ref": "#/components/schemas/CompositionDependencyIndex",
-            "description": "Validated variable/source consumers for reactive scheduling. Omitted when empty."
+            "description": "Validated variable and query consumers for reactive scheduling. Omitted when empty."
           }
         },
         "additionalProperties": false
@@ -15512,88 +15769,7 @@
         },
         "additionalProperties": false
       },
-      "CompositionResolvedSource": {
-        "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "kind",
-              "source_id",
-              "request",
-              "source_schema_fingerprint",
-              "form_bindings",
-              "expected_result"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "const": "inline_sql"
-              },
-              "source_id": {
-                "type": "string"
-              },
-              "request": {
-                "type": "object",
-                "additionalProperties": true,
-                "description": "Existing stateless SQL query request with server-derived Form ID bindings."
-              },
-              "source_schema_fingerprint": {
-                "type": "string",
-                "pattern": "^[0-9a-f]{64}$"
-              },
-              "form_bindings": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/CompositionResolvedFormBinding"
-                }
-              },
-              "expected_result": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/CompositionResolvedResultColumn"
-                }
-              }
-            },
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "required": [
-              "kind",
-              "source_id",
-              "request",
-              "source_schema_fingerprint",
-              "expected_result"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "const": "saved_sql"
-              },
-              "source_id": {
-                "type": "string"
-              },
-              "request": {
-                "type": "object",
-                "additionalProperties": true,
-                "description": "Existing stateless SQL query request selecting the exact Saved SQL revision."
-              },
-              "source_schema_fingerprint": {
-                "type": "string",
-                "pattern": "^[0-9a-f]{64}$"
-              },
-              "expected_result": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/CompositionResolvedResultColumn"
-                }
-              }
-            },
-            "additionalProperties": false
-          }
-        ]
-      },
-      "CompositionResolvedFormBinding": {
+      "CompositionFormBinding": {
         "type": "object",
         "required": [
           "relation",
@@ -15610,54 +15786,23 @@
         },
         "additionalProperties": false
       },
-      "CompositionResolvedResultColumn": {
+      "CompositionResultColumn": {
         "type": "object",
         "required": [
           "name",
-          "type"
+          "value_type"
         ],
         "properties": {
           "name": {
             "type": "string"
           },
-          "type": {
-            "$ref": "#/components/schemas/CompositionResultFieldType"
+          "value_type": {
+            "$ref": "#/components/schemas/CompositionScalarDescriptor"
           }
         },
         "additionalProperties": false
       },
-      "CompositionResolvePlan": {
-        "type": "object",
-        "required": [
-          "composition_revision",
-          "sources",
-          "component_bindings"
-        ],
-        "properties": {
-          "composition_revision": {
-            "$ref": "#/components/schemas/CompositionRevisionReference"
-          },
-          "sources": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/CompositionResolvedSource"
-            }
-          },
-          "component_bindings": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/CompositionResolvedComponentBinding"
-            },
-            "description": "Stable display bindings in the resolver's section order."
-          },
-          "dependencies": {
-            "$ref": "#/components/schemas/CompositionDependencyIndex",
-            "description": "Validated variable/source consumers for reactive scheduling. Omitted when empty."
-          }
-        },
-        "additionalProperties": false
-      },
-      "CompositionResolvedComponentBinding": {
+      "CompositionComponentBinding": {
         "type": "object",
         "required": [
           "component_id",
@@ -15678,13 +15823,7 @@
           },
           "variable_id": {
             "type": "string",
-            "description": "Declared variable selected by an Input or variable-backed Text component."
-          },
-          "source_id": {
-            "type": "string"
-          },
-          "result_property_key": {
-            "type": "string"
+            "description": "The single typed graph value referenced by this component."
           },
           "expected_result_type": {
             "$ref": "#/components/schemas/CompositionResultFieldType"
@@ -15703,14 +15842,7 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/CompositionVariableConsumers"
             },
-            "description": "Variable ID to Input, Text, and source consumers."
-          },
-          "source_consumers": {
-            "type": "object",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/CompositionSourceConsumers"
-            },
-            "description": "Source ID to Metric and Table consumers."
+            "description": "Variable ID to input, text, query, metric, and table consumers."
           }
         },
         "additionalProperties": false
@@ -15732,19 +15864,13 @@
             },
             "uniqueItems": true
           },
-          "source_ids": {
+          "query_variable_ids": {
             "type": "array",
             "items": {
               "type": "string"
             },
             "uniqueItems": true
-          }
-        },
-        "additionalProperties": false
-      },
-      "CompositionSourceConsumers": {
-        "type": "object",
-        "properties": {
+          },
           "metric_component_ids": {
             "type": "array",
             "items": {
@@ -15801,7 +15927,7 @@
           "json"
         ]
       },
-      "CompositionResolveDiagnostic": {
+      "CompositionDiagnostic": {
         "type": "object",
         "required": [
           "code"
@@ -15815,61 +15941,6 @@
           }
         },
         "additionalProperties": false
-      },
-      "CompositionResolveResponse": {
-        "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "ok",
-              "variable_definitions",
-              "plan"
-            ],
-            "properties": {
-              "ok": {
-                "type": "boolean",
-                "const": true
-              },
-              "variable_definitions": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/CompositionVariableDefinition"
-                }
-              },
-              "plan": {
-                "$ref": "#/components/schemas/CompositionResolvePlan"
-              }
-            },
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "required": [
-              "ok",
-              "diagnostics"
-            ],
-            "properties": {
-              "ok": {
-                "type": "boolean",
-                "const": false
-              },
-              "variable_definitions": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/CompositionVariableDefinition"
-                }
-              },
-              "diagnostics": {
-                "type": "array",
-                "minItems": 1,
-                "items": {
-                  "$ref": "#/components/schemas/CompositionResolveDiagnostic"
-                }
-              }
-            },
-            "additionalProperties": false
-          }
-        ]
       },
       "CompositionPreviewResponse": {
         "oneOf": [
@@ -15924,7 +15995,7 @@
                 "type": "array",
                 "minItems": 1,
                 "items": {
-                  "$ref": "#/components/schemas/CompositionResolveDiagnostic"
+                  "$ref": "#/components/schemas/CompositionDiagnostic"
                 }
               }
             },
@@ -15936,35 +16007,21 @@
         "type": "object",
         "required": [
           "id",
-          "type",
+          "value_type",
           "required"
         ],
         "properties": {
           "id": {
             "type": "string"
           },
-          "type": {
-            "type": "string",
-            "enum": [
-              "string",
-              "boolean",
-              "integer",
-              "float",
-              "date",
-              "timestamp"
-            ]
+          "value_type": {
+            "$ref": "#/components/schemas/CompositionScalarDescriptor"
           },
           "required": {
             "type": "boolean"
           },
           "default": {
             "$ref": "#/components/schemas/JsonValue"
-          },
-          "format": {
-            "type": "string",
-            "enum": [
-              "year-month"
-            ]
           }
         },
         "additionalProperties": false
@@ -16399,188 +16456,6 @@
           }
         }
       },
-      "CompositionMetricQueryTarget": {
-        "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "kind",
-              "composition_id",
-              "revision_id"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "const": "saved_revision"
-              },
-              "composition_id": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "revision_id": {
-                "type": "string",
-                "format": "uuid"
-              }
-            },
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "required": [
-              "kind",
-              "yaml"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "const": "draft"
-              },
-              "yaml": {
-                "type": "string",
-                "maxLength": 65536
-              }
-            },
-            "additionalProperties": false
-          }
-        ]
-      },
-      "CompositionMetricQueryRequest": {
-        "type": "object",
-        "dependentRequired": {
-          "base_entry_id": [
-            "base_revision_id"
-          ],
-          "base_revision_id": [
-            "base_entry_id"
-          ]
-        },
-        "required": [
-          "target",
-          "component_id"
-        ],
-        "properties": {
-          "target": {
-            "$ref": "#/components/schemas/CompositionMetricQueryTarget"
-          },
-          "base_entry_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "Exact Composition entry being edited by a draft; supply together with base_revision_id."
-          },
-          "base_revision_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "Exact Composition base revision for a draft; supply together with base_entry_id."
-          },
-          "component_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "variables": {
-            "type": "object",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            },
-            "default": {}
-          },
-          "unset_variables": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Variable names explicitly left unset. Omission from both fields uses a declared default; an unset name must not also appear in variables."
-          }
-        },
-        "additionalProperties": false
-      },
-      "CompositionMetricQueryValue": {
-        "type": "object",
-        "required": [
-          "component_id",
-          "result_type",
-          "value"
-        ],
-        "properties": {
-          "component_id": {
-            "type": "string"
-          },
-          "result_type": {
-            "$ref": "#/components/schemas/CompositionResultFieldType"
-          },
-          "value": {
-            "$ref": "#/components/schemas/JsonValue",
-            "description": "Encoding is determined by result_type: integer values are canonical base-10 strings that preserve exact precision; decimal values are base-10 strings that preserve scale; float values are JSON numbers; boolean values are JSON booleans; string, date, and timestamp values are JSON strings. A successful SQL NULL is JSON null."
-          }
-        },
-        "additionalProperties": false
-      },
-      "CompositionMetricQueryDiagnostic": {
-        "type": "object",
-        "required": [
-          "code"
-        ],
-        "properties": {
-          "code": {
-            "$ref": "#/components/schemas/CompositionDiagnosticCode"
-          },
-          "component_id": {
-            "type": "string"
-          },
-          "variable_id": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false
-      },
-      "CompositionMetricQueryResponse": {
-        "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "ok",
-              "result"
-            ],
-            "properties": {
-              "ok": {
-                "type": "boolean",
-                "const": true
-              },
-              "draft_fingerprint": {
-                "type": "string"
-              },
-              "result": {
-                "$ref": "#/components/schemas/CompositionMetricQueryValue"
-              }
-            },
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "required": [
-              "ok",
-              "diagnostics"
-            ],
-            "properties": {
-              "ok": {
-                "type": "boolean",
-                "const": false
-              },
-              "draft_fingerprint": {
-                "type": "string"
-              },
-              "diagnostics": {
-                "type": "array",
-                "minItems": 1,
-                "items": {
-                  "$ref": "#/components/schemas/CompositionMetricQueryDiagnostic"
-                }
-              }
-            },
-            "additionalProperties": false
-          }
-        ]
-      },
       "SavedSqlSearchHistoryFieldCondition": {
         "type": "object",
         "required": [
@@ -16840,6 +16715,160 @@
           }
         },
         "additionalProperties": false
+      },
+      "CompositionQuery": {
+        "type": "object",
+        "required": [
+          "variable_id",
+          "returns",
+          "result_columns",
+          "form_bindings",
+          "schema_fingerprint",
+          "query_semantic_fingerprint"
+        ],
+        "properties": {
+          "variable_id": {
+            "type": "string"
+          },
+          "request": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Existing stateless SQL query request compiled from the graph; absent until scalar query dependencies resolve or an authoring preview has unset Input dependencies."
+          },
+          "sql_text": {
+            "type": "string",
+            "description": "Authorized source text from the exact pinned Saved SQL revision; omitted for inline SQL."
+          },
+          "deferred_arguments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CompositionDeferredArgument"
+            }
+          },
+          "returns": {
+            "$ref": "#/components/schemas/CompositionQueryResultType"
+          },
+          "result_columns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CompositionResultColumn"
+            }
+          },
+          "form_bindings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CompositionFormBinding"
+            }
+          },
+          "schema_fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "query_semantic_fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "scalar_cardinality": {
+            "$ref": "#/components/schemas/CompositionScalarCardinality"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompositionDeferredArgument": {
+        "type": "object",
+        "required": [
+          "argument_name",
+          "variable_id",
+          "value_type"
+        ],
+        "properties": {
+          "argument_name": {
+            "type": "string"
+          },
+          "variable_id": {
+            "type": "string"
+          },
+          "value_type": {
+            "$ref": "#/components/schemas/CompositionScalarDescriptor"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompositionQueryResultType": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "value_type"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "scalar"
+              },
+              "value_type": {
+                "$ref": "#/components/schemas/CompositionScalarDescriptor"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "columns"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "table"
+              },
+              "columns": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CompositionResultColumn"
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "CompositionScalarCardinality": {
+        "type": "string",
+        "enum": [
+          "exactly_one_row"
+        ]
+      },
+      "CompositionScalarDescriptor": {
+        "type": "object",
+        "required": [
+          "scalar_type",
+          "nullable"
+        ],
+        "properties": {
+          "scalar_type": {
+            "$ref": "#/components/schemas/CompositionScalarType"
+          },
+          "nullable": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompositionScalarType": {
+        "type": "string",
+        "enum": [
+          "string",
+          "boolean",
+          "integer",
+          "float",
+          "decimal",
+          "date",
+          "timestamp",
+          "json"
+        ]
       }
     }
   }

@@ -13,20 +13,22 @@ use url::Url;
 pub mod composition;
 
 pub use composition::{
-    CompositionDependencyIndex, CompositionDiagnosticCode, CompositionEntryIntegrity,
-    CompositionEntryMetadata, CompositionHistoryPage, CompositionLintError,
-    CompositionLintResponse, CompositionLintValue, CompositionListItem, CompositionListPage,
-    CompositionMetricPresentation, CompositionMetricQueryDiagnostic, CompositionMetricQueryRequest,
-    CompositionMetricQueryResponse, CompositionMetricQueryTarget, CompositionMetricQueryValue,
+    CompositionComponentBinding, CompositionComponentKind, CompositionDeferredArgument,
+    CompositionDependencyIndex, CompositionDiagnostic, CompositionDiagnosticCode,
+    CompositionEntryIntegrity, CompositionEntryMetadata, CompositionEvaluationPage,
+    CompositionEvaluationQueryDiagnostic, CompositionEvaluationRequest,
+    CompositionEvaluationRequestDiagnostic, CompositionEvaluationResponse,
+    CompositionEvaluationResultContractDiagnostic, CompositionEvaluationResultDiagnostic,
+    CompositionEvaluationTarget, CompositionFormBinding, CompositionGraphQueryResult,
+    CompositionHistoryPage, CompositionLintError, CompositionLintResponse, CompositionLintValue,
+    CompositionListItem, CompositionListPage, CompositionMetricPresentation,
     CompositionPreviewPlan, CompositionPreviewRequest, CompositionPreviewResponse,
-    CompositionPublicationReceipt, CompositionRawRevision, CompositionResolveDiagnostic,
-    CompositionResolvePlan, CompositionResolveRequest, CompositionResolveResponse,
-    CompositionResolvedComponentBinding, CompositionResolvedComponentKind,
-    CompositionResolvedFormBinding, CompositionResolvedResultColumn, CompositionResolvedSource,
-    CompositionRestoreRequest, CompositionRestoreResponse, CompositionResultFieldType,
-    CompositionRevisionMetadata, CompositionRevisionReference, CompositionSaveRequest,
-    CompositionSaveResponse, CompositionSourceConsumers, CompositionVariableConsumers,
-    CompositionVariableDefinition, CompositionVariableFormat, CompositionVariableType,
+    CompositionPublicationReceipt, CompositionQuery, CompositionQueryResultType,
+    CompositionRawRevision, CompositionRestoreRequest, CompositionRestoreResponse,
+    CompositionResultColumn, CompositionResultFieldType, CompositionRevisionMetadata,
+    CompositionRevisionReference, CompositionSaveRequest, CompositionSaveResponse,
+    CompositionScalarCardinality, CompositionScalarDescriptor, CompositionScalarType,
+    CompositionVariableConsumers, CompositionVariableDefinition,
 };
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -92,9 +94,8 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "composition.list",
     "composition.get",
     "composition.history",
-    "composition.resolve",
     "composition.preview",
-    "composition.metric.query",
+    "composition.evaluate",
     "composition.save",
     "composition.restore",
     "sql.list",
@@ -1156,17 +1157,6 @@ pub fn prepare_request(
                     query,
                 )
             }
-            "composition.resolve" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to resolve Composition"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "compositions".into(),
-                    required_string(operation, args, "composition_id")?,
-                    "resolve".into(),
-                ],
-                vec![],
-            ),
             "composition.preview" => (
                 OperationSpec::json(HttpMethod::Post, "Failed to preview Composition"),
                 vec![
@@ -1177,13 +1167,13 @@ pub fn prepare_request(
                 ],
                 vec![],
             ),
-            "composition.metric.query" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to query Composition Metric"),
+            "composition.evaluate" => (
+                OperationSpec::json(HttpMethod::Post, "Failed to evaluate Composition graph"),
                 vec![
                     "spaces".into(),
                     required_string(operation, args, "space_id")?,
                     "compositions".into(),
-                    "metric-query".into(),
+                    "evaluate".into(),
                 ],
                 vec![],
             ),
@@ -2042,19 +2032,14 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             "Failed to get Composition history",
             RequestBodyKind::None,
         ),
-        "composition.resolve" => (
-            HttpMethod::Post,
-            "Failed to resolve Composition",
-            RequestBodyKind::Json,
-        ),
         "composition.preview" => (
             HttpMethod::Post,
             "Failed to preview Composition",
             RequestBodyKind::Json,
         ),
-        "composition.metric.query" => (
+        "composition.evaluate" => (
             HttpMethod::Post,
-            "Failed to query Composition Metric",
+            "Failed to evaluate Composition graph",
             RequestBodyKind::Json,
         ),
         "composition.save" => (
@@ -2318,6 +2303,7 @@ fn failure(error: ApiProtocolError) -> ProtocolEnvelope {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
 
     const SQL_FIRST_COMPOSITION_YAML: &str =
         include_str!("../../ugoite-domain/tests/fixtures/composition/sql-first.ugcomp.yaml");
@@ -2340,13 +2326,104 @@ mod tests {
                 "composition.list",
                 "composition.get",
                 "composition.history",
-                "composition.resolve",
                 "composition.preview",
-                "composition.metric.query",
+                "composition.evaluate",
                 "composition.save",
                 "composition.restore",
             ]
         );
+    }
+
+    #[test]
+    fn removed_composition_operations_have_no_protocol_fallback() {
+        for operation in ["composition.resolve", "composition.metric.query"] {
+            let error = prepare_request(operation, &json!({}), None)
+                .expect_err("removed Composition operation must be rejected");
+            assert_eq!(error.kind, "invalid_operation");
+            assert_eq!(error.operation.as_deref(), Some(operation));
+        }
+    }
+
+    #[test]
+    fn composition_evaluation_uses_the_stateless_portable_operation() {
+        let body = json!({
+            "evaluation_id": "01900000-0000-7000-8000-000000000012",
+            "target": {
+                "kind": "saved_revision",
+                "composition_id": "01900000-0000-7000-8000-000000000010",
+                "revision_id": "01900000-0000-7000-8000-000000000011"
+            },
+            "variables": {"month": "2026-10"},
+            "page": {"variable_id": "rows", "cursor": "opaque-cursor"}
+        });
+        let prepared = prepare_request(
+            "composition.evaluate",
+            &json!({"space_id": "demo"}),
+            Some(&body),
+        )
+        .expect("Composition graph evaluation request");
+        assert_eq!(prepared.method, HttpMethod::Post);
+        assert_eq!(prepared.path, "/spaces/demo/compositions/evaluate");
+        assert_eq!(prepared.body_kind, RequestBodyKind::Json);
+        assert_eq!(
+            serde_json::from_str::<Value>(prepared.body.as_deref().expect("request body"))
+                .expect("request JSON"),
+            body
+        );
+        let request: CompositionEvaluationRequest =
+            serde_json::from_value(body.clone()).expect("evaluation request DTO");
+        assert_eq!(serde_json::to_value(request).expect("serialized DTO"), body);
+    }
+
+    #[test]
+    fn composition_evaluation_response_keeps_query_result_diagnostics_typed() {
+        let response = CompositionEvaluationResponse {
+            evaluation_id: "01900000-0000-7000-8000-000000000012".to_owned(),
+            ok: false,
+            snapshot_fingerprint: Some("a".repeat(64)),
+            publication_fingerprint: Some("b".repeat(64)),
+            authorization_fingerprint: None,
+            composition_revision: None,
+            draft_fingerprint: None,
+            variable_values: BTreeMap::new(),
+            queries: Vec::new(),
+            component_bindings: Vec::new(),
+            dependencies: CompositionDependencyIndex::default(),
+            query_results: BTreeMap::new(),
+            computed_query_ids: Vec::new(),
+            diagnostics: Vec::new(),
+            query_diagnostics: vec![CompositionEvaluationQueryDiagnostic {
+                code: "result_validation_failed".to_owned(),
+                variable_id: "total".to_owned(),
+                request_diagnostic: None,
+                result_diagnostic: Some(CompositionEvaluationResultDiagnostic {
+                    code: "result_contract_mismatch".to_owned(),
+                    variable_id: "total".to_owned(),
+                    column_name: None,
+                    result_diagnostic: Some(CompositionEvaluationResultContractDiagnostic {
+                        code: "scalar_no_rows".to_owned(),
+                        expected_count: Some(1),
+                        observed_count: Some(0),
+                        row_index: None,
+                        column_index: None,
+                        column_name: None,
+                        expected_column_name: None,
+                        expected_value_type: None,
+                        observed_value_type: None,
+                    }),
+                }),
+            }],
+        };
+        let value = serde_json::to_value(&response).expect("serialized evaluation response");
+        assert_eq!(value["ok"], false);
+        assert_eq!(value["query_results"], json!({}));
+        assert_eq!(
+            value["query_diagnostics"][0]["result_diagnostic"]["result_diagnostic"]["code"],
+            "scalar_no_rows"
+        );
+        let decoded: CompositionEvaluationResponse =
+            serde_json::from_value(value).expect("typed evaluation response");
+        assert_eq!(decoded, response);
     }
 
     fn form_header(name: &str, value: &str) -> Header {
@@ -2721,33 +2798,27 @@ mod tests {
             assert!(value.get("parameters").is_none());
         };
 
-        let resolve = CompositionResolveRequest {
-            revision_id: "revision-1".to_string(),
-            variables: variables.clone(),
-            unset_variables: Vec::new(),
-        };
-        assert_variable_wire_shape(serde_json::to_value(resolve).expect("resolve request"));
-        assert!(serde_json::from_value::<CompositionResolveRequest>(json!({
-            "revision_id": "revision-1",
-            "parameters": {"month": "2026-10"}
-        }))
-        .is_err());
-
         let variable_definition = CompositionVariableDefinition {
             id: "month".to_owned(),
-            variable_type: CompositionVariableType::Date,
+            value_type: CompositionScalarDescriptor {
+                scalar_type: CompositionScalarType::Date,
+                nullable: false,
+            },
             required: true,
             default: None,
-            format: Some(CompositionVariableFormat::YearMonth),
         };
         let definition_wire =
             serde_json::to_value(variable_definition).expect("variable definition DTO");
         assert_eq!(definition_wire["id"], "month");
+        assert_eq!(
+            definition_wire["value_type"],
+            json!({"scalar_type":"date","nullable":false})
+        );
         assert!(definition_wire.get("label").is_none());
         assert!(
             serde_json::from_value::<CompositionVariableDefinition>(json!({
                 "id": "month",
-                "type": "date",
+                "value_type": {"scalar_type":"date","nullable":false},
                 "required": true,
                 "label": "Month"
             }))
@@ -2792,89 +2863,67 @@ mod tests {
             "parameters": {"month": "2026-10"}
         }))
         .is_err());
-
-        let metric = CompositionMetricQueryRequest {
-            target: CompositionMetricQueryTarget::Draft {
-                yaml: SQL_FIRST_COMPOSITION_YAML.to_owned(),
-            },
-            base_entry_id: Some("018f0000-0000-7000-8000-000000000001".to_owned()),
-            base_revision_id: Some("018f0000-0000-7000-8000-000000000002".to_owned()),
-            component_id: "total".to_string(),
-            variables,
-            unset_variables: Vec::new(),
-        };
-        let metric_json = serde_json::to_value(metric).expect("metric request");
-        assert_variable_wire_shape(metric_json.clone());
-        assert_eq!(
-            metric_json["base_entry_id"],
-            "018f0000-0000-7000-8000-000000000001"
-        );
-        assert_eq!(
-            metric_json["base_revision_id"],
-            "018f0000-0000-7000-8000-000000000002"
-        );
-        assert!(
-            serde_json::from_value::<CompositionMetricQueryRequest>(json!({
-                "target": {"kind": "draft", "yaml": SQL_FIRST_COMPOSITION_YAML},
-                "base_entry_id": "018f0000-0000-7000-8000-000000000001",
-                "component_id": "total"
-            }))
-            .is_ok(),
-            "the transport DTO leaves pair validation to the server"
-        );
-        assert!(
-            serde_json::from_value::<CompositionMetricQueryRequest>(json!({
-                "target": {"kind": "draft", "yaml": SQL_FIRST_COMPOSITION_YAML},
-                "component_id": "total",
-                "parameters": {"month": "2026-10"}
-            }))
-            .is_err()
-        );
     }
 
     #[test]
     fn composition_inline_sql_resolved_request_round_trips_sql_first_shape() {
         let inline_sql = json!({
-            "kind": "inline_sql",
-            "source_id": "expense_rows",
+            "variable_id": "expense_rows",
             "request": {
                 "sql": "SELECT \"amount\" FROM \"__form_10\" WHERE \"Date\" >= $month_start",
                 "parameters": {"month_start": "2026-10-01"},
                 "parameter_types": {"month_start": "date"},
                 "limit": 100
             },
-            "source_schema_fingerprint": "a".repeat(64),
+            "deferred_arguments": [],
+            "returns": {"kind":"table","columns":[{"name":"amount","value_type":{"scalar_type":"decimal","nullable":true}}]},
+            "result_columns": [{"name":"amount","value_type":{"scalar_type":"decimal","nullable":true}}],
             "form_bindings": [{"relation": "expenses", "form_id": "form-1"}],
-            "expected_result": [{"name": "amount", "type": "decimal"}]
+            "schema_fingerprint": "a".repeat(64),
+            "query_semantic_fingerprint": "b".repeat(64)
         });
-        let source: CompositionResolvedSource =
-            serde_json::from_value(inline_sql.clone()).expect("inline SQL source DTO");
+        let query: CompositionQuery =
+            serde_json::from_value(inline_sql.clone()).expect("resolved query DTO");
         assert_eq!(
-            serde_json::to_value(&source).expect("serialize inline SQL source DTO"),
+            serde_json::to_value(&query).expect("serialize resolved query DTO"),
             inline_sql
         );
+        assert_eq!(query.sql_text, None);
         assert_eq!(
             inline_sql["request"]["parameters"]["month_start"],
             "2026-10-01"
         );
         assert!(inline_sql["request"].get("saved_sql").is_none());
 
+        let mut pinned_saved_sql = inline_sql.clone();
+        pinned_saved_sql["sql_text"] = json!("SELECT {{minimum}} AS total");
+        let saved_query: CompositionQuery =
+            serde_json::from_value(pinned_saved_sql.clone()).expect("pinned Saved SQL DTO");
+        assert_eq!(
+            serde_json::to_value(&saved_query).expect("serialize pinned Saved SQL DTO"),
+            pinned_saved_sql
+        );
+        assert_eq!(
+            saved_query.sql_text.as_deref(),
+            Some("SELECT {{minimum}} AS total")
+        );
+
         let component_binding = json!({
             "component_id": "transactions",
             "kind": "table",
-            "source_id": "expense_rows"
+            "variable_id": "expense_rows"
         });
-        let binding: CompositionResolvedComponentBinding =
+        let binding: CompositionComponentBinding =
             serde_json::from_value(component_binding.clone()).expect("binding DTO");
         assert_eq!(
             serde_json::to_value(binding).expect("serialize binding DTO"),
             component_binding
         );
         assert!(
-            serde_json::from_value::<CompositionResolvedComponentBinding>(json!({
+            serde_json::from_value::<CompositionComponentBinding>(json!({
                 "component_id": "transactions",
                 "kind": "table",
-                "source_id": "expense_rows",
+                "variable_id": "expense_rows",
                 "label": "Expense rows"
             }))
             .is_err()
@@ -3160,143 +3209,6 @@ mod tests {
             restore_response
         );
 
-        let resolve_body = json!({
-            "revision_id": "01900000-0000-7000-8000-000000000003",
-            "variables": {"month": "2026-10"},
-            "unset_variables": ["include_archived"]
-        });
-        let resolve = prepare_request(
-            "composition.resolve",
-            &json!({"space_id": "demo", "composition_id": "composition-1"}),
-            Some(&resolve_body),
-        )
-        .expect("resolve request");
-        assert_eq!(resolve.method, HttpMethod::Post);
-        assert_eq!(
-            resolve.path,
-            "/spaces/demo/compositions/composition-1/resolve"
-        );
-        assert_eq!(resolve.body_kind, RequestBodyKind::Json);
-        assert_eq!(
-            serde_json::from_str::<Value>(resolve.body.as_deref().expect("resolve body"))
-                .expect("resolve request JSON"),
-            resolve_body
-        );
-        let resolve_request: CompositionResolveRequest =
-            serde_json::from_value(resolve_body.clone()).expect("resolve request DTO");
-        assert_eq!(
-            serde_json::to_value(resolve_request).expect("serialize resolve request DTO"),
-            resolve_body
-        );
-
-        let resolve_success = json!({
-            "ok": true,
-            "variable_definitions": [{
-                "id": "month",
-                "type": "date",
-                "required": true,
-                "default": "2026-10-01",
-                "format": "year-month"
-            }, {
-                "id": "region",
-                "type": "string",
-                "required": false
-            }],
-            "plan": {
-                "composition_revision": {
-                    "entry_id": "01900000-0000-7000-8000-000000000002",
-                    "revision_id": "01900000-0000-7000-8000-000000000003"
-                },
-                "sources": [{
-                    "kind": "inline_sql",
-                    "source_id": "expense_rows",
-                    "request": {
-                        "sql": "SELECT \"amount\" FROM \"__form_10\" WHERE \"Date\" >= $month_start",
-                        "parameters": {"month_start": "2026-10-01"},
-                        "parameter_types": {"month_start": "date"},
-                        "limit": 100
-                    },
-                    "source_schema_fingerprint": "a".repeat(64),
-                    "form_bindings": [],
-                    "expected_result": [{"name": "amount", "type": "decimal"}]
-                }, {
-                    "kind": "saved_sql",
-                    "source_id": "monthly-total",
-                    "request": {
-                        "limit": 100,
-                        "saved_sql": {
-                            "id": "01900000-0000-7000-8000-000000000004",
-                            "revision_id": "01900000-0000-7000-8000-000000000005"
-                        }
-                    },
-                    "source_schema_fingerprint": "b".repeat(64),
-                    "expected_result": [{"name": "total_amount", "type": "integer"}]
-                }],
-                "component_bindings": [{
-                    "component_id": "rows",
-                    "kind": "table",
-                    "source_id": "expense_rows"
-                }, {
-                    "component_id": "total",
-                    "kind": "metric",
-                    "source_id": "monthly-total",
-                    "result_property_key": "total_amount",
-                    "expected_result_type": "integer"
-                }]
-            }
-        });
-        let resolve_success_dto: CompositionResolveResponse =
-            serde_json::from_value(resolve_success.clone()).expect("resolve success DTO");
-        assert_eq!(
-            serde_json::to_value(&resolve_success_dto).expect("serialize resolve success DTO"),
-            resolve_success
-        );
-        // Text bindings carry layout position with no source request.
-        let text_binding = json!({
-            "component_id": "note",
-            "kind": "text"
-        });
-        let text_dto: CompositionResolvedComponentBinding =
-            serde_json::from_value(text_binding.clone()).expect("text binding DTO");
-        assert_eq!(text_dto.source_id, None);
-        assert_eq!(
-            serde_json::to_value(&text_dto).expect("serialize text binding DTO"),
-            text_binding
-        );
-        let source_unavailable = json!({
-            "ok": false,
-            "variable_definitions": [{
-                "id": "month",
-                "type": "date",
-                "required": true,
-                "default": "2026-10-01",
-                "format": "year-month"
-            }],
-            "diagnostics": [{"code": "source_unavailable"}]
-        });
-        let resolve_error_dto: CompositionResolveResponse =
-            serde_json::from_value(source_unavailable.clone()).expect("resolve diagnostic DTO");
-        assert_eq!(
-            serde_json::to_value(&resolve_error_dto).expect("serialize resolve diagnostic DTO"),
-            source_unavailable
-        );
-        assert_eq!(
-            CompositionDiagnosticCode::SourceUnavailable.as_str(),
-            "source_unavailable"
-        );
-        let variable_diagnostic = json!({
-            "ok": false,
-            "diagnostics": [{"code": "variable_missing", "variable_id": "month"}]
-        });
-        let variable_diagnostic_dto: CompositionResolveResponse =
-            serde_json::from_value(variable_diagnostic.clone())
-                .expect("typed-variable diagnostic DTO");
-        assert_eq!(
-            serde_json::to_value(variable_diagnostic_dto)
-                .expect("serialize typed-variable diagnostic DTO"),
-            variable_diagnostic
-        );
-
         let preview_body = json!({
             "yaml": SQL_FIRST_COMPOSITION_YAML,
             "variables": {"month": "2026-10"},
@@ -3323,47 +3235,35 @@ mod tests {
             preview_body
         );
 
-        let metric_body = json!({
+        let evaluation_body = json!({
+            "evaluation_id": "01900000-0000-7000-8000-000000000012",
             "target": {
                 "kind": "saved_revision",
                 "composition_id": "01900000-0000-7000-8000-000000000010",
                 "revision_id": "01900000-0000-7000-8000-000000000011"
             },
-            "component_id": "monthly_total",
             "variables": {"month": "2026-10"},
-            "unset_variables": ["include_archived"]
+            "page": {"variable_id": "rows", "cursor": "opaque-cursor"}
         });
-        let metric_query = prepare_request(
-            "composition.metric.query",
+        let evaluation = prepare_request(
+            "composition.evaluate",
             &json!({"space_id": "demo"}),
-            Some(&metric_body),
+            Some(&evaluation_body),
         )
-        .expect("Composition Metric query request");
-        assert_eq!(metric_query.method, HttpMethod::Post);
-        assert_eq!(metric_query.path, "/spaces/demo/compositions/metric-query");
-        assert_eq!(metric_query.body_kind, RequestBodyKind::Json);
+        .expect("Composition graph evaluation request");
+        assert_eq!(evaluation.method, HttpMethod::Post);
+        assert_eq!(evaluation.path, "/spaces/demo/compositions/evaluate");
+        assert_eq!(evaluation.body_kind, RequestBodyKind::Json);
         assert_eq!(
-            serde_json::from_str::<Value>(metric_query.body.as_deref().expect("metric query body"))
-                .expect("metric query request JSON"),
-            metric_body
+            serde_json::from_str::<Value>(evaluation.body.as_deref().expect("evaluation body"))
+                .expect("evaluation request JSON"),
+            evaluation_body
         );
-        let metric_request: CompositionMetricQueryRequest =
-            serde_json::from_value(metric_body.clone()).expect("metric query DTO");
+        let evaluation_request: CompositionEvaluationRequest =
+            serde_json::from_value(evaluation_body.clone()).expect("evaluation request DTO");
         assert_eq!(
-            serde_json::to_value(metric_request).expect("serialize metric query DTO"),
-            metric_body
-        );
-
-        let draft_metric_body = json!({
-            "target": {"kind": "draft", "yaml": SQL_FIRST_COMPOSITION_YAML},
-            "component_id": "sql_total",
-            "variables": {}
-        });
-        let draft_metric_request: CompositionMetricQueryRequest =
-            serde_json::from_value(draft_metric_body.clone()).expect("draft metric query DTO");
-        assert_eq!(
-            serde_json::to_value(draft_metric_request).expect("serialize draft metric query DTO"),
-            draft_metric_body
+            serde_json::to_value(evaluation_request).expect("serialize evaluation DTO"),
+            evaluation_body
         );
 
         let preview_success = json!({
@@ -3371,12 +3271,13 @@ mod tests {
             "draft_fingerprint": "f".repeat(64),
             "variable_definitions": [{
                 "id": "month",
-                "type": "date",
+                "value_type": {"scalar_type":"date","nullable":false},
                 "required": true
             }],
             "plan": {
                 "draft_fingerprint": "f".repeat(64),
-                "sources": [],
+                "variable_values": {},
+                "queries": [],
                 "component_bindings": []
             }
         });
@@ -3432,7 +3333,7 @@ mod tests {
             assert_eq!(code.as_str(), expected);
             assert_eq!(CompositionDiagnosticCode::from_code(expected), Some(code));
             let diagnostic = json!({"code": expected});
-            let diagnostic_dto: CompositionResolveResponse = serde_json::from_value(json!({
+            let diagnostic_dto: CompositionPreviewResponse = serde_json::from_value(json!({
                 "ok": false,
                 "diagnostics": [diagnostic]
             }))
@@ -3577,20 +3478,6 @@ mod tests {
             )
             .expect("raw Composition JSON response");
             assert_eq!(decoded, expected);
-        }
-
-        for response_value in [resolve_success, source_unavailable] {
-            let decoded = decode_response(
-                "composition.resolve",
-                ApiResponse {
-                    status: 200,
-                    status_text: "OK".into(),
-                    headers: vec![],
-                    body: response_value.to_string(),
-                },
-            )
-            .expect("Composition resolve JSON response");
-            assert_eq!(decoded, response_value);
         }
     }
 
@@ -4261,10 +4148,7 @@ mod tests {
         }
         if matches!(
             operation,
-            "composition.get"
-                | "composition.history"
-                | "composition.resolve"
-                | "composition.restore"
+            "composition.get" | "composition.history" | "composition.restore"
         ) {
             arguments.insert("composition_id".into(), json!("composition-1"));
         }

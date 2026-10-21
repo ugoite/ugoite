@@ -2,24 +2,23 @@
 title: "ADR-024 — SQL-first Composition sources and workspace"
 ---
 
-**Status: Implemented for the current prerelease model; superseded as the next
-target by [ADR-025](adr-025-composition-query-variable-graph.md).**
-This decision records the current in-repository Composition model. ADR-025
-replaces that unreleased authoring and source grammar; its target is not yet
-implemented. Neither decision authorizes or schedules a product release or
-version change.
+**Status: Historical prerelease decision; superseded by [ADR-025](adr-025-composition-query-variable-graph.md).**
+This ADR records the unreleased source-based schema that preceded the strict
+typed variable graph. Its grammar is no longer accepted and is not a
+compatibility contract. ADR-025 is normative for the current Composition
+model. This record does not authorize or schedule a product release or version
+change.
 
 ADR-024 describes the current prerelease implementation only; it is no longer
 the accepted next grammar or schema. References below to the "replacement"
 describe the earlier prerelease replacement of ADR-023's grammar. ADR-025 is
 the normative target for the next Composition model.
 
-ADR-023 remains the record of its original typed-variable decision. ADR-024
-retains typed variables and direct Input/Text bindings while removing source
-and display-label semantics that conflict with SQL-first authoring. This ADR is
-the record of the current v1 grammar. The prereplacement
-implementation snapshot is preserved in
-[the historical contract](../testing/history/composition-prereplacement-contract.md)
+ADR-023 records its original typed-variable decision. At the time it was
+accepted, ADR-024 retained typed variables and direct Input/Text bindings
+while removing the earlier source and display-label semantics. That source-
+based grammar is now superseded by ADR-025. The prereplacement implementation
+snapshot is preserved in [the historical contract](../testing/history/composition-prereplacement-contract.md)
 and is not a compatibility promise for the replacement.
 
 ## Context

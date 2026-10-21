@@ -2,87 +2,84 @@ use anyhow::Result;
 use std::collections::{BTreeMap, BTreeSet};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::composition::{
-    CompositionValue, CompositionVariable, CompositionVariableReference, CompositionVariableType,
+    VariableGraphArgumentBinding, VariableGraphNode, VariableGraphNodeKind,
+    VariableGraphScalarDescriptor, VariableGraphScalarType,
 };
 
-/// Reject inline SQL parameters that cannot be supplied by the Composition's
-/// declared variable schema. The query planner reports parameter names even
-/// when a name was absent from that schema, so this must run before publishing.
-pub(super) fn validate_inline_parameters(
-    parameter_names: &BTreeSet<String>,
-    variables: &[CompositionVariable],
+/// Verify that a Saved SQL query binds every argument in its exact revision,
+/// and that each binding points to a scalar graph variable of the required
+/// SQL type. The parameter declarations remain owned by Saved SQL; the
+/// Composition stores only argument-to-variable references.
+pub(super) fn validate_saved_sql_arguments(
+    bindings: &[VariableGraphArgumentBinding],
+    saved_sql_types: &BTreeMap<String, VariableGraphScalarDescriptor>,
+    variables: &[VariableGraphNode],
 ) -> Result<()> {
-    let declared = variables
+    let bound_names = bindings
         .iter()
-        .map(|variable| variable.id.as_str())
+        .map(|binding| binding.name.as_str())
         .collect::<BTreeSet<_>>();
-    if parameter_names
-        .iter()
-        .any(|parameter| !declared.contains(parameter.as_str()))
-    {
-        return Err(invalid_composition(
-            "Composition SQL parameters must be declared as Composition variables",
-        ));
-    }
-    Ok(())
-}
-
-/// Verify that a Saved SQL source binds every variable in its pinned revision,
-/// and that each literal or Composition variable has the exact declared type.
-pub(super) fn validate_saved_sql_bindings(
-    source_bindings: &BTreeMap<String, CompositionValue>,
-    saved_sql_variable_types: &BTreeMap<String, String>,
-    variables: &[CompositionVariable],
-) -> Result<()> {
-    let bound_names = source_bindings.keys().cloned().collect::<BTreeSet<_>>();
-    let saved_names = saved_sql_variable_types
+    let saved_names = saved_sql_types
         .keys()
-        .cloned()
+        .map(String::as_str)
         .collect::<BTreeSet<_>>();
-    if bound_names != saved_names {
+    if bound_names != saved_names || bound_names.len() != bindings.len() {
         return Err(invalid_composition(
-            "Composition Saved SQL bindings must match the pinned revision variables",
+            "Composition Saved SQL arguments must match the exact revision",
         ));
     }
 
-    let composition_variables = variables
+    let nodes = variables
         .iter()
-        .map(|variable| (variable.id.as_str(), variable.variable_type))
+        .map(|node| (node.id.as_str(), node))
         .collect::<BTreeMap<_, _>>();
-    for (name, value) in source_bindings {
-        let Some(sql_type) = saved_sql_variable_types
-            .get(name)
-            .and_then(|type_name| composition_variable_type_for_sql(type_name))
-        else {
-            return Err(invalid_composition(
-                "Composition Saved SQL revision has an unsupported variable type",
-            ));
-        };
-        let value_matches = match value {
-            CompositionValue::Literal(value) => sql_type.accepts_value(value.as_json_value()),
-            CompositionValue::Variable(CompositionVariableReference { variable }) => {
-                composition_variables.get(variable.as_str()) == Some(&sql_type)
+    for binding in bindings {
+        let required = saved_sql_types
+            .get(&binding.name)
+            .ok_or_else(|| invalid_composition("Composition Saved SQL argument is unknown"))?;
+        let node = nodes
+            .get(binding.variable.as_str())
+            .ok_or_else(|| invalid_composition("Composition SQL argument variable is missing"))?;
+        let actual = match &node.kind {
+            VariableGraphNodeKind::Constant { value_type, .. }
+            | VariableGraphNodeKind::Input { value_type, .. } => *value_type,
+            VariableGraphNodeKind::Query {
+                returns: ugoite_domain::composition::VariableGraphResultType::Scalar { value_type },
+                ..
+            } => *value_type,
+            VariableGraphNodeKind::Query {
+                returns: ugoite_domain::composition::VariableGraphResultType::Table { .. },
+                ..
+            } => {
+                return Err(invalid_composition(
+                    "Composition SQL arguments must reference scalar values",
+                ));
             }
         };
-        if !value_matches {
+        if actual.scalar_type != required.scalar_type {
             return Err(invalid_composition(
-                "Composition Saved SQL binding does not match its declared variable type",
+                "Composition Saved SQL argument type does not match its variable",
+            ));
+        }
+        if !supported_saved_argument_type(required.scalar_type) {
+            return Err(invalid_composition(
+                "Composition Saved SQL revision uses an unsupported argument type",
             ));
         }
     }
     Ok(())
 }
 
-fn composition_variable_type_for_sql(type_name: &str) -> Option<CompositionVariableType> {
-    match type_name {
-        "string" => Some(CompositionVariableType::String),
-        "boolean" => Some(CompositionVariableType::Boolean),
-        "integer" => Some(CompositionVariableType::Integer),
-        "float" => Some(CompositionVariableType::Float),
-        "date" => Some(CompositionVariableType::Date),
-        "timestamp" => Some(CompositionVariableType::Timestamp),
-        _ => None,
-    }
+fn supported_saved_argument_type(value: VariableGraphScalarType) -> bool {
+    matches!(
+        value,
+        VariableGraphScalarType::String
+            | VariableGraphScalarType::Boolean
+            | VariableGraphScalarType::Integer
+            | VariableGraphScalarType::Float
+            | VariableGraphScalarType::Date
+            | VariableGraphScalarType::Timestamp
+    )
 }
 
 fn invalid_composition(message: &'static str) -> anyhow::Error {
@@ -92,76 +89,65 @@ fn invalid_composition(message: &'static str) -> anyhow::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
-
-    fn variable(id: &str, variable_type: CompositionVariableType) -> CompositionVariable {
-        CompositionVariable {
-            id: id.to_owned(),
-            variable_type,
-            required: true,
-            default: None,
-            format: None,
-        }
-    }
+    use ugoite_domain::composition::{
+        VariableGraphArgumentBinding, VariableGraphColumn, VariableGraphQuery,
+        VariableGraphQueryDefinition, VariableGraphResultType,
+    };
 
     #[test]
-    fn inline_parameters_must_be_declared() {
-        let variables = [variable("minimum", CompositionVariableType::Integer)];
-        assert!(
-            validate_inline_parameters(&BTreeSet::from(["minimum".to_owned()]), &variables).is_ok()
-        );
-        assert!(
-            validate_inline_parameters(&BTreeSet::from(["missing".to_owned()]), &variables)
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn saved_sql_bindings_must_match_exact_revision_names() {
-        let source_bindings = BTreeMap::from([(
+    fn saved_sql_arguments_accept_scalar_query_nodes_but_reject_tables() {
+        let binding = VariableGraphArgumentBinding {
+            name: "minimum".to_owned(),
+            variable: "source".to_owned(),
+        };
+        let saved_sql_types = BTreeMap::from([(
             "minimum".to_owned(),
-            CompositionValue::Literal(serde_json::from_value(json!(2)).unwrap()),
+            VariableGraphScalarDescriptor {
+                scalar_type: VariableGraphScalarType::Integer,
+                nullable: false,
+            },
         )]);
-        assert!(validate_saved_sql_bindings(
-            &source_bindings,
-            &BTreeMap::from([("minimum".to_owned(), "integer".to_owned())]),
-            &[]
+        let query = VariableGraphQuery {
+            definition: VariableGraphQueryDefinition::InlineSql {
+                sql: "SELECT 7 AS value".to_owned(),
+            },
+            arguments: Vec::new(),
+            form_bindings: Vec::new(),
+            schema_fingerprint: String::new(),
+        };
+        let scalar = VariableGraphNode {
+            id: "source".to_owned(),
+            kind: VariableGraphNodeKind::Query {
+                returns: VariableGraphResultType::Scalar {
+                    value_type: saved_sql_types["minimum"],
+                },
+                query: query.clone(),
+            },
+        };
+        assert!(validate_saved_sql_arguments(
+            std::slice::from_ref(&binding),
+            &saved_sql_types,
+            &[scalar],
         )
         .is_ok());
-        assert!(validate_saved_sql_bindings(&source_bindings, &BTreeMap::new(), &[]).is_err());
-        assert!(validate_saved_sql_bindings(
-            &source_bindings,
-            &BTreeMap::from([
-                ("minimum".to_owned(), "integer".to_owned()),
-                ("maximum".to_owned(), "integer".to_owned()),
-            ]),
-            &[]
-        )
-        .is_err());
-    }
 
-    #[test]
-    fn saved_sql_bindings_must_match_exact_types() {
-        let variables = [variable("text", CompositionVariableType::String)];
-        let literal_binding = BTreeMap::from([(
-            "minimum".to_owned(),
-            CompositionValue::Literal(serde_json::from_value(json!("not an integer")).unwrap()),
-        )]);
-        let integer_sql = BTreeMap::from([("minimum".to_owned(), "integer".to_owned())]);
-        assert!(validate_saved_sql_bindings(&literal_binding, &integer_sql, &variables).is_err());
-
-        let variable_binding = BTreeMap::from([(
-            "minimum".to_owned(),
-            CompositionValue::Variable(CompositionVariableReference {
-                variable: "text".to_owned(),
-            }),
-        )]);
-        assert!(validate_saved_sql_bindings(&variable_binding, &integer_sql, &variables).is_err());
-        assert!(validate_saved_sql_bindings(
-            &variable_binding,
-            &BTreeMap::from([("minimum".to_owned(), "string".to_owned())]),
-            &variables
-        )
-        .is_ok());
+        let table = VariableGraphNode {
+            id: "source".to_owned(),
+            kind: VariableGraphNodeKind::Query {
+                returns: VariableGraphResultType::Table {
+                    columns: vec![VariableGraphColumn {
+                        name: "value".to_owned(),
+                        value_type: saved_sql_types["minimum"],
+                    }],
+                },
+                query,
+            },
+        };
+        let error = validate_saved_sql_arguments(&[binding], &saved_sql_types, &[table])
+            .expect_err("table query variables cannot be SQL scalar arguments");
+        assert_eq!(
+            error.downcast_ref::<AppError>().map(AppError::code),
+            Some(ErrorCode::InvalidInput)
+        );
     }
 }

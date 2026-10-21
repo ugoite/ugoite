@@ -1,8 +1,6 @@
 import { type APIRequestContext, expect, test } from "@playwright/test";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
-import { completeSavedSqlCompositionYaml } from "./lib/composition.ts";
-
-const SOURCE_UNAVAILABLE_DIAGNOSTIC = "A data source is unavailable.";
+import { completeCompositionGraphYaml } from "./lib/composition-graph.ts";
 
 type SeedState = {
   spaceId: string;
@@ -10,6 +8,7 @@ type SeedState = {
   revisionId: string;
   compositionName: string;
   canonicalYaml: string;
+  privateValue: string;
 };
 
 type CompositionSaveResponse = {
@@ -47,12 +46,13 @@ async function createSpace(request: APIRequestContext): Promise<string> {
   return result.space_uid!;
 }
 
-async function seedUnavailableSourceComposition(
+async function seedGraphComposition(
   request: APIRequestContext,
 ): Promise<SeedState> {
   const spaceId = await createSpace(request);
   const suffix = crypto.randomUUID().slice(0, 8);
-  const compositionName = `Broken recovery ${suffix}`;
+  const compositionName = `Recovery graph ${suffix}`;
+  const privateValue = `recovery-private-${suffix}`;
   const formName = `RecoverySource${suffix}`;
   const formResponse = await request.post(
     getBackendUrl(`/spaces/${spaceId}/forms`),
@@ -87,7 +87,7 @@ async function seedUnavailableSourceComposition(
     {
       data: {
         form: formName,
-        fields: { "Private value": `recovery-private-${suffix}` },
+        fields: { "Private value": privateValue },
       },
     },
   );
@@ -116,37 +116,29 @@ async function seedUnavailableSourceComposition(
   expect(savedSql.id).toBeTruthy();
   expect(savedSql.revision_id).toBeTruthy();
 
-  let yaml = [
-    "format: ugoite.composition",
-    "format_version: 1",
-    `name: ${compositionName}`,
-    "kind: dashboard",
-    "spec:",
-    "  sources:",
-    "    - id: recovery_rows",
-    "      kind: saved_sql",
-    `      entry_id: "${savedSql.id}"`,
-    `      revision_id: "${savedSql.revision_id}"`,
-    "      expected_result: []",
-    "      schema_fingerprint: ''",
-    "  components:",
-    "    - id: recovery_table",
-    "      kind: table",
-    "      source: recovery_rows",
-    "  layout:",
-    "    kind: flow",
-    "    rows:",
-    "      - id: main",
-    "        items:",
-    "          - kind: component",
-    "            component: recovery_table",
-    "",
-  ].join("\n");
-  yaml = await completeSavedSqlCompositionYaml(request, spaceId, yaml, [{
-    id: "recovery_rows",
-    savedSqlId: savedSql.id!,
-    savedSqlRevisionId: savedSql.revision_id!,
-  }]);
+  const yaml = await completeCompositionGraphYaml(request, spaceId, {
+    name: compositionName,
+    variables: [{
+      id: "recovery_rows",
+      kind: "query",
+      returns: { kind: "table", columns: [] },
+      query: {
+        kind: "saved_sql",
+        entry_id: savedSql.id!,
+        revision_id: savedSql.revision_id!,
+        arguments: [],
+      },
+    }],
+    components: [{
+      id: "recovery_table",
+      kind: "table",
+      variable: "recovery_rows",
+    }],
+    rows: [{
+      id: "main",
+      items: [{ kind: "component", component: "recovery_table" }],
+    }],
+  });
   const saveResponse = await request.post(
     getBackendUrl(`/spaces/${spaceId}/compositions`),
     {
@@ -166,6 +158,7 @@ async function seedUnavailableSourceComposition(
     revisionId: saved.revision_id!,
     compositionName,
     canonicalYaml: saved.canonical_yaml!,
+    privateValue,
   };
 }
 
@@ -175,7 +168,7 @@ test.describe("Composition Recovery Authorization", () => {
   test.beforeAll(async ({ request }) => {
     test.setTimeout(120_000);
     await waitForServers(request);
-    seed = await seedUnavailableSourceComposition(request);
+    seed = await seedGraphComposition(request);
   });
 
   test("Composition raw recovery preserves caller-visible contracts", async ({ browser, context, playwright, request }) => {
@@ -220,10 +213,7 @@ test.describe("Composition Recovery Authorization", () => {
     // Authenticated-denied reads share this shape by construction; that
     // boundary is covered by Rust storage/ACL tests, not by a second
     // principal here: generic_entry_mutations_cannot_write_composition_registry
-    // plus the concealment unit tests in
-    // crates/ugoite-core/src/composition.rs
-    // (denied_metric_source_is_concealed_as_source_unavailable and
-    // field_level_diagnostics_require_an_authorized_source_form_read).
+    // and the Composition registry authorization tests in Core.
     const missingResponse = await request.get(
       getBackendUrl(
         `/spaces/${seed.spaceId}/compositions/${crypto.randomUUID()}`,
@@ -262,7 +252,8 @@ test.describe("Composition Recovery Authorization", () => {
       await anonymous.dispose();
     }
 
-    // Browser: the exact revision shows the stable diagnostic with no rows.
+    // Browser: the exact saved revision is evaluated and rendered through
+    // its typed table variable while raw history remains independently readable.
     const storageState = await context.storageState();
     const freshContext = await browser.newContext({ storageState });
     try {
@@ -276,10 +267,9 @@ test.describe("Composition Recovery Authorization", () => {
       await expect(
         page.getByRole("heading", { level: 1, name: seed.compositionName }),
       ).toBeVisible();
-      await expect(page.getByRole("alert")).toContainText(
-        SOURCE_UNAVAILABLE_DIAGNOSTIC,
+      await expect(page.getByRole("table")).toContainText(
+        seed.privateValue,
       );
-      await expect(page.getByRole("table")).toHaveCount(0);
     } finally {
       await freshContext.close();
     }

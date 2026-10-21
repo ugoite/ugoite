@@ -9,32 +9,42 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use ugoite_api_client::{
-    prepare_request, CompositionDiagnosticCode as ApiCompositionDiagnosticCode,
-    CompositionEntryIntegrity, CompositionEntryMetadata, CompositionHistoryPage,
+    prepare_request, CompositionComponentBinding, CompositionComponentKind,
+    CompositionDeferredArgument, CompositionDependencyIndex,
+    CompositionDiagnostic as ApiCompositionDiagnostic,
+    CompositionDiagnosticCode as ApiCompositionDiagnosticCode, CompositionEntryIntegrity,
+    CompositionEntryMetadata, CompositionEvaluationQueryDiagnostic, CompositionEvaluationRequest,
+    CompositionEvaluationRequestDiagnostic, CompositionEvaluationResponse,
+    CompositionEvaluationResultContractDiagnostic, CompositionEvaluationResultDiagnostic,
+    CompositionEvaluationTarget, CompositionFormBinding,
+    CompositionGraphQueryResult as ApiCompositionGraphQueryResult, CompositionHistoryPage,
     CompositionLintError, CompositionLintResponse, CompositionLintValue, CompositionListItem,
-    CompositionListPage, CompositionMetricQueryRequest as ApiCompositionMetricQueryRequest,
-    CompositionMetricQueryResponse as ApiCompositionMetricQueryResponse,
-    CompositionMetricQueryTarget as ApiCompositionMetricQueryTarget, CompositionPublicationReceipt,
-    CompositionRawRevision, CompositionResolvePlan, CompositionResolveResponse,
-    CompositionResolvedSource, CompositionRestoreRequest, CompositionRestoreResponse,
-    CompositionResultFieldType as ApiCompositionResultFieldType, CompositionRevisionMetadata,
+    CompositionListPage, CompositionMetricPresentation as ApiCompositionMetricPresentation,
+    CompositionPublicationReceipt, CompositionQuery, CompositionQueryResultType,
+    CompositionRawRevision, CompositionRestoreRequest, CompositionRestoreResponse,
+    CompositionResultColumn, CompositionResultFieldType as ApiCompositionResultFieldType,
+    CompositionRevisionMetadata, CompositionRevisionReference,
     CompositionSaveRequest as ApiCompositionSaveRequest, CompositionSaveResponse,
+    CompositionScalarCardinality, CompositionScalarDescriptor, CompositionScalarType,
+    CompositionVariableConsumers,
 };
 use ugoite_core::composition::{
-    ResolvedComponentKind, ResolvedCompositionPlan, ResolvedSourceRequest,
+    CompositionScalarCardinality as CoreCompositionScalarCardinality, ResolvedComponentKind,
+    ResolvedQueryRequest,
 };
-use ugoite_core::composition_metric::{
-    CompositionMetricQueryRequest as CoreCompositionMetricQueryRequest,
-    CompositionMetricQueryTarget as CoreCompositionMetricQueryTarget,
-};
-use ugoite_core::sql_query::SqlQueryPage;
 use ugoite_domain::composition::{
-    canonicalize_composition_yaml, parse_composition_yaml, CanonicalComposition,
-    CompositionDiagnosticCode, CompositionVariable, CompositionVariableInputValue,
-    MAX_COMPOSITION_YAML_BYTES,
+    canonicalize_composition_yaml, parse_composition_yaml, parse_variable_graph_input,
+    CanonicalComposition, CompositionDiagnosticCode, CompositionMetricPresentation,
+    VariableGraphInputValue, VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind,
+    VariableGraphResultType, VariableGraphScalarDescriptor, VariableGraphScalarType,
+    VariableGraphValidatedResult, MAX_COMPOSITION_YAML_BYTES,
 };
 use ugoite_domain::id::{EntryId, RevisionId};
-use ugoite_iceberg::service::UgoiteService;
+use ugoite_iceberg::service::{
+    CompositionGraphEvaluationPlan as CoreCompositionGraphEvaluationPlan,
+    CompositionQueryEvaluationResponse as CoreCompositionQueryEvaluationResponse,
+    CompositionQueryEvaluationTarget as CoreCompositionQueryEvaluationTarget, UgoiteService,
+};
 use uuid::Uuid;
 
 const COMPOSITION_LIST_PAGE_SIZE: usize = 100;
@@ -149,9 +159,9 @@ pub enum CompositionSubCmd {
         #[arg(long, value_name = "FILE")]
         output: PathBuf,
     },
-    /// Resolve and execute one bounded page for each Composition source
+    /// Resolve and execute one bounded page for each Composition query variable
     #[command(
-        long_about = "Resolve and execute one bounded page for each Composition source. Repeat --var ID=VALUE to supply typed variables. Use --var ID= to explicitly unset a variable and bypass its default; omit --var to allow a declared default to apply."
+        long_about = "Resolve and execute Composition query variables. Repeat --var ID=VALUE to supply typed inputs. Use --var ID= to explicitly unset an input and bypass its default; omit --var to allow a declared default to apply."
     )]
     Query {
         #[arg(value_name = "COMPOSITION_ID")]
@@ -670,52 +680,6 @@ async fn export_composition(
     })
 }
 
-#[derive(Serialize)]
-struct CompositionQueryOutput {
-    ok: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    plan: Option<CompositionResolvePlan>,
-    sources: Vec<CompositionQuerySourceOutput>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    diagnostics: Vec<CompositionQueryDiagnostic>,
-}
-
-#[derive(Serialize)]
-struct CompositionQuerySourceOutput {
-    source_id: String,
-    kind: &'static str,
-    page: Option<Value>,
-    metrics: Vec<CompositionQueryMetricOutput>,
-}
-
-#[derive(Serialize)]
-struct CompositionQueryMetricOutput {
-    component_id: String,
-    result_type: ApiCompositionResultFieldType,
-    value: Value,
-}
-
-#[derive(Clone, Debug, Serialize)]
-struct CompositionQueryDiagnostic {
-    code: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    variable_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    source_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    component_id: Option<String>,
-}
-
-struct CompositionQueryPlan {
-    portable: CompositionResolvePlan,
-    core: ResolvedCompositionPlan,
-}
-
-enum CompositionQueryResolution {
-    Plan(Box<CompositionQueryPlan>),
-    Diagnostics(Vec<CompositionQueryDiagnostic>),
-}
-
 async fn query_composition(
     target: &SpaceTarget,
     composition_id: &str,
@@ -723,14 +687,34 @@ async fn query_composition(
     raw_variables: &[String],
 ) -> Result<()> {
     let composition = read_composition(target, composition_id, requested_revision).await?;
-    let (variable_values, unset_variables) =
+    let (_variable_definitions, variable_values, unset_variables) =
         match composition.fields.get("spec").and_then(Value::as_str) {
             Some(yaml) => match parse_composition_yaml(yaml) {
-                Ok(document) => parse_cli_variables(&document.spec.variables, raw_variables)?,
-                Err(_) => parse_cli_variables(&[], raw_variables)?,
+                Ok(document) => {
+                    let definitions = document.spec.variables;
+                    let (values, unset) = parse_cli_variables(&definitions, raw_variables)?;
+                    (definitions, values, unset)
+                }
+                Err(_) => {
+                    let (values, unset) = parse_cli_variables(&[], raw_variables)?;
+                    (Vec::new(), values, unset)
+                }
             },
-            None => parse_cli_variables(&[], raw_variables)?,
+            None => {
+                let (values, unset) = parse_cli_variables(&[], raw_variables)?;
+                (Vec::new(), values, unset)
+            }
         };
+    if matches!(target, SpaceTarget::Remote { .. }) {
+        return query_composition_remote(
+            target,
+            composition_id,
+            &composition.revision.revision_id,
+            variable_values,
+            unset_variables,
+        )
+        .await;
+    }
     let local_service = match target {
         SpaceTarget::Core { root, .. } => {
             Some(UgoiteService::new_without_background_refresh(root)?)
@@ -738,258 +722,396 @@ async fn query_composition(
         SpaceTarget::Remote { .. } => None,
     };
 
-    let resolution = resolve_composition(
-        target,
-        target_space_id(target),
-        composition_id,
-        &composition.revision.revision_id,
-        variable_values.clone(),
-        unset_variables.clone(),
-        local_service.as_ref(),
-    )
-    .await?;
-    let plan = match resolution {
-        CompositionQueryResolution::Plan(plan) => *plan,
-        CompositionQueryResolution::Diagnostics(diagnostics) => {
-            crate::output::print_json(&CompositionQueryOutput {
-                ok: false,
-                plan: None,
-                sources: Vec::new(),
-                diagnostics,
-            });
-            return Ok(());
-        }
-    };
-
-    anyhow::ensure!(
-        plan.portable.sources.len() == plan.core.sources.len(),
-        "portable and Core Composition source counts diverged"
-    );
-
-    let metric_context = CompositionMetricQueryContext {
-        composition_id,
-        composition_revision_id: &composition.revision.revision_id,
-        variables: &variable_values,
-        unset_variables: &unset_variables,
-    };
-    let mut sources = Vec::with_capacity(plan.portable.sources.len());
-    let mut diagnostics = Vec::new();
-    for (portable_source, core_source) in plan.portable.sources.iter().zip(plan.core.sources.iter())
-    {
-        let (source, source_diagnostics) = execute_composition_source(
-            target,
-            portable_source,
-            core_source,
-            &plan.core,
-            local_service.as_ref(),
-            &metric_context,
+    let response = local_service
+        .as_ref()
+        .context("local Composition graph evaluation service is unavailable")?
+        .evaluate_composition_graph_local(
+            target_space_id(target),
+            CoreCompositionQueryEvaluationTarget::SavedRevision {
+                composition_id: composition_id.to_owned(),
+                revision_id: composition.revision.revision_id.clone(),
+            },
+            Uuid::now_v7(),
+            None,
+            None,
+            &variable_values,
+            &unset_variables,
+            None,
+            None,
         )
         .await?;
-        sources.push(source);
-        diagnostics.extend(source_diagnostics);
-    }
-
-    crate::output::print_json(&CompositionQueryOutput {
-        ok: diagnostics.is_empty(),
-        plan: Some(plan.portable),
-        sources,
-        diagnostics,
-    });
+    crate::output::print_json(&local_composition_evaluation_response(response)?);
     Ok(())
 }
 
-struct CompositionMetricQueryContext<'a> {
-    composition_id: &'a str,
-    composition_revision_id: &'a str,
-    variables: &'a BTreeMap<String, Value>,
-    unset_variables: &'a [String],
-}
-
-fn composition_metric_query_request(
-    context: &CompositionMetricQueryContext<'_>,
-    component_id: &str,
-) -> ApiCompositionMetricQueryRequest {
-    ApiCompositionMetricQueryRequest {
-        target: ApiCompositionMetricQueryTarget::SavedRevision {
-            composition_id: context.composition_id.to_string(),
-            revision_id: context.composition_revision_id.to_string(),
-        },
-        base_entry_id: None,
-        base_revision_id: None,
-        component_id: component_id.to_string(),
-        variables: context.variables.clone(),
-        unset_variables: context.unset_variables.to_vec(),
-    }
-}
-
-async fn resolve_composition(
+async fn query_composition_remote(
     target: &SpaceTarget,
-    space_id: &str,
     composition_id: &str,
     revision_id: &str,
     variables: BTreeMap<String, Value>,
     unset_variables: Vec<String>,
-    local_service: Option<&UgoiteService>,
-) -> Result<CompositionQueryResolution> {
-    match target {
-        SpaceTarget::Core { .. } => {
-            let service = local_service.context("local Composition service is unavailable")?;
-            let resolution = service
-                .resolve_composition_local(
-                    space_id,
-                    composition_id,
-                    revision_id,
-                    &variables,
-                    &unset_variables,
+) -> Result<()> {
+    let request = CompositionEvaluationRequest {
+        evaluation_id: Uuid::now_v7().to_string(),
+        target: CompositionEvaluationTarget::SavedRevision {
+            composition_id: composition_id.to_owned(),
+            revision_id: revision_id.to_owned(),
+        },
+        base_entry_id: None,
+        base_revision_id: None,
+        variables,
+        unset_variables,
+        requested_queries: None,
+        page: None,
+    };
+    let arguments = json!({"space_id": target_space_id(target)});
+    let body = serde_json::to_value(&request).context("encode Composition evaluation request")?;
+    prepare_request("composition.evaluate", &arguments, Some(&body))?;
+    let result =
+        http::execute_for_target(target, "composition.evaluate", arguments, Some(body)).await?;
+    let response: ugoite_api_client::CompositionEvaluationResponse =
+        serde_json::from_value(result).context("decode Composition graph evaluation response")?;
+    crate::output::print_json(&response);
+    Ok(())
+}
+
+fn local_composition_evaluation_response(
+    response: CoreCompositionQueryEvaluationResponse,
+) -> Result<CompositionEvaluationResponse> {
+    let mut composition_revision = None;
+    let mut draft_fingerprint = response.draft_fingerprint.clone();
+    let mut variable_values = BTreeMap::new();
+    let mut queries = Vec::new();
+    let mut component_bindings = Vec::new();
+    let mut dependencies = CompositionDependencyIndex::default();
+    if let Some(plan) = response.plan {
+        let CoreCompositionGraphEvaluationPlan {
+            composition_revision: revision,
+            draft_fingerprint: draft,
+            variable_values: values,
+            queries: core_queries,
+            component_bindings: core_bindings,
+            dependencies: core_dependencies,
+        } = plan;
+        composition_revision = revision.map(|revision| CompositionRevisionReference {
+            entry_id: revision.entry_id.to_string(),
+            revision_id: revision.revision_id.to_string(),
+        });
+        draft_fingerprint = draft;
+        variable_values = values
+            .into_iter()
+            .map(|(id, value)| (id, composition_literal_to_json(&value)))
+            .collect();
+        (queries, component_bindings) =
+            composition_queries_and_bindings(core_queries, core_bindings)?;
+        dependencies = composition_dependency_index(core_dependencies);
+    }
+
+    let query_results = response
+        .query_results
+        .into_iter()
+        .map(|(variable_id, result)| {
+            let exact_integer_rows = match &result.result {
+                VariableGraphValidatedResult::Table { rows, .. } => Some(
+                    rows.iter()
+                        .map(|row| {
+                            row.iter()
+                                .map(|cell| match cell {
+                                    VariableGraphLiteral::Integer(value) => Some(value.to_string()),
+                                    _ => None,
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .collect::<Vec<_>>(),
+                ),
+                VariableGraphValidatedResult::Scalar { .. } => None,
+            };
+            let value = serde_json::to_value(&result.result)
+                .context("encode local Composition graph query result")?;
+            Ok((
+                variable_id,
+                ApiCompositionGraphQueryResult {
+                    value,
+                    has_more: result.has_more,
+                    next: result.next,
+                    exact_integer_rows,
+                },
+            ))
+        })
+        .collect::<Result<BTreeMap<_, _>>>()?;
+
+    let diagnostics = response
+        .diagnostics
+        .into_iter()
+        .map(|diagnostic| {
+            let code = ApiCompositionDiagnosticCode::from_code(diagnostic.code.as_str()).context(
+                "local Composition diagnostic is missing from the portable API contract",
+            )?;
+            Ok(ApiCompositionDiagnostic {
+                code,
+                variable_id: diagnostic.variable_id,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let query_diagnostics = response
+        .query_diagnostics
+        .into_iter()
+        .map(|diagnostic| CompositionEvaluationQueryDiagnostic {
+            code: diagnostic.code.as_str().to_owned(),
+            variable_id: diagnostic.variable_id,
+            request_diagnostic: diagnostic.request_diagnostic.map(|request| {
+                CompositionEvaluationRequestDiagnostic {
+                    code: request.code.as_str().to_owned(),
+                    argument_name: request.argument_name,
+                    reference_id: request.reference_id,
+                    domain_code: request.domain_code,
+                    cycle: request.cycle,
+                }
+            }),
+            result_diagnostic: diagnostic.result_diagnostic.map(|result| {
+                CompositionEvaluationResultDiagnostic {
+                    code: result.code.as_str().to_owned(),
+                    variable_id: result.variable_id,
+                    column_name: result.column_name,
+                    result_diagnostic: result.result_diagnostic.map(|detail| {
+                        CompositionEvaluationResultContractDiagnostic {
+                            code: detail.code.as_str().to_owned(),
+                            expected_count: detail.expected_count,
+                            observed_count: detail.observed_count,
+                            row_index: detail.row_index,
+                            column_index: detail.column_index,
+                            column_name: detail.column_name,
+                            expected_column_name: detail.expected_column_name,
+                            expected_value_type: detail
+                                .expected_value_type
+                                .map(composition_scalar_descriptor),
+                            observed_value_type: detail
+                                .observed_value_type
+                                .map(composition_scalar_descriptor),
+                        }
+                    }),
+                }
+            }),
+        })
+        .collect();
+
+    Ok(CompositionEvaluationResponse {
+        evaluation_id: response.evaluation_id.to_string(),
+        ok: response.ok,
+        snapshot_fingerprint: response.snapshot_fingerprint,
+        publication_fingerprint: response.publication_fingerprint,
+        authorization_fingerprint: response.authorization_fingerprint,
+        composition_revision,
+        draft_fingerprint,
+        variable_values,
+        queries,
+        component_bindings,
+        dependencies,
+        query_results,
+        computed_query_ids: response.computed_query_ids,
+        diagnostics,
+        query_diagnostics,
+    })
+}
+
+fn composition_literal_to_json(value: &VariableGraphLiteral) -> Value {
+    match value {
+        VariableGraphLiteral::String(value)
+        | VariableGraphLiteral::Date(value)
+        | VariableGraphLiteral::Timestamp(value)
+        | VariableGraphLiteral::Decimal(value) => json!(value),
+        VariableGraphLiteral::Boolean(value) => json!(value),
+        VariableGraphLiteral::Integer(value) => json!(value),
+        VariableGraphLiteral::Float(value) => json!(value),
+        VariableGraphLiteral::Json(value) => value.clone(),
+        VariableGraphLiteral::Null => Value::Null,
+    }
+}
+
+fn composition_scalar_descriptor(
+    descriptor: VariableGraphScalarDescriptor,
+) -> CompositionScalarDescriptor {
+    CompositionScalarDescriptor {
+        scalar_type: match descriptor.scalar_type {
+            VariableGraphScalarType::String => CompositionScalarType::String,
+            VariableGraphScalarType::Boolean => CompositionScalarType::Boolean,
+            VariableGraphScalarType::Integer => CompositionScalarType::Integer,
+            VariableGraphScalarType::Float => CompositionScalarType::Float,
+            VariableGraphScalarType::Decimal => CompositionScalarType::Decimal,
+            VariableGraphScalarType::Date => CompositionScalarType::Date,
+            VariableGraphScalarType::Timestamp => CompositionScalarType::Timestamp,
+            VariableGraphScalarType::Json => CompositionScalarType::Json,
+        },
+        nullable: descriptor.nullable,
+    }
+}
+
+fn composition_query_result_type(returns: VariableGraphResultType) -> CompositionQueryResultType {
+    match returns {
+        VariableGraphResultType::Scalar { value_type } => CompositionQueryResultType::Scalar {
+            value_type: composition_scalar_descriptor(value_type),
+        },
+        VariableGraphResultType::Table { columns } => CompositionQueryResultType::Table {
+            columns: columns.into_iter().map(composition_result_column).collect(),
+        },
+    }
+}
+
+fn composition_result_column(
+    column: ugoite_domain::composition::VariableGraphColumn,
+) -> CompositionResultColumn {
+    CompositionResultColumn {
+        name: column.name,
+        value_type: composition_scalar_descriptor(column.value_type),
+    }
+}
+
+fn composition_result_field_type(
+    result_type: ugoite_domain::composition::CompositionResultFieldType,
+) -> ApiCompositionResultFieldType {
+    match result_type {
+        ugoite_domain::composition::CompositionResultFieldType::String => {
+            ApiCompositionResultFieldType::String
+        }
+        ugoite_domain::composition::CompositionResultFieldType::Boolean => {
+            ApiCompositionResultFieldType::Boolean
+        }
+        ugoite_domain::composition::CompositionResultFieldType::Integer => {
+            ApiCompositionResultFieldType::Integer
+        }
+        ugoite_domain::composition::CompositionResultFieldType::Float => {
+            ApiCompositionResultFieldType::Float
+        }
+        ugoite_domain::composition::CompositionResultFieldType::Decimal => {
+            ApiCompositionResultFieldType::Decimal
+        }
+        ugoite_domain::composition::CompositionResultFieldType::Date => {
+            ApiCompositionResultFieldType::Date
+        }
+        ugoite_domain::composition::CompositionResultFieldType::Timestamp => {
+            ApiCompositionResultFieldType::Timestamp
+        }
+        ugoite_domain::composition::CompositionResultFieldType::Json => {
+            ApiCompositionResultFieldType::Json
+        }
+    }
+}
+
+fn composition_metric_presentation(
+    presentation: CompositionMetricPresentation,
+) -> ApiCompositionMetricPresentation {
+    match presentation {
+        CompositionMetricPresentation::Number {
+            unit,
+            fraction_digits,
+        } => ApiCompositionMetricPresentation::Number {
+            unit,
+            fraction_digits,
+        },
+    }
+}
+
+fn composition_dependency_index(
+    dependencies: ugoite_core::composition::CompositionDependencyIndex,
+) -> CompositionDependencyIndex {
+    CompositionDependencyIndex {
+        variable_consumers: dependencies
+            .variable_consumers
+            .into_iter()
+            .map(|(id, consumers)| {
+                (
+                    id,
+                    CompositionVariableConsumers {
+                        input_component_ids: consumers.input_component_ids,
+                        text_component_ids: consumers.text_component_ids,
+                        query_variable_ids: consumers.query_variable_ids,
+                        metric_component_ids: consumers.metric_component_ids,
+                        table_component_ids: consumers.table_component_ids,
+                    },
                 )
-                .await?;
-            if let Some(plan) = resolution.plan {
-                Ok(CompositionQueryResolution::Plan(Box::new(
-                    composition_query_plan_from_core(plan)?,
-                )))
-            } else {
-                Ok(CompositionQueryResolution::Diagnostics(
-                    resolution
-                        .diagnostics
-                        .iter()
-                        .map(|diagnostic| CompositionQueryDiagnostic {
-                            code: composition_diagnostic_code_for_cli(diagnostic.code),
-                            variable_id: diagnostic.variable_id.clone(),
-                            source_id: None,
-                            component_id: None,
-                        })
-                        .collect(),
-                ))
-            }
-        }
-        SpaceTarget::Remote { .. } => {
-            let arguments = json!({
-                "space_id": space_id,
-                "composition_id": composition_id,
-            });
-            let body = composition_resolve_body(revision_id, variables, unset_variables);
-            let response =
-                http::execute_for_target(target, "composition.resolve", arguments, Some(body))
-                    .await?;
-            let response: CompositionResolveResponse =
-                serde_json::from_value(response).context("decode Composition resolve response")?;
-            if response.ok {
-                let plan = response
-                    .plan
-                    .context("Composition resolve succeeded without a plan")?;
-                Ok(CompositionQueryResolution::Plan(Box::new(
-                    composition_query_plan_from_portable(plan)?,
-                )))
-            } else {
-                let diagnostics = response
-                    .diagnostics
-                    .iter()
-                    .map(|diagnostic| {
-                        Ok(CompositionQueryDiagnostic {
-                            code: serde_json::to_value(diagnostic.code)?
-                                .as_str()
-                                .context("Composition diagnostic code must serialize as text")?
-                                .to_string(),
-                            variable_id: diagnostic.variable_id.clone(),
-                            source_id: None,
-                            component_id: None,
-                        })
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-                Ok(CompositionQueryResolution::Diagnostics(diagnostics))
-            }
-        }
+            })
+            .collect(),
     }
 }
 
-fn composition_diagnostic_code_for_cli(code: CompositionDiagnosticCode) -> String {
-    code.as_str().to_string()
-}
-
-fn composition_query_plan_from_core(plan: ResolvedCompositionPlan) -> Result<CompositionQueryPlan> {
-    let portable = portable_plan_from_core_composition_plan(&plan)?;
-    Ok(CompositionQueryPlan {
-        portable,
-        core: plan,
-    })
-}
-
-fn portable_plan_from_core_composition_plan(
-    plan: &ResolvedCompositionPlan,
-) -> Result<CompositionResolvePlan> {
-    let mut value = serde_json::to_value(plan)?;
-    let sources = value["sources"]
-        .as_array_mut()
-        .context("Core Composition plan has no source array")?;
-    for source in sources {
-        anyhow::ensure!(
-            source["kind"] == "sql",
-            "Core Composition plan contains an unknown source kind"
-        );
-        if source["request"]["saved_sql"].is_null() {
-            source["kind"] = json!("inline_sql");
-        } else {
-            source["kind"] = json!("saved_sql");
-            source
-                .as_object_mut()
-                .context("Core Saved SQL source is not an object")?
-                .remove("form_bindings");
-        }
-    }
-    serde_json::from_value(value)
-        .context("encode local Composition resolve plan through the portable DTO")
-}
-
-fn composition_query_plan_from_portable(
-    plan: CompositionResolvePlan,
-) -> Result<CompositionQueryPlan> {
-    let core = core_plan_from_portable_composition_plan(&plan)?;
-    Ok(CompositionQueryPlan {
-        portable: plan,
-        core,
-    })
-}
-
-fn core_plan_from_portable_composition_plan(
-    plan: &CompositionResolvePlan,
-) -> Result<ResolvedCompositionPlan> {
-    let mut value = serde_json::to_value(plan)?;
-    let sources = value["sources"]
-        .as_array_mut()
-        .context("portable Composition plan has no source array")?;
-    for source in sources {
-        anyhow::ensure!(
-            matches!(source["kind"].as_str(), Some("inline_sql" | "saved_sql")),
-            "portable Composition plan contains an unknown SQL source kind"
-        );
-        if source["kind"] == "saved_sql" {
-            // The portable Saved SQL DTO has no Form bindings; Core's
-            // source-neutral SQL request represents that as an empty list.
-            source["form_bindings"] = json!([]);
-        }
-        source["kind"] = json!("sql");
-    }
-    serde_json::from_value(value)
-        .context("decode portable Composition resolve plan for shared Core evaluation")
-}
-
-fn composition_resolve_body(
-    revision_id: &str,
-    variables: BTreeMap<String, Value>,
-    unset_variables: Vec<String>,
-) -> Value {
-    let mut body = json!({
-        "revision_id": revision_id,
-        "variables": variables,
-    });
-    if !unset_variables.is_empty() {
-        body["unset_variables"] = json!(unset_variables);
-    }
-    body
+fn composition_queries_and_bindings(
+    core_queries: Vec<ResolvedQueryRequest>,
+    core_bindings: Vec<ugoite_core::composition::ResolvedComponentBinding>,
+) -> Result<(Vec<CompositionQuery>, Vec<CompositionComponentBinding>)> {
+    let queries = core_queries
+        .into_iter()
+        .map(|query| {
+            let request = query
+                .request
+                .map(serde_json::to_value)
+                .transpose()
+                .context("encode local Composition graph SQL request")?;
+            let form_bindings = query
+                .form_bindings
+                .into_iter()
+                .map(|binding| CompositionFormBinding {
+                    relation: binding.relation,
+                    form_id: binding.form_id.to_string(),
+                })
+                .collect();
+            let result_columns = query
+                .result_columns
+                .into_iter()
+                .map(composition_result_column)
+                .collect();
+            let scalar_cardinality =
+                query
+                    .scalar_cardinality
+                    .map(|cardinality| match cardinality {
+                        CoreCompositionScalarCardinality::ExactlyOneRow => {
+                            CompositionScalarCardinality::ExactlyOneRow
+                        }
+                    });
+            let deferred_arguments = query
+                .deferred_arguments
+                .into_iter()
+                .map(|argument| CompositionDeferredArgument {
+                    argument_name: argument.argument_name,
+                    variable_id: argument.variable_id,
+                    value_type: composition_scalar_descriptor(argument.value_type),
+                })
+                .collect();
+            Ok(CompositionQuery {
+                variable_id: query.variable_id,
+                request,
+                sql_text: query.sql_text,
+                deferred_arguments,
+                returns: composition_query_result_type(query.returns),
+                result_columns,
+                form_bindings,
+                schema_fingerprint: query.schema_fingerprint,
+                query_semantic_fingerprint: query.query_semantic_fingerprint,
+                scalar_cardinality,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let component_bindings = core_bindings
+        .into_iter()
+        .map(|binding| CompositionComponentBinding {
+            component_id: binding.component_id,
+            kind: match binding.kind {
+                ResolvedComponentKind::Input => CompositionComponentKind::Input,
+                ResolvedComponentKind::Metric => CompositionComponentKind::Metric,
+                ResolvedComponentKind::Tabular => CompositionComponentKind::Table,
+                ResolvedComponentKind::Text => CompositionComponentKind::Text,
+            },
+            variable_id: binding.variable_id,
+            expected_result_type: binding
+                .expected_result_type
+                .map(composition_result_field_type),
+            presentation: binding.presentation.map(composition_metric_presentation),
+        })
+        .collect();
+    Ok((queries, component_bindings))
 }
 
 fn parse_cli_variables(
-    definitions: &[CompositionVariable],
+    definitions: &[VariableGraphNode],
     assignments: &[String],
 ) -> Result<(BTreeMap<String, Value>, Vec<String>)> {
     let mut values = BTreeMap::new();
@@ -1010,19 +1132,26 @@ fn parse_cli_variables(
         }
         let definition = definitions.iter().find(|definition| definition.id == key);
         let value = match definition {
-            Some(definition) => match definition.variable_type.parse_input(raw_value) {
-                CompositionVariableInputValue::Unset => {
+            Some(VariableGraphNode {
+                kind: VariableGraphNodeKind::Input { value_type, .. },
+                ..
+            }) => {
+                if raw_value.is_empty() {
                     unset_variables.insert(key.to_string());
                     continue;
                 }
-                CompositionVariableInputValue::Valid(value) => value,
-                CompositionVariableInputValue::Invalid => {
-                    return Err(crate::output::UsageError(format!(
+                parse_cli_input_value(*value_type, raw_value).ok_or_else(|| {
+                    crate::output::UsageError(format!(
                         "Composition variable {key:?} has an invalid value for its declared type"
                     ))
-                    .into());
-                }
-            },
+                })?
+            }
+            Some(_) => {
+                return Err(crate::output::UsageError(format!(
+                    "Composition variable {key:?} is not an input"
+                ))
+                .into());
+            }
             None if raw_value.is_empty() => {
                 unset_variables.insert(key.to_string());
                 continue;
@@ -1034,184 +1163,13 @@ fn parse_cli_variables(
     Ok((values, unset_variables.into_iter().collect()))
 }
 
-async fn execute_composition_source(
-    target: &SpaceTarget,
-    portable_source: &CompositionResolvedSource,
-    core_source: &ResolvedSourceRequest,
-    plan: &ResolvedCompositionPlan,
-    local_service: Option<&UgoiteService>,
-    metric_context: &CompositionMetricQueryContext<'_>,
-) -> Result<(
-    CompositionQuerySourceOutput,
-    Vec<CompositionQueryDiagnostic>,
-)> {
-    let space_id = target_space_id(target);
-    let (source_id, kind, operation, request) = composition_source_dispatch(portable_source);
-    let arguments = json!({"space_id": space_id});
-    let core_source_id = match core_source {
-        ResolvedSourceRequest::Sql { source_id, .. } => source_id,
-    };
-    anyhow::ensure!(
-        source_id == core_source_id,
-        "portable and Core Composition source order diverged"
-    );
-    let needs_table_page = composition_source_needs_table_page(plan, source_id);
-
-    let (page, metrics, diagnostics) = match (target, portable_source, core_source) {
-        (
-            SpaceTarget::Remote { .. },
-            CompositionResolvedSource::InlineSql { .. }
-            | CompositionResolvedSource::SavedSql { .. },
-            ResolvedSourceRequest::Sql { source_id, .. },
-        ) => {
-            let page_value = if needs_table_page {
-                let page_value =
-                    http::execute_for_target(target, operation, arguments, Some(request.clone()))
-                        .await?;
-                let _: SqlQueryPage = serde_json::from_value(page_value.clone())
-                    .context("sql.query returned an invalid Composition page")?;
-                Some(page_value)
-            } else {
-                None
-            };
-            let (metrics, diagnostics) =
-                execute_composition_metrics(target, plan, source_id, metric_context, local_service)
-                    .await?;
-            (page_value, metrics, diagnostics)
-        }
-        (
-            SpaceTarget::Core { .. },
-            CompositionResolvedSource::InlineSql { .. }
-            | CompositionResolvedSource::SavedSql { .. },
-            ResolvedSourceRequest::Sql {
-                source_id, request, ..
-            },
-        ) => {
-            let page_value = if needs_table_page {
-                let page = local_service
-                    .context("local Composition query service is unavailable")?
-                    .query_sql(space_id, request.clone())
-                    .await?;
-                Some(serde_json::to_value(&page)?)
-            } else {
-                None
-            };
-            let (metrics, diagnostics) =
-                execute_composition_metrics(target, plan, source_id, metric_context, local_service)
-                    .await?;
-            (page_value, metrics, diagnostics)
-        }
-    };
-
-    Ok((
-        CompositionQuerySourceOutput {
-            source_id: source_id.to_string(),
-            kind,
-            page,
-            metrics,
-        },
-        diagnostics,
-    ))
-}
-
-fn composition_source_needs_table_page(plan: &ResolvedCompositionPlan, source_id: &str) -> bool {
-    plan.component_bindings.iter().any(|binding| {
-        binding.source_id.as_deref() == Some(source_id)
-            && binding.kind == ResolvedComponentKind::Tabular
-    })
-}
-
-async fn execute_composition_metrics(
-    target: &SpaceTarget,
-    plan: &ResolvedCompositionPlan,
-    source_id: &str,
-    context: &CompositionMetricQueryContext<'_>,
-    local_service: Option<&UgoiteService>,
-) -> Result<(
-    Vec<CompositionQueryMetricOutput>,
-    Vec<CompositionQueryDiagnostic>,
-)> {
-    let mut metrics = Vec::new();
-    let mut diagnostics = Vec::new();
-    for binding in plan.component_bindings.iter().filter(|binding| {
-        binding.source_id.as_deref() == Some(source_id)
-            && binding.kind == ResolvedComponentKind::Metric
-    }) {
-        let request = composition_metric_query_request(context, &binding.component_id);
-        let response = match target {
-            SpaceTarget::Remote { .. } => {
-                let value = http::execute_for_target(
-                    target,
-                    "composition.metric.query",
-                    json!({"space_id": target_space_id(target)}),
-                    Some(serde_json::to_value(&request)?),
-                )
-                .await?;
-                serde_json::from_value::<ApiCompositionMetricQueryResponse>(value)
-                    .context("decode Composition Metric query response")?
-            }
-            SpaceTarget::Core { .. } => {
-                let core_request = CoreCompositionMetricQueryRequest {
-                    target: CoreCompositionMetricQueryTarget::SavedRevision {
-                        composition_id: context.composition_id.to_string(),
-                        revision_id: context.composition_revision_id.to_string(),
-                    },
-                    draft_base: None,
-                    component_id: binding.component_id.clone(),
-                    variables: context.variables.clone(),
-                    unset_variables: context.unset_variables.to_vec(),
-                };
-                let response = local_service
-                    .context("local Composition Metric query service is unavailable")?
-                    .query_composition_metric_local(target_space_id(target), core_request)
-                    .await?;
-                serde_json::from_value(serde_json::to_value(response)?)
-                    .context("decode local Composition Metric query response")?
-            }
-        };
-        if response.ok {
-            let result = response
-                .result
-                .context("Composition Metric query succeeded without a result")?;
-            anyhow::ensure!(
-                result.component_id == binding.component_id,
-                "Composition Metric query returned a different component"
-            );
-            metrics.push(CompositionQueryMetricOutput {
-                component_id: result.component_id,
-                result_type: result.result_type,
-                value: result.value,
-            });
-        } else {
-            anyhow::ensure!(
-                !response.diagnostics.is_empty(),
-                "Composition Metric query failed without diagnostics"
-            );
-            diagnostics.extend(response.diagnostics.into_iter().map(|diagnostic| {
-                CompositionQueryDiagnostic {
-                    code: diagnostic.code.as_str().to_string(),
-                    variable_id: diagnostic.variable_id,
-                    source_id: Some(source_id.to_string()),
-                    component_id: diagnostic
-                        .component_id
-                        .or_else(|| Some(binding.component_id.clone())),
-                }
-            }));
-        }
-    }
-    Ok((metrics, diagnostics))
-}
-
-fn composition_source_dispatch(
-    source: &CompositionResolvedSource,
-) -> (&str, &'static str, &'static str, &Value) {
-    match source {
-        CompositionResolvedSource::InlineSql {
-            source_id, request, ..
-        } => (source_id, "inline_sql", "sql.query", request),
-        CompositionResolvedSource::SavedSql {
-            source_id, request, ..
-        } => (source_id, "saved_sql", "sql.query", request),
+fn parse_cli_input_value(
+    descriptor: ugoite_domain::composition::VariableGraphScalarDescriptor,
+    raw: &str,
+) -> Option<Value> {
+    match parse_variable_graph_input(descriptor, raw) {
+        VariableGraphInputValue::Valid(value) => Some(value.to_json_value()),
+        VariableGraphInputValue::Unset | VariableGraphInputValue::Invalid => None,
     }
 }
 
@@ -1413,14 +1371,10 @@ fn diagnostic_response(code: CompositionDiagnosticCode) -> CompositionLintRespon
 mod tests {
     use super::{
         composition_get_arguments, composition_history_arguments, composition_list_arguments,
-        composition_metric_query_request, composition_query_plan_from_core,
-        composition_query_plan_from_portable, composition_resolve_body,
-        composition_source_dispatch, composition_source_needs_table_page,
-        core_plan_from_portable_composition_plan, export_composition, lint_file, lint_yaml_bytes,
-        list_compositions, local_raw_revision_to_api, parse_cli_variables, raw_spec_output,
-        read_composition, read_composition_history, write_raw_spec_to_path,
-        CompositionQueryDiagnostic, CompositionQueryMetricOutput, CompositionVariable,
-        RawSpecOutput,
+        export_composition, lint_file, lint_yaml_bytes, list_compositions,
+        local_composition_evaluation_response, local_raw_revision_to_api, parse_cli_variables,
+        raw_spec_output, read_composition, read_composition_history, write_raw_spec_to_path,
+        CoreCompositionGraphEvaluationPlan, CoreCompositionQueryEvaluationResponse, RawSpecOutput,
     };
     use crate::cli_config::SpaceTarget;
     use anyhow::Result;
@@ -1429,14 +1383,12 @@ mod tests {
     use std::io::Write;
     use ugoite_api_client::{
         prepare_request, CompositionDiagnosticCode, CompositionHistoryPage, CompositionListPage,
-        CompositionResolvePlan, CompositionResolvedSource, CompositionResultFieldType, HttpMethod,
-        RequestBodyKind,
+        HttpMethod, RequestBodyKind,
     };
-    use ugoite_core::composition::ResolvedCompositionPlan;
     use ugoite_core::error::{AppError, ErrorCode};
     use ugoite_domain::composition::{
-        CompositionVariableType as DomainCompositionVariableType,
-        MAX_COMPOSITION_VARIABLE_STRING_BYTES, MAX_COMPOSITION_YAML_BYTES,
+        VariableGraphNode, VariableGraphNodeKind, VariableGraphScalarDescriptor,
+        VariableGraphScalarType, MAX_COMPOSITION_VARIABLE_STRING_BYTES, MAX_COMPOSITION_YAML_BYTES,
     };
     use ugoite_domain::entry::{EntryMetadata, EntryOperation, EntryRevision, FieldValue};
     use ugoite_domain::form::FormVersion;
@@ -1452,20 +1404,51 @@ mod tests {
     const SQL_FIRST_COMPOSITION_FINGERPRINT: &str = include_str!(
         "../../../../crates/ugoite-domain/tests/fixtures/composition/sql-first.fingerprint.txt"
     );
-    const METADATA_ONLY_COMPOSITION: &str = "format: ugoite.composition\nformat_version: 1\nname: Metadata only\nkind: dashboard\nspec:\n  variables: []\n  sources: []\n  components:\n    - id: note\n      kind: text\n      content:\n        kind: literal\n        text: metadata\n      style: body\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: component\n            component: note\n";
+    const METADATA_ONLY_COMPOSITION: &str = "format: ugoite.composition\nformat_version: 1\nname: Metadata only\nkind: dashboard\nspec:\n  variables: []\n  components:\n    - id: note\n      kind: text\n      content:\n        kind: literal\n        text: metadata\n      style: body\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: component\n            component: note\n";
 
     #[test]
-    fn composition_diagnostics_expose_variable_ids() {
-        let value = serde_json::to_value(CompositionQueryDiagnostic {
-            code: "variable_missing".to_string(),
-            variable_id: Some("minimum".to_string()),
-            source_id: None,
-            component_id: None,
-        })
-        .expect("Composition diagnostic serializes");
+    fn local_graph_evaluation_uses_the_portable_response_shape() {
+        let response = CoreCompositionQueryEvaluationResponse {
+            evaluation_id: Uuid::from_u128(1),
+            ok: true,
+            draft_fingerprint: None,
+            snapshot_fingerprint: Some("snapshot".to_string()),
+            publication_fingerprint: Some("publication".to_string()),
+            authorization_fingerprint: Some("local-operator".to_string()),
+            variable_definitions: None,
+            plan: Some(CoreCompositionGraphEvaluationPlan {
+                composition_revision: None,
+                draft_fingerprint: None,
+                variable_values: BTreeMap::new(),
+                queries: Vec::new(),
+                component_bindings: vec![ugoite_core::composition::ResolvedComponentBinding {
+                    component_id: "count".to_string(),
+                    kind: ugoite_core::composition::ResolvedComponentKind::Metric,
+                    variable_id: Some("total".to_string()),
+                    expected_result_type: Some(
+                        ugoite_domain::composition::CompositionResultFieldType::Integer,
+                    ),
+                    presentation: None,
+                }],
+                dependencies: ugoite_core::composition::CompositionDependencyIndex::default(),
+            }),
+            query_results: BTreeMap::new(),
+            computed_query_ids: Vec::new(),
+            diagnostics: Vec::new(),
+            query_diagnostics: Vec::new(),
+        };
 
-        assert_eq!(value["variable_id"], "minimum");
-        assert!(value.get("parameter_id").is_none());
+        let response = local_composition_evaluation_response(response)
+            .expect("Core graph response maps to the portable API response");
+        let value = serde_json::to_value(response).expect("portable response serializes");
+        assert_eq!(value["component_bindings"][0]["kind"], "metric");
+        assert_eq!(value["component_bindings"][0]["variable_id"], "total");
+        assert_eq!(
+            value["component_bindings"][0]["expected_result_type"],
+            "integer"
+        );
+        assert!(value.get("plan").is_none());
+        assert!(value.get("metrics").is_none());
     }
 
     #[test]
@@ -1486,7 +1469,7 @@ mod tests {
     }
 
     #[test]
-    fn lint_file_preserves_sql_first_sources_and_shared_fingerprint() {
+    fn lint_file_preserves_sql_first_query_variables_and_shared_fingerprint() {
         let mut file = tempfile::NamedTempFile::new().expect("temporary YAML file");
         file.write_all(SQL_FIRST_COMPOSITION.as_bytes())
             .expect("write SQL-first Composition fixture");
@@ -1497,8 +1480,16 @@ mod tests {
         let value = response.value.expect("canonical value");
         assert_eq!(value.canonical_yaml, SQL_FIRST_COMPOSITION_CANONICAL);
         assert_eq!(value.fingerprint, SQL_FIRST_COMPOSITION_FINGERPRINT.trim());
-        assert_eq!(value.document["spec"]["sources"][0]["kind"], "inline_sql");
-        assert_eq!(value.document["spec"]["sources"][1]["kind"], "saved_sql");
+        assert_eq!(value.document["spec"]["variables"][2]["kind"], "query");
+        assert_eq!(
+            value.document["spec"]["variables"][2]["query"]["kind"],
+            "inline_sql"
+        );
+        assert_eq!(value.document["spec"]["variables"][3]["kind"], "query");
+        assert_eq!(
+            value.document["spec"]["variables"][3]["query"]["kind"],
+            "saved_sql"
+        );
     }
 
     #[test]
@@ -1530,51 +1521,33 @@ mod tests {
         }
     }
 
+    fn input_node(
+        id: &str,
+        scalar_type: VariableGraphScalarType,
+        required: bool,
+    ) -> VariableGraphNode {
+        VariableGraphNode {
+            id: id.to_owned(),
+            kind: VariableGraphNodeKind::Input {
+                value_type: VariableGraphScalarDescriptor {
+                    scalar_type,
+                    nullable: false,
+                },
+                required,
+                default: None,
+            },
+        }
+    }
+
     #[test]
     fn query_cli_variables_follow_the_shared_domain_types() {
         let definitions = vec![
-            CompositionVariable {
-                id: "enabled".to_string(),
-                variable_type: DomainCompositionVariableType::Boolean,
-                required: true,
-                default: None,
-                format: None,
-            },
-            CompositionVariable {
-                id: "count".to_string(),
-                variable_type: DomainCompositionVariableType::Integer,
-                required: true,
-                default: None,
-                format: None,
-            },
-            CompositionVariable {
-                id: "ratio".to_string(),
-                variable_type: DomainCompositionVariableType::Float,
-                required: true,
-                default: None,
-                format: None,
-            },
-            CompositionVariable {
-                id: "date".to_string(),
-                variable_type: DomainCompositionVariableType::Date,
-                required: true,
-                default: None,
-                format: None,
-            },
-            CompositionVariable {
-                id: "timestamp".to_string(),
-                variable_type: DomainCompositionVariableType::Timestamp,
-                required: true,
-                default: None,
-                format: None,
-            },
-            CompositionVariable {
-                id: "title".to_string(),
-                variable_type: DomainCompositionVariableType::String,
-                required: false,
-                default: None,
-                format: None,
-            },
+            input_node("enabled", VariableGraphScalarType::Boolean, true),
+            input_node("count", VariableGraphScalarType::Integer, true),
+            input_node("ratio", VariableGraphScalarType::Float, true),
+            input_node("date", VariableGraphScalarType::Date, true),
+            input_node("timestamp", VariableGraphScalarType::Timestamp, true),
+            input_node("title", VariableGraphScalarType::String, false),
         ];
         let (values, unset_variables) = parse_cli_variables(
             &definitions,
@@ -1603,30 +1576,22 @@ mod tests {
     #[test]
     fn query_cli_values_use_the_shared_bounded_lexical_contract() {
         let definitions = vec![
-            ("enabled", DomainCompositionVariableType::Boolean),
-            ("count", DomainCompositionVariableType::Integer),
-            ("ratio", DomainCompositionVariableType::Float),
-            ("date", DomainCompositionVariableType::Date),
-            ("timestamp", DomainCompositionVariableType::Timestamp),
-            ("title", DomainCompositionVariableType::String),
+            ("enabled", VariableGraphScalarType::Boolean),
+            ("count", VariableGraphScalarType::Integer),
+            ("ratio", VariableGraphScalarType::Float),
+            ("date", VariableGraphScalarType::Date),
+            ("timestamp", VariableGraphScalarType::Timestamp),
+            ("title", VariableGraphScalarType::String),
         ]
         .into_iter()
-        .map(|(id, variable_type)| CompositionVariable {
-            id: id.to_string(),
-            variable_type,
-            required: false,
-            default: None,
-            format: None,
-        })
+        .map(|(id, scalar_type)| input_node(id, scalar_type, false))
         .collect::<Vec<_>>();
         let max_float_token = format!("1{}", "0".repeat(63));
         let invalid_assignments = [
             "enabled=TRUE".to_string(),
             "count=12x".to_string(),
             "count=9007199254740992".to_string(),
-            "ratio=1.".to_string(),
             "ratio=1e309".to_string(),
-            "ratio=1e-324".to_string(),
             format!("ratio={}", "1".to_string() + &"0".repeat(64)),
             "date=2025-02-29".to_string(),
             "timestamp=2026-10-13T14:59:59".to_string(),
@@ -1669,242 +1634,6 @@ mod tests {
 
         assert!(values.is_empty());
         assert_eq!(unset_variables, vec!["unknown"]);
-    }
-
-    #[test]
-    fn query_resolve_body_keeps_the_exact_revision_typed_variables_and_explicit_unsets() {
-        let body = composition_resolve_body(
-            "revision-1",
-            BTreeMap::from([
-                ("month".to_string(), json!("2026-10")),
-                ("include_archived".to_string(), json!(true)),
-            ]),
-            vec!["end_date".to_string()],
-        );
-        assert_eq!(
-            body,
-            json!({
-                "revision_id": "revision-1",
-                "variables": {
-                    "month": "2026-10",
-                    "include_archived": true
-                },
-                "unset_variables": ["end_date"]
-            })
-        );
-
-        let request = prepare_request(
-            "composition.resolve",
-            &json!({"space_id":"demo", "composition_id":"composition-1"}),
-            Some(&body),
-        )
-        .expect("exact resolve operation");
-        assert_eq!(
-            request.path,
-            "/spaces/demo/compositions/composition-1/resolve"
-        );
-
-        assert_eq!(
-            composition_resolve_body("revision-1", BTreeMap::new(), Vec::new()),
-            json!({"revision_id":"revision-1", "variables":{}}),
-            "an omitted variable must leave default selection to Core"
-        );
-    }
-
-    #[test]
-    fn query_dispatches_each_resolved_request_unchanged_to_existing_operations() {
-        let inline_request = json!({
-            "sql": "SELECT * FROM \"__form_42\"",
-            "parameters": {"month": "2026-10"},
-            "parameter_types": {"month": "date"},
-            "limit": 100
-        });
-        let inline_source = CompositionResolvedSource::InlineSql {
-            source_id: "entries".to_string(),
-            request: inline_request.clone(),
-            source_schema_fingerprint: "a".repeat(64),
-            form_bindings: Vec::new(),
-            expected_result: Vec::new(),
-        };
-        let (source_id, kind, operation, request) = composition_source_dispatch(&inline_source);
-        assert_eq!(source_id, "entries");
-        assert_eq!(kind, "inline_sql");
-        assert_eq!(operation, "sql.query");
-        assert_eq!(request, &inline_request);
-
-        let sql_request = json!({
-            "sql": "SELECT * FROM entries",
-            "limit": 1,
-            "parameters": {},
-            "parameter_types": {},
-            "saved_sql": {"id":"sql-1", "revision_id":"revision-2"}
-        });
-        let sql_source = CompositionResolvedSource::SavedSql {
-            source_id: "summary".to_string(),
-            request: sql_request.clone(),
-            source_schema_fingerprint: "b".repeat(64),
-            expected_result: Vec::new(),
-        };
-        let (source_id, kind, operation, request) = composition_source_dispatch(&sql_source);
-        assert_eq!(source_id, "summary");
-        assert_eq!(kind, "saved_sql");
-        assert_eq!(operation, "sql.query");
-        assert_eq!(request, &sql_request);
-    }
-
-    #[test]
-    fn portable_resolve_plan_round_trips_through_core_with_exact_sql_revision_and_metric_type() {
-        let portable: CompositionResolvePlan = serde_json::from_value(json!({
-            "composition_revision": {
-                "entry_id": "00000000-0000-0000-0000-000000000001",
-                "revision_id": "00000000-0000-0000-0000-000000000002"
-            },
-            "sources": [{
-                "kind": "saved_sql",
-                "source_id": "summary",
-                "request": {
-                    "sql": "SELECT 42 AS total",
-                    "parameters": {},
-                    "parameter_types": {},
-                    "limit": 1,
-                    "saved_sql": {
-                        "id": "sql-entry-1",
-                        "revision_id": "sql-revision-7"
-                    }
-                },
-                "source_schema_fingerprint": "abc",
-                "expected_result": []
-            }],
-            "component_bindings": [{
-                "component_id": "total",
-                "kind": "metric",
-                "source_id": "summary",
-                "result_property_key": "total",
-                "expected_result_type": "integer"
-            }]
-        }))
-        .expect("portable resolve plan");
-
-        let core = core_plan_from_portable_composition_plan(&portable)
-            .expect("portable SQL source kinds map to Core's generic SQL request kind");
-        let ugoite_core::composition::ResolvedSourceRequest::Sql {
-            request,
-            form_bindings,
-            ..
-        } = &core.sources[0];
-        assert_eq!(request.sql, "SELECT 42 AS total");
-        assert!(form_bindings.is_empty());
-        let saved_sql = request
-            .saved_sql
-            .as_ref()
-            .expect("exact Saved SQL selector");
-        assert_eq!(saved_sql.id, "sql-entry-1");
-        assert_eq!(saved_sql.revision_id, "sql-revision-7");
-
-        let resolved = composition_query_plan_from_portable(portable.clone())
-            .expect("portable plan adapts to the shared Core types");
-        assert_eq!(resolved.portable, portable);
-        assert_eq!(
-            resolved.portable.component_bindings[0].expected_result_type,
-            Some(ugoite_api_client::CompositionResultFieldType::Integer)
-        );
-        assert_eq!(resolved.core, core);
-
-        let local_plan = composition_query_plan_from_core(resolved.core.clone())
-            .expect("local plan adapts to the portable DTO");
-        assert_eq!(local_plan.portable, resolved.portable);
-    }
-
-    #[test]
-    fn composition_metric_output_contains_only_the_selected_result_type_and_value() {
-        let output = CompositionQueryMetricOutput {
-            component_id: "count".to_string(),
-            result_type: CompositionResultFieldType::Integer,
-            value: json!("3"),
-        };
-
-        assert_eq!(
-            serde_json::to_value(output).expect("metric JSON output"),
-            json!({
-                "component_id": "count",
-                "result_type": "integer",
-                "value": "3"
-            })
-        );
-    }
-
-    #[test]
-    fn saved_sql_metric_query_carries_variables_and_explicit_unsets_at_the_exact_revision() {
-        let variables = BTreeMap::from([
-            ("month".to_string(), json!("2026-10")),
-            ("include_archived".to_string(), json!(false)),
-        ]);
-        let unset_variables = vec!["search_text".to_string()];
-        let context = super::CompositionMetricQueryContext {
-            composition_id: "composition-entry-1",
-            composition_revision_id: "composition-revision-9",
-            variables: &variables,
-            unset_variables: &unset_variables,
-        };
-        let request = composition_metric_query_request(&context, "total");
-        let body = serde_json::to_value(request).expect("portable metric request");
-
-        assert_eq!(
-            body,
-            json!({
-                "target": {
-                    "kind": "saved_revision",
-                    "composition_id": "composition-entry-1",
-                    "revision_id": "composition-revision-9"
-                },
-                "component_id": "total",
-                "variables": {
-                    "month": "2026-10",
-                    "include_archived": false
-                },
-                "unset_variables": ["search_text"]
-            })
-        );
-        let prepared = prepare_request(
-            "composition.metric.query",
-            &json!({"space_id":"demo"}),
-            Some(&body),
-        )
-        .expect("portable metric query operation");
-        assert_eq!(prepared.method, HttpMethod::Post);
-        assert_eq!(prepared.path, "/spaces/demo/compositions/metric-query");
-        assert_eq!(prepared.body_kind, RequestBodyKind::Json);
-    }
-
-    #[test]
-    fn metric_sources_do_not_require_a_table_page_but_table_bindings_do() {
-        let mut plan: ResolvedCompositionPlan = serde_json::from_value(json!({
-            "composition_revision": {
-                "entry_id": "00000000-0000-0000-0000-000000000001",
-                "revision_id": "00000000-0000-0000-0000-000000000002"
-            },
-            "sources": [],
-            "component_bindings": [{
-                "component_id": "total",
-                "kind": "metric",
-                "source_id": "summary",
-                "result_property_key": "total",
-                "expected_result_type": "float"
-            }]
-        }))
-        .expect("Core plan with a Saved SQL metric binding");
-
-        assert!(!composition_source_needs_table_page(&plan, "summary"));
-
-        plan.component_bindings.push(
-            serde_json::from_value(json!({
-                "component_id": "rows",
-                "kind": "table",
-                "source_id": "summary"
-            }))
-            .expect("Saved SQL table binding"),
-        );
-        assert!(composition_source_needs_table_page(&plan, "summary"));
     }
 
     #[test]

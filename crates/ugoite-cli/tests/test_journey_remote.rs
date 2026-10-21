@@ -30,7 +30,6 @@ kind: dashboard
 name: Basic Composition
 spec:
   variables: []
-  sources: []
   components:
     - id: note
       kind: text
@@ -147,6 +146,104 @@ fn stdout_json(output: &Output, what: &str) -> serde_json::Value {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     serde_json::from_str(&stdout).unwrap_or_else(|_| panic!("{what} stdout is not JSON: {stdout}"))
+}
+
+fn normalize_composition_query_descriptor(mut query: serde_json::Value) -> serde_json::Value {
+    if query["request"].is_object() {
+        query["request"]["execution_id"] = serde_json::Value::Null;
+    }
+    query
+}
+
+fn composition_query_diagnostic_pairs(value: &serde_json::Value) -> Vec<(String, Option<String>)> {
+    let mut diagnostics = value["diagnostics"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|diagnostic| {
+            (
+                diagnostic["code"].as_str().unwrap_or_default().to_owned(),
+                diagnostic["variable_id"].as_str().map(str::to_owned),
+            )
+        })
+        .collect::<Vec<_>>();
+    diagnostics.extend(
+        value["query_diagnostics"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|diagnostic| {
+                (
+                    diagnostic["code"].as_str().unwrap_or_default().to_owned(),
+                    diagnostic["variable_id"].as_str().map(str::to_owned),
+                )
+            }),
+    );
+    diagnostics.sort();
+    diagnostics
+}
+
+fn assert_composition_query_semantics_match(core: &serde_json::Value, remote: &serde_json::Value) {
+    assert_eq!(core["ok"], remote["ok"]);
+    assert!(
+        core.get("plan").is_none(),
+        "local output must use the graph response shape"
+    );
+    assert!(
+        core.get("metrics").is_none(),
+        "local output must not project per-component metrics"
+    );
+    assert_eq!(
+        composition_query_diagnostic_pairs(core),
+        composition_query_diagnostic_pairs(remote),
+        "local and remote Composition query diagnostics should carry the same codes and variables"
+    );
+    assert_eq!(
+        core.get("composition_revision")
+            .unwrap_or(&serde_json::Value::Null),
+        &remote["composition_revision"]
+    );
+    assert_eq!(
+        core.get("variable_values").expect("local variable values"),
+        &remote["variable_values"]
+    );
+    assert_eq!(
+        core.get("component_bindings")
+            .expect("local component bindings"),
+        &remote["component_bindings"]
+    );
+    assert_eq!(
+        core.get("dependencies").expect("local dependency index"),
+        &remote["dependencies"]
+    );
+    assert_eq!(core["computed_query_ids"], remote["computed_query_ids"]);
+
+    let local_queries = core["queries"].as_array().expect("local query descriptors");
+    let remote_queries = remote["queries"].as_array().expect("remote query plan");
+    assert_eq!(local_queries.len(), remote_queries.len());
+    for (local, remote) in local_queries.iter().zip(remote_queries) {
+        let local = normalize_composition_query_descriptor(local.clone());
+        let remote = normalize_composition_query_descriptor(remote.clone());
+        assert_eq!(local, remote, "query descriptors should remain equivalent");
+    }
+
+    let local_results = core["query_results"]
+        .as_object()
+        .expect("local graph query results");
+    let remote_results = remote["query_results"]
+        .as_object()
+        .expect("remote graph query results");
+    assert_eq!(local_results.len(), remote_results.len());
+    for (variable_id, local_result) in local_results {
+        let remote_result = &remote_results[variable_id];
+        assert_eq!(local_result["value"], remote_result["value"]);
+        assert_eq!(local_result["has_more"], remote_result["has_more"]);
+        assert_eq!(
+            local_result.get("exact_integer_rows"),
+            remote_result.get("exact_integer_rows"),
+            "exact table integers should match for {variable_id}"
+        );
+    }
 }
 
 fn contains_string(value: &serde_json::Value, needle: &str) -> bool {
@@ -1576,24 +1673,27 @@ kind: dashboard
 spec:
   variables:
     - id: month_start
-      type: date
+      kind: input
+      value_type: {{ scalar_type: date, nullable: false }}
       required: true
-      default: "2026-01-01"
+      default: {{ kind: date, value: "2026-01-01" }}
     - id: month_end
-      type: date
+      kind: input
+      value_type: {{ scalar_type: date, nullable: false }}
       required: true
-  sources:
     - id: expense_rows
-      kind: inline_sql
-      name: Expense rows
-      sql: |
-        SELECT "field_101" AS "Date", "field_102" AS "Merchant", "field_103" AS "Amount"
-        FROM "{form_name}"
-        WHERE "field_101" >= $month_start AND "field_101" < $month_end
-        ORDER BY "field_101" ASC, "_ugoite_id"
-      form_bindings: []
-      expected_result: []
-      schema_fingerprint: ""
+      kind: query
+      returns: {{ kind: table, columns: [] }}
+      query:
+        kind: inline_sql
+        sql: |
+          SELECT "field_101" AS "Date", "field_102" AS "Merchant", "field_103" AS "Amount"
+          FROM "{form_name}"
+          WHERE "field_101" >= $month_start AND "field_101" < $month_end
+          ORDER BY "field_101" ASC, "_ugoite_id"
+        arguments:
+          - {{ name: month_start, variable: month_start }}
+          - {{ name: month_end, variable: month_end }}
   components:
     - id: month_start_input
       kind: input
@@ -1603,7 +1703,7 @@ spec:
       variable: month_end
     - id: transactions
       kind: table
-      source: expense_rows
+      variable: expense_rows
   layout:
     kind: flow
     rows:
@@ -1640,8 +1740,8 @@ spec:
     let revised_yaml = yaml
         .replacen("name: CLI parity", "name: CLI parity revised", 1)
         .replacen(
-            "WHERE \"field_101\" >= $month_start AND \"field_101\" < $month_end\n        ORDER BY",
-            "WHERE \"field_101\" >= $month_start AND \"field_101\" < $month_end AND \"field_102\" = 'January-10'\n        ORDER BY",
+            "AND \"field_101\" < $month_end",
+            "AND \"field_101\" < $month_end AND \"field_102\" = 'January-10'",
             1,
         );
     assert_ne!(revised_yaml, yaml, "the newer document must be distinct");
@@ -1741,9 +1841,9 @@ spec:
         "Remote parameterized Composition query",
     );
     assert_eq!(core_query["ok"], true, "Core query response: {core_query}");
-    assert_eq!(core_query, remote_query);
+    assert_composition_query_semantics_match(&core_query, &remote_query);
     assert_eq!(
-        core_query["sources"][0]["page"]["rows"]
+        core_query["query_results"]["expense_rows"]["value"]["rows"]
             .as_array()
             .map(Vec::len),
         Some(2),
@@ -1769,9 +1869,9 @@ spec:
         &run_cli(&fixture.config_path, &latest_query_args).await,
         "Remote latest-revision Composition query",
     );
-    assert_eq!(core_latest_query, remote_latest_query);
+    assert_composition_query_semantics_match(&core_latest_query, &remote_latest_query);
     assert_eq!(
-        core_latest_query["sources"][0]["page"]["rows"]
+        core_latest_query["query_results"]["expense_rows"]["value"]["rows"]
             .as_array()
             .map(Vec::len),
         Some(1),
@@ -1808,7 +1908,7 @@ spec:
         &run_cli(&fixture.config_path, &unknown_unset_args).await,
         "Remote unknown-variable explicit unset",
     );
-    assert_eq!(core_unknown_unset, remote_unknown_unset);
+    assert_composition_query_semantics_match(&core_unknown_unset, &remote_unknown_unset);
     assert_eq!(core_unknown_unset["ok"], false);
     let unknown_diagnostic = core_unknown_unset["diagnostics"]
         .as_array()
@@ -1838,12 +1938,12 @@ spec:
         &run_cli(&fixture.config_path, &explicit_unset_args).await,
         "Remote explicit-unset Composition query",
     );
-    assert_eq!(core_explicit_unset, remote_explicit_unset);
+    assert_composition_query_semantics_match(&core_explicit_unset, &remote_explicit_unset);
     assert_eq!(
         core_explicit_unset["ok"], false,
         "explicit unset must bypass the declared month_start default"
     );
-    assert!(core_explicit_unset["plan"].is_null());
+    assert!(core_explicit_unset.get("plan").is_none());
     let explicit_unset_diagnostics = core_explicit_unset["diagnostics"]
         .as_array()
         .expect("explicit-unset diagnostics");
@@ -1945,19 +2045,17 @@ format_version: 1
 name: CLI schema drift
 kind: dashboard
 spec:
-  variables: []
-  sources:
+  variables:
     - id: rows
-      kind: inline_sql
-      name: Salary rows
-      sql: SELECT * FROM "{form_name}"
-      form_bindings: []
-      expected_result: []
-      schema_fingerprint: ""
+      kind: query
+      returns: {{ kind: table, columns: [] }}
+      query:
+        kind: inline_sql
+        sql: SELECT * FROM "{form_name}"
   components:
     - id: salary_table
       kind: table
-      source: rows
+      variable: rows
   layout:
     kind: flow
     rows:
@@ -2141,12 +2239,12 @@ spec:
         &run_cli(&fixture.config_path, &query_args).await,
         "Remote schema-drift Composition query",
     );
-    assert_eq!(core_query, remote_query);
+    assert_composition_query_semantics_match(&core_query, &remote_query);
     assert_eq!(core_query["ok"], false);
     assert_eq!(
         core_query["diagnostics"],
-        json!([{"code": "source_schema_changed"}]),
-        "changed source schemas must retain the stable drift diagnostic"
+        json!([{"code": "query_schema_changed", "variable_id": "rows"}]),
+        "changed query schemas must retain the stable variable-scoped drift diagnostic"
     );
 
     let history_after = stdout_json(
@@ -2335,7 +2433,7 @@ async fn test_cli_composition_unsupported_version_recovery_matches_core_remote()
         &run_cli(&fixture.config_path, &query_args).await,
         "Remote future Composition query",
     );
-    assert_eq!(core_query, remote_query);
+    assert_composition_query_semantics_match(&core_query, &remote_query);
     assert_eq!(core_query["ok"], false);
     assert_eq!(
         core_query["diagnostics"],

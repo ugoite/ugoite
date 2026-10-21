@@ -1,11 +1,11 @@
 version: "0.1"
-updated: "2026-10-16"
+updated: "2026-10-20"
 page:
   id: space-composition-edit
   title: Edit tool
   route: /spaces/{space_id}/compositions/{composition_id}/{revision_id}/edit
   implementation: implemented
-  contract_status: planned
+  contract_status: in_progress
 components:
   shared:
     - id: space-shell
@@ -15,13 +15,12 @@ components:
     - id: studio-load
       type: query-results
       title: Exact revision load
-      source: Load the selected Composition Entry revision into the strict SQL-first v1 reader
+      source: Load the selected Composition Entry revision into the strict typed graph reader
       loading: explicit
       unsupported_or_invalid_document: >-
-        Show a concise diagnostic and a back control. Keep raw inspection,
+        Show a concise local diagnostic and a back control. Keep raw inspection,
         export, and Entry history recovery available through their existing
-        paths; do not open the editor, migrate, or execute an unsupported
-        prereplacement Composition document.
+        paths; do not open, migrate, or execute a replaced Composition document.
     - id: studio-name
       type: text-input
       title: Tool name
@@ -34,31 +33,25 @@ components:
       single_control: true
       source: canonical Composition document through composition.save with the selected base revision
       persistence: append one Entry revision with existing receipt and stale-write semantics
-      readiness: valid strict document with each component placed exactly once and no dangling references
+      readiness: strict typed graph, valid SQL descriptors and bindings, and each component placed exactly once
     - id: composition-studio
       type: composition-studio
       reference: ../components/composition-studio.yaml
-      contract_status: planned
-      steady_state: Design canvas and the selected SQL Workspace, without explanatory paragraphs or decorative cards
-      sources:
-        allowed: [inline_sql, saved_sql]
-        inline_sql: Editable SQL source; Form bindings are server-derived and retained by stable Form ID
-        saved_sql: Read-only exact Entry revision; never follows latest and has no Composition-owned alias
-        workspace: ../components/sql-workspace.yaml
+      contract_status: in_progress
+      modes: [design, variables]
+      variables:
+        kinds: [constant, input, query]
+        query_outputs: [table, scalar]
+        editor: shared SQL Workspace with explicit SQL-parameter-to-variable bindings
       design:
-        components: [input, text, table, metric]
-        label_step: absent
-        variable_reference: Input references a Composition variable; Text displays literal content or a direct string-variable value
-        table: Uses the selected SQL source result
-        metric: Selects one declared scalar output column from a SQL source
-      composition_metadata:
-        tags_control: absent
-        editable_component_labels: absent
-        editable_variable_labels: absent
-        source_display_alias: absent
+        components: [input, text, table, value]
+        table_and_value_binding_picker:
+          tabs: [variables, forms, saved_sql]
+          saved_sql_revision: exact_entry_revision
+          persisted_component_reference: variable_only
+        inspector: one_variable_reference_action_for_table_and_value
       execution:
-        preview: explicit, owned by Composition adapter
-        results: shared SQL result presentation; current state only
-        paging_and_count: explicit query operations
-        browser_aggregation: absent
-      work: Draft, typed input, preview results, paging, and drawer state are transient
+        preview: explicit, using immutable evaluation snapshots and current authorization
+        results: transient stateless work
+        paging: bounded_server_owned_continuation
+      work: Draft, input values, previews, pages, results, and editor diagnostics are transient

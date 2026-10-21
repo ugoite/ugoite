@@ -8,10 +8,15 @@ export interface PendingCompositionSaveAttempt {
   /** Saved-SQL route identity. EntryQuery saves identify by routePath only. */
   sqlId?: string;
   routePath: string;
+  saveTarget: CompositionSaveTarget;
   name: string;
   yaml: string;
   idempotencyKey: string;
 }
+
+export type CompositionSaveTarget =
+  | { kind: "create" }
+  | { kind: "update"; compositionId: string; baseRevisionId: string };
 
 export interface StoredCompositionSaveAttempt {
   attempt: PendingCompositionSaveAttempt;
@@ -19,9 +24,9 @@ export interface StoredCompositionSaveAttempt {
   routeVisitId: number | undefined;
 }
 
-type RouteIdentity = Pick<
+export type CompositionSaveAttemptIdentity = Pick<
   PendingCompositionSaveAttempt,
-  "spaceId" | "sqlId" | "routePath"
+  "spaceId" | "sqlId" | "routePath" | "saveTarget"
 >;
 type CompositionSaveAttemptEvent =
   | { type: "pending"; stored: StoredCompositionSaveAttempt }
@@ -43,11 +48,23 @@ const listeners = typeof window === "undefined"
 let nextRouteVisitId = 0;
 let activeRouteVisit: { key: string; id: number } | undefined;
 
-const identityKey = ({ spaceId, sqlId, routePath }: RouteIdentity) =>
-  JSON.stringify([spaceId, sqlId, routePath]);
+const identityKey = ({
+  spaceId,
+  sqlId,
+  routePath,
+  saveTarget,
+}: CompositionSaveAttemptIdentity) =>
+  JSON.stringify([spaceId, sqlId, routePath, saveTarget]);
+
+export function sameCompositionSaveIdentity(
+  left: CompositionSaveAttemptIdentity,
+  right: CompositionSaveAttemptIdentity,
+): boolean {
+  return identityKey(left) === identityKey(right);
+}
 
 export function getPendingCompositionSaveAttempt(
-  identity: RouteIdentity,
+  identity: CompositionSaveAttemptIdentity,
 ): StoredCompositionSaveAttempt | undefined {
   return pendingAttempts?.get(identityKey(identity));
 }
@@ -56,11 +73,16 @@ export function stagePendingCompositionSaveAttempt(
   attempt: PendingCompositionSaveAttempt,
   routeVisitId: number | undefined,
 ): void {
-  pendingAttempts?.set(identityKey(attempt), {
+  const stored = {
     attempt,
     state: "in_flight",
     routeVisitId,
-  });
+  } as const;
+  const key = identityKey(attempt);
+  pendingAttempts?.set(key, stored);
+  for (const listener of listeners?.get(key) ?? []) {
+    listener({ type: "pending", stored });
+  }
 }
 
 export function markPendingCompositionSaveAttemptUncertain(
@@ -82,7 +104,7 @@ export function markPendingCompositionSaveAttemptUncertain(
 }
 
 export function clearPendingCompositionSaveAttempt(
-  identity: RouteIdentity & { idempotencyKey?: string },
+  identity: CompositionSaveAttemptIdentity & { idempotencyKey?: string },
   outcome?: "completed" | "rejected",
   routeVisitId?: number,
 ): void {
@@ -109,7 +131,7 @@ export function clearPendingCompositionSaveAttempt(
 }
 
 export function subscribeToPendingCompositionSaveAttempt(
-  identity: RouteIdentity,
+  identity: CompositionSaveAttemptIdentity,
   listener: Listener,
 ): () => void {
   const key = identityKey(identity);
@@ -124,7 +146,7 @@ export function subscribeToPendingCompositionSaveAttempt(
 }
 
 export function beginCompositionSaveRouteVisit(
-  identity: RouteIdentity,
+  identity: CompositionSaveAttemptIdentity,
 ): number | undefined {
   if (!pendingAttempts) return undefined;
   const id = ++nextRouteVisitId;
@@ -133,7 +155,7 @@ export function beginCompositionSaveRouteVisit(
 }
 
 export function isCurrentCompositionSaveRouteVisit(
-  identity: RouteIdentity,
+  identity: CompositionSaveAttemptIdentity,
   visitId: number | undefined,
 ): boolean {
   if (visitId === undefined || !pendingAttempts) return true;

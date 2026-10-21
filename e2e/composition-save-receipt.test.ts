@@ -1,6 +1,6 @@
 import { type APIRequestContext, expect, test } from "@playwright/test";
 import { getBackendUrl, waitForServers } from "./lib/client.ts";
-import { completeSavedSqlCompositionYaml } from "./lib/composition.ts";
+import { completeCompositionGraphYaml } from "./lib/composition-graph.ts";
 
 type SeedState = {
   spaceId: string;
@@ -29,45 +29,6 @@ type CompositionHistoryPage = {
 
 function sqlIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
-}
-
-function buildYaml(
-  name: string,
-  savedSqlId: string,
-  savedSqlRevisionId: string,
-): string {
-  return [
-    "format: ugoite.composition",
-    "format_version: 1",
-    `name: ${name}`,
-    "kind: dashboard",
-    "spec:",
-    "  sources:",
-    "    - id: receipt_rows",
-    "      kind: saved_sql",
-    `      entry_id: "${savedSqlId}"`,
-    `      revision_id: "${savedSqlRevisionId}"`,
-    "      expected_result: []",
-    "      schema_fingerprint: ''",
-    "  components:",
-    "    - id: total",
-    "      kind: metric",
-    "      source: receipt_rows",
-    "      column: total",
-    "    - id: rows",
-    "      kind: table",
-    "      source: receipt_rows",
-    "  layout:",
-    "    kind: flow",
-    "    rows:",
-    "      - id: main",
-    "        items:",
-    "          - kind: component",
-    "            component: total",
-    "          - kind: component",
-    "            component: rows",
-    "",
-  ].join("\n");
 }
 
 async function createSpace(request: APIRequestContext): Promise<string> {
@@ -166,22 +127,39 @@ async function seedReceiptComposition(
   expect(savedSql.id).toBeTruthy();
   expect(savedSql.revision_id).toBeTruthy();
 
-  const yaml = await completeSavedSqlCompositionYaml(
+  const yaml = await completeCompositionGraphYaml(
     request,
     spaceId,
-    buildYaml(compositionName, savedSql.id!, savedSql.revision_id!),
-    [{
-      id: "receipt_rows",
-      savedSqlId: savedSql.id!,
-      savedSqlRevisionId: savedSql.revision_id!,
-    }],
+    {
+      name: compositionName,
+      variables: [{
+        id: "receipt_total",
+        kind: "query",
+        returns: {
+          kind: "scalar",
+          value_type: { scalar_type: "float", nullable: true },
+        },
+        query: {
+          kind: "saved_sql",
+          entry_id: savedSql.id!,
+          revision_id: savedSql.revision_id!,
+          column: "total",
+          arguments: [],
+        },
+      }],
+      components: [{ id: "total", kind: "metric", variable: "receipt_total" }],
+      rows: [{
+        id: "main",
+        items: [{ kind: "component", component: "total" }],
+      }],
+    },
   );
   return {
     spaceId,
     yaml,
     renamedYaml: yaml.replace(
-      `name: ${compositionName}`,
-      `name: ${compositionName} renamed`,
+      `name: ${JSON.stringify(compositionName)}`,
+      `name: ${JSON.stringify(`${compositionName} renamed`)}`,
     ),
   };
 }

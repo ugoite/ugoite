@@ -514,8 +514,8 @@ run = [
 ]
 
 [tasks."test:composition-adapter"]
-description = "Run focused Composition portable protocol and Server adapter tests"
-run = "cargo nextest run -p ugoite-api-client -p ugoite-server -E 'test(composition_operations_prepare_and_decode_through_the_portable_protocol) | test(composition_resolve_conceals_missing_and_denied_forms) | test(composition_resolve_requires_exact_saved_sql_revision_and_conceals_denial) | test(composition_resolve_uses_exact_requested_revision_with_newer_revision_available) | test(composition_metric_query_route_preserves_revision_parameters_and_acl)' --locked"
+description = "Run focused Composition graph protocol, Server adapter, and CLI parity tests"
+run = "cargo nextest run -p ugoite-api-client -p ugoite-server -p ugoite-iceberg -p ugoite-cli -E 'test(removed_composition_operations_have_no_protocol_fallback) | test(composition_evaluation_uses_the_stateless_portable_operation) | test(composition_operations_prepare_and_decode_through_the_portable_protocol) | test(composition_evaluate_route_executes_the_selected_saved_graph) | test(composition_save_derives_pinned_saved_sql_schema_with_date_parameters) | test(composition_restore_route_rechecks_current_authorization_after_revocation) | test(openapi_exposes_graph_composition_operations_without_legacy_adapters) | test(local_graph_table_pages_keep_their_publication_snapshot) | test(local_graph_evaluation_uses_the_portable_response_shape) | test(test_cli_composition_inspect_query_export_match_core_remote)' --locked"
 
 [tasks."test:composition:domain"]
 description = "Run the typed Composition domain contract tests"

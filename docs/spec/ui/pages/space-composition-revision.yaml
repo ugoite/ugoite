@@ -1,11 +1,11 @@
 version: "0.1"
-updated: "2026-10-16"
+updated: "2026-10-20"
 page:
   id: space-composition-revision
   title: Saved tool revision
   route: /spaces/{space_id}/compositions/{composition_id}/{revision_id}
   implementation: implemented
-  contract_status: planned
+  contract_status: in_progress
 components:
   shared:
     - id: space-shell
@@ -34,32 +34,29 @@ components:
           title: Restore
           status: implemented
           availability: historical revisions only
-          source: composition.restore with the opened revision as the restore source, the latest revision as the base, and one Idempotency-Key reused for retry
-          description: Restore appends a new revision from the opened historical revision and never rewrites history. A stale base shows a conflict with a recovery link to history; the new revision opens for review and further edits.
+          source: composition.restore with the opened revision as the restore source and latest revision as the base
+          persistence: append a new revision and preserve existing receipt and stale-write semantics
     - id: composition-history-identity
       type: history
       current_revision: operation, timestamp, and current state are visible
       revision_identity: exact revision stays in the internal route target and is not rendered as a user-facing label
     - id: composition-diagnostics
       type: list
-      title: Resolve diagnostics
-      source: current composition.resolve response for the selected exact revision
+      title: Evaluation diagnostics
+      source: composition.evaluate for the selected exact revision and immutable input snapshot
     - id: composition-components
       type: query-results
-      title: Flow rows with inputs, text, metrics, and tables
-      source: resolved SQL sources from the selected exact Composition revision
+      title: Flow rows with inputs, text, values, and tables
+      source: typed variable graph from the selected exact Composition revision
       layout: saved-tool flow rows in declaration order; pixel coordinates are not persisted
-      variables: typed definitions/defaults are Knowledge; runtime values and raw input are transient Work
-      input_components: reference one variable and own no saved value; no display label is persisted
-      text_components: literal body or direct string-variable reference with fixed typography roles
-      table_components: render the current bounded page from one SQL source using SqlResultTable
+      variables: typed constants and definitions are Knowledge; input values and query results are transient Work
+      input_components: reference one input variable and own no saved runtime value
+      text_components: literal body or string scalar reference with fixed typography roles
+      table_components: bounded page from a table<Row> variable through the stateless evaluation path
       table_presentation:
-        component: SqlResultTable
         result_presentation_reference: ../components/result-table.yaml
-      metric_components: server-evaluated scalar output column from one SQL source; require exactly one row and one selected scalar column
-      metric_presentation: distinguish zero rows, one-row NULL, zero, multiple rows, unavailable source, invalid result, and execution error
-      metric_numeric_presentation: optional unit and fractional-digit formatting; never changes SQL semantics
-      query_semantics: Layout does not change the source query plan
-      pagination_owner: SQL query handle; continuation and explicit count stay in stateless query requests
-      state: previews, raw input, pages, results, and diagnostics are transient Work
+      value_components: display-compatible scalar variable, including explicit empty/null/error states
+      value_cardinality: one row and one column; no implicit first-row or first-column selection
+      pagination_owner: server-owned stateless continuation for the query variable
+      state: input values, pages, results, and diagnostics are transient Work
       horizontal_overflow: result-table viewport only

@@ -3,7 +3,7 @@
 use super::*;
 use crate::index;
 use ugoite_core::composition::{
-    ResolvedComponentBinding, ResolvedComponentKind, ResolvedSourceRequest,
+    ResolvedComponentBinding, ResolvedComponentKind, ResolvedQueryRequest,
 };
 use ugoite_core::composition_metric::{
     encode_composition_metric_value, evaluate_sql_metric_probe, CompositionMetricQueryRequest,
@@ -12,6 +12,7 @@ use ugoite_core::composition_metric::{
 use ugoite_core::query::QueryLimits;
 use ugoite_core::sql_query::{SqlQueryRequest, SqlScalarProbeResult};
 use ugoite_domain::composition::CompositionDiagnosticCode;
+use ugoite_domain::composition::VariableGraphLiteral;
 use ugoite_domain::id::{validate_entry_id, validate_revision_id};
 
 #[derive(Clone, Copy)]
@@ -19,6 +20,20 @@ struct MetricExecutionAuthorization<'a> {
     composition_id: Option<&'a str>,
     principal_ids: Option<&'a [Uuid]>,
     query_limits_override: Option<&'a QueryLimits>,
+}
+
+struct AuthorizedScalarProbeOptions<'a> {
+    query_limits_override: Option<&'a QueryLimits>,
+    allow_inline_sql: bool,
+    publication_override: Option<&'a PublicationRef>,
+}
+
+struct MetricQueryPlan<'a> {
+    queries: &'a [ResolvedQueryRequest],
+    component_bindings: &'a [ResolvedComponentBinding],
+    variable_values: &'a std::collections::BTreeMap<String, VariableGraphLiteral>,
+    component_id: &'a str,
+    draft_fingerprint: Option<String>,
 }
 
 impl UgoiteService {
@@ -59,7 +74,7 @@ impl UgoiteService {
                 (
                     resolution
                         .plan
-                        .map(|plan| (plan.sources, plan.component_bindings)),
+                        .map(|plan| (plan.queries, plan.component_bindings, plan.variable_values)),
                     None,
                     resolution.diagnostics,
                 )
@@ -77,24 +92,27 @@ impl UgoiteService {
                 (
                     preview
                         .plan
-                        .map(|plan| (plan.sources, plan.component_bindings)),
+                        .map(|plan| (plan.queries, plan.component_bindings, plan.variable_values)),
                     preview.draft_fingerprint,
                     preview.diagnostics,
                 )
             }
         };
-        if let Some((sources, component_bindings)) = plan {
+        if let Some((queries, component_bindings, variable_values)) = plan {
             self.query_composition_metric_from_plan(
                 space_id,
-                &sources,
-                &component_bindings,
-                &request.component_id,
+                MetricQueryPlan {
+                    queries: &queries,
+                    component_bindings: &component_bindings,
+                    variable_values: &variable_values,
+                    component_id: &request.component_id,
+                    draft_fingerprint,
+                },
                 MetricExecutionAuthorization {
                     composition_id: None,
                     principal_ids: None,
                     query_limits_override: None,
                 },
-                draft_fingerprint,
             )
             .await
         } else {
@@ -178,7 +196,7 @@ impl UgoiteService {
                 (
                     resolution
                         .plan
-                        .map(|plan| (plan.sources, plan.component_bindings)),
+                        .map(|plan| (plan.queries, plan.component_bindings, plan.variable_values)),
                     None,
                     resolution.diagnostics,
                     Some(composition_id.as_str()),
@@ -198,25 +216,28 @@ impl UgoiteService {
                 (
                     preview
                         .plan
-                        .map(|plan| (plan.sources, plan.component_bindings)),
+                        .map(|plan| (plan.queries, plan.component_bindings, plan.variable_values)),
                     preview.draft_fingerprint,
                     preview.diagnostics,
                     None,
                 )
             }
         };
-        if let Some((sources, component_bindings)) = plan {
+        if let Some((queries, component_bindings, variable_values)) = plan {
             self.query_composition_metric_from_plan(
                 space_id,
-                &sources,
-                &component_bindings,
-                &request.component_id,
+                MetricQueryPlan {
+                    queries: &queries,
+                    component_bindings: &component_bindings,
+                    variable_values: &variable_values,
+                    component_id: &request.component_id,
+                    draft_fingerprint,
+                },
                 MetricExecutionAuthorization {
                     composition_id,
                     principal_ids: Some(principal_ids),
                     query_limits_override,
                 },
-                draft_fingerprint,
             )
             .await
         } else {
@@ -230,12 +251,16 @@ impl UgoiteService {
     async fn query_composition_metric_from_plan(
         &self,
         space_id: &str,
-        sources: &[ResolvedSourceRequest],
-        component_bindings: &[ResolvedComponentBinding],
-        component_id: &str,
+        plan: MetricQueryPlan<'_>,
         authorization: MetricExecutionAuthorization<'_>,
-        draft_fingerprint: Option<String>,
     ) -> Result<CompositionMetricQueryResponse> {
+        let MetricQueryPlan {
+            queries,
+            component_bindings,
+            variable_values,
+            component_id,
+            draft_fingerprint,
+        } = plan;
         let MetricExecutionAuthorization {
             composition_id,
             principal_ids,
@@ -258,19 +283,7 @@ impl UgoiteService {
                 CompositionDiagnosticCode::InvalidComposition,
             ));
         }
-        let Some(source_id) = binding.source_id.as_deref() else {
-            return Ok(metric_query_diagnostic(
-                draft_fingerprint,
-                component_id,
-                CompositionDiagnosticCode::InvalidComposition,
-            ));
-        };
-        let Some(source) = sources.iter().find(|source| match source {
-            ResolvedSourceRequest::Sql {
-                source_id: candidate,
-                ..
-            } => candidate == source_id,
-        }) else {
+        let Some(variable_id) = binding.variable_id.as_deref() else {
             return Ok(metric_query_diagnostic(
                 draft_fingerprint,
                 component_id,
@@ -285,10 +298,46 @@ impl UgoiteService {
             ));
         };
 
-        let ResolvedSourceRequest::Sql {
-            request: sql_request,
-            ..
-        } = source;
+        if let Some(value) = variable_values.get(variable_id) {
+            let value = variable_graph_literal_json(value);
+            let value = match encode_composition_metric_value(result_type, value) {
+                Ok(value) => value,
+                Err(diagnostic) => {
+                    return Ok(metric_query_diagnostic(
+                        draft_fingerprint,
+                        component_id,
+                        diagnostic.code,
+                    ));
+                }
+            };
+            return Ok(CompositionMetricQueryResponse {
+                ok: true,
+                draft_fingerprint,
+                result: Some(CompositionMetricQueryValue {
+                    component_id: component_id.to_owned(),
+                    result_type,
+                    value,
+                }),
+                diagnostics: Vec::new(),
+            });
+        }
+        let Some(query) = queries
+            .iter()
+            .find(|query| query.variable_id == variable_id)
+        else {
+            return Ok(metric_query_diagnostic(
+                draft_fingerprint,
+                component_id,
+                CompositionDiagnosticCode::InvalidComposition,
+            ));
+        };
+        let Some(sql_request) = query.request.as_ref() else {
+            return Ok(metric_query_diagnostic(
+                draft_fingerprint,
+                component_id,
+                CompositionDiagnosticCode::QueryUnavailable,
+            ));
+        };
         let probe = match principal_ids {
             Some(principal_ids) => {
                 self.probe_composition_sql_scalar_authorized(
@@ -377,12 +426,25 @@ impl UgoiteService {
         space_id: &str,
         request: SqlQueryRequest,
     ) -> Result<SqlScalarProbeResult> {
+        self.probe_composition_sql_scalar_local_at_publication(space_id, request, None)
+            .await
+    }
+
+    pub(super) async fn probe_composition_sql_scalar_local_at_publication(
+        &self,
+        space_id: &str,
+        request: SqlQueryRequest,
+        publication_override: Option<&PublicationRef>,
+    ) -> Result<SqlScalarProbeResult> {
         validate_scalar_probe_request_with_inline(&request, true)?;
         let prepared = sql_execution::prepare_sql_request(self, space_id, &request, None).await?;
         self.validate_complete_space(space_id).await?;
         let workspace =
             iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
-        let publication = workspace.current_publication().await?;
+        let publication = match publication_override {
+            Some(publication) => publication.clone(),
+            None => workspace.current_publication().await?,
+        };
         let checkpoint = workspace.resolve_publication(&publication).await?;
         let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
         let relation_scopes = sql_execution::all_current_relation_scopes(&forms);
@@ -419,8 +481,11 @@ impl UgoiteService {
             principal_ids,
             None,
             request,
-            None,
-            false,
+            AuthorizedScalarProbeOptions {
+                query_limits_override: None,
+                allow_inline_sql: false,
+                publication_override: None,
+            },
         )
         .await
     }
@@ -438,8 +503,33 @@ impl UgoiteService {
             principal_ids,
             composition_id,
             request,
-            query_limits_override,
-            true,
+            AuthorizedScalarProbeOptions {
+                query_limits_override,
+                allow_inline_sql: true,
+                publication_override: None,
+            },
+        )
+        .await
+    }
+
+    pub(super) async fn probe_composition_sql_scalar_authorized_at_publication(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        composition_id: Option<&str>,
+        request: SqlQueryRequest,
+        publication: &PublicationRef,
+    ) -> Result<SqlScalarProbeResult> {
+        self.probe_sql_scalar_authorized_with_composition_access(
+            space_id,
+            principal_ids,
+            composition_id,
+            request,
+            AuthorizedScalarProbeOptions {
+                query_limits_override: None,
+                allow_inline_sql: true,
+                publication_override: Some(publication),
+            },
         )
         .await
     }
@@ -450,10 +540,9 @@ impl UgoiteService {
         principal_ids: &[Uuid],
         composition_id: Option<&str>,
         request: SqlQueryRequest,
-        query_limits_override: Option<&QueryLimits>,
-        allow_inline_sql: bool,
+        options: AuthorizedScalarProbeOptions<'_>,
     ) -> Result<SqlScalarProbeResult> {
-        validate_scalar_probe_request_with_inline(&request, allow_inline_sql)?;
+        validate_scalar_probe_request_with_inline(&request, options.allow_inline_sql)?;
         require_nonempty_authorized_principals(principal_ids)?;
         self.validate_complete_space(space_id).await?;
         let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
@@ -479,7 +568,10 @@ impl UgoiteService {
         self.validate_complete_space(space_id).await?;
         let workspace =
             iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
-        let publication = workspace.current_publication().await?;
+        let publication = match options.publication_override {
+            Some(publication) => publication.clone(),
+            None => workspace.current_publication().await?,
+        };
         let checkpoint = workspace.resolve_publication(&publication).await?;
         let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
         if let Some(composition_id) = composition_id {
@@ -495,7 +587,9 @@ impl UgoiteService {
             sql_execution::authorized_relation_scopes(&state, principal_ids, &forms)?;
         let execution_sql = sql_execution::bind_sql_to_forms(&prepared, &forms, &relation_scopes)?;
         let parameters = prepared.parameters;
-        let (columns, result_schema, rows) = if let Some(query_limits) = query_limits_override {
+        let (columns, result_schema, rows) = if let Some(query_limits) =
+            options.query_limits_override
+        {
             index::execute_sql_scalar_probe_authorized_by_form_at_checkpoint_stateless_with_limits(
                 &self.operator,
                 &self.workspace_path(space_id),
@@ -567,6 +661,21 @@ fn metric_query_diagnostic(
     }
 }
 
+fn variable_graph_literal_json(value: &VariableGraphLiteral) -> serde_json::Value {
+    use serde_json::json;
+    match value {
+        VariableGraphLiteral::String(value)
+        | VariableGraphLiteral::Date(value)
+        | VariableGraphLiteral::Timestamp(value)
+        | VariableGraphLiteral::Decimal(value) => json!(value),
+        VariableGraphLiteral::Boolean(value) => json!(value),
+        VariableGraphLiteral::Integer(value) => json!(value),
+        VariableGraphLiteral::Float(value) => json!(value),
+        VariableGraphLiteral::Json(value) => value.clone(),
+        VariableGraphLiteral::Null => serde_json::Value::Null,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -578,10 +687,11 @@ mod tests {
     use ugoite_core::composition::CompositionRevisionRef;
     use ugoite_core::query::{QueryLimits, SqlFunctionPolicy};
     use ugoite_domain::composition::{
-        canonicalize_composition, CompositionComponent, CompositionDocument,
-        CompositionFormBinding, CompositionFormat, CompositionKind, CompositionResultColumn,
-        CompositionResultFieldType, CompositionSource, CompositionSpec, DashboardFlowLayout,
-        FlowItem, FlowLayoutKind, FlowRow,
+        canonicalize_composition, CompositionComponent, CompositionDocument, CompositionFormat,
+        CompositionKind, CompositionSpec, DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow,
+        VariableGraphFormBinding, VariableGraphNode, VariableGraphNodeKind, VariableGraphQuery,
+        VariableGraphQueryDefinition, VariableGraphResultType, VariableGraphScalarDescriptor,
+        VariableGraphScalarType,
     };
     use ugoite_domain::form::{sql_column_name, FormChange, FormChangeSet};
     use ugoite_domain::id::FieldId;
@@ -624,32 +734,37 @@ mod tests {
             )
             .await?;
 
-        let expected_result = vec![CompositionResultColumn {
-            name: "total".to_string(),
-            result_type: CompositionResultFieldType::Integer,
-        }];
         let document = CompositionDocument {
             format: CompositionFormat::UgoiteComposition,
             format_version: 1,
             kind: CompositionKind::Dashboard,
             name: "Metric provenance".to_string(),
             spec: CompositionSpec {
-                variables: Vec::new(),
-                sources: vec![CompositionSource::InlineSql {
+                variables: vec![VariableGraphNode {
                     id: "metric_source".to_string(),
-                    name: "Total".to_string(),
-                    sql: format!(
-                        "SELECT SUM(\"{}\") AS total FROM \"{original_form_name}\"",
-                        sql_column_name(amount_field)
-                    ),
-                    form_bindings: Vec::new(),
-                    expected_result: Vec::new(),
-                    schema_fingerprint: String::new(),
+                    kind: VariableGraphNodeKind::Query {
+                        returns: VariableGraphResultType::Scalar {
+                            value_type: VariableGraphScalarDescriptor {
+                                scalar_type: VariableGraphScalarType::Integer,
+                                nullable: true,
+                            },
+                        },
+                        query: VariableGraphQuery {
+                            definition: VariableGraphQueryDefinition::InlineSql {
+                                sql: format!(
+                                    "SELECT SUM(\"{}\") AS total FROM \"{original_form_name}\"",
+                                    sql_column_name(amount_field)
+                                ),
+                            },
+                            arguments: Vec::new(),
+                            form_bindings: Vec::new(),
+                            schema_fingerprint: String::new(),
+                        },
+                    },
                 }],
                 components: vec![CompositionComponent::Metric {
                     id: "metric".to_string(),
-                    source: "metric_source".to_string(),
-                    column: "total".to_string(),
+                    variable: "metric_source".to_string(),
                     presentation: None,
                 }],
                 layout: DashboardFlowLayout {
@@ -735,19 +850,13 @@ mod tests {
         }
 
         let mut forged = saved.document.clone();
-        let CompositionSource::InlineSql {
-            form_bindings,
-            expected_result: saved_expected_result,
-            ..
-        } = &mut forged.spec.sources[0]
-        else {
+        let VariableGraphNodeKind::Query { query, .. } = &mut forged.spec.variables[0].kind else {
             panic!("metric source is inline SQL");
         };
-        *form_bindings = vec![CompositionFormBinding {
+        query.form_bindings = vec![VariableGraphFormBinding {
             relation: original_form_name.to_string(),
             form_id: replacement_form.form_id,
         }];
-        assert_eq!(*saved_expected_result, expected_result);
         let forged_yaml = canonicalize_composition(&forged)
             .map_err(|code| anyhow::anyhow!(code.as_str()))?
             .yaml;
@@ -844,29 +953,36 @@ mod tests {
                 "owner",
             )
             .await?;
-        let source = CompositionSource::SavedSql {
-            id: "source".to_string(),
-            entry_id: serde_json::from_value(saved_sql["id"].clone())?,
-            revision_id: serde_json::from_value(saved_sql["revision_id"].clone())?,
-            expected_result: vec![CompositionResultColumn {
-                name: "total".to_string(),
-                result_type: CompositionResultFieldType::Integer,
-            }],
-            schema_fingerprint: "0".repeat(64),
-            variables: BTreeMap::new(),
-        };
         let document = CompositionDocument {
             format: CompositionFormat::UgoiteComposition,
             format_version: 1,
             kind: CompositionKind::Dashboard,
             name: "Metric resource limit".to_string(),
             spec: CompositionSpec {
-                variables: Vec::new(),
-                sources: vec![source],
+                variables: vec![VariableGraphNode {
+                    id: "source".to_string(),
+                    kind: VariableGraphNodeKind::Query {
+                        returns: VariableGraphResultType::Scalar {
+                            value_type: VariableGraphScalarDescriptor {
+                                scalar_type: VariableGraphScalarType::Integer,
+                                nullable: true,
+                            },
+                        },
+                        query: VariableGraphQuery {
+                            definition: VariableGraphQueryDefinition::SavedSql {
+                                entry_id: saved_sql["id"].as_str().map(str::to_owned),
+                                revision_id: saved_sql["revision_id"].as_str().map(str::to_owned),
+                                column: Some("total".to_string()),
+                            },
+                            arguments: Vec::new(),
+                            form_bindings: Vec::new(),
+                            schema_fingerprint: String::new(),
+                        },
+                    },
+                }],
                 components: vec![CompositionComponent::Metric {
                     id: "metric".to_string(),
-                    source: "source".to_string(),
-                    column: "total".to_string(),
+                    variable: "source".to_string(),
                     presentation: None,
                 }],
                 layout: DashboardFlowLayout {

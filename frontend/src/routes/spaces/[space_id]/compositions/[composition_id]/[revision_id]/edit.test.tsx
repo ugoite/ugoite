@@ -1,596 +1,104 @@
 import "@testing-library/jest-dom/vitest";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from "@solidjs/testing-library";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { render, screen } from "@solidjs/testing-library";
+import type { JSX } from "solid-js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
-import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
-import { expectBackLinkAtHeaderStart } from "~/test/back-link-placement";
 import CompositionEditRoute from "./edit";
 
-const {
-  getMock,
-  lintMock,
-  canonicalizeMock,
-  saveMock,
-  previewMock,
-  querySourceMock,
-  formListMock,
-  sqlListMock,
-  sqlGetMock,
-  sqlQueryMock,
-  entryRevisionMock,
-  navigateMock,
-} = vi.hoisted(() => ({
+const { canonicalizeMock, getMock, lintMock, studioProps } = vi.hoisted(() => ({
+  canonicalizeMock: vi.fn(),
   getMock: vi.fn(),
   lintMock: vi.fn(),
-  canonicalizeMock: vi.fn(),
-  saveMock: vi.fn(),
-  previewMock: vi.fn(),
-  querySourceMock: vi.fn(),
-  formListMock: vi.fn(),
-  sqlListMock: vi.fn(),
-  sqlGetMock: vi.fn(),
-  sqlQueryMock: vi.fn(),
-  entryRevisionMock: vi.fn(),
-  navigateMock: vi.fn(),
+  studioProps: vi.fn(),
 }));
 
 vi.mock("@solidjs/router", () => ({
   useParams: () => ({
     space_id: "space-1",
     composition_id: "tool-1",
-    revision_id: "revision-1",
+    revision_id: "revision-2",
   }),
-  useLocation: () => ({
-    pathname: "/spaces/space-1/compositions/tool-1/revision-1/edit",
-  }),
-  useNavigate: () => navigateMock,
-  A: (props: {
-    href: string;
-    class?: string;
-    children: unknown;
-    ["aria-label"]?: string;
-    title?: string;
-  }) => (
-    <a
-      href={props.href}
-      class={props.class}
-      aria-label={props["aria-label"]}
-      title={props.title}
-    >
-      {props.children as never}
-    </a>
+  A: (props: { href: string; class?: string; children: JSX.Element }) => (
+    <a href={props.href} class={props.class}>{props.children}</a>
   ),
 }));
 
 vi.mock("~/lib/composition-api", () => ({
   compositionApi: {
-    get: (...args: unknown[]) =>
-      (getMock as (...call: unknown[]) => unknown)(...args),
-    lint: (...args: unknown[]) =>
-      (lintMock as (...call: unknown[]) => unknown)(...args),
-    canonicalizeDocument: (...args: unknown[]) =>
-      (canonicalizeMock as (...call: unknown[]) => unknown)(...args),
-    save: (...args: unknown[]) =>
-      (saveMock as (...call: unknown[]) => unknown)(...args),
-    preview: (...args: unknown[]) =>
-      (previewMock as (...call: unknown[]) => unknown)(...args),
-    querySource: (...args: unknown[]) =>
-      (querySourceMock as (...call: unknown[]) => unknown)(...args),
+    canonicalizeDocument: (...args: unknown[]) => canonicalizeMock(...args),
+    get: (...args: unknown[]) => getMock(...args),
+    lint: (...args: unknown[]) => lintMock(...args),
   },
 }));
 
-vi.mock("~/lib/ugoite-client", () => ({
-  entryApi: {
-    getRevision: (...args: unknown[]) =>
-      (entryRevisionMock as (...call: unknown[]) => unknown)(...args),
-  },
-  formApi: {
-    list: (...args: unknown[]) =>
-      (formListMock as (...call: unknown[]) => unknown)(...args),
-  },
-  sqlApi: {
-    list: (...args: unknown[]) =>
-      (sqlListMock as (...call: unknown[]) => unknown)(...args),
-    get: (...args: unknown[]) =>
-      (sqlGetMock as (...call: unknown[]) => unknown)(...args),
-    query: (...args: unknown[]) =>
-      (sqlQueryMock as (...call: unknown[]) => unknown)(...args),
+vi.mock("~/components/CompositionStudio", () => ({
+  CompositionStudio: (props: Record<string, unknown>) => {
+    studioProps(props);
+    return <div data-testid="graph-studio" />;
   },
 }));
 
-const storedYaml = "format: ugoite.composition\nname: Monthly review\n";
-
-const lintDocument = {
+const graphDocument = {
   format: "ugoite.composition",
   format_version: 1,
   kind: "dashboard",
-  name: "Monthly review",
+  name: "Monthly report",
   spec: {
     variables: [],
-    sources: [{
-      kind: "saved_sql",
-      id: "src-1",
-      entry_id: "sql-1",
-      revision_id: "sql-rev-1",
-      expected_result: [{ name: "total", type: "float" }],
-      variables: {},
-    }],
-    components: [{ kind: "table", id: "disp-1", source: "src-1" }],
-    layout: {
-      kind: "flow",
-      rows: [{
-        id: "main",
-        items: [{ kind: "component", component: "disp-1" }],
-      }],
-    },
+    components: [],
+    layout: { kind: "flow", rows: [] },
   },
 };
 
-const savedEntry = {
-  id: "sql-1",
-  name: "Monthly totals",
-  kind: "user-query",
-  sql: "SELECT total FROM monthly",
-  variables: [],
-  created_at: "2026-10-01T00:00:00Z",
-  updated_at: "2026-10-02T00:00:00Z",
-  revision_id: "sql-rev-1",
-};
-
-const savedResponse = {
-  composition_id: "tool-1",
-  revision_id: "revision-2",
-  canonical_yaml: "canonical yaml",
-  receipt: {
-    command_id: "command-1",
-    catalog_generation: 4,
-    snapshot_id: 42,
-    committed_revision_ids: ["revision-2"],
-    committed_at_micros: 1,
-    data_file_count: 1,
-  },
-};
+const linted = (document: unknown) => ({
+  ok: true,
+  value: { document, canonical_yaml: "canonical", fingerprint: "fp" },
+});
 
 describe("Composition edit route", () => {
   beforeEach(() => {
     setLocale("en");
     vi.clearAllMocks();
-    getMock.mockResolvedValue({
-      revision: {
-        entry_id: "tool-1",
-        revision_id: "revision-1",
-        committed_at_micros: 1,
-      },
-      fields: { spec: storedYaml },
-      unmapped_field_values: {},
-    });
-    lintMock.mockResolvedValue({
-      ok: true,
-      value: {
-        document: lintDocument,
-        canonical_yaml: storedYaml,
-        fingerprint: "fingerprint",
-      },
-    });
-    canonicalizeMock.mockResolvedValue({
-      document: {},
-      canonical_yaml: "canonical yaml",
-      fingerprint: "fingerprint",
-    });
-    previewMock.mockResolvedValue({
-      ok: true,
-      draft_fingerprint: "draft-fingerprint",
-      variable_definitions: [],
-      plan: { draft_fingerprint: "draft-fingerprint", sources: [] },
-    });
-    formListMock.mockResolvedValue([]);
-    sqlListMock.mockResolvedValue([savedEntry]);
-    sqlGetMock.mockResolvedValue(savedEntry);
-    entryRevisionMock.mockResolvedValue({
-      revision_id: "sql-rev-1",
-      fields: { sql: "SELECT total FROM monthly", variables: [] },
-    });
-    sqlQueryMock.mockResolvedValue({
-      columns: ["total"],
-      rows: [[1]],
-      has_more: false,
-      result_schema: [{ name: "total", type: "float" }],
-    });
+    getMock.mockResolvedValue({ fields: { spec: "strict graph yaml" } });
+    lintMock.mockImplementation(async () => linted(graphDocument));
+    canonicalizeMock.mockImplementation(async (document: unknown) => ({
+      document,
+      canonical_yaml: "canonical",
+      fingerprint: "fp",
+    }));
   });
 
-  afterEach(() => cleanup());
-
-  it("keeps the single back link at the header start when loading fails", async () => {
-    getMock.mockRejectedValueOnce(new Error("Unavailable"));
+  it("loads a strict variable graph into the editor", async () => {
     render(() => <CompositionEditRoute />);
 
-    const back = await screen.findByRole("link", { name: "Back to revision" });
-    expect(back).toHaveAttribute(
-      "href",
-      "/spaces/space-1/compositions/tool-1/revision-1",
-    );
-    expect(screen.getAllByRole("link", { name: "Back to revision" }))
-      .toHaveLength(1);
-    expectBackLinkAtHeaderStart(back);
-  });
-
-  it("loads the exact revision through get and lint with a prefilled studio", async () => {
-    render(() => <CompositionEditRoute />);
-
-    expect(await screen.findByLabelText("Name")).toHaveValue("Monthly review");
-    expect(getMock).toHaveBeenCalledWith("space-1", "tool-1", "revision-1");
-    expect(lintMock).toHaveBeenCalledWith(storedYaml);
-    expect(entryRevisionMock).toHaveBeenCalledWith("space-1", "sql-1", "sql-rev-1");
-
-    // One Back to the opened revision, one Save, Design-first true-mode
-    // structure with the single mode control: the finished shape only, no
-    // Variables, Data workspace, or Preview section.
-    expect(screen.getAllByRole("link")).toHaveLength(1);
-    const back = screen.getByRole("link", { name: "Back to revision" });
-    expect(back).toHaveAttribute(
-      "href",
-      "/spaces/space-1/compositions/tool-1/revision-1",
-    );
-    expect(back.parentElement?.firstElementChild).toBe(back);
-    expect(screen.getAllByRole("button", { name: "Save" })).toHaveLength(1);
-    expect(screen.getByRole("region", { name: "Design" }))
-      .toBeInTheDocument();
-    expect(screen.queryByRole("heading", { level: 2 }))
-      .not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("heading", { name: "Display" }),
-    ).not.toBeInTheDocument();
-
-    // Data mode: the source row carries the Saved SQL entry name. Display
-    // listing lives on the Design canvas now, not in a legacy section.
-    fireEvent.click(
-      within(screen.getByRole("radiogroup", { name: "Studio mode" })).getByRole(
-        "radio",
-        { name: "Data" },
-      ),
-    );
-    const source = screen.getByRole("button", { name: "Monthly totals" });
-    expect(source).toBeInTheDocument();
-    fireEvent.click(source);
-    expect(await screen.findByRole("textbox", { name: "SQL" })).toHaveTextContent(
-      "SELECT total FROM monthly",
-    );
-  });
-
-  it("keeps document source IDs out of labels when names cannot be loaded", async () => {
-    sqlGetMock.mockRejectedValueOnce(new Error("Unavailable"));
-    formListMock.mockRejectedValueOnce(new Error("Unavailable"));
-    render(() => <CompositionEditRoute />);
-
-    expect(await screen.findByLabelText("Name")).toHaveValue("Monthly review");
-    fireEvent.click(
-      within(screen.getByRole("radiogroup", { name: "Studio mode" })).getByRole(
-        "radio",
-        { name: "Data" },
-      ),
-    );
-
-    expect(await screen.findByRole("button", { name: "Source 1" }))
-      .toBeInTheDocument();
-    expect(screen.queryByText("src-1")).not.toBeInTheDocument();
-  });
-
-  it("opens canonical revisions when empty variables are omitted", async () => {
-    const { variables: _variables, ...specWithoutVariables } =
-      lintDocument.spec;
-    const [{ variables: _sourceVariables, ...savedSqlSource }] =
-      lintDocument.spec.sources;
-    lintMock.mockResolvedValueOnce({
-      ok: true,
-      value: {
-        document: {
-          ...lintDocument,
-          spec: {
-            ...specWithoutVariables,
-            sources: [savedSqlSource],
-          },
-        },
-        canonical_yaml: storedYaml,
-        fingerprint: "fingerprint",
+    expect(await screen.findByTestId("graph-studio")).toBeInTheDocument();
+    expect(studioProps).toHaveBeenCalledWith(expect.objectContaining({
+      spaceId: "space-1",
+      initialDraft: expect.objectContaining({
+        name: "Monthly report",
+        variables: [],
+        components: [],
+      }),
+      saveMode: {
+        kind: "update",
+        compositionId: "tool-1",
+        baseRevisionId: "revision-2",
       },
-    });
+    }));
+  });
 
-    render(() => <CompositionEditRoute />);
-
-    expect(await screen.findByLabelText("Name")).toHaveValue(
-      "Monthly review",
+  it("rejects a document containing the removed sources shape", async () => {
+    lintMock.mockImplementation(async () =>
+      linted({
+        ...graphDocument,
+        spec: { ...graphDocument.spec, sources: [] },
+      })
     );
-    expect(screen.queryByText("This revision cannot be edited.")).not
-      .toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
-  });
-
-  it("refuses explicit null variables as malformed", async () => {
-    lintMock.mockResolvedValueOnce({
-      ok: true,
-      value: {
-        document: {
-          ...lintDocument,
-          spec: {
-            ...lintDocument.spec,
-            variables: null,
-          },
-        },
-        canonical_yaml: storedYaml,
-        fingerprint: "fingerprint",
-      },
-    });
-
-    render(() => <CompositionEditRoute />);
-
-    expect(await screen.findByText("This revision cannot be edited."))
-      .toBeInTheDocument();
-    expect(screen.queryByLabelText("Name")).not.toBeInTheDocument();
-  });
-
-  it("refuses explicit null Saved SQL variables as malformed", async () => {
-    const { variables: _variables, ...specWithoutVariables } =
-      lintDocument.spec;
-    lintMock.mockResolvedValueOnce({
-      ok: true,
-      value: {
-        document: {
-          ...lintDocument,
-          spec: {
-            ...specWithoutVariables,
-            sources: [{ ...lintDocument.spec.sources[0], variables: null }],
-          },
-        },
-        canonical_yaml: storedYaml,
-        fingerprint: "fingerprint",
-      },
-    });
-
-    render(() => <CompositionEditRoute />);
-
-    expect(await screen.findByText("This revision cannot be edited."))
-      .toBeInTheDocument();
-    expect(screen.queryByLabelText("Name")).not.toBeInTheDocument();
-  });
-
-  it("refuses legacy Metric definitions without converting them", async () => {
-    const document = {
-      ...lintDocument,
-      spec: {
-        ...lintDocument.spec,
-        components: [{
-          kind: "metric",
-          id: "legacy-total",
-          source: "src-1",
-          value_field: { kind: "sql_column", name: "total" },
-        }],
-      },
-    } as unknown as typeof lintDocument;
-    lintMock.mockResolvedValueOnce({
-      ok: true,
-      value: { document, canonical_yaml: storedYaml, fingerprint: "fp" },
-    });
     render(() => <CompositionEditRoute />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "This revision cannot be edited.",
     );
-    expect(screen.getByRole("link", { name: "Back to revision" }))
-      .toHaveAttribute(
-        "href",
-        "/spaces/space-1/compositions/tool-1/revision-1",
-      );
-    expect(screen.queryByLabelText("Name")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Save" }))
-      .not.toBeInTheDocument();
-  });
-
-  it("saves an update with base revision identity and a stable retry key", async () => {
-    render(() => <CompositionEditRoute />);
-    expect(await screen.findByLabelText("Name")).toHaveValue("Monthly review");
-
-    saveMock.mockRejectedValueOnce(new Error("transport closed"));
-    saveMock.mockResolvedValueOnce(savedResponse);
-
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => {
-      expect(saveMock).toHaveBeenCalledTimes(1);
-    });
-    expect(saveMock).toHaveBeenCalledWith(
-      "space-1",
-      "canonical yaml",
-      expect.any(String),
-      { compositionId: "tool-1", baseRevisionId: "revision-1" },
-    );
-    expect(await screen.findByText("Could not save this tool."))
-      .toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    await waitFor(() => {
-      expect(saveMock).toHaveBeenCalledTimes(2);
-    });
-    // The retry reuses the identical payload, identity, and key.
-    expect(saveMock.mock.calls[1]).toEqual(saveMock.mock.calls[0]);
-    expect(navigateMock).toHaveBeenCalledWith(
-      "/spaces/space-1/compositions/tool-1/revision-2",
-    );
-  });
-
-  it("refuses an invalid lint without opening the studio", async () => {
-    lintMock.mockResolvedValueOnce({
-      ok: false,
-      error: { kind: "composition_diagnostic", code: "invalid_composition" },
-    });
-    render(() => <CompositionEditRoute />);
-
-    expect(await screen.findByText("This revision cannot be edited."))
-      .toBeInTheDocument();
-    expect(getMock).toHaveBeenCalledWith("space-1", "tool-1", "revision-1");
-    // The studio never opens: no name input, no Save, one way back.
-    expect(screen.queryByLabelText("Name")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Save" })).not
-      .toBeInTheDocument();
-    expect(screen.getAllByRole("link")).toHaveLength(1);
-    expect(screen.getByRole("link", { name: "Back to revision" }))
-      .toHaveAttribute(
-        "href",
-        "/spaces/space-1/compositions/tool-1/revision-1",
-      );
-    expect(saveMock).not.toHaveBeenCalled();
-  });
-
-  it("surfaces a stale base conflict without leaving the route", async () => {
-    render(() => <CompositionEditRoute />);
-    expect(await screen.findByLabelText("Name")).toHaveValue("Monthly review");
-
-    // Another writer published first: the update carries the stale base
-    // and the server rejects it instead of rewriting history.
-    saveMock.mockRejectedValueOnce(
-      new UgoiteApiError({
-        kind: "conflict",
-        operation: "composition.save",
-        status: 409,
-        code: "REVISION_CONFLICT",
-        message: "base revision is stale",
-      }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() => {
-      expect(saveMock).toHaveBeenCalledTimes(1);
-    });
-    expect(saveMock).toHaveBeenCalledWith(
-      "space-1",
-      "canonical yaml",
-      expect.any(String),
-      { compositionId: "tool-1", baseRevisionId: "revision-1" },
-    );
-    expect(await screen.findByText("Could not save this tool."))
-      .toBeInTheDocument();
-    // The rejected attempt stays on the route with the draft intact: no
-    // new revision, no navigation, no silent retry.
-    expect(navigateMock).not.toHaveBeenCalled();
-    expect(screen.getByLabelText("Name")).toHaveValue("Monthly review");
-    expect(
-      screen.queryByRole("button", { name: "Retry" }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("reopens a restored multi-row revision for continued editing", async () => {
-    // A restored revision carries text blocks and several rows; the edit
-    // route loads it back into an editable draft so restore-then-edit
-    // continues without flattening or rejecting known kinds.
-    sqlGetMock.mockResolvedValueOnce({
-      ...savedEntry,
-      variables: [{ name: "month_start", type: "date", description: "" }],
-    });
-    entryRevisionMock.mockResolvedValueOnce({
-      revision_id: "sql-rev-1",
-      fields: {
-        sql: "SELECT amount FROM expenses WHERE month >= $month_start",
-        variables: [{ name: "month_start", type: "date" }],
-      },
-    });
-    lintMock.mockResolvedValueOnce({
-      ok: true,
-      value: {
-        document: {
-          format: "ugoite.composition",
-          format_version: 1,
-          kind: "dashboard",
-          name: "Monthly expenses",
-          spec: {
-            variables: [
-              {
-                id: "month_start",
-                label: "Start month",
-                type: "date",
-                required: true,
-                format: "year-month",
-              },
-            ],
-            sources: [{
-              kind: "saved_sql",
-              id: "month_total",
-              entry_id: "sql-1",
-              revision_id: "sql-rev-1",
-              expected_result: [{ name: "total", type: "float" }],
-              variables: { month_start: { variable: "month_start" } },
-            }],
-            components: [
-              {
-                kind: "text",
-                id: "summary_title",
-                content: { kind: "literal", text: "Monthly summary" },
-                style: "heading",
-              },
-              {
-                kind: "input",
-                id: "input-month_start",
-                variable: "month_start",
-              },
-              {
-                kind: "metric",
-                id: "total",
-                label: "Monthly total",
-                source: "month_total",
-                column: "total",
-              },
-            ],
-            layout: {
-              kind: "flow",
-              rows: [
-                {
-                  id: "controls",
-                  items: [{
-                    kind: "component",
-                    component: "input-month_start",
-                  }],
-                },
-                {
-                  id: "summary",
-                  items: [
-                    { kind: "component", component: "summary_title" },
-                    { kind: "component", component: "total" },
-                  ],
-                },
-              ],
-            },
-          },
-        },
-        canonical_yaml: storedYaml,
-        fingerprint: "fingerprint",
-      },
-    });
-    render(() => <CompositionEditRoute />);
-
-    expect(await screen.findByLabelText("Name")).toHaveValue(
-      "Monthly expenses",
-    );
-    expect(getMock).toHaveBeenCalledWith("space-1", "tool-1", "revision-1");
-    // The studio opens in update mode: one Save, one way back, Design
-    // first with the restored blocks on the canvas.
-    expect(screen.getAllByRole("button", { name: "Save" })).toHaveLength(1);
-    expect(screen.getByRole("link", { name: "Back to revision" }))
-      .toHaveAttribute(
-        "href",
-        "/spaces/space-1/compositions/tool-1/revision-1",
-      );
-    // Data mode resolves the restored source to its Saved SQL entry name.
-    fireEvent.click(
-      within(screen.getByRole("radiogroup", { name: "Studio mode" })).getByRole(
-        "radio",
-        { name: "Data" },
-      ),
-    );
-    expect(screen.getAllByRole("button", { name: "Monthly totals" }))
-      .toHaveLength(1);
+    expect(screen.queryByTestId("graph-studio")).toBeNull();
   });
 });

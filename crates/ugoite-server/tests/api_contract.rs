@@ -1470,10 +1470,10 @@ fn openapi_documents_composition_lint_request_response_and_diagnostics() {
             "variable_unknown",
             "variable_missing",
             "variable_type_mismatch",
-            "source_unavailable",
+            "query_unavailable",
             "missing_field",
             "field_type_changed",
-            "source_schema_changed",
+            "query_schema_changed",
             "metric_result_not_scalar",
             "metric_result_type_mismatch",
             "metric_scalar_no_rows",
@@ -1656,20 +1656,15 @@ fn openapi_documents_composition_preview_without_publication() {
         .is_some());
     let plan = &snapshot["components"]["schemas"]["CompositionPreviewPlan"];
     assert_eq!(
-        plan["properties"]["sources"]["items"]["$ref"],
-        "#/components/schemas/CompositionResolvedSource"
+        plan["properties"]["queries"]["items"]["$ref"],
+        "#/components/schemas/CompositionQuery"
     );
     assert_eq!(
         plan["properties"]["component_bindings"]["items"]["$ref"],
-        "#/components/schemas/CompositionResolvedComponentBinding"
+        "#/components/schemas/CompositionComponentBinding"
     );
     assert_eq!(
         plan["properties"]["dependencies"]["$ref"],
-        "#/components/schemas/CompositionDependencyIndex"
-    );
-    assert_eq!(
-        snapshot["components"]["schemas"]["CompositionResolvePlan"]["properties"]["dependencies"]
-            ["$ref"],
         "#/components/schemas/CompositionDependencyIndex"
     );
     assert_eq!(
@@ -1677,10 +1672,10 @@ fn openapi_documents_composition_preview_without_publication() {
             ["variable_consumers"]["additionalProperties"]["$ref"],
         "#/components/schemas/CompositionVariableConsumers"
     );
-    assert_eq!(
+    assert!(
         snapshot["components"]["schemas"]["CompositionDependencyIndex"]["properties"]
-            ["source_consumers"]["additionalProperties"]["$ref"],
-        "#/components/schemas/CompositionSourceConsumers"
+            .get("source_consumers")
+            .is_none()
     );
     assert!(plan["required"]
         .as_array()
@@ -1694,242 +1689,91 @@ fn openapi_documents_composition_preview_without_publication() {
 }
 
 #[test]
-fn openapi_documents_bounded_composition_metric_queries() {
+fn openapi_exposes_graph_composition_operations_without_legacy_adapters() {
     let snapshot = ugoite_server::openapi_snapshot();
-    let metric = &snapshot["paths"]["/spaces/{space_id}/compositions/metric-query"]["post"];
-    assert_eq!(
-        metric["requestBody"]["content"]["application/json"]["schema"]["$ref"],
-        "#/components/schemas/CompositionMetricQueryRequest"
-    );
-    assert_eq!(
-        metric["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
-        "#/components/schemas/CompositionMetricQueryResponse"
-    );
-    assert_eq!(
-        metric["responses"]["413"]["description"],
-        "The JSON request body exceeds the 256 KiB bound"
-    );
-    let metric_value = &snapshot["components"]["schemas"]["CompositionMetricQueryValue"];
-    let metric_properties = metric_value["properties"]
+    let paths = snapshot["paths"].as_object().expect("OpenAPI paths");
+    assert!(paths.contains_key("/spaces/{space_id}/compositions/preview"));
+    assert!(paths.contains_key("/spaces/{space_id}/compositions/evaluate"));
+    assert!(!paths.contains_key("/spaces/{space_id}/compositions/{entry_id}/resolve"));
+    assert!(!paths.contains_key("/spaces/{space_id}/compositions/metric-query"));
+
+    let schemas = snapshot["components"]["schemas"]
         .as_object()
-        .expect("metric value properties");
-    assert_eq!(
-        metric_properties
-            .keys()
-            .map(String::as_str)
-            .collect::<Vec<_>>(),
-        vec!["component_id", "result_type", "value"]
-    );
-    assert_eq!(
-        metric_properties["component_id"],
-        serde_json::json!({"type": "string"})
-    );
-    assert_eq!(
-        metric_properties["result_type"]["$ref"],
-        "#/components/schemas/CompositionResultFieldType"
-    );
-    assert_eq!(
-        metric_properties["value"]["$ref"],
-        "#/components/schemas/JsonValue"
-    );
-    assert_eq!(
-        metric_value["required"],
-        serde_json::json!(["component_id", "result_type", "value"])
-    );
-    assert!(snapshot["components"]["schemas"]
-        .get("CompositionMetricOperation")
-        .is_none());
-    assert!(snapshot["components"]["schemas"]
-        .get("CompositionMetricSourceKind")
-        .is_none());
-    assert!(metric["description"]
-        .as_str()
-        .expect("bounded metric description")
-        .contains("at most two rows"));
-    assert!(metric["description"]
-        .as_str()
-        .expect("bounded metric description")
-        .contains("inline SQL uses server-derived Form ID bindings"));
-
-    let request = &snapshot["components"]["schemas"]["CompositionMetricQueryRequest"];
-    assert_eq!(request["additionalProperties"], false);
-    assert_eq!(
-        request["required"],
-        serde_json::json!(["target", "component_id"])
-    );
-    assert_eq!(
-        request["properties"]["target"]["$ref"],
-        "#/components/schemas/CompositionMetricQueryTarget"
-    );
-    assert!(request["properties"].get("variables").is_some());
-    assert!(request["properties"].get("unset_variables").is_some());
-    assert!(request["properties"].get("parameters").is_none());
-    assert_eq!(request["properties"]["base_entry_id"]["format"], "uuid");
-    assert_eq!(request["properties"]["base_revision_id"]["format"], "uuid");
-    assert_eq!(
-        request["dependentRequired"]["base_entry_id"],
-        serde_json::json!(["base_revision_id"])
-    );
-    assert_eq!(
-        request["dependentRequired"]["base_revision_id"],
-        serde_json::json!(["base_entry_id"])
-    );
-    assert_eq!(
-        snapshot["components"]["schemas"]["CompositionMetricQueryTarget"]["oneOf"]
-            .as_array()
-            .map(Vec::len),
-        Some(2)
-    );
-
-    let response = &snapshot["components"]["schemas"]["CompositionMetricQueryResponse"];
-    assert_eq!(response["oneOf"].as_array().map(Vec::len), Some(2));
-    assert_eq!(response["oneOf"][0]["properties"]["ok"]["const"], true);
-    assert_eq!(response["oneOf"][1]["properties"]["ok"]["const"], false);
-    assert_eq!(
-        response["oneOf"][0]["properties"]["result"]["$ref"],
-        "#/components/schemas/CompositionMetricQueryValue"
-    );
-    assert_eq!(
-        response["oneOf"][1]["properties"]["diagnostics"]["items"]["$ref"],
-        "#/components/schemas/CompositionMetricQueryDiagnostic"
-    );
-    let metric_diagnostic = &snapshot["components"]["schemas"]["CompositionMetricQueryDiagnostic"];
-    assert!(metric_diagnostic["properties"].get("variable_id").is_some());
-    assert!(metric_diagnostic["properties"]
-        .get("parameter_id")
-        .is_none());
-    assert_eq!(
-        snapshot["components"]["schemas"]["CompositionMetricQueryValue"]["properties"]["value"]["description"],
-        "Encoding is determined by result_type: integer values are canonical base-10 strings that preserve exact precision; decimal values are base-10 strings that preserve scale; float values are JSON numbers; boolean values are JSON booleans; string, date, and timestamp values are JSON strings. A successful SQL NULL is JSON null."
-    );
+        .expect("OpenAPI schemas");
+    for legacy in [
+        "CompositionResolveRequest",
+        "CompositionResolveResponse",
+        "CompositionResolvePlan",
+        "CompositionMetricQueryRequest",
+        "CompositionMetricQueryResponse",
+    ] {
+        assert!(
+            !schemas.contains_key(legacy),
+            "legacy schema {legacy} remains"
+        );
+    }
+    assert!(schemas.contains_key("CompositionPreviewRequest"));
+    assert!(schemas.contains_key("CompositionEvaluationRequest"));
+    assert!(schemas.contains_key("CompositionQuery"));
+    assert!(schemas.contains_key("CompositionDiagnostic"));
+    assert!(schemas["CompositionGraphQueryResult"]["properties"]
+        .get("exact_integer_rows")
+        .is_some());
 }
 
 #[test]
-fn openapi_documents_composition_resolve_metric_result_type() {
+fn openapi_documents_graph_query_variables_and_variable_only_component_bindings() {
     let snapshot = ugoite_server::openapi_snapshot();
-    let resolve = &snapshot["paths"]["/spaces/{space_id}/compositions/{entry_id}/resolve"]["post"];
-    assert_eq!(
-        resolve["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
-        "#/components/schemas/CompositionResolveResponse"
-    );
-    let request = &snapshot["components"]["schemas"]["CompositionResolveRequest"];
-    assert!(request["properties"].get("variables").is_some());
-    assert!(request["properties"].get("unset_variables").is_some());
-    assert!(request["properties"].get("parameters").is_none());
-    let response = &snapshot["components"]["schemas"]["CompositionResolveResponse"];
-    for result in response["oneOf"]
+    let queries = &snapshot["components"]["schemas"]["CompositionQuery"];
+    assert!(queries["required"]
         .as_array()
-        .expect("resolve response variants")
-    {
-        assert!(result["properties"].get("variable_definitions").is_some());
-        assert!(result["properties"].get("parameter_definitions").is_none());
-        assert_eq!(
-            result["properties"]["variable_definitions"]["items"]["$ref"],
-            "#/components/schemas/CompositionVariableDefinition"
-        );
-    }
-    let diagnostic = &snapshot["components"]["schemas"]["CompositionResolveDiagnostic"];
-    assert!(diagnostic["properties"].get("variable_id").is_some());
-    assert!(diagnostic["properties"].get("parameter_id").is_none());
-
-    let binding = &snapshot["components"]["schemas"]["CompositionResolvedComponentBinding"];
-    assert!(binding["properties"]["kind"]["enum"]
-        .as_array()
-        .expect("component binding kinds")
-        .contains(&serde_json::json!("input")));
-    assert_eq!(binding["properties"]["variable_id"]["type"], "string");
-    assert!(!binding["required"]
-        .as_array()
-        .expect("required component fields")
+        .expect("resolved query fields")
         .contains(&serde_json::json!("variable_id")));
     assert_eq!(
-        binding["properties"]["expected_result_type"]["$ref"],
-        "#/components/schemas/CompositionResultFieldType"
+        queries["properties"]["form_bindings"]["items"]["$ref"],
+        "#/components/schemas/CompositionFormBinding"
     );
     assert_eq!(
-        binding["properties"]["presentation"]["$ref"],
-        "#/components/schemas/CompositionMetricPresentation"
+        queries["properties"]["returns"]["$ref"],
+        "#/components/schemas/CompositionQueryResultType"
     );
-    assert!(binding["properties"].get("metric_field_id").is_none());
-    assert!(!binding["required"]
-        .as_array()
-        .expect("required component fields")
-        .contains(&serde_json::json!("presentation")));
     assert_eq!(
-        snapshot["components"]["schemas"]["CompositionMetricPresentation"]["oneOf"][0]
-            ["properties"]["fraction_digits"]["maximum"],
-        255
+        queries["properties"]["result_columns"]["items"]["$ref"],
+        "#/components/schemas/CompositionResultColumn"
     );
-    assert!(!binding["required"]
-        .as_array()
-        .expect("required component fields")
-        .contains(&serde_json::json!("expected_result_type")));
+    assert!(snapshot["components"]["schemas"]
+        .get("CompositionResolvedSource")
+        .is_none());
+    assert!(snapshot["components"]["schemas"]
+        .get("CompositionSourceConsumers")
+        .is_none());
     assert_eq!(
-        snapshot["components"]["schemas"]["CompositionResultFieldType"]["enum"],
-        serde_json::json!([
-            "string",
-            "boolean",
-            "integer",
-            "float",
-            "decimal",
-            "date",
-            "timestamp",
-            "json"
-        ])
-    );
-}
-
-#[test]
-fn openapi_documents_sql_only_composition_sources_without_display_labels() {
-    let snapshot = ugoite_server::openapi_snapshot();
-    let sources = snapshot["components"]["schemas"]["CompositionResolvedSource"]["oneOf"]
-        .as_array()
-        .expect("resolved SQL sources");
-    assert_eq!(sources.len(), 2);
-    assert_eq!(sources[0]["properties"]["kind"]["const"], "inline_sql");
-    assert_eq!(sources[1]["properties"]["kind"]["const"], "saved_sql");
-    assert!(sources[0]["required"]
-        .as_array()
-        .expect("inline SQL source fields")
-        .contains(&serde_json::json!("form_bindings")));
-    assert_eq!(
-        sources[0]["properties"]["form_bindings"]["items"]["$ref"],
-        "#/components/schemas/CompositionResolvedFormBinding"
-    );
-    for source in sources {
-        assert!(source["required"]
-            .as_array()
-            .expect("resolved SQL source fields")
-            .contains(&serde_json::json!("expected_result")));
-        assert_eq!(
-            source["properties"]["expected_result"]["items"]["$ref"],
-            "#/components/schemas/CompositionResolvedResultColumn"
-        );
-    }
-    assert_eq!(
-        snapshot["components"]["schemas"]["CompositionResolvedFormBinding"]["additionalProperties"],
+        snapshot["components"]["schemas"]["CompositionFormBinding"]["additionalProperties"],
         false
     );
     assert_eq!(
-        snapshot["components"]["schemas"]["CompositionResolvedFormBinding"]["properties"]
-            ["form_id"]["format"],
+        snapshot["components"]["schemas"]["CompositionFormBinding"]["properties"]["form_id"]
+            ["format"],
         "uuid"
     );
     assert_eq!(
-        snapshot["components"]["schemas"]["CompositionResolvedResultColumn"]["properties"]["type"]
+        snapshot["components"]["schemas"]["CompositionResultColumn"]["properties"]["value_type"]
             ["$ref"],
-        "#/components/schemas/CompositionResultFieldType"
+        "#/components/schemas/CompositionScalarDescriptor"
     );
-    for source in sources {
-        let request_description = source["properties"]["request"]["description"]
-            .as_str()
-            .expect("SQL request description");
-        assert!(request_description.contains("SQL query request"));
-    }
-    let binding = &snapshot["components"]["schemas"]["CompositionResolvedComponentBinding"];
-    assert!(binding["properties"].get("label").is_none());
+    assert!(queries["properties"]["request"]["description"]
+        .as_str()
+        .unwrap()
+        .contains("stateless SQL query request"));
+    let binding = &snapshot["components"]["schemas"]["CompositionComponentBinding"];
+    assert!(binding["properties"].get("source_id").is_none());
+    assert!(binding["properties"].get("result_property_key").is_none());
     let variable = &snapshot["components"]["schemas"]["CompositionVariableDefinition"];
-    assert!(variable["properties"].get("label").is_none());
+    assert_eq!(
+        variable["properties"]["value_type"]["$ref"],
+        "#/components/schemas/CompositionScalarDescriptor"
+    );
+    assert!(variable["properties"].get("type").is_none());
 }
 
 #[test]

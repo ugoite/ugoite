@@ -6,7 +6,6 @@ import {
   test,
 } from "@playwright/test";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
-import { completeInlineSqlCompositionYaml } from "./lib/composition.ts";
 
 type FormFieldSummary = {
   sql_column?: string;
@@ -24,46 +23,101 @@ type CompositionSaveResponse = {
   revision_id: string;
 };
 
+type CompositionTableReturn = {
+  kind: "table";
+  columns: Array<{
+    name: string;
+    value_type: { scalar_type: string; nullable: boolean };
+  }>;
+};
+
+type CompositionPreviewResponse = {
+  ok: boolean;
+  plan?: {
+    queries: Array<{
+      variable_id: string;
+      returns: CompositionTableReturn;
+      form_bindings: Array<{ relation: string; form_id: string }>;
+      schema_fingerprint: string;
+    }>;
+  };
+  diagnostics?: Array<{ code: string }>;
+};
+
+type CompositionEvaluationRequest = {
+  evaluation_id: string;
+  target: {
+    kind: "saved_revision";
+    composition_id: string;
+    revision_id: string;
+  };
+  requested_queries?: string[];
+  page?: { variable_id: string; cursor: string };
+};
+
+type CompositionEvaluationTable = {
+  kind: "table";
+  columns: CompositionTableReturn["columns"];
+  rows: unknown[][];
+};
+
+type CompositionEvaluationResponse = {
+  evaluation_id: string;
+  ok: boolean;
+  composition_revision?: { entry_id: string; revision_id: string };
+  computed_query_ids: string[];
+  queries: Array<{ variable_id: string; returns: CompositionTableReturn }>;
+  query_results: Record<string, {
+    value: CompositionEvaluationTable;
+    has_more: boolean;
+    next?: string;
+  }>;
+  [key: string]: unknown;
+};
+
 type NarrowSeed = {
   spaceId: string;
   compositionOneColumnId: string;
   compositionOneColumnRevision: string;
   compositionTwoColumnId: string;
   compositionTwoColumnRevision: string;
+  singleColumnSqlName: string;
   singleColumnSqlId: string;
   manyColumnSqlId: string;
   alphaValues: string[];
+  pagedAlphaValues: string[];
 };
 
 const MANY_COLUMN_COUNT = 12;
+const COMPOSITION_PAGE_SIZE = 100;
 
 function sqlIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
-function buildInlineSqlYaml(
-  name: string,
-  sourceName: string,
-  sql: string,
-): string {
+function buildInlineSqlCompositionYaml(name: string, sql: string): string {
   const lines = [
     "format: ugoite.composition",
     "format_version: 1",
     `name: ${name}`,
     "kind: dashboard",
     "spec:",
-    "  sources:",
+    "  variables:",
     "    - id: narrow_rows",
-    "      kind: inline_sql",
-    `      name: ${sourceName}`,
-    `      sql: ${sql}`,
-    "      form_bindings: []",
-    "      expected_result: []",
-    "      schema_fingerprint: ''",
+    "      kind: query",
+    "      returns:",
+    "        kind: table",
+    "        columns: []",
+    "      query:",
+    "        kind: inline_sql",
+    `        sql: ${JSON.stringify(sql)}`,
+    "        arguments: []",
+    "        form_bindings: []",
+    '        schema_fingerprint: ""',
     "  components:",
     "    - id: narrow_table",
     "      kind: table",
-    "      source: narrow_rows",
+    "      variable: narrow_rows",
     "  layout:",
     "    kind: flow",
     "    rows:",
@@ -74,6 +128,46 @@ function buildInlineSqlYaml(
     "",
   ];
   return lines.join("\n");
+}
+
+async function completeInlineSqlCompositionYaml(
+  request: APIRequestContext,
+  spaceId: string,
+  draftYaml: string,
+): Promise<string> {
+  const response = await request.post(
+    getBackendUrl(`/spaces/${spaceId}/compositions/preview`),
+    { data: { yaml: draftYaml } },
+  );
+  expect(response.status()).toBe(200);
+  const preview = await response.json() as CompositionPreviewResponse;
+  expect(preview.ok, JSON.stringify(preview.diagnostics)).toBe(true);
+  const query = preview.plan?.queries.find((item) =>
+    item.variable_id === "narrow_rows"
+  );
+  expect(query).toBeTruthy();
+  expect(query!.returns.kind).toBe("table");
+  expect(query!.returns.columns.length).toBeGreaterThan(0);
+  expect(query!.schema_fingerprint).toMatch(/^[0-9a-f]{64}$/);
+
+  let yaml = draftYaml;
+  const replaceLine = (line: string, replacement: string) => {
+    expect(yaml).toContain(line);
+    yaml = yaml.replace(line, replacement);
+  };
+  replaceLine(
+    "      returns:\n        kind: table\n        columns: []",
+    `      returns: ${JSON.stringify(query!.returns)}`,
+  );
+  replaceLine(
+    "        form_bindings: []",
+    `        form_bindings: ${JSON.stringify(query!.form_bindings)}`,
+  );
+  replaceLine(
+    '        schema_fingerprint: ""',
+    `        schema_fingerprint: ${JSON.stringify(query!.schema_fingerprint)}`,
+  );
+  return yaml;
 }
 
 async function createSpace(request: APIRequestContext): Promise<string> {
@@ -115,9 +209,12 @@ async function seedNarrowSurfaces(
   const spaceId = await createSpace(request);
   const suffix = crypto.randomUUID().slice(0, 8);
   const formName = `NarrowSurface${suffix}`;
-  const alphaValues = [1, 2, 3].map((index) =>
-    `Narrow Alpha ${suffix} ${index}`
+  const pagedAlphaValues = Array.from(
+    { length: COMPOSITION_PAGE_SIZE + 1 },
+    (_, index) =>
+      `Narrow Alpha ${suffix} ${String(index + 1).padStart(3, "0")}`,
   );
+  const alphaValues = pagedAlphaValues.slice(0, 3);
 
   const formResponse = await request.post(
     getBackendUrl(`/spaces/${spaceId}/forms`),
@@ -164,7 +261,7 @@ async function seedNarrowSurfaces(
   const relation = sqlIdentifier(form!.sql_relation!);
   const alphaColumn = sqlIdentifier(alphaField!.sql_column!);
   const betaColumn = sqlIdentifier(betaField!.sql_column!);
-  const totalOrder = `ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50`;
+  const totalOrder = `ORDER BY ${alphaColumn} ASC, _ugoite_id LIMIT 3`;
 
   const singleColumnSql = await request.post(
     getBackendUrl(`/spaces/${spaceId}/sql`),
@@ -206,38 +303,21 @@ async function seedNarrowSurfaces(
   const oneColumnYaml = await completeInlineSqlCompositionYaml(
     request,
     spaceId,
-    buildInlineSqlYaml(
+    buildInlineSqlCompositionYaml(
       `Narrow one column ${suffix}`,
-      `Narrow one column ${suffix} rows`,
-      `SELECT ${alphaColumn} AS label FROM ${sqlIdentifier(formName)}`,
+      `SELECT ${alphaColumn} AS label FROM ${relation} ORDER BY ${alphaColumn} ASC, _ugoite_id LIMIT 3`,
     ),
-    {
-      id: "narrow_rows",
-      relation: formName,
-      formId: form!.id!,
-      expectedResult: [{ name: "label", type: "string" }],
-    },
   );
   const oneColumn = await saveComposition(request, spaceId, oneColumnYaml);
   const twoColumnYaml = await completeInlineSqlCompositionYaml(
     request,
     spaceId,
-    buildInlineSqlYaml(
+    buildInlineSqlCompositionYaml(
       `Narrow two column ${suffix}`,
-      `Narrow two column ${suffix} rows`,
-      `SELECT ${alphaColumn} AS alpha, ${betaColumn} AS beta FROM ${
-        sqlIdentifier(formName)
-      } LIMIT 2`,
+      `SELECT ${alphaColumn} AS alpha, ${betaColumn} AS beta FROM ${relation} ORDER BY ${alphaColumn} ASC, _ugoite_id LIMIT ${
+        COMPOSITION_PAGE_SIZE + 1
+      }`,
     ),
-    {
-      id: "narrow_rows",
-      relation: formName,
-      formId: form!.id!,
-      expectedResult: [
-        { name: "alpha", type: "string" },
-        { name: "beta", type: "string" },
-      ],
-    },
   );
   const twoColumn = await saveComposition(request, spaceId, twoColumnYaml);
 
@@ -247,9 +327,11 @@ async function seedNarrowSurfaces(
     compositionOneColumnRevision: oneColumn.revision_id,
     compositionTwoColumnId: twoColumn.composition_id,
     compositionTwoColumnRevision: twoColumn.revision_id,
+    singleColumnSqlName: `Narrow single column ${suffix}`,
     singleColumnSqlId: singleColumn.id!,
     manyColumnSqlId: manyColumn.id!,
     alphaValues,
+    pagedAlphaValues,
   };
 }
 
@@ -300,7 +382,7 @@ test.describe("Result surface narrow viewports", () => {
   let seed: NarrowSeed;
 
   test.beforeAll(async ({ request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(180_000);
     await waitForServers(request);
     seed = await seedNarrowSurfaces(request);
   });
@@ -340,9 +422,99 @@ test.describe("Result surface narrow viewports", () => {
   });
 
   test("REQ-FE-068: Composition 2-column confines overflow to the result viewport", async ({ page }) => {
-    // Mitase evidence: REQ-FE-068#criterion.local-horizontal-overflow.
-    test.setTimeout(120_000);
+    // Mitase evidence: REQ-FE-068#criterion.local-horizontal-overflow. Issue #4534.
+    test.setTimeout(180_000);
+    let firstEvaluationId = "";
+    let firstEvaluationResponse: CompositionEvaluationResponse | undefined;
+    const pageRequests: CompositionEvaluationRequest[] = [];
+    const continuationCursor = "narrow-result-page-2";
+    await page.route("**/compositions/evaluate", async (route) => {
+      const request = route.request()
+        .postDataJSON() as CompositionEvaluationRequest;
+      expect(request.target).toEqual({
+        kind: "saved_revision",
+        composition_id: seed.compositionTwoColumnId,
+        revision_id: seed.compositionTwoColumnRevision,
+      });
+
+      if (request.page) {
+        pageRequests.push(request);
+        expect(firstEvaluationResponse).toBeTruthy();
+        expect(request.evaluation_id).toBe(firstEvaluationId);
+        expect(request.page).toEqual({
+          variable_id: "narrow_rows",
+          cursor: continuationCursor,
+        });
+        const previousResult = firstEvaluationResponse!.query_results
+          .narrow_rows;
+        await route.fulfill({
+          json: {
+            ...firstEvaluationResponse,
+            evaluation_id: request.evaluation_id,
+            computed_query_ids: ["narrow_rows"],
+            query_results: {
+              narrow_rows: {
+                value: {
+                  ...previousResult.value,
+                  rows: [[
+                    { kind: "string", value: seed.pagedAlphaValues.at(-1)! },
+                    {
+                      kind: "string",
+                      value: `Narrow Beta ${seed.pagedAlphaValues.at(-1)!}`,
+                    },
+                  ]],
+                },
+                has_more: false,
+              },
+            },
+          },
+        });
+        return;
+      }
+
+      firstEvaluationId = request.evaluation_id;
+      const response = await route.fetch();
+      expect(response.ok()).toBe(true);
+      const evaluation = await response.json() as CompositionEvaluationResponse;
+      expect(evaluation.ok).toBe(true);
+      expect(evaluation.composition_revision).toEqual({
+        entry_id: seed.compositionTwoColumnId,
+        revision_id: seed.compositionTwoColumnRevision,
+      });
+      expect(evaluation.query_results.narrow_rows.value.kind).toBe("table");
+      firstEvaluationResponse = evaluation;
+
+      // Keep the saved revision's real evaluate response and schema, then
+      // expand its page in the browser to exercise the 100-row viewport.
+      const existingResult = evaluation.query_results.narrow_rows;
+      const firstPageRows = seed.pagedAlphaValues.slice(
+        0,
+        COMPOSITION_PAGE_SIZE,
+      ).map((alpha) => [
+        { kind: "string", value: alpha },
+        { kind: "string", value: `Narrow Beta ${alpha}` },
+      ]);
+      await route.fulfill({
+        response,
+        json: {
+          ...evaluation,
+          query_results: {
+            ...evaluation.query_results,
+            narrow_rows: {
+              ...existingResult,
+              value: { ...existingResult.value, rows: firstPageRows },
+              has_more: true,
+              next: continuationCursor,
+            },
+          },
+        },
+      });
+    });
+
     for (const width of [320, 390]) {
+      firstEvaluationId = "";
+      firstEvaluationResponse = undefined;
+      pageRequests.length = 0;
       await page.setViewportSize({ width, height: 800 });
       await page.goto(
         getFrontendUrl(
@@ -354,7 +526,10 @@ test.describe("Result surface narrow viewports", () => {
       const table = page.getByRole("table");
       await expect(table).toBeVisible();
       await expect(table.locator("thead th")).toHaveCount(2);
-      await expect(table.locator("tbody tr")).toHaveCount(2);
+      await expect(table.locator("tbody tr")).toHaveCount(
+        COMPOSITION_PAGE_SIZE,
+      );
+      await expect(table).toContainText(seed.pagedAlphaValues[0]);
 
       await expectNoPageHorizontalOverflow(page);
       const viewport = page.locator(".result-table-viewport");
@@ -363,21 +538,18 @@ test.describe("Result surface narrow viewports", () => {
       await expectNoGiantFixedMinWidth(table, width);
 
       const next = page.getByRole("button", { name: "Next", exact: true });
-      const previous = page.getByRole("button", {
-        name: "Previous",
-        exact: true,
+      await expect(next).toBeEnabled();
+      await next.click();
+      await expect(table.locator("tbody tr")).toHaveCount(1);
+      await expect(table).toContainText(seed.pagedAlphaValues.at(-1)!);
+      expect(pageRequests).toHaveLength(1);
+      expect(pageRequests[0].evaluation_id).toBe(firstEvaluationId);
+      expect(pageRequests[0].page).toEqual({
+        variable_id: "narrow_rows",
+        cursor: continuationCursor,
       });
-      if (await next.count() > 0) {
-        await expect(next).toBeEnabled();
-        await next.click();
-        await expect(table.locator("tbody tr")).toHaveCount(1);
-        await expectNoPageHorizontalOverflow(page);
-        await expectViewportRectWithinViewport(page, viewport);
-        await expect(previous).toBeEnabled();
-        await previous.click();
-        await expect(table.locator("tbody tr")).toHaveCount(2);
-        await expectNoPageHorizontalOverflow(page);
-      }
+      await expectNoPageHorizontalOverflow(page);
+      await expectViewportRectWithinViewport(page, viewport);
     }
   });
 
@@ -421,11 +593,18 @@ test.describe("Result surface narrow viewports", () => {
       )).toBeVisible();
 
       await saveAsTool.click();
-      // Save-as-tool seeds the Studio instead of a dialog: the Studio
-      // opens prefilled with the Saved SQL source and stays save-ready.
       await expect(page).toHaveURL(
-        new RegExp(`/spaces/${seed.spaceId}/compositions/new$`),
+        new RegExp(`/spaces/${seed.spaceId}/compositions/new\\?`),
       );
+      const bindingPicker = page.getByRole("dialog", { name: "Table" });
+      await expect(bindingPicker).toBeVisible();
+      await expect(bindingPicker.getByRole("tab", { name: "Saved SQL" }))
+        .toHaveAttribute("aria-selected", "true");
+      await bindingPicker.getByRole("button", {
+        name: seed.singleColumnSqlName,
+        exact: true,
+      }).click();
+      await expect(bindingPicker).toBeHidden();
       await expect(
         page.getByRole("button", { name: "Save", exact: true }),
       ).toBeEnabled();

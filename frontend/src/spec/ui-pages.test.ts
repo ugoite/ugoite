@@ -503,31 +503,34 @@ describe("UI spec YAML registry", () => {
     }
   });
 
-  it("REQ-FE-040: registers the SQL-first Composition and shared SQL Workspace contracts", () => {
+  it("REQ-FE-040: registers the graph Composition and shared SQL Workspace contracts", () => {
     const studioPath = path.join(componentsDir, "composition-studio.yaml");
     const studioContract = readFileSync(studioPath, "utf8");
     const sharedWorkspaceContract = readFileSync(
       path.join(componentsDir, "sql-workspace.yaml"),
       "utf8",
     );
-    const dataWorkspaceSource = readFileSync(
+    const revisionRouteSource = readFileSync(
       path.join(
         repoRoot,
-        "frontend/src/components/CompositionDataWorkspace.tsx",
+        "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx",
       ),
       "utf8",
     );
 
     expect(studioContract).toContain(
-      "**Status: implemented for the current prerelease model.**",
+      "**Status: implementation in progress; complete SQL grammar coverage remains a separate gate.**",
     );
-    expect(studioContract).toContain("The next unreleased target is [ADR-025]");
+    expect(studioContract).toContain(
+      "The normative next Composition model is [ADR-025]",
+    );
     expect(studioContract.replaceAll(/\s+/g, " ")).toContain(
-      "no EntryQuery is created",
+      "Table and Value share one BindingPicker with Variables, Forms, and Saved SQL tabs.",
     );
-    expect(dataWorkspaceSource).toContain("<SQLWorkspace");
+    expect(revisionRouteSource).toContain("compositionApi.evaluate");
+    expect(revisionRouteSource).toContain("<CompositionGraphRenderer");
     expect(sharedWorkspaceContract.replaceAll(/\s+/g, " ")).toContain(
-      "Composition inline SQL use the same Workspace component",
+      "Composition query variables use the same Workspace component",
     );
   });
 
@@ -551,7 +554,7 @@ describe("UI spec YAML registry", () => {
     }
   });
 
-  it("SQL-first Composition spec: keeps paging request-owned by the SQL query handle", () => {
+  it("REQ-COMP-009: keeps paging request-owned by the query variable", () => {
     const revision = loadPages().find(({ spec }) =>
       spec.page?.id === "space-composition-revision"
     );
@@ -560,7 +563,7 @@ describe("UI spec YAML registry", () => {
     );
     expect(compositionComponents).toMatchObject({
       pagination_owner:
-        "SQL query handle; continuation and explicit count stay in stateless query requests",
+        "server-owned stateless continuation for the query variable",
     });
   });
 
@@ -608,7 +611,7 @@ describe("UI spec YAML registry", () => {
       });
   });
 
-  it("REQ-COMP-008: keeps Composition variable declarations in Knowledge and values in transient Work", () => {
+  it("REQ-COMP-009: keeps Composition variable definitions in Knowledge and values in transient Work", () => {
     const revision = loadPages().find(({ spec }) =>
       spec.page?.id === "space-composition-revision"
     );
@@ -616,12 +619,12 @@ describe("UI spec YAML registry", () => {
       id === "composition-components"
     );
 
-    expect(revision?.spec.page?.contract_status).toBe("planned");
+    expect(revision?.spec.page?.contract_status).toBe("in_progress");
     expect(components).toMatchObject({
       variables:
-        "typed definitions/defaults are Knowledge; runtime values and raw input are transient Work",
+        "typed constants and definitions are Knowledge; input values and query results are transient Work",
       input_components:
-        "reference one variable and own no saved value; no display label is persisted",
+        "reference one input variable and own no saved runtime value",
     });
   });
 

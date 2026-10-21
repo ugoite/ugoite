@@ -4,8 +4,16 @@ import {
   type Page,
   test,
 } from "@playwright/test";
-import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
-import { completeSavedSqlCompositionYaml } from "./lib/composition.ts";
+import {
+  getBackendUrl,
+  getDefaultSpaceId,
+  getFrontendUrl,
+  waitForServers,
+} from "./lib/client.ts";
+import {
+  completeCompositionGraphYaml,
+  type CompositionGraphSeed,
+} from "./lib/composition-graph.ts";
 
 type SeedState = {
   spaceId: string;
@@ -18,17 +26,7 @@ function sqlIdentifier(value: string): string {
 }
 
 async function createSpace(request: APIRequestContext): Promise<string> {
-  const suffix = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
-  const response = await request.post(getBackendUrl("/spaces"), {
-    data: {
-      slug: `composition-invalid-input-${suffix}`,
-      name: `Composition invalid input ${suffix}`,
-    },
-  });
-  expect([200, 201]).toContain(response.status());
-  const result = await response.json() as { space_uid?: string };
-  expect(result.space_uid).toBeTruthy();
-  return result.space_uid!;
+  return await getDefaultSpaceId(request);
 }
 
 async function seedInvalidInputComposition(
@@ -98,58 +96,53 @@ async function seedInvalidInputComposition(
   expect(savedSql.id).toBeTruthy();
   expect(savedSql.revision_id).toBeTruthy();
 
-  let yaml = [
-    "format: ugoite.composition",
-    "format_version: 1",
-    `name: Invalid variable input ${suffix}`,
-    "kind: dashboard",
-    "spec:",
-    "  variables:",
-    "    - id: minimum_amount",
-    "      type: integer",
-    "      required: true",
-    "      default: 5",
-    "  sources:",
-    "    - id: matching_rows",
-    "      kind: saved_sql",
-    `      entry_id: "${savedSql.id}"`,
-    `      revision_id: "${savedSql.revision_id}"`,
-    "      expected_result: []",
-    "      schema_fingerprint: ''",
-    "      variables:",
-    "        minimum:",
-    "          variable: minimum_amount",
-    "  components:",
-    "    - id: first_input",
-    "      kind: input",
-    "      variable: minimum_amount",
-    "    - id: second_input",
-    "      kind: input",
-    "      variable: minimum_amount",
-    "    - id: matching_rows_metric",
-    "      kind: metric",
-    "      source: matching_rows",
-    "      column: matching_rows",
-    "  layout:",
-    "    kind: flow",
-    "    rows:",
-    "      - id: inputs",
-    "        items:",
-    "          - kind: component",
-    "            component: first_input",
-    "          - kind: component",
-    "            component: second_input",
-    "      - id: result",
-    "        items:",
-    "          - kind: component",
-    "            component: matching_rows_metric",
-    "",
-  ].join("\n");
-  yaml = await completeSavedSqlCompositionYaml(request, spaceId, yaml, [{
-    id: "matching_rows",
-    savedSqlId: savedSql.id!,
-    savedSqlRevisionId: savedSql.revision_id!,
-  }]);
+  const graph: CompositionGraphSeed = {
+    name: `Invalid variable input ${suffix}`,
+    variables: [
+      {
+        id: "minimum_amount",
+        kind: "input",
+        value_type: { scalar_type: "integer", nullable: false },
+        required: true,
+        default: { kind: "integer", value: 5 },
+      },
+      {
+        id: "matching_rows",
+        kind: "query",
+        returns: {
+          kind: "scalar",
+          value_type: { scalar_type: "integer", nullable: false },
+        },
+        query: {
+          kind: "saved_sql",
+          entry_id: savedSql.id!,
+          revision_id: savedSql.revision_id!,
+          arguments: [{ name: "minimum", variable: "minimum_amount" }],
+          form_bindings: [],
+          schema_fingerprint: "",
+        },
+      },
+    ],
+    components: [
+      { id: "first_input", kind: "input", variable: "minimum_amount" },
+      { id: "second_input", kind: "input", variable: "minimum_amount" },
+      { id: "matching_rows_metric", kind: "metric", variable: "matching_rows" },
+    ],
+    rows: [
+      {
+        id: "inputs",
+        items: [
+          { kind: "component", component: "first_input" },
+          { kind: "component", component: "second_input" },
+        ],
+      },
+      {
+        id: "result",
+        items: [{ kind: "component", component: "matching_rows_metric" }],
+      },
+    ],
+  };
+  const yaml = await completeCompositionGraphYaml(request, spaceId, graph);
   const compositionResponse = await request.post(
     getBackendUrl(`/spaces/${spaceId}/compositions`),
     {
@@ -192,14 +185,14 @@ test.describe("Composition invalid variable Input", () => {
 
   test("invalid_raw_input_blocks_query_and_stale_result", async ({ page }) => {
     test.setTimeout(120_000);
-    let metricQueryCount = 0;
-    const metricQueryPath =
-      `/api/spaces/${seed.spaceId}/compositions/metric-query`;
+    await page.setViewportSize({ width: 390, height: 844 });
+    let evaluationCount = 0;
+    const evaluationPath = `/api/spaces/${seed.spaceId}/compositions/evaluate`;
     page.on("request", (request) => {
       if (
         request.method() === "POST" &&
-        new URL(request.url()).pathname === metricQueryPath
-      ) metricQueryCount += 1;
+        new URL(request.url()).pathname === evaluationPath
+      ) evaluationCount += 1;
     });
 
     await page.goto(
@@ -209,15 +202,33 @@ test.describe("Composition invalid variable Input", () => {
       { waitUntil: "domcontentloaded" },
     );
 
-    const inputs = page.getByRole("textbox");
+    const inputs = page.locator(".compositionGraphInput input");
     const firstInput = inputs.nth(0);
     const secondInput = inputs.nth(1);
-    const metric = page.locator("output.compositionMetric");
+    const metric = page.locator(".compositionGraphMetric strong");
+    await expect(firstInput).toHaveAccessibleName("minimum_amount");
+    await expect(secondInput).toHaveAccessibleName("minimum_amount");
+    const firstInputBox = await firstInput.boundingBox();
+    const secondInputBox = await secondInput.boundingBox();
+    expect(firstInputBox).not.toBeNull();
+    expect(secondInputBox).not.toBeNull();
+    expect(firstInputBox!.height).toBeGreaterThanOrEqual(44);
+    expect(secondInputBox!.height).toBeGreaterThanOrEqual(44);
+    expect(
+      await page.evaluate(() =>
+        document.documentElement.scrollWidth <=
+          document.documentElement.clientWidth
+      ),
+    ).toBe(true);
+    await firstInput.focus();
+    await expect(firstInput).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(secondInput).toBeFocused();
     await expect(firstInput).toHaveValue("5");
     await expect(secondInput).toHaveValue("5");
     await expect(metric).toHaveText("2", { timeout: 30_000 });
-    expect(metricQueryCount).toBeGreaterThan(0);
-    const successfulQueryCount = metricQueryCount;
+    expect(evaluationCount).toBeGreaterThan(0);
+    const successfulEvaluationCount = evaluationCount;
 
     await firstInput.fill("-");
     await expect(firstInput).toHaveValue("-");
@@ -228,16 +239,16 @@ test.describe("Composition invalid variable Input", () => {
     await expect(page.getByRole("alert").first()).toBeVisible();
     await settleWithoutMetricQuery(
       page,
-      () => metricQueryCount,
-      successfulQueryCount,
+      () => evaluationCount,
+      successfulEvaluationCount,
     );
 
-    const explicitUnsetResolution = page.waitForResponse((response) => {
+    const explicitUnsetEvaluation = page.waitForResponse((response) => {
       const url = new URL(response.url());
       if (
         response.request().method() !== "POST" ||
         url.pathname !==
-          `/api/spaces/${seed.spaceId}/compositions/${seed.compositionId}/resolve`
+          `/api/spaces/${seed.spaceId}/compositions/evaluate`
       ) return false;
       try {
         const body = response.request().postDataJSON() as {
@@ -254,7 +265,7 @@ test.describe("Composition invalid variable Input", () => {
     await expect(firstInput).toHaveAttribute("aria-invalid", "true");
     await expect(secondInput).toHaveAttribute("aria-invalid", "true");
     await expect(metric).toHaveCount(0);
-    const unsetResponse = await explicitUnsetResolution;
+    const unsetResponse = await explicitUnsetEvaluation;
     expect(unsetResponse.ok()).toBe(true);
     const unsetResult = await unsetResponse.json() as {
       ok?: boolean;
@@ -267,14 +278,14 @@ test.describe("Composition invalid variable Input", () => {
     });
     await settleWithoutMetricQuery(
       page,
-      () => metricQueryCount,
-      successfulQueryCount,
+      () => evaluationCount,
+      successfulEvaluationCount + 1,
     );
 
     await firstInput.fill("2");
     await expect(firstInput).toHaveValue("2");
     await expect(secondInput).toHaveValue("2");
     await expect(metric).toHaveText("3", { timeout: 30_000 });
-    expect(metricQueryCount).toBeGreaterThan(successfulQueryCount);
+    expect(evaluationCount).toBeGreaterThan(successfulEvaluationCount);
   });
 });

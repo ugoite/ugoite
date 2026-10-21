@@ -2,54 +2,48 @@
 title: "SQL-first Composition acceptance plan"
 ---
 
-This is the acceptance matrix for the SQL-first Composition v1 prerelease
-candidate. It records implementation and validation evidence without implying
-a product release. The prior implementation evidence is preserved in the
-[prereplacement snapshot](history/composition-prereplacement-acceptance.md)
-and does not apply to the replacement. The accepted next target in ADR-025 is
-not covered by this current-candidate matrix and remains planned work.
+This matrix tracks the unreleased typed query-graph candidate. It records
+implementation and validation evidence; it does not announce or authorize a
+release. The prior source-based Composition evidence is retained in the
+[prereplacement snapshot](history/composition-prereplacement-acceptance.md) and
+does not make that grammar executable.
 
-The normative document shape is in the [Composition contract](../contracts/composition.md)
-and [ADR-024](../contracts/adr-024-composition-sql-first.md); the future
-variable-graph contract is [ADR-025](../contracts/adr-025-composition-query-variable-graph.md).
-The canonical
-Composition and workspace requirements are `REQ-COMP-008`, `REQ-FE-079`, and
-`REQ-FE-080`; their Feature bindings locate the implementation and its
-verification evidence.
+The current document contract is in the
+[Composition contract](../contracts/composition.md),
+[ADR-024](../contracts/adr-024-composition-sql-first.md), and
+[ADR-025](../contracts/adr-025-composition-query-variable-graph.md). The primary
+requirements are `REQ-COMP-009` and the shared SQL Workspace requirements; their
+Mitase bindings locate the code and verification targets.
 
 ## Acceptance matrix
 
-| Boundary | Required evidence | Current evidence state |
-| --- | --- | --- |
-| Canonical document | Native and WASM parsing agree on one strict v1 envelope, canonical YAML, fingerprint, and diagnostics. `inline_sql` and `saved_sql` are the only source variants. Unknown old `entry_query`, root `tags`, and Composition-owned `label` fields are rejected. | Implemented; Mitase verification passes locally. Native/WASM CI evidence is tracked against the candidate PR commit. |
-| Inline SQL identity | Lint/save derives relation-to-Form-ID bindings on the server, persists the ordered result descriptor and fingerprint, and never trusts client-supplied Form bindings. A Form rename keeps the exact bound ID; deletion or loss of access fails closed. | Implemented. The 10-test Composition E2E lane exercises inline SQL-backed Table/Metric results; Form rename/deletion and ACL-denial journeys remain pending. |
-| Saved SQL identity | A Composition pins one exact Saved SQL Entry and revision, carries typed parameter mappings and the expected result descriptor, and never follows latest or copies the query body. Typed Saved SQL defaults remain Saved SQL authoring data; Composition defaults are copied only by an explicit user action. | Implemented; exact-revision pinning, explicit Composition defaults, save/reopen, and history restore pass in the local Studio and Metric E2E lane (10/10). |
-| Query and Metric behavior | Tables and Metrics share one resolved SQL source result. Metrics use one declared scalar column and distinguish zero rows, one-row `NULL`, numeric zero, multiple rows, type mismatch, and access denial without browser aggregation or an implicit `LIMIT 1`. Existing SQL paging, count, cancellation, resource bounds, and current authorization remain in force. | Implemented; local Composition Metric E2E passes 10/10, including null/empty/zero/multiple-row states and the 100-row Table paging boundary. Authorization and cancellation lanes remain separate CI evidence. |
-| Knowledge and recovery | Save creates an append-only Entry revision with the existing receipt and stale-write behavior. Resolve selects the exact Composition revision. Unsupported or invalid stored bytes remain available through raw inspection, export, and history; those paths do not make a prereplacement document executable. Runtime input, result, paging, and drawer state remain transient Work. | Save, exact-revision view, append-only edit, history, and restore pass in the local Studio E2E. Receipt/stale-write and raw invalid-byte recovery still require their focused CI journeys. |
-| Shared SQL Workspace | `/sql/new`, Saved SQL detail/edit, and inline Composition SQL use the shared workspace contract. Structured actions round-trip only supported syntax, direct SQL remains authoritative, and destructive structured rewrites require explicit diff confirmation. Preview count and paging are explicit. | Implemented; Deno type checks pass. The current local Composition E2E covers Saved SQL run and save-as-tool, while direct SQL structured-action and explicit diff journeys await CI evidence. |
-| Composition Studio | Form selection creates editable inline SQL such as `SELECT * FROM "G"` without inserting `LIMIT 50`. The desktop source rail and narrow-screen drawer support keyboard operation. Design components use semantic values without editable labels or tags. Steady state relies on structure, names, and accessible icon actions rather than explanatory copy or decorative cards. | Local Studio journeys pass 3/3 within the 10/10 Composition E2E lane, including the 390px Inspector flow and 320/375/390px overflow assertions. Manual assistive-technology and Safari checks remain open. |
+| Boundary                       | Required evidence                                                                                                                                                                                                                                                                                             | Candidate evidence state                                                                                                                                                                                                                                             |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Typed graph and strict grammar | Domain, WASM, API, CLI, and Browser accept one typed `spec.variables` graph. Old Composition `sources`, component source references, aliases, and migration paths are absent; invalid old bytes remain available only through raw Entry history and export.                                                   | Domain/API/WASM/CLI/Browser cutover and strict rejection tests are in the candidate. Focused Domain, WASM, and CLI journeys passed locally; required CI remains pending.                                                                                             |
+| Query identity and arguments   | Inline SQL uses server-derived Form bindings and schema descriptors. Saved SQL pins an exact Entry and revision. Each SQL placeholder is explicitly bound to a scalar graph value and checked against the pinned parameter type.                                                                              | Exact revision and derived binding tests are present. Local tests cover planner-derived scalar query bindings and preview rejection of mismatched Saved SQL argument types; required CI remains pending.                                                             |
+| Evaluation and rendering       | Evaluation uses an immutable Composition, Publication, authorization, and parameter snapshot. It validates each result against the declared descriptor, shares results for repeated references within one snapshot, and leaves preview values in Work. Scalar results require exactly one row and one column. | Core and storage tests cover bounded dependency evaluation, scalar cardinality, typed results, and page continuations. Browser journeys cover stale response ordering, Space changes, source ACL revocation, and same-browser principal changes; CI remains pending. |
+| Design bindings                | Table and Metric use the same Variables / Forms / Saved SQL picker. Form and Saved SQL choices normalize to a query variable; the placed component stores only its variable reference. Insert and reference change are atomic and do not open another inspector.                                              | The new graph canvas, binding picker, and DTO checks are in the candidate. Focused component tests and the full browser journey remain required before acceptance.                                                                                                   |
+| Variable workspace             | Design and Variables are the only modes. Inputs, constants, and query variables each have one editor. Query variables reuse the shared SQL Workspace and its diagnostics.                                                                                                                                     | The new workspace and responsive journeys are in the candidate. Manual assistive-technology and iOS Safari checks remain unrecorded.                                                                                                                                 |
+| Shared SQL Workspace           | `/sql/new`, Saved SQL editing, and Composition query variables share the SQL Document editor, formatter, typed operations, and diagnostics. Every executor-admitted read-only construct has a GUI operation and round-trip evidence; unsupported constructs fail closed.                                      | The candidate builds on the merged SQL Document workspace. Remaining aggregate, JOIN, trivia, and capability-matrix follow-ups are tracked as separate open PRs and must be reconciled before claiming complete executor-to-GUI parity.                              |
+| Knowledge and recovery         | Save appends an Entry revision. Exact-revision inspection and restore keep their existing meaning. Invalid or old Composition bytes can be inspected as raw history but cannot be silently converted or executed.                                                                                             | The candidate retains raw history and append-only Entry handling and adds strict old-grammar rejection. Required cross-surface CI and raw-history journeys remain to be confirmed against the final candidate.                                                       |
 
 ## Required journey evidence
 
-For the current candidate, required CI must still confirm strict replacement
-parsing and native/WASM parity, relation-binding and descriptor drift,
-authorization changes, bounded execution, and existing API/CLI behavior. The
-local Browser lane passed 10/10 and covers exact Saved SQL revision pinning,
-scalar cardinality, typed Input state, save/reopen, history restore, responsive
-drawer behavior, and Table paging. Direct SQL structured-action gating,
-stale-write/receipt recovery, raw invalid-byte recovery, and cross-surface CLI
-use remain separate evidence items.
+Required CI must confirm strict Domain and WASM parity, query type inference,
+Saved SQL revision pinning, ACL rechecks, stateless pagination, API and CLI
+behavior, and the Browser journeys listed above. Focused local tests are
+diagnostic evidence only and do not replace checks on the exact candidate
+commit.
 
-The final cross-surface lane must exercise the same Space-owned Composition
-through CLI and Browser, including raw recovery after an invalid or
-prereplacement document is encountered. Existing Saved SQL, Form, Entry,
-general SQL, API, and authorization behavior must retain its established
-meaning. Required CI and each journey result must be recorded against the exact
-candidate commit before the corresponding acceptance claim is promoted.
+Before promoting the complete SQL GUI claim, the SQL capability matrix must show
+zero difference between the executor's admitted read-only grammar and the
+constructs the shared editor can inspect, modify, and round-trip. This includes
+the remaining SQL follow-ups listed above. General SQL dialects and unapproved
+functions are outside that matrix.
 
 ## Explicit evidence gaps
 
-CI evidence is tracked against each candidate PR commit. No manual
-assistive-technology or Safari result, raw invalid-byte recovery journey, or
-cross-surface CLI/Browser replacement run is recorded. The prereplacement
-snapshot contains historical observations only and cannot close these gaps.
+The candidate still needs required CI and independent review. Manual
+assistive-technology and iOS Safari evidence remains open. The SQL editor
+capability matrix and the remaining open SQL Workspace follow-ups must be
+resolved before declaring the plan complete. No release has been performed.

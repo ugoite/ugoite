@@ -83,6 +83,32 @@ Deno.test(
       ["Actual browser 200% zoom and iPhone Safari device verification"],
     );
     assertEquals(
+      plan.criteria.find(({ id }) => id === "A02")?.manual_evidence_gaps,
+      ["The browser tests do not independently verify the 50-row preview cap versus SQL text LIMIT."],
+    );
+    assert(
+      plan.criteria.find(({ id }) => id === "A02")?.selectors.some((
+        selector,
+      ) =>
+        selector.path === "e2e/composition-studio-journey.test.ts" &&
+        selector.kind === "test" &&
+        selector.name ===
+          "Form bindings create variable-backed displays with explicit aggregation"
+      ),
+      "A02 must include the interactive Form binding journey",
+    );
+    assert(
+      plan.criteria.find(({ id }) => id === "A09")?.selectors.some((
+        selector,
+      ) =>
+        selector.path === "e2e/composition-studio-journey.test.ts" &&
+        selector.kind === "test" &&
+        selector.name ===
+          "Form bindings create variable-backed displays with explicit aggregation"
+      ),
+      "A09 must include the explicit Form aggregate selection journey",
+    );
+    assertEquals(
       plan.criteria.find(({ id }) => id === "A12")?.manual_evidence_gaps,
       ["VoiceOver and NVDA device verification"],
     );

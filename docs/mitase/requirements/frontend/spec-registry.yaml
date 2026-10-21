@@ -166,14 +166,14 @@ requirements:
           - id: composition-sql-contract-registry
             adapter: typescript
             path: frontend/src/spec/ui-pages.test.ts
-            selector: { kind: test, name: "REQ-FE-040: registers the SQL-first Composition and shared SQL Workspace contracts" }
+            selector: { kind: test, name: "REQ-FE-040: registers the graph Composition and shared SQL Workspace contracts" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-040#criterion.registry-shape
                 covers:
                   - FEAT-FE-013#binding.frontend/target.component-composition-studio
                   - FEAT-FE-013#binding.frontend/target.component-shared-sql-workspace
-                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: registers the SQL-first Composition and shared SQL Workspace contracts" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: registers the graph Composition and shared SQL Workspace contracts" } }
           - id: page-links
             adapter: typescript
             path: frontend/src/spec/ui-pages.test.ts

@@ -6,8 +6,16 @@ import {
   type Page,
   test,
 } from "@playwright/test";
-import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
-import { completeSavedSqlCompositionYaml } from "./lib/composition.ts";
+import {
+  getBackendUrl,
+  getDefaultSpaceId,
+  getFrontendUrl,
+  waitForServers,
+} from "./lib/client.ts";
+import {
+  completeCompositionGraphYaml,
+  type CompositionGraphSeed,
+} from "./lib/composition-graph.ts";
 
 type SavedSqlRevision = {
   entryId: string;
@@ -21,14 +29,12 @@ type SeedState = {
   compositionName: string;
 };
 
-type SourceDefinition = {
+type ScalarQueryDefinition = {
   id: string;
   savedSql: SavedSqlRevision;
-};
-type MetricDefinition = {
-  id: string;
-  source: string;
   column: string;
+  scalarType: "integer" | "float";
+  nullable: boolean;
 };
 
 function sqlIdentifier(value: string): string {
@@ -36,17 +42,7 @@ function sqlIdentifier(value: string): string {
 }
 
 async function createSpace(request: APIRequestContext): Promise<string> {
-  const suffix = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
-  const response = await request.post(getBackendUrl("/spaces"), {
-    data: {
-      slug: `composition-scalar-state-${suffix}`,
-      name: `Composition scalar state ${suffix}`,
-    },
-  });
-  expect([200, 201]).toContain(response.status());
-  const result = await response.json() as { space_uid?: string };
-  expect(result.space_uid).toBeTruthy();
-  return result.space_uid!;
+  return await getDefaultSpaceId(request);
 }
 
 async function createSavedSql(
@@ -69,60 +65,55 @@ async function createSavedSql(
   return { entryId: savedSql.id!, revisionId: savedSql.revision_id! };
 }
 
-function compositionYaml(
+function compositionGraph(
   name: string,
-  sources: SourceDefinition[],
-  metrics: MetricDefinition[],
-): string {
-  const lines = [
-    "format: ugoite.composition",
-    "format_version: 1",
-    `name: ${name}`,
-    "kind: dashboard",
-    "spec:",
-    "  sources:",
-  ];
-  for (const source of sources) {
-    lines.push(
-      `    - id: ${source.id}`,
-      "      kind: saved_sql",
-      `      entry_id: \"${source.savedSql.entryId}\"`,
-      `      revision_id: \"${source.savedSql.revisionId}\"`,
-      "      expected_result: []",
-      "      schema_fingerprint: ''",
-    );
-  }
-  lines.push("  components:");
-  for (const metric of metrics) {
-    lines.push(
-      `    - id: ${metric.id}`,
-      "      kind: metric",
-      `      source: ${metric.source}`,
-      `      column: ${metric.column}`,
-    );
-  }
-  lines.push(
-    "  layout:",
-    "    kind: flow",
-    "    rows:",
-    "      - id: aggregates",
-    "        items:",
-  );
-  for (const metric of metrics.slice(0, 4)) {
-    lines.push(
-      "          - kind: component",
-      `            component: ${metric.id}`,
-    );
-  }
-  lines.push("      - id: scalar_states", "        items:");
-  for (const metric of metrics.slice(4)) {
-    lines.push(
-      "          - kind: component",
-      `            component: ${metric.id}`,
-    );
-  }
-  lines.push("");
-  return lines.join("\n");
+  queries: ScalarQueryDefinition[],
+): CompositionGraphSeed {
+  const queryVariable = (query: ScalarQueryDefinition) => ({
+    id: query.id,
+    kind: "query" as const,
+    returns: {
+      kind: "scalar",
+      value_type: {
+        scalar_type: query.scalarType,
+        nullable: query.nullable,
+      },
+    },
+    query: {
+      kind: "saved_sql",
+      entry_id: query.savedSql.entryId,
+      revision_id: query.savedSql.revisionId,
+      column: query.column,
+      arguments: [],
+      form_bindings: [],
+      schema_fingerprint: "",
+    },
+  });
+  return {
+    name,
+    variables: queries.map(queryVariable),
+    components: queries.map((query) => ({
+      id: query.id,
+      kind: "metric",
+      variable: query.id,
+    })),
+    rows: [
+      {
+        id: "aggregates",
+        items: queries.slice(0, 4).map((query) => ({
+          kind: "component" as const,
+          component: query.id,
+        })),
+      },
+      {
+        id: "scalar_states",
+        items: queries.slice(4).map((query) => ({
+          kind: "component" as const,
+          component: query.id,
+        })),
+      },
+    ],
+  };
 }
 
 async function seedScalarStateComposition(
@@ -197,70 +188,61 @@ async function seedScalarStateComposition(
     `SELECT COUNT(*) AS value FROM ${table} WHERE ${amount} < 0`,
   );
 
-  const sources: SourceDefinition[] = [
-    {
-      id: "aggregate_source",
-      savedSql: aggregateSql,
-    },
-    {
-      id: "zero_rows_source",
-      savedSql: zeroRowsSql,
-    },
-    {
-      id: "null_source",
-      savedSql: nullSql,
-    },
-    {
-      id: "zero_source",
-      savedSql: zeroSql,
-    },
-  ];
-  const metrics: MetricDefinition[] = [
+  const queries: ScalarQueryDefinition[] = [
     {
       id: "all_rows",
-      source: "aggregate_source",
+      savedSql: aggregateSql,
       column: "row_count",
+      scalarType: "integer",
+      nullable: false,
     },
     {
       id: "rows_with_amount",
-      source: "aggregate_source",
+      savedSql: aggregateSql,
       column: "amount_count",
+      scalarType: "integer",
+      nullable: false,
     },
     {
       id: "amount_total",
-      source: "aggregate_source",
+      savedSql: aggregateSql,
       column: "amount_sum",
+      scalarType: "float",
+      nullable: true,
     },
     {
       id: "amount_average",
-      source: "aggregate_source",
+      savedSql: aggregateSql,
       column: "amount_average",
+      scalarType: "float",
+      nullable: true,
     },
     {
       id: "zero_rows",
-      source: "zero_rows_source",
+      savedSql: zeroRowsSql,
       column: "value",
+      scalarType: "float",
+      nullable: true,
     },
     {
       id: "null_result",
-      source: "null_source",
+      savedSql: nullSql,
       column: "value",
+      scalarType: "float",
+      nullable: true,
     },
     {
       id: "zero_result",
-      source: "zero_source",
+      savedSql: zeroSql,
       column: "value",
+      scalarType: "integer",
+      nullable: false,
     },
   ];
-  const yaml = await completeSavedSqlCompositionYaml(
+  const yaml = await completeCompositionGraphYaml(
     request,
     spaceId,
-    compositionYaml(compositionName, sources, metrics),
-    sources.map(({ id, savedSql }) => ({
-      id,
-      savedSqlId: savedSql.entryId,
-      savedSqlRevisionId: savedSql.revisionId,
-    })),
+    compositionGraph(compositionName, queries),
   );
   const compositionResponse = await request.post(
     getBackendUrl(`/spaces/${spaceId}/compositions`),
@@ -290,13 +272,11 @@ async function openSavedComposition(
 ): Promise<void> {
   const path =
     `/spaces/${seed.spaceId}/compositions/${seed.compositionId}/${seed.compositionRevisionId}`;
-  await page.goto(getFrontendUrl(`/spaces/${seed.spaceId}/dashboard`), {
+  await page.goto(getFrontendUrl(`/spaces/${seed.spaceId}/compositions`), {
     waitUntil: "domcontentloaded",
   });
-  const link = page.getByRole("link", {
-    name: new RegExp(`^${seed.compositionName} Dashboard`),
-  });
-  await expect(link).toHaveAttribute("href", path);
+  const link = page.locator(`a[href="${path}"]`);
+  await expect(link).toBeVisible();
   await link.click();
   await page.waitForURL((url) => url.pathname === path);
   await expect(
@@ -304,14 +284,12 @@ async function openSavedComposition(
   ).toBeVisible();
 }
 
-function metricSection(page: Page, componentIndex: number) {
-  return page.locator("section.section").nth(componentIndex);
+function metricSection(page: Page, variableId: string) {
+  return page.getByRole("region", { name: variableId, exact: true });
 }
 
-function metricOutput(page: Page, componentIndex: number) {
-  return metricSection(page, componentIndex).locator(
-    "output.compositionMetric",
-  );
+function metricOutput(page: Page, variableId: string) {
+  return metricSection(page, variableId).locator("strong");
 }
 
 const scalarResultTimeoutMs = 30_000;
@@ -342,16 +320,16 @@ test.describe("Composition scalar state journey", () => {
     test.setTimeout(120_000);
     const { freshContext, page } = await openOwnerPage(browser, context, seed);
     try {
-      await expect(metricOutput(page, 0)).toHaveText("3", {
+      await expect(metricOutput(page, "all_rows")).toHaveText("3", {
         timeout: scalarResultTimeoutMs,
       });
-      await expect(metricOutput(page, 1)).toHaveText("2", {
+      await expect(metricOutput(page, "rows_with_amount")).toHaveText("2", {
         timeout: scalarResultTimeoutMs,
       });
-      await expect(metricOutput(page, 2)).toHaveText("30", {
+      await expect(metricOutput(page, "amount_total")).toHaveText("30", {
         timeout: scalarResultTimeoutMs,
       });
-      await expect(metricOutput(page, 3)).toHaveText("15", {
+      await expect(metricOutput(page, "amount_average")).toHaveText("15", {
         timeout: scalarResultTimeoutMs,
       });
     } finally {
@@ -363,7 +341,10 @@ test.describe("Composition scalar state journey", () => {
     test.setTimeout(120_000);
     const { freshContext, page } = await openOwnerPage(browser, context, seed);
     try {
-      const zeroRowsSection = metricSection(page, 4);
+      const zeroRowsSection = page.getByRole("region", {
+        name: "scalar_states",
+        exact: true,
+      });
       await expect(zeroRowsSection.getByRole("alert")).toContainText(
         await page.locator("html").getAttribute("lang").then((locale) =>
           locale === "ja"
@@ -372,17 +353,19 @@ test.describe("Composition scalar state journey", () => {
         ),
         { timeout: scalarResultTimeoutMs },
       );
-      await expect(zeroRowsSection.locator("output.compositionMetric"))
-        .toHaveCount(0, { timeout: scalarResultTimeoutMs });
+      await expect(page.getByRole("region", {
+        name: "zero_rows",
+        exact: true,
+      })).toHaveCount(0, { timeout: scalarResultTimeoutMs });
 
-      const nullOutput = metricOutput(page, 5);
+      const nullOutput = metricOutput(page, "null_result");
       await expect(nullOutput).toHaveText(
         await page.locator("html").getAttribute("lang").then((locale) =>
           locale === "ja" ? "データなし" : "No data"
         ),
         { timeout: scalarResultTimeoutMs },
       );
-      await expect(metricOutput(page, 6)).toHaveText("0", {
+      await expect(metricOutput(page, "zero_result")).toHaveText("0", {
         timeout: scalarResultTimeoutMs,
       });
       await expect(nullOutput).not.toHaveText("0", {
