@@ -588,6 +588,7 @@
             "select"
           ],
           "limits": [
+            "every set-operation operand must be a SELECT query body",
             "Typed operator/quantifier including BY NAME, seed addition, operand replacement/removal/swap."
           ]
         },
