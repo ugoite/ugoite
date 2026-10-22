@@ -3950,11 +3950,11 @@ fn keyword_token_in_range<'a>(
         .map(|(_, token)| token)
 }
 
-fn next_significant_token<'a>(
-    document: &'a SqlDocument,
+fn next_significant_token(
+    document: &SqlDocument,
     start: usize,
     end: usize,
-) -> Option<&'a SqlDocumentToken> {
+) -> Option<&SqlDocumentToken> {
     document.tokens.iter().find(|token| {
         token.range.start >= start
             && token.range.end <= end
@@ -5045,7 +5045,11 @@ fn add_from_relation(
                         .end,
                 ),
         )?;
-        let suffix_space = (insertion > last.end).then_some(" ").unwrap_or_default();
+        let suffix_space = if insertion > last.end {
+            " "
+        } else {
+            Default::default()
+        };
         return source_insertion(document, insertion, format!(", {factor_sql}{suffix_space}"));
     }
 
@@ -5070,16 +5074,21 @@ fn add_from_relation(
         .unwrap_or(select_range.end)
         .min(select_range.end.max(last_item.end));
     let insertion = insertion_after_intervening_comments(document, last_item.end, clause_start)?;
-    let prefix_space = document
+    let prefix_space = if document
         .source
         .get(..insertion)
         .and_then(|prefix| prefix.chars().next_back())
         .is_some_and(char::is_whitespace)
-        .then_some("")
-        .unwrap_or(" ");
-    let suffix_space = (insertion < clause_start)
-        .then_some(" ")
-        .unwrap_or_default();
+    {
+        ""
+    } else {
+        " "
+    };
+    let suffix_space = if insertion < clause_start {
+        " "
+    } else {
+        Default::default()
+    };
     source_insertion(
         document,
         insertion,
@@ -6171,7 +6180,7 @@ fn list_item_prefix_start(
     let previous = document
         .tokens
         .iter()
-        .filter(|token| {
+        .rfind(|token| {
             token.range.start >= clause_range.start
                 && token.range.end <= item_range.start
                 && !matches!(
@@ -6179,7 +6188,6 @@ fn list_item_prefix_start(
                     SqlDocumentTokenKind::Trivia | SqlDocumentTokenKind::Comment
                 )
         })
-        .last()
         .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
     if !token_text(&document.source, previous).is_some_and(|text| text.eq_ignore_ascii_case("BY")) {
         return Err(SqlDocumentEditError::NodeRangeUnavailable);
@@ -6315,9 +6323,9 @@ fn function_argument_ranges(
         return Err(SqlDocumentEditError::InvalidSemanticReplacement);
     };
     if node.kind != SqlDocumentNodeKind::FunctionExpression
-        || !name
+        || name
             .last()
-            .is_some_and(|part| crate::sql_functions::user_sql_aggregate(&part.value).is_some())
+            .is_none_or(|part| crate::sql_functions::user_sql_aggregate(&part.value).is_none())
     {
         return Err(SqlDocumentEditError::InvalidSemanticReplacement);
     }
@@ -6366,15 +6374,14 @@ fn function_argument_ranges(
                 }
                 continue;
             }
-            if token.kind == SqlDocumentTokenKind::Word {
-                if ["ORDER", "LIMIT", "IGNORE", "RESPECT", "ON"]
+            if token.kind == SqlDocumentTokenKind::Word
+                && ["ORDER", "LIMIT", "IGNORE", "RESPECT", "ON"]
                     .iter()
                     .any(|keyword| {
                         token_is_keyword_at(&document.source, &document.tokens, index, keyword)
                     })
-                {
-                    return Err(SqlDocumentEditError::NodeRangeUnavailable);
-                }
+            {
+                return Err(SqlDocumentEditError::NodeRangeUnavailable);
             }
             if first_sql_token
                 && token.kind != SqlDocumentTokenKind::Trivia
@@ -8026,10 +8033,10 @@ impl QueryStructureCollector<'_> {
             let mut matched = true;
             for word in &words[1..] {
                 next_index = skip_trivia_tokens(self.tokens, next_index);
-                if !self
+                if self
                     .token_depths
                     .get(next_index)
-                    .is_some_and(|next_depth| *next_depth == depth)
+                    .is_none_or(|next_depth| *next_depth != depth)
                     || !token_is_keyword_at(self.source, self.tokens, next_index, word)
                 {
                     matched = false;
@@ -8054,7 +8061,7 @@ impl QueryStructureCollector<'_> {
                     && token_is_keyword_at(self.source, self.tokens, *index, word)
             })
             .map(|(_, token)| token.range)
-            .last()
+            .next_back()
     }
 
     fn order_item_range(
@@ -8089,7 +8096,7 @@ impl QueryStructureCollector<'_> {
                             )
                     })
                     .map(|(_, token)| token.range.end)
-                    .last()
+                    .next_back()
             })
             .unwrap_or(expression_range.end);
         SqlSourceRange {
@@ -8717,7 +8724,7 @@ impl QueryStructureCollector<'_> {
                         || token_is_keyword_at(self.source, self.tokens, *index, "APPLY"))
             })
             .map(|(index, _)| index)
-            .last()?;
+            .next_back()?;
         let mut start_index = join_index;
         while let Some(previous_index) = previous_nontrivia_token(self.tokens, start_index) {
             let token = &self.tokens[previous_index];
@@ -14764,9 +14771,7 @@ mod tests {
             slice(SqlDocumentNodeKind::Join)
         );
         assert!(
-            slice(SqlDocumentNodeKind::GroupByClause)
-                .iter()
-                .any(|text| *text == "GROUP BY ALL"),
+            slice(SqlDocumentNodeKind::GroupByClause).contains(&"GROUP BY ALL"),
             "group ranges: {:?}",
             slice(SqlDocumentNodeKind::GroupByClause)
         );

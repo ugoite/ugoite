@@ -773,7 +773,6 @@ pub fn propose_sql_structure_operation(
                 &original_query,
                 select,
                 SqlDocumentNodeKind::LimitClause,
-                false,
                 replacement.as_deref(),
                 &[],
                 SqlStructureReason::RowLimitUnsupported,
@@ -1106,17 +1105,17 @@ fn join_kind_source_edits(
         .iter()
         .map(|(_, word)| word.as_str())
         .collect::<Vec<_>>();
-    let prefix_matches_current = match (current_kind, prefix.as_slice()) {
+    let prefix_matches_current = matches!(
+        (current_kind, prefix.as_slice()),
         (SqlStructureJoinKind::Inner, [])
-        | (SqlStructureJoinKind::Inner, ["INNER"])
-        | (SqlStructureJoinKind::Left, ["LEFT"])
-        | (SqlStructureJoinKind::Left, ["LEFT", "OUTER"])
-        | (SqlStructureJoinKind::Right, ["RIGHT"])
-        | (SqlStructureJoinKind::Right, ["RIGHT", "OUTER"])
-        | (SqlStructureJoinKind::Full, ["FULL"])
-        | (SqlStructureJoinKind::Full, ["FULL", "OUTER"]) => true,
-        _ => false,
-    };
+            | (SqlStructureJoinKind::Inner, ["INNER"])
+            | (SqlStructureJoinKind::Left, ["LEFT"])
+            | (SqlStructureJoinKind::Left, ["LEFT", "OUTER"])
+            | (SqlStructureJoinKind::Right, ["RIGHT"])
+            | (SqlStructureJoinKind::Right, ["RIGHT", "OUTER"])
+            | (SqlStructureJoinKind::Full, ["FULL"])
+            | (SqlStructureJoinKind::Full, ["FULL", "OUTER"])
+    );
     if !prefix_matches_current {
         return None;
     }
@@ -4289,13 +4288,18 @@ fn rewrite_query_clause(
     query: &Query,
     select: &Select,
     kind: SqlDocumentNodeKind,
-    belongs_to_select: bool,
     replacement: Option<&str>,
     insert_before: &[SqlDocumentNodeKind],
     reason: SqlStructureReason,
 ) -> Result<String, SqlStructureReason> {
     let (document, query_id, select_id) =
         document_query_and_select_ids(sql, query, select).ok_or(reason)?;
+    let belongs_to_select = matches!(
+        kind,
+        SqlDocumentNodeKind::WhereClause
+            | SqlDocumentNodeKind::GroupByClause
+            | SqlDocumentNodeKind::HavingClause
+    );
     let parent_id = if belongs_to_select {
         select_id
     } else {
@@ -4361,7 +4365,6 @@ fn rewrite_where_clause(
             query,
             select,
             SqlDocumentNodeKind::WhereClause,
-            true,
             None,
             &[],
             SqlStructureReason::FilterUnsupported,
@@ -4394,7 +4397,6 @@ fn rewrite_order_by_clause(
         original_query,
         original_select,
         SqlDocumentNodeKind::OrderByClause,
-        false,
         proposed.as_deref(),
         &[SqlDocumentNodeKind::LimitClause],
         SqlStructureReason::SortUnsupported,
@@ -4421,7 +4423,6 @@ fn rewrite_group_by_clause(
         original_query,
         original_select,
         SqlDocumentNodeKind::GroupByClause,
-        true,
         replacement.as_deref(),
         &[
             SqlDocumentNodeKind::HavingClause,
@@ -4449,7 +4450,6 @@ fn rewrite_having_clause(
             original_query,
             original_select,
             SqlDocumentNodeKind::HavingClause,
-            true,
             replacement.as_deref(),
             &[
                 SqlDocumentNodeKind::OrderByClause,
@@ -6718,7 +6718,6 @@ mod tests {
     #[test]
     fn join_editor_fails_closed_outside_the_bounded_inner_equality_shape() {
         for sql in [
-            "SELECT * FROM \"Task\" AS t LEFT JOIN \"Task\" AS other ON t.field_101 = other.field_101",
             "SELECT * FROM \"Task\" AS t CROSS JOIN \"Task\" AS other",
             "SELECT * FROM \"Task\" AS t JOIN \"Task\" AS other USING (field_101)",
             "SELECT * FROM \"Task\" AS t JOIN \"Task\" AS other ON t.field_101 = other.field_101 AND t.field_102 = other.field_102",
@@ -7786,7 +7785,7 @@ mod tests {
         .expect("column comparison edit applies atomically");
         assert_eq!(applied.document.to_sql(), proposed);
         let undone = crate::sql_document::apply_sql_document_edit_transaction(
-            &applied.document.to_sql(),
+            applied.document.to_sql(),
             &applied.undo,
         )
         .expect("column comparison has a guarded undo");
@@ -9252,8 +9251,8 @@ mod tests {
             &context(),
         );
 
-        assert_eq!(result.status, SqlStructureStatus::Unsupported);
-        assert_eq!(result.reason, Some(SqlStructureReason::SortUnsupported));
+        assert_eq!(result.status, SqlStructureStatus::InvalidSql);
+        assert_eq!(result.reason, Some(SqlStructureReason::ParseFailed));
         assert!(!result.capabilities.sort.enabled);
     }
 

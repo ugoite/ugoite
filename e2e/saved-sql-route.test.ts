@@ -324,17 +324,19 @@ test.describe("Saved SQL route", () => {
 
       const dialog = page.getByRole("dialog", { name: "Filter" });
       const leaves = dialog.getByRole("treeitem", {
-        name: /Binary expression: "_ugoite_id" = \$entry_id/,
+        name: /Binary expression: "_ugoite_id" = \$entry_id$/,
       });
       await expect(leaves).toHaveCount(33);
       const deepest = leaves.last();
       await deepest.scrollIntoViewIfNeeded();
       await expect(deepest).toBeInViewport();
       await deepest.click();
-      await dialog.getByRole("combobox", {
-        name: "Binary operator",
+      const operator = dialog.getByRole("combobox", {
+        name: "Operator",
         exact: true,
-      }).selectOption("not_eq");
+      });
+      await expect(operator).toHaveValue("eq");
+      await operator.selectOption("not_eq");
       const apply = dialog.getByRole("button", { name: "Apply", exact: true });
       await expect(apply).toBeEnabled();
       const dimensions = await dialog.evaluate((element) => {
@@ -360,12 +362,21 @@ test.describe("Saved SQL route", () => {
       expect(dimensions.targetWidth).toBeGreaterThanOrEqual(44);
       expect(dimensions.targetHeight).toBeGreaterThanOrEqual(44);
       await apply.click();
+      await expect(page.locator(".ui-sql-editor")).toContainText(
+        '"_ugoite_id" <> $entry_id',
+      );
       await dialog.getByRole("button", { name: "Close", exact: true }).last()
         .click();
       await expect(page.locator(".ui-sql-editor")).toContainText(
         '"_ugoite_id" <> $entry_id',
       );
+      const saved = page.waitForResponse((response) =>
+        response.request().method() === "PUT" &&
+        new URL(response.url()).pathname ===
+          `/api/spaces/${spaceId}/sql/${savedSqlId}`
+      );
       await page.getByRole("button", { name: "Save", exact: true }).click();
+      expect((await saved).ok()).toBe(true);
       const stored = await request.get(
         getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
       );
@@ -395,7 +406,7 @@ test.describe("Saved SQL route", () => {
   test("REQ-FE-063 @smoke: shared SQL Workspace round-trips a Form query through save and run", async ({ page, request }) => {
     const timestamp = Date.now();
     const queryName = `Form-bound draft ${timestamp}`;
-    const alternateFormName = `SQL Workspace Alternate ${timestamp}`;
+    const alternateFormName = `SQL_Workspace_Alternate_${timestamp}`;
     let savedSqlId: string | undefined;
     await ensureDefaultForm(request, spaceId);
     const relation = await getDefaultFormRelation(request, spaceId);
@@ -440,7 +451,9 @@ test.describe("Saved SQL route", () => {
       return page.getByRole("dialog", { name, exact: true });
     };
     const applyAndClose = async (dialog: ReturnType<typeof page.getByRole>) => {
+      const previousSql = await page.locator(".ui-sql-editor").textContent();
       await dialog.getByRole("button", { name: "Apply", exact: true }).click();
+      await expect(page.locator(".ui-sql-editor")).not.toHaveText(previousSql!);
       await dialog.getByRole("button", { name: "Close", exact: true }).last()
         .click();
     };
@@ -498,10 +511,12 @@ test.describe("Saved SQL route", () => {
       await filterDialog.getByRole("treeitem", {
         name: /Binary expression: "_ugoite_id" <> \$entry_id/,
       }).click();
-      await filterDialog.getByRole("combobox", {
-        name: "Binary operator",
+      const operator = filterDialog.getByRole("combobox", {
+        name: "Operator",
         exact: true,
-      }).selectOption("eq");
+      });
+      await expect(operator).toHaveValue("not_eq");
+      await operator.selectOption("eq");
       await applyAndClose(filterDialog);
       await expect(page.locator(".ui-sql-editor")).toContainText(
         '"_ugoite_id" = $entry_id',

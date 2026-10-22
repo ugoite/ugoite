@@ -927,6 +927,7 @@ async function main(): Promise<void> {
   assertEqual(
     JSON.stringify(analyzedJoin.joins),
     JSON.stringify([{
+      join_kind: "inner",
       left_alias: { name: "_ugoite_left", quoted: true },
       left_column: "title",
       relation: "Task",
@@ -1019,7 +1020,7 @@ async function main(): Promise<void> {
     "ambiguous unqualified join filter fails closed",
   );
 
-  const unsupportedOuterJoin = await invokeWasm(instance.exports, {
+  const outerJoin = await invokeWasm(instance.exports, {
     action: "domain.analyze_sql_structure",
     value: {
       sql:
@@ -1027,20 +1028,15 @@ async function main(): Promise<void> {
       context,
     },
   });
-  const unsupportedOuterValue = unsupportedOuterJoin.value as Record<
-    string,
-    unknown
-  >;
+  const outerValue = outerJoin.value as Record<string, unknown>;
   assertEqual(
-    unsupportedOuterValue.status,
-    "unsupported",
-    "outer join remains outside the editor contract",
+    outerValue.status,
+    "supported",
+    "bounded outer join is supported",
   );
-  assertEqual(
-    unsupportedOuterValue.reason,
-    "join_unsupported",
-    "outer join fail-closed reason",
-  );
+  const outerJoins = outerValue.joins as Record<string, unknown>[];
+  assertEqual(outerJoins.length, 1, "one bounded outer join descriptor");
+  assertEqual(outerJoins[0].join_kind, "left", "left join kind is preserved");
 }
 
 if (import.meta.main) {

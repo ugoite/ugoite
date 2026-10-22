@@ -42,6 +42,24 @@ export const route = spaceRoute({
   navigation: "search",
 });
 
+function selectSavedSqlPreviewRevision(input: {
+  id: string;
+  revisionId: string;
+  sql: string;
+  storedSql: string;
+  variables: readonly SqlVariable[];
+  storedVariables: readonly SqlVariable[];
+}) {
+  const types = (variables: readonly SqlVariable[]) =>
+    variables.map(({ name, type }) => ({ name, type }));
+  if (
+    input.sql !== input.storedSql ||
+    JSON.stringify(types(input.variables)) !==
+      JSON.stringify(types(input.storedVariables))
+  ) return undefined;
+  return { id: input.id, revisionId: input.revisionId };
+}
+
 export default function SpaceSqlDetailRoute() {
   const params = useParams<{ space_id: string; sql_id: string }>();
   const navigate = useNavigate();
@@ -173,17 +191,15 @@ export default function SpaceSqlDetailRoute() {
     planSavedSql: () => undefined,
     savedSql: () => {
       const current = entry();
-      if (!current || sqlInput() !== savedSql()) return undefined;
-      const types = (variables: readonly SqlVariable[]) =>
-        variables.map(({ name, type }) => ({ name, type }));
-      if (
-        JSON.stringify(types(savedVariables())) !==
-          JSON.stringify(types(revisionVariables()))
-      ) return undefined;
-      return {
+      if (!current) return undefined;
+      return selectSavedSqlPreviewRevision({
         id: current.id,
         revisionId: revisionId() ?? current.revision_id,
-      };
+        sql: sqlInput(),
+        storedSql: savedSql(),
+        variables: savedVariables(),
+        storedVariables: revisionVariables(),
+      });
     },
   });
 

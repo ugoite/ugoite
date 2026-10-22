@@ -1415,7 +1415,8 @@ impl AuthorizedQueryContext {
             .create_physical_plan()
             .await
             .map_err(AuthorizedQueryError::execution_failed)?;
-        validate_physical_plan(&physical, &self.authorized_scans)?;
+        validate_physical_plan(&physical, &self.authorized_scans)
+            .map_err(AuthorizedQueryError::unauthorized)?;
         Ok(result_schema)
     }
 

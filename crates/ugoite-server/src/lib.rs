@@ -18933,6 +18933,45 @@ spec:
     }
 
     #[tokio::test]
+    async fn stateless_sql_plan_returns_typed_schema_without_saved_results() -> anyhow::Result<()> {
+        let principal_id = Uuid::from_u128(29749);
+        let (client, space_id, _) =
+            production_rest_fixture("stateless-sql-plan", principal_id, true).await?;
+        let (_, before) = client
+            .json(Method::GET, &format!("/spaces/{space_id}/sql"), None)
+            .await?;
+        let (status, plan) = client.json(Method::POST, &format!("/spaces/{space_id}/sql/query/plan"), Some(json!({
+            "sql": "SELECT $value AS value", "parameters": {"value": null}, "parameter_types": {"value": "integer"}
+        }))).await?;
+        assert_eq!(status, StatusCode::OK, "{plan}");
+        assert_eq!(plan["result_schema"][0]["name"], "value");
+        assert_eq!(plan["result_schema"][0]["type"], "integer");
+        assert!(plan.get("rows").is_none());
+        assert!(plan.get("next").is_none());
+        let (_, after) = client
+            .json(Method::GET, &format!("/spaces/{space_id}/sql"), None)
+            .await?;
+        assert_eq!(before, after, "planning must not create Saved SQL");
+        for sql in [
+            "SELECT * FROM hidden_form",
+            "SELECT 1; SELECT 2",
+            "SELECT LOWER('value')",
+        ] {
+            let (status, _) = client
+                .json(
+                    Method::POST,
+                    &format!("/spaces/{space_id}/sql/query/plan"),
+                    Some(json!({
+                        "sql": sql, "parameters": {}, "parameter_types": {}
+                    })),
+                )
+                .await?;
+            assert!(!status.is_success(), "plan unexpectedly admitted {sql}");
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn stateless_sql_query_pins_publication_and_separates_count() -> anyhow::Result<()> {
         let principal_id = Uuid::from_u128(29750);
         let (client, space_id, _space_uid) =
@@ -18949,20 +18988,6 @@ spec:
             .expect("seeded Form SQL relation")
             .to_owned();
         let sql = format!("SELECT _ugoite_id, field_100 FROM \"{relation}\" ORDER BY _ugoite_id");
-
-        let (plan_status, plan) = client
-            .json(
-                Method::POST,
-                &format!("/spaces/{space_id}/sql/query/plan"),
-                Some(json!({"sql": sql, "parameters": {}, "parameter_types": {}})),
-            )
-            .await?;
-        assert_eq!(plan_status, StatusCode::OK, "{plan}");
-        assert_eq!(plan["result_schema"].as_array().map(Vec::len), Some(2));
-        assert!(
-            plan.get("rows").is_none(),
-            "planning must not materialize rows"
-        );
 
         for (id, body) in [("first", "one"), ("second", "two"), ("third", "three")] {
             let (status, response) = client

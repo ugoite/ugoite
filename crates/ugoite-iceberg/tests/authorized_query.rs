@@ -2818,7 +2818,7 @@ async fn typed_sql_document_edits_execute_through_authorized_query_context() -> 
     );
     let appended_set_source = appended_set.document.to_sql();
     let appended_set_document =
-        ugoite_domain::sql_document::parse_sql_document(&appended_set_source);
+        ugoite_domain::sql_document::parse_sql_document(appended_set_source);
     let appended_operation = appended_set_document
         .nodes
         .iter()
@@ -2959,7 +2959,7 @@ async fn typed_sql_document_edits_execute_through_authorized_query_context() -> 
         "the exact SQL produced by a typed CTE addition is authorized and executable"
     );
     let added_cte_source = added_cte.document.to_sql();
-    let added_cte_document = ugoite_domain::sql_document::parse_sql_document(&added_cte_source);
+    let added_cte_document = ugoite_domain::sql_document::parse_sql_document(added_cte_source);
     let unused_cte = added_cte_document
         .nodes
         .iter()
@@ -2968,7 +2968,7 @@ async fn typed_sql_document_edits_execute_through_authorized_query_context() -> 
         })
         .expect("the added CTE has a typed declaration");
     let removed_cte = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
-        &added_cte_source,
+        added_cte_source,
         &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
             contract_version: added_cte_document.contract_version,
             expected_source: added_cte_source.to_owned(),
