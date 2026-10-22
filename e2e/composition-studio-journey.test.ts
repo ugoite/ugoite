@@ -1143,6 +1143,10 @@ test.describe("Composition Studio Journey", () => {
       composition_id: string;
       revision_id: string;
     };
+    await expect(page).toHaveURL(
+      new RegExp(`${savePath}/${saved.composition_id}/${saved.revision_id}$`),
+      { timeout: 30_000 },
+    );
     const updated = await request.put(
       getBackendUrl(`/spaces/${spaceId}/sql/${savedSql.id}`),
       {
