@@ -581,11 +581,11 @@ test.describe("Saved SQL route", () => {
       expect(result.ok(), await result.text()).toBe(true);
       const output = await result.json() as {
         columns: string[];
-        rows: unknown[][];
+        rows: Record<string, unknown>[];
       };
       expect(output.columns).toHaveLength(1);
       expect(output.rows).toHaveLength(1);
-      expect(Number(output.rows[0][0])).toBe(1);
+      expect(Number(output.rows[0][output.columns[0]])).toBe(1);
       await expect(
         page.getByRole("region", { name: /^(SQL results|SQL 結果)$/ }).first(),
       ).toBeVisible();
