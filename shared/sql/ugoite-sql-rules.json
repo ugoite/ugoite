@@ -66,7 +66,8 @@
         "aggregate": {
           "mean": "avg"
         }
-      }
+      },
+      "admission_corpus": "shared/sql/sql-admission-corpus.json"
     },
     "direct_sql_lint": {
       "require_from": false,
@@ -76,7 +77,7 @@
       "parser_dialect": "GenericDialect",
       "parser_parity_fixture": "shared/sql/sql-document-parser-parity.json",
       "typed_document_contract": {
-        "version": 14,
+        "version": 17,
         "protocol": "SqlDocumentNodeKind",
         "semantic_protocol": "SqlDocumentNodeData",
         "parser_engine": {
@@ -105,7 +106,11 @@
           "common_table_expression",
           "relation",
           "table_factor",
-          "unmodeled_expression"
+          "unmodeled_expression",
+          "order_by_item",
+          "select",
+          "wildcard",
+          "query_clause_value"
         ],
         "node_kinds": [
           "query_statement",
@@ -124,8 +129,719 @@
           "join",
           "where_clause",
           "group_by_clause",
+          "group_by_item",
           "having_clause",
           "order_by_clause",
+          "order_by_item",
+          "limit_clause",
+          "offset_clause",
+          "relation",
+          "table_factor",
+          "identifier_expression",
+          "compound_identifier_expression",
+          "literal_expression",
+          "binary_expression",
+          "unary_expression",
+          "function_expression",
+          "case_expression",
+          "cast_expression",
+          "subquery_expression",
+          "predicate_expression",
+          "nested_expression",
+          "other_expression",
+          "value"
+        ]
+      },
+      "toolbar": {
+        "visible_actions": [
+          "form",
+          "columns",
+          "filter",
+          "sort",
+          "structure",
+          "arguments"
+        ],
+        "structure_operations": [
+          "join",
+          "aggregate",
+          "group_by",
+          "having",
+          "distinct",
+          "row_limit",
+          "document"
+        ]
+      },
+      "aggregate_contract": {
+        "checked": "registry_signature_and_gui_roundtrip",
+        "verification": [
+          "domain_round_trip",
+          "wasm_protocol",
+          "frontend_protocol",
+          "authorized_executor"
+        ],
+        "known_editor_rejections": [],
+        "verification_gaps": []
+      },
+      "operations": [
+        {
+          "action": "form",
+          "protocol": "apply_sql_document_semantic_edit_transaction",
+          "sql": [
+            "FROM"
+          ],
+          "coverage": "bounded",
+          "protocol_family": "sql_document"
+        },
+        {
+          "action": "join",
+          "toolbar_category": "structure",
+          "protocol": "apply_sql_document_semantic_edit_transaction",
+          "sql": [
+            "INNER JOIN",
+            "LEFT JOIN",
+            "RIGHT JOIN",
+            "FULL JOIN",
+            "ON"
+          ],
+          "coverage": "bounded",
+          "protocol_family": "sql_document"
+        },
+        {
+          "action": "columns",
+          "protocol": "apply_sql_document_semantic_edit_transaction",
+          "sql": [
+            "SELECT projection"
+          ],
+          "coverage": "bounded",
+          "protocol_family": "sql_document"
+        },
+        {
+          "action": "filter",
+          "protocol": "apply_sql_document_semantic_edit_transaction",
+          "sql": [
+            "WHERE"
+          ],
+          "coverage": "bounded",
+          "protocol_family": "sql_document"
+        },
+        {
+          "action": "sort",
+          "protocol": "apply_sql_document_semantic_edit_transaction",
+          "sql": [
+            "ORDER BY"
+          ],
+          "coverage": "bounded",
+          "protocol_family": "sql_document"
+        },
+        {
+          "action": "aggregate",
+          "toolbar_category": "structure",
+          "protocol": "apply_sql_document_semantic_edit_transaction",
+          "sql": [
+            "SELECT aggregate projection"
+          ],
+          "coverage": "bounded",
+          "functions": [
+            "count",
+            "sum",
+            "avg",
+            "mean",
+            "min",
+            "max"
+          ],
+          "protocol_family": "sql_document"
+        },
+        {
+          "action": "group_by",
+          "toolbar_category": "structure",
+          "protocol": "apply_sql_document_semantic_edit_transaction",
+          "sql": [
+            "GROUP BY"
+          ],
+          "coverage": "bounded",
+          "protocol_family": "sql_document"
+        },
+        {
+          "action": "having",
+          "toolbar_category": "structure",
+          "protocol": "apply_sql_document_semantic_edit_transaction",
+          "sql": [
+            "HAVING"
+          ],
+          "coverage": "bounded",
+          "protocol_family": "sql_document"
+        },
+        {
+          "action": "document",
+          "toolbar_category": "structure",
+          "protocol_family": "sql_document",
+          "protocol": "apply_sql_document_semantic_edit_transaction",
+          "sql": [
+            "SQL syntax tree"
+          ],
+          "coverage": "bounded"
+        },
+        {
+          "action": "distinct",
+          "toolbar_category": "structure",
+          "protocol": "apply_sql_document_semantic_edit_transaction",
+          "sql": [
+            "SELECT DISTINCT"
+          ],
+          "coverage": "bounded",
+          "protocol_family": "sql_document"
+        },
+        {
+          "action": "row_limit",
+          "toolbar_category": "structure",
+          "protocol": "apply_sql_document_semantic_edit_transaction",
+          "sql": [
+            "LIMIT",
+            "OFFSET"
+          ],
+          "coverage": "bounded",
+          "protocol_family": "sql_document"
+        }
+      ],
+      "constructs": [
+        {
+          "id": "from_relation",
+          "sql": "FROM",
+          "backend_admission": "planner_decides",
+          "editor_coverage": "bounded",
+          "verification": [
+            "domain_round_trip",
+            "wasm_protocol",
+            "frontend_protocol",
+            "authorized_executor"
+          ],
+          "document_handling": "typed_tree",
+          "document_nodes": [
+            "from_clause",
+            "relation_tree",
+            "relation",
+            "table_factor"
+          ],
+          "limits": [
+            "Typed named or source-backed derived relation selection and relation aliases; current authorization is checked by the planner."
+          ]
+        },
+        {
+          "id": "projection",
+          "sql": "SELECT",
+          "backend_admission": "planner_decides",
+          "editor_coverage": "bounded",
+          "verification": [
+            "domain_round_trip",
+            "wasm_protocol",
+            "frontend_protocol",
+            "authorized_executor"
+          ],
+          "document_handling": "typed_tree",
+          "document_nodes": [
+            "select_list",
+            "select_item",
+            "identifier_expression",
+            "compound_identifier_expression",
+            "literal_expression",
+            "binary_expression",
+            "unary_expression",
+            "function_expression",
+            "case_expression",
+            "cast_expression",
+            "subquery_expression",
+            "predicate_expression",
+            "nested_expression",
+            "other_expression",
+            "value"
+          ],
+          "limits": [
+            "Typed projection expression, Form-column and wildcard expansion, append/remove/reorder; source outside the edit is retained.",
+            "Projection alias preservation does not yet prove full alias construction or binding-aware renaming."
+          ]
+        },
+        {
+          "id": "where_predicate",
+          "sql": "WHERE",
+          "backend_admission": "planner_decides",
+          "editor_coverage": "bounded",
+          "editor_operations": [
+            "filter",
+            "document"
+          ],
+          "verification": [
+            "domain_edit_undo",
+            "wasm_protocol",
+            "frontend_protocol",
+            "authorized_executor"
+          ],
+          "document_handling": "typed_tree",
+          "document_nodes": [
+            "where_clause",
+            "identifier_expression",
+            "compound_identifier_expression",
+            "literal_expression",
+            "binary_expression",
+            "unary_expression",
+            "function_expression",
+            "case_expression",
+            "cast_expression",
+            "subquery_expression",
+            "predicate_expression",
+            "nested_expression",
+            "other_expression",
+            "value"
+          ],
+          "limits": [
+            "Typed nested predicate replacement and WHERE insertion/removal; parameters are declared separately."
+          ]
+        },
+        {
+          "id": "grouping",
+          "sql": "GROUP BY",
+          "backend_admission": "planner_decides",
+          "editor_coverage": "bounded",
+          "verification": [
+            "domain_round_trip",
+            "wasm_protocol",
+            "frontend_protocol",
+            "authorized_executor"
+          ],
+          "document_handling": "typed_tree",
+          "document_nodes": [
+            "group_by_clause",
+            "identifier_expression",
+            "compound_identifier_expression",
+            "other_expression",
+            "group_by_item"
+          ],
+          "limits": [
+            "Typed grouping-key append/remove/reorder in the same SELECT scope."
+          ]
+        },
+        {
+          "id": "having",
+          "sql": "HAVING",
+          "backend_admission": "planner_decides",
+          "editor_coverage": "bounded",
+          "editor_operations": [
+            "having",
+            "document"
+          ],
+          "verification": [
+            "domain_round_trip",
+            "wasm_protocol",
+            "frontend_protocol",
+            "authorized_executor"
+          ],
+          "document_handling": "typed_tree",
+          "document_nodes": [
+            "having_clause",
+            "identifier_expression",
+            "compound_identifier_expression",
+            "literal_expression",
+            "binary_expression",
+            "unary_expression",
+            "function_expression",
+            "case_expression",
+            "cast_expression",
+            "subquery_expression",
+            "predicate_expression",
+            "nested_expression",
+            "other_expression",
+            "value"
+          ],
+          "limits": [
+            "Typed HAVING insertion/removal and nested predicate replacement."
+          ]
+        },
+        {
+          "id": "ordering",
+          "sql": "ORDER BY",
+          "backend_admission": "planner_decides",
+          "editor_coverage": "bounded",
+          "verification": [
+            "domain_round_trip",
+            "wasm_protocol",
+            "frontend_protocol",
+            "authorized_executor"
+          ],
+          "document_handling": "typed_tree",
+          "document_nodes": [
+            "order_by_clause",
+            "identifier_expression",
+            "compound_identifier_expression",
+            "literal_expression",
+            "binary_expression",
+            "unary_expression",
+            "function_expression",
+            "case_expression",
+            "cast_expression",
+            "subquery_expression",
+            "predicate_expression",
+            "nested_expression",
+            "other_expression",
+            "value",
+            "order_by_item"
+          ],
+          "limits": [
+            "Typed ordering expressions, ASC/DESC and NULL placement, append/remove/reorder."
+          ]
+        },
+        {
+          "id": "row_limit",
+          "sql": "LIMIT/OFFSET",
+          "backend_admission": "planner_decides",
+          "editor_coverage": "bounded",
+          "verification": [
+            "domain_round_trip",
+            "wasm_protocol",
+            "frontend_protocol",
+            "authorized_executor"
+          ],
+          "document_handling": "typed_tree",
+          "document_nodes": [
+            "limit_clause",
+            "offset_clause",
+            "literal_expression",
+            "value"
+          ],
+          "limits": [
+            "Non-negative integer LIMIT/OFFSET insertion, update and removal; unsupported clause forms fail closed."
+          ]
+        },
+        {
+          "id": "joins",
+          "sql": "JOIN",
+          "backend_admission": "planner_decides",
+          "editor_coverage": "bounded",
+          "verification": [
+            "domain_round_trip",
+            "wasm_protocol",
+            "frontend_protocol",
+            "authorized_executor"
+          ],
+          "document_handling": "typed_tree",
+          "document_nodes": [
+            "from_clause",
+            "relation_tree",
+            "join",
+            "relation",
+            "table_factor",
+            "identifier_expression",
+            "compound_identifier_expression",
+            "binary_expression",
+            "predicate_expression",
+            "other_expression"
+          ],
+          "limits": [
+            "Typed repeated JOIN construction with named or source-backed relations and typed ON/USING constraints.",
+            "Comment-bearing subtree replacement fails closed; full admitted JOIN grammar coverage remains unverified."
+          ]
+        },
+        {
+          "id": "common_table_expressions",
+          "sql": "WITH",
+          "backend_admission": "planner_decides",
+          "editor_coverage": "bounded",
+          "editor_operations": [
+            "document"
+          ],
+          "verification": [
+            "domain_edit_undo",
+            "wasm_protocol",
+            "frontend_protocol",
+            "authorized_executor",
+            "scope_resolution"
+          ],
+          "document_handling": "typed_tree",
+          "document_nodes": [
+            "with_clause",
+            "common_table_expression",
+            "query",
+            "select"
+          ],
+          "limits": [
+            "Scope-aware CTE rename, seed creation, unreferenced removal, body replacement and reorder."
+          ]
+        },
+        {
+          "id": "set_operations",
+          "sql": "UNION/INTERSECT/EXCEPT",
+          "backend_admission": "planner_decides",
+          "editor_coverage": "bounded",
+          "editor_operations": [
+            "document"
+          ],
+          "verification": [
+            "domain_edit_undo",
+            "wasm_protocol",
+            "frontend_protocol",
+            "authorized_executor"
+          ],
+          "document_handling": "typed_tree",
+          "document_nodes": [
+            "set_operation",
+            "set_operation_left",
+            "set_operation_right",
+            "query",
+            "select"
+          ],
+          "limits": [
+            "Typed operator/quantifier including BY NAME, seed addition, operand replacement/removal/swap."
+          ]
+        },
+        {
+          "id": "values_query",
+          "sql": "VALUES",
+          "backend_admission": "statement_gate_rejects",
+          "editor_coverage": "none",
+          "document_handling": "rejected_by_executor_gate",
+          "document_nodes": []
+        },
+        {
+          "id": "table_query",
+          "sql": "TABLE",
+          "backend_admission": "statement_gate_rejects",
+          "editor_coverage": "none",
+          "document_handling": "rejected_by_executor_gate",
+          "document_nodes": []
+        },
+        {
+          "id": "general_expressions",
+          "sql": "CASE/CAST/arithmetic/scalar functions",
+          "backend_admission": "planner_decides",
+          "editor_coverage": "bounded",
+          "editor_operations": [
+            "document"
+          ],
+          "verification": [
+            "domain_edit_undo",
+            "wasm_protocol",
+            "frontend_protocol",
+            "authorized_executor"
+          ],
+          "document_handling": "typed_tree",
+          "document_nodes": [
+            "identifier_expression",
+            "compound_identifier_expression",
+            "literal_expression",
+            "binary_expression",
+            "unary_expression",
+            "function_expression",
+            "case_expression",
+            "cast_expression",
+            "subquery_expression",
+            "predicate_expression",
+            "nested_expression",
+            "other_expression",
+            "value"
+          ],
+          "limits": [
+            "Typed literals, identifiers, operators, registered aggregates, casts, CASE, predicates and subquery seeds.",
+            "Unmodeled expression source is preserved; unsupported semantic fields and arbitrary construction remain explicit gaps."
+          ]
+        }
+      ],
+      "semantic_operations": [
+        "replace_identifier",
+        "replace_literal",
+        "replace_binary_operator",
+        "replace_unary_sign",
+        "replace_set_operation",
+        "add_set_operation_operand",
+        "remove_set_operation_operand",
+        "swap_set_operation_operands",
+        "replace_set_operation_operand",
+        "replace_cast_target_type",
+        "wrap_expression_in_cast",
+        "wrap_expression_in_aggregate",
+        "set_aggregate_function",
+        "set_aggregate_distinct",
+        "remove_aggregate",
+        "wrap_expression_in_case",
+        "wrap_expression_in_predicate",
+        "append_in_list_value",
+        "remove_last_in_list_value",
+        "replace_table_factor",
+        "add_join",
+        "add_from_relation",
+        "replace_join",
+        "rename_common_table_expression",
+        "add_common_table_expression",
+        "remove_common_table_expression",
+        "replace_common_table_expression_query",
+        "move_common_table_expression",
+        "replace_predicate_negation",
+        "add_case_branch",
+        "remove_case_branch",
+        "set_case_else",
+        "add_where_clause",
+        "set_filter_predicate",
+        "remove_filter_clause",
+        "compose_binary_expression",
+        "replace_expression_from_node",
+        "set_projection_expression",
+        "add_projection_expression",
+        "add_projection_column",
+        "expand_projection_wildcard",
+        "add_scalar_subquery_projection",
+        "wrap_expression_in_subquery_predicate",
+        "replace_expression_with_exists_subquery",
+        "add_group_by_expression",
+        "remove_group_by_item",
+        "move_group_by_item",
+        "add_order_by_expression",
+        "set_order_by_expression",
+        "set_order_by_options",
+        "remove_order_by_item",
+        "move_order_by_item",
+        "set_select_distinct",
+        "set_limit_value",
+        "remove_limit",
+        "set_offset_value",
+        "remove_offset",
+        "add_having_clause",
+        "remove_having_clause",
+        "remove_projection_item",
+        "move_projection_item",
+        "set_function_argument",
+        "remove_last_function_argument"
+      ],
+      "active_engine": "sql_document",
+      "coverage_complete": false,
+      "verification_gaps": [
+        "Full constructibility and editability of all runtime-admitted AST variants remains tracked by #4565.",
+        "Source-backed unmodeled expressions do not imply structured editing coverage."
+      ],
+      "source_parser": {
+        "crate": "sqlparser",
+        "version": "0.63.0"
+      },
+      "evidence": [
+        {
+          "id": "common-toolbar",
+          "selectors": [
+            [
+              "crates/ugoite-domain/src/sql_document.rs",
+              "fn semantic_filter_group_and_aggregate_ops_are_typed_and_undoable"
+            ],
+            [
+              "crates/ugoite-wasm/src/lib.rs",
+              "fn sql_document_common_toolbar_semantic_operations_have_wasm_parity"
+            ],
+            [
+              "frontend/src/components/SqlDocumentTreeEditor.test.tsx",
+              "updates aggregate functions, DISTINCT, and removal with typed operations"
+            ],
+            [
+              "crates/ugoite-iceberg/tests/authorized_query.rs",
+              "async fn typed_sql_document_filter_group_and_aggregate_edits_execute_authorized_queries"
+            ]
+          ]
+        },
+        {
+          "id": "nested-scopes",
+          "selectors": [
+            [
+              "crates/ugoite-domain/src/sql_document.rs",
+              "fn semantic_cte_body_replace_and_order_are_typed_and_undoable"
+            ],
+            [
+              "crates/ugoite-wasm/src/lib.rs",
+              "fn sql_document_nested_structure_edit_protocol_matches_native_and_undo"
+            ],
+            [
+              "frontend/src/components/SqlDocumentTreeEditor.test.tsx",
+              "replaces a CTE body with another query from the parsed document"
+            ],
+            [
+              "crates/ugoite-iceberg/tests/authorized_query.rs",
+              "async fn typed_sql_document_nested_structure_edits_execute_authorized_queries"
+            ]
+          ]
+        },
+        {
+          "id": "source-and-undo",
+          "selectors": [
+            [
+              "crates/ugoite-domain/src/sql_document.rs",
+              "fn semantic_edits_render_typed_leaves_and_preserve_untouched_source"
+            ],
+            [
+              "crates/ugoite-wasm/src/lib.rs",
+              "fn sql_document_semantic_edit_protocol_matches_native_and_undo"
+            ],
+            [
+              "frontend/src/lib/ugoite-client/protocol.test.ts",
+              "applySqlDocumentSemanticEditTransaction"
+            ],
+            [
+              "crates/ugoite-iceberg/tests/authorized_query.rs",
+              "async fn typed_sql_document_edits_execute_through_authorized_query_context"
+            ]
+          ]
+        }
+      ]
+    },
+    "legacy_subset_editor": {
+      "parser_dialect": "GenericDialect",
+      "parser_parity_fixture": "shared/sql/sql-document-parser-parity.json",
+      "typed_document_contract": {
+        "version": 17,
+        "protocol": "SqlDocumentNodeKind",
+        "semantic_protocol": "SqlDocumentNodeData",
+        "parser_engine": {
+          "crate": "datafusion",
+          "version": "54.1.0",
+          "recursion_limit": 256
+        },
+        "parser_dialect": "GenericDialect",
+        "statement_nodes": [
+          "query_statement",
+          "other_statement"
+        ],
+        "semantic_kinds": [
+          "identifier",
+          "compound_identifier",
+          "literal",
+          "typed_literal",
+          "binary_operator",
+          "unary_operator",
+          "function",
+          "case",
+          "cast",
+          "predicate",
+          "set_operation",
+          "with_clause",
+          "common_table_expression",
+          "relation",
+          "table_factor",
+          "unmodeled_expression",
+          "order_by_item",
+          "group_by_item"
+        ],
+        "node_kinds": [
+          "query_statement",
+          "other_statement",
+          "query",
+          "with_clause",
+          "common_table_expression",
+          "set_operation",
+          "set_operation_left",
+          "set_operation_right",
+          "select",
+          "select_list",
+          "select_item",
+          "from_clause",
+          "relation_tree",
+          "join",
+          "where_clause",
+          "group_by_clause",
+          "group_by_item",
+          "having_clause",
+          "order_by_clause",
+          "order_by_item",
           "limit_clause",
           "offset_clause",
           "relation",
@@ -431,7 +1147,8 @@
             "group_by_clause",
             "identifier_expression",
             "compound_identifier_expression",
-            "other_expression"
+            "other_expression",
+            "group_by_item"
           ],
           "limits": [
             "the group-by toolbar selects simple Form columns",
@@ -498,7 +1215,8 @@
             "predicate_expression",
             "nested_expression",
             "other_expression",
-            "value"
+            "value",
+            "order_by_item"
           ],
           "limits": [
             "the Sort toolbar edits simple columns; the SQL tree can append an existing same-query typed expression with ASC/DESC and optional NULLS FIRST/LAST",

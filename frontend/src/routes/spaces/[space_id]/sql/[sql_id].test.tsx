@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fireEvent,
   render,
@@ -151,6 +151,8 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     name: "Default",
     created_at: "2025-01-01T00:00:00Z",
   };
+
+  afterEach(() => vi.restoreAllMocks());
 
   beforeEach(() => {
     navigateMock.mockReset();
@@ -453,6 +455,70 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     query.mockRestore();
   });
 
+  it("plans and saves an argument type change as a draft while keeping exact revision previews", async () => {
+    seedSqlEntry("default", {
+      id: "saved-query",
+      name: "Typed query",
+      kind: "user-query",
+      sql: "SELECT $value",
+      variables: [{ name: "value", type: "integer", description: "" }],
+      created_at: "2025-03-01T00:00:00Z",
+      updated_at: "2025-03-02T00:00:00Z",
+      revision_id: "rev-1",
+    });
+    const plan = vi.spyOn(sqlApi, "plan");
+    const update = vi.spyOn(sqlApi, "update").mockResolvedValue({
+      id: "saved-query",
+      revisionId: "rev-2",
+    });
+    const query = vi.spyOn(sqlApi, "query").mockResolvedValue({
+      columns: ["value"],
+      rows: [[null]],
+      has_more: false,
+    });
+    render(() => <SpaceSqlDetailRoute />);
+    fireEvent.change(
+      await screen.findByRole("combobox", { name: "Type for value" }),
+      { target: { value: "string" } },
+    );
+    await waitFor(() =>
+      expect(plan).toHaveBeenCalledWith("default", {
+        sql: "SELECT $value",
+        parameters: { value: null },
+        parameter_types: { value: "string" },
+      }, expect.any(AbortSignal))
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith(
+        "default",
+        "saved-query",
+        expect.objectContaining({
+          sql: "SELECT $value",
+          variables: [{ name: "value", type: "string", description: "" }],
+          parent_revision_id: "rev-1",
+        }),
+      )
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Run Query" })).toBeEnabled()
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Run Query" }));
+    await waitFor(() =>
+      expect(query).toHaveBeenCalledWith(
+        "default",
+        expect.objectContaining({
+          saved_sql: { id: "saved-query", revision_id: "rev-2" },
+          parameter_types: { value: "string" },
+        }),
+        expect.any(AbortSignal),
+      )
+    );
+  });
+
   it("pins an edited query preview to the revision returned by Save", async () => {
     seedSqlEntry("default", {
       id: "saved-query",
@@ -479,6 +545,9 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     fireEvent.input(await screen.findByRole("textbox", { name: "SQL" }), {
       target: { value: "SELECT 2" },
     });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(update).toHaveBeenCalledOnce());
@@ -533,6 +602,9 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Add argument" }),
     );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
@@ -550,6 +622,9 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
         value: "SELECT * FROM records WHERE title = {{title}} LIMIT 2",
       },
     });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
     expect(update).toHaveBeenNthCalledWith(
@@ -584,6 +659,9 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     fireEvent.input(
       screen.getByRole("textbox", { name: "Default for count" }),
       { target: { value: "12" } },
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
     );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
@@ -626,6 +704,9 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     );
     expect(await screen.findByText("Argument is not referenced in SQL."))
       .toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(
       await screen.findByText(
@@ -676,6 +757,9 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
         "SELECT $total",
       );
     });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(update).toHaveBeenCalledWith("default", "saved-query", {
@@ -711,6 +795,9 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     render(() => <SpaceSqlDetailRoute />);
     const name = await screen.findByRole("textbox", { name: "Query name" });
     fireEvent.input(name, { target: { value: "   " } });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>

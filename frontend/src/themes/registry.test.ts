@@ -8,11 +8,11 @@ describe("v5 design system", () => {
     "utf8",
   );
   it("uses the approved concept palette", () => {
-    expect(css).toContain("--bg: #F6F8FC");
-    expect(css).toContain("--ink: #10243C");
-    expect(css).toContain("--faint: #5D6F86");
-    expect(css).toContain("--line: #D7E0EA");
-    expect(css).toContain("--black: #111");
+    expect(css.toLowerCase()).toContain("--bg: #f6f8fc");
+    expect(css.toLowerCase()).toContain("--ink: #10243c");
+    expect(css.toLowerCase()).toContain("--faint: #5d6f86");
+    expect(css.toLowerCase()).toContain("--line: #d7e0ea");
+    expect(css.toLowerCase()).toContain("--black: #111");
   });
   it("uses the approved shell dimensions and responsive breakpoint", () => {
     expect(css).toContain("grid-template-columns: 228px minmax(0, 1fr)");

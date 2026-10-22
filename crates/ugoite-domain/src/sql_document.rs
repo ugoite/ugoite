@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
     CastKind, CteAsMaterialized, Distinct, DuplicateTreatment, Expr, FunctionArg, FunctionArgExpr,
     FunctionArguments, GroupByExpr, Ident, LimitClause, ObjectName, ObjectNamePart, OrderByKind,
-    Query, Select, SelectItem, SetExpr, Spanned, Statement, TableFactor, Value, ValueWithSpan,
-    Visit, Visitor,
+    OrderBySort, Query, Select, SelectItem, SetExpr, Spanned, Statement, TableFactor, Value,
+    ValueWithSpan, Visit, Visitor,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserError};
@@ -8240,11 +8240,15 @@ impl QueryStructureCollector<'_> {
                                     Some(item_range),
                                     order_id,
                                     Some(SqlDocumentNodeData::OrderByItem {
-                                        direction: item.options.asc.map(|asc| {
-                                            if asc {
-                                                SqlDocumentOrderDirection::Asc
-                                            } else {
-                                                SqlDocumentOrderDirection::Desc
+                                        direction: item.options.sort.as_ref().and_then(|sort| {
+                                            match sort {
+                                                OrderBySort::Asc => {
+                                                    Some(SqlDocumentOrderDirection::Asc)
+                                                }
+                                                OrderBySort::Desc => {
+                                                    Some(SqlDocumentOrderDirection::Desc)
+                                                }
+                                                OrderBySort::Using(_) => None,
                                             }
                                         }),
                                         nulls_order: item.options.nulls_first.map(|first| {
@@ -8634,6 +8638,10 @@ impl QueryStructureCollector<'_> {
                 };
                 let join_end = self
                     .span_range(join)
+                    .map(|range| SqlSourceRange {
+                        start: join_start,
+                        end: range.end.max(relation_range.end),
+                    })
                     .and_then(|range| close_unbalanced_parentheses(self.source, self.tokens, range))
                     .map_or(relation_range.end, |range| {
                         range.end.max(relation_range.end)
@@ -9996,6 +10004,7 @@ fn table_factor_data(table_factor: &TableFactor) -> SqlDocumentNodeData {
         TableFactor::NestedJoin { alias, .. } => ("nested_join", alias.as_ref()),
         TableFactor::Pivot { alias, .. } => ("pivot", alias.as_ref()),
         TableFactor::Unpivot { alias, .. } => ("unpivot", alias.as_ref()),
+        TableFactor::UnpivotExpr { .. } => ("unpivot_expression", None),
         TableFactor::MatchRecognize { alias, .. } => ("match_recognize", alias.as_ref()),
         TableFactor::XmlTable { alias, .. } => ("xml_table", alias.as_ref()),
         TableFactor::SemanticView { alias, .. } => ("semantic_view", alias.as_ref()),
@@ -10335,11 +10344,9 @@ mod tests {
         assert!(token_texts.contains(&"\"MiX\""));
         assert!(token_texts.contains(&"'$day'"));
         assert!(token_texts.contains(&"$day"));
-        assert!(
-            token_texts
-                .iter()
-                .any(|text| text.starts_with("/* tail */"))
-        );
+        assert!(token_texts
+            .iter()
+            .any(|text| text.starts_with("/* tail */")));
         assert_eq!(
             document
                 .tokens
@@ -10404,12 +10411,10 @@ mod tests {
         assert!(changed.document.to_sql().contains("/* left */"));
         assert!(changed.document.to_sql().ends_with("/* tail */"));
         assert!(changed.document.to_sql().contains("FROM \"G\""));
-        assert!(
-            changed
-                .document
-                .to_sql()
-                .contains("ORDER BY \"Total\" DESC")
-        );
+        assert!(changed
+            .document
+            .to_sql()
+            .contains("ORDER BY \"Total\" DESC"));
 
         let undone = apply_sql_document_edit_transaction(&changed.document.source, &changed.undo)
             .expect("the typed edit returns a guarded inverse transaction");
@@ -11312,12 +11317,10 @@ mod tests {
         assert!(kinds.contains(&SqlDocumentNodeKind::CaseExpression));
         assert!(kinds.contains(&SqlDocumentNodeKind::CastExpression));
         assert!(kinds.contains(&SqlDocumentNodeKind::SubqueryExpression));
-        assert!(
-            document
-                .nodes
-                .iter()
-                .any(|node| node.parent.is_some_and(|parent| parent < node.id))
-        );
+        assert!(document
+            .nodes
+            .iter()
+            .any(|node| node.parent.is_some_and(|parent| parent < node.id)));
     }
 
     #[test]
@@ -11337,9 +11340,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("missing {kind:?} node containing {needle:?}"))
         };
         assert!(slice(SqlDocumentNodeKind::WithClause, "WITH c AS").starts_with("WITH c AS"));
-        assert!(
-            slice(SqlDocumentNodeKind::CommonTableExpression, "c AS (").contains("WHERE a > 0")
-        );
+        assert!(slice(SqlDocumentNodeKind::CommonTableExpression, "c AS (").contains("WHERE a > 0"));
         assert!(slice(SqlDocumentNodeKind::SetOperation, "UNION").contains("UNION"));
         assert!(slice(SqlDocumentNodeKind::SelectList, "SELECT c.a").starts_with("SELECT c.a"));
         assert!(slice(SqlDocumentNodeKind::FromClause, "FROM c JOIN").starts_with("FROM c JOIN"));
@@ -11380,12 +11381,10 @@ mod tests {
                     && node.parent == Some(with.id)
             })
             .expect("CTE belongs to WITH");
-        assert!(
-            document
-                .nodes
-                .iter()
-                .any(|node| node.kind == SqlDocumentNodeKind::Query && node.parent == Some(cte.id))
-        );
+        assert!(document
+            .nodes
+            .iter()
+            .any(|node| node.kind == SqlDocumentNodeKind::Query && node.parent == Some(cte.id)));
 
         let set_operation = document
             .nodes
@@ -11439,12 +11438,10 @@ mod tests {
         assert_eq!(document.status, SqlDocumentStatus::Parsed);
         assert_eq!(document.to_sql(), source);
         assert_eq!(document.contract_version, SQL_DOCUMENT_CONTRACT_VERSION);
-        assert!(
-            document
-                .tokens
-                .iter()
-                .all(|token| document.source_slice(token.range).is_some())
-        );
+        assert!(document
+            .tokens
+            .iter()
+            .all(|token| document.source_slice(token.range).is_some()));
 
         let has_semantic = |node_kind, expected: &dyn Fn(&SqlDocumentNodeData) -> bool| {
             document
@@ -13053,13 +13050,11 @@ mod tests {
             edited.document.source,
             "SELECT 1 /* keep */, (SELECT 1) AS __ugoite_scalar_subquery FROM \"G\" ORDER BY 1"
         );
-        assert!(
-            edited
-                .document
-                .nodes
-                .iter()
-                .any(|node| { node.kind == SqlDocumentNodeKind::SubqueryExpression })
-        );
+        assert!(edited
+            .document
+            .nodes
+            .iter()
+            .any(|node| { node.kind == SqlDocumentNodeKind::SubqueryExpression }));
         assert!(edited.document.nodes.iter().any(|node| {
             node.kind == SqlDocumentNodeKind::Select
                 && node.parent.is_some_and(|parent| {
@@ -13667,12 +13662,10 @@ mod tests {
             ),
         )
         .expect("GROUP BY keys can be reordered as source-backed nodes");
-        assert!(
-            moved_group
-                .document
-                .source
-                .contains("GROUP BY amount + 1, amount")
-        );
+        assert!(moved_group
+            .document
+            .source
+            .contains("GROUP BY amount + 1, amount"));
         let restored =
             apply_sql_document_edit_transaction(&moved_group.document.source, &moved_group.undo)
                 .expect("group-key reordering has an exact inverse");
@@ -13689,12 +13682,10 @@ mod tests {
             ),
         )
         .expect("a GROUP BY key can be removed");
-        assert!(
-            removed_group
-                .document
-                .source
-                .contains("GROUP BY amount HAVING")
-        );
+        assert!(removed_group
+            .document
+            .source
+            .contains("GROUP BY amount HAVING"));
         let restored = apply_sql_document_edit_transaction(
             &removed_group.document.source,
             &removed_group.undo,
@@ -13781,12 +13772,10 @@ mod tests {
             ),
         )
         .expect("a simple aggregate wrapper can be removed");
-        assert!(
-            removed_aggregate
-                .document
-                .source
-                .contains("HAVING amount > 0")
-        );
+        assert!(removed_aggregate
+            .document
+            .source
+            .contains("HAVING amount > 0"));
         let restored = apply_sql_document_edit_transaction(
             &removed_aggregate.document.source,
             &removed_aggregate.undo,
@@ -14906,12 +14895,9 @@ mod tests {
             ancestors.push(node);
             ancestor = node.parent;
         }
-        assert!(
-            ancestors
-                .iter()
-                .any(|node| node.id == nested_item.id
-                    && node.kind == SqlDocumentNodeKind::SelectItem)
-        );
+        assert!(ancestors
+            .iter()
+            .any(|node| node.id == nested_item.id && node.kind == SqlDocumentNodeKind::SelectItem));
 
         for comment in ["/* before */", "/* wildcard tail */", "/* alias tail */"] {
             assert!(document.tokens.iter().any(|token| {
@@ -14995,18 +14981,14 @@ mod tests {
         let source = "-- 日\nSELECT '東京' AS \"日付\"";
         let document = parse_sql_document(source);
         assert_eq!(document.status, SqlDocumentStatus::Parsed);
-        assert!(
-            document
-                .tokens
-                .iter()
-                .any(|token| { document.source_slice(token.range) == Some("'東京'") })
-        );
-        assert!(
-            document
-                .tokens
-                .iter()
-                .any(|token| { document.source_slice(token.range) == Some("\"日付\"") })
-        );
+        assert!(document
+            .tokens
+            .iter()
+            .any(|token| { document.source_slice(token.range) == Some("'東京'") }));
+        assert!(document
+            .tokens
+            .iter()
+            .any(|token| { document.source_slice(token.range) == Some("\"日付\"") }));
     }
 
     #[test]
@@ -15082,18 +15064,14 @@ mod tests {
                     && source.is_char_boundary(range.end)
             })
         }));
-        assert!(
-            document
-                .nodes
-                .iter()
-                .any(|node| node.kind == SqlDocumentNodeKind::CaseExpression)
-        );
-        assert!(
-            document
-                .nodes
-                .iter()
-                .any(|node| node.kind == SqlDocumentNodeKind::CastExpression)
-        );
+        assert!(document
+            .nodes
+            .iter()
+            .any(|node| node.kind == SqlDocumentNodeKind::CaseExpression));
+        assert!(document
+            .nodes
+            .iter()
+            .any(|node| node.kind == SqlDocumentNodeKind::CastExpression));
         // `Parsed` is syntax state only. No plan or executor admission is run
         // by this document parser.
     }
@@ -15290,13 +15268,11 @@ mod tests {
         .expect("syntax diagnostics do not reject a source edit");
 
         assert_eq!(result.document.status, SqlDocumentStatus::InvalidSql);
-        assert!(
-            result
-                .document
-                .diagnostics
-                .iter()
-                .any(|diagnostic| { diagnostic.code == SqlDocumentDiagnosticCode::ParseFailed })
-        );
+        assert!(result
+            .document
+            .diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.code == SqlDocumentDiagnosticCode::ParseFailed }));
         assert_eq!(result.document.to_sql(), "SELECT ( FROM \"G\"");
     }
 

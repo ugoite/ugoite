@@ -266,7 +266,7 @@ describe("portable Ugoite API protocol WASM", () => {
     const sourceBytes = new TextEncoder().encode(sql);
 
     expect(document).toMatchObject({
-      contract_version: 14,
+      contract_version: 17,
       source: sql,
       status: "parsed",
     });
@@ -1107,7 +1107,7 @@ describe("portable Ugoite API protocol WASM", () => {
       }],
     });
     expect(edited.document.source).toBe(
-      'SELECT 1, (SELECT 1) FROM "G"',
+      'SELECT 1, (SELECT 1) AS __ugoite_scalar_subquery FROM "G"',
     );
     expect(
       edited.document.nodes.some((node) => node.kind === "subquery_expression"),

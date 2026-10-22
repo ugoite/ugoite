@@ -1,71 +1,70 @@
 ---
-title: 'Ugoite SQL'
+title: "Ugoite SQL"
 ---
 
 Ugoite separates SQL execution from Saved SQL persistence:
 
 1. **Saved SQL** under `/spaces/{space_id}/sql` is versioned Knowledge stored in
    the Space.
-2. **SQL Query** under `/spaces/{space_id}/sql/query` is a stateless,
-   read-only execution surface. It does not create a session, result object, or
-   query metadata in the Space.
+2. **SQL Query** under `/spaces/{space_id}/sql/query` is a stateless, read-only
+   execution surface. It does not create a session, result object, or query
+   metadata in the Space.
 3. **SQL Query Plan** under `/spaces/{space_id}/sql/query/plan` checks a query
    with the caller's current read authorization and returns its planned output
    schema without collecting result rows or writing Knowledge.
 
 The CLI uses `ugoite sql query`, `ugoite sql count`, `ugoite sql saved run`, and
 bounded `ugoite sql export`. `sql saved run` selects a current or exact Saved
-SQL revision through the existing `sql.query` operation. Export repeatedly
-calls that operation and streams complete results as NDJSON; it is CLI
-orchestration, not another REST operation. Local Core and remote REST targets
-use the same request DTOs and semantics. `ugoite sql lint` is parser-only:
-syntax validity does not authorize execution or resolve a Form. The Browser SQL
-editor uses the authorized plan operation for runtime-admission diagnostics;
-the parser-only CLI command keeps its existing meaning.
+SQL revision through the existing `sql.query` operation. Export repeatedly calls
+that operation and streams complete results as NDJSON; it is CLI orchestration,
+not another REST operation. Local Core and remote REST targets use the same
+request DTOs and semantics. `ugoite sql lint` is parser-only: syntax validity
+does not authorize execution or resolve a Form. The Browser SQL editor uses the
+authorized plan operation for runtime-admission diagnostics; the parser-only CLI
+command keeps its existing meaning.
 
 New SQL can refer to authorized Forms by their quoted names. Ordinary SQL
 resolves those names in the current read publication. A new Saved SQL revision
 stores the server-derived Form IDs behind those names, and execution of that
 revision keeps those IDs fixed across renames while rechecking authorization.
-The Browser editor offers Form-name completions and displays saved/current
-names in Saved SQL diagnostics.
+The Browser editor offers Form-name completions and displays saved/current names
+in Saved SQL diagnostics.
 
 SQL accepts exactly one read-only `SELECT` statement. The authorized query
 context exposes only permitted Form relations, columns, and functions, and
 executes through the fixed Space publication selected for the request chain.
-Relation-free scalar queries such as `SELECT 1` are also valid; statements
-that name relations still resolve only against Forms authorized for the caller.
+Relation-free scalar queries such as `SELECT 1` are also valid; statements that
+name relations still resolve only against Forms authorized for the caller.
 Core-owned SQL function policies admit scalar, aggregate, and window functions
 independently. Stateless page and count inputs share the closed
 `ReadOnlyAggregateV1` allowlist: `COUNT`, `SUM`, `AVG`, `MIN`, and `MAX` are
 available as aggregate functions, while window functions and unrelated
-aggregates remain unavailable. The explicit count operation applies its
-trusted row-count expression to the authorized query plan separately from
-user SQL. Parameters use DataFusion's native `$name` syntax and are bound as
-typed scalars before planning; parameter text is never substituted into SQL.
-Saved SQL variable declarations may carry optional scalar defaults validated
-against the declared ADR-023 type. A default is stored with its Saved SQL
-revision and is shown as the initial value in Browser variable inputs; it does
-not become an execution parameter unless the user explicitly runs the query
-with that value. `sql.query` and `sql saved run` continue to use only the
-parameters supplied in the request.
+aggregates remain unavailable. The explicit count operation applies its trusted
+row-count expression to the authorized query plan separately from user SQL.
+Parameters use DataFusion's native `$name` syntax and are bound as typed scalars
+before planning; parameter text is never substituted into SQL. Saved SQL
+variable declarations may carry optional scalar defaults validated against the
+declared ADR-023 type. A default is stored with its Saved SQL revision and is
+shown as the initial value in Browser variable inputs; it does not become an
+execution parameter unless the user explicitly runs the query with that value.
+`sql.query` and `sql saved run` continue to use only the parameters supplied in
+the request.
 
 The permitted aggregate functions are `COUNT`, `SUM`, `AVG`, `MIN`, and `MAX`;
 `MEAN` is an alias for `AVG`. `COUNT()` and `COUNT(*)` count rows,
 `COUNT(expression, ...)` counts rows where every argument is non-`NULL`, and
 `COUNT(DISTINCT expression)` counts distinct non-`NULL` values. DataFusion also
-admits `COUNT(DISTINCT *)`, which counts the single distinct wildcard marker
-for a non-empty input. `SUM` and `AVG` accept numeric values; `MIN`/`MAX`
-accept comparable scalar values. `SUM`,
-`AVG`, and floating aggregate results use checked accumulation: integer and
-decimal overflow, unsupported numeric types, and non-finite floating results
-fail the query instead of returning a wrapped, partial, or non-finite value.
-Integer `AVG` returns `Float64`: integer inputs are accumulated exactly, then
-the result follows IEEE-754 Float64 precision and may round near large integer
-boundaries. `AVG` over Decimal input stays Decimal with its declared output
-scale; cast to Decimal when fixed base-10 precision is required.
-`COUNT`, checked `SUM`, and checked `AVG` preserve SQL `DISTINCT` semantics.
-Window functions are not part of this read-only aggregate policy.
+admits `COUNT(DISTINCT *)`, which counts the single distinct wildcard marker for
+a non-empty input. `SUM` and `AVG` accept numeric values; `MIN`/`MAX` accept
+comparable scalar values. `SUM`, `AVG`, and floating aggregate results use
+checked accumulation: integer and decimal overflow, unsupported numeric types,
+and non-finite floating results fail the query instead of returning a wrapped,
+partial, or non-finite value. Integer `AVG` returns `Float64`: integer inputs
+are accumulated exactly, then the result follows IEEE-754 Float64 precision and
+may round near large integer boundaries. `AVG` over Decimal input stays Decimal
+with its declared output scale; cast to Decimal when fixed base-10 precision is
+required. `COUNT`, checked `SUM`, and checked `AVG` preserve SQL `DISTINCT`
+semantics. Window functions are not part of this read-only aggregate policy.
 `sql.query.count` remains the count of rows in the SQL result and is distinct
 from a SQL expression such as `SELECT COUNT(*) ...`.
 
@@ -80,28 +79,34 @@ execution lifecycle is introduced.
 `sql.query.plan` accepts the SQL, typed parameters, and optional exact Saved SQL
 revision reference used by query planning. It resolves permitted Forms, checks
 current read access, builds and validates the physical plan, and returns only
-the server-derived output schema. It does not read result rows or create a
-query result, session, continuation, or Space revision. Planner diagnostics
-from this operation are the execution-admission boundary for the shared SQL
-GUI; successful parsing alone is not sufficient to save or execute a draft.
+the server-derived output schema. It does not read result rows or create a query
+result, session, continuation, or Space revision. Planner diagnostics from this
+operation are the planning-admission boundary for the shared SQL GUI; successful
+parsing alone is not sufficient to save a draft. Plan success is specific to its
+parameters, authorization and publication; data-dependent execution failures
+remain possible. Definition preflight ignores transient preview input values and
+uses declared defaults or typed NULLs. Edited Saved SQL definitions are planned
+as drafts against the same current Form-name resolution used to derive bindings
+at save time; exact-revision previews keep their stored bindings and types.
+Every subsequent mutation or query rechecks its own authorization and revision
+constraints.
 
 Every new SQL page carries a server-owned `result_schema` in column order,
 including for empty and all-`NULL` results. Each result column also reports
 whether the planned output can be SQL `NULL`. Readers of typed schemas that
 predate this additive field treat the column as nullable. Decimal columns use
 the logical type `decimal`; their row values are strings containing the exact
-base-10 value, with no exponent and with the planned fractional scale
-preserved. They are never converted through binary floating point. Integer and
-float columns retain their portable types. Clients may opt in to
-`exact_integer_rows` for column-aligned base-10 strings that preserve integer
-digits beyond JavaScript's safe integer range; this leaves `rows` and the
-`integer` schema unchanged.
-Composition may include an optional request `execution_id` to bind its
-server-side result to the exact request coordinate, including any continuation,
-and discard a delayed page after the inputs have changed. Ordinary SQL clients
-may omit it; the public page shape remains unchanged.
-Numeric overflow and non-finite-result failures use stable SQL aggregate error
-codes with safe messages.
+base-10 value, with no exponent and with the planned fractional scale preserved.
+They are never converted through binary floating point. Integer and float
+columns retain their portable types. Clients may opt in to `exact_integer_rows`
+for column-aligned base-10 strings that preserve integer digits beyond
+JavaScript's safe integer range; this leaves `rows` and the `integer` schema
+unchanged. Composition may include an optional request `execution_id` to bind
+its server-side result to the exact request coordinate, including any
+continuation, and discard a delayed page after the inputs have changed. Ordinary
+SQL clients may omit it; the public page shape remains unchanged. Numeric
+overflow and non-finite-result failures use stable SQL aggregate error codes
+with safe messages.
 
 SQL results are not automatically materialized as Knowledge. A SELECT cannot
 write a publication, derived relation, or execution metadata. Future SQL DML

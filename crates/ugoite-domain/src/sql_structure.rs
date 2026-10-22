@@ -11,8 +11,8 @@ use sqlparser::ast::{
     BinaryOperator, DataType, Distinct, DuplicateTreatment, Expr, Function, FunctionArg,
     FunctionArgExpr, FunctionArgumentList, FunctionArguments, GroupByExpr, Ident, JoinConstraint,
     JoinOperator, LimitClause, ObjectName, ObjectNamePart, OrderBy, OrderByExpr, OrderByKind,
-    OrderByOptions, OrderBySort, Query, Select, SelectFlavor, SelectItem, SetExpr, Spanned, Statement,
-    TableFactor, TableWithJoins, TypedString, UnaryOperator, Value, ValueWithSpan,
+    OrderByOptions, OrderBySort, Query, Select, SelectFlavor, SelectItem, SetExpr, Spanned,
+    Statement, TableFactor, TableWithJoins, TypedString, UnaryOperator, Value, ValueWithSpan,
 };
 use sqlparser::tokenizer::Span;
 use std::collections::BTreeSet;
@@ -5922,7 +5922,7 @@ mod tests {
         let matrix: serde_json::Value =
             serde_json::from_str(include_str!("../../../shared/sql/ugoite-sql-rules.json"))
                 .expect("shared SQL rules must remain valid JSON");
-        let editor = &matrix["feature_matrix"]["editor"];
+        let editor = &matrix["feature_matrix"]["legacy_subset_editor"];
         let relation_limits = editor["constructs"]
             .as_array()
             .expect("editor constructs must be an array")

@@ -260,6 +260,25 @@ describe("SqlStructureToolbar typed SQL Document actions", () => {
     await waitFor(() => expect(currentSql()).toBe(changedSql));
   });
 
+  it("keeps directly authored reserved relations editable and hides them from the Form chooser", async () => {
+    const reserved = {
+      ...formContext,
+      identity: "reserved",
+      relationSelectable: false,
+      label: "Reserved",
+      parser: { ...formContext.parser, relation: "Reserved" },
+    };
+    const source = 'SELECT 1 FROM "Reserved"';
+    const { actions, currentSql } = setup(source, [formContext, reserved]);
+    await waitFor(() => expect(actions()).toHaveLength(12));
+    fireEvent.click(screen.getByRole("button", { name: "Form" }));
+    const choices = await screen.findByRole("combobox", { name: "Form" });
+    expect(choices.querySelector('option[value="G"]')).not.toBeNull();
+    expect(choices.querySelector('option[value="Reserved"]')).toBeNull();
+    expect(currentSql()).toBe(source);
+    expect(applySemanticEditMock).not.toHaveBeenCalled();
+  });
+
   it("keeps Arguments available without Form context", async () => {
     const { actions } = setup("SELECT 1");
     await waitFor(() => expect(actions()).toHaveLength(12));

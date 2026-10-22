@@ -66,6 +66,9 @@ export default function SpaceSqlDetailRoute() {
   const [defaultDrafts, setDefaultDrafts] = createSignal<
     Record<string, SqlVariableDefaultDraft>
   >({});
+  const [revisionVariables, setRevisionVariables] = createSignal<SqlVariable[]>(
+    [],
+  );
   const [revisionId, setRevisionId] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal<"save" | "delete" | null>(null);
   const [actionError, setActionError] = createSignal<string | null>(null);
@@ -84,6 +87,7 @@ export default function SpaceSqlDetailRoute() {
     setSavedSql(current.sql);
     const declared = current.variables ?? [];
     setSavedVariables([...declared]);
+    setRevisionVariables([...declared]);
     setDefaultDrafts({});
     setRevisionId(current.revision_id);
   });
@@ -154,7 +158,7 @@ export default function SpaceSqlDetailRoute() {
     return queryName().trim() !== savedName() || sqlInput() !== savedSql() ||
       nextVariables.invalid !== undefined ||
       JSON.stringify(nextVariables.variables) !==
-        JSON.stringify(savedVariables());
+        JSON.stringify(revisionVariables());
   });
   const queryVariablesHref = () =>
     `/spaces/${encodeURIComponent(spaceId())}/sql/${
@@ -165,9 +169,17 @@ export default function SpaceSqlDetailRoute() {
     spaceId,
     sql: () => normalized().sql,
     variables: workspaceVariables,
+    planParameters: "definition",
+    planSavedSql: () => undefined,
     savedSql: () => {
       const current = entry();
       if (!current || sqlInput() !== savedSql()) return undefined;
+      const types = (variables: readonly SqlVariable[]) =>
+        variables.map(({ name, type }) => ({ name, type }));
+      if (
+        JSON.stringify(types(savedVariables())) !==
+          JSON.stringify(types(revisionVariables()))
+      ) return undefined;
       return {
         id: current.id,
         revisionId: revisionId() ?? current.revision_id,
@@ -301,11 +313,12 @@ export default function SpaceSqlDetailRoute() {
     const currentPlan = workspace.plan();
     if (
       JSON.stringify({
-        sql: sqlInput(),
-        arguments: savedVariables(),
-        defaults: defaultDrafts(),
-        revision: revisionId() ?? entry()?.revision_id,
-      }) !== saveIdentity || currentPlan.status !== "success" ||
+          sql: sqlInput(),
+          arguments: savedVariables(),
+          defaults: defaultDrafts(),
+          revision: revisionId() ?? entry()?.revision_id,
+        }) !== saveIdentity ||
+      currentPlan.status !== "success" ||
       !currentPlan.isCurrent
     ) {
       setActionError(currentPlan.error ?? t("sqlPage.planPending"));
@@ -328,6 +341,7 @@ export default function SpaceSqlDetailRoute() {
       setSavedName(name ?? "");
       setSavedSql(sql);
       setSavedVariables(nextVariables.variables);
+      setRevisionVariables(nextVariables.variables);
       setDefaultDrafts({});
       setRevisionId(result.revisionId);
     } catch (error) {

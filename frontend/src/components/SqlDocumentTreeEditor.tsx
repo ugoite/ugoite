@@ -1840,7 +1840,9 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     if (node.kind === "where_clause" || node.kind === "having_clause") {
       if (filterAction() === "remove") {
         return {
-          kind: "remove_filter_clause",
+          kind: node.kind === "having_clause"
+            ? "remove_having_clause"
+            : "remove_filter_clause",
           node_id: node.id,
           expected_kind: node.kind,
         };

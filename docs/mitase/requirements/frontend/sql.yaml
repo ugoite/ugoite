@@ -48,12 +48,12 @@ requirements:
           - id: sql-diagnostics
             adapter: typescript
             path: frontend/src/lib/sql.test.ts
-            selector: { kind: test, name: "should flag missing select clause" }
+            selector: { kind: test, name: "reports the read-only statement policy from Rust SQL Document" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-036#criterion.editor-contract
                 covers: [FEAT-FE-006#binding.frontend/target.sql-helpers]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: "should flag missing select clause" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: "reports the read-only statement policy from Rust SQL Document" } }
           - id: sql-schema
             adapter: typescript
             path: frontend/src/lib/sql.test.ts
@@ -75,21 +75,21 @@ requirements:
           - id: shared-rules-lint
             adapter: typescript
             path: frontend/src/lib/sql.test.ts
-            selector: { kind: test, name: "uses the shared SQL rules for linting" }
+            selector: { kind: test, name: "uses Rust SQL Document as the source of statement diagnostics" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-036#criterion.shared-rules
                 covers: [FEAT-FE-006#binding.frontend/target.sql-helpers, FEAT-FE-006#binding.frontend/target.shared-sql-rules]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: "uses the shared SQL rules for linting" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: "uses Rust SQL Document as the source of statement diagnostics" } }
           - id: sql-read-only-policy
             adapter: typescript
             path: frontend/src/lib/sql.test.ts
-            selector: { kind: test, name: "reports the read-only policy separately from server syntax lint" }
+            selector: { kind: test, name: "classifies read-only policy from the top-level statement form" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-036#criterion.editor-contract
                 covers: [FEAT-FE-006#binding.frontend/target.sql-helpers]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: "reports the read-only policy separately from server syntax lint" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: "classifies read-only policy from the top-level statement form" } }
 
   - id: REQ-FE-050
     title: SQL Query Management API Client
@@ -223,20 +223,20 @@ requirements:
           - id: browser-create
             adapter: typescript
             path: e2e/saved-sql-route.test.ts
-            selector: { kind: test, name: "REQ-FE-063 @smoke: new saved SQL uses the shared structure actions and runs through Saved SQL" }
+            selector: { kind: test, name: "REQ-FE-063 @smoke: shared SQL Workspace round-trips a Form query through save and run" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-063#criterion.relation-free-starter
                 covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063 @smoke: new saved SQL uses the shared structure actions and runs through Saved SQL" } }
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063 @smoke: shared SQL Workspace round-trips a Form query through save and run" } }
               - kind: verifies
                 criterion: REQ-FE-063#criterion.explicit-save-and-run
                 covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063 @smoke: new saved SQL uses the shared structure actions and runs through Saved SQL" } }
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063 @smoke: shared SQL Workspace round-trips a Form query through save and run" } }
               - kind: verifies
                 criterion: REQ-FE-063#criterion.shared-structure-actions
                 covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063 @smoke: new saved SQL uses the shared structure actions and runs through Saved SQL" } }
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063 @smoke: shared SQL Workspace round-trips a Form query through save and run" } }
           - id: typed-default-create
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/sql/new.test.tsx
@@ -248,13 +248,13 @@ requirements:
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.test.tsx", test: "saves an explicitly enabled default for a SQL variable" } }
           - id: form-options-readiness
             adapter: typescript
-            path: frontend/src/routes/spaces/[space_id]/sql/new.test.tsx
-            selector: { kind: test, name: keeps Form disabled after SQL analysis until Form options resolve }
+            path: frontend/src/routes/spaces/[space_id]/sql/new.form-options.test.tsx
+            selector: { kind: test, name: offers resolved Form choices in the SQL relation tree }
             claims:
               - kind: verifies
                 criterion: REQ-FE-063#criterion.shared-structure-actions
                 covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.test.tsx", test: "keeps Form disabled after SQL analysis until Form options resolve" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.form-options.test.tsx", test: "offers resolved Form choices in the SQL relation tree" } }
 
   - id: REQ-FE-061
     title: Saved SQL List Route Guidance
@@ -656,9 +656,9 @@ requirements:
           - id: sql-structure-proposal
             adapter: typescript
             path: frontend/src/components/SqlStructureToolbar.test.tsx
-            selector: { kind: test, name: intersects Form capabilities and changes SQL only after proposal confirmation }
+            selector: { kind: test, name: adds Form G to SELECT 1 through the typed FROM operation }
             claims:
               - kind: verifies
                 criterion: REQ-FE-080#criterion.safe-structured-operations
                 covers: [FEAT-FE-008#binding.frontend/target.sql-structure-toolbar]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlStructureToolbar.test.tsx, test: intersects Form capabilities and changes SQL only after proposal confirmation } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlStructureToolbar.test.tsx, test: adds Form G to SELECT 1 through the typed FROM operation } }

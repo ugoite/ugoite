@@ -52,6 +52,10 @@ interface SqlWorkspaceControllerOptions {
   sql: () => string;
   variables: () => readonly SqlWorkspaceVariableDefinition[];
   savedSql?: () => { id: string; revisionId: string } | undefined;
+  /** Draft saves resolve current Form names; exact revision previews retain bindings. */
+  planSavedSql?: () => { id: string; revisionId: string } | undefined;
+  /** Definition preflight is independent of transient preview input values. */
+  planParameters?: "definition" | "values";
 }
 
 type PageState = {
@@ -174,8 +178,30 @@ export function createSqlWorkspaceController(
     return { identity, sql, variables, values, savedSql };
   });
 
+  const planParts = createMemo(
+    () => {
+      const parts = requestParts();
+      const values = options.planParameters === "definition"
+        ? {}
+        : parts.values;
+      const savedSql = options.planSavedSql
+        ? options.planSavedSql()
+        : parts.savedSql;
+      const identity = JSON.stringify({
+        spaceId: options.spaceId(),
+        sql: parts.sql,
+        variables: parts.variables,
+        values,
+        savedSql,
+      });
+      return { ...parts, values, savedSql, identity };
+    },
+    undefined,
+    { equals: (previous, next) => previous.identity === next.identity },
+  );
+
   const plan = createMemo<SQLWorkspacePlanState>(() => {
-    const identity = requestParts().identity;
+    const identity = planParts().identity;
     const state = planState();
     if (state.identity !== identity) {
       return { status: "pending", isCurrent: false };
@@ -210,7 +236,7 @@ export function createSqlWorkspaceController(
   });
 
   createEffect(() => {
-    const parts = requestParts();
+    const parts = planParts();
     const generation = ++planGeneration;
     if (planTimer !== undefined) clearTimeout(planTimer);
     planTimer = undefined;
@@ -226,11 +252,11 @@ export function createSqlWorkspaceController(
       planTimer = undefined;
       let built: BuiltRequest;
       try {
-        built = buildRequest();
+        built = buildRequest(undefined, parts);
       } catch (error) {
         if (
           generation === planGeneration &&
-          parts.identity === requestParts().identity
+          parts.identity === planParts().identity
         ) {
           setPlanState({
             identity: parts.identity,
@@ -243,7 +269,7 @@ export function createSqlWorkspaceController(
       }
       if (
         generation !== planGeneration || built.identity !== parts.identity ||
-        parts.identity !== requestParts().identity
+        parts.identity !== planParts().identity
       ) return;
 
       const controller = new AbortController();
@@ -260,7 +286,7 @@ export function createSqlWorkspaceController(
         () => {
           if (
             generation === planGeneration && !controller.signal.aborted &&
-            parts.identity === requestParts().identity
+            parts.identity === planParts().identity
           ) {
             setPlanState({
               identity: parts.identity,
@@ -272,7 +298,7 @@ export function createSqlWorkspaceController(
         (error) => {
           if (
             generation === planGeneration && !controller.signal.aborted &&
-            parts.identity === requestParts().identity && !abortError(error)
+            parts.identity === planParts().identity && !abortError(error)
           ) {
             setPlanState({
               identity: parts.identity,
@@ -316,8 +342,10 @@ export function createSqlWorkspaceController(
     };
   });
 
-  const buildRequest = (continuation?: string): BuiltRequest => {
-    const parts = requestParts();
+  const buildRequest = (
+    continuation?: string,
+    parts = requestParts(),
+  ): BuiltRequest => {
     const parameters: Record<string, unknown> = {};
     const parameterTypes: Record<string, string> = {};
     for (const variable of parts.variables) {

@@ -333,6 +333,28 @@ describe("/spaces/:space_id/sql/new", () => {
       .toBeInTheDocument();
   });
 
+  it("keeps Save disabled while the current authorized plan is pending or rejected", async () => {
+    let resolvePlan!: (value: { result_schema: [] }) => void;
+    sqlPlanMock.mockImplementationOnce(() =>
+      new Promise((resolve) => {
+        resolvePlan = resolve;
+      })
+    );
+    render(() => <SpaceQueryCreateRoute />);
+    const editor = await screen.findByRole("textbox", { name: "SQL" });
+    await waitFor(() => expect(sqlPlanMock).toHaveBeenCalled());
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(save).toBeDisabled();
+    fireEvent.click(save);
+    expect(sqlCreateMock).not.toHaveBeenCalled();
+    sqlPlanMock.mockRejectedValue(new Error("Plan rejected"));
+    fireEvent.input(editor, { target: { value: "SELECT hidden_column" } });
+    resolvePlan({ result_schema: [] });
+    await waitFor(() => expect(sqlPlanMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(save).toBeDisabled());
+    expect(sqlCreateMock).not.toHaveBeenCalled();
+  });
+
   it("REQ-FE-063: starts from a relation-free draft and saves through the shared SQL workspace", async () => {
     render(() => <SpaceQueryCreateRoute />);
 
@@ -355,6 +377,9 @@ describe("/spaces/:space_id/sql/new", () => {
     fireEvent.input(screen.getByLabelText("Query name"), {
       target: { value: "Relation-free draft" },
     });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -398,6 +423,9 @@ describe("/spaces/:space_id/sql/new", () => {
     );
     fireEvent.click(
       within(dialog).getAllByRole("button", { name: "Close" }).slice(-1)[0],
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
     );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
@@ -446,6 +474,9 @@ describe("/spaces/:space_id/sql/new", () => {
         -1,
       )[0],
     );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -480,6 +511,9 @@ describe("/spaces/:space_id/sql/new", () => {
     fireEvent.click(
       within(dialog).getAllByRole("button", { name: "Close" }).slice(-1)[0],
     );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(
       await screen.findByText(
@@ -489,6 +523,9 @@ describe("/spaces/:space_id/sql/new", () => {
     expect(sqlCreateMock).not.toHaveBeenCalled();
 
     fireEvent.input(editor, { target: { value: "SELECT $page_size" } });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(sqlCreateMock).toHaveBeenCalledWith(
@@ -534,6 +571,9 @@ describe("/spaces/:space_id/sql/new", () => {
     fireEvent.click(
       within(dialog).getAllByRole("button", { name: "Close" }).slice(-1)[0],
     );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(sqlCreateMock).toHaveBeenCalledWith(
@@ -571,6 +611,9 @@ describe("/spaces/:space_id/sql/new", () => {
     );
     fireEvent.click(
       within(dialog).getAllByRole("button", { name: "Close" }).slice(-1)[0],
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
     );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 

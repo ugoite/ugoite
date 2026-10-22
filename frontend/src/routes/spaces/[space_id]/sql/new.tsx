@@ -105,6 +105,8 @@ export default function SpaceQueryCreateRoute() {
     spaceId,
     sql: normalizedSql,
     variables: workspaceVariables,
+    planParameters: "definition",
+    planSavedSql: () => undefined,
   });
 
   const handleSqlChange = (sql: string) => {
@@ -221,10 +223,11 @@ export default function SpaceQueryCreateRoute() {
     const currentPlan = workspace.plan();
     if (
       JSON.stringify({
-        sql: sqlInput(),
-        arguments: argumentDefinitions(),
-        defaults: defaultDrafts(),
-      }) !== saveIdentity || currentPlan.status !== "success" ||
+          sql: sqlInput(),
+          arguments: argumentDefinitions(),
+          defaults: defaultDrafts(),
+        }) !== saveIdentity ||
+      currentPlan.status !== "success" ||
       !currentPlan.isCurrent
     ) {
       setError(currentPlan.error ?? t("sqlPage.planPending"));

@@ -422,7 +422,9 @@ describe("SQLWorkspace", () => {
             role="dialog"
             aria-label="Row limit"
           >
-            <button onClick={() => setDialogOpen(false)}>Close</button>
+            <button type="button" onClick={() => setDialogOpen(false)}>
+              Close
+            </button>
           </div>
         </Show>
       );

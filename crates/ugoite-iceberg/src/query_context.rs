@@ -2544,6 +2544,227 @@ mod function_policy_tests {
     }
 
     #[tokio::test]
+    async fn schema_only_planning_never_executes_the_physical_plan() -> anyhow::Result<()> {
+        use async_trait::async_trait;
+        use datafusion::execution::context::QueryPlanner;
+        use datafusion::execution::{SessionState, SessionStateBuilder, TaskContext};
+        use datafusion::logical_expr::LogicalPlan;
+        use datafusion::physical_plan::{
+            DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties, SendableRecordBatchStream,
+        };
+        use datafusion::physical_planner::{DefaultPhysicalPlanner, PhysicalPlanner};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        #[derive(Debug)]
+        struct ProbeExec {
+            inner: Arc<dyn ExecutionPlan>,
+            executions: Arc<AtomicUsize>,
+        }
+        impl DisplayAs for ProbeExec {
+            fn fmt_as(
+                &self,
+                _: DisplayFormatType,
+                f: &mut std::fmt::Formatter<'_>,
+            ) -> std::fmt::Result {
+                write!(f, "ProbeExec")
+            }
+        }
+        impl ExecutionPlan for ProbeExec {
+            fn name(&self) -> &str {
+                "ProbeExec"
+            }
+            fn properties(&self) -> &Arc<PlanProperties> {
+                self.inner.properties()
+            }
+            fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
+                vec![&self.inner]
+            }
+            fn with_new_children(
+                self: Arc<Self>,
+                children: Vec<Arc<dyn ExecutionPlan>>,
+            ) -> datafusion::error::Result<Arc<dyn ExecutionPlan>> {
+                assert_eq!(children.len(), 1);
+                Ok(Arc::new(Self {
+                    inner: children[0].clone(),
+                    executions: self.executions.clone(),
+                }))
+            }
+            fn execute(
+                &self,
+                partition: usize,
+                context: Arc<TaskContext>,
+            ) -> datafusion::error::Result<SendableRecordBatchStream> {
+                self.executions.fetch_add(1, Ordering::SeqCst);
+                self.inner.execute(partition, context)
+            }
+        }
+        #[derive(Debug)]
+        struct ProbePlanner(Arc<AtomicUsize>);
+        #[async_trait]
+        impl QueryPlanner for ProbePlanner {
+            async fn create_physical_plan(
+                &self,
+                logical: &LogicalPlan,
+                state: &SessionState,
+            ) -> datafusion::error::Result<Arc<dyn ExecutionPlan>> {
+                let inner = DefaultPhysicalPlanner::default()
+                    .create_physical_plan(logical, state)
+                    .await?;
+                Ok(Arc::new(ProbeExec {
+                    inner,
+                    executions: self.0.clone(),
+                }))
+            }
+        }
+        let executions = Arc::new(AtomicUsize::new(0));
+        let limits = limits(SqlFunctionPolicy::ReadOnlyAggregateV1);
+        let state = SessionStateBuilder::from(bounded_session_context(&limits)?.state())
+            .with_query_planner(Arc::new(ProbePlanner(executions.clone())))
+            .build();
+        let query_context = AuthorizedQueryContext {
+            context: datafusion::prelude::SessionContext::new_with_state(state),
+            permits: Arc::new(Semaphore::new(limits.max_concurrency)),
+            limits,
+            authorized_relations: BTreeSet::new(),
+            form_name_aliases: BTreeMap::new(),
+            authorized_scans: BTreeSet::new(),
+            duplicate_head_checks: Vec::new(),
+            duplicate_head_checks_validated: Arc::new(Mutex::new(BTreeSet::new())),
+        };
+        let schema = query_context
+            .stateless_result_schema("SELECT 1 AS value", HashMap::new())
+            .await?;
+        assert_eq!(schema.len(), 1);
+        assert_eq!(
+            executions.load(Ordering::SeqCst),
+            0,
+            "schema-only planning executed a physical plan"
+        );
+        query_context
+            .execute_stateless_page("SELECT 1 AS value", HashMap::new(), 0, 10)
+            .await?;
+        assert!(
+            executions.load(Ordering::SeqCst) > 0,
+            "the probe must observe real execution"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn shared_sql_admission_corpus_records_each_runtime_stage() -> anyhow::Result<()> {
+        use ugoite_domain::sql_document::{parse_sql_document, SqlDocumentStatus};
+        let corpus: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../shared/sql/sql-admission-corpus.json"
+        ))?;
+        let limits = limits(SqlFunctionPolicy::ReadOnlyAggregateV1);
+        let context = bounded_session_context(&limits)?;
+        let query_context = AuthorizedQueryContext {
+            context,
+            permits: Arc::new(Semaphore::new(limits.max_concurrency)),
+            limits,
+            authorized_relations: BTreeSet::new(),
+            form_name_aliases: BTreeMap::new(),
+            authorized_scans: BTreeSet::new(),
+            duplicate_head_checks: Vec::new(),
+            duplicate_head_checks_validated: Arc::new(Mutex::new(BTreeSet::new())),
+        };
+        for case in corpus["cases"].as_array().expect("admission cases") {
+            let id = case["id"].as_str().expect("case id");
+            let sql = case["sql"].as_str().expect("case SQL");
+            let expected = |stage: &str| case["expected"][stage].as_bool().expect("expected stage");
+            let document = parse_sql_document(sql);
+            assert_eq!(document.to_sql(), sql, "{id}: source preservation");
+            assert_eq!(
+                document.status == SqlDocumentStatus::Parsed,
+                expected("source_document"),
+                "{id}: source parse"
+            );
+            let parsed = crate::sql_parser::parse_sql(sql);
+            assert_eq!(
+                parsed.is_ok(),
+                expected("runtime_parse"),
+                "{id}: runtime parse"
+            );
+            if parsed.is_err() {
+                continue;
+            }
+            let admitted = crate::index::validate_read_only_sql(sql);
+            assert_eq!(
+                admitted.is_ok(),
+                expected("statement_admission"),
+                "{id}: statement admission"
+            );
+            if admitted.is_err() {
+                continue;
+            }
+            let values = case["parameters"].as_object().cloned().unwrap_or_default();
+            let types: BTreeMap<String, String> = case
+                .get("parameter_types")
+                .map(|value| serde_json::from_value(value.clone()))
+                .transpose()?
+                .unwrap_or_default();
+            let parameters = crate::index::datafusion_parameters(&values, &types)?;
+            let logical = query_context.prepared_plan(sql, parameters.clone()).await;
+            assert_eq!(
+                logical.is_ok(),
+                expected("logical_plan"),
+                "{id}: logical plan: {logical:?}"
+            );
+            if logical.is_err() {
+                continue;
+            }
+            let planned = query_context
+                .stateless_result_schema(sql, parameters.clone())
+                .await;
+            assert_eq!(
+                planned.is_ok(),
+                expected("physical_plan"),
+                "{id}: physical plan: {planned:?}"
+            );
+            if planned.is_err() {
+                assert!(
+                    query_context
+                        .execute_stateless_page(sql, parameters, 0, 10)
+                        .await
+                        .is_err(),
+                    "{id}: execution must preserve physical rejection"
+                );
+                continue;
+            }
+            let page = query_context
+                .execute_stateless_page(sql, parameters, 0, 10)
+                .await;
+            assert_eq!(page.is_ok(), expected("execution"), "{id}: execution");
+            let page = page?;
+            assert_eq!(
+                planned?, page.result_schema,
+                "{id}: plan/page output schema"
+            );
+            let mut rows = Vec::<Vec<String>>::new();
+            for batch in page.batches {
+                for row in 0..batch.num_rows() {
+                    rows.push(
+                        batch
+                            .columns()
+                            .iter()
+                            .map(|column| {
+                                datafusion::scalar::ScalarValue::try_from_array(column, row)
+                                    .map(|value| value.to_string())
+                            })
+                            .collect::<datafusion::error::Result<Vec<_>>>()?,
+                    );
+                }
+            }
+            assert_eq!(
+                serde_json::to_value(rows)?,
+                case["expected_text_rows"],
+                "{id}: result values"
+            );
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn authorized_iceberg_context_executes_admitted_query_shape_fixtures(
     ) -> anyhow::Result<()> {
         use ugoite_core::query::{

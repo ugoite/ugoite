@@ -18959,7 +18959,10 @@ spec:
             .await?;
         assert_eq!(plan_status, StatusCode::OK, "{plan}");
         assert_eq!(plan["result_schema"].as_array().map(Vec::len), Some(2));
-        assert!(plan.get("rows").is_none(), "planning must not materialize rows");
+        assert!(
+            plan.get("rows").is_none(),
+            "planning must not materialize rows"
+        );
 
         for (id, body) in [("first", "one"), ("second", "two"), ("third", "three")] {
             let (status, response) = client

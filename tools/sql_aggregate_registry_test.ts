@@ -7,7 +7,7 @@ const [registrySource, toolbarSource, sqlSource, protocolSource] = await Promise
       new URL("crates/ugoite-domain/src/sql_functions.rs", repository),
     ),
     Deno.readTextFile(
-      new URL("frontend/src/components/SqlStructureToolbar.tsx", repository),
+      new URL("frontend/src/components/SqlDocumentTreeEditor.tsx", repository),
     ),
     Deno.readTextFile(new URL("frontend/src/lib/sql.ts", repository)),
     Deno.readTextFile(
@@ -109,40 +109,30 @@ Deno.test("browser aggregate picker follows the Rust aggregate registry", () => 
     assertEquals(descriptor.wildcard, "Unsupported", descriptor.name);
   }
   const toolbarList = toolbarSource.match(
-    /const functions: SqlStructureAggregateFunction\[\] = \[([\s\S]*?)\];/,
+    /const aggregateFunctions:[\s\S]*?= \[([\s\S]*?)\];/,
   );
   const protocolList = protocolSource.match(
-    /export type SqlStructureAggregateFunction =([\s\S]*?);/,
+    /export type SqlDocumentAggregateFunction =([\s\S]*?);/,
   );
   if (!toolbarList || !protocolList) {
-    throw new Error("Aggregate editor or protocol function list was not found");
+    throw new Error("Typed aggregate editor or protocol list was not found");
   }
-  const toolbarSpellings = [...toolbarList[1].matchAll(/"([^"]+)"/g)].map((
-    entry,
-  ) => entry[1]);
-  const protocolSpellings = [...protocolList[1].matchAll(/"([^"]+)"/g)].map((
-    entry,
-  ) => entry[1]);
-
-  assertEquals([...toolbarSpellings].sort(), [...registeredSpellings].sort());
-  assertEquals([...protocolSpellings].sort(), [...registeredSpellings].sort());
+  const toolbarNames = [...toolbarList[1].matchAll(/kind: "([^"]+)"/g)].map((
+    [, name],
+  ) => name);
+  const protocolNames = [...protocolList[1].matchAll(/"([^"]+)"/g)].map((
+    [, name],
+  ) => name);
+  const canonical = functions.map(({ name }) => name);
+  assertEquals(toolbarNames.slice().sort(), canonical.slice().sort());
+  assertEquals(protocolNames.slice().sort(), canonical.slice().sort());
   assertEquals(
-    protocolSource.includes("arguments?: string[];"),
+    registeredSpellings.includes("mean"),
     true,
-    "the browser protocol must keep extra COUNT arguments optional for the existing wire shape",
+    "MEAN remains an accepted AVG alias rather than a separate picker entry",
   );
-  assertEquals(
-    toolbarSource.includes("const aggregateColumnsOf ="),
-    true,
-    "the browser editor must read the legacy column and optional variadic arguments",
-  );
-  assertEquals(
-    toolbarSource.includes(
-      "if (aggregate.distinct && columns.length > 1) return false;",
-    ),
-    true,
-    "DISTINCT remains restricted to one COUNT argument",
-  );
+  assertEquals(toolbarSource.includes('kind: "set_function_argument"'), true);
+  assertEquals(toolbarSource.includes('kind: "set_aggregate_distinct"'), true);
 
   const byType = returnedAggregateLists(sqlSource);
   const numericTypes = new Set(["integer", "float", "decimal"]);

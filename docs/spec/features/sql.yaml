@@ -32,6 +32,20 @@ apis:
     command: ugoite sql count <SQL_OR_FILE>
     file: crates/ugoite-cli/src/commands/sql.rs
     function: run
+- id: sql.query.plan
+  method: POST
+  status: implemented
+  description: Plan a read-only SQL SELECT with current read authorization, typed parameters and an optional exact Saved SQL revision. Return only the output schema after physical-plan validation without executing result rows or persisting Knowledge. Success does not authorize later requests or guarantee data-dependent execution success.
+  backend:
+    path: /spaces/{space_id}/sql/query/plan
+    file: crates/ugoite-server/src/lib.rs
+    function: plan_sql
+  frontend:
+    file: frontend/src/lib/sql-api.ts
+    function: sqlApi.plan
+  ugoite_core:
+    file: crates/ugoite-iceberg/src/service.rs
+    function: plan_sql_authorized_for_principals
 - id: sql.list
   method: GET
   status: implemented

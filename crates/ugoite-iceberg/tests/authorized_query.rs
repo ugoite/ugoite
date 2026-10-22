@@ -9,8 +9,8 @@ use ugoite_core::query::{
 use ugoite_domain::entry::{EntryMetadata, EntryOperation, EntryRevision, FieldValue};
 use ugoite_domain::form::{FieldType, FormDefinition, FormField, FormVersion};
 use ugoite_domain::id::{EntryId, FieldId, FormId, SpaceId};
-use ugoite_iceberg::{IcebergWorkspace, publication_context, query_context::AuthorizedQueryError};
-use ugoite_storage::{SpaceUri, operator_from_uri};
+use ugoite_iceberg::{publication_context, query_context::AuthorizedQueryError, IcebergWorkspace};
+use ugoite_storage::{operator_from_uri, SpaceUri};
 use uuid::Uuid;
 
 fn form(id: u128, name: &str) -> FormDefinition {
@@ -241,8 +241,8 @@ fn policy(form: &FormDefinition, readable: &[u128]) -> AuthorizedQueryPolicy {
 }
 
 #[tokio::test]
-async fn context_makes_unapproved_forms_entries_columns_and_system_objects_unresolvable()
--> anyhow::Result<()> {
+async fn context_makes_unapproved_forms_entries_columns_and_system_objects_unresolvable(
+) -> anyhow::Result<()> {
     let workspace = IcebergWorkspace::memory_for_tests(
         SpaceId::from(Uuid::from_u128(1)),
         "memory://authorized-query-boundary",
@@ -423,8 +423,8 @@ async fn count_aggregates_only_authorized_current_entries() -> anyhow::Result<()
 }
 
 #[tokio::test]
-async fn sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts()
--> anyhow::Result<()> {
+async fn sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts(
+) -> anyhow::Result<()> {
     let workspace = IcebergWorkspace::memory_for_tests(
         SpaceId::from(Uuid::from_u128(200)),
         "memory://authorized-query-aggregate-spike",
@@ -1242,27 +1242,23 @@ async fn context_binds_native_datafusion_parameters_without_sql_substitution() -
         0,
         "parameter must remain a scalar value"
     );
-    assert!(
-        context
-            .execute_with_parameters(
-                "SELECT field_100 FROM tasks WHERE field_100 = $title",
-                HashMap::new()
-            )
-            .await
-            .is_err()
-    );
-    assert!(
-        context
-            .execute_with_parameters(
-                "SELECT field_100 FROM tasks",
-                HashMap::from([(
-                    "title".to_string(),
-                    datafusion::scalar::ScalarValue::Utf8(Some("allowed".into())),
-                )]),
-            )
-            .await
-            .is_err()
-    );
+    assert!(context
+        .execute_with_parameters(
+            "SELECT field_100 FROM tasks WHERE field_100 = $title",
+            HashMap::new()
+        )
+        .await
+        .is_err());
+    assert!(context
+        .execute_with_parameters(
+            "SELECT field_100 FROM tasks",
+            HashMap::from([(
+                "title".to_string(),
+                datafusion::scalar::ScalarValue::Utf8(Some("allowed".into())),
+            )]),
+        )
+        .await
+        .is_err());
     Ok(())
 }
 
@@ -1369,8 +1365,8 @@ async fn function_variants_and_storage_failures_are_closed_errors() -> anyhow::R
 }
 
 #[tokio::test]
-async fn context_requires_complete_checkpoint_and_reads_the_requested_snapshot()
--> anyhow::Result<()> {
+async fn context_requires_complete_checkpoint_and_reads_the_requested_snapshot(
+) -> anyhow::Result<()> {
     let workspace = IcebergWorkspace::memory_for_tests(
         SpaceId::from(Uuid::from_u128(20)),
         "memory://authorized-query-checkpoint",
@@ -1402,12 +1398,10 @@ async fn context_requires_complete_checkpoint_and_reads_the_requested_snapshot()
     incomplete_checkpoint.coordinate_checksum =
         incomplete_checkpoint.computed_coordinate_checksum();
     incomplete.checkpoint = Some(incomplete_checkpoint);
-    assert!(
-        workspace
-            .authorized_query_context(incomplete)
-            .await
-            .is_err()
-    );
+    assert!(workspace
+        .authorized_query_context(incomplete)
+        .await
+        .is_err());
     Ok(())
 }
 
@@ -1821,14 +1815,12 @@ async fn typed_sql_document_edits_execute_through_authorized_query_context() -> 
         .execute(projection_add_edit.document.to_sql())
         .await?;
     assert_eq!(projection_add_result[0].num_columns(), 2);
-    assert!(
-        projection_add_result[0]
-            .column(1)
-            .as_any()
-            .downcast_ref::<BooleanArray>()
-            .expect("the copied comparison is a typed boolean projection")
-            .value(0)
-    );
+    assert!(projection_add_result[0]
+        .column(1)
+        .as_any()
+        .downcast_ref::<BooleanArray>()
+        .expect("the copied comparison is a typed boolean projection")
+        .value(0));
     assert_eq!(
         projection_add_result[0].num_rows(),
         1,
@@ -1896,14 +1888,12 @@ async fn typed_sql_document_edits_execute_through_authorized_query_context() -> 
         .execute(projection_move_edit.document.to_sql())
         .await?;
     assert_eq!(projection_move_result[0].num_columns(), 2);
-    assert!(
-        projection_move_result[0]
-            .column(0)
-            .as_any()
-            .downcast_ref::<BooleanArray>()
-            .expect("the moved comparison remains a typed boolean projection")
-            .value(0)
-    );
+    assert!(projection_move_result[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<BooleanArray>()
+        .expect("the moved comparison remains a typed boolean projection")
+        .value(0));
     assert_eq!(
         projection_move_result[0]
             .column(1)
@@ -1942,14 +1932,12 @@ async fn typed_sql_document_edits_execute_through_authorized_query_context() -> 
         .execute(projection_remove_edit.document.to_sql())
         .await?;
     assert_eq!(projection_remove_result[0].num_columns(), 1);
-    assert!(
-        projection_remove_result[0]
-            .column(0)
-            .as_any()
-            .downcast_ref::<BooleanArray>()
-            .expect("the remaining comparison stays typed")
-            .value(0)
-    );
+    assert!(projection_remove_result[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<BooleanArray>()
+        .expect("the remaining comparison stays typed")
+        .value(0));
     assert_eq!(
         projection_remove_result[0].num_rows(),
         1,
@@ -2634,12 +2622,10 @@ async fn typed_sql_document_edits_execute_through_authorized_query_context() -> 
         schema[0].column_type,
         ugoite_core::sql_query::SqlResultColumnType::Integer
     );
-    assert!(
-        context
-            .execute_stateless_page(sql, HashMap::new(), 0, 1)
-            .await
-            .is_err()
-    );
+    assert!(context
+        .execute_stateless_page(sql, HashMap::new(), 0, 1)
+        .await
+        .is_err());
 
     let document = ugoite_domain::sql_document::parse_sql_document(sql);
     let cast = document
@@ -3671,12 +3657,10 @@ async fn system_columns_are_queryable_only_when_explicitly_allowlisted() -> anyh
     let context = workspace
         .authorized_query_context(policy(&tasks, &[42]))
         .await?;
-    assert!(
-        context
-            .execute("SELECT _ugoite_entry_id FROM tasks")
-            .await
-            .is_err()
-    );
+    assert!(context
+        .execute("SELECT _ugoite_entry_id FROM tasks")
+        .await
+        .is_err());
 
     let mut colliding = form(44, "Colliding");
     colliding.fields[0].name = "entry_id".into();
@@ -3758,8 +3742,8 @@ async fn context_enforces_memory_and_timeout_limits() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn typed_sql_document_filter_group_and_aggregate_edits_execute_authorized_queries()
--> anyhow::Result<()> {
+async fn typed_sql_document_filter_group_and_aggregate_edits_execute_authorized_queries(
+) -> anyhow::Result<()> {
     let workspace = IcebergWorkspace::memory_for_tests(
         SpaceId::from(Uuid::from_u128(970)),
         "memory://authorized-query-sql-document-common-edits",

@@ -2617,12 +2617,8 @@ mod tests {
             "parameters": {},
             "parameter_types": {}
         });
-        let request = prepare_request(
-            "sql.query.plan",
-            &json!({"space_id": "demo"}),
-            Some(&body),
-        )
-        .expect("SQL plan request");
+        let request = prepare_request("sql.query.plan", &json!({"space_id": "demo"}), Some(&body))
+            .expect("SQL plan request");
         assert_eq!(request.method, HttpMethod::Post);
         assert_eq!(request.path, "/spaces/demo/sql/query/plan");
         assert_eq!(
