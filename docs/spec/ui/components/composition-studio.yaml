@@ -2,7 +2,7 @@
 title: "Composition Studio"
 ---
 
-**Status: browser routes are temporarily unavailable until PR3 completes the Studio gates. This document records the target design; complete SQL grammar coverage remains a separate gate.** The normative next Composition model is [ADR-025](../../../architecture/contracts/adr-025-composition-query-variable-graph.md). The unreleased source-based model in [ADR-024](../../../architecture/contracts/adr-024-composition-sql-first.md) is superseded and has no compatibility path.
+**Status: implementation in progress; complete SQL grammar coverage remains a separate gate.** The normative next Composition model is [ADR-025](../../../architecture/contracts/adr-025-composition-query-variable-graph.md). The unreleased source-based model in [ADR-024](../../../architecture/contracts/adr-024-composition-sql-first.md) is superseded and has no compatibility path.
 
 ## Modes and variable graph
 

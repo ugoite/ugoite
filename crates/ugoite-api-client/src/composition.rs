@@ -597,6 +597,9 @@ pub struct CompositionQuery {
     /// Exact SQL source for an authorized pinned Saved SQL revision.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sql_text: Option<String>,
+    /// Authorized SQL using immutable Form relation IDs, suitable for an explicit inline copy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub portable_sql: Option<String>,
     #[serde(default)]
     pub deferred_arguments: Vec<CompositionDeferredArgument>,
     pub returns: CompositionQueryResultType,

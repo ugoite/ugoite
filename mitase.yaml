@@ -292,6 +292,22 @@ inventory:
         - frontend/src/components/CompositionStudioSync.test.tsx
         - frontend/src/components/CompositionInspectorSheet.tsx
         - frontend/src/components/CompositionStudioMobile.test.tsx
+        - e2e/composition-golden-journey.test.ts
+        - e2e/composition-stale-response.test.ts
+        - e2e/composition-studio-journey.test.ts
+        - e2e/composition-scalar-state-journey.test.ts
+        - e2e/composition-table-metric-pagination.test.ts
+        - frontend/src/routes/spaces/[space_id]/compositions/index.tsx
+        - frontend/src/routes/spaces/[space_id]/compositions/new.tsx
+        - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id].tsx
+        - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx
+        - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.tsx
+        - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.tsx
+        - frontend/src/lib/composition-space-navigation.test.ts
+        - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx
+        - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+        - frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+        - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx
     openapi:
       roots:
         - crates/ugoite-server/src/openapi.json

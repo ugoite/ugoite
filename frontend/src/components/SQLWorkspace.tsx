@@ -20,6 +20,7 @@ export interface SQLWorkspaceVariable {
 }
 
 export type SQLWorkspaceActionKind =
+  | "copy"
   | "form"
   | "columns"
   | "filter"
@@ -38,6 +39,7 @@ export type SQLWorkspaceActionKind =
 export interface SQLWorkspaceAction {
   kind: SQLWorkspaceActionKind;
   icon:
+    | "edit"
     | "forms"
     | "columns"
     | "filter"
@@ -168,7 +170,12 @@ export function SQLWorkspaceActionBar(props: SQLWorkspaceActionBarProps) {
     const argumentsAction = current.filter((action) =>
       action.kind === "arguments"
     );
-    return [...primary, ...structure, ...argumentsAction];
+    return [
+      ...primary,
+      ...structure,
+      ...argumentsAction,
+      ...current.filter((action) => action.kind === "copy"),
+    ];
   };
 
   const actionName = (action: SQLWorkspaceAction) =>

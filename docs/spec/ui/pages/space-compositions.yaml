@@ -1,11 +1,10 @@
 version: "0.1"
-updated: "2026-10-21"
+updated: "2026-10-16"
 page:
   id: space-compositions
   title: Saved tools
   route: /spaces/{space_id}/compositions
-  implementation: temporarily-unavailable
-  availability: No browser route is registered until the Composition UI gates are complete.
+  implementation: implemented
 components:
   shared:
     - id: space-shell

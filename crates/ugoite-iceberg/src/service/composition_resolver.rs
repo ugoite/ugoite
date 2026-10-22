@@ -150,6 +150,60 @@ impl OwnedCurrentQueryDescriptor {
     }
 }
 
+/// Preserve the resolver's immutable Form identities when a caller explicitly
+/// copies a query or requests its count through the existing stateless SQL API.
+/// This is output metadata only: clients still receive ordinary SQL, which is
+/// parsed, planned and authorized again on every subsequent request.
+fn attach_portable_query_sql(
+    queries: &mut [ugoite_core::composition::ResolvedQueryRequest],
+    definitions: &[VariableGraphNode],
+) -> Result<()> {
+    for query in queries {
+        let node = definitions
+            .iter()
+            .find(|node| node.id == query.variable_id)
+            .ok_or_else(|| anyhow!("resolved query definition is missing"))?;
+        let VariableGraphNodeKind::Query {
+            query: definition, ..
+        } = &node.kind
+        else {
+            return Err(anyhow!("resolved query variable is not a query"));
+        };
+        let source = match &definition.definition {
+            VariableGraphQueryDefinition::InlineSql { sql } => sql.as_str(),
+            VariableGraphQueryDefinition::SavedSql { .. } => query
+                .sql_text
+                .as_deref()
+                .ok_or_else(|| anyhow!("resolved Saved SQL source is missing"))?,
+        };
+        let bindings = query
+            .form_bindings
+            .iter()
+            .map(|binding| (binding.relation.clone(), sql_relation_name(binding.form_id)))
+            .collect();
+        let (mut sql, _) = crate::index::resolve_saved_sql_bindings(source, &bindings)?;
+        if let VariableGraphQueryDefinition::SavedSql {
+            column: Some(column),
+            ..
+        } = &definition.definition
+        {
+            // A scalar Saved SQL binding can select one output of a wider
+            // result. Make that projection explicit in the independent copy.
+            let statements = crate::sql_parser::parse_sql(&sql)?;
+            if statements.len() != 1 {
+                return Err(anyhow!("resolved Saved SQL must contain one query"));
+            }
+            sql = format!(
+                "SELECT \"{}\" FROM ({}) AS \"__ugoite_saved_scalar\"",
+                column.replace('"', "\"\""),
+                statements[0]
+            );
+        }
+        query.portable_sql = Some(sql);
+    }
+    Ok(())
+}
+
 impl UgoiteService {
     async fn get_composition_source_form_local(
         &self,
@@ -851,11 +905,14 @@ impl UgoiteService {
         );
 
         Ok(match result {
-            Ok(plan) => CompositionResolution {
-                variable_definitions,
-                plan: Some(plan),
-                diagnostics: Vec::new(),
-            },
+            Ok(mut plan) => {
+                attach_portable_query_sql(&mut plan.queries, &document.spec.variables)?;
+                CompositionResolution {
+                    variable_definitions,
+                    plan: Some(plan),
+                    diagnostics: Vec::new(),
+                }
+            }
             Err(diagnostics) => CompositionResolution {
                 variable_definitions,
                 plan: None,
@@ -1136,12 +1193,15 @@ impl UgoiteService {
         };
 
         Ok(match result {
-            Ok(plan) => CompositionPreview {
-                draft_fingerprint: Some(draft_fingerprint),
-                variable_definitions,
-                plan: Some(plan),
-                diagnostics: Vec::new(),
-            },
+            Ok(mut plan) => {
+                attach_portable_query_sql(&mut plan.queries, &document.spec.variables)?;
+                CompositionPreview {
+                    draft_fingerprint: Some(draft_fingerprint),
+                    variable_definitions,
+                    plan: Some(plan),
+                    diagnostics: Vec::new(),
+                }
+            }
             Err(diagnostics) => CompositionPreview {
                 draft_fingerprint: Some(draft_fingerprint),
                 variable_definitions,

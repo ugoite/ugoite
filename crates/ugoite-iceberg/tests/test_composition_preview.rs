@@ -1402,3 +1402,168 @@ async fn preview_exposes_variable_definitions_in_declaration_order() -> Result<(
     assert_eq!(placed_ids, ["region", "month"]);
     Ok(())
 }
+
+#[tokio::test]
+async fn portable_inline_sql_count_keeps_form_identity_after_rename_and_replacement() -> Result<()>
+{
+    let (service, space_id, document, form_id) = setup_preview_space().await?;
+    let yaml = canonicalize_composition(&document)
+        .expect("valid graph document")
+        .yaml;
+    let saved = save_local_composition(&service, &space_id, document.clone()).await?;
+    let preview = service
+        .preview_composition_local(&space_id, &yaml, &BTreeMap::new(), &[])
+        .await?;
+    let query = preview
+        .plan
+        .context("authorized query plan")?
+        .queries
+        .remove(0);
+    let sql = query.portable_sql.context("portable SQL uses Form IDs")?;
+    assert!(sql.contains(&sql_relation_name(form_id)));
+    assert!(!sql.contains("\"Composition-Preview\""));
+    // Exercise the native append-only Form evolution contract; the public
+    // name-addressed upsert API is not a Form-rename adapter.
+    let workspace = ugoite_iceberg::iceberg_store::native_mutation_workspace(
+        service.operator(),
+        &service.workspace_path(&space_id),
+    )
+    .await?;
+    let current_form = workspace.load_form(form_id).await?;
+    let changes = ugoite_domain::form::FormChangeSet {
+        form_id,
+        expected_version: Some(current_form.version),
+        changes: vec![ugoite_domain::form::FormChange::RenameForm {
+            name: "Renamed-Preview".to_owned(),
+        }],
+    };
+    workspace
+        .commit(ugoite_iceberg::publication_context(
+            "portable-sql-rename",
+            "test.form.evolve",
+            &changes,
+        )?)?
+        .evolve_form(&changes)
+        .await?;
+    let replacement = service.upsert_form_result(&space_id, &json!({
+        "name": "Composition-Preview", "fields": { "title": { "id": 100, "type": "string" } }
+    })).await?;
+    assert_ne!(replacement.form_id, form_id);
+    let resolved = service
+        .resolve_composition_local(
+            &space_id,
+            &saved.entry_id.to_string(),
+            &saved.revision_id.to_string(),
+            &BTreeMap::new(),
+            &[],
+        )
+        .await?;
+    let resolved = resolved
+        .plan
+        .context("saved Composition must retain its Form binding after rename")?;
+    assert_eq!(
+        resolved.queries[0].portable_sql.as_deref(),
+        Some(sql.as_str())
+    );
+    let count = service
+        .count_sql(
+            &space_id,
+            ugoite_core::sql_query::SqlQueryCountRequest {
+                sql,
+                parameters: Default::default(),
+                parameter_types: Default::default(),
+                saved_sql: None,
+            },
+        )
+        .await?;
+    assert_eq!(
+        count, 3,
+        "portable SQL must keep the original Form, not its same-name replacement"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn portable_saved_sql_copy_keeps_pinned_revision_and_selected_scalar_column() -> Result<()> {
+    let (service, space_id, mut document, _) = setup_preview_space().await?;
+    let sql_id = Uuid::now_v7();
+    let payload = SqlPayload {
+        name: Some("Pinned scalar".to_owned()),
+        kind: SqlKind::UserQuery,
+        metadata: None,
+        sql: "SELECT CAST(11 AS BIGINT) AS \"a\"\"b\", CAST(99 AS BIGINT) AS other".to_owned(),
+        variables: json!([]),
+    };
+    let created = service
+        .create_saved_sql(&space_id, Some(&sql_id.to_string()), &payload, "owner")
+        .await?;
+    let revision = created["revision_id"]
+        .as_str()
+        .context("Saved SQL revision")?;
+    service
+        .update_saved_sql(
+            &space_id,
+            &sql_id.to_string(),
+            &SqlPayload {
+                sql: "SELECT CAST(999 AS BIGINT) AS \"a\"\"b\", CAST(0 AS BIGINT) AS other"
+                    .to_owned(),
+                ..payload
+            },
+            revision,
+            "owner",
+        )
+        .await?;
+    document.spec.variables[0].kind = VariableGraphNodeKind::Query {
+        returns: VariableGraphResultType::Scalar {
+            value_type: VariableGraphScalarDescriptor {
+                scalar_type: VariableGraphScalarType::Integer,
+                nullable: false,
+            },
+        },
+        query: VariableGraphQuery {
+            definition: VariableGraphQueryDefinition::SavedSql {
+                entry_id: Some(EntryId::from_uuid(sql_id).to_string()),
+                revision_id: Some(revision.to_owned()),
+                column: Some("a\"b".to_owned()),
+            },
+            arguments: Vec::new(),
+            form_bindings: Vec::new(),
+            schema_fingerprint: String::new(),
+        },
+    };
+    document.spec.components[0] = CompositionComponent::Metric {
+        id: "table".to_owned(),
+        variable: "source".to_owned(),
+        presentation: None,
+    };
+    let yaml = canonicalize_composition(&document)
+        .expect("valid graph document")
+        .yaml;
+    let preview = service
+        .preview_composition_local(&space_id, &yaml, &BTreeMap::new(), &[])
+        .await?;
+    let query = preview
+        .plan
+        .context("pinned scalar plan")?
+        .queries
+        .remove(0);
+    assert!(query
+        .sql_text
+        .as_deref()
+        .context("pinned SQL")?
+        .contains("11"));
+    let sql = query.portable_sql.context("independent inline copy")?;
+    let page = service
+        .query_sql(
+            &space_id,
+            ugoite_core::sql_query::SqlQueryRequest {
+                sql,
+                limit: 2,
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(page.columns, vec!["a\"b"]);
+    assert_eq!(page.rows, vec![json!({"a\"b": 11})]);
+    Ok(())
+}

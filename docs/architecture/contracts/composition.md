@@ -9,8 +9,8 @@ cutover are in progress in the active change. Full SQL executor-to-GUI grammar
 coverage remains an open implementation gate and is not claimed here. This
 document does not authorize release preparation or publication.
 
-[ADR-024](./adr-024-composition-sql-first.md) records the superseded,
-unreleased source-based schema; [ADR-023](./adr-023-composition-reactive-variables.md)
+[ADR-024](./adr-024-composition-sql-first.md) records the superseded, unreleased
+source-based schema; [ADR-023](./adr-023-composition-reactive-variables.md)
 records the preceding prerelease grammar. Neither is a compatibility contract.
 [ADR-019](./decisions.md) continues to govern the flow layout AST, exactly-once
 component placement, and presentation order. General REST behavior is
@@ -19,10 +19,10 @@ not create a second API contract.
 
 ## Canonical document
 
-A Composition is one Space-owned Knowledge document stored in an Entry
-revision. The Space remains authoritative. Save and restore use existing
-append-only Entry history, receipts, idempotency, and stale-write conflict
-contracts; no separate database or hidden catalog becomes authoritative.
+A Composition is one Space-owned Knowledge document stored in an Entry revision.
+The Space remains authoritative. Save and restore use existing append-only Entry
+history, receipts, idempotency, and stale-write conflict contracts; no separate
+database or hidden catalog becomes authoritative.
 
 The strict .ugcomp.yaml document keeps format_version: 1. Its envelope contains
 format, format_version, kind: dashboard, name, and spec. The spec contains one
@@ -32,23 +32,32 @@ fields are rejected.
 
 Each variable has a unique ID and exactly one kind:
 
-| Kind | Stored definition | Runtime value |
-| --- | --- | --- |
-| constant | Typed scalar type and validated constant value | The stored typed value |
-| input | Scalar type, requiredness, and optional typed default | A transient user value, read by a placed Input component |
-| query | SQL definition, explicit argument map, and table or scalar return descriptor | The authorized result in one immutable evaluation snapshot |
+| Kind     | Stored definition                                                            | Runtime value                                              |
+| -------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| constant | Typed scalar type and validated constant value                               | The stored typed value                                     |
+| input    | Scalar type, requiredness, and optional typed default                        | A transient user value, read by a placed Input component   |
+| query    | SQL definition, explicit argument map, and table or scalar return descriptor | The authorized result in one immutable evaluation snapshot |
 
 Portable scalar types are string, boolean, integer, float, decimal, date,
 timestamp, and json when supported by the query contract. A table descriptor is
-an ordered set of typed columns. Scalar descriptors include nullability.
-Domain and Core own type inference and validation. Inputs must be placed and
-used; constants and query values are not represented as separate sources.
+an ordered set of typed columns. Scalar descriptors include nullability. Domain
+and Core own type inference and validation. Inputs must be placed and used;
+constants and query values are not represented as separate sources.
 
-Query variables contain inline SQL or a Saved SQL Entry and exact revision.
-SQL parameters map explicitly to Composition variable IDs; matching names do
-not create implicit bindings. Initial bindings accept scalar variables only.
-Form IDs and result descriptors are derived by the server, never trusted from
-client input. Saved SQL never follows a moving latest revision.
+Query variables contain inline SQL or a Saved SQL Entry and exact revision. SQL
+parameters map explicitly to Composition variable IDs; matching names do not
+create implicit bindings. Initial bindings accept scalar variables only. Form
+IDs and result descriptors are derived by the server, never trusted from client
+input. Saved SQL never follows a moving latest revision.
+
+Authorized query descriptors also expose `portable_sql`: the existing Rust
+relation resolver replaces Form names with their immutable SQL relation IDs.
+This is ordinary SQL, not a trusted binding token. Explicit inline copies and
+counts pass through the existing SQL planner and current authorization again. A
+Saved SQL scalar-column selection becomes an explicit one-column projection in
+the independent copy; the pinned revision and its SQL remain unchanged. The
+original pinned source remains separately available as `sql_text` for its
+read-only editor. Neither field is persisted as a second query definition.
 
 Display components render graph values:
 
@@ -79,15 +88,15 @@ closed.
 A scalar query succeeds only for exactly one row and one column. Zero rows, one
 NULL row, multiple rows, multiple columns, type drift, and access denial are
 distinct outcomes. Runtime evaluation never silently selects a first row or
-column. A first-item interaction is an explicit deterministic ORDER BY ...
-LIMIT 1 query and produces an optional value when there is no row.
+column. A first-item interaction is an explicit deterministic ORDER BY ... LIMIT
+1 query and produces an optional value when there is no row.
 
 Each run uses an immutable Composition revision, Publication reference,
-authorization state, input values, SQL revision, and argument fingerprint.
-Only affected dependent queries are recomputed. The same query result can be
-shared within one snapshot. Generation and fingerprint checks discard stale
-responses. Query results are stateless and bounded; they are never persisted as
-Knowledge or materialized in a hidden table.
+authorization state, input values, SQL revision, and argument fingerprint. Only
+affected dependent queries are recomputed. The same query result can be shared
+within one snapshot. Generation and fingerprint checks discard stale responses.
+Query results are stateless and bounded; they are never persisted as Knowledge
+or materialized in a hidden table.
 
 The Composition path reuses the existing Rust SQL executor. SQL query paging,
 continuation, count, cancellation, and resource limits remain server-owned.
@@ -97,39 +106,39 @@ aggregate fetched rows.
 
 ## SQL document and Studio boundary
 
-One Rust-owned SQL document contract serves native and WASM callers. The
-durable query is one SQL string; GUI JSON and Form selections are not persisted
-as parallel query representations. The editor must preserve comments, quoted
+One Rust-owned SQL document contract serves native and WASM callers. The durable
+query is one SQL string; GUI JSON and Form selections are not persisted as
+parallel query representations. The editor must preserve comments, quoted
 identifiers, aliases, literals, and untouched clauses when another subtree is
 edited. Text and tree edits commit as one draft revision. Invalid drafts cannot
 run or save.
 
 The executor's read-only SQL allowlist is the authority. Parser success alone
 does not admit a query. Every admitted SQL construct must have a corresponding
-typed GUI operation, diagnostic, and round-trip fixture before complete
-coverage can be claimed. The current SQL structure editor still has documented
-coverage gaps; ADR-025's feature matrix tracks them. Browser code does not add a
-second parser or SQL generator.
+typed GUI operation, diagnostic, and round-trip fixture before complete coverage
+can be claimed. The current SQL structure editor still has documented coverage
+gaps; ADR-025's feature matrix tracks them. Browser code does not add a second
+parser or SQL generator.
 
-Design Table and Value insertion use one picker with Variables, Forms, and
-Saved SQL choices. Form and exact-revision Saved SQL choices resolve or exactly
-reuse a compatible query variable and insert the component atomically. Form
-Value choices require an explicit aggregate and applicable column. Saved SQL
-scalar choices validate one-row, one-column cardinality. The persisted
-component keeps only its variable reference. Rebinding uses the same picker
-without mutating a shared query variable. Successful insertion closes the
-picker without opening an Inspector.
+Design Table and Value insertion use one picker with Variables, Forms, and Saved
+SQL choices. Form and exact-revision Saved SQL choices resolve or exactly reuse
+a compatible query variable and insert the component atomically. Form Value
+choices require an explicit aggregate and applicable column. Saved SQL scalar
+choices validate one-row, one-column cardinality. The persisted component keeps
+only its variable reference. Rebinding uses the same picker without mutating a
+shared query variable. Successful insertion closes the picker without opening an
+Inspector.
 
 ## Failure and recovery boundary
 
 The canonical reader accepts only the typed graph schema. It has no legacy
 Composition decoder, old-kind alias, fallback, dual read/write, hidden keeper,
 or migration. Old Composition bytes remain inspectable and exportable through
-the existing general Entry history and raw inspection contracts; those paths
-do not make an old document executable.
+the existing general Entry history and raw inspection contracts; those paths do
+not make an old document executable.
 
 Unsupported versions, malformed documents, invalid bindings, and unavailable
-resources return local diagnostics without silently changing identity. A
-missing Composition revision does not fall back to latest, and a Saved SQL
-query uses its exact pinned revision. Browser input, preview, paging, result,
-cursor, loading, and error state remain transient Work.
+resources return local diagnostics without silently changing identity. A missing
+Composition revision does not fall back to latest, and a Saved SQL query uses
+its exact pinned revision. Browser input, preview, paging, result, cursor,
+loading, and error state remain transient Work.

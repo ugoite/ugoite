@@ -107,9 +107,11 @@ does not certify that server state has remained unchanged.
 mapping, current evidence selectors and required-runner wiring. Those source
 checks do not execute Rust or browser behavior. Required Rust tests, real WASM
 protocol tests, frontend coverage and browser E2E supply executable evidence
-separately. The owning routes share the Workspace. Composition browser
-integration remains temporarily unavailable and must not be reported as
-completed parity.
+separately. The owning routes share the Workspace. Composition query variables
+use the same Workspace and typed operations. The Composition browser journeys
+additionally verify graph bindings, exact revision source, reactive results, and
+recovery. This integration does not close the broader construct-coverage gap
+recorded above.
 
 Retire the subset editor only after public API compatibility and all replacement
 evidence, fixtures, tasks and Mitase selectors are reviewed. Keep explicit gaps

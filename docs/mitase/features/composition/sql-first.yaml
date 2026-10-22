@@ -163,6 +163,36 @@ features:
                 criterion: REQ-COMP-009#criterion.query-results-validated-before-preview
               - kind: satisfies
                 criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+          - id: portable-query-sql
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service/composition_resolver.rs
+            selector: { kind: symbol, name: attach_portable_query_sql }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.exact-query-identities
+      - id: portable-query-verification
+        role: verification
+        facet: verification
+        responsibility: Verify independent SQL keeps immutable Form identity and the exact Saved SQL scalar projection.
+        targets:
+          - id: portable-form-identity
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_preview.rs
+            selector: { kind: test, name: portable_inline_sql_count_keeps_form_identity_after_rename_and_replacement }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.exact-query-identities
+                covers: [FEAT-COMP-010#binding.sql-first-resolution-implementation/target.portable-query-sql]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: portable_inline_sql_count_keeps_form_identity_after_rename_and_replacement } }
+          - id: pinned-scalar-copy
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_preview.rs
+            selector: { kind: test, name: portable_saved_sql_copy_keeps_pinned_revision_and_selected_scalar_column }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.exact-query-identities
+                covers: [FEAT-COMP-010#binding.sql-first-resolution-implementation/target.portable-query-sql]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: portable_saved_sql_copy_keeps_pinned_revision_and_selected_scalar_column } }
       - id: sql-first-workspace-implementation
         role: implementation
         facet: frontend
@@ -206,6 +236,8 @@ features:
             selector: { kind: symbol, name: CompositionStudio }
             claims:
               - kind: satisfies
+                criterion: REQ-FE-080#criterion.explicit-preview-count-and-paging
+              - kind: satisfies
                 criterion: REQ-FE-079#criterion.composition-structure-first-steady-state
               - kind: satisfies
                 criterion: REQ-FE-079#criterion.composition-mode-context-singular
@@ -222,6 +254,20 @@ features:
                 criterion: REQ-FE-079#criterion.composition-insertion-completes-before-edit
               - kind: satisfies
                 criterion: REQ-FE-079#criterion.composition-table-source-change-is-explicit
+          - id: composition-revision-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx
+            selector: { kind: symbol, name: CompositionRevisionRoute }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-binding-identifiers-stay-internal
+          - id: composition-history-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.tsx
+            selector: { kind: symbol, name: CompositionHistoryRoute }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-079#criterion.composition-history-hides-revision-identifiers
           - id: composition-text-inspector
             adapter: typescript
             path: frontend/src/components/CompositionGraphDesignCanvas.tsx
@@ -231,3 +277,26 @@ features:
                 criterion: REQ-FE-079#criterion.composition-text-inspector-literal-editing
               - kind: satisfies
                 criterion: REQ-FE-079#criterion.composition-text-inspector-variable-binding
+      - id: graph-workspace-read-verification
+        role: verification
+        facet: verification
+        responsibility: Verify explicit count and paging, obsolete-result suppression, and browser pinning before an independent inline copy.
+        targets:
+          - id: count-and-page-lifecycle
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: "counts only on request, pages in both directions, and rejects an obsolete count" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.explicit-preview-count-and-paging
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "counts only on request, pages in both directions, and rejects an obsolete count" } }
+          - id: browser-inline-copy
+            adapter: typescript
+            path: e2e/composition-studio-journey.test.ts
+            selector: { kind: test, name: "Pinned Saved SQL source supports an explicit inline copy and explicit counts" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.exact-query-identities
+                covers: [FEAT-COMP-010#binding.sql-first-resolution-implementation/target.portable-query-sql]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Pinned Saved SQL source supports an explicit inline copy and explicit counts" } }

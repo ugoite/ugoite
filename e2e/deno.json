@@ -20,7 +20,8 @@
     "sql-export-remote-auth": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test sql-export-remote-auth.test.ts",
     "saved-sql-route": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test saved-sql-route.test.ts",
     "full": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test --grep-invert @screenshot",
-    "screenshot": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test ui-pages-screenshots.test.ts"
+    "screenshot": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test ui-pages-screenshots.test.ts",
+    "composition-studio": "deno run --node-modules-dir=auto -A npm:@playwright/test@^1.60.0 test composition-studio-journey.test.ts composition-golden-journey.test.ts composition-invalid-variable-input.test.ts composition-latest-variable-generation.test.ts composition-revision-stale-response.test.ts composition-scalar-state-journey.test.ts composition-stale-response.test.ts composition-table-metric-pagination.test.ts"
   },
   "imports": {
     "@playwright/test": "npm:@playwright/test@^1.60.0"

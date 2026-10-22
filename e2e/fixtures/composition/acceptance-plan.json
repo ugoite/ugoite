@@ -1,6 +1,6 @@
 {
   "schema": "ugoite/composition-acceptance-plan/v1",
-  "source": "2026-10-21 implementation directive: PR1 pauses incomplete Composition browser routes; PR3 restores the completed Studio",
+  "source": "SQL-first acceptance on the strict typed variable graph (ADR-025)",
   "criteria": [
     {
       "id": "A01",
@@ -34,11 +34,12 @@
         {
           "path": "frontend/src/components/CompositionVariableBindingPicker.test.tsx",
           "kind": "file"
+        },
+        {
+          "path": "e2e/composition-studio-journey.test.ts",
+          "kind": "test",
+          "name": "Form bindings create variable-backed displays with explicit aggregation"
         }
-      ],
-      "manual_evidence_gaps": [
-        "Composition browser routes are paused until PR3; Form authoring E2E will be restored there.",
-        "Browser verification of the preview cap versus SQL text LIMIT is deferred."
       ]
     },
     {
@@ -59,10 +60,12 @@
           "path": "e2e/composition-source-acl-isolation.test.ts",
           "kind": "test",
           "name": "evaluate rechecks Form and exact Saved SQL access after revocation"
+        },
+        {
+          "path": "crates/ugoite-iceberg/tests/test_composition_preview.rs",
+          "kind": "test",
+          "name": "portable_inline_sql_count_keeps_form_identity_after_rename_and_replacement"
         }
-      ],
-      "manual_evidence_gaps": [
-        "Form rename and same-name replacement identity behavior are not covered by the vNext tests selected here"
       ]
     },
     {
@@ -83,10 +86,17 @@
           "path": "crates/ugoite-core/tests/composition_query_evaluation.rs",
           "kind": "test",
           "name": "evaluation_rejects_requests_with_unbound_parameters_or_stale_snapshot_ids"
+        },
+        {
+          "path": "crates/ugoite-iceberg/tests/test_composition_preview.rs",
+          "kind": "test",
+          "name": "portable_saved_sql_copy_keeps_pinned_revision_and_selected_scalar_column"
+        },
+        {
+          "path": "e2e/composition-studio-journey.test.ts",
+          "kind": "test",
+          "name": "Pinned Saved SQL source supports an explicit inline copy and explicit counts"
         }
-      ],
-      "manual_evidence_gaps": [
-        "Saved SQL duplication into inline SQL is not covered by the vNext tests selected here"
       ]
     },
     {
@@ -117,10 +127,14 @@
           "path": "crates/ugoite-iceberg/tests/test_composition_preview.rs",
           "kind": "test",
           "name": "parameterized_saved_sql_placeholder_previews_and_saves_with_server_schema"
+        },
+        {
+          "path": "e2e/composition-invalid-variable-input.test.ts",
+          "kind": "test",
+          "name": "invalid_raw_input_blocks_query_and_stale_result"
         }
       ],
       "manual_evidence_gaps": [
-        "Composition browser routes are paused until PR3; invalid raw input behavior has no route-level browser evidence.",
         "Standalone-preview handling of Saved SQL defaults is not verified by the vNext tests selected here."
       ]
     },
@@ -167,10 +181,17 @@
         {
           "path": "crates/ugoite-iceberg/src/service/composition_resolver.rs",
           "kind": "file"
+        },
+        {
+          "path": "e2e/composition-table-metric-pagination.test.ts",
+          "kind": "test",
+          "name": "Table pagination leaves the SQL Metric and typed Input unchanged"
+        },
+        {
+          "path": "e2e/composition-studio-journey.test.ts",
+          "kind": "test",
+          "name": "Pinned Saved SQL source supports an explicit inline copy and explicit counts"
         }
-      ],
-      "manual_evidence_gaps": [
-        "Composition browser routes are paused until PR3; browser pagination and stale-response behavior are unverified."
       ]
     },
     {
@@ -196,10 +217,12 @@
           "path": "e2e/composition-metric-journey.test.ts",
           "kind": "test",
           "name": "API evaluates an exact Saved SQL revision and reports scalar cardinality failures"
+        },
+        {
+          "path": "e2e/composition-scalar-state-journey.test.ts",
+          "kind": "test",
+          "name": "scalar_result_distinguishes_zero_rows_null_and_zero"
         }
-      ],
-      "manual_evidence_gaps": [
-        "Composition browser routes are paused until PR3; metric rendering and alias headings are unverified in browser."
       ]
     },
     {
@@ -213,10 +236,14 @@
         {
           "path": "frontend/src/app.css",
           "kind": "file"
+        },
+        {
+          "path": "e2e/composition-studio-journey.test.ts",
+          "kind": "test",
+          "name": "Composition Studio responsive modes fit target viewports and support keyboard and touch"
         }
       ],
       "manual_evidence_gaps": [
-        "Composition browser routes are paused until PR3; browser UI gates have no route-level evidence.",
         "Actual browser 200% zoom and iPhone Safari device verification"
       ]
     },
@@ -235,10 +262,12 @@
         {
           "path": "frontend/src/components/CompositionStudioSync.test.tsx",
           "kind": "file"
+        },
+        {
+          "path": "e2e/composition-studio-journey.test.ts",
+          "kind": "test",
+          "name": "Composition Studio responsive modes fit target viewports and support keyboard and touch"
         }
-      ],
-      "manual_evidence_gaps": [
-        "Composition browser routes are paused until PR3; Studio interaction and layout are not currently available for browser verification."
       ]
     },
     {
@@ -256,10 +285,14 @@
         {
           "path": "frontend/src/app.css",
           "kind": "file"
+        },
+        {
+          "path": "e2e/composition-studio-journey.test.ts",
+          "kind": "test",
+          "name": "Composition Studio responsive modes fit target viewports and support keyboard and touch"
         }
       ],
       "manual_evidence_gaps": [
-        "Composition browser routes are paused until PR3; dialog and drawer browser behavior is not currently available for verification.",
         "VoiceOver and NVDA device verification"
       ]
     },
@@ -280,6 +313,11 @@
           "path": "e2e/composition-recovery-authorization.test.ts",
           "kind": "test",
           "name": "Composition raw recovery preserves caller-visible contracts"
+        },
+        {
+          "path": "e2e/composition-golden-journey.test.ts",
+          "kind": "test",
+          "name": "Browser saves a tool once, reopens its exact revision from Home, and pages parameterized results with model connection disabled"
         }
       ],
       "manual_evidence_gaps": [

@@ -11,6 +11,8 @@ import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { ResultPagination } from "~/components/ResultPagination";
 import { SqlResultTable } from "~/components/SqlResultTable";
 import { sqlApi } from "~/lib/ugoite-client";
+import { canCreateSavedSqlComposition } from "~/lib/composition-api";
+import { spaceCompositionNewPath } from "~/lib/space-path";
 import { t } from "~/lib/i18n";
 import { normalizeSqlVariables } from "~/lib/sql";
 import { displaySqlName } from "~/lib/sql-metadata";
@@ -67,6 +69,7 @@ export default function SpaceSqlRunRoute() {
   const [pageError, setPageError] = createSignal<unknown>(null);
   const [pageRetry, setPageRetry] = createSignal(0);
   const [countResultIdentity, setCountResultIdentity] = createSignal("");
+  const [saveError, setSaveError] = createSignal<string | null>(null);
   const state = createMemo(() => runState(location.state));
 
   const [entry] = createResource(
@@ -297,6 +300,26 @@ export default function SpaceSqlRunRoute() {
   };
 
   const resultError = () => entry.error || pageError();
+  const canSaveAsTool = () => {
+    const current = entry();
+    const result = visiblePage();
+    return !!current && canCreateSavedSqlComposition(current) && !!result &&
+      !entry.loading && !pageLoading() && !resultError() &&
+      result.columns.length > 0 &&
+      new Set(result.columns).size === result.columns.length;
+  };
+
+  const openInStudio = () => {
+    const current = entry();
+    if (!current || !canSaveAsTool()) return;
+    setSaveError(null);
+    const query = new URLSearchParams({
+      saved_sql_id: current.id,
+      saved_sql_revision: current.revision_id,
+    });
+    navigate(`${spaceCompositionNewPath(spaceId())}?${query.toString()}`);
+  };
+
   return (
     <>
       <div class="screenHead">
@@ -331,6 +354,15 @@ export default function SpaceSqlRunRoute() {
                   })}
                 </p>
                 <div class="flex flex-wrap items-center gap-2">
+                  <Show when={canSaveAsTool()}>
+                    <button
+                      type="button"
+                      class="ui-button ui-button-secondary"
+                      onClick={openInStudio}
+                    >
+                      {t("composition.saveAsTool")}
+                    </button>
+                  </Show>
                   <Show
                     when={count() !== null &&
                       countResultIdentity() === makeQueryIdentity(
@@ -421,6 +453,11 @@ export default function SpaceSqlRunRoute() {
           onPrevious={handlePrevious}
           onNext={handleNext}
         />
+        <Show when={saveError()}>
+          <p class="ui-alert ui-alert-error mt-4" role="alert">
+            {saveError()}
+          </p>
+        </Show>
         <Show when={entry.error && !pageError()}>
           <button
             type="button"

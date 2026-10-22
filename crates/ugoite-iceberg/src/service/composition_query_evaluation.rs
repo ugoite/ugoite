@@ -1001,6 +1001,7 @@ mod tests {
             variable_id: "total".to_owned(),
             request: None,
             sql_text: None,
+            portable_sql: None,
             deferred_arguments: Vec::new(),
             returns: VariableGraphResultType::Scalar {
                 value_type: VariableGraphScalarDescriptor {

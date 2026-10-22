@@ -58,6 +58,8 @@ export interface CompositionVariableGraphWorkspaceProps {
   onQueryChange?: (variableId: string, sql: string) => void;
   onRunQuery?: (variableId: string) => void;
   onNextQuery?: (variableId: string) => void;
+  onPreviousQuery?: (variableId: string) => void;
+  onCountQuery?: (variableId: string) => void;
   onVariablesAdded?: (
     variableId: string,
     variables: readonly { name: string; type: CompositionSqlArgumentType }[],
@@ -629,105 +631,117 @@ export function CompositionVariableGraphWorkspace(
               </Show>
               <Show when={node().kind === "query"}>
                 {(() => {
-                  const query = node() as Extract<
-                    CompositionVariableNode,
-                    { kind: "query" }
-                  >;
-                  const sql = query.query.kind === "inline_sql"
-                    ? query.query.sql
-                    : props.sqlBodies?.[query.id] ?? "";
-                  const declarations =
-                    props.parameterDeclarations?.[query.id] ?? [];
+                  const query = () =>
+                    node() as Extract<
+                      CompositionVariableNode,
+                      { kind: "query" }
+                    >;
+                  const sql = () => {
+                    const definition = query().query;
+                    return definition.kind === "inline_sql"
+                      ? definition.sql
+                      : props.sqlBodies?.[query().id] ?? "";
+                  };
+                  const declarations = () =>
+                    props.parameterDeclarations?.[query().id] ?? [];
                   const [actions, setActions] = createSignal<
                     SQLWorkspaceAction[]
                   >([]);
                   const structureContexts = () =>
                     buildSqlStructureContexts(
                       props.sqlForms ?? [],
-                      declarations.map((argument) => ({
+                      declarations().map((argument) => ({
                         name: argument.name,
                         type: argument.type,
                       })),
-                      `composition-query:${query.id}`,
+                      `composition-query:${query().id}`,
                     );
-                  const candidates = props.draft.variables.filter((entry) =>
-                    entry.id !== query.id &&
-                    (entry.kind === "constant" || entry.kind === "input" ||
-                      entry.kind === "query" && entry.returns.kind === "scalar")
-                  );
+                  const candidates = () =>
+                    props.draft.variables.filter((entry) =>
+                      entry.id !== query().id &&
+                      (entry.kind === "constant" || entry.kind === "input" ||
+                        entry.kind === "query" &&
+                          entry.returns.kind === "scalar")
+                    );
                   return (
                     <>
                       <SQLWorkspace
-                        id={`composition-variable-${query.id}`}
-                        sql={sql}
-                        {...(query.query.kind === "inline_sql"
+                        id={`composition-variable-${query().id}`}
+                        sql={sql()}
+                        {...(query().query.kind === "inline_sql"
                           ? {
                             onSqlChange: (sql: string) =>
-                              props.onQueryChange?.(query.id, sql),
+                              props.onQueryChange?.(query().id, sql),
                           }
                           : { readOnly: true })}
                         schema={props.sqlSchema}
                         actions={[
                           ...actions(),
-                          ...(props.actionsForQuery?.(query.id) ?? []),
+                          ...(props.actionsForQuery?.(query().id) ?? []),
                         ]}
                         variables={[]}
-                        onPreview={() => props.onRunQuery?.(query.id)}
+                        onPreview={() => props.onRunQuery?.(query().id)}
                         previewDisabled={!props.onRunQuery}
-                        preview={props.previewForQuery?.(query.id) ??
+                        preview={props.previewForQuery?.(query().id) ??
                           { status: "idle", isCurrent: false }}
-                        onNext={() => props.onNextQuery?.(query.id)}
+                        onNext={() => props.onNextQuery?.(query().id)}
+                        onPrevious={() => props.onPreviousQuery?.(query().id)}
+                        onCount={query().returns.kind === "table" &&
+                            props.onCountQuery
+                          ? () => props.onCountQuery?.(query().id)
+                          : undefined}
                       />
-                      <Show when={query.query.kind === "inline_sql"}>
+                      <Show when={query().query.kind === "inline_sql"}>
                         <SqlStructureToolbar
-                          sql={() => sql}
+                          sql={sql}
                           contexts={structureContexts}
                           onSqlChange={(nextSql) =>
-                            props.onQueryChange?.(query.id, nextSql)}
+                            props.onQueryChange?.(query().id, nextSql)}
                           onVariablesAdded={(variables) =>
-                            props.onVariablesAdded?.(query.id, variables)}
+                            props.onVariablesAdded?.(query().id, variables)}
                           reservedVariableNames={() =>
-                            query.query.arguments.map((argument) =>
+                            query().query.arguments.map((argument) =>
                               argument.name
                             )}
                           onActionsChange={setActions}
                         />
                       </Show>
-                      <Show when={declarations.length}>
+                      <Show when={declarations().length}>
                         <section
                           class="compositionVariableArguments"
                           aria-label={t("sqlPage.variables")}
                         >
-                          <For each={declarations}>
+                          <For each={declarations()}>
                             {(argument) => {
-                              const bound =
-                                query.query.arguments.find((entry) =>
+                              const bound = () =>
+                                query().query.arguments.find((entry) =>
                                   entry.name === argument.name
                                 )?.variable ?? "";
-                              const typed = candidates.filter((entry) =>
-                                (entry.kind === "query"
-                                  ? entry.returns.kind === "scalar"
-                                    ? entry.returns.value_type.scalar_type
-                                    : undefined
-                                  : entry.value_type.scalar_type) ===
-                                  argument.type
-                              );
+                              const typed = () =>
+                                candidates().filter((entry) =>
+                                  (entry.kind === "query"
+                                    ? entry.returns.kind === "scalar"
+                                      ? entry.returns.value_type.scalar_type
+                                      : undefined
+                                    : entry.value_type.scalar_type) ===
+                                    argument.type
+                                );
                               return (
                                 <label class="compositionVariableArgumentRow">
                                   <span>{argument.name}</span>
                                   <select
                                     class="ui-input"
                                     aria-label={argument.name}
-                                    value={bound}
+                                    value={bound()}
                                     onChange={(event) =>
                                       updateArgument(
-                                        query,
+                                        query(),
                                         argument.name,
                                         event.currentTarget.value,
                                       )}
                                   >
                                     <option value="">—</option>
-                                    <For each={typed}>
+                                    <For each={typed()}>
                                       {(entry) => (
                                         <option value={entry.id}>
                                           {entry.id}

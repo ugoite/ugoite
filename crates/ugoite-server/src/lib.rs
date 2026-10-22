@@ -12020,6 +12020,7 @@ fn api_composition_queries_and_bindings(
                 variable_id: query.variable_id,
                 request,
                 sql_text: query.sql_text,
+                portable_sql: query.portable_sql,
                 deferred_arguments,
                 returns: api_composition_query_result_type(query.returns),
                 result_columns,
@@ -16229,6 +16230,16 @@ spec:
 
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["evaluation_id"], evaluation_id);
+        for query in body["queries"]
+            .as_array()
+            .expect("resolved query descriptors")
+        {
+            assert_eq!(query["portable_sql"], query["request"]["sql"]);
+            assert!(query["portable_sql"]
+                .as_str()
+                .is_some_and(|sql| !sql.is_empty()));
+        }
+
         assert_eq!(body["ok"], false, "{body}");
         assert_eq!(
             body["computed_query_ids"],

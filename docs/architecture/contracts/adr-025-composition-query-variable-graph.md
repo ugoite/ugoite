@@ -6,10 +6,10 @@ title: "ADR-025 — Composition query variable graph and complete SQL Workspace"
 completion remain in progress.** This decision replaces the unreleased
 Composition grammar and authoring model recorded in
 [ADR-024](adr-024-composition-sql-first.md). The strict graph and stateless
-evaluation are implemented in `main`; the browser Composition routes are
-temporarily unavailable while complete SQL document and executor-to-GUI
-coverage and Design/runtime parity remain open gates. This decision does not
-authorize release preparation or publication.
+evaluation are implemented in `main`; the browser Composition routes use the
+shared typed SQL Workspace and graph evaluator. Full executor-to-GUI construct
+coverage remains a separate open gate. This decision does not authorize release
+preparation or publication.
 
 ## Context
 
@@ -101,12 +101,13 @@ construct must add its planner, authorization, type, GUI, and regression
 coverage in the same change. Browser code does not add a second SQL parser or
 generator.
 
-The following matrix records the required editor surface. "Current gap" is an
-implementation finding, not permission to narrow the SQL requirement. Runtime
-admission for constructs that lack a focused executor fixture remains an
-explicit evidence gap until a fixture proves it.
+The following matrix records the required editor surface and the findings at the
+time of this decision. These historical gaps are not permission to narrow the
+requirement. Current implemented operations and bounded evidence are in
+[the live SQL matrix](sql-gui-feature-matrix.md) and its versioned inventory.
+Runtime admission without a focused executor fixture remains unverified.
 
-| SQL construct                                                                                                     | Required GUI operation                                          | Current evidence / gap                                                                                                                                                                                              |
+| SQL construct                                                                                                     | Required GUI operation                                          | Evidence at decision (historical)                                                                                                                                                                                   |
 | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | One read-only `SELECT`; no multi-statement or write statement                                                     | Query tree, diagnostics, SQL preview                            | The existing SQL API contract requires read-only SQL; unsupported statements fail closed.                                                                                                                           |
 | `SELECT` without `FROM`; wildcard, columns, aliases, expressions, `DISTINCT`                                      | Columns and expression tree                                     | Executor fixture `read_only_aggregate_policy_registers_only_aggregate_functions` plans `SELECT COUNT(*)` without `FROM`; broad no-`FROM` expressions and GUI coverage are gaps.                                     |
@@ -184,10 +185,10 @@ reader or migration.
 ## Implementation status
 
 The strict typed graph and stateless evaluation are implemented in `main`.
-Composition browser routes are temporarily unavailable while the shared SQL
-editor, Design/runtime renderer parity, and browser acceptance gates are
-completed. Complete SQL executor-to-GUI coverage remains open: the shared
-editor still needs the lossless SQL document contract and paired fixtures for
-every admitted construct. Keep these gates explicit until their implementation
-and CI evidence are complete. No release preparation, version update, candidate
-creation, or publication is included.
+Composition browser routes share the typed SQL Document Workspace and graph
+renderer. The candidate includes authoring, saved-revision, reactive result,
+recovery, and responsive browser journeys. Complete SQL executor-to-GUI
+construct coverage remains open under #4565; the requirement is unchanged. Keep
+these gates explicit until their implementation and CI evidence are complete. No
+release preparation, version update, candidate creation, or publication is
+included.

@@ -9,7 +9,7 @@ import {
   type CompositionDocumentCanonicalization,
   protocolFetch,
 } from "./ugoite-client";
-import type { SqlEntry } from "./types";
+import type { SqlEntry, SqlQueryRequest } from "./types";
 
 export interface CompositionListItem {
   composition_id: string;
@@ -85,6 +85,11 @@ export interface CompositionSaveOptions {
 /** Authorized graph query metadata returned by the existing preview operation. */
 export interface CompositionGraphPreviewQuery {
   variable_id: string;
+  request?: SqlQueryRequest;
+  /** Source of the authorized exact Saved SQL revision, never the latest. */
+  sql_text?: string;
+  /** Rebound by Rust to immutable Form relation IDs, without granting authority. */
+  portable_sql?: string;
   deferred_arguments: Array<{
     argument_name: string;
     variable_id: string;

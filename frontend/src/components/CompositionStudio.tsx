@@ -1,14 +1,19 @@
 import { useLocation, useNavigate } from "@solidjs/router";
 import {
   createEffect,
+  createMemo,
   createResource,
   createSignal,
   onCleanup,
   Show,
+  untrack,
 } from "solid-js";
 import { BackLink } from "~/components/BackLink";
 import { CompositionGraphStudio } from "~/components/CompositionGraphStudio";
-import type { SQLWorkspacePreview } from "~/components/SQLWorkspace";
+import type {
+  SQLWorkspaceAction,
+  SQLWorkspacePreview,
+} from "~/components/SQLWorkspace";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import {
   compositionApi,
@@ -35,6 +40,7 @@ import {
   sameResolvedQueryMeaning,
 } from "~/lib/composition-variable-binding";
 import { t } from "~/lib/i18n";
+import { compositionQueryCountRequest } from "~/lib/composition-query-read";
 import {
   compositionCanonicalizeErrorMessage,
   compositionSaveErrorMessage,
@@ -245,9 +251,54 @@ export function CompositionStudio(props: CompositionStudioProps) {
       yaml: string;
       next?: string;
       pageNumber: number;
+      pages: Array<{ preview: SQLWorkspacePreview; next?: string }>;
+      response: CompositionEvaluationResponse;
     }>
   >({});
   const runGenerations = new Map<string, number>();
+  const runControllers = new Map<string, AbortController>();
+  const countControllers = new Map<string, AbortController>();
+  onCleanup(() => {
+    for (
+      const controller of [
+        ...runControllers.values(),
+        ...countControllers.values(),
+      ]
+    ) controller.abort();
+    for (const [id, generation] of runGenerations) {
+      runGenerations.set(id, generation + 1);
+    }
+  });
+  let editorScope: string | undefined;
+  createEffect(() => {
+    const scope = JSON.stringify(routeIdentity());
+    if (editorScope === undefined) {
+      editorScope = scope;
+      return;
+    }
+    if (editorScope === scope) return;
+    editorScope = scope;
+    untrack(() => {
+      for (
+        const controller of [
+          ...runControllers.values(),
+          ...countControllers.values(),
+        ]
+      ) controller.abort();
+      for (const [id, generation] of runGenerations) {
+        runGenerations.set(id, generation + 1);
+      }
+      setQueryPreviews({});
+      setQueryEvaluations({});
+      setInvalidEditorVariables(new Set());
+      setSaveError(null);
+      setDraft(
+        props.saveMode.kind === "create"
+          ? createCompositionGraphDraft()
+          : props.initialDraft ?? createCompositionGraphDraft(),
+      );
+    });
+  });
   const [formsResource] = createResource(
     () => props.spaceId,
     (spaceId) => formApi.list(spaceId),
@@ -350,6 +401,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
         exactIntegerRows,
         pageIdentity: `${evaluation.evaluation_id}:${variableId}:${pageNumber}`,
         pageNumber,
+        canPrevious: pageNumber > 1,
         canNext: evaluated.has_more && Boolean(evaluated.next),
       },
     };
@@ -358,6 +410,12 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const runQuery = async (variableId: string, cursor?: string) => {
     const generation = (runGenerations.get(variableId) ?? 0) + 1;
     runGenerations.set(variableId, generation);
+    runControllers.get(variableId)?.abort();
+    const controller = new AbortController();
+    runControllers.set(variableId, controller);
+    if (!cursor) countControllers.get(variableId)?.abort();
+    const spaceId = props.spaceId;
+    const scope = JSON.stringify(routeIdentity());
     const previous = queryEvaluations()[variableId];
     const isContinuation = Boolean(cursor && previous);
     setQueryPreviews((current) => ({
@@ -381,7 +439,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
         evaluationId = crypto.randomUUID();
         pageNumber = 1;
       }
-      const evaluation = await compositionApi.evaluate(props.spaceId, {
+      if (
+        controller.signal.aborted ||
+        runGenerations.get(variableId) !== generation
+      ) return;
+      const evaluation = await compositionApi.evaluate(spaceId, {
         evaluation_id: evaluationId,
         target: { kind: "draft", yaml },
         ...(props.saveMode.kind === "update"
@@ -393,36 +455,37 @@ export function CompositionStudio(props: CompositionStudioProps) {
         variables: {},
         ...(!cursor ? { requested_queries: [variableId] } : {}),
         ...(cursor ? { page: { variable_id: variableId, cursor } } : {}),
-      });
-      if (runGenerations.get(variableId) !== generation) return;
+      }, controller.signal);
+      if (
+        controller.signal.aborted ||
+        JSON.stringify(routeIdentity()) !== scope ||
+        runGenerations.get(variableId) !== generation ||
+        evaluation.evaluation_id !== evaluationId
+      ) return;
       const evaluated = evaluation.query_results[variableId];
-      if (!isContinuation) {
-        setQueryEvaluations((current) => ({
-          ...current,
-          [variableId]: {
-            evaluationId,
-            yaml,
-            next: evaluated?.next,
-            pageNumber,
-          },
-        }));
-      } else {
-        setQueryEvaluations((current) => ({
-          ...current,
-          [variableId]: {
-            evaluationId,
-            yaml,
-            next: evaluated?.next,
-            pageNumber,
-          },
-        }));
-      }
-      setQueryPreviews((current) => ({
+      const preview = workspacePage(evaluation, variableId, pageNumber);
+      setQueryEvaluations((current) => ({
         ...current,
-        [variableId]: workspacePage(evaluation, variableId, pageNumber),
+        [variableId]: {
+          evaluationId,
+          yaml,
+          next: evaluated?.next,
+          pageNumber,
+          response: evaluation,
+          pages: [
+            ...(isContinuation
+              ? previous?.pages.slice(0, pageNumber - 1) ?? []
+              : []),
+            { preview, next: evaluated?.next },
+          ],
+        },
       }));
+      setQueryPreviews((current) => ({ ...current, [variableId]: preview }));
     } catch {
-      if (runGenerations.get(variableId) === generation) {
+      if (
+        !controller.signal.aborted &&
+        runGenerations.get(variableId) === generation
+      ) {
         setQueryPreviews((current) => ({
           ...current,
           [variableId]: {
@@ -434,14 +497,70 @@ export function CompositionStudio(props: CompositionStudioProps) {
       }
     }
   };
-  const session: CompositionBindingSession = {
-    session_id: crypto.randomUUID(),
-    space_id: props.spaceId,
-    document_revision: props.saveMode.kind === "update"
-      ? props.saveMode.baseRevisionId
-      : null,
-    principal_generation: "not-captured",
+  const countQuery = async (variableId: string) => {
+    const evaluated = queryEvaluations()[variableId];
+    const preview = queryPreviews()[variableId];
+    if (!evaluated || preview?.status !== "success" || !preview.isCurrent) {
+      return;
+    }
+    countControllers.get(variableId)?.abort();
+    const controller = new AbortController();
+    countControllers.set(variableId, controller);
+    const isCurrent = () =>
+      !controller.signal.aborted &&
+      queryEvaluations()[variableId]?.evaluationId === evaluated.evaluationId &&
+      queryEvaluations()[variableId]?.yaml === evaluated.yaml;
+    const updateCount = (count: SQLWorkspacePreview["count"]) => {
+      if (isCurrent()) {
+        setQueryPreviews((all) => ({
+          ...all,
+          [variableId]: { ...all[variableId], count },
+        }));
+      }
+    };
+    updateCount({ status: "loading" });
+    try {
+      const request = compositionQueryCountRequest(
+        draft(),
+        evaluated.response,
+        variableId,
+      );
+      const value = await sqlApi.count(
+        props.spaceId,
+        request,
+        controller.signal,
+      );
+      updateCount({ status: "success", value });
+    } catch {
+      updateCount({ status: "error", error: t("sqlPage.failedCount") });
+    }
   };
+
+  const previousQueryPage = (variableId: string) => {
+    const current = queryEvaluations()[variableId];
+    if (!current || current.pageNumber <= 1) return;
+    const pageNumber = current.pageNumber - 1;
+    const page = current.pages[pageNumber - 1];
+    if (!page) return;
+    runGenerations.set(variableId, (runGenerations.get(variableId) ?? 0) + 1);
+    setQueryEvaluations((all) => ({
+      ...all,
+      [variableId]: { ...current, pageNumber, next: page.next },
+    }));
+    setQueryPreviews((all) => ({ ...all, [variableId]: page.preview }));
+  };
+
+  const session = createMemo<CompositionBindingSession>(() => {
+    const identity = routeIdentity();
+    return {
+      session_id: crypto.randomUUID(),
+      space_id: identity.spaceId,
+      document_revision: props.saveMode.kind === "update"
+        ? props.saveMode.baseRevisionId
+        : null,
+      principal_generation: "not-captured",
+    };
+  });
   const getPrincipalGeneration = async () => {
     const authSession = await authApi.getSession();
     if (!authSession.authenticated) return "anonymous";
@@ -451,9 +570,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
   };
   const isSessionCurrent = async (value: CompositionBindingSession) => {
     if (
-      value.session_id !== session.session_id ||
+      value.session_id !== session().session_id ||
       value.space_id !== props.spaceId ||
-      value.document_revision !== session.document_revision
+      value.document_revision !== session().document_revision
     ) return false;
     try {
       return value.principal_generation === await getPrincipalGeneration();
@@ -464,6 +583,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
 
   const previewCandidate = async (
     candidate: CompositionGraphDraft,
+    signal?: AbortSignal,
   ): Promise<CompositionGraphPreviewResponse> => {
     const document = compositionGraphDocumentDraft(candidate);
     return await compositionApi.previewGraph(
@@ -480,7 +600,108 @@ export function CompositionStudio(props: CompositionStudioProps) {
           revisionId: props.saveMode.baseRevisionId,
         }
         : undefined,
+      signal,
     );
+  };
+
+  // Exact Saved SQL source is returned by the authorized graph resolver.
+  // Do not consult sql.get (the moving head) to populate a pinned editor.
+  const savedQueryIdentity = createMemo(() => {
+    const current = draft();
+    const queries = current.variables.filter((
+      node,
+    ): node is Extract<CompositionVariableNode, { kind: "query" }> =>
+      node.kind === "query" && node.query.kind === "saved_sql"
+    );
+    if (!queries.length) return undefined;
+    return JSON.stringify({
+      spaceId: props.spaceId,
+      base: props.saveMode,
+      queries: queries.map((node) => ({ id: node.id, query: node.query })),
+      argumentTypes: queries.flatMap((node) =>
+        node.query.arguments.map((argument) => {
+          const variable = current.variables.find((entry) =>
+            entry.id === argument.variable
+          );
+          return variable?.kind === "query"
+            ? variable.returns
+            : variable?.value_type;
+        })
+      ),
+    });
+  });
+  let metadataController: AbortController | undefined;
+  onCleanup(() => metadataController?.abort());
+  const [savedQueryMetadata] = createResource(
+    savedQueryIdentity,
+    async (identity) => {
+      metadataController?.abort();
+      const controller = new AbortController();
+      metadataController = controller;
+      const response = await previewCandidate(draft(), controller.signal);
+      if (!response.ok || !response.plan) {
+        throw new Error(
+          t("composition.queryFailed"),
+        );
+      }
+      return {
+        identity,
+        queries: response.plan.queries,
+        bodies: Object.fromEntries(
+          response.plan.queries.flatMap((query) =>
+            query.sql_text === undefined
+              ? []
+              : [[query.variable_id, query.sql_text]]
+          ),
+        ),
+      };
+    },
+  );
+  const sqlBodies = () => {
+    if (savedQueryMetadata.error) return {};
+    const metadata = savedQueryMetadata();
+    return metadata?.identity === savedQueryIdentity()
+      ? metadata?.bodies ?? {}
+      : {};
+  };
+  const actionsForQuery = (variableId: string): SQLWorkspaceAction[] => {
+    const node = draft().variables.find((entry) => entry.id === variableId);
+    if (node?.kind !== "query" || node.query.kind !== "saved_sql") return [];
+    const metadata = savedQueryMetadata.error
+      ? undefined
+      : savedQueryMetadata();
+    const query = metadata?.identity === savedQueryIdentity()
+      ? metadata?.queries.find((entry) => entry.variable_id === variableId)
+      : undefined;
+    return [{
+      kind: "copy",
+      icon: "edit",
+      label: t("composition.editInlineCopy"),
+      disabled: !query?.portable_sql,
+      disabledReason: !query?.portable_sql
+        ? t("composition.queryFailed")
+        : undefined,
+      onActivate: () => {
+        if (
+          !query?.portable_sql || metadata?.identity !== savedQueryIdentity()
+        ) return;
+        onDraftChange({
+          ...draft(),
+          variables: draft().variables.map((entry) =>
+            entry.id === variableId && entry.kind === "query"
+              ? {
+                ...entry,
+                query: {
+                  kind: "inline_sql",
+                  sql: query.portable_sql!,
+                  arguments: entry.query.arguments,
+                },
+              }
+              : entry
+          ),
+        });
+      },
+    }];
   };
 
   const bindFromPreview = async (
@@ -876,11 +1097,17 @@ export function CompositionStudio(props: CompositionStudioProps) {
         pendingSave = undefined;
         setSaveRetryAvailable(false);
       }
-      if (generation === saveGeneration()) {
+      if (
+        generation === saveGeneration() &&
+        sameCompositionSaveIdentity(attempt, routeIdentity())
+      ) {
         setSaveError(compositionCanonicalizeErrorMessage(error));
       }
     } finally {
-      if (generation === saveGeneration()) setSaving(false);
+      if (
+        generation === saveGeneration() &&
+        sameCompositionSaveIdentity(attempt, routeIdentity())
+      ) setSaving(false);
     }
   };
 
@@ -901,6 +1128,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const markQueryPreviewsStale = (invalidated: readonly string[]) => {
     if (!invalidated.length) return;
     for (const variableId of invalidated) {
+      runControllers.get(variableId)?.abort();
+      countControllers.get(variableId)?.abort();
       runGenerations.set(
         variableId,
         (runGenerations.get(variableId) ?? 0) + 1,
@@ -990,17 +1219,21 @@ export function CompositionStudio(props: CompositionStudioProps) {
           savedSqlSeedUnavailable={savedSqlSeedUnavailable()}
           initialSavedSqlBinding={props.initialSavedSqlBinding}
           provider={provider}
-          session={session}
+          session={session()}
           getPrincipalGeneration={getPrincipalGeneration}
           isSessionCurrent={isSessionCurrent}
           sqlSchema={sqlSchema()}
           sqlForms={formsResource() ?? []}
+          sqlBodies={sqlBodies()}
+          actionsForQuery={actionsForQuery}
           previewForQuery={(variableId) =>
             queryPreviews()[variableId] ?? {
               status: "idle",
               isCurrent: false,
             }}
           onRunQuery={(variableId) => void runQuery(variableId)}
+          onPreviousQuery={previousQueryPage}
+          onCountQuery={(variableId) => void countQuery(variableId)}
           onNextQuery={(variableId) => {
             const evaluation = queryEvaluations()[variableId];
             if (evaluation?.next) void runQuery(variableId, evaluation.next);

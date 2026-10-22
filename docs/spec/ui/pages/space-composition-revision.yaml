@@ -1,11 +1,10 @@
 version: "0.1"
-updated: "2026-10-21"
+updated: "2026-10-20"
 page:
   id: space-composition-revision
   title: Saved tool revision
   route: /spaces/{space_id}/compositions/{composition_id}/{revision_id}
-  implementation: temporarily-unavailable
-  availability: No browser route is registered until the Composition UI gates are complete.
+  implementation: implemented
   contract_status: in_progress
 components:
   shared:

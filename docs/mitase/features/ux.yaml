@@ -467,6 +467,33 @@ features:
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
               - kind: satisfies
                 criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
+          - id: composition-studio
+            adapter: typescript
+            path: frontend/src/components/CompositionStudio.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
+          - id: composition-history-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
+          - id: composition-edit-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
           - id: storage-test-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/test-connection.tsx"
@@ -498,6 +525,9 @@ features:
                   - FEAT-UX-007#binding.back-control-implementation/target.sql-new-route
                   - FEAT-UX-007#binding.back-control-implementation/target.sql-variables-route
                   - FEAT-UX-007#binding.back-control-implementation/target.sql-run-route
+                  - FEAT-UX-007#binding.back-control-implementation/target.composition-studio
+                  - FEAT-UX-007#binding.back-control-implementation/target.composition-history-route
+                  - FEAT-UX-007#binding.back-control-implementation/target.composition-edit-route
                   - FEAT-UX-007#binding.back-control-implementation/target.storage-test-route
                 runner: { runner: e2e-playwright, arguments: { file: e2e/compact-controls-evidence.test.ts, test: "REQ-UX-NAV-001: keeps nested compact headers visible and keyboard reachable" } }
               - kind: verifies
@@ -515,6 +545,9 @@ features:
                   - FEAT-UX-007#binding.back-control-implementation/target.sql-new-route
                   - FEAT-UX-007#binding.back-control-implementation/target.sql-variables-route
                   - FEAT-UX-007#binding.back-control-implementation/target.sql-run-route
+                  - FEAT-UX-007#binding.back-control-implementation/target.composition-studio
+                  - FEAT-UX-007#binding.back-control-implementation/target.composition-history-route
+                  - FEAT-UX-007#binding.back-control-implementation/target.composition-edit-route
                   - FEAT-UX-007#binding.back-control-implementation/target.storage-test-route
                 runner: { runner: e2e-playwright, arguments: { file: e2e/compact-controls-evidence.test.ts, test: "REQ-UX-NAV-001: keeps nested compact headers visible and keyboard reachable" } }
   - id: FEAT-UX-008

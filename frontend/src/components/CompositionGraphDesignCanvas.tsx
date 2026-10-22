@@ -1,4 +1,4 @@
-import { createSignal, For, Show } from "solid-js";
+import { createEffect, createSignal, For, Show } from "solid-js";
 import { IconButton } from "~/components/IconButton";
 import { UiIcon } from "~/components/UiIcon";
 import { CompositionVariableBindingPicker } from "~/components/CompositionVariableBindingPicker";
@@ -75,6 +75,15 @@ export function CompositionGraphDesignCanvas(
     props.initialSavedSqlBinding ? "table" : null,
   );
   const [selectedId, setSelectedId] = createSignal<string | null>(null);
+  let sessionId = props.session.session_id;
+  createEffect(() => {
+    const next = props.session.session_id;
+    if (sessionId === next) return;
+    sessionId = next;
+    setPaletteOpen(false);
+    setSelectedId(null);
+    setPickerKind(props.initialSavedSqlBinding ? "table" : null);
+  });
   let addButton: HTMLButtonElement | undefined;
   let bindingOpener: HTMLElement | null = null;
   const savedSqlChoices = () => {

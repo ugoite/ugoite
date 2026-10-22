@@ -50,7 +50,7 @@ Deno.test(
     assertEquals(plan.schema, "ugoite/composition-acceptance-plan/v1");
     assertEquals(
       plan.source,
-      "2026-10-21 implementation directive: PR1 pauses incomplete Composition browser routes; PR3 restores the completed Studio",
+      "SQL-first acceptance on the strict typed variable graph (ADR-025)",
     );
     assertEquals(plan.criteria.map(({ id }) => id), EXPECTED_IDS);
     assertEquals(
@@ -81,16 +81,16 @@ Deno.test(
     assertEquals(
       plan.criteria.find(({ id }) => id === "A10")?.manual_evidence_gaps,
       [
-        "Composition browser routes are paused until PR3; browser UI gates have no route-level evidence.",
         "Actual browser 200% zoom and iPhone Safari device verification",
       ],
     );
     assertEquals(
       plan.criteria.find(({ id }) => id === "A02")?.manual_evidence_gaps,
-      [
-        "Composition browser routes are paused until PR3; Form authoring E2E will be restored there.",
-        "Browser verification of the preview cap versus SQL text LIMIT is deferred.",
-      ],
+      undefined,
+    );
+    assertEquals(
+      plan.criteria.find(({ id }) => id === "A04")?.manual_evidence_gaps,
+      undefined,
     );
     assert(
       plan.criteria.find(({ id }) => id === "A09")?.selectors.some((selector) =>
@@ -101,24 +101,17 @@ Deno.test(
       ),
       "A09 must retain request-level exact revision and cardinality evidence",
     );
-    const removedRouteTests = new Set([
-      "e2e/composition-golden-journey.test.ts",
-      "e2e/composition-invalid-variable-input.test.ts",
-      "e2e/composition-revision-stale-response.test.ts",
-      "e2e/composition-studio-journey.test.ts",
-    ]);
-    assert(
-      plan.criteria.every((criterion) =>
-        criterion.selectors.every((selector) =>
-          !removedRouteTests.has(selector.path)
-        )
-      ),
-      "paused Composition UI tests must not be presented as current evidence",
-    );
+    for (const id of ["A02", "A04", "A08", "A10", "A11", "A12", "A13"]) {
+      assert(
+        plan.criteria.find((criterion) => criterion.id === id)?.selectors.some((
+          selector,
+        ) => selector.path.startsWith("e2e/composition-")),
+        `${id} needs a current browser journey`,
+      );
+    }
     assertEquals(
       plan.criteria.find(({ id }) => id === "A12")?.manual_evidence_gaps,
       [
-        "Composition browser routes are paused until PR3; dialog and drawer browser behavior is not currently available for verification.",
         "VoiceOver and NVDA device verification",
       ],
     );
