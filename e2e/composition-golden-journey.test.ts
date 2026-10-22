@@ -187,21 +187,25 @@ async function seedSavedSql(
   expect(amountColumn).toBeTruthy();
 
   const rows = createSeedRows(manifest);
-  for (const row of rows) {
-    const entryResponse = await request.post(
-      getBackendUrl(`/spaces/${spaceId}/entries`),
-      {
-        data: {
-          form: formName,
-          fields: {
-            Date: row.date,
-            Merchant: row.merchant,
-            Amount: row.amount,
+  for (let offset = 0; offset < rows.length; offset += 8) {
+    await Promise.all(
+      rows.slice(offset, offset + 8).map(async (row) => {
+        const entryResponse = await request.post(
+          getBackendUrl(`/spaces/${spaceId}/entries`),
+          {
+            data: {
+              form: formName,
+              fields: {
+                Date: row.date,
+                Merchant: row.merchant,
+                Amount: row.amount,
+              },
+            },
           },
-        },
-      },
+        );
+        expect(entryResponse.status()).toBe(201);
+      }),
     );
-    expect(entryResponse.status()).toBe(201);
   }
 
   const sql = manifest.saved_sql.sql_template
@@ -302,7 +306,7 @@ test.describe("Composition Golden Journey", () => {
   let manifest: SeedManifest;
 
   test.beforeAll(async ({ request }) => {
-    // The 102-row pagination fixture seeds entry-by-entry; slow hosts need
+    // The 102-row fixture publishes bounded batches; slow hosts need
     // room beyond the default per-hook budget.
     test.setTimeout(300_000);
     await waitForServers(request);
@@ -414,6 +418,8 @@ test.describe("Composition Golden Journey", () => {
         "month_end",
         manifest.parameters.month_end,
       );
+      await addInput(initialPage, "month_start");
+      await addInput(initialPage, "month_end");
       await initialPage.getByRole("tablist", { name: "Studio mode" })
         .getByRole("tab", { name: "Design", exact: true }).click();
       await initialPage.getByRole("button", {
@@ -428,8 +434,12 @@ test.describe("Composition Golden Journey", () => {
         exact: true,
       });
       await picker.getByRole("tab", { name: "Saved SQL", exact: true }).click();
-      await picker.getByRole("button", { name: seed.savedSqlName, exact: true })
-        .click();
+      const savedSqlChoice = picker.getByRole("button", {
+        name: seed.savedSqlName,
+        exact: true,
+      });
+      await expect(savedSqlChoice).toBeEnabled({ timeout: 30_000 });
+      await savedSqlChoice.click();
       for (const argument of ["month_start", "month_end"]) {
         await picker.getByLabel(`Variable for SQL argument ${argument}`, {
           exact: true,
@@ -438,9 +448,6 @@ test.describe("Composition Golden Journey", () => {
       }
       await picker.getByRole("button", { name: "Add", exact: true }).click();
       await expect(picker).toHaveCount(0);
-      await addInput(initialPage, "month_start");
-      await addInput(initialPage, "month_end");
-
       await initialPage.getByRole("button", { name: "Save", exact: true })
         .click();
       await expect(
