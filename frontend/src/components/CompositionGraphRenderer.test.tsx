@@ -138,6 +138,45 @@ describe("CompositionGraphRenderer", () => {
     expect(onPrevious).toHaveBeenCalledWith("rows");
   });
 
+  it("announces an empty table after successful evaluation without keeping previous rows", () => {
+    const [result, setResult] = createSignal(evaluation);
+    render(() => (
+      <CompositionGraphRenderer
+        draft={draft}
+        evaluation={result()}
+        rawInputs={{}}
+        inputStates={{}}
+        blockedQueryIds={new Set()}
+        previousPageQueryIds={new Set()}
+        pageBusy={false}
+        onInput={vi.fn()}
+        onNext={vi.fn()}
+        onPrevious={vi.fn()}
+      />
+    ));
+    expect(screen.getByRole("table")).toHaveTextContent("Alpha");
+    setResult({
+      ...evaluation,
+      query_results: {
+        ...evaluation.query_results,
+        rows: {
+          value: {
+            ...evaluation.query_results.rows.value,
+            kind: "table",
+            rows: [],
+          },
+          has_more: false,
+        },
+      },
+    });
+    expect(screen.getByRole("table")).not.toHaveTextContent("Alpha");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "The query returned no rows.",
+    );
+    expect(screen.queryByRole("button", { name: "Next" })).not
+      .toBeInTheDocument();
+  });
+
   it("shows the selected Saved SQL output alias for an opaque generated variable", () => {
     const variableId =
       "query_018ff2a7-32d4-7b80-a57f-03010544ea9b_opaque_value";

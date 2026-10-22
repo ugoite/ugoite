@@ -554,8 +554,9 @@ test.describe("Composition Golden Journey", () => {
       await expect(table.locator("tbody tr")).toHaveCount(
         manifest.expected.after_month_start_change_rows,
       );
-      await expect(reopenedPage.getByText("No results", { exact: true }))
-        .toBeVisible();
+      await expect(reopenedPage.getByRole("status")).toHaveText(
+        "The query returned no rows.",
+      );
       // ResultPagination intentionally renders no navigation on a single
       // (here empty) page, so accept absent-or-disabled pagination.
       await expect(

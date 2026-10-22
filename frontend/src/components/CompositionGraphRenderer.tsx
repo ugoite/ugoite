@@ -331,6 +331,11 @@ export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
                                             </For>
                                           </tbody>
                                         </table>
+                                        <Show when={table()?.rows.length === 0}>
+                                          <p role="status">
+                                            {t("sqlPage.noResults")}
+                                          </p>
+                                        </Show>
                                         <ResultPagination
                                           class="compositionGraphPagination"
                                           canPrevious={Boolean(
