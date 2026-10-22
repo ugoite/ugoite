@@ -904,6 +904,7 @@ async function main(): Promise<void> {
       context,
       operation: {
         kind: "set_join",
+        join_kind: "inner",
         left_column: "title",
         right_column: "title",
       },
@@ -972,6 +973,7 @@ async function main(): Promise<void> {
       context,
       operation: {
         kind: "set_join",
+        join_kind: "inner",
         left_column: "title",
         right_column: "title",
       },

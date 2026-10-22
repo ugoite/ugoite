@@ -9,6 +9,9 @@ Ugoite separates SQL execution from Saved SQL persistence:
 2. **SQL Query** under `/spaces/{space_id}/sql/query` is a stateless,
    read-only execution surface. It does not create a session, result object, or
    query metadata in the Space.
+3. **SQL Query Plan** under `/spaces/{space_id}/sql/query/plan` checks a query
+   with the caller's current read authorization and returns its planned output
+   schema without collecting result rows or writing Knowledge.
 
 The CLI uses `ugoite sql query`, `ugoite sql count`, `ugoite sql saved run`, and
 bounded `ugoite sql export`. `sql saved run` selects a current or exact Saved
@@ -16,7 +19,9 @@ SQL revision through the existing `sql.query` operation. Export repeatedly
 calls that operation and streams complete results as NDJSON; it is CLI
 orchestration, not another REST operation. Local Core and remote REST targets
 use the same request DTOs and semantics. `ugoite sql lint` is parser-only:
-syntax validity does not authorize execution or resolve a Form.
+syntax validity does not authorize execution or resolve a Form. The Browser SQL
+editor uses the authorized plan operation for runtime-admission diagnostics;
+the parser-only CLI command keeps its existing meaning.
 
 New SQL can refer to authorized Forms by their quoted names. Ordinary SQL
 resolves those names in the current read publication. A new Saved SQL revision
@@ -71,6 +76,14 @@ authorization coordinate. It is client-held state, not an authorization token;
 each request rechecks current authorization. `sql.query.count` is explicit and
 separate from page retrieval. No total-cardinality ceiling or persistent SQL
 execution lifecycle is introduced.
+
+`sql.query.plan` accepts the SQL, typed parameters, and optional exact Saved SQL
+revision reference used by query planning. It resolves permitted Forms, checks
+current read access, builds and validates the physical plan, and returns only
+the server-derived output schema. It does not read result rows or create a
+query result, session, continuation, or Space revision. Planner diagnostics
+from this operation are the execution-admission boundary for the shared SQL
+GUI; successful parsing alone is not sufficient to save or execute a draft.
 
 Every new SQL page carries a server-owned `result_schema` in column order,
 including for empty and all-`NULL` results. Each result column also reports

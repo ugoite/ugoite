@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import type {
   SQLWorkspaceCount,
   SQLWorkspacePage,
+  SQLWorkspacePlanState,
   SQLWorkspacePreview,
   SQLWorkspaceScalar,
   SQLWorkspaceVariable,
@@ -9,7 +10,11 @@ import type {
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { t } from "~/lib/i18n";
 import { normalizeSqlVariables, parseSqlVariableDefault } from "~/lib/sql";
-import type { SqlQueryPage, SqlVariable } from "~/lib/types";
+import type {
+  SqlQueryPage,
+  SqlQueryPlanRequest,
+  SqlVariable,
+} from "~/lib/types";
 import { sqlApi } from "~/lib/ugoite-client";
 
 export type SqlWorkspaceVariableDefinition = SQLWorkspaceVariable & {
@@ -21,11 +26,11 @@ export type SqlWorkspaceVariableDefinition = SQLWorkspaceVariable & {
  * that remain in the query. Saved SQL owns variable type/default metadata;
  * changing the SQL text alone must not silently replace it with string values.
  */
-export function normalizeSqlWorkspaceVariables(
+export async function normalizeSqlWorkspaceVariables(
   sql: string,
   existing: readonly SqlVariable[] = [],
-): { sql: string; variables: SqlWorkspaceVariableDefinition[] } {
-  const normalized = normalizeSqlVariables(sql);
+): Promise<{ sql: string; variables: SqlWorkspaceVariableDefinition[] }> {
+  const normalized = await normalizeSqlVariables(sql, [...existing]);
   const existingByName = new Map(existing.map((variable) => [
     variable.name,
     variable,
@@ -74,6 +79,7 @@ type QueryRequest = {
 };
 
 type BuiltRequest = { identity: string; request: QueryRequest };
+type PlanState = SQLWorkspacePlanState & { identity: string };
 
 const abortError = (error: unknown): boolean =>
   !!error && typeof error === "object" &&
@@ -138,17 +144,25 @@ export function createSqlWorkspaceController(
   });
   const [continuationStack, setContinuationStack] = createSignal<string[]>([]);
   const [currentIdentity, setCurrentIdentity] = createSignal("");
+  const [planState, setPlanState] = createSignal<PlanState>({
+    identity: "",
+    status: "pending",
+    isCurrent: false,
+  });
 
   let pageGeneration = 0;
   let countGeneration = 0;
   let pageController: AbortController | undefined;
   let countController: AbortController | undefined;
+  let planController: AbortController | undefined;
+  let planTimer: ReturnType<typeof setTimeout> | undefined;
+  let planGeneration = 0;
   let previousIdentity: string | undefined;
 
   const requestParts = createMemo(() => {
     const variables = options.variables();
     const values = parameterValues();
-    const sql = normalizeSqlVariables(options.sql()).sql.trim();
+    const sql = options.sql().trim();
     const savedSql = options.savedSql?.();
     const identity = JSON.stringify({
       spaceId: options.spaceId(),
@@ -158,6 +172,19 @@ export function createSqlWorkspaceController(
       savedSql,
     });
     return { identity, sql, variables, values, savedSql };
+  });
+
+  const plan = createMemo<SQLWorkspacePlanState>(() => {
+    const identity = requestParts().identity;
+    const state = planState();
+    if (state.identity !== identity) {
+      return { status: "pending", isCurrent: false };
+    }
+    return {
+      status: state.status,
+      isCurrent: state.isCurrent,
+      ...(state.error ? { error: state.error } : {}),
+    };
   });
 
   createEffect(() => {
@@ -180,6 +207,87 @@ export function createSqlWorkspaceController(
     setContinuationStack([]);
     setPreviewState({ identity, status: "idle" });
     setCountState({ identity, status: "idle" });
+  });
+
+  createEffect(() => {
+    const parts = requestParts();
+    const generation = ++planGeneration;
+    if (planTimer !== undefined) clearTimeout(planTimer);
+    planTimer = undefined;
+    planController?.abort();
+    planController = undefined;
+    setPlanState({
+      identity: parts.identity,
+      status: "pending",
+      isCurrent: false,
+    });
+
+    planTimer = setTimeout(() => {
+      planTimer = undefined;
+      let built: BuiltRequest;
+      try {
+        built = buildRequest();
+      } catch (error) {
+        if (
+          generation === planGeneration &&
+          parts.identity === requestParts().identity
+        ) {
+          setPlanState({
+            identity: parts.identity,
+            status: "error",
+            isCurrent: true,
+            error: formatUserFacingError(error, "sqlPage.failedQuery"),
+          });
+        }
+        return;
+      }
+      if (
+        generation !== planGeneration || built.identity !== parts.identity ||
+        parts.identity !== requestParts().identity
+      ) return;
+
+      const controller = new AbortController();
+      planController = controller;
+      const request: SqlQueryPlanRequest = {
+        sql: built.request.sql,
+        parameters: built.request.parameters,
+        parameter_types: built.request.parameter_types,
+        ...(built.request.saved_sql
+          ? { saved_sql: built.request.saved_sql }
+          : {}),
+      };
+      void sqlApi.plan(options.spaceId(), request, controller.signal).then(
+        () => {
+          if (
+            generation === planGeneration && !controller.signal.aborted &&
+            parts.identity === requestParts().identity
+          ) {
+            setPlanState({
+              identity: parts.identity,
+              status: "success",
+              isCurrent: true,
+            });
+          }
+        },
+        (error) => {
+          if (
+            generation === planGeneration && !controller.signal.aborted &&
+            parts.identity === requestParts().identity && !abortError(error)
+          ) {
+            setPlanState({
+              identity: parts.identity,
+              status: "error",
+              isCurrent: true,
+              error: formatUserFacingError(error, "sqlPage.failedQuery"),
+            });
+          }
+        },
+      ).finally(() => {
+        if (generation === planGeneration && planController === controller) {
+          planController = undefined;
+        }
+      });
+    }, 350);
   });
 
   const preview = createMemo<SQLWorkspacePreview>(() => {
@@ -417,10 +525,15 @@ export function createSqlWorkspaceController(
   onCleanup(() => {
     pageGeneration += 1;
     countGeneration += 1;
+    planGeneration += 1;
+    if (planTimer !== undefined) clearTimeout(planTimer);
+    planTimer = undefined;
     pageController?.abort();
     countController?.abort();
+    planController?.abort();
     pageController = undefined;
     countController = undefined;
+    planController = undefined;
   });
 
   return {
@@ -429,6 +542,7 @@ export function createSqlWorkspaceController(
       setParameterValues((current) => ({ ...current, [name]: rawValue }));
     },
     preview,
+    plan,
     run,
     count,
     next,

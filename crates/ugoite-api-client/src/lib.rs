@@ -104,6 +104,7 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "sql.update",
     "sql.delete",
     "sql.query",
+    "sql.query.plan",
     "sql.query.count",
     "agent.list",
     "agent.create",
@@ -397,6 +398,7 @@ pub fn operation_auth_intent(operation: &str) -> Option<AuthIntent> {
             | "entry.query"
             | "entry.query.count"
             | "sql.query"
+            | "sql.query.plan"
             | "sql.query.count"
             | "composition.lint"
     ) {
@@ -1337,6 +1339,17 @@ pub fn prepare_request(
                 ],
                 vec![],
             ),
+            "sql.query.plan" => (
+                OperationSpec::json(HttpMethod::Post, "Failed to plan SQL query"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "sql".into(),
+                    "query".into(),
+                    "plan".into(),
+                ],
+                vec![],
+            ),
             "sql.query.count" => (
                 OperationSpec::json(HttpMethod::Post, "Failed to count SQL query rows"),
                 vec![
@@ -2112,6 +2125,11 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             "Failed to query SQL",
             RequestBodyKind::Json,
         ),
+        "sql.query.plan" => (
+            HttpMethod::Post,
+            "Failed to plan SQL query",
+            RequestBodyKind::Json,
+        ),
         "sql.query.count" => (
             HttpMethod::Post,
             "Failed to count SQL query rows",
@@ -2590,6 +2608,27 @@ mod tests {
         .expect("request");
         assert_eq!(request.method, HttpMethod::Post);
         assert_eq!(request.path, "/spaces/demo/sql/query/count");
+    }
+
+    #[test]
+    fn sql_query_plan_uses_the_stateless_plan_route() {
+        let body = json!({
+            "sql": "SELECT 1",
+            "parameters": {},
+            "parameter_types": {}
+        });
+        let request = prepare_request(
+            "sql.query.plan",
+            &json!({"space_id": "demo"}),
+            Some(&body),
+        )
+        .expect("SQL plan request");
+        assert_eq!(request.method, HttpMethod::Post);
+        assert_eq!(request.path, "/spaces/demo/sql/query/plan");
+        assert_eq!(
+            request.body.expect("body"),
+            serde_json::to_string(&body).expect("encode")
+        );
     }
 
     #[test]
@@ -4271,6 +4310,7 @@ mod tests {
             "entry.query",
             "entry.query.count",
             "sql.query",
+            "sql.query.plan",
             "sql.query.count",
             "composition.lint",
             "form.list",

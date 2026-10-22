@@ -1768,6 +1768,7 @@ fn protected_routes(state: AppState) -> Router<AppState> {
             delete(revoke_member),
         )
         .route("/spaces/{space_id}/sql/query", post(query_sql))
+        .route("/spaces/{space_id}/sql/query/plan", post(plan_sql))
         .route("/spaces/{space_id}/sql/query/count", post(count_sql))
         .route(
             "/spaces/{space_id}/entries",
@@ -9800,6 +9801,24 @@ async fn query_sql(
         state
             .service
             .query_sql_authorized_for_principals(&space_id, &principals, request)
+            .await
+            .map_err(ApiError::from_core)?,
+    ))
+}
+
+async fn plan_sql(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path(space_id): Path<String>,
+    Json(request): Json<ugoite_core::sql_query::SqlQueryPlanRequest>,
+) -> ApiResult<Json<ugoite_core::sql_query::SqlQueryPlan>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    Ok(Json(
+        state
+            .service
+            .plan_sql_authorized_for_principals(&space_id, &principals, request)
             .await
             .map_err(ApiError::from_core)?,
     ))
@@ -18930,6 +18949,17 @@ spec:
             .expect("seeded Form SQL relation")
             .to_owned();
         let sql = format!("SELECT _ugoite_id, field_100 FROM \"{relation}\" ORDER BY _ugoite_id");
+
+        let (plan_status, plan) = client
+            .json(
+                Method::POST,
+                &format!("/spaces/{space_id}/sql/query/plan"),
+                Some(json!({"sql": sql, "parameters": {}, "parameter_types": {}})),
+            )
+            .await?;
+        assert_eq!(plan_status, StatusCode::OK, "{plan}");
+        assert_eq!(plan["result_schema"].as_array().map(Vec::len), Some(2));
+        assert!(plan.get("rows").is_none(), "planning must not materialize rows");
 
         for (id, body) in [("first", "one"), ("second", "two"), ("third", "three")] {
             let (status, response) = client

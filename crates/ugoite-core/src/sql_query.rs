@@ -148,6 +148,40 @@ impl SqlQueryCountRequest {
     }
 }
 
+/// A stateless, authorized SQL planning request. It returns the planned
+/// portable result schema without reading result rows.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SqlQueryPlanRequest {
+    #[serde(default)]
+    pub sql: String,
+    #[serde(default)]
+    pub parameters: Map<String, Value>,
+    #[serde(default)]
+    pub parameter_types: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub saved_sql: Option<SavedSqlRevisionRef>,
+}
+
+impl SqlQueryPlanRequest {
+    pub fn validate(&self) -> Result<(), SqlQueryError> {
+        SqlQueryCountRequest {
+            sql: self.sql.clone(),
+            parameters: self.parameters.clone(),
+            parameter_types: self.parameter_types.clone(),
+            saved_sql: self.saved_sql.clone(),
+        }
+        .validate()
+    }
+}
+
+/// Result of authorized SQL planning with no materialized rows.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SqlQueryPlan {
+    pub result_schema: Vec<SqlResultColumn>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SqlQueryPage {
@@ -415,6 +449,30 @@ mod tests {
             "0000000000000000000000000000000000000000000000000000000000000000",
         )
         .expect("publication")
+    }
+
+    #[test]
+    fn sql_query_plan_requires_a_query_or_exact_saved_revision() {
+        assert!(SqlQueryPlanRequest {
+            sql: String::new(),
+            parameters: Map::new(),
+            parameter_types: BTreeMap::new(),
+            saved_sql: None,
+        }
+        .validate()
+        .is_err());
+
+        assert!(SqlQueryPlanRequest {
+            sql: String::new(),
+            parameters: Map::new(),
+            parameter_types: BTreeMap::new(),
+            saved_sql: Some(SavedSqlRevisionRef {
+                id: "saved-1".to_string(),
+                revision_id: "revision-1".to_string(),
+            }),
+        }
+        .validate()
+        .is_ok());
     }
 
     #[test]

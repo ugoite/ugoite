@@ -77,6 +77,7 @@ export const UGOITE_API_OPERATIONS = [
   "sql.update",
   "sql.delete",
   "sql.query",
+  "sql.query.plan",
   "sql.query.count",
   "agent.list",
   "agent.create",
@@ -380,8 +381,25 @@ export type SqlDocumentNodeKind =
   | "query_statement"
   | "other_statement"
   | "query"
+  | "with_clause"
+  | "common_table_expression"
+  | "set_operation"
+  | "set_operation_left"
+  | "set_operation_right"
   | "select"
+  | "select_list"
   | "select_item"
+  | "from_clause"
+  | "relation_tree"
+  | "join"
+  | "where_clause"
+  | "group_by_clause"
+  | "group_by_item"
+  | "having_clause"
+  | "order_by_clause"
+  | "order_by_item"
+  | "limit_clause"
+  | "offset_clause"
   | "relation"
   | "table_factor"
   | "identifier_expression"
@@ -398,11 +416,93 @@ export type SqlDocumentNodeKind =
   | "other_expression"
   | "value";
 
+export type SqlDocumentIdentifier = {
+  value: string;
+  quote_style: string | null;
+};
+
+export type SqlDocumentColumnReference = {
+  qualifier?: SqlDocumentIdentifier | null;
+  column: SqlDocumentIdentifier;
+};
+
+export type SqlDocumentOrderDirection = "asc" | "desc";
+export type SqlDocumentNullsOrder = "first" | "last";
+
+export type SqlDocumentLiteralKind =
+  | "number"
+  | "string"
+  | "boolean"
+  | "null"
+  | "placeholder"
+  | "other";
+
+/** Parser-derived syntax metadata; this is not an execution or type contract. */
+export type SqlDocumentNodeData =
+  | { kind: "select"; distinct: boolean; distinct_on: boolean }
+  | { kind: "wildcard"; qualifier: SqlDocumentIdentifier | null }
+  | {
+    kind: "order_by_item";
+    direction: SqlDocumentOrderDirection | null;
+    nulls_order: SqlDocumentNullsOrder | null;
+  }
+  | { kind: "query_clause_value"; value: number | null }
+  | { kind: "identifier"; value: string; quote_style: string | null }
+  | { kind: "compound_identifier"; parts: SqlDocumentIdentifier[] }
+  | {
+    kind: "literal";
+    literal_kind: SqlDocumentLiteralKind;
+    raw: string | null;
+  }
+  | { kind: "typed_literal"; data_type: string; raw: string | null }
+  | { kind: "binary_operator"; operator: string }
+  | { kind: "unary_operator"; operator: string }
+  | {
+    kind: "function";
+    name: SqlDocumentIdentifier[];
+    argument_count: number | null;
+    distinct: boolean;
+    has_filter: boolean;
+    has_over: boolean;
+    has_argument_clauses: boolean;
+    can_replace_argument: boolean;
+    can_add_argument: boolean;
+    can_remove_argument: boolean;
+  }
+  | {
+    kind: "case";
+    has_operand: boolean;
+    when_count: number;
+    has_else: boolean;
+  }
+  | { kind: "cast"; cast_kind: string; target_type: string | null }
+  | { kind: "predicate"; operator: string; negated: boolean }
+  | { kind: "set_operation"; operator: string; quantifier: string }
+  | { kind: "with_clause"; recursive: boolean; cte_count: number }
+  | {
+    kind: "common_table_expression";
+    name: SqlDocumentIdentifier;
+    columns: SqlDocumentIdentifier[];
+    materialized: boolean | null;
+  }
+  | { kind: "relation"; name: SqlDocumentIdentifier[] }
+  | {
+    kind: "table_factor";
+    factor_kind: string;
+    alias: SqlDocumentIdentifier | null;
+  }
+  | {
+    kind: "unmodeled_expression";
+    node_kind: SqlDocumentNodeKind;
+    reason: string;
+  };
+
 export type SqlDocumentNode = {
   id: number;
   parent: number | null;
   kind: SqlDocumentNodeKind;
   range: SqlDocumentSourceRange | null;
+  semantic: SqlDocumentNodeData | null;
 };
 
 export type SqlDocumentStatus =
@@ -449,6 +549,514 @@ export type SqlDocumentEditTransaction = {
   edits: SqlDocumentEdit[];
 };
 
+export type SqlDocumentNodeEdit = {
+  node_id: number;
+  expected_kind: SqlDocumentNodeKind;
+  replacement: string;
+};
+
+export type SqlDocumentNodeEditTransaction = {
+  contract_version: number;
+  expected_source: string;
+  edits: SqlDocumentNodeEdit[];
+};
+
+export type SqlDocumentSemanticIdentifier = {
+  value: string;
+  quote_style: string | null;
+};
+
+export type SqlDocumentSemanticLiteral =
+  | { kind: "number"; value: string }
+  | { kind: "string"; value: string }
+  | { kind: "boolean"; value: boolean }
+  | { kind: "null" }
+  | { kind: "named_parameter"; name: string };
+
+export type SqlDocumentSemanticBinaryOperator =
+  | "and"
+  | "or"
+  | "eq"
+  | "not_eq"
+  | "lt"
+  | "lte"
+  | "gt"
+  | "gte"
+  | "add"
+  | "subtract"
+  | "multiply"
+  | "divide"
+  | "modulo"
+  | "concat";
+
+export type SqlDocumentSetOperator = "union" | "intersect" | "except";
+export type SqlDocumentSetQuantifier =
+  | "default"
+  | "all"
+  | "distinct"
+  | "by_name"
+  | "all_by_name"
+  | "distinct_by_name";
+export type SqlDocumentSetOperand = "left" | "right";
+export type SqlDocumentUnarySign = "positive" | "negative";
+export type SqlDocumentSubqueryPredicateTemplate = "in" | "not_in";
+export type SqlDocumentPredicateTemplate =
+  | "in"
+  | "not_in"
+  | "between"
+  | "not_between"
+  | "like"
+  | "not_like"
+  | "is_null"
+  | "is_not_null";
+export type SqlDocumentCastType =
+  | "varchar"
+  | "boolean"
+  | "big_int"
+  | "double"
+  | "decimal"
+  | "date"
+  | "timestamp"
+  | "json";
+export type SqlDocumentAggregateFunction =
+  | "count"
+  | "sum"
+  | "avg"
+  | "min"
+  | "max";
+
+export type SqlDocumentRelationFactor =
+  | {
+    kind: "table";
+    name: SqlDocumentIdentifier[];
+    alias: SqlDocumentIdentifier | null;
+  }
+  | {
+    kind: "derived";
+    query_node_id: number;
+    alias: SqlDocumentIdentifier;
+  }
+  | { kind: "existing_table_factor"; node_id: number };
+
+export type SqlDocumentJoinOperator =
+  | "inner"
+  | "left"
+  | "left_outer"
+  | "right"
+  | "right_outer"
+  | "full"
+  | "full_outer"
+  | "cross"
+  | "natural"
+  | "natural_inner"
+  | "natural_left"
+  | "natural_left_outer"
+  | "natural_right"
+  | "natural_right_outer"
+  | "natural_full"
+  | "natural_full_outer";
+
+export type SqlDocumentJoinConstraint =
+  | { kind: "none" }
+  | {
+    kind: "on";
+    expression_node_id: number;
+    expression_expected_kind: SqlDocumentNodeKind;
+  }
+  | { kind: "using"; columns: SqlDocumentIdentifier[] };
+
+export type SqlDocumentJoin = {
+  operator: SqlDocumentJoinOperator;
+  relation: SqlDocumentRelationFactor;
+  constraint: SqlDocumentJoinConstraint;
+};
+
+export type SqlDocumentSemanticEdit =
+  | {
+    kind: "replace_identifier";
+    node_id: number;
+    expected_kind: SqlDocumentNodeKind;
+    parts: SqlDocumentSemanticIdentifier[];
+  }
+  | {
+    kind: "replace_literal";
+    node_id: number;
+    expected_kind: SqlDocumentNodeKind;
+    literal: SqlDocumentSemanticLiteral;
+  }
+  | {
+    kind: "replace_binary_operator";
+    node_id: number;
+    expected_kind: SqlDocumentNodeKind;
+    operator: SqlDocumentSemanticBinaryOperator;
+  }
+  | {
+    kind: "replace_unary_sign";
+    node_id: number;
+    expected_kind: "unary_expression";
+    sign: SqlDocumentUnarySign;
+  }
+  | {
+    kind: "replace_set_operation";
+    node_id: number;
+    expected_kind: "set_operation";
+    operator: SqlDocumentSetOperator;
+    quantifier: SqlDocumentSetQuantifier;
+  }
+  | {
+    kind: "add_set_operation_operand";
+    node_id: number;
+    expected_kind: "query";
+    operator: SqlDocumentSetOperator;
+    quantifier: SqlDocumentSetQuantifier;
+  }
+  | {
+    kind: "remove_set_operation_operand";
+    node_id: number;
+    expected_kind: "set_operation";
+    keep: SqlDocumentSetOperand;
+  }
+  | {
+    kind: "swap_set_operation_operands";
+    node_id: number;
+    expected_kind: "set_operation";
+  }
+  | {
+    kind: "replace_set_operation_operand";
+    node_id: number;
+    expected_kind: "set_operation_left" | "set_operation_right";
+    expression_node_id: number;
+    expression_expected_kind: SqlDocumentNodeKind;
+  }
+  | {
+    kind: "replace_cast_target_type";
+    node_id: number;
+    expected_kind: "cast_expression";
+    target_type: SqlDocumentCastType;
+  }
+  | {
+    kind: "wrap_expression_in_cast";
+    node_id: number;
+    expected_kind: SqlDocumentNodeKind;
+    target_type: SqlDocumentCastType;
+  }
+  | {
+    kind: "wrap_expression_in_aggregate";
+    node_id: number;
+    expected_kind: SqlDocumentNodeKind;
+    function: SqlDocumentAggregateFunction;
+    distinct: boolean;
+  }
+  | {
+    kind: "set_aggregate_function";
+    node_id: number;
+    expected_kind: "function_expression";
+    function: SqlDocumentAggregateFunction;
+  }
+  | {
+    kind: "set_aggregate_distinct";
+    node_id: number;
+    expected_kind: "function_expression";
+    distinct: boolean;
+  }
+  | {
+    kind: "remove_aggregate";
+    node_id: number;
+    expected_kind: "function_expression";
+  }
+  | {
+    kind: "wrap_expression_in_case";
+    node_id: number;
+    expected_kind: SqlDocumentNodeKind;
+  }
+  | {
+    kind: "rename_common_table_expression";
+    node_id: number;
+    expected_kind: "common_table_expression";
+    name: SqlDocumentIdentifier;
+  }
+  | {
+    kind: "add_common_table_expression";
+    node_id: number;
+    expected_kind: "query";
+    name: SqlDocumentIdentifier;
+  }
+  | {
+    kind: "remove_common_table_expression";
+    node_id: number;
+    expected_kind: "common_table_expression";
+  }
+  | {
+    kind: "replace_common_table_expression_query";
+    node_id: number;
+    expected_kind: "common_table_expression";
+    query_node_id: number;
+  }
+  | {
+    kind: "move_common_table_expression";
+    node_id: number;
+    expected_kind: "common_table_expression";
+    to_index: number;
+  }
+  | {
+    kind: "wrap_expression_in_subquery_predicate";
+    node_id: number;
+    expected_kind: SqlDocumentNodeKind;
+    template: SqlDocumentSubqueryPredicateTemplate;
+  }
+  | {
+    kind: "replace_expression_with_exists_subquery";
+    node_id: number;
+    expected_kind: SqlDocumentNodeKind;
+  }
+  | {
+    kind: "replace_predicate_negation";
+    node_id: number;
+    expected_kind: "predicate_expression";
+    negated: boolean;
+  }
+  | {
+    kind: "add_case_branch";
+    node_id: number;
+    expected_kind: "case_expression";
+  }
+  | {
+    kind: "remove_case_branch";
+    node_id: number;
+    expected_kind: "case_expression";
+  }
+  | {
+    kind: "set_case_else";
+    node_id: number;
+    expected_kind: "case_expression";
+    has_else: boolean;
+  }
+  | {
+    kind: "add_where_clause";
+    node_id: number;
+    expected_kind: "select";
+  }
+  | {
+    kind: "set_filter_predicate";
+    node_id: number;
+    expected_kind: "where_clause" | "having_clause";
+    expression_node_id: number;
+    expression_expected_kind: SqlDocumentNodeKind;
+  }
+  | {
+    kind: "remove_filter_clause";
+    node_id: number;
+    expected_kind: "where_clause" | "having_clause";
+  }
+  | {
+    kind: "wrap_expression_in_predicate";
+    node_id: number;
+    expected_kind: SqlDocumentNodeKind;
+    template: SqlDocumentPredicateTemplate;
+  }
+  | {
+    kind: "append_in_list_value";
+    node_id: number;
+    expected_kind: "predicate_expression";
+  }
+  | {
+    kind: "remove_last_in_list_value";
+    node_id: number;
+    expected_kind: "predicate_expression";
+  }
+  | {
+    kind: "compose_binary_expression";
+    node_id: number;
+    expected_kind: SqlDocumentNodeKind;
+    left_expression_node_id: number;
+    left_expression_expected_kind: SqlDocumentNodeKind;
+    operator: SqlDocumentSemanticBinaryOperator;
+    right_expression_node_id: number;
+    right_expression_expected_kind: SqlDocumentNodeKind;
+  }
+  | {
+    kind: "replace_expression_from_node";
+    node_id: number;
+    expected_kind: SqlDocumentNodeKind;
+    expression_node_id: number;
+    expression_expected_kind: SqlDocumentNodeKind;
+  }
+  | {
+    kind: "set_projection_expression";
+    node_id: number;
+    expected_kind: "select_item";
+    expression_node_id: number;
+    expression_expected_kind: SqlDocumentNodeKind;
+  }
+  | {
+    kind: "add_projection_expression";
+    node_id: number;
+    expected_kind: "select_list";
+    expression_node_id: number;
+    expression_expected_kind: SqlDocumentNodeKind;
+  }
+  | {
+    kind: "add_projection_column";
+    node_id: number;
+    expected_kind: "select_list";
+    column: SqlDocumentColumnReference;
+  }
+  | {
+    kind: "expand_projection_wildcard";
+    node_id: number;
+    expected_kind: "select_item";
+    columns: SqlDocumentColumnReference[];
+  }
+  | {
+    kind: "add_scalar_subquery_projection";
+    node_id: number;
+    expected_kind: "select_list";
+  }
+  | {
+    kind: "add_group_by_expression";
+    node_id: number;
+    expected_kind: "select";
+    expression_node_id: number;
+    expression_expected_kind: SqlDocumentNodeKind;
+  }
+  | {
+    kind: "remove_group_by_item";
+    node_id: number;
+    expected_kind: "group_by_item";
+  }
+  | {
+    kind: "move_group_by_item";
+    node_id: number;
+    expected_kind: "group_by_item";
+    to_index: number;
+  }
+  | {
+    kind: "add_order_by_expression";
+    node_id: number;
+    expected_kind: "query";
+    expression_node_id: number;
+    expression_expected_kind: SqlDocumentNodeKind;
+    direction: "asc" | "desc";
+    nulls_order: "first" | "last" | null;
+  }
+  | {
+    kind: "set_order_by_expression";
+    node_id: number;
+    expected_kind: "order_by_item";
+    expression_node_id: number;
+    expression_expected_kind: SqlDocumentNodeKind;
+  }
+  | {
+    kind: "set_order_by_options";
+    node_id: number;
+    expected_kind: "order_by_item";
+    direction: SqlDocumentOrderDirection;
+    nulls_order: SqlDocumentNullsOrder | null;
+  }
+  | {
+    kind: "remove_order_by_item";
+    node_id: number;
+    expected_kind: "order_by_item";
+  }
+  | {
+    kind: "move_order_by_item";
+    node_id: number;
+    expected_kind: "order_by_item";
+    to_index: number;
+  }
+  | {
+    kind: "set_select_distinct";
+    node_id: number;
+    expected_kind: "select";
+    distinct: boolean;
+  }
+  | {
+    kind: "set_limit_value";
+    node_id: number;
+    expected_kind: "query";
+    value: number;
+  }
+  | {
+    kind: "remove_limit";
+    node_id: number;
+    expected_kind: "query";
+  }
+  | {
+    kind: "set_offset_value";
+    node_id: number;
+    expected_kind: "query";
+    value: number;
+  }
+  | {
+    kind: "remove_offset";
+    node_id: number;
+    expected_kind: "query";
+  }
+  | {
+    kind: "add_having_clause";
+    node_id: number;
+    expected_kind: "select";
+  }
+  | {
+    kind: "remove_having_clause";
+    node_id: number;
+    expected_kind: "having_clause";
+  }
+  | {
+    kind: "remove_projection_item";
+    node_id: number;
+    expected_kind: "select_item";
+  }
+  | {
+    kind: "move_projection_item";
+    node_id: number;
+    expected_kind: "select_item";
+    to_index: number;
+  }
+  | {
+    kind: "set_function_argument";
+    node_id: number;
+    expected_kind: "function_expression";
+    argument_index: number;
+    expression_node_id: number;
+    expression_expected_kind: SqlDocumentNodeKind;
+  }
+  | {
+    kind: "remove_last_function_argument";
+    node_id: number;
+    expected_kind: "function_expression";
+  }
+  | {
+    kind: "replace_table_factor";
+    node_id: number;
+    expected_kind: "table_factor";
+    factor: SqlDocumentRelationFactor;
+  }
+  | {
+    kind: "add_from_relation";
+    node_id: number;
+    expected_kind: "select";
+    factor: SqlDocumentRelationFactor;
+  }
+  | {
+    kind: "add_join";
+    node_id: number;
+    expected_kind: "relation_tree";
+    join: SqlDocumentJoin;
+  }
+  | {
+    kind: "replace_join";
+    node_id: number;
+    expected_kind: "join";
+    join: SqlDocumentJoin;
+  };
+
+export type SqlDocumentSemanticEditTransaction = {
+  contract_version: number;
+  expected_source: string;
+  edits: SqlDocumentSemanticEdit[];
+};
+
 export type SqlDocumentEditResult = {
   document: SqlDocument;
   undo: SqlDocumentEditTransaction;
@@ -462,6 +1070,13 @@ export type SqlDocumentEditErrorCode =
   | "source_too_large"
   | "source_too_complex"
   | "too_many_edits"
+  | "document_not_parsed"
+  | "contract_version_mismatch"
+  | "node_not_found"
+  | "node_kind_mismatch"
+  | "node_range_unavailable"
+  | "invalid_semantic_replacement"
+  | "duplicate_node_target"
   | "invalid_range"
   | "range_out_of_bounds"
   | "not_utf8_boundary"
@@ -499,6 +1114,26 @@ export const applySqlDocumentEditTransaction = async (
     value: { current_source: currentSource, transaction },
   });
 
+/** Apply guarded replacements to Rust-classified SQL Document nodes. */
+export const applySqlDocumentNodeEditTransaction = async (
+  currentSource: string,
+  transaction: SqlDocumentNodeEditTransaction,
+): Promise<SqlDocumentEditResult> =>
+  await invokeProtocol<SqlDocumentEditResult, SqlDocumentEditErrorCode>({
+    action: "domain.apply_sql_document_node_edit_transaction",
+    value: { current_source: currentSource, transaction },
+  });
+
+/** Apply typed SQL syntax edits in Rust. */
+export const applySqlDocumentSemanticEditTransaction = async (
+  currentSource: string,
+  transaction: SqlDocumentSemanticEditTransaction,
+): Promise<SqlDocumentEditResult> =>
+  await invokeProtocol<SqlDocumentEditResult, SqlDocumentEditErrorCode>({
+    action: "domain.apply_sql_document_semantic_edit_transaction",
+    value: { current_source: currentSource, transaction },
+  });
+
 export type SqlStructureColumnType =
   | "string"
   | "boolean"
@@ -523,188 +1158,6 @@ export type SqlStructureContext = {
   columns: { name: string; type: SqlStructureColumnType }[];
   variables?: { name: string; type: SqlStructureVariableType }[];
   stable_key?: string[];
-};
-
-export type SqlStructureFilterOperator =
-  | "eq"
-  | "not_eq"
-  | "lt"
-  | "lt_eq"
-  | "gt"
-  | "gt_eq"
-  | "is_null"
-  | "is_not_null";
-
-export type SqlStructureFilter = {
-  column: string;
-  qualifier?: SqlStructureAlias;
-  operator: SqlStructureFilterOperator;
-  parameter?: string;
-};
-
-export type SqlStructureFilterExpression =
-  | { kind: "and" | "or"; expressions: SqlStructureFilterExpression[] }
-  | { kind: "not"; expression: SqlStructureFilterExpression }
-  | {
-    kind: "predicate";
-    column: string;
-    qualifier?: SqlStructureAlias;
-    operator: SqlStructureFilterOperator;
-    parameter?: string;
-  };
-
-export type SqlStructureSort = {
-  column: string;
-  qualifier?: SqlStructureAlias;
-  direction: "asc" | "desc";
-};
-
-export type SqlStructureAggregateFunction =
-  | "count"
-  | "sum"
-  | "avg"
-  | "mean"
-  | "min"
-  | "max";
-
-export type SqlStructureAlias = {
-  name: string;
-  quoted: boolean;
-};
-
-export type SqlStructureJoin = {
-  relation: string;
-  left_alias: SqlStructureAlias;
-  right_alias: SqlStructureAlias;
-  left_column: string;
-  right_column: string;
-};
-
-export type SqlStructureProjectionAlias = {
-  column: string;
-  alias?: SqlStructureAlias;
-};
-
-export type SqlStructureProjectionSlotInput = {
-  /** Preserve the analyzed slot identity; omit for a newly added projection. */
-  id?: string;
-  column: string;
-  /** Null explicitly clears an alias. */
-  alias?: SqlStructureAlias | null;
-};
-
-export type SqlStructureAggregate = {
-  function: SqlStructureAggregateFunction;
-  /** Omitted only for COUNT(*). */
-  column?: string;
-  /** Additional column names after `column` for variadic COUNT. */
-  arguments?: string[];
-  distinct: boolean;
-  alias?: SqlStructureAlias;
-};
-
-export type SqlStructureLiteral =
-  | { kind: "integer" | "string"; value: string }
-  | { kind: "boolean"; value: boolean }
-  | { kind: "null" };
-
-export type SqlStructureOperation =
-  | { kind: "set_relation"; relation: string }
-  | { kind: "set_join"; left_column: string; right_column: string }
-  | { kind: "set_literal_projection"; values: SqlStructureLiteral[] }
-  | {
-    kind: "set_columns";
-    columns: string[];
-    /** Aligned aliases. Omitted to retain aliases on selected columns. */
-    aliases?: (SqlStructureAlias | null)[];
-  }
-  | {
-    kind: "set_projection_slots";
-    slots: SqlStructureProjectionSlotInput[];
-  }
-  | { kind: "set_filters"; filters: SqlStructureFilter[] }
-  | {
-    kind: "set_filter_expression";
-    expression: SqlStructureFilterExpression | null;
-  }
-  | { kind: "set_sort"; order_by: SqlStructureSort[] }
-  | { kind: "set_aggregates"; aggregates: SqlStructureAggregate[] }
-  | { kind: "set_group_by"; columns: string[] }
-  | { kind: "set_distinct"; distinct: boolean };
-
-export type SqlStructureReason =
-  | "invalid_context"
-  | "sql_too_large"
-  | "parse_failed"
-  | "single_statement_required"
-  | "select_required"
-  | "common_table_expression_unsupported"
-  | "set_operation_unsupported"
-  | "query_clause_unsupported"
-  | "relation_unsupported"
-  | "relation_mismatch"
-  | "join_unsupported"
-  | "projection_unsupported"
-  | "filter_unsupported"
-  | "sort_unsupported"
-  | "unknown_column"
-  | "duplicate_column"
-  | "empty_projection"
-  | "invalid_variable_name"
-  | "unknown_variable"
-  | "variable_type_mismatch"
-  | "filter_type_unsupported"
-  | "stable_key_unavailable"
-  | "stable_key_unorderable"
-  | "stable_order_required"
-  | "aggregate_unsupported"
-  | "aggregate_type_unsupported"
-  | "group_by_unsupported"
-  | "distinct_unsupported"
-  | "round_trip_failed";
-
-export type SqlStructureActionCapability = {
-  enabled: boolean;
-  reason?: SqlStructureReason;
-};
-
-export type SqlStructureAnalysis = {
-  contract_version: number;
-  status: "supported" | "invalid_sql" | "unsupported";
-  reason?: SqlStructureReason;
-  projection: string[];
-  literal_projection: SqlStructureLiteral[];
-  projection_aliases: SqlStructureProjectionAlias[];
-  filters: SqlStructureFilter[];
-  filter_expression?: SqlStructureFilterExpression | null;
-  aggregates: SqlStructureAggregate[];
-  group_by: string[];
-  distinct: boolean;
-  order_by: SqlStructureSort[];
-  joins: SqlStructureJoin[];
-  referenced_variables: string[];
-  stable_pagination: boolean;
-  capabilities: {
-    join: SqlStructureActionCapability;
-    columns: SqlStructureActionCapability;
-    filter: SqlStructureActionCapability;
-    filter_expression?: SqlStructureActionCapability;
-    sort: SqlStructureActionCapability;
-    aggregate: SqlStructureActionCapability;
-    group_by: SqlStructureActionCapability;
-    distinct: SqlStructureActionCapability;
-    stable_pagination: SqlStructureActionCapability;
-  };
-};
-
-export type SqlStructureProposal = {
-  contract_version: number;
-  status: "supported" | "invalid_sql" | "unsupported";
-  reason?: SqlStructureReason;
-  base_sql: string;
-  proposed_sql?: string;
-  requires_confirmation: boolean;
-  added_stable_tie_breakers: string[];
 };
 
 export type VariableGraphInputValueByType = {
@@ -771,32 +1224,6 @@ export const parseVariableGraphInputSync = <
     },
   );
 };
-
-/** Load the Rust SQL parser before offering structure-aware Workspace actions. */
-export const prepareSqlStructureParser = async (): Promise<void> => {
-  await loadExports();
-};
-
-/** Analyze the safe SQL subset through the shared Rust domain parser. */
-export const analyzeSqlStructure = async (
-  sql: string,
-  context: SqlStructureContext,
-): Promise<SqlStructureAnalysis> =>
-  await invokeProtocol<SqlStructureAnalysis>({
-    action: "domain.analyze_sql_structure",
-    value: { sql, context },
-  });
-
-/** Build a non-mutating SQL proposal; the adapter owns diff confirmation. */
-export const proposeSqlStructureOperation = async (
-  sql: string,
-  context: SqlStructureContext,
-  operation: SqlStructureOperation,
-): Promise<SqlStructureProposal> =>
-  await invokeProtocol<SqlStructureProposal>({
-    action: "domain.propose_sql_structure_operation",
-    value: { sql, context, operation },
-  });
 
 /** Exact protocol envelope for one spreadsheet-CSV encode request. */
 export const buildSpreadsheetCsvRequest = (

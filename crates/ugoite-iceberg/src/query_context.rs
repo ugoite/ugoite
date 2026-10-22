@@ -239,7 +239,11 @@ pub(crate) fn bounded_session_context(
     limits.validate().map_err(|message| anyhow!(message))?;
     let config = SessionConfig::new()
         .with_information_schema(false)
-        .with_target_partitions(limits.max_concurrency);
+        .with_target_partitions(limits.max_concurrency)
+        .set_str(
+            "datafusion.sql_parser.recursion_limit",
+            &crate::sql_parser::SQL_PARSER_RECURSION_LIMIT.to_string(),
+        );
     let runtime = RuntimeEnvBuilder::new()
         .with_memory_pool(Arc::new(GreedyMemoryPool::new(limits.max_memory_bytes)))
         .build_arc()
@@ -1398,6 +1402,20 @@ impl AuthorizedQueryContext {
     ) -> Result<Vec<SqlResultColumn>> {
         let plan = self.prepared_plan(sql, parameters).await?;
         let (_, result_schema) = sql_output_shape(&plan)?;
+        // A successful logical plan is not enough to promise that this
+        // executor can run the query. Build and authorize the physical plan
+        // here as well so schema-only validation reports the same supported
+        // execution boundary without reading any rows.
+        let frame = self
+            .context
+            .execute_logical_plan(plan)
+            .await
+            .map_err(AuthorizedQueryError::execution_failed)?;
+        let physical = frame
+            .create_physical_plan()
+            .await
+            .map_err(AuthorizedQueryError::execution_failed)?;
+        validate_physical_plan(&physical, &self.authorized_scans)?;
         Ok(result_schema)
     }
 
@@ -1704,10 +1722,11 @@ fn sql_output_shape(plan: &LogicalPlan) -> Result<(Vec<String>, Vec<SqlResultCol
 }
 
 fn stateless_query_has_top_level_order(sql: &str) -> Result<bool> {
-    use datafusion::sql::parser::{DFParser, Statement as DataFusionStatement};
+    use datafusion::sql::parser::Statement as DataFusionStatement;
     use datafusion::sql::sqlparser::ast::Statement as SqlStatement;
 
-    let statements = DFParser::parse_sql(sql).map_err(AuthorizedQueryError::invalid_query)?;
+    let statements =
+        crate::sql_parser::parse_sql(sql).map_err(AuthorizedQueryError::invalid_query)?;
     let Some(DataFusionStatement::Statement(statement)) = statements.front() else {
         return Err(AuthorizedQueryError::invalid_query(anyhow!(
             "SQL query must contain one SELECT statement"
@@ -1898,7 +1917,6 @@ fn resolve_form_name_references_with_references(
     sql: &str,
     aliases: &BTreeMap<String, String>,
 ) -> Result<FormNameReferenceResolution> {
-    use datafusion::sql::parser::DFParser;
     use datafusion::sql::sqlparser::ast::{
         Ident, ObjectName, ObjectNamePart, VisitMut, VisitorMut,
     };
@@ -2000,7 +2018,8 @@ fn resolve_form_name_references_with_references(
         }
     }
 
-    let mut statements = DFParser::parse_sql(sql).map_err(AuthorizedQueryError::invalid_query)?;
+    let mut statements =
+        crate::sql_parser::parse_sql(sql).map_err(AuthorizedQueryError::invalid_query)?;
     let mut resolver = AliasReferenceResolver {
         aliases,
         cte_scopes: Vec::new(),
@@ -2469,6 +2488,247 @@ mod function_policy_tests {
             .is_err(),
             "an admitted aggregate must not become a window function by using OVER"
         );
+    }
+
+    #[tokio::test]
+    async fn authorized_query_context_executes_admitted_expression_fixtures() {
+        let limits = limits(SqlFunctionPolicy::ReadOnlyAggregateV1);
+        let context =
+            bounded_session_context(&limits).expect("bounded DataFusion context should be created");
+        let query_context = AuthorizedQueryContext {
+            context,
+            permits: Arc::new(Semaphore::new(limits.max_concurrency)),
+            limits,
+            authorized_relations: BTreeSet::new(),
+            form_name_aliases: BTreeMap::new(),
+            authorized_scans: BTreeSet::new(),
+            duplicate_head_checks: Vec::new(),
+            duplicate_head_checks_validated: Arc::new(Mutex::new(BTreeSet::new())),
+        };
+
+        for sql in [
+            "SELECT CASE WHEN 1 > 0 THEN 1 ELSE 0 END AS result",
+            "SELECT CAST('7' AS BIGINT) AS result",
+            "SELECT 1 + 2 AS result",
+            "SELECT 1 IN (1, 2) AS result",
+            "SELECT 2 BETWEEN 1 AND 3 AS result",
+            "SELECT 'ugoite' LIKE 'ugo%' AS result",
+            "SELECT 1 WHERE 1 IN (SELECT 1)",
+            "SELECT 1 WHERE EXISTS (SELECT 1)",
+        ] {
+            let page = query_context
+                .execute_stateless_page(sql, HashMap::new(), 0, 10)
+                .await
+                .unwrap_or_else(|error| panic!("authorized planner rejected {sql}: {error:#}"));
+            let rows = page
+                .batches
+                .iter()
+                .map(|batch| batch.num_rows())
+                .sum::<usize>();
+            assert_eq!(rows, 1, "{sql}");
+        }
+
+        for sql in [
+            "SELECT LOWER('value')",
+            "SELECT ROW_NUMBER() OVER ()",
+            "SELECT COUNT(1) OVER ()",
+        ] {
+            assert!(
+                query_context
+                    .prepared_plan(sql, HashMap::new())
+                    .await
+                    .is_err(),
+                "authorized planner unexpectedly admitted {sql}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn authorized_iceberg_context_executes_admitted_query_shape_fixtures(
+    ) -> anyhow::Result<()> {
+        use ugoite_core::query::{
+            AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QuerySystemColumn,
+        };
+        use ugoite_domain::form::{
+            sql_column_name, sql_relation_name, FieldType, FormDefinition, FormField, FormVersion,
+        };
+        use ugoite_domain::id::{FieldId, FormId, SpaceId};
+        use uuid::Uuid;
+
+        fn planner_form(id: u128, name: &str) -> FormDefinition {
+            FormDefinition {
+                id: FormId::from(Uuid::from_u128(id)),
+                version: FormVersion::new(1).expect("valid test Form version"),
+                name: name.to_owned(),
+                description: None,
+                fields: [100, 101]
+                    .into_iter()
+                    .map(|field_id| FormField {
+                        id: FieldId::new(field_id).expect("valid test field ID"),
+                        name: format!("value_{field_id}"),
+                        field_type: FieldType::Integer,
+                        required: false,
+                        label: None,
+                        description: None,
+                        semantic_role: None,
+                        reference_form: None,
+                        list_item: None,
+                        validation: None,
+                        enum_values: Vec::new(),
+                        deprecated: false,
+                    })
+                    .collect(),
+                allow_extra_attributes: false,
+                extension_metadata: BTreeMap::new(),
+            }
+        }
+
+        let space_id = SpaceId::from(Uuid::from_u128(19_021));
+        let workspace = crate::IcebergWorkspace::memory_for_tests(
+            space_id,
+            "memory://authorized-sql-query-shape-fixtures",
+        )
+        .await?;
+        let left_form = planner_form(19_022, "PlannerLeft");
+        let right_form = planner_form(19_023, "PlannerRight");
+        for (command_id, form) in [
+            ("sql-planner-left-form", &left_form),
+            ("sql-planner-right-form", &right_form),
+        ] {
+            workspace
+                .commit(crate::publication_context(
+                    command_id,
+                    "test.sql-planner.form",
+                    form,
+                )?)?
+                .create_form(form)
+                .await?;
+        }
+
+        let forms = [&left_form, &right_form]
+            .into_iter()
+            .map(|form| {
+                (
+                    form.id,
+                    AuthorizedQueryForm {
+                        relation: sql_relation_name(form.id),
+                        sql_aliases: BTreeSet::new(),
+                        entry_scope: EntryScope::AllCurrent,
+                        columns: [100, 101]
+                            .into_iter()
+                            .map(|field_id| {
+                                sql_column_name(
+                                    FieldId::new(field_id).expect("valid test field ID"),
+                                )
+                            })
+                            .collect(),
+                        system_columns: BTreeSet::from([QuerySystemColumn::ExternalId]),
+                    },
+                )
+            })
+            .collect();
+        let query_context = workspace
+            .authorized_query_context(AuthorizedQueryPolicy {
+                forms,
+                checkpoint: None,
+                limits: limits(SqlFunctionPolicy::ReadOnlyAggregateV1),
+            })
+            .await?;
+
+        let left = sql_relation_name(left_form.id);
+        let right = sql_relation_name(right_form.id);
+        let id = "field_100";
+        let group = "field_101";
+        let mut fixtures = vec![
+            (
+                "CTE",
+                format!("WITH selected AS (SELECT {id} FROM {left}) SELECT {id} FROM selected"),
+            ),
+            (
+                "UNION",
+                format!("SELECT {id} FROM {left} UNION SELECT {id} FROM {right}"),
+            ),
+            (
+                "INTERSECT",
+                format!("SELECT {id} FROM {left} INTERSECT SELECT {id} FROM {right}"),
+            ),
+            (
+                "EXCEPT",
+                format!("SELECT {id} FROM {left} EXCEPT SELECT {id} FROM {right}"),
+            ),
+            (
+                "HAVING",
+                format!("SELECT COUNT(*) AS row_count FROM {left} HAVING COUNT(*) >= 0"),
+            ),
+            (
+                "derived relation",
+                format!("SELECT derived.{id} FROM (SELECT {id} FROM {left}) AS derived"),
+            ),
+            (
+                "IN subquery predicate",
+                format!("SELECT {id} FROM {left} WHERE {id} IN (SELECT {id} FROM {right})"),
+            ),
+            (
+                "scalar subquery",
+                format!("SELECT (SELECT MAX({id}) FROM {right}) AS max_id FROM {left}"),
+            ),
+            (
+                "INNER JOIN",
+                format!(
+                    "SELECT a.{id} FROM {left} AS a INNER JOIN {right} AS b ON a.{id} = b.{id}"
+                ),
+            ),
+            (
+                "LEFT JOIN",
+                format!("SELECT a.{id} FROM {left} AS a LEFT JOIN {right} AS b ON a.{id} = b.{id}"),
+            ),
+            (
+                "RIGHT JOIN",
+                format!(
+                    "SELECT a.{id} FROM {left} AS a RIGHT JOIN {right} AS b ON a.{id} = b.{id}"
+                ),
+            ),
+            (
+                "FULL OUTER JOIN",
+                format!(
+                    "SELECT a.{id} FROM {left} AS a FULL OUTER JOIN {right} AS b ON a.{id} = b.{id}"
+                ),
+            ),
+            (
+                "CROSS JOIN",
+                format!("SELECT a.{id} FROM {left} AS a CROSS JOIN {right} AS b"),
+            ),
+            (
+                "NATURAL JOIN",
+                format!("SELECT a.{id} FROM {left} AS a NATURAL JOIN {right} AS b"),
+            ),
+            (
+                "JOIN USING",
+                format!("SELECT a.{id} FROM {left} AS a JOIN {right} AS b USING ({id})"),
+            ),
+        ];
+        fixtures.push((
+            "GROUP BY with HAVING",
+            format!(
+                "SELECT {group}, COUNT(*) AS row_count FROM {left} GROUP BY {group} HAVING COUNT(*) > 0"
+            ),
+        ));
+
+        for (shape, sql) in fixtures {
+            crate::index::validate_read_only_sql(&sql).unwrap_or_else(|error| {
+                panic!("statement gate rejected {shape} fixture `{sql}`: {error:#}")
+            });
+            query_context
+                .execute_stateless_page(&sql, HashMap::new(), 0, 10)
+                .await
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "authorized planner/executor rejected {shape} fixture `{sql}`: {error:#}"
+                    )
+                });
+        }
+
+        Ok(())
     }
 
     #[tokio::test]

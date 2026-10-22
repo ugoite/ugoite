@@ -76,12 +76,43 @@ export default function SpaceSqlRunRoute() {
       return sqlApi.get(requestedSpace, requestedSql);
     },
   );
+  const [normalizedSql, setNormalizedSql] = createSignal<{
+    entryId: string;
+    revisionId: string;
+    sql: string;
+  }>();
+  let normalizationGeneration = 0;
+  createEffect(() => {
+    const current = entry();
+    const generation = ++normalizationGeneration;
+    setNormalizedSql(undefined);
+    if (!current) return;
+    void normalizeSqlVariables(current.sql).then((normalized) => {
+      if (
+        generation === normalizationGeneration && entry()?.id === current.id &&
+        entry()?.revision_id === current.revision_id
+      ) {
+        setNormalizedSql({
+          entryId: current.id,
+          revisionId: current.revision_id,
+          sql: normalized.sql,
+        });
+      }
+    }).catch(() => {
+      if (generation === normalizationGeneration) setNormalizedSql(undefined);
+    });
+  });
   const request = createMemo(() => {
     const current = entry();
     if (!current) return undefined;
+    const normalized = normalizedSql();
+    if (
+      !normalized || normalized.entryId !== current.id ||
+      normalized.revisionId !== current.revision_id || !normalized.sql.trim()
+    ) return undefined;
     const currentState = state();
     return {
-      sql: normalizeSqlVariables(current.sql).sql,
+      sql: normalized.sql,
       parameters: currentState.parameters ?? {},
       parameter_types: currentState.parameterTypes ?? {},
       include_exact_integer_values: true,

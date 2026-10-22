@@ -99,8 +99,11 @@ test.describe("Saved SQL route", () => {
         },
       },
     );
-    expect([200, 201]).toContain(createResponse.status());
-    const savedSqlId = (await createResponse.json() as { id: string }).id;
+    const createResult = await createResponse.json() as { id?: string };
+    expect([200, 201], JSON.stringify(createResult)).toContain(
+      createResponse.status(),
+    );
+    const savedSqlId = createResult.id!;
 
     try {
       await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`), {
@@ -108,7 +111,19 @@ test.describe("Saved SQL route", () => {
       });
       await expect(page.locator(".ui-sql-editor")).toContainText("SELECT 1");
 
-      const distinctAction = page.getByRole("button", { name: "Distinct" });
+      const structureAction = page.getByRole("button", {
+        name: "Structure",
+        exact: true,
+      });
+      await expect(structureAction).toBeEnabled();
+      await structureAction.click();
+      const structureOptions = page.getByRole("group", {
+        name: "Structure options",
+      });
+      const distinctAction = structureOptions.getByRole("button", {
+        name: "Distinct",
+        exact: true,
+      });
       await expect(distinctAction).toBeEnabled();
       await distinctAction.click();
       const dialog = page.getByRole("dialog", { name: "Distinct" });
@@ -123,6 +138,95 @@ test.describe("Saved SQL route", () => {
       await expect(page.locator(".ui-sql-editor")).toContainText(
         "SELECT DISTINCT 1",
       );
+    } finally {
+      await request.delete(
+        getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
+      );
+    }
+  });
+
+  test("Form selection builds a relation from a relation-free SELECT without replacing SQL outside the seed", async ({ page, request }) => {
+    await ensureDefaultForm(request, spaceId);
+    const relation = await getDefaultFormRelation(request, spaceId);
+    const name = `Relation-free SQL ${Date.now()}`;
+    const createResponse = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/sql`),
+      {
+        data: {
+          name,
+          kind: "user-query",
+          sql: "SELECT 1",
+          variables: [],
+        },
+      },
+    );
+    const createBody = await createResponse.text();
+    expect([200, 201], createBody).toContain(createResponse.status());
+    const savedSqlId = (JSON.parse(createBody) as { id: string }).id;
+
+    try {
+      await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`), {
+        waitUntil: "domcontentloaded",
+      });
+      const toolbar = page.getByRole("group", { name: "SQL" });
+      await toolbar.getByRole("button", { name: "Form", exact: true })
+        .click();
+      const dialog = page.getByRole("dialog", { name: "Form" });
+      await dialog.getByRole("button", { name: "Entry", exact: true })
+        .click();
+      await page.getByRole("dialog", { name: "Review SQL change" })
+        .getByRole("button", { name: "Apply change" }).click();
+
+      await expect(page.locator(".ui-sql-editor")).toContainText(
+        `SELECT * FROM "${relation}"`,
+      );
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+    } finally {
+      await request.delete(
+        getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
+      );
+    }
+  });
+
+  test("REQ-FE-064 @smoke: a Form query exposes every shared SQL action", async ({ page, request }) => {
+    await ensureDefaultForm(request, spaceId);
+    const relation = await getDefaultFormRelation(request, spaceId);
+    const name = `Form SQL Workspace ${Date.now()}`;
+    const createResponse = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/sql`),
+      {
+        data: {
+          name,
+          kind: "user-query",
+          sql: `SELECT * FROM "${relation}"`,
+          variables: [],
+        },
+      },
+    );
+    const createBody = await createResponse.text();
+    expect([200, 201], createBody).toContain(createResponse.status());
+    const savedSqlId = (JSON.parse(createBody) as { id: string }).id;
+
+    try {
+      await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`), {
+        waitUntil: "domcontentloaded",
+      });
+      await expect(page.locator(".ui-sql-editor")).toContainText(
+        `SELECT * FROM "${relation}"`,
+      );
+
+      for (
+        const action of [
+          "Form",
+          "Columns",
+          "Filter",
+          "Sort",
+          "Structure",
+          "Arguments",
+        ]
+      ) {
+        await expect(page.getByRole("button", { name: action })).toBeEnabled();
+      }
     } finally {
       await request.delete(
         getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
@@ -159,14 +263,20 @@ test.describe("Saved SQL route", () => {
       expect(dimensions.documentWidth).toBeLessThanOrEqual(
         dimensions.viewportWidth + 1,
       );
-      expect(dimensions.buttons).toHaveLength(8);
+      expect(dimensions.buttons).toHaveLength(6);
       expect(
         Math.max(...dimensions.buttons.map((button) => button.top)) -
           Math.min(...dimensions.buttons.map((button) => button.top)),
       ).toBeLessThanOrEqual(1);
-      expect(dimensions.toolbarScrollWidth).toBeGreaterThan(
-        dimensions.toolbarWidth,
-      );
+      if (width === 320) {
+        expect(dimensions.toolbarScrollWidth).toBeGreaterThan(
+          dimensions.toolbarWidth,
+        );
+      } else {
+        expect(dimensions.toolbarScrollWidth).toBeLessThanOrEqual(
+          dimensions.toolbarWidth + 1,
+        );
+      }
       for (const button of dimensions.buttons) {
         expect(button.width).toBeGreaterThanOrEqual(44);
         expect(button.height).toBeGreaterThanOrEqual(44);
@@ -198,8 +308,9 @@ test.describe("Saved SQL route", () => {
         },
       },
     );
-    expect([200, 201]).toContain(createResponse.status());
-    const savedSqlId = (await createResponse.json() as { id: string }).id;
+    const createBody = await createResponse.text();
+    expect([200, 201], createBody).toContain(createResponse.status());
+    const savedSqlId = (JSON.parse(createBody) as { id: string }).id;
 
     try {
       await page.setViewportSize({ width: 320, height: 844 });
@@ -219,11 +330,10 @@ test.describe("Saved SQL route", () => {
         name: "Remove filter group",
       });
       await expect(deepestActions).toHaveCount(1);
-      const deepestPredicate = dialog.locator(
-        '.sql-structure-filter-node[data-filter-depth="32"]',
-      );
+      const deepestPredicate = dialog.locator(".sql-structure-filter-node")
+        .last();
       const predicateControls = deepestPredicate.getByRole("combobox");
-      await expect(predicateControls).toHaveCount(3);
+      await expect(predicateControls).toHaveCount(4);
       await predicateControls.first().scrollIntoViewIfNeeded();
       await expect(predicateControls.first()).toBeInViewport();
       await deepestActions.scrollIntoViewIfNeeded();
@@ -235,13 +345,18 @@ test.describe("Saved SQL route", () => {
           ".sql-structure-filter-list",
         );
         if (!list) throw new Error("Filter list is missing");
-        const target = dialog.querySelector<HTMLElement>(
-          '[data-filter-depth="31"] .sql-structure-filter-group-controls .icononly',
+        const deepestGroup = Array.from(
+          dialog.querySelectorAll<HTMLElement>(".sql-structure-filter-group"),
+        ).at(-1);
+        const targetButton = deepestGroup?.querySelector<HTMLElement>(
+          ".sql-structure-filter-group-controls .icononly",
         );
-        if (!target) throw new Error("Deep filter group action is missing");
-        const deepestPredicate = dialog.querySelector<HTMLElement>(
-          '.sql-structure-filter-node[data-filter-depth="32"]',
-        );
+        if (!targetButton) {
+          throw new Error("Deep filter group action is missing");
+        }
+        const deepestPredicate = Array.from(
+          dialog.querySelectorAll<HTMLElement>(".sql-structure-filter-node"),
+        ).at(-1);
         if (!deepestPredicate) {
           throw new Error("Deep filter predicate is missing");
         }
@@ -257,7 +372,7 @@ test.describe("Saved SQL route", () => {
             };
           },
         );
-        const rect = target.getBoundingClientRect();
+        const rect = targetButton.getBoundingClientRect();
         const dialogRect = dialog.getBoundingClientRect();
         return {
           documentWidth: document.documentElement.scrollWidth,
@@ -293,13 +408,26 @@ test.describe("Saved SQL route", () => {
       expect(dimensions.targetRight).toBeLessThanOrEqual(
         dimensions.dialogRight + 1,
       );
-      expect(dimensions.controls).toHaveLength(3);
+      expect(dimensions.controls).toHaveLength(4);
       for (const control of dimensions.controls) {
         expect(control.width).toBeGreaterThanOrEqual(44);
         expect(control.height).toBeGreaterThanOrEqual(44);
         expect(control.left).toBeGreaterThanOrEqual(dimensions.dialogLeft);
         expect(control.right).toBeLessThanOrEqual(dimensions.dialogRight + 1);
       }
+
+      const queryResponse = await request.post(
+        getBackendUrl(`/spaces/${spaceId}/sql/query`),
+        {
+          data: {
+            sql: `SELECT "_ugoite_id" FROM "${relation}" WHERE ${expression}`,
+            parameters: { entry_id: "no-match" },
+            parameter_types: { entry_id: "string" },
+            limit: 50,
+          },
+        },
+      );
+      expect(queryResponse.ok(), await queryResponse.text()).toBe(true);
     } finally {
       await request.delete(
         getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
@@ -307,11 +435,67 @@ test.describe("Saved SQL route", () => {
     }
   });
 
-  test("REQ-FE-063 @smoke: new saved SQL uses the shared structure actions and runs through Saved SQL", async ({ page, request }) => {
-    const queryName = `Form-bound draft ${Date.now()}`;
+  test("REQ-FE-063 @smoke: shared SQL Workspace round-trips a Form query through save and run", async ({ page, request }) => {
+    const timestamp = Date.now();
+    const queryName = `Form-bound draft ${timestamp}`;
+    const alternateFormName = `SQL Workspace Alternate ${timestamp}`;
     let savedSqlId: string | undefined;
+    let entryId: string | undefined;
+
     await ensureDefaultForm(request, spaceId);
     const relation = await getDefaultFormRelation(request, spaceId);
+    const formCreateResponse = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/forms`),
+      {
+        data: {
+          name: alternateFormName,
+          version: 1,
+          template: `# ${alternateFormName}\n\n## Body\n`,
+          fields: { Body: { type: "markdown", required: false } },
+        },
+      },
+    );
+    const formCreateBody = await formCreateResponse.text();
+    expect([200, 201, 409], formCreateBody).toContain(
+      formCreateResponse.status(),
+    );
+
+    const formsResponse = await request.get(
+      getBackendUrl(`/spaces/${spaceId}/forms`),
+    );
+    expect(formsResponse.ok(), await formsResponse.text()).toBe(true);
+    const forms = await formsResponse.json() as Array<{
+      name?: string;
+      sql_relation?: string;
+    }>;
+    const alternateForm = forms.find((form) => form.name === alternateFormName);
+    expect(alternateForm?.sql_relation).toBeTruthy();
+    const alternateRelation = alternateForm!.sql_relation!;
+
+    const entryResponse = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/entries`),
+      {
+        data: {
+          form: alternateFormName,
+          fields: { Body: `Saved SQL GUI journey ${timestamp}` },
+        },
+      },
+    );
+    const entryBody = await entryResponse.text();
+    expect(entryResponse.status(), entryBody).toBe(201);
+    entryId = (JSON.parse(entryBody) as { id: string }).id;
+
+    const structureActions = page.getByRole("group", { name: "SQL" });
+    const toolbarAction = (name: string) =>
+      structureActions.getByRole("button", { name, exact: true });
+    const openStructureOption = async (name: string) => {
+      await toolbarAction("Structure").click();
+      const options = page.getByRole("group", { name: "Structure options" });
+      const option = options.getByRole("button", { name, exact: true });
+      await expect(option).toBeEnabled();
+      await option.click();
+      return page.getByRole("dialog", { name });
+    };
 
     try {
       await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/new`), {
@@ -320,97 +504,141 @@ test.describe("Saved SQL route", () => {
 
       await expect(page.locator(".ui-sql-editor")).toContainText("SELECT 1");
       await expect(page.getByLabel("Form for this query")).toHaveCount(0);
-      await expect(
-        page.getByRole("button", { name: /^Aggregate(?:$|:)/ }),
-      ).toHaveCount(1);
       await expect(page.getByLabel("Filter field")).toHaveCount(0);
 
-      const structureActions = page.getByRole("group", { name: "SQL" });
-      const formAction = structureActions.getByRole("button", {
-        name: "Form",
-        exact: true,
-      });
+      const formAction = toolbarAction("Form");
       await expect(formAction).toBeEnabled();
-      await expect(
-        structureActions.getByRole("button", {
-          name: /^Aggregate(?:$|:)/,
-        }),
-      ).toBeDisabled();
-      await expect(page.locator(".ui-sql-editor")).not.toContainText(
-        /\b(?:LIMIT|OFFSET)\b/i,
-      );
-      await expect(page.getByLabel("Filter field")).toHaveCount(0);
-
       await formAction.click();
       const formDialog = page.getByRole("dialog", { name: "Form" });
-      await formDialog.getByRole("button", { name: "Entry" }).click();
-      const reviewDialog = page.getByRole("dialog", {
+      await formDialog.getByRole("button", { name: "Entry", exact: true })
+        .click();
+      const formReviewDialog = page.getByRole("dialog", {
         name: "Review SQL change",
       });
-      await expect(reviewDialog.getByText(`SELECT * FROM "${relation}"`))
-        .toBeVisible();
-      await reviewDialog.getByRole("button", { name: "Apply change" }).click();
+      await expect(formReviewDialog).toContainText(
+        `SELECT * FROM "${relation}"`,
+      );
+      await formReviewDialog.getByRole("button", { name: "Apply change" })
+        .click();
       await expect(page.locator(".ui-sql-editor")).toContainText(
         `SELECT * FROM "${relation}"`,
       );
 
-      const editor = page.getByRole("textbox", { name: "SQL", exact: true });
-      await editor.fill(
-        `SELECT "_ugoite_id" FROM "${relation}" AS entry_rows ORDER BY "_ugoite_id"`,
+      for (
+        const action of [
+          "Form",
+          "Columns",
+          "Filter",
+          "Sort",
+          "Structure",
+          "Arguments",
+        ]
+      ) {
+        await expect(toolbarAction(action)).toBeEnabled();
+      }
+
+      await toolbarAction("Columns").click();
+      const columnsDialog = page.getByRole("dialog", { name: "Columns" });
+      const projectionSlots = columnsDialog.locator(
+        ".sql-structure-projection-slot",
       );
+      await expect(projectionSlots.first()).toBeVisible();
+      const projectionCount = await projectionSlots.count();
+      for (let index = projectionCount - 1; index > 0; index -= 1) {
+        await projectionSlots.nth(index).getByRole("button", {
+          name: /^Remove column/,
+        }).click();
+      }
+      await projectionSlots.first().getByRole("combobox").selectOption(
+        "_ugoite_id",
+      );
+      await columnsDialog.getByRole("button", { name: "Review change" })
+        .click();
+      const columnsReviewDialog = page.getByRole("dialog", {
+        name: "Review SQL change",
+      });
+      await expect(columnsReviewDialog).toContainText(
+        `SELECT "_ugoite_id" FROM "${relation}"`,
+      );
+      await columnsReviewDialog.getByRole("button", { name: "Apply change" })
+        .click();
       await expect(page.locator(".ui-sql-editor")).toContainText(
-        `FROM "${relation}" AS entry_rows`,
+        `SELECT "_ugoite_id" FROM "${relation}"`,
       );
 
-      const filter = structureActions.getByRole("button", {
-        name: "Filter",
-        exact: true,
-      });
-      await expect(filter).toBeEnabled();
-      await filter.click();
+      await toolbarAction("Arguments").click();
+      const argumentsDialog = page.getByRole("dialog", { name: "Arguments" });
+      await argumentsDialog.getByLabel("Argument name", { exact: true }).fill(
+        "entry_id",
+      );
+      await argumentsDialog.getByLabel("Type", { exact: true }).selectOption(
+        "string",
+      );
+      await argumentsDialog.getByRole("button", { name: "Add argument" })
+        .click();
+      await expect(
+        argumentsDialog.getByText("Argument is not referenced in SQL."),
+      ).toBeVisible();
+      await argumentsDialog.getByRole("button", { name: "Close" }).click();
+
+      const editor = page.getByRole("textbox", { name: "SQL", exact: true });
+      await editor.fill(
+        `SELECT "_ugoite_id" FROM "${relation}" WHERE "_ugoite_id" = $entry_id ORDER BY "_ugoite_id" ASC`,
+      );
+      await expect(page.locator(".ui-sql-editor")).toContainText(
+        `WHERE "_ugoite_id" = $entry_id`,
+      );
+      await expect(page.getByRole("textbox", { name: "entry_id", exact: true }))
+        .toBeVisible();
+
+      await toolbarAction("Filter").click();
       const filterDialog = page.getByRole("dialog", { name: "Filter" });
-      await filterDialog.getByRole("button", { name: "Add filter" }).click();
-      await filterDialog.getByRole("button", { name: "Review change" }).click();
+      const filterControls = filterDialog.locator(".sql-structure-filter-node")
+        .getByRole("combobox");
+      await expect(filterControls).toHaveCount(3);
+      await expect(filterControls.nth(0)).toHaveValue("_ugoite_id");
+      await expect(filterControls.nth(2)).toHaveValue("entry_id");
+      await filterControls.nth(1).selectOption("like");
+      await filterDialog.getByRole("button", { name: "Review change" })
+        .click();
       const filterReviewDialog = page.getByRole("dialog", {
         name: "Review SQL change",
       });
-      await expect(filterReviewDialog.getByText(/\$filter__ugoite_id/))
-        .toBeVisible();
+      await expect(filterReviewDialog).toContainText(
+        /"_ugoite_id"\s+LIKE\s+\$entry_id/i,
+      );
       await filterReviewDialog.getByRole("button", { name: "Apply change" })
         .click();
-      const filterValue = page.getByRole("textbox", {
-        name: "filter__ugoite_id",
-        exact: true,
-      });
-      await expect(filterValue).toBeVisible();
-      await filterValue.fill("no-match");
 
-      const groupBy = structureActions.getByRole("button", {
-        name: "Group by",
-        exact: true,
+      await toolbarAction("Sort").click();
+      const sortDialog = page.getByRole("dialog", { name: "Sort" });
+      await sortDialog.getByLabel("Direction", { exact: true }).selectOption(
+        "desc",
+      );
+      await sortDialog.getByRole("button", { name: "Review change" }).click();
+      const sortReviewDialog = page.getByRole("dialog", {
+        name: "Review SQL change",
       });
-      await expect(groupBy).toBeEnabled();
-      await groupBy.click();
-      const groupByDialog = page.getByRole("dialog", { name: "Group by" });
+      await expect(sortReviewDialog).toContainText(
+        /ORDER BY "_ugoite_id" DESC/i,
+      );
+      await sortReviewDialog.getByRole("button", { name: "Apply change" })
+        .click();
+
+      const groupByDialog = await openStructureOption("Group by");
       await groupByDialog.getByLabel("_ugoite_id", { exact: true }).check();
       await groupByDialog.getByRole("button", { name: "Review change" })
         .click();
       const groupByReviewDialog = page.getByRole("dialog", {
         name: "Review SQL change",
       });
-      await expect(
-        groupByReviewDialog.getByText(/GROUP BY "_ugoite_id"/),
-      ).toBeVisible();
+      await expect(groupByReviewDialog).toContainText(
+        /GROUP BY "_ugoite_id"/,
+      );
       await groupByReviewDialog.getByRole("button", { name: "Apply change" })
         .click();
 
-      const aggregate = structureActions.getByRole("button", {
-        name: "Aggregate",
-        exact: true,
-      });
-      await expect(aggregate).toBeEnabled();
-      await aggregate.click();
-      const aggregateDialog = page.getByRole("dialog", { name: "Aggregate" });
+      const aggregateDialog = await openStructureOption("Aggregate");
       await aggregateDialog.getByRole("button", { name: "Add aggregate" })
         .click();
       await aggregateDialog.getByRole("button", { name: "Review change" })
@@ -418,14 +646,87 @@ test.describe("Saved SQL route", () => {
       const aggregateReviewDialog = page.getByRole("dialog", {
         name: "Review SQL change",
       });
-      await expect(aggregateReviewDialog.getByText(/COUNT\(\*\)/))
-        .toBeVisible();
-      await aggregateReviewDialog.getByRole("button", { name: "Apply change" })
-        .click();
-      await expect(page.locator(".ui-sql-editor")).toContainText(/COUNT\(\*\)/);
+      await expect(aggregateReviewDialog).toContainText(/COUNT\(\*\)/);
+      await aggregateReviewDialog.getByRole("button", {
+        name: "Apply change",
+      }).click();
+
+      await formAction.click();
+      const changeFormDialog = page.getByRole("dialog", { name: "Form" });
+      await changeFormDialog.getByRole("button", {
+        name: alternateFormName,
+        exact: true,
+      }).click();
+      const formChangeReviewDialog = page.getByRole("dialog", {
+        name: "Review SQL change",
+      });
+      await expect(formChangeReviewDialog).toContainText(
+        `FROM "${alternateRelation}"`,
+      );
+      await expect(formChangeReviewDialog).toContainText(
+        /WHERE "_ugoite_id"\s+LIKE\s+\$entry_id/i,
+      );
+      await expect(formChangeReviewDialog).toContainText(
+        /GROUP BY "_ugoite_id"/,
+      );
+      await expect(formChangeReviewDialog).toContainText(
+        /ORDER BY "_ugoite_id" DESC/i,
+      );
+      await formChangeReviewDialog.getByRole("button", {
+        name: "Apply change",
+      }).click();
+      await expect(page.locator(".ui-sql-editor")).toContainText(
+        `FROM "${alternateRelation}"`,
+      );
+      await expect(page.locator(".ui-sql-editor")).toContainText(
+        /WHERE "_ugoite_id"\s+LIKE\s+\$entry_id/i,
+      );
       await expect(page.locator(".ui-sql-editor")).toContainText(
         /GROUP BY "_ugoite_id"/,
       );
+      await expect(page.locator(".ui-sql-editor")).toContainText(
+        /ORDER BY "_ugoite_id" DESC/i,
+      );
+
+      await editor.fill(
+        `SELECT COUNT(*) FROM "${alternateRelation}" WHERE "_ugoite_id" = $entry_id GROUP BY "_ugoite_id" ORDER BY "_ugoite_id" DESC LIMIT 9`,
+      );
+      await expect(page.locator(".ui-sql-editor")).toContainText("LIMIT 9");
+      await expect(page.locator(".ui-sql-editor")).toContainText(
+        `FROM "${alternateRelation}"`,
+      );
+      await expect(page.locator(".ui-sql-editor")).toContainText(
+        /GROUP BY "_ugoite_id"/,
+      );
+
+      const treeDialog = await openStructureOption("SQL tree");
+      const queryNode = treeDialog.getByRole("treeitem", {
+        name: /^Query:/,
+      });
+      await expect(queryNode).toBeVisible();
+      await queryNode.click();
+      const orderExpression = treeDialog.getByLabel(
+        "Order by expression",
+        { exact: true },
+      );
+      const aggregateExpression = orderExpression.locator("option").filter({
+        hasText: "COUNT(*)",
+      }).first();
+      const aggregateExpressionValue = await aggregateExpression.getAttribute(
+        "value",
+      );
+      expect(aggregateExpressionValue).toBeTruthy();
+      await orderExpression.selectOption(aggregateExpressionValue!);
+      await treeDialog.getByRole("button", {
+        name: "Add order expression",
+      }).click();
+      await treeDialog.getByRole("button", { name: "Apply", exact: true })
+        .click();
+      await expect(page.locator(".ui-sql-editor")).toContainText("LIMIT 9");
+      await expect(page.locator(".ui-sql-editor")).toContainText(
+        /ORDER BY "_ugoite_id" DESC,?\s*COUNT\(\*\) ASC/i,
+      );
+
       await page.getByLabel("Query name").fill(queryName);
       const createResponsePromise = page.waitForResponse((response) => {
         const url = new URL(response.url());
@@ -434,22 +735,24 @@ test.describe("Saved SQL route", () => {
       });
       await page.getByRole("button", { name: "Save" }).click();
       const createResponse = await createResponsePromise;
-      expect([200, 201]).toContain(createResponse.status());
-      savedSqlId = (await createResponse.json() as { id: string }).id;
+      const createBody = await createResponse.text();
+      expect([200, 201], createBody).toContain(createResponse.status());
+      savedSqlId = (JSON.parse(createBody) as { id: string }).id;
 
       await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`), {
         waitUntil: "domcontentloaded",
       });
       await expect(page.locator(".ui-sql-editor")).toContainText(
-        `FROM "${relation}" AS entry_rows`,
+        `FROM "${alternateRelation}"`,
       );
       await expect(page.locator(".ui-sql-editor")).toContainText(
         /GROUP BY "_ugoite_id"/,
       );
-      await page.getByRole("textbox", {
-        name: "filter__ugoite_id",
-        exact: true,
-      }).fill("no-match");
+      await expect(page.locator(".ui-sql-editor")).toContainText("LIMIT 9");
+      await page.getByRole("textbox", { name: "entry_id", exact: true }).fill(
+        entryId,
+      );
+
       const queryResponsePromise = page.waitForResponse((response) => {
         const url = new URL(response.url());
         return response.request().method() === "POST" &&
@@ -457,20 +760,32 @@ test.describe("Saved SQL route", () => {
       });
       await page.getByRole("button", { name: "Run Query" }).click();
       const queryResponse = await queryResponsePromise;
-      expect(queryResponse.ok()).toBe(true);
+      expect(queryResponse.ok(), await queryResponse.text()).toBe(true);
+      const queryPage = await queryResponse.json() as {
+        columns: string[];
+        rows: unknown[][];
+      };
+      expect(queryPage.columns).toHaveLength(1);
+      expect(queryPage.rows).toHaveLength(1);
+      expect(queryPage.rows[0]).toHaveLength(1);
+      expect(Number(queryPage.rows[0][0])).toBe(1);
       await expect(page).toHaveURL(
         new RegExp(`/spaces/${spaceId}/sql/${savedSqlId}$`),
       );
       await expect(
         page.getByRole("region", { name: /^(SQL results|SQL 結果)$/ }).first(),
-      )
-        .toBeVisible();
+      ).toBeVisible();
       await expect(page.locator('section[aria-busy="true"]')).toHaveCount(0);
       await expect(page.locator('p[role="alert"]')).toHaveCount(0);
     } finally {
       if (savedSqlId) {
         await request.delete(
           getBackendUrl(`/spaces/${spaceId}/sql/${savedSqlId}`),
+        );
+      }
+      if (entryId) {
+        await request.delete(
+          getBackendUrl(`/spaces/${spaceId}/entries/${entryId}`),
         );
       }
     }

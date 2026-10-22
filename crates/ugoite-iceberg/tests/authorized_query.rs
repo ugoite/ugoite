@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::Duration;
 
-use arrow_array::{Int64Array, StringArray};
+use arrow_array::{BooleanArray, Float64Array, Int64Array, StringArray};
 use ugoite_core::query::{
     AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
     SqlFunctionPolicy,
@@ -9,8 +9,8 @@ use ugoite_core::query::{
 use ugoite_domain::entry::{EntryMetadata, EntryOperation, EntryRevision, FieldValue};
 use ugoite_domain::form::{FieldType, FormDefinition, FormField, FormVersion};
 use ugoite_domain::id::{EntryId, FieldId, FormId, SpaceId};
-use ugoite_iceberg::{publication_context, query_context::AuthorizedQueryError, IcebergWorkspace};
-use ugoite_storage::{operator_from_uri, SpaceUri};
+use ugoite_iceberg::{IcebergWorkspace, publication_context, query_context::AuthorizedQueryError};
+use ugoite_storage::{SpaceUri, operator_from_uri};
 use uuid::Uuid;
 
 fn form(id: u128, name: &str) -> FormDefinition {
@@ -241,8 +241,8 @@ fn policy(form: &FormDefinition, readable: &[u128]) -> AuthorizedQueryPolicy {
 }
 
 #[tokio::test]
-async fn context_makes_unapproved_forms_entries_columns_and_system_objects_unresolvable(
-) -> anyhow::Result<()> {
+async fn context_makes_unapproved_forms_entries_columns_and_system_objects_unresolvable()
+-> anyhow::Result<()> {
     let workspace = IcebergWorkspace::memory_for_tests(
         SpaceId::from(Uuid::from_u128(1)),
         "memory://authorized-query-boundary",
@@ -423,8 +423,8 @@ async fn count_aggregates_only_authorized_current_entries() -> anyhow::Result<()
 }
 
 #[tokio::test]
-async fn sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts(
-) -> anyhow::Result<()> {
+async fn sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts()
+-> anyhow::Result<()> {
     let workspace = IcebergWorkspace::memory_for_tests(
         SpaceId::from(Uuid::from_u128(200)),
         "memory://authorized-query-aggregate-spike",
@@ -463,6 +463,58 @@ async fn sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts
     let context = workspace
         .authorized_query_context(aggregate_policy(&tasks, &[206, 208, 210, 214]))
         .await?;
+    let aggregate_source = "SELECT field_101 + 0 FROM tasks";
+    let aggregate_document = ugoite_domain::sql_document::parse_sql_document(aggregate_source);
+    let amount = aggregate_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::BinaryExpression
+                && node
+                    .range
+                    .and_then(|range| aggregate_document.source_slice(range))
+                    == Some("field_101 + 0")
+        })
+        .expect("the SQL document exposes the composed numeric expression");
+    let wrapped_aggregate =
+        ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            aggregate_source,
+            &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+                contract_version: aggregate_document.contract_version,
+                expected_source: aggregate_source.to_owned(),
+                edits: vec![
+                    ugoite_domain::sql_document::SqlDocumentSemanticEdit::WrapExpressionInAggregate {
+                        node_id: amount.id,
+                        expected_kind: amount.kind,
+                        function:
+                            ugoite_domain::sql_document::SqlDocumentAggregateFunction::Sum,
+                        distinct: true,
+                    },
+                ],
+            },
+        )?;
+    assert_eq!(
+        wrapped_aggregate.document.to_sql(),
+        "SELECT SUM(DISTINCT field_101 + 0) FROM tasks"
+    );
+    let wrapped_aggregate_batches = context.execute(wrapped_aggregate.document.to_sql()).await?;
+    assert_eq!(wrapped_aggregate_batches.len(), 1);
+    assert_eq!(wrapped_aggregate_batches[0].num_rows(), 1);
+    assert_eq!(
+        wrapped_aggregate_batches[0].schema().field(0).data_type(),
+        &arrow_schema::DataType::Int64,
+        "SUM(DISTINCT expression) retains the Int64 result schema"
+    );
+    assert_eq!(
+        wrapped_aggregate_batches[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("the authorized SUM(DISTINCT expression) result is Int64")
+            .value(0),
+        250,
+        "the aggregate observes only distinct, authorized expression results"
+    );
     let batches = context
         .execute(
             "SELECT COUNT(*) AS row_count, COUNT(field_102) AS optional_count, \
@@ -1093,6 +1145,61 @@ async fn high_cardinality_grouping_and_distinct_aggregates_are_bounded() -> anyh
 }
 
 #[tokio::test]
+async fn typed_set_operation_operand_swap_reaches_authorized_execution() -> anyhow::Result<()> {
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(100)),
+        "memory://authorized-query-set-operation-swap",
+    )
+    .await?;
+    let tasks = form(101, "Tasks");
+    create_form(&workspace, &tasks).await?;
+    let context = workspace
+        .authorized_query_context(policy(&tasks, &[]))
+        .await?;
+
+    let source = "SELECT 1 UNION ALL SELECT 2";
+    let document = ugoite_domain::sql_document::parse_sql_document(source);
+    let operation = document
+        .nodes
+        .iter()
+        .find(|node| node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::SetOperation)
+        .expect("the parser exposes the set operation node");
+    let edited = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+        source,
+        &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+            contract_version: document.contract_version,
+            expected_source: source.to_owned(),
+            edits: vec![
+                ugoite_domain::sql_document::SqlDocumentSemanticEdit::SwapSetOperationOperands {
+                    node_id: operation.id,
+                    expected_kind: ugoite_domain::sql_document::SqlDocumentNodeKind::SetOperation,
+                },
+            ],
+        },
+    )?;
+    assert_eq!(edited.document.to_sql(), "SELECT 2 UNION ALL SELECT 1");
+
+    let rows = context.execute(edited.document.to_sql()).await?;
+    assert_eq!(rows.iter().map(|batch| batch.num_rows()).sum::<usize>(), 2);
+    let mut values = rows
+        .iter()
+        .flat_map(|batch| {
+            batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .expect("the SELECT literals are Int64")
+                .values()
+                .iter()
+                .copied()
+        })
+        .collect::<Vec<_>>();
+    values.sort_unstable();
+    assert_eq!(values, [1, 2]);
+    Ok(())
+}
+
+#[tokio::test]
 async fn context_binds_native_datafusion_parameters_without_sql_substitution() -> anyhow::Result<()>
 {
     let workspace = IcebergWorkspace::memory_for_tests(
@@ -1135,23 +1242,27 @@ async fn context_binds_native_datafusion_parameters_without_sql_substitution() -
         0,
         "parameter must remain a scalar value"
     );
-    assert!(context
-        .execute_with_parameters(
-            "SELECT field_100 FROM tasks WHERE field_100 = $title",
-            HashMap::new()
-        )
-        .await
-        .is_err());
-    assert!(context
-        .execute_with_parameters(
-            "SELECT field_100 FROM tasks",
-            HashMap::from([(
-                "title".to_string(),
-                datafusion::scalar::ScalarValue::Utf8(Some("allowed".into())),
-            )]),
-        )
-        .await
-        .is_err());
+    assert!(
+        context
+            .execute_with_parameters(
+                "SELECT field_100 FROM tasks WHERE field_100 = $title",
+                HashMap::new()
+            )
+            .await
+            .is_err()
+    );
+    assert!(
+        context
+            .execute_with_parameters(
+                "SELECT field_100 FROM tasks",
+                HashMap::from([(
+                    "title".to_string(),
+                    datafusion::scalar::ScalarValue::Utf8(Some("allowed".into())),
+                )]),
+            )
+            .await
+            .is_err()
+    );
     Ok(())
 }
 
@@ -1258,8 +1369,8 @@ async fn function_variants_and_storage_failures_are_closed_errors() -> anyhow::R
 }
 
 #[tokio::test]
-async fn context_requires_complete_checkpoint_and_reads_the_requested_snapshot(
-) -> anyhow::Result<()> {
+async fn context_requires_complete_checkpoint_and_reads_the_requested_snapshot()
+-> anyhow::Result<()> {
     let workspace = IcebergWorkspace::memory_for_tests(
         SpaceId::from(Uuid::from_u128(20)),
         "memory://authorized-query-checkpoint",
@@ -1291,10 +1402,12 @@ async fn context_requires_complete_checkpoint_and_reads_the_requested_snapshot(
     incomplete_checkpoint.coordinate_checksum =
         incomplete_checkpoint.computed_coordinate_checksum();
     incomplete.checkpoint = Some(incomplete_checkpoint);
-    assert!(workspace
-        .authorized_query_context(incomplete)
-        .await
-        .is_err());
+    assert!(
+        workspace
+            .authorized_query_context(incomplete)
+            .await
+            .is_err()
+    );
     Ok(())
 }
 
@@ -1317,18 +1430,1201 @@ async fn context_enforces_the_row_limit() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn stateless_result_schema_plans_without_executing_rows() -> anyhow::Result<()> {
+async fn typed_sql_document_edits_execute_through_authorized_query_context() -> anyhow::Result<()> {
     let workspace = IcebergWorkspace::memory_for_tests(
         SpaceId::from(Uuid::from_u128(35)),
         "memory://authorized-query-schema-only",
     )
     .await?;
     let tasks = form(36, "Tasks");
+    let related = form(43, "Related tasks");
     create_form(&workspace, &tasks).await?;
+    create_form(&workspace, &related).await?;
     append(&workspace, &tasks, 37, 38, "not-a-number").await?;
-    let context = workspace
-        .authorized_query_context(policy(&tasks, &[37]))
+    append(&workspace, &tasks, 39, 40, "alpha").await?;
+    append(&workspace, &related, 44, 45, "not-a-number").await?;
+    let mut null_title = revision(&tasks, 41, 42, "placeholder");
+    null_title
+        .values
+        .insert(FieldId::new(100).unwrap(), FieldValue::Null);
+    workspace
+        .commit(publication_context(
+            Uuid::new_v4().to_string(),
+            "test.entry",
+            &null_title,
+        )?)?
+        .append_revisions(tasks.id, vec![null_title])
         .await?;
+    let mut authorized_policy = policy(&tasks, &[37]);
+    authorized_policy.forms.insert(
+        related.id,
+        AuthorizedQueryForm {
+            relation: "related_tasks".to_owned(),
+            sql_aliases: BTreeSet::new(),
+            entry_scope: EntryScope::Only(
+                [EntryId::from(Uuid::from_u128(44))].into_iter().collect(),
+            ),
+            columns: ["field_100".to_owned()].into_iter().collect(),
+            system_columns: BTreeSet::new(),
+        },
+    );
+    let context = workspace
+        .authorized_query_context(authorized_policy)
+        .await?;
+    let join_source = "SELECT left_rows.field_100 FROM tasks AS left_rows";
+    let join_document = ugoite_domain::sql_document::parse_sql_document(join_source);
+    let relation_tree = join_document
+        .nodes
+        .iter()
+        .find(|node| node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::RelationTree)
+        .expect("the typed SQL document exposes the FROM relation tree");
+    let added_join = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+        join_source,
+        &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+            contract_version: join_document.contract_version,
+            expected_source: join_source.to_owned(),
+            edits: vec![
+                ugoite_domain::sql_document::SqlDocumentSemanticEdit::AddJoin {
+                    node_id: relation_tree.id,
+                    expected_kind: ugoite_domain::sql_document::SqlDocumentNodeKind::RelationTree,
+                    join: ugoite_domain::sql_document::SqlDocumentJoin {
+                        operator: ugoite_domain::sql_document::SqlDocumentJoinOperator::Inner,
+                        relation: ugoite_domain::sql_document::SqlDocumentRelationFactor::Table {
+                            name: vec![ugoite_domain::sql_document::SqlDocumentIdentifier {
+                                value: "related_tasks".to_owned(),
+                                quote_style: None,
+                            }],
+                            alias: Some(ugoite_domain::sql_document::SqlDocumentIdentifier {
+                                value: "right_rows".to_owned(),
+                                quote_style: None,
+                            }),
+                        },
+                        constraint: ugoite_domain::sql_document::SqlDocumentJoinConstraint::Using {
+                            columns: vec![ugoite_domain::sql_document::SqlDocumentIdentifier {
+                                value: "field_100".to_owned(),
+                                quote_style: None,
+                            }],
+                        },
+                    },
+                },
+            ],
+        },
+    )?;
+    assert_eq!(
+        added_join.document.to_sql(),
+        "SELECT left_rows.field_100 FROM tasks AS left_rows INNER JOIN related_tasks AS right_rows USING (field_100)"
+    );
+    let joined = context.execute(added_join.document.to_sql()).await?;
+    assert_eq!(
+        joined.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+        1,
+        "the typed multi-Form JOIN executes only within both authorized Form scopes"
+    );
+    let unauthorized_join_source = "SELECT left_rows.field_100 FROM tasks AS left_rows";
+    let unauthorized_join_document =
+        ugoite_domain::sql_document::parse_sql_document(unauthorized_join_source);
+    let unauthorized_relation_tree = unauthorized_join_document
+        .nodes
+        .iter()
+        .find(|node| node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::RelationTree)
+        .expect("the typed SQL document exposes the source relation tree");
+    let unauthorized_join =
+        ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            unauthorized_join_source,
+            &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+                contract_version: unauthorized_join_document.contract_version,
+                expected_source: unauthorized_join_source.to_owned(),
+                edits: vec![
+                    ugoite_domain::sql_document::SqlDocumentSemanticEdit::AddJoin {
+                        node_id: unauthorized_relation_tree.id,
+                        expected_kind:
+                            ugoite_domain::sql_document::SqlDocumentNodeKind::RelationTree,
+                        join: ugoite_domain::sql_document::SqlDocumentJoin {
+                            operator: ugoite_domain::sql_document::SqlDocumentJoinOperator::Inner,
+                            relation:
+                                ugoite_domain::sql_document::SqlDocumentRelationFactor::Table {
+                                    name: vec![
+                                        ugoite_domain::sql_document::SqlDocumentIdentifier {
+                                            value: "secrets".to_owned(),
+                                            quote_style: None,
+                                        },
+                                    ],
+                                    alias: Some(
+                                        ugoite_domain::sql_document::SqlDocumentIdentifier {
+                                            value: "secret_rows".to_owned(),
+                                            quote_style: None,
+                                        },
+                                    ),
+                                },
+                            constraint:
+                                ugoite_domain::sql_document::SqlDocumentJoinConstraint::Using {
+                                    columns: vec![
+                                        ugoite_domain::sql_document::SqlDocumentIdentifier {
+                                            value: "field_100".to_owned(),
+                                            quote_style: None,
+                                        },
+                                    ],
+                                },
+                        },
+                    },
+                ],
+            },
+        )?;
+    assert!(
+        context
+            .execute(unauthorized_join.document.to_sql())
+            .await
+            .is_err(),
+        "typed relation edits cannot expose a Form outside the authorized snapshot"
+    );
+    let comparison_context = ugoite_domain::sql_structure::SqlStructureContext {
+        relation: "tasks".to_owned(),
+        columns: vec![ugoite_domain::sql_structure::SqlStructureColumn {
+            name: "field_100".to_owned(),
+            column_type: ugoite_domain::sql_structure::SqlStructureColumnType::String,
+        }],
+        variables: Vec::new(),
+        stable_key: Vec::new(),
+    };
+    let comparison = ugoite_domain::sql_structure::propose_sql_structure_operation(
+        "SELECT field_100 FROM tasks",
+        &comparison_context,
+        ugoite_domain::sql_structure::SqlStructureOperation::SetFilterExpression {
+            expression: Some(
+                ugoite_domain::sql_structure::SqlStructureFilterExpression::ColumnComparison {
+                    left: ugoite_domain::sql_structure::SqlStructureColumnReference {
+                        column: "field_100".to_owned(),
+                        qualifier: None,
+                    },
+                    operator: ugoite_domain::sql_structure::SqlStructureFilterOperator::Eq,
+                    right: ugoite_domain::sql_structure::SqlStructureColumnReference {
+                        column: "field_100".to_owned(),
+                        qualifier: None,
+                    },
+                },
+            ),
+        },
+    );
+    assert_eq!(
+        comparison.status,
+        ugoite_domain::sql_structure::SqlStructureStatus::Supported,
+        "the Rust filter editor constructs a typed column comparison"
+    );
+    let comparison_sql = comparison
+        .proposed_sql
+        .expect("the column comparison adds a WHERE clause");
+    let comparison_result = context.execute(&comparison_sql).await?;
+    assert_eq!(
+        comparison_result
+            .iter()
+            .map(|batch| batch.num_rows())
+            .sum::<usize>(),
+        1,
+        "the edited predicate reaches authorized planning and filters the Form rows"
+    );
+    let projection_source = "SELECT 1 FROM tasks WHERE field_100 = 'not-a-number'";
+    let projection_document = ugoite_domain::sql_document::parse_sql_document(projection_source);
+    let projection_item = projection_document
+        .nodes
+        .iter()
+        .find(|node| node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::SelectItem)
+        .expect("the SQL tree exposes the selected projection item");
+    let where_expression = projection_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::IdentifierExpression
+                && matches!(
+                    &node.semantic,
+                    Some(ugoite_domain::sql_document::SqlDocumentNodeData::Identifier {
+                        value,
+                        ..
+                    }) if value == "field_100"
+                )
+        })
+        .expect("the SQL tree exposes the authorized Form-column expression");
+    let projection_edit =
+        ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            projection_source,
+            &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+                contract_version: projection_document.contract_version,
+                expected_source: projection_source.to_owned(),
+                edits: vec![
+                    ugoite_domain::sql_document::SqlDocumentSemanticEdit::SetProjectionExpression {
+                        node_id: projection_item.id,
+                        expected_kind: ugoite_domain::sql_document::SqlDocumentNodeKind::SelectItem,
+                        expression_node_id: where_expression.id,
+                        expression_expected_kind:
+                            ugoite_domain::sql_document::SqlDocumentNodeKind::IdentifierExpression,
+                    },
+                ],
+            },
+        )?;
+    let projected_result = context.execute(projection_edit.document.to_sql()).await?;
+    assert_eq!(
+        projected_result[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .expect("the copied Form-column expression keeps its string type")
+            .value(0),
+        "not-a-number",
+        "a typed projection expression replacement executes through the authorized query context"
+    );
+    let binary_source = "SELECT field_100, 'x' FROM tasks";
+    let binary_document = ugoite_domain::sql_document::parse_sql_document(binary_source);
+    let mut binary_items = binary_document
+        .nodes
+        .iter()
+        .filter(|node| node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::SelectItem)
+        .collect::<Vec<_>>();
+    binary_items.sort_by_key(|node| node.range.map(|range| range.start));
+    let binary_left = binary_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.parent == Some(binary_items[0].id)
+                && node.kind
+                    == ugoite_domain::sql_document::SqlDocumentNodeKind::IdentifierExpression
+        })
+        .expect("the authorized Form column is a typed expression");
+    let binary_right = binary_document
+        .nodes
+        .iter()
+        .find(|node| {
+            matches!(
+                &node.semantic,
+                Some(ugoite_domain::sql_document::SqlDocumentNodeData::Literal {
+                    raw: Some(raw),
+                    ..
+                }) if raw == "'x'"
+            )
+        })
+        .expect("the projection literal is a typed expression");
+    let binary_edit = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+        binary_source,
+        &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+            contract_version: binary_document.contract_version,
+            expected_source: binary_source.to_owned(),
+            edits: vec![
+                ugoite_domain::sql_document::SqlDocumentSemanticEdit::ComposeBinaryExpression {
+                    node_id: binary_items[0].id,
+                    expected_kind: ugoite_domain::sql_document::SqlDocumentNodeKind::SelectItem,
+                    left_expression_node_id: binary_left.id,
+                    left_expression_expected_kind: binary_left.kind,
+                    operator: ugoite_domain::sql_document::SqlDocumentBinaryOperator::Concat,
+                    right_expression_node_id: binary_right.id,
+                    right_expression_expected_kind: binary_right.kind,
+                },
+            ],
+        },
+    )?;
+    let binary_result = context.execute(binary_edit.document.to_sql()).await?;
+    assert_eq!(
+        binary_result[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .expect("the planner accepts the typed string concatenation")
+            .value(0),
+        "not-a-numberx",
+        "a constructed expression plans and runs inside the authorized Form context"
+    );
+    let expression_copy_source = "SELECT field_100 || 'x' AS text_value, field_100 FROM tasks";
+    let expression_copy_document =
+        ugoite_domain::sql_document::parse_sql_document(expression_copy_source);
+    let expression_copy_target = expression_copy_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::BinaryExpression
+                && node
+                    .range
+                    .and_then(|range| expression_copy_document.source_slice(range))
+                    == Some("field_100 || 'x'")
+        })
+        .expect("the first projection exposes its concatenation expression");
+    let expression_copy_source_node = expression_copy_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::IdentifierExpression
+                && node
+                    .range
+                    .is_some_and(|range| range.start > expression_copy_target.range.unwrap().end)
+        })
+        .expect("the second projection exposes a same-query identifier");
+    let expression_copy_edit =
+        ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            expression_copy_source,
+            &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+                contract_version: expression_copy_document.contract_version,
+                expected_source: expression_copy_source.to_owned(),
+                edits: vec![
+                    ugoite_domain::sql_document::SqlDocumentSemanticEdit::ReplaceExpressionFromNode {
+                        node_id: expression_copy_target.id,
+                        expected_kind:
+                            ugoite_domain::sql_document::SqlDocumentNodeKind::BinaryExpression,
+                        expression_node_id: expression_copy_source_node.id,
+                        expression_expected_kind:
+                            ugoite_domain::sql_document::SqlDocumentNodeKind::IdentifierExpression,
+                    },
+                ],
+            },
+        )?;
+    let expression_copy_result = context
+        .execute(expression_copy_edit.document.to_sql())
+        .await?;
+    assert_eq!(
+        expression_copy_result[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .expect("the planner accepts the copied string expression")
+            .value(0),
+        "not-a-number",
+        "a copied typed expression reaches authorized SQL planning and execution"
+    );
+    let projection_add_source = "SELECT 1 FROM tasks WHERE field_100 = 'not-a-number'";
+    let projection_add_document =
+        ugoite_domain::sql_document::parse_sql_document(projection_add_source);
+    let projection_list = projection_add_document
+        .nodes
+        .iter()
+        .find(|node| node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::SelectList)
+        .expect("the SQL tree exposes the projection list");
+    let filter_expression = projection_add_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::BinaryExpression
+        })
+        .expect("the SQL tree exposes the typed comparison expression");
+    let projection_add_edit =
+        ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            projection_add_source,
+            &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+                contract_version: projection_add_document.contract_version,
+                expected_source: projection_add_source.to_owned(),
+                edits: vec![
+                    ugoite_domain::sql_document::SqlDocumentSemanticEdit::AddProjectionExpression {
+                        node_id: projection_list.id,
+                        expected_kind: ugoite_domain::sql_document::SqlDocumentNodeKind::SelectList,
+                        expression_node_id: filter_expression.id,
+                        expression_expected_kind:
+                            ugoite_domain::sql_document::SqlDocumentNodeKind::BinaryExpression,
+                    },
+                ],
+            },
+        )?;
+    let projection_add_result = context
+        .execute(projection_add_edit.document.to_sql())
+        .await?;
+    assert_eq!(projection_add_result[0].num_columns(), 2);
+    assert!(
+        projection_add_result[0]
+            .column(1)
+            .as_any()
+            .downcast_ref::<BooleanArray>()
+            .expect("the copied comparison is a typed boolean projection")
+            .value(0)
+    );
+    assert_eq!(
+        projection_add_result[0].num_rows(),
+        1,
+        "a typed projection expression insertion executes through the authorized query context"
+    );
+    let scalar_subquery_source = "SELECT field_100 FROM tasks WHERE field_100 = 'not-a-number'";
+    let scalar_subquery_document =
+        ugoite_domain::sql_document::parse_sql_document(scalar_subquery_source);
+    let scalar_subquery_list = scalar_subquery_document
+        .nodes
+        .iter()
+        .find(|node| node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::SelectList)
+        .expect("the SQL tree exposes the projection list");
+    let scalar_subquery_edit =
+        ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            scalar_subquery_source,
+            &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+                contract_version: scalar_subquery_document.contract_version,
+                expected_source: scalar_subquery_source.to_owned(),
+                edits: vec![ugoite_domain::sql_document::SqlDocumentSemanticEdit::AddScalarSubqueryProjection {
+                    node_id: scalar_subquery_list.id,
+                    expected_kind: ugoite_domain::sql_document::SqlDocumentNodeKind::SelectList,
+                }],
+            },
+        )?;
+    let scalar_subquery_result = context
+        .execute(scalar_subquery_edit.document.to_sql())
+        .await?;
+    assert_eq!(scalar_subquery_result[0].num_columns(), 2);
+    assert_eq!(
+        scalar_subquery_result[0]
+            .column(1)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("the nested relation-free SELECT returns a typed integer")
+            .value(0),
+        1,
+        "a constructed scalar subquery reaches authorized planning and execution"
+    );
+    let projection_move_source = projection_add_edit.document.to_sql();
+    let projection_move_document =
+        ugoite_domain::sql_document::parse_sql_document(projection_move_source);
+    let mut projection_items = projection_move_document
+        .nodes
+        .iter()
+        .filter(|node| node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::SelectItem)
+        .collect::<Vec<_>>();
+    projection_items.sort_by_key(|node| node.range.map(|range| range.start));
+    let projection_move_edit =
+        ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            projection_move_source,
+            &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+                contract_version: projection_move_document.contract_version,
+                expected_source: projection_move_source.to_owned(),
+                edits: vec![
+                    ugoite_domain::sql_document::SqlDocumentSemanticEdit::MoveProjectionItem {
+                        node_id: projection_items[1].id,
+                        expected_kind: ugoite_domain::sql_document::SqlDocumentNodeKind::SelectItem,
+                        to_index: 0,
+                    },
+                ],
+            },
+        )?;
+    let projection_move_result = context
+        .execute(projection_move_edit.document.to_sql())
+        .await?;
+    assert_eq!(projection_move_result[0].num_columns(), 2);
+    assert!(
+        projection_move_result[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<BooleanArray>()
+            .expect("the moved comparison remains a typed boolean projection")
+            .value(0)
+    );
+    assert_eq!(
+        projection_move_result[0]
+            .column(1)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("the other moved projection remains integer typed")
+            .value(0),
+        1,
+        "a typed projection reorder executes through the authorized query context"
+    );
+
+    let projection_remove_source = projection_move_edit.document.to_sql();
+    let projection_remove_document =
+        ugoite_domain::sql_document::parse_sql_document(projection_remove_source);
+    let mut projection_remove_items = projection_remove_document
+        .nodes
+        .iter()
+        .filter(|node| node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::SelectItem)
+        .collect::<Vec<_>>();
+    projection_remove_items.sort_by_key(|node| node.range.map(|range| range.start));
+    let projection_remove_edit =
+        ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            projection_remove_source,
+            &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+                contract_version: projection_remove_document.contract_version,
+                expected_source: projection_remove_source.to_owned(),
+                edits: vec![
+                    ugoite_domain::sql_document::SqlDocumentSemanticEdit::RemoveProjectionItem {
+                        node_id: projection_remove_items[1].id,
+                        expected_kind: ugoite_domain::sql_document::SqlDocumentNodeKind::SelectItem,
+                    },
+                ],
+            },
+        )?;
+    let projection_remove_result = context
+        .execute(projection_remove_edit.document.to_sql())
+        .await?;
+    assert_eq!(projection_remove_result[0].num_columns(), 1);
+    assert!(
+        projection_remove_result[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<BooleanArray>()
+            .expect("the remaining comparison stays typed")
+            .value(0)
+    );
+    assert_eq!(
+        projection_remove_result[0].num_rows(),
+        1,
+        "a typed projection removal executes through the authorized query context"
+    );
+    let filter_structure_context = ugoite_domain::sql_structure::SqlStructureContext {
+        relation: "tasks".to_owned(),
+        columns: vec![ugoite_domain::sql_structure::SqlStructureColumn {
+            name: "field_100".to_owned(),
+            column_type: ugoite_domain::sql_structure::SqlStructureColumnType::String,
+        }],
+        variables: vec![
+            ugoite_domain::sql_structure::SqlStructureVariable {
+                name: "status".to_owned(),
+                variable_type: ugoite_domain::sql_structure::SqlStructureVariableType::String,
+            },
+            ugoite_domain::sql_structure::SqlStructureVariable {
+                name: "status_upper".to_owned(),
+                variable_type: ugoite_domain::sql_structure::SqlStructureVariableType::String,
+            },
+            ugoite_domain::sql_structure::SqlStructureVariable {
+                name: "pattern".to_owned(),
+                variable_type: ugoite_domain::sql_structure::SqlStructureVariableType::String,
+            },
+        ],
+        stable_key: vec![],
+    };
+    let filter_proposal = ugoite_domain::sql_structure::propose_sql_structure_operation(
+        "SELECT * FROM tasks",
+        &filter_structure_context,
+        ugoite_domain::sql_structure::SqlStructureOperation::SetFilters {
+            filters: vec![ugoite_domain::sql_structure::SqlStructureFilter {
+                column: "field_100".to_owned(),
+                qualifier: None,
+                operator: ugoite_domain::sql_structure::SqlStructureFilterOperator::Eq,
+                parameter: Some("status".to_owned()),
+                second_parameter: None,
+            }],
+        },
+    );
+    assert_eq!(
+        filter_proposal.status,
+        ugoite_domain::sql_structure::SqlStructureStatus::Supported
+    );
+    let filtered_sql = filter_proposal
+        .proposed_sql
+        .expect("the typed Filter edit returns executable SQL");
+    let filtered = context
+        .execute_with_parameters(
+            &filtered_sql,
+            HashMap::from([(
+                "status".to_owned(),
+                datafusion::scalar::ScalarValue::Utf8(Some("not-a-number".to_owned())),
+            )]),
+        )
+        .await?;
+    assert_eq!(
+        filtered.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+        1
+    );
+
+    let range_proposal = ugoite_domain::sql_structure::propose_sql_structure_operation(
+        "SELECT * FROM tasks",
+        &filter_structure_context,
+        ugoite_domain::sql_structure::SqlStructureOperation::SetFilterExpression {
+            expression: Some(
+                ugoite_domain::sql_structure::SqlStructureFilterExpression::Predicate {
+                    column: "field_100".to_owned(),
+                    qualifier: None,
+                    operator: ugoite_domain::sql_structure::SqlStructureFilterOperator::Between,
+                    parameter: Some("status".to_owned()),
+                    second_parameter: Some("status_upper".to_owned()),
+                },
+            ),
+        },
+    );
+    assert_eq!(
+        range_proposal.status,
+        ugoite_domain::sql_structure::SqlStructureStatus::Supported
+    );
+    let range_sql = range_proposal
+        .proposed_sql
+        .expect("the typed range edit returns executable SQL");
+    assert!(range_sql.contains("BETWEEN $status AND $status_upper"));
+    let ranged = context
+        .execute_with_parameters(
+            &range_sql,
+            HashMap::from([
+                (
+                    "status".to_owned(),
+                    datafusion::scalar::ScalarValue::Utf8(Some("a".to_owned())),
+                ),
+                (
+                    "status_upper".to_owned(),
+                    datafusion::scalar::ScalarValue::Utf8(Some("z".to_owned())),
+                ),
+            ]),
+        )
+        .await?;
+    assert_eq!(
+        ranged.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+        1,
+        "both range bounds are bound through the authorized query context"
+    );
+
+    for (operator, parameter_name, parameter_value, expected_rows) in [
+        (
+            ugoite_domain::sql_structure::SqlStructureFilterOperator::In,
+            "status",
+            "not-a-number",
+            1,
+        ),
+        (
+            ugoite_domain::sql_structure::SqlStructureFilterOperator::NotIn,
+            "status",
+            "not-a-number",
+            0,
+        ),
+        (
+            ugoite_domain::sql_structure::SqlStructureFilterOperator::Like,
+            "pattern",
+            "%number%",
+            1,
+        ),
+        (
+            ugoite_domain::sql_structure::SqlStructureFilterOperator::NotLike,
+            "pattern",
+            "%number%",
+            0,
+        ),
+        (
+            ugoite_domain::sql_structure::SqlStructureFilterOperator::Ilike,
+            "pattern",
+            "%NUMBER%",
+            1,
+        ),
+        (
+            ugoite_domain::sql_structure::SqlStructureFilterOperator::NotIlike,
+            "pattern",
+            "%NUMBER%",
+            0,
+        ),
+    ] {
+        let proposal = ugoite_domain::sql_structure::propose_sql_structure_operation(
+            "SELECT * FROM tasks",
+            &filter_structure_context,
+            ugoite_domain::sql_structure::SqlStructureOperation::SetFilterExpression {
+                expression: Some(
+                    ugoite_domain::sql_structure::SqlStructureFilterExpression::Predicate {
+                        column: "field_100".to_owned(),
+                        qualifier: None,
+                        operator,
+                        parameter: Some(parameter_name.to_owned()),
+                        second_parameter: None,
+                    },
+                ),
+            },
+        );
+        assert_eq!(
+            proposal.status,
+            ugoite_domain::sql_structure::SqlStructureStatus::Supported,
+            "{operator:?}"
+        );
+        let sql = proposal.proposed_sql.expect("typed predicate SQL");
+        let result = context
+            .execute_with_parameters(
+                &sql,
+                HashMap::from([(
+                    parameter_name.to_owned(),
+                    datafusion::scalar::ScalarValue::Utf8(Some(parameter_value.to_owned())),
+                )]),
+            )
+            .await?;
+        assert_eq!(
+            result.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+            expected_rows,
+            "{operator:?} executes through the authorized query context: {sql}"
+        );
+    }
+
+    let mut grouping_policy = policy(&tasks, &[37]);
+    grouping_policy.limits.function_policy = SqlFunctionPolicy::ReadOnlyAggregateV1;
+    let grouping_context = workspace.authorized_query_context(grouping_policy).await?;
+    let count_source = "SELECT COUNT(field_100) AS item_count FROM tasks";
+    let count_document = ugoite_domain::sql_document::parse_sql_document(count_source);
+    let count_function = count_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::FunctionExpression
+                && matches!(
+                    &node.semantic,
+                    Some(ugoite_domain::sql_document::SqlDocumentNodeData::Function {
+                        name,
+                        ..
+                    }) if name.last().is_some_and(|part| part.value.eq_ignore_ascii_case("COUNT"))
+                )
+        })
+        .expect("the SQL tree exposes the COUNT aggregate");
+    let count_argument = count_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::IdentifierExpression
+                && node.parent == Some(count_function.id)
+        })
+        .expect("the SQL tree exposes COUNT's typed expression argument");
+    let count_argument_edit =
+        ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            count_source,
+            &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+                contract_version: count_document.contract_version,
+                expected_source: count_source.to_owned(),
+                edits: vec![
+                    ugoite_domain::sql_document::SqlDocumentSemanticEdit::SetFunctionArgument {
+                        node_id: count_function.id,
+                        expected_kind:
+                            ugoite_domain::sql_document::SqlDocumentNodeKind::FunctionExpression,
+                        argument_index: 1,
+                        expression_node_id: count_argument.id,
+                        expression_expected_kind:
+                            ugoite_domain::sql_document::SqlDocumentNodeKind::IdentifierExpression,
+                    },
+                ],
+            },
+        )?;
+    let count_argument_result = grouping_context
+        .execute(count_argument_edit.document.to_sql())
+        .await?;
+    assert_eq!(
+        count_argument_result[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("COUNT of typed arguments returns Int64")
+            .value(0),
+        1,
+        "a typed expression copied into COUNT executes through the authorized query context"
+    );
+    let case_source =
+        "SELECT SUM(CASE WHEN field_100 = 'not-a-number' THEN 10 ELSE 1 END) AS total FROM tasks";
+    let case_document = ugoite_domain::sql_document::parse_sql_document(case_source);
+    let then_literal = case_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.range
+                .and_then(|range| case_document.source_slice(range))
+                == Some("10")
+                && matches!(
+                    node.semantic.as_ref(),
+                    Some(ugoite_domain::sql_document::SqlDocumentNodeData::Literal {
+                        literal_kind: ugoite_domain::sql_document::SqlDocumentLiteralKind::Number,
+                        ..
+                    })
+                )
+        })
+        .expect("the SQL tree exposes the CASE THEN numeric literal");
+    let edited_case = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+        case_source,
+        &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+            contract_version: case_document.contract_version,
+            expected_source: case_source.to_owned(),
+            edits: vec![
+                ugoite_domain::sql_document::SqlDocumentSemanticEdit::ReplaceLiteral {
+                    node_id: then_literal.id,
+                    expected_kind: then_literal.kind,
+                    literal: ugoite_domain::sql_document::SqlDocumentSemanticLiteral::Number {
+                        value: "20".to_owned(),
+                    },
+                },
+            ],
+        },
+    )?;
+    let case_result = grouping_context
+        .execute(edited_case.document.to_sql())
+        .await?;
+    assert_eq!(
+        case_result[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("SUM(CASE ...) remains an Int64 result")
+            .value(0),
+        20,
+        "the exact CASE tree literal edit changes the authorized aggregate result"
+    );
+    let case_node = case_document
+        .nodes
+        .iter()
+        .find(|node| node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::CaseExpression)
+        .expect("the SQL tree exposes the CASE expression");
+    let case_branch_edit =
+        ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            case_source,
+            &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+                contract_version: case_document.contract_version,
+                expected_source: case_source.to_owned(),
+                edits: vec![
+                    ugoite_domain::sql_document::SqlDocumentSemanticEdit::AddCaseBranch {
+                        node_id: case_node.id,
+                        expected_kind:
+                            ugoite_domain::sql_document::SqlDocumentNodeKind::CaseExpression,
+                    },
+                ],
+            },
+        )?;
+    let case_branch_result = grouping_context
+        .execute(case_branch_edit.document.to_sql())
+        .await?;
+    assert_eq!(
+        case_branch_result[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("CASE branch editing keeps the aggregate type")
+            .value(0),
+        10,
+        "the added typed CASE branch executes through the authorized query context"
+    );
+
+    let aggregate_proposal = ugoite_domain::sql_structure::propose_sql_structure_operation(
+        "SELECT * FROM tasks",
+        &ugoite_domain::sql_structure::SqlStructureContext {
+            relation: "tasks".to_owned(),
+            columns: vec![ugoite_domain::sql_structure::SqlStructureColumn {
+                name: "field_100".to_owned(),
+                column_type: ugoite_domain::sql_structure::SqlStructureColumnType::String,
+            }],
+            variables: vec![],
+            stable_key: vec![],
+        },
+        ugoite_domain::sql_structure::SqlStructureOperation::SetAggregates {
+            aggregates: vec![ugoite_domain::sql_structure::SqlStructureAggregate {
+                function: ugoite_domain::sql_structure::SqlStructureAggregateFunction::Count,
+                column: None,
+                arguments: vec![],
+                distinct: false,
+                alias: Some(ugoite_domain::sql_structure::SqlStructureAlias {
+                    name: "row_count".to_owned(),
+                    quoted: true,
+                }),
+            }],
+        },
+    );
+    assert_eq!(
+        aggregate_proposal.status,
+        ugoite_domain::sql_structure::SqlStructureStatus::Supported
+    );
+    let aggregate_sql = aggregate_proposal
+        .proposed_sql
+        .expect("the typed aggregate edit returns executable SQL");
+    let aggregate_result = grouping_context.execute(&aggregate_sql).await?;
+    assert_eq!(aggregate_result.len(), 1);
+    assert_eq!(
+        aggregate_result[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("COUNT(*) result stays Int64")
+            .value(0),
+        1
+    );
+    let having_proposal = ugoite_domain::sql_structure::propose_sql_structure_operation(
+        "SELECT COUNT(*) AS item_count FROM tasks",
+        &ugoite_domain::sql_structure::SqlStructureContext {
+            relation: "tasks".to_owned(),
+            columns: vec![ugoite_domain::sql_structure::SqlStructureColumn {
+                name: "field_100".to_owned(),
+                column_type: ugoite_domain::sql_structure::SqlStructureColumnType::String,
+            }],
+            variables: vec![],
+            stable_key: vec![],
+        },
+        ugoite_domain::sql_structure::SqlStructureOperation::SetHaving {
+            expression: Some(
+                ugoite_domain::sql_structure::SqlStructureHavingExpression::Predicate {
+                    aggregate: ugoite_domain::sql_structure::SqlStructureAggregate {
+                        function:
+                            ugoite_domain::sql_structure::SqlStructureAggregateFunction::Count,
+                        column: None,
+                        arguments: vec![],
+                        distinct: false,
+                        alias: None,
+                    },
+                    operator: ugoite_domain::sql_structure::SqlStructureHavingOperator::Gt,
+                    value: ugoite_domain::sql_structure::SqlStructureHavingValue::Integer(
+                        "0".to_owned(),
+                    ),
+                },
+            ),
+        },
+    );
+    assert_eq!(
+        having_proposal.status,
+        ugoite_domain::sql_structure::SqlStructureStatus::Supported
+    );
+    let having_sql = having_proposal
+        .proposed_sql
+        .expect("the typed HAVING edit returns executable SQL");
+    let having_result = grouping_context.execute(&having_sql).await?;
+    assert_eq!(
+        having_result
+            .iter()
+            .map(|batch| batch.num_rows())
+            .sum::<usize>(),
+        1
+    );
+    let grouping_structure_context = ugoite_domain::sql_structure::SqlStructureContext {
+        relation: "tasks".to_owned(),
+        columns: vec![ugoite_domain::sql_structure::SqlStructureColumn {
+            name: "field_100".to_owned(),
+            column_type: ugoite_domain::sql_structure::SqlStructureColumnType::String,
+        }],
+        variables: vec![],
+        stable_key: vec![],
+    };
+    let grouping_proposal = ugoite_domain::sql_structure::propose_sql_structure_operation(
+        "SELECT field_100 FROM tasks",
+        &grouping_structure_context,
+        ugoite_domain::sql_structure::SqlStructureOperation::SetGroupBy {
+            columns: vec!["field_100".to_owned()],
+        },
+    );
+    assert_eq!(
+        grouping_proposal.status,
+        ugoite_domain::sql_structure::SqlStructureStatus::Supported,
+        "GROUP BY proposal was rejected: {grouping_proposal:?}"
+    );
+    let grouped_sql = grouping_proposal
+        .proposed_sql
+        .expect("the typed GROUP BY edit returns executable SQL");
+    let grouped = grouping_context.execute(&grouped_sql).await?;
+    assert_eq!(grouped.len(), 1);
+    assert_eq!(grouped[0].num_rows(), 1);
+    assert_eq!(grouped[0].num_columns(), 1);
+
+    let relation_context = ugoite_domain::sql_structure::SqlStructureContext {
+        relation: "tasks".to_owned(),
+        columns: vec![ugoite_domain::sql_structure::SqlStructureColumn {
+            name: "field_100".to_owned(),
+            column_type: ugoite_domain::sql_structure::SqlStructureColumnType::String,
+        }],
+        variables: vec![],
+        stable_key: vec![],
+    };
+    let relation_proposal = ugoite_domain::sql_structure::propose_sql_structure_operation(
+        "SELECT 1",
+        &relation_context,
+        ugoite_domain::sql_structure::SqlStructureOperation::SetRelation {
+            relation: "tasks".to_owned(),
+        },
+    );
+    assert_eq!(
+        relation_proposal.status,
+        ugoite_domain::sql_structure::SqlStructureStatus::Supported
+    );
+    let selected_form_sql = relation_proposal
+        .proposed_sql
+        .expect("the trusted Form picker returns executable SQL");
+    let selected_form = context.execute(&selected_form_sql).await?;
+    assert_eq!(
+        selected_form
+            .iter()
+            .map(|batch| batch.num_rows())
+            .sum::<usize>(),
+        1
+    );
+
+    let projection_context = ugoite_domain::sql_structure::SqlStructureContext {
+        relation: "tasks".to_owned(),
+        columns: vec![ugoite_domain::sql_structure::SqlStructureColumn {
+            name: "field_100".to_owned(),
+            column_type: ugoite_domain::sql_structure::SqlStructureColumnType::String,
+        }],
+        variables: vec![],
+        stable_key: vec![],
+    };
+    let projection_proposal = ugoite_domain::sql_structure::propose_sql_structure_operation(
+        "SELECT * FROM tasks",
+        &projection_context,
+        ugoite_domain::sql_structure::SqlStructureOperation::SetColumns {
+            columns: vec!["field_100".to_owned()],
+            aliases: vec![],
+        },
+    );
+    assert_eq!(
+        projection_proposal.status,
+        ugoite_domain::sql_structure::SqlStructureStatus::Supported
+    );
+    let projected_sql = projection_proposal
+        .proposed_sql
+        .expect("the typed Columns edit returns executable SQL");
+    let projected = context.execute(&projected_sql).await?;
+    assert_eq!(projected.len(), 1);
+    assert_eq!(projected[0].num_rows(), 1);
+    assert_eq!(projected[0].num_columns(), 1);
+
+    let row_limit_context = ugoite_domain::sql_structure::SqlStructureContext {
+        relation: "tasks".to_owned(),
+        columns: vec![ugoite_domain::sql_structure::SqlStructureColumn {
+            name: "field_100".to_owned(),
+            column_type: ugoite_domain::sql_structure::SqlStructureColumnType::String,
+        }],
+        variables: vec![],
+        stable_key: vec![],
+    };
+    let row_limit_proposal = ugoite_domain::sql_structure::propose_sql_structure_operation(
+        "SELECT * FROM tasks",
+        &row_limit_context,
+        ugoite_domain::sql_structure::SqlStructureOperation::SetRowLimit {
+            limit: Some("1".to_owned()),
+            offset: None,
+        },
+    );
+    assert_eq!(
+        row_limit_proposal.status,
+        ugoite_domain::sql_structure::SqlStructureStatus::Supported
+    );
+    let row_limited_sql = row_limit_proposal
+        .proposed_sql
+        .expect("the typed row-limit edit returns executable SQL");
+    let row_limited = context.execute(&row_limited_sql).await?;
+    assert_eq!(
+        row_limited
+            .iter()
+            .map(|batch| batch.num_rows())
+            .sum::<usize>(),
+        1,
+        "authorized execution applies the exact GUI-proposed LIMIT"
+    );
+
+    let mut sort_policy = policy(&tasks, &[37, 39, 41]);
+    sort_policy
+        .forms
+        .get_mut(&tasks.id)
+        .unwrap()
+        .system_columns
+        .insert(QuerySystemColumn::ExternalId);
+    let sort_query_context = workspace.authorized_query_context(sort_policy).await?;
+    let base_relation = sort_query_context.execute("SELECT * FROM tasks").await?;
+    let base_relation_columns = base_relation
+        .first()
+        .map(|batch| batch.num_columns())
+        .unwrap_or_default();
+    assert!(base_relation_columns > 0);
+
+    let join_structure_context = ugoite_domain::sql_structure::SqlStructureContext {
+        relation: "tasks".to_owned(),
+        columns: vec![ugoite_domain::sql_structure::SqlStructureColumn {
+            name: "field_100".to_owned(),
+            column_type: ugoite_domain::sql_structure::SqlStructureColumnType::String,
+        }],
+        variables: vec![],
+        stable_key: vec![],
+    };
+    for (join_kind, keyword, expected_rows) in [
+        (
+            ugoite_domain::sql_structure::SqlStructureJoinKind::Inner,
+            "INNER JOIN",
+            2,
+        ),
+        (
+            ugoite_domain::sql_structure::SqlStructureJoinKind::Left,
+            "LEFT JOIN",
+            3,
+        ),
+        (
+            ugoite_domain::sql_structure::SqlStructureJoinKind::Right,
+            "RIGHT JOIN",
+            3,
+        ),
+        (
+            ugoite_domain::sql_structure::SqlStructureJoinKind::Full,
+            "FULL JOIN",
+            4,
+        ),
+    ] {
+        let join_proposal = ugoite_domain::sql_structure::propose_sql_structure_operation(
+            "SELECT * FROM tasks",
+            &join_structure_context,
+            ugoite_domain::sql_structure::SqlStructureOperation::SetJoin {
+                join_kind,
+                left_column: "field_100".to_owned(),
+                right_column: "field_100".to_owned(),
+            },
+        );
+        assert_eq!(
+            join_proposal.status,
+            ugoite_domain::sql_structure::SqlStructureStatus::Supported,
+            "{keyword} proposal was rejected: {join_proposal:?}"
+        );
+        let joined_sql = join_proposal
+            .proposed_sql
+            .expect("the typed JOIN edit returns executable SQL");
+        assert!(joined_sql.contains(keyword), "{joined_sql}");
+        let joined = sort_query_context.execute(&joined_sql).await?;
+        assert!(
+            joined
+                .iter()
+                .all(|batch| batch.num_columns() == base_relation_columns * 2),
+            "authorized {keyword} must preserve both relation outputs"
+        );
+        assert_eq!(
+            joined.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+            expected_rows,
+            "authorized {keyword} must preserve outer rows without scanning policy-hidden entries"
+        );
+    }
+
+    let sort_source = "SELECT field_100 FROM tasks ORDER BY field_100 ASC NULLS FIRST";
+    let sort_context = ugoite_domain::sql_structure::SqlStructureContext {
+        relation: "tasks".to_owned(),
+        columns: vec![
+            ugoite_domain::sql_structure::SqlStructureColumn {
+                name: "field_100".to_owned(),
+                column_type: ugoite_domain::sql_structure::SqlStructureColumnType::String,
+            },
+            ugoite_domain::sql_structure::SqlStructureColumn {
+                name: "_ugoite_id".to_owned(),
+                column_type: ugoite_domain::sql_structure::SqlStructureColumnType::String,
+            },
+        ],
+        variables: vec![],
+        stable_key: vec!["_ugoite_id".to_owned()],
+    };
+    let sort_proposal = ugoite_domain::sql_structure::propose_sql_structure_operation(
+        sort_source,
+        &sort_context,
+        ugoite_domain::sql_structure::SqlStructureOperation::SetSort {
+            order_by: vec![ugoite_domain::sql_structure::SqlStructureSort {
+                column: "field_100".to_owned(),
+                qualifier: None,
+                projection_alias: None,
+                direction: ugoite_domain::sql_structure::SqlStructureSortDirection::Desc,
+                nulls_first: Some(false),
+            }],
+        },
+    );
+    assert_eq!(
+        sort_proposal.status,
+        ugoite_domain::sql_structure::SqlStructureStatus::Supported,
+        "Sort edit proposal was rejected: {sort_proposal:?}"
+    );
+    let edited_sort_sql = sort_proposal
+        .proposed_sql
+        .expect("the typed Sort edit returns executable SQL");
+    assert!(
+        edited_sort_sql.contains("ORDER BY \"field_100\" DESC NULLS LAST"),
+        "unexpected typed Sort output: {edited_sort_sql}"
+    );
+    let sorted = sort_query_context.execute(&edited_sort_sql).await?;
+    let sorted_values = sorted
+        .iter()
+        .flat_map(|batch| {
+            batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .expect("the authorized Sort projection stays string typed")
+                .iter()
+                .map(|value| value.map(str::to_owned))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        sorted_values,
+        vec![
+            Some("not-a-number".to_owned()),
+            Some("alpha".to_owned()),
+            None
+        ],
+        "the typed Sort edit executes with explicit NULLS LAST semantics"
+    );
+
     let sql = "SELECT CAST(field_100 AS BIGINT) AS numeric_title FROM tasks";
 
     let schema = context.stateless_result_schema(sql, HashMap::new()).await?;
@@ -1338,10 +2634,989 @@ async fn stateless_result_schema_plans_without_executing_rows() -> anyhow::Resul
         schema[0].column_type,
         ugoite_core::sql_query::SqlResultColumnType::Integer
     );
-    assert!(context
-        .execute_stateless_page(sql, HashMap::new(), 0, 1)
+    assert!(
+        context
+            .execute_stateless_page(sql, HashMap::new(), 0, 1)
+            .await
+            .is_err()
+    );
+
+    let document = ugoite_domain::sql_document::parse_sql_document(sql);
+    let cast = document
+        .nodes
+        .iter()
+        .find(|node| node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::CastExpression)
+        .expect("the typed SQL document exposes the CAST node");
+    let edited = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+        sql,
+        &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+            contract_version: document.contract_version,
+            expected_source: sql.to_owned(),
+            edits: vec![
+                ugoite_domain::sql_document::SqlDocumentSemanticEdit::ReplaceCastTargetType {
+                    node_id: cast.id,
+                    expected_kind: ugoite_domain::sql_document::SqlDocumentNodeKind::CastExpression,
+                    target_type: ugoite_domain::sql_document::SqlDocumentCastType::Varchar,
+                },
+            ],
+        },
+    )?;
+    let batches = context.execute(edited.document.to_sql()).await?;
+    assert_eq!(batches.len(), 1);
+    assert_eq!(batches[0].num_rows(), 1);
+    assert!(
+        format!("{:?}", batches[0].column(0)).contains("not-a-number"),
+        "the authorized planner returns the edited VARCHAR cast"
+    );
+
+    let wrap_source = "SELECT field_100 FROM tasks WHERE field_100 = 'not-a-number'";
+    let wrap_document = ugoite_domain::sql_document::parse_sql_document(wrap_source);
+    let select_item = wrap_document
+        .nodes
+        .iter()
+        .find(|node| node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::SelectItem)
+        .expect("the SQL document exposes the selected Form column");
+    let expression = wrap_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.parent == Some(select_item.id)
+                && node.kind
+                    == ugoite_domain::sql_document::SqlDocumentNodeKind::IdentifierExpression
+        })
+        .expect("the selected Form column is a typed expression node");
+    let wrapped = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+        wrap_source,
+        &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+            contract_version: wrap_document.contract_version,
+            expected_source: wrap_source.to_owned(),
+            edits: vec![
+                ugoite_domain::sql_document::SqlDocumentSemanticEdit::WrapExpressionInCast {
+                    node_id: expression.id,
+                    expected_kind: expression.kind,
+                    target_type: ugoite_domain::sql_document::SqlDocumentCastType::Varchar,
+                },
+            ],
+        },
+    )?;
+    assert_eq!(
+        wrapped.document.to_sql(),
+        "SELECT CAST(field_100 AS VARCHAR) FROM tasks WHERE field_100 = 'not-a-number'"
+    );
+    let wrapped_batches = context.execute(wrapped.document.to_sql()).await?;
+    assert_eq!(
+        wrapped_batches
+            .iter()
+            .map(|batch| batch.num_rows())
+            .sum::<usize>(),
+        1,
+        "the generated CAST SQL executes through the authorized Form query path"
+    );
+    assert!(matches!(
+        wrapped_batches[0].column(0).data_type(),
+        arrow_schema::DataType::Utf8
+            | arrow_schema::DataType::LargeUtf8
+            | arrow_schema::DataType::Utf8View
+    ));
+    assert!(
+        format!("{:?}", wrapped_batches[0].column(0)).contains("not-a-number"),
+        "the generated VARCHAR CAST preserves the authorized Form value"
+    );
+
+    let in_list_source =
+        "SELECT field_100 FROM tasks WHERE field_100 IN ('not-a-number', 'unmatched')";
+    let in_list_document = ugoite_domain::sql_document::parse_sql_document(in_list_source);
+    let in_predicate = in_list_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::PredicateExpression
+                && matches!(
+                    node.semantic,
+                    Some(ugoite_domain::sql_document::SqlDocumentNodeData::Predicate {
+                        ref operator,
+                        ..
+                    }) if operator == "in"
+                )
+        })
+        .expect("the typed SQL document exposes the IN predicate");
+    let in_list_edit = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+        in_list_source,
+        &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+            contract_version: in_list_document.contract_version,
+            expected_source: in_list_source.to_owned(),
+            edits: vec![
+                ugoite_domain::sql_document::SqlDocumentSemanticEdit::AppendInListValue {
+                    node_id: in_predicate.id,
+                    expected_kind: in_predicate.kind,
+                },
+            ],
+        },
+    )?;
+    assert_eq!(
+        in_list_edit.document.to_sql(),
+        "SELECT field_100 FROM tasks WHERE field_100 IN ('not-a-number', 'unmatched', NULL)"
+    );
+    let in_list_batches = context.execute(in_list_edit.document.to_sql()).await?;
+    assert_eq!(
+        in_list_batches
+            .iter()
+            .map(|batch| batch.num_rows())
+            .sum::<usize>(),
+        1,
+        "the typed IN-list edit keeps execution within the authorized Form path"
+    );
+
+    let set_source = "SELECT field_100 FROM tasks UNION ALL SELECT field_100 FROM tasks";
+    let set_document = ugoite_domain::sql_document::parse_sql_document(set_source);
+    let set_operation = set_document
+        .nodes
+        .iter()
+        .find(|node| node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::SetOperation)
+        .expect("the typed SQL document exposes the set operation node");
+    let edited_set = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+        set_source,
+        &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+            contract_version: set_document.contract_version,
+            expected_source: set_source.to_owned(),
+            edits: vec![
+                ugoite_domain::sql_document::SqlDocumentSemanticEdit::ReplaceSetOperation {
+                    node_id: set_operation.id,
+                    expected_kind: ugoite_domain::sql_document::SqlDocumentNodeKind::SetOperation,
+                    operator: ugoite_domain::sql_document::SqlDocumentSetOperator::Except,
+                    quantifier: ugoite_domain::sql_document::SqlDocumentSetQuantifier::Distinct,
+                },
+            ],
+        },
+    )?;
+    let batches = context.execute(edited_set.document.to_sql()).await?;
+    assert_eq!(
+        batches.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+        0,
+        "the exact SQL produced by a typed set-operation edit is planned and executed"
+    );
+
+    let set_add_source = "SELECT 1";
+    let set_add_document = ugoite_domain::sql_document::parse_sql_document(set_add_source);
+    let set_add_query = set_add_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::Query
+                && node
+                    .range
+                    .and_then(|range| set_add_document.source_slice(range))
+                    .is_some_and(|text| text.trim() == set_add_source)
+        })
+        .expect("the typed SQL document exposes the query node");
+    let appended_set = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+        set_add_source,
+        &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+            contract_version: set_add_document.contract_version,
+            expected_source: set_add_source.to_owned(),
+            edits: vec![
+                ugoite_domain::sql_document::SqlDocumentSemanticEdit::AddSetOperationOperand {
+                    node_id: set_add_query.id,
+                    expected_kind: ugoite_domain::sql_document::SqlDocumentNodeKind::Query,
+                    operator: ugoite_domain::sql_document::SqlDocumentSetOperator::Union,
+                    quantifier: ugoite_domain::sql_document::SqlDocumentSetQuantifier::All,
+                },
+            ],
+        },
+    )?;
+    let batches = context.execute(appended_set.document.to_sql()).await?;
+    assert_eq!(
+        batches.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+        2,
+        "the appended typed set-operation seed reaches the authorized executor"
+    );
+    let appended_set_source = appended_set.document.to_sql();
+    let appended_set_document =
+        ugoite_domain::sql_document::parse_sql_document(&appended_set_source);
+    let appended_operation = appended_set_document
+        .nodes
+        .iter()
+        .find(|node| node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::SetOperation)
+        .expect("the appended set operation has a typed node");
+    let removed_set = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+        appended_set_source,
+        &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+            contract_version: appended_set_document.contract_version,
+            expected_source: appended_set_source.to_owned(),
+            edits: vec![
+                ugoite_domain::sql_document::SqlDocumentSemanticEdit::RemoveSetOperationOperand {
+                    node_id: appended_operation.id,
+                    expected_kind: ugoite_domain::sql_document::SqlDocumentNodeKind::SetOperation,
+                    keep: ugoite_domain::sql_document::SqlDocumentSetOperand::Left,
+                },
+            ],
+        },
+    )?;
+    assert_eq!(removed_set.document.to_sql(), set_add_source);
+    let batches = context.execute(removed_set.document.to_sql()).await?;
+    assert_eq!(
+        batches.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+        1,
+        "removing the appended operand keeps the SQL authorized and executable"
+    );
+
+    let cte_source = "WITH c AS (SELECT field_100 FROM tasks) SELECT field_100 FROM c";
+    let cte_document = ugoite_domain::sql_document::parse_sql_document(cte_source);
+    let cte = cte_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::CommonTableExpression
+        })
+        .expect("the typed SQL document exposes the CTE node");
+    let edited_cte = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+        cte_source,
+        &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+            contract_version: cte_document.contract_version,
+            expected_source: cte_source.to_owned(),
+            edits: vec![
+                ugoite_domain::sql_document::SqlDocumentSemanticEdit::RenameCommonTableExpression {
+                    node_id: cte.id,
+                    expected_kind:
+                        ugoite_domain::sql_document::SqlDocumentNodeKind::CommonTableExpression,
+                    name: ugoite_domain::sql_document::SqlDocumentIdentifier {
+                        value: "rows".to_owned(),
+                        quote_style: None,
+                    },
+                },
+            ],
+        },
+    )?;
+    let batches = context.execute(edited_cte.document.to_sql()).await?;
+    assert_eq!(
+        batches.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+        1,
+        "the exact SQL produced by a typed CTE edit is planned and executed"
+    );
+
+    let scoped_cte_source = "WITH c AS (SELECT field_100 FROM tasks WHERE field_100 IS NOT NULL), d AS (WITH c AS (SELECT field_100 FROM tasks WHERE field_100 IS NULL) SELECT field_100 FROM c), e AS (SELECT field_100 FROM c) SELECT field_100 FROM c";
+    let scoped_cte_document = ugoite_domain::sql_document::parse_sql_document(scoped_cte_source);
+    let outer_cte = scoped_cte_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::CommonTableExpression
+                && matches!(node.semantic, Some(ugoite_domain::sql_document::SqlDocumentNodeData::CommonTableExpression { ref name, .. }) if name.value == "c")
+        })
+        .expect("the outer CTE declaration is exposed by the typed document");
+    let renamed_scoped_cte =
+        ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            scoped_cte_source,
+            &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+                contract_version: scoped_cte_document.contract_version,
+                expected_source: scoped_cte_source.to_owned(),
+                edits: vec![
+                    ugoite_domain::sql_document::SqlDocumentSemanticEdit::RenameCommonTableExpression {
+                        node_id: outer_cte.id,
+                        expected_kind:
+                            ugoite_domain::sql_document::SqlDocumentNodeKind::CommonTableExpression,
+                        name: ugoite_domain::sql_document::SqlDocumentIdentifier {
+                            value: "rows".to_owned(),
+                            quote_style: None,
+                        },
+                    },
+                ],
+            },
+        )?;
+    assert_eq!(
+        renamed_scoped_cte.document.to_sql(),
+        "WITH rows AS (SELECT field_100 FROM tasks WHERE field_100 IS NOT NULL), d AS (WITH c AS (SELECT field_100 FROM tasks WHERE field_100 IS NULL) SELECT field_100 FROM c), e AS (SELECT field_100 FROM rows) SELECT field_100 FROM rows"
+    );
+    let batches = context
+        .execute(renamed_scoped_cte.document.to_sql())
+        .await?;
+    assert_eq!(
+        batches.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+        1,
+        "scope-aware CTE rename preserves nested shadowing and executes in the authorized context"
+    );
+
+    let add_cte_source = "SELECT field_100 FROM tasks";
+    let add_cte_document = ugoite_domain::sql_document::parse_sql_document(add_cte_source);
+    let query = add_cte_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::Query
+                && node
+                    .range
+                    .and_then(|range| add_cte_document.source_slice(range))
+                    .is_some_and(|text| text.trim() == add_cte_source)
+        })
+        .expect("the typed SQL document exposes the query node");
+    let added_cte = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+        add_cte_source,
+        &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+            contract_version: add_cte_document.contract_version,
+            expected_source: add_cte_source.to_owned(),
+            edits: vec![
+                ugoite_domain::sql_document::SqlDocumentSemanticEdit::AddCommonTableExpression {
+                    node_id: query.id,
+                    expected_kind: ugoite_domain::sql_document::SqlDocumentNodeKind::Query,
+                    name: ugoite_domain::sql_document::SqlDocumentIdentifier {
+                        value: "unused_rows".to_owned(),
+                        quote_style: None,
+                    },
+                },
+            ],
+        },
+    )?;
+    let batches = context.execute(added_cte.document.to_sql()).await?;
+    assert_eq!(
+        batches.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+        1,
+        "the exact SQL produced by a typed CTE addition is authorized and executable"
+    );
+    let added_cte_source = added_cte.document.to_sql();
+    let added_cte_document = ugoite_domain::sql_document::parse_sql_document(&added_cte_source);
+    let unused_cte = added_cte_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::CommonTableExpression
+        })
+        .expect("the added CTE has a typed declaration");
+    let removed_cte = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+        &added_cte_source,
+        &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+            contract_version: added_cte_document.contract_version,
+            expected_source: added_cte_source.to_owned(),
+            edits: vec![
+                ugoite_domain::sql_document::SqlDocumentSemanticEdit::RemoveCommonTableExpression {
+                    node_id: unused_cte.id,
+                    expected_kind:
+                        ugoite_domain::sql_document::SqlDocumentNodeKind::CommonTableExpression,
+                },
+            ],
+        },
+    )?;
+    assert_eq!(removed_cte.document.to_sql(), add_cte_source);
+    let batches = context.execute(removed_cte.document.to_sql()).await?;
+    assert_eq!(
+        batches.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+        1,
+        "removing an unreferenced CTE keeps the authorized query executable"
+    );
+
+    let predicate_source = "SELECT field_100 FROM tasks WHERE field_100 IS NULL";
+    let predicate_document = ugoite_domain::sql_document::parse_sql_document(predicate_source);
+    let predicate = predicate_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::PredicateExpression
+        })
+        .expect("the typed SQL document exposes the NULL predicate");
+    let edited_predicate =
+        ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            predicate_source,
+            &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+                contract_version: predicate_document.contract_version,
+                expected_source: predicate_source.to_owned(),
+                edits: vec![
+                    ugoite_domain::sql_document::SqlDocumentSemanticEdit::ReplacePredicateNegation {
+                        node_id: predicate.id,
+                        expected_kind:
+                            ugoite_domain::sql_document::SqlDocumentNodeKind::PredicateExpression,
+                        negated: true,
+                    },
+                ],
+            },
+        )?;
+    let batches = context.execute(edited_predicate.document.to_sql()).await?;
+    assert_eq!(
+        batches.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+        1,
+        "the exact SQL produced by a typed predicate edit is planned and authorized"
+    );
+
+    let predicate_seed_source = "SELECT field_100 FROM tasks";
+    let predicate_seed_document =
+        ugoite_domain::sql_document::parse_sql_document(predicate_seed_source);
+    let predicate_seed_expression = predicate_seed_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::IdentifierExpression
+        })
+        .expect("the SQL document exposes the typed numeric expression");
+    let predicate_seed = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+        predicate_seed_source,
+        &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+            contract_version: predicate_seed_document.contract_version,
+            expected_source: predicate_seed_source.to_owned(),
+            edits: vec![
+                ugoite_domain::sql_document::SqlDocumentSemanticEdit::WrapExpressionInPredicate {
+                    node_id: predicate_seed_expression.id,
+                    expected_kind: predicate_seed_expression.kind,
+                    template: ugoite_domain::sql_document::SqlDocumentPredicateTemplate::Between,
+                },
+            ],
+        },
+    )?;
+    assert_eq!(
+        predicate_seed.document.to_sql(),
+        "SELECT (field_100) BETWEEN NULL AND NULL FROM tasks"
+    );
+    let predicate_seed_batches = context.execute(predicate_seed.document.to_sql()).await?;
+    assert_eq!(predicate_seed_batches.len(), 1);
+    assert_eq!(
+        predicate_seed_batches[0].schema().field(0).data_type(),
+        &arrow_schema::DataType::Boolean,
+        "the generated BETWEEN predicate is typed and authorized for execution"
+    );
+
+    let where_seed_source = "SELECT field_100 FROM tasks ORDER BY field_100 LIMIT 2";
+    let where_seed_document = ugoite_domain::sql_document::parse_sql_document(where_seed_source);
+    let select = where_seed_document
+        .nodes
+        .iter()
+        .find(|node| node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::Select)
+        .expect("the query document exposes its SELECT node");
+    let where_seed = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+        where_seed_source,
+        &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+            contract_version: where_seed_document.contract_version,
+            expected_source: where_seed_source.to_owned(),
+            edits: vec![
+                ugoite_domain::sql_document::SqlDocumentSemanticEdit::AddWhereClause {
+                    node_id: select.id,
+                    expected_kind: select.kind,
+                },
+            ],
+        },
+    )?;
+    assert_eq!(
+        where_seed.document.to_sql(),
+        "SELECT field_100 FROM tasks WHERE TRUE ORDER BY field_100 LIMIT 2"
+    );
+    let where_seed_batches = context.execute(where_seed.document.to_sql()).await?;
+    assert_eq!(
+        where_seed_batches
+            .iter()
+            .map(|batch| batch.num_rows())
+            .sum::<usize>(),
+        1,
+        "the generated WHERE seed remains executable through the authorized query context"
+    );
+
+    let aggregate_tasks = aggregate_form(39);
+    create_form(&workspace, &aggregate_tasks).await?;
+    append_aggregate(
+        &workspace,
+        aggregate_revision(&aggregate_tasks, 40, 41, "one", 1, FieldValue::Number(1.0)),
+    )
+    .await?;
+    let aggregate_context = workspace
+        .authorized_query_context(aggregate_policy(&aggregate_tasks, &[40]))
+        .await?;
+    let case_wrap_source = "SELECT field_101 FROM tasks";
+    let case_wrap_document = ugoite_domain::sql_document::parse_sql_document(case_wrap_source);
+    let amount = case_wrap_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::IdentifierExpression
+                && matches!(
+                    &node.semantic,
+                    Some(ugoite_domain::sql_document::SqlDocumentNodeData::Identifier {
+                        value,
+                        ..
+                    }) if value == "field_101"
+                )
+        })
+        .expect("the SQL document exposes the numeric Form column");
+    let wrapped_case = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+        case_wrap_source,
+        &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+            contract_version: case_wrap_document.contract_version,
+            expected_source: case_wrap_source.to_owned(),
+            edits: vec![
+                ugoite_domain::sql_document::SqlDocumentSemanticEdit::WrapExpressionInCase {
+                    node_id: amount.id,
+                    expected_kind: amount.kind,
+                },
+            ],
+        },
+    )?;
+    assert_eq!(
+        wrapped_case.document.to_sql(),
+        "SELECT CASE WHEN TRUE THEN field_101 ELSE NULL END FROM tasks"
+    );
+    let wrapped_case_batches = aggregate_context
+        .execute(wrapped_case.document.to_sql())
+        .await?;
+    assert_eq!(wrapped_case_batches.len(), 1);
+    assert_eq!(wrapped_case_batches[0].num_rows(), 1);
+    assert_eq!(
+        wrapped_case_batches[0].schema().field(0).data_type(),
+        &arrow_schema::DataType::Int64,
+        "the CASE expression preserves the numeric Form column's result type"
+    );
+    assert_eq!(
+        wrapped_case_batches[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("the authorized CASE result remains Int64")
+            .value(0),
+        1,
+        "the generated CASE preserves the selected Form value"
+    );
+    let unary_source = "SELECT -COUNT(*) AS row_count FROM tasks";
+    let unary_document = ugoite_domain::sql_document::parse_sql_document(unary_source);
+    let unary = unary_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::UnaryExpression
+                && matches!(
+                    node.semantic,
+                    Some(ugoite_domain::sql_document::SqlDocumentNodeData::UnaryOperator {
+                        ref operator
+                    }) if operator == "-"
+                )
+        })
+        .expect("the typed SQL document exposes the unary aggregate sign");
+    let edited_unary = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+        unary_source,
+        &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+            contract_version: unary_document.contract_version,
+            expected_source: unary_source.to_owned(),
+            edits: vec![
+                ugoite_domain::sql_document::SqlDocumentSemanticEdit::ReplaceUnarySign {
+                    node_id: unary.id,
+                    expected_kind:
+                        ugoite_domain::sql_document::SqlDocumentNodeKind::UnaryExpression,
+                    sign: ugoite_domain::sql_document::SqlDocumentUnarySign::Positive,
+                },
+            ],
+        },
+    )?;
+    let batches = aggregate_context
+        .execute(edited_unary.document.to_sql())
+        .await?;
+    let values = batches[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .expect("the authorized aggregate expression returns an integer");
+    assert_eq!(values.value(0), 1);
+    let group_by_source = "SELECT field_100 FROM tasks ORDER BY field_100";
+    let group_by_document = ugoite_domain::sql_document::parse_sql_document(group_by_source);
+    let select = group_by_document
+        .nodes
+        .iter()
+        .find(|node| node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::Select)
+        .expect("the SQL tree exposes the selected SELECT body");
+    let group_expression = group_by_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::IdentifierExpression
+                && node.parent.is_some_and(|parent| {
+                    group_by_document.nodes[parent as usize].kind
+                        == ugoite_domain::sql_document::SqlDocumentNodeKind::SelectItem
+                })
+        })
+        .expect("the authorized Form column is a typed grouping expression");
+    let group_by_edit = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+        group_by_source,
+        &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+            contract_version: group_by_document.contract_version,
+            expected_source: group_by_source.to_owned(),
+            edits: vec![
+                ugoite_domain::sql_document::SqlDocumentSemanticEdit::AddGroupByExpression {
+                    node_id: select.id,
+                    expected_kind: ugoite_domain::sql_document::SqlDocumentNodeKind::Select,
+                    expression_node_id: group_expression.id,
+                    expression_expected_kind:
+                        ugoite_domain::sql_document::SqlDocumentNodeKind::IdentifierExpression,
+                },
+            ],
+        },
+    )?;
+    assert_eq!(
+        group_by_edit.document.to_sql(),
+        "SELECT field_100 FROM tasks GROUP BY field_100 ORDER BY field_100"
+    );
+    let grouped = context.execute(group_by_edit.document.to_sql()).await?;
+    assert_eq!(
+        grouped.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+        1,
+        "the typed grouping expression reaches authorized SQL planning and execution"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn typed_sql_document_nested_structure_edits_execute_authorized_queries() -> anyhow::Result<()>
+{
+    use ugoite_domain::sql_document::{
+        SqlDocumentIdentifier, SqlDocumentNodeKind, SqlDocumentRelationFactor,
+        SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction, SqlDocumentSetOperator,
+        SqlDocumentSetQuantifier, SqlDocumentSubqueryPredicateTemplate,
+    };
+
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(76)),
+        "memory://authorized-query-nested-structure",
+    )
+    .await?;
+    let tasks = form(77, "Tasks");
+    create_form(&workspace, &tasks).await?;
+    append(&workspace, &tasks, 78, 79, "alpha").await?;
+    let context = workspace
+        .authorized_query_context(policy(&tasks, &[78]))
+        .await?;
+
+    let apply = |source: &str, edits: Vec<SqlDocumentSemanticEdit>| {
+        let document = ugoite_domain::sql_document::parse_sql_document(source);
+        ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            source,
+            &SqlDocumentSemanticEditTransaction {
+                contract_version: document.contract_version,
+                expected_source: source.to_owned(),
+                edits,
+            },
+        )
+    };
+
+    let scalar_source = "SELECT 1";
+    let scalar_document = ugoite_domain::sql_document::parse_sql_document(scalar_source);
+    let scalar_list = scalar_document
+        .nodes
+        .iter()
+        .find(|node| node.kind == SqlDocumentNodeKind::SelectList)
+        .expect("the scalar SELECT has a typed projection list");
+    let scalar = apply(
+        scalar_source,
+        vec![SqlDocumentSemanticEdit::AddScalarSubqueryProjection {
+            node_id: scalar_list.id,
+            expected_kind: SqlDocumentNodeKind::SelectList,
+        }],
+    )?;
+    let scalar_select = scalar
+        .document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == SqlDocumentNodeKind::Select
+                && node
+                    .range
+                    .and_then(|range| scalar.document.source_slice(range))
+                    == Some("SELECT 1")
+                && node.parent.is_some_and(|parent| {
+                    scalar
+                        .document
+                        .nodes
+                        .get(parent as usize)
+                        .is_some_and(|query| {
+                            query.parent.is_some_and(|grandparent| {
+                                scalar.document.nodes.get(grandparent as usize).is_some_and(
+                                    |subquery| {
+                                        subquery.kind == SqlDocumentNodeKind::SubqueryExpression
+                                    },
+                                )
+                            })
+                        })
+                })
+        })
+        .expect("the scalar subquery has its own typed SELECT scope");
+    let scalar_with_from = apply(
+        &scalar.document.source,
+        vec![SqlDocumentSemanticEdit::AddFromRelation {
+            node_id: scalar_select.id,
+            expected_kind: SqlDocumentNodeKind::Select,
+            factor: SqlDocumentRelationFactor::Table {
+                name: vec![SqlDocumentIdentifier {
+                    value: "tasks".to_owned(),
+                    quote_style: None,
+                }],
+                alias: None,
+            },
+        }],
+    )?;
+    assert_eq!(
+        scalar_with_from.document.to_sql(),
+        "SELECT 1, (SELECT 1 FROM tasks) AS __ugoite_scalar_subquery"
+    );
+    let scalar_batches = context.execute(scalar_with_from.document.to_sql()).await?;
+    assert_eq!(scalar_batches.len(), 1);
+    assert_eq!(scalar_batches[0].num_columns(), 2);
+    assert_eq!(
+        scalar_batches[0]
+            .column(1)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("nested scalar SELECT has an integer result")
+            .value(0),
+        1
+    );
+
+    let in_source = "SELECT 1";
+    let in_document = ugoite_domain::sql_document::parse_sql_document(in_source);
+    let operand = in_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.range.and_then(|range| in_document.source_slice(range)) == Some("1")
+                && node.parent.is_some_and(|parent| {
+                    in_document
+                        .nodes
+                        .get(parent as usize)
+                        .is_some_and(|item| item.kind == SqlDocumentNodeKind::SelectItem)
+                })
+        })
+        .expect("the projection expression is a typed node");
+    let in_query = apply(
+        in_source,
+        vec![SqlDocumentSemanticEdit::WrapExpressionInSubqueryPredicate {
+            node_id: operand.id,
+            expected_kind: operand.kind,
+            template: SqlDocumentSubqueryPredicateTemplate::In,
+        }],
+    )?;
+    assert_eq!(
+        in_query.document.status,
+        ugoite_domain::sql_document::SqlDocumentStatus::Parsed
+    );
+    let in_error = context
+        .execute(in_query.document.to_sql())
         .await
-        .is_err());
+        .expect_err("the current physical executor rejects IN subqueries");
+    let in_error = format!("{in_error:#}");
+    assert!(
+        in_error.contains("Physical plan does not support logical expression InSubquery"),
+        "unexpected IN-subquery executor diagnostic: {in_error}"
+    );
+
+    let exists_source = "SELECT field_100 FROM tasks WHERE TRUE";
+    let exists_document = ugoite_domain::sql_document::parse_sql_document(exists_source);
+    let truth = exists_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.range
+                .and_then(|range| exists_document.source_slice(range))
+                == Some("TRUE")
+        })
+        .expect("the WHERE seed is typed");
+    let exists_query = apply(
+        exists_source,
+        vec![
+            SqlDocumentSemanticEdit::ReplaceExpressionWithExistsSubquery {
+                node_id: truth.id,
+                expected_kind: truth.kind,
+            },
+        ],
+    )?;
+    let exists_batches = context.execute(exists_query.document.to_sql()).await?;
+    assert_eq!(
+        exists_batches
+            .iter()
+            .map(|batch| batch.num_rows())
+            .sum::<usize>(),
+        1
+    );
+    assert_eq!(
+        exists_batches[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .expect("authorized Form column remains a string")
+            .value(0),
+        "alpha"
+    );
+
+    let cte_source = "WITH c AS (SELECT 1 AS n), d AS (SELECT 2 AS n) SELECT n FROM c";
+    let cte_document = ugoite_domain::sql_document::parse_sql_document(cte_source);
+    let cte_c = cte_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == SqlDocumentNodeKind::CommonTableExpression
+                && matches!(node.semantic, Some(ugoite_domain::sql_document::SqlDocumentNodeData::CommonTableExpression { ref name, .. }) if name.value == "c")
+        })
+        .expect("the first CTE is typed");
+    let query_d = cte_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == SqlDocumentNodeKind::Query
+                && node.parent.is_some_and(|parent| {
+                    cte_document.nodes.get(parent as usize).is_some_and(|cte| {
+                        matches!(cte.semantic, Some(ugoite_domain::sql_document::SqlDocumentNodeData::CommonTableExpression { ref name, .. }) if name.value == "d")
+                    })
+                })
+        })
+        .expect("the second CTE body is a typed query");
+    let cte_replaced = apply(
+        cte_source,
+        vec![SqlDocumentSemanticEdit::ReplaceCommonTableExpressionQuery {
+            node_id: cte_c.id,
+            expected_kind: SqlDocumentNodeKind::CommonTableExpression,
+            query_node_id: query_d.id,
+        }],
+    )?;
+    let cte_replaced_batches = context.execute(cte_replaced.document.to_sql()).await?;
+    assert_eq!(
+        cte_replaced_batches[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("the CTE returns an integer")
+            .value(0),
+        2
+    );
+    let cte_d = cte_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == SqlDocumentNodeKind::CommonTableExpression
+                && matches!(node.semantic, Some(ugoite_domain::sql_document::SqlDocumentNodeData::CommonTableExpression { ref name, .. }) if name.value == "d")
+        })
+        .expect("the second CTE is typed");
+    let cte_moved = apply(
+        cte_source,
+        vec![SqlDocumentSemanticEdit::MoveCommonTableExpression {
+            node_id: cte_d.id,
+            expected_kind: SqlDocumentNodeKind::CommonTableExpression,
+            to_index: 0,
+        }],
+    )?;
+    let cte_moved_batches = context.execute(cte_moved.document.to_sql()).await?;
+    assert_eq!(
+        cte_moved_batches[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("reordered CTEs keep integer output")
+            .value(0),
+        1
+    );
+
+    let set_source = "SELECT 1 AS v UNION ALL SELECT 2 AS v";
+    let set_document = ugoite_domain::sql_document::parse_sql_document(set_source);
+    let right_operand = set_document
+        .nodes
+        .iter()
+        .find(|node| node.kind == SqlDocumentNodeKind::SetOperationRight)
+        .expect("the right set operand is represented");
+    let left_select = set_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == SqlDocumentNodeKind::Select
+                && node
+                    .range
+                    .and_then(|range| set_document.source_slice(range))
+                    == Some("SELECT 1 AS v")
+        })
+        .expect("the left SELECT is parser-backed");
+    let set_replaced = apply(
+        set_source,
+        vec![SqlDocumentSemanticEdit::ReplaceSetOperationOperand {
+            node_id: right_operand.id,
+            expected_kind: SqlDocumentNodeKind::SetOperationRight,
+            expression_node_id: left_select.id,
+            expression_expected_kind: SqlDocumentNodeKind::Select,
+        }],
+    )?;
+    let set_batches = context.execute(set_replaced.document.to_sql()).await?;
+    assert_eq!(
+        set_batches
+            .iter()
+            .map(|batch| batch.num_rows())
+            .sum::<usize>(),
+        2
+    );
+    let values = set_batches
+        .iter()
+        .flat_map(|batch| {
+            batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .expect("replaced set operand returns integer values")
+                .iter()
+                .map(|value| value.expect("set values are non-null"))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(values, vec![1, 1]);
+
+    for quantifier in [
+        SqlDocumentSetQuantifier::ByName,
+        SqlDocumentSetQuantifier::AllByName,
+        SqlDocumentSetQuantifier::DistinctByName,
+    ] {
+        let source =
+            "SELECT 1 AS left_value, 2 AS shared UNION SELECT 3 AS shared, 4 AS right_value";
+        let document = ugoite_domain::sql_document::parse_sql_document(source);
+        let operation = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::SetOperation)
+            .expect("the set operation is represented");
+        let edited = apply(
+            source,
+            vec![SqlDocumentSemanticEdit::ReplaceSetOperation {
+                node_id: operation.id,
+                expected_kind: SqlDocumentNodeKind::SetOperation,
+                operator: SqlDocumentSetOperator::Union,
+                quantifier,
+            }],
+        )?;
+        let by_name = context.execute(edited.document.to_sql()).await?;
+        assert_eq!(
+            by_name.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+            2
+        );
+        assert_eq!(by_name[0].num_columns(), 3);
+    }
+
+    // The typed relation model remains guarded by the same authorization
+    // context when adding a second Form relation through FROM.
+    let relation_source = "SELECT tasks.field_100 FROM tasks";
+    let relation_document = ugoite_domain::sql_document::parse_sql_document(relation_source);
+    let select = relation_document
+        .nodes
+        .iter()
+        .find(|node| node.kind == SqlDocumentNodeKind::Select)
+        .expect("the outer SELECT is typed");
+    let added_relation = apply(
+        relation_source,
+        vec![SqlDocumentSemanticEdit::AddFromRelation {
+            node_id: select.id,
+            expected_kind: SqlDocumentNodeKind::Select,
+            factor: SqlDocumentRelationFactor::Table {
+                name: vec![SqlDocumentIdentifier {
+                    value: "tasks".to_owned(),
+                    quote_style: None,
+                }],
+                alias: Some(SqlDocumentIdentifier {
+                    value: "other_tasks".to_owned(),
+                    quote_style: None,
+                }),
+            },
+        }],
+    )?;
+    let added_relation_batches = context.execute(added_relation.document.to_sql()).await?;
+    assert_eq!(
+        added_relation_batches
+            .iter()
+            .map(|batch| batch.num_rows())
+            .sum::<usize>(),
+        1,
+        "a generated relation remains within the authorized Form scope"
+    );
+
     Ok(())
 }
 
@@ -1396,10 +3671,12 @@ async fn system_columns_are_queryable_only_when_explicitly_allowlisted() -> anyh
     let context = workspace
         .authorized_query_context(policy(&tasks, &[42]))
         .await?;
-    assert!(context
-        .execute("SELECT _ugoite_entry_id FROM tasks")
-        .await
-        .is_err());
+    assert!(
+        context
+            .execute("SELECT _ugoite_entry_id FROM tasks")
+            .await
+            .is_err()
+    );
 
     let mut colliding = form(44, "Colliding");
     colliding.fields[0].name = "entry_id".into();
@@ -1477,5 +3754,247 @@ async fn context_enforces_memory_and_timeout_limits() -> anyhow::Result<()> {
     timed_out.limits.timeout = Duration::from_nanos(1);
     let context = workspace.authorized_query_context(timed_out).await?;
     assert!(context.execute("SELECT * FROM tasks").await.is_err());
+    Ok(())
+}
+
+#[tokio::test]
+async fn typed_sql_document_filter_group_and_aggregate_edits_execute_authorized_queries()
+-> anyhow::Result<()> {
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(970)),
+        "memory://authorized-query-sql-document-common-edits",
+    )
+    .await?;
+    let tasks = aggregate_form(971);
+    create_form(&workspace, &tasks).await?;
+    let revisions = [
+        aggregate_revision(&tasks, 972, 982, "food", 10, FieldValue::Null),
+        aggregate_revision(&tasks, 973, 983, "food", 10, FieldValue::Null),
+        aggregate_revision(&tasks, 974, 984, "travel", 20, FieldValue::Null),
+    ];
+    append_aggregate_batch(&workspace, revisions.to_vec()).await?;
+    let context = workspace
+        .authorized_query_context(aggregate_policy(&tasks, &[972, 973, 974]))
+        .await?;
+
+    let apply = |source: &str, edit: ugoite_domain::sql_document::SqlDocumentSemanticEdit| {
+        let document = ugoite_domain::sql_document::parse_sql_document(source);
+        ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            source,
+            &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+                contract_version: document.contract_version,
+                expected_source: source.to_owned(),
+                edits: vec![edit],
+            },
+        )
+        .map(|result| result.document.to_sql().to_owned())
+        .map_err(anyhow::Error::from)
+    };
+
+    let filter_source = "SELECT field_101 > 0 FROM tasks WHERE field_101 = 10";
+    let filter_document = ugoite_domain::sql_document::parse_sql_document(filter_source);
+    let where_clause = filter_document
+        .nodes
+        .iter()
+        .find(|node| node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::WhereClause)
+        .expect("the filter clause is represented");
+    let replacement = filter_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::BinaryExpression
+                && filter_document.source_slice(node.range.unwrap()) == Some("field_101 > 0")
+        })
+        .expect("the SELECT predicate is a reusable typed filter expression");
+    let replaced_filter = apply(
+        filter_source,
+        ugoite_domain::sql_document::SqlDocumentSemanticEdit::SetFilterPredicate {
+            node_id: where_clause.id,
+            expected_kind: where_clause.kind,
+            expression_node_id: replacement.id,
+            expression_expected_kind: replacement.kind,
+        },
+    )?;
+    let filtered = context.execute(&replaced_filter).await?;
+    assert_eq!(
+        filtered.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+        3
+    );
+    let predicate = filtered[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<BooleanArray>()
+        .expect("filter replacement remains a boolean expression");
+    assert!(predicate.values().iter().all(|value| value));
+
+    let replaced_document = ugoite_domain::sql_document::parse_sql_document(&replaced_filter);
+    let where_clause = replaced_document
+        .nodes
+        .iter()
+        .find(|node| node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::WhereClause)
+        .expect("the replaced filter remains represented");
+    let without_filter = apply(
+        &replaced_filter,
+        ugoite_domain::sql_document::SqlDocumentSemanticEdit::RemoveFilterClause {
+            node_id: where_clause.id,
+            expected_kind: where_clause.kind,
+        },
+    )?;
+    let unfiltered = context.execute(&without_filter).await?;
+    assert_eq!(
+        unfiltered
+            .iter()
+            .map(|batch| batch.num_rows())
+            .sum::<usize>(),
+        3
+    );
+
+    let group_source = "SELECT field_100, SUM(field_101) FROM tasks GROUP BY field_100, field_102";
+    let group_document = ugoite_domain::sql_document::parse_sql_document(group_source);
+    let group_clause = group_document
+        .nodes
+        .iter()
+        .find(|node| node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::GroupByClause)
+        .expect("GROUP BY is represented");
+    let mut group_items = group_document
+        .nodes
+        .iter()
+        .filter(|node| {
+            node.parent == Some(group_clause.id)
+                && node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::GroupByItem
+        })
+        .collect::<Vec<_>>();
+    group_items.sort_by_key(|item| item.range.map(|range| range.start));
+    let moved_group = apply(
+        group_source,
+        ugoite_domain::sql_document::SqlDocumentSemanticEdit::MoveGroupByItem {
+            node_id: group_items[1].id,
+            expected_kind: group_items[1].kind,
+            to_index: 0,
+        },
+    )?;
+    let grouped = context.execute(&moved_group).await?;
+    assert_eq!(
+        grouped.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+        2
+    );
+    let moved_document = ugoite_domain::sql_document::parse_sql_document(&moved_group);
+    let group_clause = moved_document
+        .nodes
+        .iter()
+        .find(|node| node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::GroupByClause)
+        .expect("reordered GROUP BY is represented");
+    let amount_group = moved_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.parent == Some(group_clause.id)
+                && node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::GroupByItem
+                && moved_document.source_slice(node.range.unwrap()) == Some("field_102")
+        })
+        .expect("the removable grouping expression is represented");
+    let reduced_group = apply(
+        &moved_group,
+        ugoite_domain::sql_document::SqlDocumentSemanticEdit::RemoveGroupByItem {
+            node_id: amount_group.id,
+            expected_kind: amount_group.kind,
+        },
+    )?;
+    let grouped = context.execute(&reduced_group).await?;
+    assert_eq!(
+        grouped.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+        2
+    );
+
+    let aggregate_source = "SELECT SUM(field_101) FROM tasks";
+    let aggregate_document = ugoite_domain::sql_document::parse_sql_document(aggregate_source);
+    let sum = aggregate_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::FunctionExpression
+                && matches!(
+                    node.semantic,
+                    Some(ugoite_domain::sql_document::SqlDocumentNodeData::Function { ref name, .. })
+                        if name.last().is_some_and(|part| part.value.eq_ignore_ascii_case("sum"))
+                )
+        })
+        .expect("SUM is represented as a registered aggregate");
+    let average = apply(
+        aggregate_source,
+        ugoite_domain::sql_document::SqlDocumentSemanticEdit::SetAggregateFunction {
+            node_id: sum.id,
+            expected_kind: sum.kind,
+            function: ugoite_domain::sql_document::SqlDocumentAggregateFunction::Avg,
+        },
+    )?;
+    let average_batches = context.execute(&average).await?;
+    assert_eq!(average_batches[0].num_rows(), 1);
+    let average_value = average_batches[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<Float64Array>()
+        .expect("AVG returns a typed floating result")
+        .value(0);
+    assert!((average_value - (40.0 / 3.0)).abs() < 1e-9);
+
+    let average_document = ugoite_domain::sql_document::parse_sql_document(&average);
+    let avg = average_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::FunctionExpression
+                && matches!(
+                    node.semantic,
+                    Some(ugoite_domain::sql_document::SqlDocumentNodeData::Function { ref name, .. })
+                        if name.last().is_some_and(|part| part.value.eq_ignore_ascii_case("avg"))
+                )
+        })
+        .expect("AVG remains represented");
+    let distinct = apply(
+        &average,
+        ugoite_domain::sql_document::SqlDocumentSemanticEdit::SetAggregateDistinct {
+            node_id: avg.id,
+            expected_kind: avg.kind,
+            distinct: true,
+        },
+    )?;
+    let distinct_batches = context.execute(&distinct).await?;
+    let distinct_average = distinct_batches[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<Float64Array>()
+        .expect("AVG(DISTINCT ...) remains numeric")
+        .value(0);
+    assert!((distinct_average - 15.0).abs() < 1e-9);
+
+    let distinct_document = ugoite_domain::sql_document::parse_sql_document(&distinct);
+    let avg = distinct_document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::FunctionExpression
+                && matches!(
+                    node.semantic,
+                    Some(ugoite_domain::sql_document::SqlDocumentNodeData::Function { ref name, .. })
+                        if name.last().is_some_and(|part| part.value.eq_ignore_ascii_case("avg"))
+                )
+        })
+        .expect("AVG(DISTINCT ...) is represented");
+    let without_aggregate = apply(
+        &distinct,
+        ugoite_domain::sql_document::SqlDocumentSemanticEdit::RemoveAggregate {
+            node_id: avg.id,
+            expected_kind: avg.kind,
+        },
+    )?;
+    let unaggregated = context.execute(&without_aggregate).await?;
+    assert_eq!(
+        unaggregated
+            .iter()
+            .map(|batch| batch.num_rows())
+            .sum::<usize>(),
+        3
+    );
     Ok(())
 }

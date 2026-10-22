@@ -17,64 +17,36 @@ title: "Shared SQL Workspace"
 - Keep the shared SQL editor's default wrapping behavior unchanged for other
   callers.
 
-The adapter-supplied action list is the only source of structured operations.
-`analyzeSqlStructure` and `proposeSqlStructureOperation` in the portable client
-use the Rust domain parser through WASM. The capability contract accepts one
-SELECT over the selected Form relation, including a plain alias on that single
-relation, and literal-only scalar SELECT statements without a relation, such
-as `SELECT 1`. For a relation-free
-statement, the adapter provides an empty relation context and the parser exposes
-only operations that do not need Form columns. Typed parameter comparisons,
-null checks, and column ordering remain bound to Form metadata. It reports
-stable reason codes for unsupported SQL and never makes direct SQL unavailable.
-The checked backend-admission and current structure-editor coverage inventory
-is recorded in the [SQL feature matrix contract](../../../architecture/contracts/sql-gui-feature-matrix.md).
-Its version 3 aggregate analysis uses the Domain aggregate registry for names,
-aliases, arity, DISTINCT, and wildcard validation. The existing `column` field
-continues to represent single-column and wildcard forms; optional `arguments`
-carries additional COUNT column names and is omitted for existing forms. The
-editor covers nullary COUNT, variadic COUNT over Form columns, and
-COUNT(DISTINCT *); MEAN remains distinguishable from AVG during AST rewrites.
-Sort proposals append adapter-supplied stable keys where needed. A proposal is
-non-mutating: the adapter must show its SQL diff and wait for explicit user
-confirmation before updating the controlled SQL value. `SqlStructureToolbar`
-analyzes SQL against trusted metadata for every Form, including reserved
-metadata Forms, so directly authored SQL over those relations can retain
-structured editing when the Rust parser supports it. The Form chooser offers
-only user-creatable Forms, using the same eligibility rule as entry creation,
-and passes the selected server-derived `sql_relation` to the Rust
-`set_relation` operation. Selecting a
-Form from the relation-free `SELECT 1` workspace seed proposes
-`SELECT * FROM <relation>`; replacing one simple relation preserves the other
-SQL clauses and is accepted only when the target Form schema validates them.
-For a single aliased relation, structure edits preserve the alias and emit
-unqualified column references. One same-Form `INNER JOIN` with explicit aliases
-and a supported equality is editable; other join shapes, derived relations, and
-table alias column lists remain unsupported. For simple Form-column
-projections, the Columns editor exposes each output alias and lets the user
-add, rename, remove, reorder, and repeat source columns independently. Each
-existing slot is identified by its projection ordinal in the exact SQL
-snapshot; newly added rows have no source identity. Slot identity is transient
-editor state and is not stored beside SQL. Unsupported expressions and unsafe
-comment/source spans remain unavailable to structured edits.
-The Form picker shows the current Form name; SQL text uses the opaque,
-server-derived `form_<32-hex-ID>` relation for that Form ID. Renaming changes
-the picker label and schema context identity while leaving existing SQL bound
-to the same relation. A new Form with the same name receives its own relation.
-Alias edits that would change an `ORDER BY` identifier between an output alias
-and a same-named Form column are rejected with a sort diagnostic.
-The proposal view shows before/after SQL and applies changes only after
-confirmation. Other structure controls stay limited to operations that the
-Rust parser can safely round-trip, with capability reasons in disabled
-actions' accessible names. `/sql/new`, Saved SQL detail/edit, and Composition
-inline SQL supply Form contexts together with a relation-free scalar context.
+The shared toolbar has six actions: Form, Columns, Filter, Sort, Structure,
+and Arguments. Structure opens the less common relation and query-tree edits.
+The toolbar sends typed SQL Document edits through the Rust/WASM protocol; it
+does not classify SQL with a second bounded analyzer or fall back to a separate
+SQL generator. The document serializer is responsible for retaining comments,
+quoted identifiers, aliases, and untouched clauses. Text edits and tree edits
+share the same Rust parser, diagnostics, transaction checks, and undo history.
 
-The Filter action edits a Rust-derived boolean expression tree with typed
-predicate leaves and nested AND, OR, and NOT nodes. Its
-`set_filter_expression` operation validates every column, operator, and
-declared variable against the trusted Form context and rejects malformed or
-over-bound trees. The older `set_filters` operation remains limited to flat
-conjunctions; the UI does not flatten a boolean tree into that lossy shape.
+Form metadata is context for the editor, not a second saved query model. The
+Form action can choose or replace a relation while retaining other clauses;
+relation-free SELECT statements such as `SELECT 1` remain editable. Nested
+relations, joins, CTEs, set operations, projections, filters, grouping,
+ordering, row limits, expressions, and SQL arguments are edited through the
+same document tree. Operations that cannot preserve a selected source span
+must fail locally with a diagnostic and leave the SQL unchanged. They must not
+silently replace the whole query with a starter statement.
+
+The argument action is available with no arguments declared. SQL placeholders
+are paired with explicit, typed declarations; unused, undefined, duplicated,
+or incompatible arguments produce local lint errors. Text inside string
+literals and comments is not treated as a placeholder. Invalid or incomplete
+SQL drafts remain visible and editable, but cannot be saved or executed.
+
+Authorized planner diagnostics validate the same SQL with its current Form
+permissions and output schema before save or preview. Syntax parsing alone does
+not promise that a query is executable. The SQL feature matrix records each
+executor-admitted construct, its typed document representation, GUI operations,
+and verification evidence in the [SQL feature matrix contract](../../../architecture/contracts/sql-gui-feature-matrix.md).
+The matrix remains the completion gate: a parser node or preserved-only tree
+display is not evidence that the construct can be edited in the GUI.
 
 ## Preview and results
 

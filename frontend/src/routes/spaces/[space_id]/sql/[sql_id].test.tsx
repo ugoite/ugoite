@@ -8,6 +8,7 @@ import {
   within,
 } from "@solidjs/testing-library";
 import SpaceSqlDetailRoute from "./[sql_id]/index";
+import { SqlArgumentDefinitionsEditor } from "~/components/SqlArgumentDefinitionsEditor";
 import { formatDateLabel } from "~/lib/date-format";
 import {
   resetMockData,
@@ -17,6 +18,8 @@ import {
 } from "~/test/mocks/handlers";
 import type { Space } from "~/lib/types";
 import { sqlApi } from "~/lib/ugoite-client";
+import * as ugoiteClient from "~/lib/ugoite-client";
+import type { SqlVariable } from "~/lib/types";
 import { expectBackLinkAtHeaderStart } from "~/test/back-link-placement";
 
 const navigateMock = vi.fn();
@@ -103,7 +106,43 @@ vi.mock("~/components/SQLWorkspace", () => ({
 }));
 
 vi.mock("~/components/SqlStructureToolbar", () => ({
-  SqlStructureToolbar: () => null,
+  SqlStructureToolbar: (props: {
+    sql: () => string;
+    argumentDefinitions?: () => readonly SqlVariable[];
+    onArgumentAdded?: (variable: SqlVariable) => boolean | void;
+    onArgumentUpdated?: (
+      oldName: string,
+      variable: SqlVariable,
+    ) => boolean | void | Promise<boolean | void>;
+    onArgumentRemoved?: (name: string) => boolean | void;
+    argumentDefaults?: () => Record<string, { enabled: boolean; raw: string }>;
+    onArgumentDefaultsChange?: (
+      defaults: Record<string, { enabled: boolean; raw: string }>,
+    ) => void;
+    disabled?: () => boolean;
+  }) => (
+    <section role="dialog" aria-label="Arguments">
+      <SqlArgumentDefinitionsEditor
+        idPrefix="saved-sql-test"
+        variables={props.argumentDefinitions?.() ?? []}
+        referencedNames={props.argumentDefinitions?.().filter((variable) =>
+          props.sql().includes(`$${variable.name}`) ||
+          props.sql().includes(`{{${variable.name}}}`)
+        ).map((variable) => variable.name) ?? []}
+        defaults={props.argumentDefaults?.() ?? {}}
+        disabled={props.disabled?.()}
+        onAdd={(variable) => {
+          if (!props.onArgumentAdded) return false;
+          return props.onArgumentAdded(variable) === false ? false : true;
+        }}
+        onUpdate={(oldName, variable) =>
+          props.onArgumentUpdated?.(oldName, variable) ?? false}
+        onRemove={(name) => props.onArgumentRemoved?.(name) ?? false}
+        onDefaultsChange={(defaults) =>
+          props.onArgumentDefaultsChange?.(defaults)}
+      />
+    </section>
+  ),
 }));
 
 describe("/spaces/:space_id/sql/:sql_id", () => {
@@ -167,6 +206,12 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
 
     expect(await screen.findByRole("heading", { name: "Recent Search" }))
       .toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId("sql-editor")).toHaveAttribute(
+        "data-disabled",
+        "false",
+      )
+    );
     expect(screen.getByText(formatDateLabel("2025-03-02T00:00:00Z")))
       .toBeInTheDocument();
     expect(screen.getByText(formatDateLabel("2025-03-01T00:00:00Z")))
@@ -178,7 +223,7 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     expect(screen.getByRole("textbox", { name: "SQL" })).toHaveValue(
       `SELECT * FROM "${entryRelation}" WHERE owner = {{owner}} ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 10`,
     );
-    expect(screen.getByRole("link", { name: "Open Variables" }))
+    expect(await screen.findByRole("link", { name: "Open Variables" }))
       .toHaveAttribute(
         "href",
         "/spaces/default/sql/saved-query/variables",
@@ -261,7 +306,14 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
       revision_id: "rev-1",
     });
     render(() => <SpaceSqlDetailRoute />);
-    fireEvent.click(await screen.findByRole("button", { name: "SQL results" }));
+    const previewButton = await screen.findByRole("button", {
+      name: "Run Query",
+    });
+    await waitFor(() => expect(previewButton).toBeEnabled());
+    const resultsButton = await screen.findByRole("button", {
+      name: "SQL results",
+    });
+    fireEvent.click(resultsButton);
 
     expect(navigateMock).toHaveBeenCalledWith(
       "/spaces/default/sql/saved-query/run",
@@ -291,8 +343,10 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
 
     render(() => <SpaceSqlDetailRoute />);
     const parameter = await screen.findByRole("textbox", { name: "id" });
+    const runButton = screen.getByRole("button", { name: "Run Query" });
+    await waitFor(() => expect(runButton).toBeEnabled());
     fireEvent.input(parameter, { target: { value: "42" } });
-    fireEvent.click(screen.getByRole("button", { name: "Run Query" }));
+    fireEvent.click(runButton);
 
     await waitFor(() => {
       expect(query).toHaveBeenCalledWith("default", {
@@ -347,7 +401,9 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     fireEvent.input(await screen.findByRole("textbox", { name: "id" }), {
       target: { value: "9007199254740993" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Run Query" }));
+    const runButton = screen.getByRole("button", { name: "Run Query" });
+    await waitFor(() => expect(runButton).toBeEnabled());
+    fireEvent.click(runButton);
 
     await waitFor(() => expect(screen.getByText("error")).toBeInTheDocument());
     expect(query).not.toHaveBeenCalled();
@@ -380,7 +436,9 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
 
     render(() => <SpaceSqlDetailRoute />);
     expect(await screen.findByRole("textbox", { name: "id" })).toHaveValue("0");
-    fireEvent.click(screen.getByRole("button", { name: "Run Query" }));
+    const runButton = screen.getByRole("button", { name: "Run Query" });
+    await waitFor(() => expect(runButton).toBeEnabled());
+    fireEvent.click(runButton);
 
     await waitFor(() => {
       expect(query).toHaveBeenCalledWith("default", {
@@ -424,7 +482,9 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(update).toHaveBeenCalledOnce());
-    fireEvent.click(screen.getByRole("button", { name: "Run Query" }));
+    const runButton = screen.getByRole("button", { name: "Run Query" });
+    await waitFor(() => expect(runButton).toBeEnabled());
+    fireEvent.click(runButton);
 
     await waitFor(() => {
       expect(query).toHaveBeenCalledWith("default", {
@@ -462,6 +522,17 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     fireEvent.input(editor, {
       target: { value: "SELECT * FROM records WHERE title = {{title}}" },
     });
+    expect(
+      await screen.findByText("Add argument title before using it in SQL."),
+    )
+      .toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: "Arguments" });
+    fireEvent.input(within(dialog).getByLabelText("Argument name"), {
+      target: { value: "title" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add argument" }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
@@ -531,6 +602,92 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
         parent_revision_id: "rev-1",
       });
     });
+    update.mockRestore();
+  });
+
+  it("blocks saving a declared SQL argument while it is unused", async () => {
+    seedSqlEntry("default", {
+      id: "saved-query",
+      name: "Unused declaration",
+      kind: "user-query",
+      sql: "SELECT 1",
+      variables: [{ type: "integer", name: "unused", description: "" }],
+      created_at: "2025-03-01T00:00:00Z",
+      updated_at: "2025-03-02T00:00:00Z",
+      revision_id: "rev-1",
+    });
+    const update = vi.spyOn(sqlApi, "update");
+    render(() => <SpaceSqlDetailRoute />);
+    fireEvent.input(
+      await screen.findByRole("textbox", { name: "Query name" }),
+      {
+        target: { value: "Changed name" },
+      },
+    );
+    expect(await screen.findByText("Argument is not referenced in SQL."))
+      .toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(
+      await screen.findByText(
+        "Argument unused must be referenced before saving.",
+      ),
+    ).toBeInTheDocument();
+    expect(update).not.toHaveBeenCalled();
+    update.mockRestore();
+  });
+
+  it("renames Saved SQL parameter references through the Rust document endpoint", async () => {
+    seedSqlEntry("default", {
+      id: "saved-query",
+      name: "By count",
+      kind: "user-query",
+      sql: "SELECT $count",
+      variables: [{ type: "integer", name: "count", description: "Count" }],
+      created_at: "2025-03-01T00:00:00Z",
+      updated_at: "2025-03-02T00:00:00Z",
+      revision_id: "rev-1",
+    });
+    const rename = vi.spyOn(ugoiteClient, "renameSqlDocumentParameter")
+      .mockImplementation(async (source, oldName, newName) => ({
+        contract_version: 7,
+        status: "parsed",
+        source: source.replaceAll(`$${oldName}`, `$${newName}`),
+        diagnostics: [],
+        tokens: [],
+        nodes: [],
+      }));
+    const update = vi.spyOn(sqlApi, "update").mockResolvedValue({
+      id: "saved-query",
+      revisionId: "rev-2",
+    });
+
+    render(() => <SpaceSqlDetailRoute />);
+    fireEvent.input(
+      await screen.findByRole("textbox", { name: "Argument name for count" }),
+      { target: { value: "total" } },
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Rename argument" }),
+    );
+
+    await waitFor(() => {
+      expect(rename).toHaveBeenCalledWith("SELECT $count", "count", "total");
+      expect(screen.getByRole("textbox", { name: "SQL" })).toHaveValue(
+        "SELECT $total",
+      );
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(update).toHaveBeenCalledWith("default", "saved-query", {
+        name: "By count",
+        kind: "user-query",
+        metadata: undefined,
+        sql: "SELECT $total",
+        variables: [{ type: "integer", name: "total", description: "Count" }],
+        parent_revision_id: "rev-1",
+      });
+    });
+    rename.mockRestore();
     update.mockRestore();
   });
 

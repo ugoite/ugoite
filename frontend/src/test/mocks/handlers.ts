@@ -860,6 +860,10 @@ export const handlers = [
     "/spaces/:spaceId/sql/query/count",
     () => HttpResponse.json({ count: 2 }),
   ),
+  testHttp.post(
+    "/spaces/:spaceId/sql/query/plan",
+    () => HttpResponse.json({ result_schema: [] }),
+  ),
 
   // Space Members
   testHttp.get("/spaces/:spaceId/members", ({ params }) => {

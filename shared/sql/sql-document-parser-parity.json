@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "description": "SQL statements accepted by both the Rust SQL Document parser and the DataFusion parser used by the read-only executor.",
+  "cases": [
+    {
+      "id": "relation-free-select",
+      "sql": "SELECT 1"
+    },
+    {
+      "id": "quoted-relation-and-alias",
+      "sql": "SELECT g.\"Name\" AS label FROM \"tasks\" AS g"
+    },
+    {
+      "id": "typed-cast-and-case",
+      "sql": "SELECT CAST(amount AS DECIMAL(10, 2)), CASE WHEN amount > 0 THEN TRUE ELSE FALSE END FROM \"tasks\""
+    },
+    {
+      "id": "parameterized-boolean-filter",
+      "sql": "SELECT \"_ugoite_id\" FROM \"tasks\" WHERE (amount >= $minimum OR amount IS NULL) AND \"_ugoite_id\" <> $excluded"
+    },
+    {
+      "id": "group-having-order-row-limit",
+      "sql": "SELECT category, SUM(amount) AS total FROM \"tasks\" GROUP BY category HAVING SUM(amount) > 0 ORDER BY total DESC NULLS LAST LIMIT 20 OFFSET 5"
+    },
+    {
+      "id": "inner-join",
+      "sql": "SELECT a.\"_ugoite_id\" FROM \"tasks\" AS a INNER JOIN \"tasks\" AS b ON a.\"_ugoite_id\" = b.\"_ugoite_id\""
+    },
+    {
+      "id": "cross-join",
+      "sql": "SELECT a.\"_ugoite_id\" FROM \"tasks\" AS a CROSS JOIN \"tasks\" AS b"
+    },
+    {
+      "id": "join-using",
+      "sql": "SELECT a.\"_ugoite_id\" FROM \"tasks\" AS a JOIN \"tasks\" AS b USING (\"_ugoite_id\")"
+    },
+    {
+      "id": "derived-relation",
+      "sql": "SELECT nested.\"_ugoite_id\" FROM (SELECT \"_ugoite_id\" FROM \"tasks\") AS nested"
+    },
+    {
+      "id": "cte-and-nested-select",
+      "sql": "WITH source_rows AS (SELECT \"_ugoite_id\" FROM \"tasks\") SELECT \"_ugoite_id\" FROM source_rows WHERE \"_ugoite_id\" IN (SELECT \"_ugoite_id\" FROM \"tasks\")"
+    },
+    {
+      "id": "set-operation-distinct",
+      "sql": "SELECT 1 UNION DISTINCT SELECT 2"
+    },
+    {
+      "id": "set-operation-by-name",
+      "sql": "SELECT 1 AS value UNION BY NAME SELECT 2 AS value"
+    },
+    {
+      "id": "aggregate-count-distinct",
+      "sql": "SELECT COUNT(DISTINCT category) FROM \"tasks\""
+    }
+  ]
+}
