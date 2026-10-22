@@ -3,6 +3,8 @@ import type {
   SqlCreatePayload,
   SqlEntry,
   SqlQueryCountRequest,
+  SqlQueryPlan,
+  SqlQueryPlanRequest,
   SqlQueryPage,
   SqlQueryRequest,
   SqlUpdatePayload,
@@ -99,5 +101,18 @@ export const sqlApi = {
       { signal },
     );
     return payload.count;
+  },
+
+  async plan(
+    spaceId: string,
+    request: SqlQueryPlanRequest,
+    signal?: AbortSignal,
+  ): Promise<SqlQueryPlan> {
+    return await protocolFetch<SqlQueryPlan>(
+      "sql.query.plan",
+      { space_id: spaceId },
+      request,
+      { signal },
+    );
   },
 };

@@ -58,19 +58,19 @@ features:
       - id: rust-structure-capabilities
         role: evidence
         facet: domain
-        responsibility: Parse only the SQL subset that can be safely transformed, expose typed action capabilities and non-mutating proposals through the portable WASM client, and preserve direct SQL as the owning adapter's source.
+        responsibility: Parse the guarded SQL Document, dispatch typed semantic transactions through WASM, and preserve source and undo without granting execution admission.
         targets:
           - id: sql-structure-analysis
             adapter: rust
-            path: crates/ugoite-domain/src/sql_structure.rs
-            selector: { kind: symbol, name: analyze_sql_structure }
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: parse_sql_document }
             claims:
               - kind: evidences
                 anchor: REQ-FE-080#criterion.safe-structured-operations
           - id: sql-structure-proposal
             adapter: rust
-            path: crates/ugoite-domain/src/sql_structure.rs
-            selector: { kind: symbol, name: propose_sql_structure_operation }
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: apply_sql_document_semantic_edit_transaction }
             claims:
               - kind: evidences
                 anchor: REQ-FE-080#criterion.safe-structured-operations
@@ -84,7 +84,7 @@ features:
           - id: sql-structure-frontend-protocol
             adapter: typescript
             path: frontend/src/lib/ugoite-client/protocol.ts
-            selector: { kind: symbol, name: analyzeSqlStructure }
+            selector: { kind: symbol, name: applySqlDocumentSemanticEditTransaction }
             claims:
               - kind: evidences
                 anchor: REQ-FE-080#criterion.safe-structured-operations

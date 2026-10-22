@@ -9,6 +9,7 @@
   },
   "imports": {
     "@codemirror/autocomplete": "npm:@codemirror/autocomplete@^6.20.2",
+    "@codemirror/commands": "npm:@codemirror/commands@^6.11.1",
     "@codemirror/lang-sql": "npm:@codemirror/lang-sql@^6.10.0",
     "@codemirror/language": "npm:@codemirror/language@^6.12.3",
     "@codemirror/lint": "npm:@codemirror/lint@^6.9.6",

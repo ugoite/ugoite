@@ -5796,6 +5796,58 @@
         }
       }
     },
+    "/spaces/{space_id}/sql/query/plan": {
+      "post": {
+        "summary": "Plan an authorized stateless read-only SQL query without reading rows",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SpaceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SqlQueryPlanRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authorized query output schema without result rows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SqlQueryPlan"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Read access is denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid, unauthorized, or non-executable SQL",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/spaces/{space_id}/sql/query/count": {
       "post": {
         "summary": "Count a stateless read-only SQL query",
@@ -14336,6 +14388,44 @@
         "required": [
           "name",
           "type"
+        ],
+        "additionalProperties": false
+      },
+      "SqlQueryPlanRequest": {
+        "type": "object",
+        "properties": {
+          "sql": {
+            "type": "string",
+            "description": "SQL text for a normal query; may be omitted or empty when saved_sql is selected."
+          },
+          "saved_sql": {
+            "$ref": "#/components/schemas/SavedSqlRevisionRef"
+          },
+          "parameters": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "parameter_types": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "SqlQueryPlan": {
+        "type": "object",
+        "properties": {
+          "result_schema": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SqlResultColumn"
+            }
+          }
+        },
+        "required": [
+          "result_schema"
         ],
         "additionalProperties": false
       },

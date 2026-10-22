@@ -31,6 +31,7 @@ pub mod saved_sql;
 pub mod search;
 pub mod service;
 pub mod space;
+mod sql_parser;
 pub mod verify;
 
 pub use health::SpaceHealthReport;

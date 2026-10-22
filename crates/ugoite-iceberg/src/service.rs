@@ -142,7 +142,8 @@ use ugoite_core::entry_query::{
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind as AppErrorKind};
 use ugoite_core::query::EntryScope;
 use ugoite_core::sql_query::{
-    SqlContinuation, SqlQueryCountRequest, SqlQueryError, SqlQueryPage, SqlQueryRequest,
+    SqlContinuation, SqlQueryCountRequest, SqlQueryError, SqlQueryPage, SqlQueryPlan,
+    SqlQueryPlanRequest, SqlQueryRequest,
 };
 use ugoite_domain::change::{ChangeCommand, RunId};
 use ugoite_domain::change_history::{
@@ -7163,6 +7164,72 @@ impl UgoiteService {
     ) -> Result<SqlQueryPage> {
         self.query_sql_authorized_with_context(space_id, principal_ids, request, None, None, None)
             .await
+    }
+
+    /// Plans one SQL request against the current authorized publication and
+    /// returns its output contract without materializing query rows.
+    pub async fn plan_sql_authorized_for_principals(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        request: SqlQueryPlanRequest,
+    ) -> Result<SqlQueryPlan> {
+        request.validate().map_err(sql_query_contract_error)?;
+        require_nonempty_authorized_principals(principal_ids)?;
+        self.validate_complete_space(space_id).await?;
+        let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
+            .acquire_state_lease(space_id)
+            .await?;
+        for principal_id in principal_ids {
+            if !effective_actions_for_state(&state, *principal_id, None)?.contains(&Action::Read) {
+                return Err(
+                    AppError::forbidden("principal is not authorized to read this Space").into(),
+                );
+            }
+        }
+
+        let query_request = SqlQueryRequest {
+            sql: request.sql,
+            parameters: request.parameters,
+            parameter_types: request.parameter_types,
+            include_exact_integer_values: false,
+            limit: 1,
+            continuation: None,
+            execution_id: None,
+            saved_sql: request.saved_sql,
+        };
+        let prepared = sql_execution::prepare_sql_request(
+            self,
+            space_id,
+            &query_request,
+            Some(sql_execution::SqlSourceAuthorization {
+                state: &state,
+                principal_ids,
+            }),
+        )
+        .await?;
+        self.validate_complete_space(space_id).await?;
+
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let publication = workspace.current_publication().await?;
+        let checkpoint = workspace.resolve_publication(&publication).await?;
+        let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
+        let relation_scopes =
+            sql_execution::authorized_relation_scopes(&state, principal_ids, &forms)?;
+        let execution_sql = sql_execution::bind_sql_to_forms(&prepared, &forms, &relation_scopes)?;
+        let result_schema = index::plan_sql_query_authorized_by_form_at_checkpoint_stateless(
+            &self.operator,
+            &self.workspace_path(space_id),
+            &execution_sql,
+            &relation_scopes,
+            prepared.parameters,
+            forms,
+            checkpoint,
+        )
+        .await?;
+
+        Ok(SqlQueryPlan { result_schema })
     }
 
     /// Executes one SQL page for an authorized Composition evaluation. The

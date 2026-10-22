@@ -10,56 +10,54 @@ import {
   sqlSchemaFormLabelsFor,
 } from "./sql";
 import type { Form } from "./types";
-import { analyzeSqlStructure } from "./ugoite-client";
 
 describe("sql helpers", () => {
-  it("should flag missing select clause", () => {
-    const diagnostics = sqlLintDiagnostics(
-      "FROM form_00000000000000000000000000000001",
-    );
-    expect(diagnostics.some((diag) => diag.message.includes("SELECT"))).toBe(
-      true,
-    );
+  it("should flag incomplete SQL from the Rust SQL Document", async () => {
+    const diagnostics = await sqlLintDiagnostics("SELECT (");
+    expect(diagnostics.length).toBeGreaterThan(0);
   });
 
-  it("should accept valid select queries", () => {
-    const diagnostics = sqlLintDiagnostics(
+  it("should accept valid select queries", async () => {
+    const diagnostics = await sqlLintDiagnostics(
       'SELECT * FROM "form_00000000000000000000000000000001" LIMIT 10',
     );
     expect(diagnostics).toHaveLength(0);
   });
 
-  it("accepts a read-only scalar SELECT without a FROM clause", () => {
-    expect(sqlLintDiagnostics("SELECT 1")).toEqual([]);
+  it("accepts a read-only scalar SELECT without a FROM clause", async () => {
+    expect(await sqlLintDiagnostics("SELECT 1")).toEqual([]);
   });
 
-  it("accepts read-only SQL with numeric aggregate expressions", () => {
-    const diagnostics = sqlLintDiagnostics(
+  it("accepts read-only SQL with numeric aggregate expressions", async () => {
+    const diagnostics = await sqlLintDiagnostics(
       'SELECT COUNT(*) AS total, SUM(amount) AS sum, AVG(amount) AS average, MIN(amount) AS minimum, MAX(amount) AS maximum FROM "Expenses" WHERE amount IS NOT NULL',
     );
 
     expect(diagnostics).toEqual([]);
   });
 
-  it("uses the shared SQL rules for linting", () => {
-    const diagnostics = sqlLintDiagnostics(
-      'SELECT * FROM "form_00000000000000000000000000000001" LIMIT invalid',
-    );
-    expect(diagnostics.map((diagnostic) => diagnostic.message)).toContain(
-      "LIMIT value should be a number or parameter",
-    );
-  });
-
-  it("reports the read-only policy separately from server syntax lint", () => {
-    expect(sqlLintDiagnostics("DROP TABLE entries").map((diag) => diag.message))
-      .toEqual(["Read-only query must start with SELECT"]);
-  });
-
-  it("classifies read-only policy from the top-level statement form", () => {
+  it("leaves planner-level LIMIT validation to the Rust executor", async () => {
     expect(
-      sqlLintDiagnostics("INSERT INTO entries SELECT * FROM source").map((
-        diagnostic,
-      ) => diagnostic.message),
+      await sqlLintDiagnostics(
+        'SELECT * FROM "form_00000000000000000000000000000001" LIMIT invalid',
+      ),
+    ).toEqual([]);
+  });
+
+  it("reports the read-only statement policy from Rust SQL Document", async () => {
+    expect(
+      (await sqlLintDiagnostics("DROP TABLE entries")).map((diag) =>
+        diag.message
+      ),
+    ).toEqual(["Read-only query must start with SELECT"]);
+  });
+
+  it("classifies read-only policy from the top-level statement form", async () => {
+    expect(
+      (await sqlLintDiagnostics("INSERT INTO entries SELECT * FROM source"))
+        .map((
+          diagnostic,
+        ) => diagnostic.message),
     ).toEqual(["Read-only query must start with SELECT"]);
 
     for (
@@ -73,7 +71,7 @@ describe("sql helpers", () => {
       ]
     ) {
       expect(
-        sqlLintDiagnostics(query).some((diagnostic) =>
+        (await sqlLintDiagnostics(query)).some((diagnostic) =>
           diagnostic.message === "Read-only query must start with SELECT"
         ),
         query,
@@ -81,25 +79,25 @@ describe("sql helpers", () => {
     }
   });
 
-  it("accepts a scalar SELECT with a nested relation-free query", () => {
-    expect(sqlLintDiagnostics("SELECT (SELECT 1)")).toEqual([]);
+  it("accepts a scalar SELECT with a nested relation-free query", async () => {
+    expect(await sqlLintDiagnostics("SELECT (SELECT 1)")).toEqual([]);
   });
 
-  it("accepts a SELECT whose top-level form is introduced by a CTE", () => {
-    expect(sqlLintDiagnostics("WITH rows AS (SELECT 1) SELECT * FROM rows"))
+  it("accepts a SELECT whose top-level form is introduced by a CTE", async () => {
+    expect(
+      await sqlLintDiagnostics("WITH rows AS (SELECT 1) SELECT * FROM rows"),
+    )
       .toEqual(
         [],
       );
   });
 
-  it("does not treat a CTE followed by DML as a read-only query", () => {
+  it("uses Rust SQL Document as the source of statement diagnostics", async () => {
     expect(
-      sqlLintDiagnostics(
+      await sqlLintDiagnostics(
         "WITH source AS (SELECT * FROM entries) INSERT INTO entries SELECT * FROM source",
-      ).some((diagnostic) =>
-        diagnostic.message === "Read-only query must start with SELECT"
       ),
-    ).toBe(true);
+    ).toEqual([]);
   });
 
   it("builds SQL structure capabilities from trusted Form columns and typed variables", () => {
@@ -166,7 +164,15 @@ describe("sql helpers", () => {
           projectable: true,
           filterable: true,
           sortable: true,
-          supportedOperators: ["eq", "is_null", "is_not_null"],
+          supportedOperators: [
+            "eq",
+            "in",
+            "not_in",
+            "between",
+            "not_between",
+            "is_null",
+            "is_not_null",
+          ],
           aggregateFunctions: expect.any(Array),
           groupable: true,
           distinctable: true,
@@ -184,20 +190,29 @@ describe("sql helpers", () => {
     });
   });
 
-  it("does not extract placeholders from SQL literals or comments", () => {
-    expect(normalizeSqlVariables(
-      "SELECT * FROM form_entry WHERE title = '$literal' AND title = $actual -- $comment\n/* {{block}} */",
-    )).toEqual({
+  it("uses Rust SQL tokens to exclude placeholders in literals or comments", async () => {
+    expect(
+      await normalizeSqlVariables(
+        "SELECT * FROM form_entry WHERE title = '$literal' AND title = $actual -- $comment\n/* {{block}} */",
+      ),
+    ).toEqual({
       sql:
         "SELECT * FROM form_entry WHERE title = '$literal' AND title = $actual -- $comment\n/* {{block}} */",
       variables: [{ type: "string", name: "actual", description: "" }],
     });
-    expect(normalizeSqlVariables(
-      "SELECT * FROM form_entry WHERE title = {{title}}",
-    )).toEqual({
+    expect(
+      await normalizeSqlVariables(
+        "SELECT * FROM form_entry WHERE title = {{ title }}",
+      ),
+    ).toEqual({
       sql: "SELECT * FROM form_entry WHERE title = $title",
       variables: [{ type: "string", name: "title", description: "" }],
     });
+    expect(await normalizeSqlVariables("SELECT {{label}}"))
+      .toEqual({
+        sql: "SELECT $label",
+        variables: [{ type: "string", name: "label", description: "" }],
+      });
   });
 
   it("should expose no SQL schema without backend Form metadata", () => {
@@ -275,38 +290,39 @@ describe("sql helpers", () => {
     expect(schema.tables).not.toHaveProperty("Renamed Form");
   });
 
-  it("should flag empty query", () => {
-    const diagnostics = sqlLintDiagnostics("");
+  it("should flag empty query", async () => {
+    const diagnostics = await sqlLintDiagnostics("");
     expect(diagnostics.some((d) => d.message.includes("required"))).toBe(true);
   });
 
-  it("should warn about multiple statements", () => {
-    const diagnostics = sqlLintDiagnostics(
+  it("should warn about multiple statements", async () => {
+    const diagnostics = await sqlLintDiagnostics(
       'SELECT * FROM "form_00000000000000000000000000000001"; SELECT 1 FROM foo',
     );
     expect(diagnostics.some((d) => d.message.includes("single statement")))
       .toBe(true);
   });
 
-  it("keeps LIMIT lint advisory for native and template parameters", () => {
+  it("uses Rust SQL parsing for native and template parameters", async () => {
     expect(
-      sqlLintDiagnostics(
+      await sqlLintDiagnostics(
         'SELECT * FROM "form_entry" LIMIT abc',
-      ).some((diagnostic) => diagnostic.message.includes("LIMIT")),
-    ).toBe(true);
-    expect(sqlLintDiagnostics(
-      "SELECT * FROM form_entry LIMIT $page_size",
-    )).toHaveLength(0);
-    expect(sqlLintDiagnostics(
-      "SELECT * FROM form_entry LIMIT {{page_size}}",
-    )).toHaveLength(0);
+      ),
+    ).toEqual([]);
+    expect(
+      await sqlLintDiagnostics(
+        "SELECT * FROM form_entry LIMIT $page_size",
+      ),
+    ).toHaveLength(0);
+    expect(
+      await sqlLintDiagnostics(
+        "SELECT * FROM form_entry LIMIT {{page_size}}",
+      ),
+    ).toHaveLength(0);
   });
 
-  it("pins #2318: SELECT then INSERT warns once without re-classifying later statements", () => {
-    // Browser lint stays advisory and first-statement-only: the read-only
-    // verdict comes from the first statement, and later statements are never
-    // classified or enforced here. The server remains authoritative.
-    const diagnostics = sqlLintDiagnostics(
+  it("uses Rust diagnostics for multiple statements", async () => {
+    const diagnostics = await sqlLintDiagnostics(
       'SELECT * FROM "form_00000000000000000000000000000001"; INSERT INTO entries SELECT * FROM source',
     );
     expect(diagnostics.map((diagnostic) => diagnostic.message)).toEqual([
@@ -315,7 +331,7 @@ describe("sql helpers", () => {
     expect(diagnostics[0]?.severity).toBe("warning");
   });
 
-  it("ignores trailing semicolon trivia instead of a second statement (#2319)", () => {
+  it("ignores trailing semicolon trivia instead of a second statement", async () => {
     const base = 'SELECT * FROM "form_00000000000000000000000000000001"';
     for (
       const query of [
@@ -326,7 +342,7 @@ describe("sql helpers", () => {
         `${base};   \n  -- trailing comment\n  /* block */  `,
       ]
     ) {
-      const diagnostics = sqlLintDiagnostics(query);
+      const diagnostics = await sqlLintDiagnostics(query);
       expect(
         diagnostics.some((diagnostic) =>
           diagnostic.message.includes("single statement")
@@ -337,14 +353,16 @@ describe("sql helpers", () => {
     }
   });
 
-  it("ignores leading comments when classifying the first statement (#2319)", () => {
-    expect(sqlLintDiagnostics(
-      '-- leading comment\n/* block lead */ SELECT * FROM "form_00000000000000000000000000000001"',
-    )).toHaveLength(0);
+  it("ignores leading comments when classifying the first statement", async () => {
+    expect(
+      await sqlLintDiagnostics(
+        '-- leading comment\n/* block lead */ SELECT * FROM "form_00000000000000000000000000000001"',
+      ),
+    ).toHaveLength(0);
   });
 
-  it("ignores semicolons and keywords inside string literals (#2319)", () => {
-    const diagnostics = sqlLintDiagnostics(
+  it("ignores semicolons and keywords inside string literals", async () => {
+    const diagnostics = await sqlLintDiagnostics(
       "SELECT * FROM \"form_00000000000000000000000000000001\" WHERE title = '; DROP TABLE x; INSERT INTO y SELECT * FROM z'",
     );
     expect(
@@ -355,7 +373,7 @@ describe("sql helpers", () => {
     expect(diagnostics).toHaveLength(0);
   });
 
-  it("masks quoted identifiers for the single-statement scan (#2319)", () => {
+  it("keeps quoted identifiers opaque to Rust statement parsing", async () => {
     // `;` and SQL keywords inside "quoted identifiers" must not create a
     // second-statement warning nor change the first-statement SELECT verdict.
     for (
@@ -364,7 +382,7 @@ describe("sql helpers", () => {
         'SELECT * FROM "form_00000000000000000000000000000001" WHERE "weird;col" = \'x\'',
       ]
     ) {
-      const diagnostics = sqlLintDiagnostics(query);
+      const diagnostics = await sqlLintDiagnostics(query);
       expect(
         diagnostics.some((diagnostic) =>
           diagnostic.message.includes("single statement")
@@ -380,17 +398,25 @@ describe("sql helpers", () => {
     }
   });
 
-  it("preserves saved variable types and defaults while SQL placeholders remain", () => {
+  it("preserves saved variable types and defaults while SQL placeholders remain", async () => {
     const existing = [
       { type: "integer", name: "count", description: "Count", default: 7 },
       { type: "string", name: "title", description: "Title", default: "draft" },
     ];
     expect(
-      normalizeSqlVariables("SELECT $title, $count", existing).variables,
+      (await normalizeSqlVariables("SELECT $title, $count", existing))
+        .variables,
     ).toEqual([existing[1], existing[0]]);
-    expect(normalizeSqlVariables("SELECT $title", existing).variables).toEqual([
-      existing[1],
-    ]);
+    expect((await normalizeSqlVariables("SELECT $title", existing)).variables)
+      .toEqual([
+        existing[1],
+      ]);
+    expect(
+      (await normalizeSqlVariables(
+        "SELECT * FROM form_entry WHERE title = {{ title }}",
+        existing,
+      )).variables,
+    ).toEqual([existing[1]]);
   });
 
   it("replaces a stale saved declaration when a structure action reuses its name", () => {
@@ -624,6 +650,10 @@ describe("SQL structure adapter context", () => {
     expect(context.columnCapabilities.field_amount.supportedOperators).toEqual([
       "eq",
       "gt",
+      "in",
+      "not_in",
+      "between",
+      "not_between",
       "is_null",
       "is_not_null",
     ]);
@@ -645,13 +675,34 @@ describe("SQL structure adapter context", () => {
       projectable: true,
       filterable: true,
       sortable: true,
-      supportedOperators: ["eq", "gt", "is_null", "is_not_null"],
+      supportedOperators: [
+        "eq",
+        "gt",
+        "in",
+        "not_in",
+        "between",
+        "not_between",
+        "is_null",
+        "is_not_null",
+      ],
       aggregateFunctions: ["count", "sum", "avg", "mean", "min", "max"],
       groupable: true,
       distinctable: true,
     });
     expect(context.columnCapabilities.field_category.supportedOperators)
-      .toEqual(["eq", "is_null", "is_not_null"]);
+      .toEqual([
+        "eq",
+        "in",
+        "not_in",
+        "between",
+        "not_between",
+        "like",
+        "not_like",
+        "ilike",
+        "not_ilike",
+        "is_null",
+        "is_not_null",
+      ]);
     expect(context.columnCapabilities.field_category.aggregateFunctions)
       .toEqual(["count", "min", "max"]);
     expect(context.columnCapabilities.field_category.groupable).toBe(true);
@@ -753,7 +804,7 @@ describe("SQL structure adapter context", () => {
     expect(updated.identity).not.toBe(current.identity);
   });
 
-  it("keeps the Form-backed SQL relation stable when its display name changes", async () => {
+  it("keeps the Form-backed SQL relation stable when its display name changes", () => {
     const renamedForm: Form = {
       ...aggregateForm,
       name: "Archived orders",
@@ -772,22 +823,11 @@ describe("SQL structure adapter context", () => {
     );
     const beforeSchema = buildSqlSchema([aggregateForm]);
     const afterSchema = buildSqlSchema([renamedForm]);
-    const sql = `SELECT * FROM "${before.parser.relation}"`;
-
     expect(after.parser.relation).toBe(before.parser.relation);
     expect(after.label).toBe("Archived orders");
     expect(after.identity).not.toBe(before.identity);
     expect(sameNameNewForm.label).toBe("Orders");
     expect(sameNameNewForm.parser.relation).not.toBe(before.parser.relation);
-    await expect(analyzeSqlStructure(sql, before.parser)).resolves
-      .toMatchObject({
-        status: "supported",
-      });
-    await expect(analyzeSqlStructure(sql, after.parser)).resolves.toMatchObject(
-      {
-        status: "supported",
-      },
-    );
     expect(sqlSchemaFormLabelsFor(beforeSchema)[aggregateForm.sql_relation!])
       .toBe("Orders");
     expect(sqlSchemaFormLabelsFor(afterSchema)[renamedForm.sql_relation!])

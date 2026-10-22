@@ -200,6 +200,29 @@ describe("sqlApi", () => {
     })).resolves.toBe(2);
   });
 
+  it("plans SQL without reading rows and sends typed null parameters", async () => {
+    const request = {
+      sql: "SELECT $day AS day",
+      parameters: { day: null },
+      parameter_types: { day: "date" },
+    };
+    server.use(
+      http.post(
+        testApiUrl("/spaces/sql-ws/sql/query/plan"),
+        async ({ request: httpRequest }) => {
+          expect(await httpRequest.json()).toEqual(request);
+          return HttpResponse.json({
+            result_schema: [{ name: "day", type: "date", nullable: true }],
+          });
+        },
+      ),
+    );
+
+    await expect(sqlApi.plan("sql-ws", request)).resolves.toEqual({
+      result_schema: [{ name: "day", type: "date", nullable: true }],
+    });
+  });
+
   it("forwards AbortSignal through page and count SQL adapters", async () => {
     const observedSignals: AbortSignal[] = [];
     server.use(

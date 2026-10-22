@@ -1,8 +1,9 @@
 import type { Diagnostic } from "@codemirror/lint";
-import { linter, lintGutter } from "@codemirror/lint";
+import { history, historyKeymap, isolateHistory } from "@codemirror/commands";
+import { forceLinting, linter, lintGutter } from "@codemirror/lint";
 import { sql } from "@codemirror/lang-sql";
 import { Compartment, EditorState } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
+import { EditorView, keymap } from "@codemirror/view";
 import { createEffect, createSignal, onCleanup } from "solid-js";
 import type { SqlSchema } from "~/lib/sql";
 import { sqlLintDiagnostics } from "~/lib/sql";
@@ -14,6 +15,7 @@ export interface SqlQueryEditorProps {
   onChange: (value: string) => void;
   schema: SqlSchema;
   onDiagnostics?: (diagnostics: Diagnostic[]) => void;
+  additionalDiagnostics?: readonly Diagnostic[];
   ariaLabel?: string;
   wrapLines?: boolean;
   disabled?: boolean;
@@ -30,9 +32,15 @@ export function SqlQueryEditor(props: SqlQueryEditorProps) {
   const initEditor = (container: HTMLDivElement) => {
     if (view()) return;
     /* v8 ignore start */
-    const lintSource: Parameters<typeof linter>[0] = (view) => {
-      const diagnostics = sqlLintDiagnostics(view.state.doc.toString());
-      props.onDiagnostics?.(diagnostics);
+    const lintSource: Parameters<typeof linter>[0] = async (view) => {
+      const source = view.state.doc.toString();
+      const diagnostics = [
+        ...await sqlLintDiagnostics(source),
+        ...(props.additionalDiagnostics ?? []),
+      ];
+      if (view.state.doc.toString() === source) {
+        props.onDiagnostics?.(diagnostics);
+      }
       return diagnostics;
     };
     /* v8 ignore stop */
@@ -40,6 +48,8 @@ export function SqlQueryEditor(props: SqlQueryEditorProps) {
     const state = EditorState.create({
       doc: props.value,
       extensions: [
+        history(),
+        keymap.of(historyKeymap),
         lintGutter(),
         schemaCompartment.of([
           sql({ schema: props.schema }),
@@ -72,11 +82,26 @@ export function SqlQueryEditor(props: SqlQueryEditorProps) {
 
     const editorView = new EditorView({ state, parent: container });
     setView(editorView);
-    const diagnostics = sqlLintDiagnostics(editorView.state.doc.toString());
     /* v8 ignore start */
-    props.onDiagnostics?.(diagnostics);
+    const source = editorView.state.doc.toString();
+    void sqlLintDiagnostics(source).then((diagnostics) => {
+      if (editorView.state.doc.toString() === source) {
+        props.onDiagnostics?.([
+          ...diagnostics,
+          ...(props.additionalDiagnostics ?? []),
+        ]);
+      }
+    });
     /* v8 ignore stop */
   };
+
+  createEffect(() => {
+    /* v8 ignore start */
+    const editorView = view();
+    const diagnostics = props.additionalDiagnostics;
+    if (editorView && diagnostics !== undefined) forceLinting(editorView);
+    /* v8 ignore stop */
+  });
 
   createEffect(() => {
     /* v8 ignore start */
@@ -85,6 +110,7 @@ export function SqlQueryEditor(props: SqlQueryEditorProps) {
     const nextValue = props.value;
     if (nextValue !== editorView.state.doc.toString()) {
       editorView.dispatch({
+        annotations: isolateHistory.of("full"),
         changes: {
           from: 0,
           to: editorView.state.doc.length,

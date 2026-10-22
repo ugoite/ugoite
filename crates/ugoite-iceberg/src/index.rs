@@ -425,13 +425,12 @@ fn is_sql_parameter_name(name: &str) -> bool {
 /// Therefore parser-valid DDL/DML, such as `DROP TABLE entries`, is accepted
 /// here and rejected only when an authorized query is planned for execution.
 pub fn validate_sql_syntax(sql: &str) -> Result<()> {
-    use datafusion::sql::parser::DFParser;
-
     let normalized = normalize_sql_template(sql)?;
     if normalized.trim().is_empty() {
         return Err(anyhow!("SQL must not be empty"));
     }
-    let statements = DFParser::parse_sql(&normalized).context("parse SQL with DataFusion")?;
+    let statements =
+        crate::sql_parser::parse_sql(&normalized).context("parse SQL with DataFusion")?;
     if statements.is_empty() {
         return Err(anyhow!("SQL must contain a statement"));
     }
@@ -443,7 +442,7 @@ pub async fn datafusion_parameter_names(
     _ws_path: &str,
     sql: &str,
 ) -> Result<BTreeSet<String>> {
-    use datafusion::sql::parser::{DFParser, Statement};
+    use datafusion::sql::parser::Statement;
     use datafusion::sql::sqlparser::ast::{visit_expressions, Expr, Value};
     use std::ops::ControlFlow;
 
@@ -451,7 +450,8 @@ pub async fn datafusion_parameter_names(
     // Saving SQL validates only DataFusion syntax and native placeholders.
     // Relation resolution remains an execution-time concern: a saved query may
     // legitimately target a Form that an operator creates later.
-    let statements = DFParser::parse_sql(&normalized).context("parse saved SQL with DataFusion")?;
+    let statements =
+        crate::sql_parser::parse_sql(&normalized).context("parse saved SQL with DataFusion")?;
     if statements.is_empty() {
         return Err(anyhow!("SQL must contain a statement"));
     }
@@ -2855,6 +2855,36 @@ pub(crate) async fn execute_sql_query_authorized_by_form_page_at_checkpoint_stat
     .await
 }
 
+/// Plans one authorized, stateless SQL query and returns its portable output
+/// schema without collecting any result rows.
+pub(crate) async fn plan_sql_query_authorized_by_form_at_checkpoint_stateless(
+    op: &Operator,
+    ws_path: &str,
+    sql_query: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+    parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    forms: Vec<FormDefinition>,
+    checkpoint: SpaceCheckpoint,
+) -> Result<Vec<SqlResultColumn>> {
+    let context = datafusion_sql_context_with_form_definitions_with_query_limits(
+        op,
+        ws_path,
+        EntryScope::AllCurrent,
+        None,
+        Some(relation_scopes),
+        Some(checkpoint),
+        sql_query_limits(SQL_MAX_OUTPUT_ROWS.saturating_add(1)),
+        false,
+        forms,
+    )
+    .await
+    .map_err(map_sql_error)?;
+    context
+        .stateless_result_schema(sql_query, parameters)
+        .await
+        .map_err(map_sql_error)
+}
+
 /// Executes a stateless SQL page using explicitly supplied limits. The
 /// ordinary adapter above provides the production SQL limits; the explicit
 /// form is also used by the bounded scalar adapter so both paths share the
@@ -3042,7 +3072,7 @@ pub fn validate_read_only_sql(sql: &str) -> Result<()> {
     if sql.trim().is_empty() {
         return Err(AppError::invalid_input(ErrorCode::InvalidInput, "sql is required").into());
     }
-    let parsed = datafusion::sql::parser::DFParser::parse_sql(sql).map_err(|error| {
+    let parsed = crate::sql_parser::parse_sql(sql).map_err(|error| {
         AppError::invalid_input(
             ErrorCode::ReadOnlySqlRequired,
             format!("read-only SQL is required: {error:#}"),
@@ -4838,6 +4868,8 @@ mod tests {
 
         for sql in [
             "SELECT 1 UNION SELECT 2",
+            "SELECT 1 INTERSECT SELECT 1",
+            "SELECT 1 EXCEPT SELECT 2",
             "WITH items AS (SELECT 1 AS value) SELECT value FROM items",
             "SELECT * FROM (SELECT 1 AS value) AS items",
             "SELECT (SELECT 1)",

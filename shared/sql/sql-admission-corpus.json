@@ -1,0 +1,305 @@
+{
+  "version": 1,
+  "scope": "Stage-specific regression corpus; not a complete grammar proof. Real Form, ACL, source-edit and non-empty execution cases remain in authorized_query.rs.",
+  "cases": [
+    {
+      "id": "scalar",
+      "sql": "SELECT 1 AS value",
+      "context": "authorized-empty-relations",
+      "expected": {
+        "runtime_parse": true,
+        "statement_admission": true,
+        "logical_plan": true,
+        "physical_plan": true,
+        "execution": true,
+        "source_document": true
+      },
+      "expected_text_rows": [
+        [
+          "1"
+        ]
+      ]
+    },
+    {
+      "id": "nested-expression",
+      "sql": "SELECT (1) AS value",
+      "context": "authorized-empty-relations",
+      "expected": {
+        "runtime_parse": true,
+        "statement_admission": true,
+        "logical_plan": true,
+        "physical_plan": true,
+        "execution": true,
+        "source_document": true
+      },
+      "expected_text_rows": [
+        [
+          "1"
+        ]
+      ]
+    },
+    {
+      "id": "cte",
+      "sql": "WITH c AS (SELECT 1 AS value) SELECT value FROM c",
+      "context": "authorized-empty-relations",
+      "expected": {
+        "runtime_parse": true,
+        "statement_admission": true,
+        "logical_plan": true,
+        "physical_plan": true,
+        "execution": true,
+        "source_document": true
+      },
+      "expected_text_rows": [
+        [
+          "1"
+        ]
+      ]
+    },
+    {
+      "id": "set-operation",
+      "sql": "SELECT 1 AS value UNION ALL SELECT 2 AS value ORDER BY value",
+      "context": "authorized-empty-relations",
+      "expected": {
+        "runtime_parse": true,
+        "statement_admission": true,
+        "logical_plan": true,
+        "physical_plan": true,
+        "execution": true,
+        "source_document": true
+      },
+      "expected_text_rows": [
+        [
+          "1"
+        ],
+        [
+          "2"
+        ]
+      ]
+    },
+    {
+      "id": "case",
+      "sql": "SELECT CASE WHEN TRUE THEN 1 ELSE 2 END AS value",
+      "context": "authorized-empty-relations",
+      "expected": {
+        "runtime_parse": true,
+        "statement_admission": true,
+        "logical_plan": true,
+        "physical_plan": true,
+        "execution": true,
+        "source_document": true
+      },
+      "expected_text_rows": [
+        [
+          "1"
+        ]
+      ]
+    },
+    {
+      "id": "cast",
+      "sql": "SELECT CAST(1 AS VARCHAR) AS value",
+      "context": "authorized-empty-relations",
+      "expected": {
+        "runtime_parse": true,
+        "statement_admission": true,
+        "logical_plan": true,
+        "physical_plan": true,
+        "execution": true,
+        "source_document": true
+      },
+      "expected_text_rows": [
+        [
+          "1"
+        ]
+      ]
+    },
+    {
+      "id": "aggregate",
+      "sql": "SELECT COUNT(*) AS value",
+      "context": "authorized-empty-relations",
+      "expected": {
+        "runtime_parse": true,
+        "statement_admission": true,
+        "logical_plan": true,
+        "physical_plan": true,
+        "execution": true,
+        "source_document": true
+      },
+      "expected_text_rows": [
+        [
+          "1"
+        ]
+      ]
+    },
+    {
+      "id": "typed-integer",
+      "sql": "SELECT $value AS value",
+      "context": "authorized-empty-relations",
+      "expected": {
+        "runtime_parse": true,
+        "statement_admission": true,
+        "logical_plan": true,
+        "physical_plan": true,
+        "execution": true,
+        "source_document": true
+      },
+      "expected_text_rows": [
+        [
+          "42"
+        ]
+      ],
+      "parameters": {
+        "value": 42
+      },
+      "parameter_types": {
+        "value": "integer"
+      }
+    },
+    {
+      "id": "typed-null",
+      "sql": "SELECT $value AS value",
+      "context": "authorized-empty-relations",
+      "expected": {
+        "runtime_parse": true,
+        "statement_admission": true,
+        "logical_plan": true,
+        "physical_plan": true,
+        "execution": true,
+        "source_document": true
+      },
+      "expected_text_rows": [
+        [
+          "NULL"
+        ]
+      ],
+      "parameters": {
+        "value": null
+      },
+      "parameter_types": {
+        "value": "integer"
+      }
+    },
+    {
+      "id": "in-where",
+      "sql": "SELECT 1 AS value WHERE 1 IN (SELECT 1)",
+      "context": "authorized-empty-relations",
+      "expected": {
+        "runtime_parse": true,
+        "statement_admission": true,
+        "logical_plan": true,
+        "physical_plan": true,
+        "execution": true,
+        "source_document": true
+      },
+      "expected_text_rows": [
+        [
+          "1"
+        ]
+      ]
+    },
+    {
+      "id": "in-projection-rejected",
+      "sql": "SELECT 1 IN (SELECT 1) AS value",
+      "context": "authorized-empty-relations",
+      "expected": {
+        "runtime_parse": true,
+        "statement_admission": true,
+        "logical_plan": true,
+        "physical_plan": false,
+        "execution": false,
+        "source_document": true
+      }
+    },
+    {
+      "id": "unauthorized-relation",
+      "sql": "SELECT * FROM hidden_form",
+      "context": "authorized-empty-relations",
+      "expected": {
+        "runtime_parse": true,
+        "statement_admission": true,
+        "logical_plan": false,
+        "physical_plan": false,
+        "execution": false,
+        "source_document": true
+      }
+    },
+    {
+      "id": "scalar-function-rejected",
+      "sql": "SELECT LOWER('secret')",
+      "context": "authorized-empty-relations",
+      "expected": {
+        "runtime_parse": true,
+        "statement_admission": true,
+        "logical_plan": false,
+        "physical_plan": false,
+        "execution": false,
+        "source_document": true
+      }
+    },
+    {
+      "id": "window-rejected",
+      "sql": "SELECT COUNT(1) OVER ()",
+      "context": "authorized-empty-relations",
+      "expected": {
+        "runtime_parse": true,
+        "statement_admission": true,
+        "logical_plan": false,
+        "physical_plan": false,
+        "execution": false,
+        "source_document": true
+      }
+    },
+    {
+      "id": "values-rejected",
+      "sql": "VALUES (1)",
+      "context": "authorized-empty-relations",
+      "expected": {
+        "runtime_parse": true,
+        "statement_admission": false,
+        "logical_plan": false,
+        "physical_plan": false,
+        "execution": false,
+        "source_document": true
+      }
+    },
+    {
+      "id": "nested-values-rejected",
+      "sql": "WITH c AS (VALUES (1)) SELECT * FROM c",
+      "context": "authorized-empty-relations",
+      "expected": {
+        "runtime_parse": true,
+        "statement_admission": false,
+        "logical_plan": false,
+        "physical_plan": false,
+        "execution": false,
+        "source_document": true
+      }
+    },
+    {
+      "id": "multiple-statements",
+      "sql": "SELECT 1; SELECT 2",
+      "context": "authorized-empty-relations",
+      "expected": {
+        "runtime_parse": true,
+        "statement_admission": false,
+        "logical_plan": false,
+        "physical_plan": false,
+        "execution": false,
+        "source_document": false
+      }
+    },
+    {
+      "id": "incomplete-draft",
+      "sql": "SELECT (",
+      "context": "authorized-empty-relations",
+      "expected": {
+        "runtime_parse": false,
+        "statement_admission": false,
+        "logical_plan": false,
+        "physical_plan": false,
+        "execution": false,
+        "source_document": false
+      }
+    }
+  ]
+}

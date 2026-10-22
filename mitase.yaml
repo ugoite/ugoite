@@ -95,6 +95,8 @@ inventory:
         - frontend/src/lib/preferences-api.ts
         - frontend/src/lib/sql-api.ts
         - frontend/src/lib/sql-api.test.ts
+        - frontend/src/lib/sql-workspace.ts
+        - frontend/src/lib/sql-workspace.test.ts
         - frontend/src/lib/sql.ts
         - frontend/src/lib/sql.test.ts
         - frontend/src/lib/asset-api.ts
@@ -192,6 +194,7 @@ inventory:
         - frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
         - frontend/src/routes/spaces/[space_id]/sql/new.tsx
         - frontend/src/routes/spaces/[space_id]/sql/new.test.tsx
+        - frontend/src/routes/spaces/[space_id]/sql/new.form-options.test.tsx
         - frontend/src/routes/spaces/[space_id]/sql/[sql_id]/variables.tsx
         - frontend/src/routes/spaces/[space_id]/sql/[sql_id]/variables.test.tsx
         - frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.tsx

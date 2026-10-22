@@ -1,16 +1,42 @@
-import { StandardSQL } from "@codemirror/lang-sql";
 import type { SQLConfig } from "@codemirror/lang-sql";
 import type { Diagnostic } from "@codemirror/lint";
-import sqlRules from "../../../shared/sql/ugoite-sql-rules.json";
 import { isReservedMetadataForm } from "./metadata-forms";
 import type { Form, SqlVariable, SqlVariableDefault } from "./types";
+import { parseSqlDocument } from "./ugoite-client/protocol";
 import type {
-  SqlStructureAggregateFunction,
+  SqlDocument,
+  SqlDocumentDiagnostic,
+  SqlDocumentToken,
   SqlStructureColumnType,
   SqlStructureContext,
-  SqlStructureFilterOperator,
   SqlStructureVariableType,
 } from "./ugoite-client";
+
+type SqlStructureAggregateFunction =
+  | "count"
+  | "sum"
+  | "avg"
+  | "mean"
+  | "min"
+  | "max";
+
+type SqlStructureFilterOperator =
+  | "eq"
+  | "not_eq"
+  | "lt"
+  | "lt_eq"
+  | "gt"
+  | "gt_eq"
+  | "in"
+  | "not_in"
+  | "between"
+  | "not_between"
+  | "like"
+  | "not_like"
+  | "ilike"
+  | "not_ilike"
+  | "is_null"
+  | "is_not_null";
 
 export type SqlSchema = NonNullable<SQLConfig["schema"]>;
 
@@ -131,6 +157,7 @@ export interface SqlStructureAdapterContext {
 const queryOperators = (
   supported: readonly string[] | undefined,
   filterable: boolean,
+  columnType: SqlStructureColumnType,
 ): SqlStructureFilterOperator[] => {
   const mapping: Record<string, SqlStructureFilterOperator> = {
     equals: "eq",
@@ -139,12 +166,38 @@ const queryOperators = (
     gt: "gt",
     gte: "gt_eq",
   };
-  return [
+  const operators = new Set<SqlStructureFilterOperator>([
     ...(supported ?? []).flatMap((operator) =>
       mapping[operator] ? [mapping[operator]] : []
     ),
-    ...(filterable ? ["is_null", "is_not_null"] as const : []),
-  ];
+  ]);
+  if (filterable) {
+    const scalarParameter = [
+      "string",
+      "boolean",
+      "integer",
+      "float",
+      "date",
+      "timestamp",
+    ].includes(columnType);
+    if (scalarParameter) {
+      operators.add("in");
+      operators.add("not_in");
+      if (columnType !== "boolean") {
+        operators.add("between");
+        operators.add("not_between");
+      }
+    }
+    if (columnType === "string") {
+      operators.add("like");
+      operators.add("not_like");
+      operators.add("ilike");
+      operators.add("not_ilike");
+    }
+    operators.add("is_null");
+    operators.add("is_not_null");
+  }
+  return [...operators];
 };
 
 /** Build analysis contexts for every Form plus a relation-free SQL context. */
@@ -179,7 +232,11 @@ export const buildSqlStructureContexts = (
         projectable: true,
         filterable: true,
         sortable: true,
-        supportedOperators: ["eq", "not_eq", "is_null", "is_not_null"],
+        supportedOperators: queryOperators(
+          ["equals"],
+          true,
+          "string",
+        ),
         aggregateFunctions: aggregateFunctionsForType("string"),
         groupable: true,
         distinctable: true,
@@ -188,16 +245,11 @@ export const buildSqlStructureContexts = (
         projectable: true,
         filterable: true,
         sortable: true,
-        supportedOperators: [
-          "eq",
-          "not_eq",
-          "lt",
-          "lt_eq",
-          "gt",
-          "gt_eq",
-          "is_null",
-          "is_not_null",
-        ],
+        supportedOperators: queryOperators(
+          ["equals", "lt", "lte", "gt", "gte"],
+          true,
+          "timestamp",
+        ),
         aggregateFunctions: aggregateFunctionsForType("timestamp"),
         groupable: true,
         distinctable: true,
@@ -206,16 +258,11 @@ export const buildSqlStructureContexts = (
         projectable: true,
         filterable: true,
         sortable: true,
-        supportedOperators: [
-          "eq",
-          "not_eq",
-          "lt",
-          "lt_eq",
-          "gt",
-          "gt_eq",
-          "is_null",
-          "is_not_null",
-        ],
+        supportedOperators: queryOperators(
+          ["equals", "lt", "lte", "gt", "gte"],
+          true,
+          "timestamp",
+        ),
         aggregateFunctions: aggregateFunctionsForType("timestamp"),
         groupable: true,
         distinctable: true,
@@ -236,6 +283,7 @@ export const buildSqlStructureContexts = (
         supportedOperators: queryOperators(
           capability?.supported_operators,
           capability?.filterable === true,
+          queryType ?? "other",
         ),
         aggregateFunctions: projectable && queryType
           ? aggregateFunctionsForType(queryType)
@@ -307,206 +355,164 @@ export function buildSqlSchema(forms: Form[]): SqlSchema {
   return schema;
 }
 
-const SQL_LITERAL_OR_COMMENT_NODES = new Set([
-  "BlockComment",
-  "LineComment",
-  "String",
-]);
-const SQL_QUOTED_IDENTIFIER_NODE = "QuotedIdentifier";
-const SQL_STATEMENT_FORM_KEYWORDS = new Set([
-  "alter",
-  "create",
-  "delete",
-  "drop",
-  "explain",
-  "insert",
-  "merge",
-  "select",
-  "truncate",
-  "update",
-]);
-
-type ParsedSql = {
-  code: string;
-  statementForm: "select" | "non-select" | undefined;
-  statementKeywords: Set<string>;
-  variableCode: string;
+type SqlDocumentLexeme = SqlDocumentToken & {
+  start: number;
+  end: number;
+  text: string;
 };
 
-type SqlTreeCursor = {
-  type: { name: string };
-  from: number;
-  to: number;
-  firstChild(): boolean;
-  nextSibling(): boolean;
-  parent(): boolean;
+function utf8ByteToUtf16Offsets(source: string): Map<number, number> {
+  const offsets = new Map<number, number>([[0, 0]]);
+  let byteOffset = 0;
+  let utf16Offset = 0;
+  for (const character of source) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    byteOffset += codePoint <= 0x7f
+      ? 1
+      : codePoint <= 0x7ff
+      ? 2
+      : codePoint <= 0xffff
+      ? 3
+      : 4;
+    utf16Offset += character.length;
+    offsets.set(byteOffset, utf16Offset);
+  }
+  return offsets;
+}
+
+function sqlDocumentLexemes(
+  source: string,
+  document: SqlDocument,
+): SqlDocumentLexeme[] {
+  const byteToUtf16 = utf8ByteToUtf16Offsets(source);
+  const bytes = new TextEncoder().encode(source);
+  const decoder = new TextDecoder();
+  return document.tokens.flatMap((token) => {
+    const start = byteToUtf16.get(token.range.start);
+    const end = byteToUtf16.get(token.range.end);
+    if (start === undefined || end === undefined) return [];
+    return [{
+      ...token,
+      start,
+      end,
+      text: decoder.decode(bytes.subarray(token.range.start, token.range.end)),
+    }];
+  });
+}
+
+type SqlParameterReference = {
+  name: string;
+  start: number;
+  end: number;
+  replacement?: string;
 };
 
-type StatementSummary = {
-  form: "select" | "non-select";
-  keywords: Set<string>;
-};
-
-function readStatementSummary(
-  sql: string,
-  cursor: SqlTreeCursor,
-): StatementSummary | null {
-  if (!cursor.firstChild()) return null;
-
-  const keywords = new Set<string>();
-  let firstToken: string | null = null;
-  let statementFormToken: string | null = null;
-  do {
-    const nodeName = cursor.type.name;
-    if (SQL_LITERAL_OR_COMMENT_NODES.has(nodeName) || nodeName === ";") {
+function parameterReferences(
+  source: string,
+  lexemes: readonly SqlDocumentLexeme[],
+): SqlParameterReference[] {
+  const references: SqlParameterReference[] = [];
+  for (let index = 0; index < lexemes.length; index += 1) {
+    const token = lexemes[index];
+    if (token.kind === "placeholder") {
+      const match = /^\$([A-Za-z_][A-Za-z0-9_]*)$/.exec(token.text);
+      if (match && !/[A-Za-z0-9_$]/.test(source[token.start - 1] ?? "")) {
+        references.push({ name: match[1], start: token.start, end: token.end });
+      }
       continue;
     }
 
-    if (nodeName === "Keyword") {
-      const token = sql.slice(cursor.from, cursor.to).toLowerCase();
-      keywords.add(token);
-      if (firstToken === null) {
-        firstToken = token;
-      }
-      if (
-        statementFormToken === null &&
-        SQL_STATEMENT_FORM_KEYWORDS.has(token) &&
-        token !== "with"
-      ) {
-        // For a CTE, the statement's actual form is the first statement-form
-        // keyword after WITH. This keeps INSERT ... SELECT classified as
-        // INSERT while allowing WITH ... SELECT queries.
-        statementFormToken = token;
-      }
-    } else if (firstToken === null) {
-      // Identifiers, literals, operators, and parser errors cannot start a
-      // read-only query. The browser still only provides advisory feedback.
-      firstToken = "";
-    }
-  } while (cursor.nextSibling());
-  cursor.parent();
-
-  if (firstToken === null) return null;
-  return {
-    form: firstToken === "select" ||
-        (firstToken === "with" && statementFormToken === "select")
-      ? "select"
-      : "non-select",
-    keywords,
-  };
-}
-
-function readFirstStatementSummary(
-  sql: string,
-  cursor: SqlTreeCursor,
-): StatementSummary | null {
-  if (!cursor.firstChild()) return null;
-  do {
-    if (cursor.type.name === "Statement") {
-      const summary = readStatementSummary(sql, cursor);
-      if (summary) {
-        cursor.parent();
-        return summary;
-      }
-    }
-  } while (cursor.nextSibling());
-  cursor.parent();
-  return null;
-}
-
-function parseSql(sql: string): ParsedSql {
-  const ignoredRanges: Array<[number, number]> = [];
-  const quotedIdentifierRanges: Array<[number, number]> = [];
-  const tree = StandardSQL.language.parser.parse(sql);
-  const cursor = tree.cursor();
-  const statementSummary = readFirstStatementSummary(sql, tree.cursor());
-
-  const visit = (): void => {
-    if (SQL_LITERAL_OR_COMMENT_NODES.has(cursor.type.name)) {
-      ignoredRanges.push([cursor.from, cursor.to]);
-      return;
-    }
-    if (cursor.type.name === SQL_QUOTED_IDENTIFIER_NODE) {
-      quotedIdentifierRanges.push([cursor.from, cursor.to]);
-      return;
-    }
-    if (cursor.firstChild()) {
-      do visit(); while (cursor.nextSibling());
-      cursor.parent();
-    }
-  };
-  if (cursor.firstChild()) {
-    do {
-      visit();
-    } while (cursor.nextSibling());
-    cursor.parent();
+    // `{{name}}` is a Saved SQL editor convenience. Rust's SQL tokenizer
+    // classifies the surrounding braces and identifier; this adapter only
+    // translates that explicit token sequence into the executor's `$name`
+    // syntax. Quoted text and comments never produce a brace token.
+    if (token.text !== "{" || token.kind !== "punctuation") continue;
+    const match = /^\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/.exec(
+      source.slice(token.start),
+    );
+    if (!match) continue;
+    const end = token.start + match[0].length;
+    const enclosed = lexemes.filter((candidate) =>
+      candidate.start >= token.start && candidate.end <= end
+    );
+    const significant = enclosed.filter((candidate) =>
+      candidate.kind !== "trivia"
+    );
+    const name = match[1];
+    if (
+      significant.map((candidate) => candidate.text).join("") !==
+        `{{${name}}}` ||
+      significant.some((candidate) =>
+        candidate.kind !== "punctuation" && candidate.kind !== "word"
+      )
+    ) continue;
+    references.push({
+      name,
+      start: token.start,
+      end,
+      replacement: `$${name}`,
+    });
   }
-
-  const maskRanges = (ranges: Array<[number, number]>): string => {
-    const masked = sql.split("");
-    for (const [from, to] of ranges) {
-      for (let offset = from; offset < to; offset += 1) masked[offset] = " ";
-    }
-    return masked.join("");
-  };
-  const code = maskRanges([...ignoredRanges, ...quotedIdentifierRanges]);
-  return {
-    code,
-    statementForm: statementSummary?.form,
-    statementKeywords: statementSummary?.keywords ?? new Set<string>(),
-    variableCode: maskRanges([...ignoredRanges, ...quotedIdentifierRanges]),
-  };
+  return references.sort((left, right) => left.start - right.start);
 }
 
-/**
- * Normalize the editor's template variables to DataFusion placeholders.
- * CodeMirror's SQL parser keeps strings, quoted identifiers, and comments out
- * of the placeholder scan, so `$name` in user text is not mistaken for a
- * session parameter.
- */
-export function normalizeSqlVariables(
-  sql: string,
-  existingVariables: SqlVariable[] = [],
-): {
+type NormalizedSqlDocument = {
+  source: string;
   sql: string;
   variables: SqlVariable[];
-} {
-  const names = new Set<string>();
+  document: SqlDocument;
+  replacements: SqlParameterReference[];
+};
+
+async function normalizeSqlDocument(
+  sql: string,
+  existingVariables: SqlVariable[] = [],
+): Promise<NormalizedSqlDocument> {
+  const sourceDocument = await parseSqlDocument(sql);
+  const references = parameterReferences(
+    sql,
+    sqlDocumentLexemes(sql, sourceDocument),
+  );
+  const replacements = references.filter((reference) =>
+    reference.replacement !== undefined
+  );
+  let normalizedSql = sql;
+  for (const reference of [...replacements].reverse()) {
+    normalizedSql = normalizedSql.slice(0, reference.start) +
+      reference.replacement + normalizedSql.slice(reference.end);
+  }
+  const document = normalizedSql === sql
+    ? sourceDocument
+    : await parseSqlDocument(normalizedSql);
+  const names = [...new Set(references.map((reference) => reference.name))];
   const existingByName = new Map(
     existingVariables.map((variable) => [variable.name, variable]),
   );
-  const parsed = parseSql(sql);
-  const variablePattern =
-    /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}|\$([A-Za-z_][A-Za-z0-9_]*)/g;
-  const normalizedSql = sql.replace(
-    variablePattern,
-    (
-      match,
-      templatedName: string | undefined,
-      nativeName: string | undefined,
-      offset: number,
-    ) => {
-      if (parsed.variableCode[offset] === " ") return match;
-      if (nativeName && /[A-Za-z0-9_$]/.test(sql[offset - 1] ?? "")) {
-        return match;
-      }
-      const name = templatedName ?? nativeName;
-      if (!name) return match;
-      names.add(name);
-      return `$${name}`;
-    },
-  );
-
   return {
+    source: sql,
     sql: normalizedSql,
-    variables: Array.from(names).map((name) =>
+    variables: names.map((name) =>
       existingByName.get(name) ?? {
         type: "string",
         name,
         description: "",
       }
     ),
+    document,
+    replacements,
   };
+}
+
+/** Normalize SQL parameter authoring syntax using the shared Rust lexer. */
+export async function normalizeSqlVariables(
+  sql: string,
+  existingVariables: SqlVariable[] = [],
+): Promise<{
+  sql: string;
+  variables: SqlVariable[];
+}> {
+  const normalized = await normalizeSqlDocument(sql, existingVariables);
+  return { sql: normalized.sql, variables: normalized.variables };
 }
 
 export function mergeSqlStructureVariables(
@@ -677,78 +683,62 @@ function isValidSqlVariableTimestamp(value: string): boolean {
   return true;
 }
 
-export function sqlLintDiagnostics(query: string): Diagnostic[] {
-  const diagnostics: Diagnostic[] = [];
-  /* v8 ignore start */
-  const lintRules = sqlRules.lint ?? {};
-  /* v8 ignore stop */
-  const leadingWhitespace = query.length - query.trimStart().length;
-  const trimmed = query.trim();
-  if (!trimmed) {
-    diagnostics.push({
-      from: 0,
-      to: Math.min(query.length, 1),
-      severity: "error",
-      message: "Query is required",
-    });
-    return diagnostics;
-  }
-
-  const parsedQuery = parseSql(query);
-  if (
-    lintRules.require_select !== false &&
-    parsedQuery.statementForm !== "select"
-  ) {
-    diagnostics.push({
-      from: leadingWhitespace,
-      to: leadingWhitespace + Math.min(trimmed.length, 6),
-      severity: "error",
-      message: "Read-only query must start with SELECT",
-    });
-  }
-
-  const semicolonIndex = parsedQuery.code.indexOf(";");
-  /* v8 ignore start */
-  if (lintRules.single_statement_only !== false) {
-    /* v8 ignore stop */
-    if (semicolonIndex !== -1) {
-      // `code` masks string literals, comments, and quoted identifiers, so a
-      // `;` found here is a real statement delimiter. Trailing trivia
-      // (whitespace and line/block comments, already masked to spaces) after
-      // the final semicolon is not a second statement.
-      const trailing = parsedQuery.code.slice(semicolonIndex + 1).trim();
-      if (trailing.length > 0) {
-        diagnostics.push({
-          from: semicolonIndex,
-          to: semicolonIndex + 1,
-          severity: "warning",
-          message: "Only a single statement is supported",
-        });
+function diagnosticForSqlDocument(
+  normalized: NormalizedSqlDocument,
+  sourceDiagnostic: SqlDocumentDiagnostic,
+): Diagnostic {
+  const byteToUtf16 = utf8ByteToUtf16Offsets(normalized.sql);
+  const normalizedStart = sourceDiagnostic.range
+    ? byteToUtf16.get(sourceDiagnostic.range.start)
+    : undefined;
+  const normalizedEnd = sourceDiagnostic.range
+    ? byteToUtf16.get(sourceDiagnostic.range.end)
+    : undefined;
+  const toSourceOffset = (offset: number): number => {
+    let shift = 0;
+    for (const replacement of normalized.replacements) {
+      const normalizedStart = replacement.start - shift;
+      const normalizedEnd = normalizedStart +
+        (replacement.replacement?.length ?? 0);
+      if (offset <= normalizedStart) return offset + shift;
+      if (offset <= normalizedEnd) {
+        return offset === normalizedEnd ? replacement.end : replacement.start;
       }
+      shift += replacement.end - replacement.start -
+        (replacement.replacement?.length ?? 0);
     }
-    /* v8 ignore start */
-  }
-  /* v8 ignore stop */
+    return offset + shift;
+  };
+  const start = normalizedStart === undefined
+    ? undefined
+    : toSourceOffset(normalizedStart);
+  const end = normalizedEnd === undefined
+    ? undefined
+    : toSourceOffset(normalizedEnd);
+  const severity = sourceDiagnostic.code === "single_statement_required"
+    ? "warning"
+    : "error";
+  const message = sourceDiagnostic.code === "empty_document"
+    ? "Query is required"
+    : sourceDiagnostic.code === "select_required"
+    ? "Read-only query must start with SELECT"
+    : sourceDiagnostic.code === "single_statement_required"
+    ? "Only a single statement is supported"
+    : sourceDiagnostic.message;
+  const leadingWhitespace = normalized.source.length -
+    normalized.source.trimStart().length;
+  return {
+    from: start ?? leadingWhitespace,
+    to: end ?? Math.min(normalized.source.length, leadingWhitespace + 1),
+    severity,
+    message,
+  };
+}
 
-  const limitMatch = /\blimit\b\s+([^\s;]+)/i.exec(parsedQuery.code);
-  /* v8 ignore start */
-  if (lintRules.limit_requires_number !== false && limitMatch) {
-    /* v8 ignore stop */
-    const limitValue = limitMatch[1];
-    const isPlaceholder = /^\$[A-Za-z_][A-Za-z0-9_]*$/.test(limitValue) ||
-      /^\{\{\s*[A-Za-z_][A-Za-z0-9_]*\s*\}\}$/.test(limitValue);
-    if (Number.isNaN(Number(limitValue)) && !isPlaceholder) {
-      const from = limitMatch.index + limitMatch[0].indexOf(limitValue);
-      diagnostics.push({
-        from,
-        to: from + limitValue.length,
-        severity: "warning",
-        message: "LIMIT value should be a number or parameter",
-      });
-    }
-    /* v8 ignore start */
-  }
-  /* v8 ignore stop */
-
-  return diagnostics;
+/** Convert Rust SQL Document diagnostics to CodeMirror's display shape. */
+export async function sqlLintDiagnostics(query: string): Promise<Diagnostic[]> {
+  const normalized = await normalizeSqlDocument(query);
+  return normalized.document.diagnostics.map((diagnostic) =>
+    diagnosticForSqlDocument(normalized, diagnostic)
+  );
 }

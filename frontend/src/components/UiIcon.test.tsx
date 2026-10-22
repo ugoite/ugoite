@@ -11,6 +11,7 @@ const allNames: UiIconName[] = [
   "spaces",
   "menu",
   "plus",
+  "minus",
   "entry",
   "asset",
   "sql",
@@ -29,6 +30,8 @@ const allNames: UiIconName[] = [
   "close",
   "arrow-up",
   "arrow-down",
+  "row-limit",
+  "tree",
 ];
 
 describe("UiIcon", () => {

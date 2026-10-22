@@ -1,11 +1,19 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@solidjs/testing-library";
+import { createSignal, Show } from "solid-js";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@solidjs/testing-library";
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildSqlSchema } from "~/lib/sql";
 import type { SQLWorkspaceProps } from "./SQLWorkspace";
 import { SQLWorkspace, SQLWorkspaceActionBar } from "./SQLWorkspace";
+import { useDialogFocus } from "./dialog-focus";
 
 vi.mock("./SqlQueryEditor", () => ({
   SqlQueryEditor: (props: {
@@ -13,11 +21,15 @@ vi.mock("./SqlQueryEditor", () => ({
     value: string;
     ariaLabel?: string;
     disabled?: boolean;
+    additionalDiagnostics?: readonly { message: string }[];
     onChange: (value: string) => void;
   }) => (
     <textarea
       id={props.id}
       aria-label={props.ariaLabel}
+      data-planner-diagnostics={props.additionalDiagnostics?.map((item) =>
+        item.message
+      ).join("|") ?? ""}
       value={props.value}
       readOnly={props.disabled}
       onInput={(event) => props.onChange(event.currentTarget.value)}
@@ -56,6 +68,38 @@ describe("SQLWorkspace", () => {
     expect(editor).toHaveValue("SELECT 1");
     fireEvent.input(editor, { target: { value: "SELECT 2" } });
     expect(onSqlChange).toHaveBeenCalledWith("SELECT 2");
+  });
+
+  it("shows a current planner error as a local SQL diagnostic", () => {
+    renderWorkspace({
+      sql: "SELECT $missing",
+      planner: {
+        status: "error",
+        isCurrent: true,
+        error: "parameter $missing is not declared",
+      },
+    });
+
+    expect(screen.getByRole("textbox", { name: "SQL" })).toHaveAttribute(
+      "data-planner-diagnostics",
+      "parameter $missing is not declared",
+    );
+  });
+
+  it("does not show a stale planner error on the current SQL draft", () => {
+    renderWorkspace({
+      sql: "SELECT 2",
+      planner: {
+        status: "error",
+        isCurrent: false,
+        error: "old SQL failed planning",
+      },
+    });
+
+    expect(screen.getByRole("textbox", { name: "SQL" })).toHaveAttribute(
+      "data-planner-diagnostics",
+      "",
+    );
   });
 
   it("REQ-FE-080: keeps exact Saved SQL read-only while preview remains available", () => {
@@ -204,6 +248,221 @@ describe("SQLWorkspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Form" }));
     expect(onActivate).toHaveBeenCalledOnce();
+  });
+
+  it("groups structure operations behind one of the six shared actions", async () => {
+    const onJoin = vi.fn();
+    const onAggregate = vi.fn();
+    const onGroupBy = vi.fn();
+    const onDistinct = vi.fn();
+    const onRowLimit = vi.fn();
+    const actions: SQLWorkspaceProps["actions"] = [
+      { kind: "form", icon: "forms", label: "Form", onActivate: vi.fn() },
+      {
+        kind: "columns",
+        icon: "columns",
+        label: "Columns",
+        onActivate: vi.fn(),
+      },
+      {
+        kind: "filter",
+        icon: "filter",
+        label: "Filter",
+        onActivate: vi.fn(),
+      },
+      { kind: "sort", icon: "sort", label: "Sort", onActivate: vi.fn() },
+      {
+        kind: "structure",
+        icon: "group-by",
+        label: "Structure",
+        disabled: true,
+        disabledReason: "Join unavailable",
+        onActivate: onJoin,
+      },
+      {
+        kind: "aggregate",
+        icon: "aggregate",
+        label: "Aggregate",
+        onActivate: onAggregate,
+      },
+      {
+        kind: "group_by",
+        icon: "group-by",
+        label: "Group by",
+        onActivate: onGroupBy,
+      },
+      {
+        kind: "distinct",
+        icon: "distinct",
+        label: "Distinct",
+        onActivate: onDistinct,
+      },
+      {
+        kind: "row_limit",
+        icon: "row-limit",
+        label: "Row limit",
+        onActivate: onRowLimit,
+      },
+      {
+        kind: "arguments",
+        icon: "sql",
+        label: "Arguments",
+        onActivate: vi.fn(),
+      },
+    ];
+    render(() => <SQLWorkspaceActionBar actions={actions} />);
+
+    const primaryGroup = screen.getByRole("group", { name: "SQL" });
+    expect(within(primaryGroup).getAllByRole("button")).toHaveLength(6);
+    const structure = within(primaryGroup).getByRole("button", {
+      name: "Structure",
+    });
+    expect(structure).toBeEnabled();
+    fireEvent.click(structure);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Structure" }),
+      ).toHaveAttribute("aria-expanded", "true")
+    );
+
+    const structureGroup = screen.getByRole("group", {
+      name: "Structure options",
+    });
+    expect(within(structureGroup).getAllByRole("button")).toHaveLength(5);
+    expect(
+      within(structureGroup).getByRole("button", {
+        name: "Structure: Join unavailable",
+      }),
+    ).toBeDisabled();
+    fireEvent.click(
+      within(structureGroup).getByRole("button", { name: "Aggregate" }),
+    );
+    expect(onAggregate).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("group", { name: "Structure options" }))
+      .toBeNull();
+    expect(onJoin).not.toHaveBeenCalled();
+    expect(onGroupBy).not.toHaveBeenCalled();
+    expect(onDistinct).not.toHaveBeenCalled();
+    fireEvent.click(
+      within(primaryGroup).getByRole("button", {
+        name: "Structure",
+      }),
+    );
+    fireEvent.click(
+      within(screen.getByRole("group", { name: "Structure options" }))
+        .getByRole("button", { name: "Group by" }),
+    );
+    expect(onGroupBy).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("group", { name: "Structure options" }))
+      .toBeNull();
+    fireEvent.click(
+      within(primaryGroup).getByRole("button", {
+        name: "Structure",
+      }),
+    );
+    fireEvent.click(
+      within(screen.getByRole("group", { name: "Structure options" }))
+        .getByRole("button", { name: "Row limit" }),
+    );
+    expect(onRowLimit).toHaveBeenCalledOnce();
+  });
+
+  it("keeps Structure reachable when every operation is locally unavailable", async () => {
+    const unavailable = (
+      kind: "structure" | "aggregate" | "group_by" | "distinct" | "row_limit",
+      label: string,
+    ) => ({
+      kind,
+      icon: "appearance" as const,
+      label,
+      disabled: true,
+      disabledReason: "Unsupported by this SQL shape",
+      onActivate: vi.fn(),
+    });
+    render(() => (
+      <SQLWorkspaceActionBar
+        actions={[
+          unavailable("structure", "Join"),
+          unavailable("aggregate", "Aggregate"),
+          unavailable("group_by", "Group by"),
+          unavailable("distinct", "Distinct"),
+          unavailable("row_limit", "Row limit"),
+        ]}
+      />
+    ));
+
+    const structure = screen.getByRole("button", { name: "Structure" });
+    expect(structure).toBeEnabled();
+    fireEvent.click(structure);
+    expect(
+      await screen.findByRole("group", { name: "Structure options" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: "Join: Unsupported by this SQL shape",
+      }),
+    ).toBeDisabled();
+  });
+
+  it("returns focus to Structure when a nested action opens and closes a dialog", async () => {
+    const [dialogOpen, setDialogOpen] = createSignal(false);
+    let dialog: HTMLDivElement | undefined;
+    let returnFocus: HTMLElement | null = null;
+    const Dialog = () => {
+      useDialogFocus(() => dialogOpen(), {
+        dialog: () => dialog,
+        returnFocus: () => returnFocus,
+        inert: false,
+        onClose: () => setDialogOpen(false),
+      });
+      return (
+        <Show when={dialogOpen()}>
+          <div
+            ref={(element) => dialog = element}
+            role="dialog"
+            aria-label="Row limit"
+          >
+            <button type="button" onClick={() => setDialogOpen(false)}>
+              Close
+            </button>
+          </div>
+        </Show>
+      );
+    };
+    render(() => (
+      <>
+        <SQLWorkspaceActionBar
+          actions={[
+            {
+              kind: "row_limit",
+              icon: "row-limit",
+              label: "Row limit",
+              onActivate: (target) => {
+                returnFocus = target ?? null;
+                setDialogOpen(true);
+              },
+            },
+          ]}
+        />
+        <Dialog />
+      </>
+    ));
+
+    const structure = screen.getByRole("button", { name: "Structure" });
+    fireEvent.click(structure);
+    fireEvent.click(
+      within(screen.getByRole("group", { name: "Structure options" }))
+        .getByRole("button", { name: "Row limit" }),
+    );
+    expect(returnFocus).toBe(structure);
+    const rowLimitDialog = await screen.findByRole("dialog", {
+      name: "Row limit",
+    });
+    fireEvent.click(
+      within(rowLimitDialog).getByRole("button", { name: "Close" }),
+    );
+
+    await waitFor(() => expect(structure).toHaveFocus());
   });
 
   it("REQ-FE-080: reports loading and errors without presenting a stale page", () => {

@@ -11,10 +11,11 @@
     "npm:@astrojs/starlight@0.41.0": "0.41.0_astro@7.0.2__@astrojs+markdown-remark@7.2.0__@emnapi+core@1.11.1__@emnapi+runtime@1.11.1__yaml@2.9.0_@emnapi+core@1.11.1_@emnapi+runtime@1.11.1_typescript@5.9.3_yaml@2.9.0",
     "npm:@babel/core@^7.29.0": "7.29.7",
     "npm:@codemirror/autocomplete@^6.20.2": "6.20.3",
+    "npm:@codemirror/commands@^6.11.1": "6.11.1",
     "npm:@codemirror/lang-sql@^6.10.0": "6.10.0",
     "npm:@codemirror/language@^6.12.3": "6.12.3",
     "npm:@codemirror/lint@^6.9.6": "6.9.7",
-    "npm:@codemirror/state@^6.6.0": "6.6.0",
+    "npm:@codemirror/state@^6.6.0": "6.7.6",
     "npm:@codemirror/view@^6.43.0": "6.43.1",
     "npm:@mswjs/interceptors@~0.41.3": "0.41.9",
     "npm:@open-draft/deferred-promise@3": "3.0.0",
@@ -1290,6 +1291,15 @@
         "@lezer/common"
       ]
     },
+    "@codemirror/commands@6.11.1": {
+      "integrity": "sha512-O/4hG3SC1YwcmQ0d2UVNDs+AsaNWd1iHVxbTeEBuqH+6bExAiPK3iS/BvpY6rZGURALv4ZD3sIgcCmRvw3ehBg==",
+      "dependencies": [
+        "@codemirror/language",
+        "@codemirror/state",
+        "@codemirror/view",
+        "@lezer/common"
+      ]
+    },
     "@codemirror/lang-sql@6.10.0": {
       "integrity": "sha512-6ayPkEd/yRw0XKBx5uAiToSgGECo/GY2NoJIHXIIQh1EVwLuKoU8BP/qK0qH5NLXAbtJRLuT73hx7P9X34iO4w==",
       "dependencies": [
@@ -1320,8 +1330,8 @@
         "crelt"
       ]
     },
-    "@codemirror/state@6.6.0": {
-      "integrity": "sha512-4nbvra5R5EtiCzr9BTHiTLc+MLXK2QGiAVYMyi8PkQd3SR+6ixar/Q/01Fa21TBIDOZXgeWV4WppsQolSreAPQ==",
+    "@codemirror/state@6.7.6": {
+      "integrity": "sha512-kAz+AncRtKuIknedxT1bq4XwXv4UowhbkHU1myPrtVb/jZtImWuV5BXzv5vK6i3kYACsdiZiQKFQQ5Mq7elW8w==",
       "dependencies": [
         "@marijn/find-cluster-break"
       ]
@@ -9237,6 +9247,7 @@
           "npm:@adobe/css-tools@^4.4.4",
           "npm:@babel/core@^7.29.0",
           "npm:@codemirror/autocomplete@^6.20.2",
+          "npm:@codemirror/commands@^6.11.1",
           "npm:@codemirror/lang-sql@^6.10.0",
           "npm:@codemirror/language@^6.12.3",
           "npm:@codemirror/lint@^6.9.6",

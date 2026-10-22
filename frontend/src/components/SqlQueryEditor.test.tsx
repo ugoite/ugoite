@@ -6,12 +6,29 @@ import { SqlQueryEditor } from "./SqlQueryEditor";
 import { buildSqlSchema } from "~/lib/sql";
 
 const codeMirrorViewMocks = vi.hoisted(() => ({
+  keymapOf: vi.fn((bindings: unknown) => ({ type: "keymap", bindings })),
   contentAttributesOf: vi.fn((attributes: Record<string, string>) => ({
     type: "contentAttributes",
     attributes,
   })),
   editableOf: vi.fn((value: boolean) => ({ type: "editable", value })),
   lineWrapping: { type: "lineWrapping" },
+}));
+
+const codeMirrorHistoryMocks = vi.hoisted(() => ({
+  history: vi.fn(() => ({ type: "history" })),
+  historyKeymap: [{ key: "Mod-z" }],
+  isolateHistoryOf: vi.fn((side: string) => ({ type: "isolateHistory", side })),
+}));
+
+const codeMirrorLintMocks = vi.hoisted(() => ({
+  forceLinting: vi.fn(),
+}));
+
+vi.mock("@codemirror/commands", () => ({
+  history: codeMirrorHistoryMocks.history,
+  historyKeymap: codeMirrorHistoryMocks.historyKeymap,
+  isolateHistory: { of: codeMirrorHistoryMocks.isolateHistoryOf },
 }));
 
 vi.mock("@codemirror/autocomplete", () => ({
@@ -23,6 +40,7 @@ vi.mock("@codemirror/language", () => ({
 }));
 
 vi.mock("@codemirror/lint", () => ({
+  forceLinting: codeMirrorLintMocks.forceLinting,
   lintGutter: () => ({ type: "lintGutter" }),
   linter: (source: unknown) => ({ type: "linter", source }),
 }));
@@ -195,11 +213,12 @@ vi.mock("@codemirror/view", () => {
         return undefined;
       }
     },
+    keymap: { of: codeMirrorViewMocks.keymapOf },
   };
 });
 
 describe("REQ-FE-036: SQL Query Editor", () => {
-  it("should render without runtime errors", () => {
+  it("should render without runtime errors", async () => {
     const onDiagnostics = vi.fn();
     const result = render(() => (
       <SqlQueryEditor
@@ -209,10 +228,55 @@ describe("REQ-FE-036: SQL Query Editor", () => {
         onDiagnostics={onDiagnostics}
       />
     ));
-    expect(onDiagnostics).toHaveBeenCalled();
+    await waitFor(() => expect(onDiagnostics).toHaveBeenCalled());
     expect(result.container.querySelector(".ui-sql-editor")).toHaveAttribute(
       "data-line-wrapping",
       "false",
+    );
+    result.unmount();
+  });
+
+  it("installs CodeMirror history and its undo/redo key bindings", () => {
+    codeMirrorHistoryMocks.history.mockClear();
+    codeMirrorViewMocks.keymapOf.mockClear();
+    render(() => (
+      <SqlQueryEditor
+        value="SELECT 1"
+        onChange={() => undefined}
+        schema={buildSqlSchema([])}
+      />
+    ));
+
+    expect(codeMirrorHistoryMocks.history).toHaveBeenCalledOnce();
+    expect(codeMirrorViewMocks.keymapOf).toHaveBeenCalledWith(
+      codeMirrorHistoryMocks.historyKeymap,
+    );
+  });
+
+  it("refreshes local linting when planner diagnostics change", async () => {
+    codeMirrorLintMocks.forceLinting.mockClear();
+    const [error, setError] = createSignal("first planner error");
+    const result = render(() => (
+      <SqlQueryEditor
+        value="SELECT 1"
+        onChange={() => undefined}
+        schema={buildSqlSchema([])}
+        additionalDiagnostics={[{
+          from: 0,
+          to: 8,
+          severity: "error",
+          message: error(),
+        }]}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(codeMirrorLintMocks.forceLinting).toHaveBeenCalled()
+    );
+    codeMirrorLintMocks.forceLinting.mockClear();
+    setError("updated planner error");
+    await waitFor(() =>
+      expect(codeMirrorLintMocks.forceLinting).toHaveBeenCalled()
     );
     result.unmount();
   });
@@ -284,6 +348,9 @@ describe("REQ-FE-036: SQL Query Editor", () => {
         'SELECT _ugoite_id FROM "form_00000000000000000000000000000001"',
       );
     });
+    expect(codeMirrorHistoryMocks.isolateHistoryOf).toHaveBeenCalledWith(
+      "full",
+    );
 
     result.unmount();
   });

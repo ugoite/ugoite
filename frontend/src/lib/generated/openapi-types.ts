@@ -120,6 +120,8 @@ export const OPENAPI_SCHEMA_NAMES = [
   "SpaceSummary",
   "SqlQueryCountRequest",
   "SqlQueryPage",
+  "SqlQueryPlan",
+  "SqlQueryPlanRequest",
   "SqlQueryRequest",
   "SqlResultColumn",
   "StorageConnectionTestRequest",
@@ -231,6 +233,7 @@ export const OPENAPI_PATHS = [
   "/spaces/{space_id}/sql",
   "/spaces/{space_id}/sql/query",
   "/spaces/{space_id}/sql/query/count",
+  "/spaces/{space_id}/sql/query/plan",
   "/spaces/{space_id}/sql/{sql_id}",
   "/spaces/{space_id}/test-connection"
 ] as const;

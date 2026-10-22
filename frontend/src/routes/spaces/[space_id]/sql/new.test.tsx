@@ -10,8 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import SpaceQueryCreateRoute from "./new";
 import { expectBackLinkAtHeaderStart } from "~/test/back-link-placement";
 import type { SQLWorkspaceAction } from "~/components/SQLWorkspace";
-import { setLocale, t } from "~/lib/i18n";
-import type { SqlStructureAnalysis } from "~/lib/ugoite-client";
+import { setLocale } from "~/lib/i18n";
 import type { Form } from "~/lib/types";
 
 const {
@@ -20,20 +19,20 @@ const {
   sqlCreateMock,
   sqlQueryMock,
   sqlCountMock,
-  analyzeSqlStructureMock,
+  sqlPlanMock,
+  parseSqlDocumentMock,
   applySqlDocumentEditTransactionMock,
-  prepareSqlStructureParserMock,
-  proposeSqlStructureOperationMock,
+  renameSqlDocumentParameterMock,
 } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
   formApiListMock: vi.fn(),
   sqlCreateMock: vi.fn(),
   sqlQueryMock: vi.fn(),
   sqlCountMock: vi.fn(),
-  analyzeSqlStructureMock: vi.fn(),
+  sqlPlanMock: vi.fn(),
+  parseSqlDocumentMock: vi.fn(),
   applySqlDocumentEditTransactionMock: vi.fn(),
-  prepareSqlStructureParserMock: vi.fn(),
-  proposeSqlStructureOperationMock: vi.fn(),
+  renameSqlDocumentParameterMock: vi.fn(),
 }));
 
 vi.mock("@solidjs/router", () => ({
@@ -85,6 +84,7 @@ vi.mock("~/components/SQLWorkspace", () => ({
     sql: string;
     onSqlChange?: (value: string) => void;
     onPreview: () => void;
+    previewDisabled?: boolean;
     onDiagnostics?: (
       diagnostics: Array<{
         from: number;
@@ -125,7 +125,13 @@ vi.mock("~/components/SQLWorkspace", () => ({
             }}
           />
         </section>
-        <button type="button" onClick={props.onPreview}>Run Query</button>
+        <button
+          type="button"
+          disabled={props.previewDisabled}
+          onClick={props.onPreview}
+        >
+          Run Query
+        </button>
         <output>{props.preview.status}</output>
         {props.preview.status === "success" && (
           <section
@@ -146,47 +152,18 @@ vi.mock("~/lib/ugoite-client", () => ({
     create: sqlCreateMock,
     query: sqlQueryMock,
     count: sqlCountMock,
+    plan: sqlPlanMock,
   },
-  analyzeSqlStructure: analyzeSqlStructureMock,
+  parseSqlDocument: parseSqlDocumentMock,
   applySqlDocumentEditTransaction: applySqlDocumentEditTransactionMock,
-  prepareSqlStructureParser: prepareSqlStructureParserMock,
-  proposeSqlStructureOperation: proposeSqlStructureOperationMock,
+  renameSqlDocumentParameter: renameSqlDocumentParameterMock,
 }));
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolvePromise) => {
-    resolve = resolvePromise;
-  });
-  return { promise, resolve };
-}
-
-const supportedAnalysis: SqlStructureAnalysis = {
-  contract_version: 1,
-  status: "supported",
-  projection: ["1"],
-  filters: [],
-  aggregates: [],
-  group_by: [],
-  distinct: false,
-  order_by: [],
-  referenced_variables: [],
-  stable_pagination: false,
-  capabilities: {
-    columns: { enabled: false },
-    filter: { enabled: false },
-    sort: { enabled: false },
-    aggregate: { enabled: false },
-    group_by: { enabled: false },
-    distinct: { enabled: false },
-    stable_pagination: { enabled: false },
-  },
-};
 
 describe("/spaces/:space_id/sql/new", () => {
   beforeEach(() => {
     setLocale("en");
     navigateMock.mockReset();
+    sqlCreateMock.mockReset();
     formApiListMock.mockResolvedValue([
       {
         id: "sql-form",
@@ -285,6 +262,17 @@ describe("/spaces/:space_id/sql/new", () => {
       result_schema: [{ name: "value", type: "integer" }],
     });
     sqlCountMock.mockReset().mockResolvedValue(1);
+    sqlPlanMock.mockReset().mockResolvedValue({ result_schema: [] });
+    parseSqlDocumentMock.mockReset().mockImplementation(
+      async (source: string) => ({
+        contract_version: 1,
+        source,
+        status: "parsed",
+        diagnostics: [],
+        tokens: [],
+        nodes: [],
+      }),
+    );
     applySqlDocumentEditTransactionMock.mockReset().mockImplementation(
       async (_source: string, transaction: {
         edits: { replacement: string }[];
@@ -296,104 +284,11 @@ describe("/spaces/:space_id/sql/new", () => {
         undo: transaction,
       }),
     );
-    analyzeSqlStructureMock.mockReset().mockImplementation(
-      async (_sql: string, context: { relation: string }) => ({
-        ...(context.relation
-          ? { ...supportedAnalysis, status: "unsupported" as const }
-          : supportedAnalysis),
+    renameSqlDocumentParameterMock.mockReset().mockImplementation(
+      async (source: string, oldName: string, newName: string) => ({
+        status: "parsed",
+        source: source.replaceAll(`$${oldName}`, `$${newName}`),
       }),
-    );
-    prepareSqlStructureParserMock.mockReset().mockResolvedValue(undefined);
-    proposeSqlStructureOperationMock.mockReset().mockImplementation(
-      async (
-        baseSql: string,
-        _context: { relation: string },
-        operation: { kind: string; relation?: string },
-      ) => ({
-        contract_version: 1,
-        status: "supported",
-        base_sql: baseSql,
-        proposed_sql: operation.kind === "set_relation"
-          ? `SELECT * FROM "${operation.relation}"`
-          : baseSql,
-        requires_confirmation: true,
-        added_stable_tie_breakers: [],
-      }),
-    );
-  });
-
-  it("keeps Form disabled after SQL analysis until Form options resolve", async () => {
-    const pendingForms = deferred<Form[]>();
-    const pendingAnalysis = deferred<SqlStructureAnalysis>();
-    let formsResolved = false;
-    let analysisResolved = false;
-    formApiListMock.mockReturnValue(pendingForms.promise);
-    analyzeSqlStructureMock.mockImplementationOnce(() =>
-      pendingAnalysis.promise.then((result) => {
-        analysisResolved = true;
-        return result;
-      })
-    );
-
-    render(() => <SpaceQueryCreateRoute />);
-
-    const editor = await screen.findByRole("textbox", { name: "SQL" });
-    const analyzingName = `Form: ${t("sqlPage.structureAnalyzing")}`;
-    const formAction = await screen.findByRole("button", {
-      name: analyzingName,
-    });
-    await waitFor(() => {
-      expect(analyzeSqlStructureMock).toHaveBeenCalledWith(
-        "SELECT 1",
-        expect.objectContaining({ relation: "" }),
-      );
-    });
-    expect(formApiListMock).toHaveBeenCalledOnce();
-    expect(formsResolved).toBe(false);
-    expect(formAction).toBeDisabled();
-
-    pendingAnalysis.resolve(supportedAnalysis);
-    const optionsUnavailableName = `Form: ${t("sqlPage.structureUnavailable")}`;
-    const disabledForMissingOptions = await screen.findByRole("button", {
-      name: optionsUnavailableName,
-    });
-    expect(analysisResolved).toBe(true);
-    expect(formsResolved).toBe(false);
-    expect(disabledForMissingOptions).toBeDisabled();
-
-    const forms = [{
-      id: "review-form",
-      name: "Review",
-      sql_relation: "form_review",
-      version: 1,
-      template: "# Review\n",
-      fields: {},
-    }];
-    formsResolved = true;
-    pendingForms.resolve(forms);
-    await waitFor(() =>
-      expect(analyzeSqlStructureMock).toHaveBeenCalledTimes(3)
-    );
-    const enabledFormAction = await screen.findByRole("button", {
-      name: "Form",
-    });
-    await waitFor(() => expect(enabledFormAction).toBeEnabled());
-    fireEvent.click(enabledFormAction);
-    const dialog = await screen.findByRole("dialog", { name: "Form" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Review" }));
-
-    await waitFor(() => {
-      expect(proposeSqlStructureOperationMock).toHaveBeenCalledWith(
-        "SELECT 1",
-        expect.objectContaining({ relation: "form_review" }),
-        { kind: "set_relation", relation: "form_review" },
-      );
-    });
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: "Apply change" }),
-    );
-    await waitFor(() =>
-      expect(editor).toHaveValue('SELECT * FROM "form_review"')
     );
   });
 
@@ -401,7 +296,9 @@ describe("/spaces/:space_id/sql/new", () => {
     render(() => <SpaceQueryCreateRoute />);
     const editor = await screen.findByRole("textbox", { name: "SQL" });
     await waitFor(() => expect(editor).toHaveValue("SELECT 1"));
-    fireEvent.click(screen.getByRole("button", { name: "Run Query" }));
+    const runButton = screen.getByRole("button", { name: "Run Query" });
+    await waitFor(() => expect(runButton).toBeEnabled());
+    fireEvent.click(runButton);
 
     await waitFor(() => {
       expect(sqlQueryMock).toHaveBeenCalledWith("default", {
@@ -436,6 +333,28 @@ describe("/spaces/:space_id/sql/new", () => {
       .toBeInTheDocument();
   });
 
+  it("keeps Save disabled while the current authorized plan is pending or rejected", async () => {
+    let resolvePlan!: (value: { result_schema: [] }) => void;
+    sqlPlanMock.mockImplementationOnce(() =>
+      new Promise((resolve) => {
+        resolvePlan = resolve;
+      })
+    );
+    render(() => <SpaceQueryCreateRoute />);
+    const editor = await screen.findByRole("textbox", { name: "SQL" });
+    await waitFor(() => expect(sqlPlanMock).toHaveBeenCalled());
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(save).toBeDisabled();
+    fireEvent.click(save);
+    expect(sqlCreateMock).not.toHaveBeenCalled();
+    sqlPlanMock.mockRejectedValue(new Error("Plan rejected"));
+    fireEvent.input(editor, { target: { value: "SELECT hidden_column" } });
+    resolvePlan({ result_schema: [] });
+    await waitFor(() => expect(sqlPlanMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(save).toBeDisabled());
+    expect(sqlCreateMock).not.toHaveBeenCalled();
+  });
+
   it("REQ-FE-063: starts from a relation-free draft and saves through the shared SQL workspace", async () => {
     render(() => <SpaceQueryCreateRoute />);
 
@@ -443,7 +362,8 @@ describe("/spaces/:space_id/sql/new", () => {
     await waitFor(() => expect(editor).toHaveValue("SELECT 1"));
     expect(screen.queryByLabelText("Form for this query")).not
       .toBeInTheDocument();
-    expect(screen.queryByLabelText("Aggregate")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Aggregate" }))
+      .toBeInTheDocument();
     expect(screen.queryByLabelText("Field")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Filter field")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Generate SQL from Form" }))
@@ -457,6 +377,9 @@ describe("/spaces/:space_id/sql/new", () => {
     fireEvent.input(screen.getByLabelText("Query name"), {
       target: { value: "Relation-free draft" },
     });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -471,7 +394,7 @@ describe("/spaces/:space_id/sql/new", () => {
     expect(navigateMock).toHaveBeenCalledWith("/spaces/default/sql");
   });
 
-  it("normalizes template variables to the native SQL query placeholder", async () => {
+  it("requires a declared argument before normalizing its template reference", async () => {
     render(() => <SpaceQueryCreateRoute />);
     const editor = await screen.findByRole("textbox", { name: "SQL" });
     await waitFor(() => {
@@ -486,6 +409,24 @@ describe("/spaces/:space_id/sql/new", () => {
     fireEvent.input(screen.getByLabelText("Query name"), {
       target: { value: "Variable query" },
     });
+    expect(
+      await screen.findByText("Add argument title before using it in SQL."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run Query" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Arguments" }));
+    const dialog = screen.getByRole("dialog", { name: "Arguments" });
+    fireEvent.input(within(dialog).getByLabelText("Argument name"), {
+      target: { value: "title" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add argument" }),
+    );
+    fireEvent.click(
+      within(dialog).getAllByRole("button", { name: "Close" }).slice(-1)[0],
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -505,14 +446,36 @@ describe("/spaces/:space_id/sql/new", () => {
 
     const editor = await screen.findByRole("textbox", { name: "SQL" });
     await waitFor(() => expect(editor).toHaveValue("SELECT 1"));
-    fireEvent.input(editor, { target: { value: "SELECT $label" } });
-
+    fireEvent.input(editor, { target: { value: "SELECT {{label}}" } });
+    fireEvent.click(screen.getByRole("button", { name: "Arguments" }));
+    const argumentDialog = screen.getByRole("dialog", { name: "Arguments" });
+    fireEvent.input(within(argumentDialog).getByLabelText("Argument name"), {
+      target: { value: "label" },
+    });
     fireEvent.click(
-      screen.getByRole("checkbox", { name: "Default for label" }),
+      within(argumentDialog).getByRole("button", { name: "Add argument" }),
+    );
+    await within(argumentDialog).findByRole("checkbox", {
+      name: "Default for label",
+    });
+    fireEvent.click(
+      within(argumentDialog).getByRole("checkbox", {
+        name: "Default for label",
+      }),
     );
     fireEvent.input(
-      screen.getByRole("textbox", { name: "Default for label" }),
+      within(argumentDialog).getByRole("textbox", {
+        name: "Default for label",
+      }),
       { target: { value: "draft" } },
+    );
+    fireEvent.click(
+      within(argumentDialog).getAllByRole("button", { name: "Close" }).slice(
+        -1,
+      )[0],
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
     );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
@@ -532,6 +495,97 @@ describe("/spaces/:space_id/sql/new", () => {
     });
   });
 
+  it("keeps unused declarations editable but blocks saving until referenced", async () => {
+    render(() => <SpaceQueryCreateRoute />);
+    const editor = await screen.findByRole("textbox", { name: "SQL" });
+    fireEvent.click(screen.getByRole("button", { name: "Arguments" }));
+    const dialog = screen.getByRole("dialog", { name: "Arguments" });
+    fireEvent.input(within(dialog).getByLabelText("Argument name"), {
+      target: { value: "page_size" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add argument" }),
+    );
+    expect(within(dialog).getByText("Argument is not referenced in SQL."))
+      .toBeInTheDocument();
+    fireEvent.click(
+      within(dialog).getAllByRole("button", { name: "Close" }).slice(-1)[0],
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(
+      await screen.findByText(
+        "Argument page_size must be referenced before saving.",
+      ),
+    ).toBeInTheDocument();
+    expect(sqlCreateMock).not.toHaveBeenCalled();
+
+    fireEvent.input(editor, { target: { value: "SELECT $page_size" } });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(sqlCreateMock).toHaveBeenCalledWith(
+        "default",
+        expect.objectContaining({
+          sql: "SELECT $page_size",
+          variables: [{ type: "string", name: "page_size", description: "" }],
+        }),
+      );
+    });
+  });
+
+  it("renames SQL placeholders through the Rust SQL Document endpoint", async () => {
+    render(() => <SpaceQueryCreateRoute />);
+    const editor = await screen.findByRole("textbox", { name: "SQL" });
+    fireEvent.input(editor, { target: { value: "SELECT {{label}}" } });
+    fireEvent.click(screen.getByRole("button", { name: "Arguments" }));
+    const dialog = await screen.findByRole("dialog", { name: "Arguments" });
+    fireEvent.input(within(dialog).getByLabelText("Argument name"), {
+      target: { value: "label" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add argument" }),
+    );
+    fireEvent.input(
+      await within(dialog).findByRole("textbox", {
+        name: "Argument name for label",
+      }),
+      { target: { value: "title" } },
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Rename argument" }),
+    );
+
+    await waitFor(() => {
+      expect(renameSqlDocumentParameterMock).toHaveBeenCalledWith(
+        "SELECT $label",
+        "label",
+        "title",
+      );
+      expect(editor).toHaveValue("SELECT $title");
+    });
+    fireEvent.click(
+      within(dialog).getAllByRole("button", { name: "Close" }).slice(-1)[0],
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(sqlCreateMock).toHaveBeenCalledWith(
+        "default",
+        expect.objectContaining({
+          sql: "SELECT $title",
+          variables: [{ type: "string", name: "title", description: "" }],
+        }),
+      );
+    });
+  });
+
   it("leaves session semantic validation to the backend", async () => {
     render(() => <SpaceQueryCreateRoute />);
     const editor = await screen.findByRole("textbox", { name: "SQL" });
@@ -543,6 +597,24 @@ describe("/spaces/:space_id/sql/new", () => {
     });
     expect(await screen.findByText(/Backend rejected the relation/))
       .toBeInTheDocument();
+    expect(
+      await screen.findByText("Add argument page_size before using it in SQL."),
+    )
+      .toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Arguments" }));
+    const dialog = screen.getByRole("dialog", { name: "Arguments" });
+    fireEvent.input(within(dialog).getByLabelText("Argument name"), {
+      target: { value: "page_size" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add argument" }),
+    );
+    fireEvent.click(
+      within(dialog).getAllByRole("button", { name: "Close" }).slice(-1)[0],
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {

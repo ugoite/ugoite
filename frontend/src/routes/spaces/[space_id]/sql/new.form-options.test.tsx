@@ -12,17 +12,15 @@ import { setLocale } from "~/lib/i18n";
 import SpaceQueryCreateRoute from "./new";
 
 const {
-  analyzeSqlStructureMock,
   formApiListMock,
   navigateMock,
-  prepareSqlStructureParserMock,
-  proposeSqlStructureOperationMock,
+  parseSqlDocumentMock,
+  sqlPlanMock,
 } = vi.hoisted(() => ({
-  analyzeSqlStructureMock: vi.fn(),
   formApiListMock: vi.fn(),
   navigateMock: vi.fn(),
-  prepareSqlStructureParserMock: vi.fn(),
-  proposeSqlStructureOperationMock: vi.fn(),
+  parseSqlDocumentMock: vi.fn(),
+  sqlPlanMock: vi.fn(),
 }));
 
 vi.mock("@solidjs/router", () => ({
@@ -61,14 +59,13 @@ vi.mock("~/components/SQLWorkspace", () => ({
 }));
 
 vi.mock("~/lib/ugoite-client", () => ({
-  analyzeSqlStructure: analyzeSqlStructureMock,
-  prepareSqlStructureParser: prepareSqlStructureParserMock,
-  proposeSqlStructureOperation: proposeSqlStructureOperationMock,
+  parseSqlDocument: parseSqlDocumentMock,
   formApi: { list: formApiListMock },
   sqlApi: {
     create: vi.fn(),
     query: vi.fn(),
     count: vi.fn(),
+    plan: sqlPlanMock,
   },
 }));
 
@@ -77,35 +74,20 @@ describe("/spaces/:space_id/sql/new Form loading", () => {
     setLocale("en");
     navigateMock.mockReset();
     formApiListMock.mockReset();
-    prepareSqlStructureParserMock.mockReset().mockResolvedValue(undefined);
-    analyzeSqlStructureMock.mockReset().mockImplementation(
-      (_sql: string, context: { relation: string }) =>
-        Promise.resolve({
-          contract_version: 1,
-          status: context.relation ? "supported" : "unsupported",
-          projection: ["*"],
-          filters: [],
-          aggregates: [],
-          group_by: [],
-          distinct: false,
-          order_by: [],
-          referenced_variables: [],
-          stable_pagination: false,
-          capabilities: {
-            columns: { enabled: false },
-            filter: { enabled: false },
-            sort: { enabled: false },
-            aggregate: { enabled: false },
-            group_by: { enabled: false },
-            distinct: { enabled: false },
-            stable_pagination: { enabled: false },
-          },
-        }),
-    );
-    proposeSqlStructureOperationMock.mockReset();
+    parseSqlDocumentMock.mockReset().mockImplementation(async (
+      source: string,
+    ) => ({
+      contract_version: 1,
+      source,
+      status: "parsed",
+      diagnostics: [],
+      tokens: [],
+      nodes: [],
+    }));
+    sqlPlanMock.mockReset().mockResolvedValue({ result_schema: [] });
   });
 
-  it("enables the real Form selector after the asynchronous Form list resolves", async () => {
+  it("offers resolved Form choices in the SQL relation tree", async () => {
     let resolveForms!: (forms: {
       id: string;
       name: string;
@@ -136,6 +118,58 @@ describe("/spaces/:space_id/sql/new Form loading", () => {
       fields: {},
     }]);
 
+    parseSqlDocumentMock.mockResolvedValueOnce({
+      contract_version: 1,
+      source: "SELECT 1",
+      status: "parsed",
+      diagnostics: [],
+      tokens: [],
+      nodes: [
+        {
+          id: 0,
+          parent: null,
+          kind: "query_statement",
+          range: null,
+          semantic: null,
+        },
+        {
+          id: 1,
+          parent: 0,
+          kind: "query",
+          range: { start: 0, end: 8 },
+          semantic: null,
+        },
+        {
+          id: 2,
+          parent: 1,
+          kind: "select",
+          range: { start: 0, end: 8 },
+          semantic: null,
+        },
+        {
+          id: 3,
+          parent: 2,
+          kind: "select_list",
+          range: { start: 7, end: 8 },
+          semantic: null,
+        },
+        {
+          id: 4,
+          parent: 3,
+          kind: "select_item",
+          range: { start: 7, end: 8 },
+          semantic: null,
+        },
+        {
+          id: 5,
+          parent: 4,
+          kind: "literal_expression",
+          range: { start: 7, end: 8 },
+          semantic: null,
+        },
+      ],
+    });
+
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Form" })).toBeEnabled()
     );
@@ -143,8 +177,10 @@ describe("/spaces/:space_id/sql/new Form loading", () => {
     fireEvent.click(formAction);
 
     const dialog = await screen.findByRole("dialog", { name: "Form" });
-    expect(
-      within(dialog).getByRole("button", { name: "Orders" }),
-    ).toBeEnabled();
+    const relationPicker = within(dialog).getByRole("combobox", {
+      name: "Form",
+    });
+    expect(within(relationPicker).getByRole("option", { name: "Orders" }))
+      .toBeInTheDocument();
   });
 });

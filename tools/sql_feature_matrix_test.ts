@@ -2,376 +2,295 @@ import { assertEquals } from "@std/assert/equals";
 
 const root = new URL("../", import.meta.url).pathname;
 const read = (path: string) => Deno.readTextFile(`${root}${path}`);
+const matrix =
+  JSON.parse(await read("shared/sql/ugoite-sql-rules.json")).feature_matrix;
+const snake = (name: string) =>
+  name.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+const rustVariants = (source: string, name: string) => {
+  const body = source.match(
+    new RegExp(`pub enum ${name}\\s*\\{([\\s\\S]*?)\\n\\}`),
+  )?.[1];
+  if (!body) throw new Error(`missing Rust enum ${name}`);
+  return [...body.matchAll(/^ {4}([A-Z][A-Za-z0-9_]*)\s*(?:\{|,)/gm)].map((
+    [, name],
+  ) => snake(name));
+};
+const tsKinds = (source: string, name: string, next: string) => {
+  const start = source.indexOf(`export type ${name} =`);
+  const end = source.indexOf(`export type ${next} =`, start);
+  if (start < 0 || end < 0) throw new Error(`missing TypeScript union ${name}`);
+  return [...source.slice(start, end).matchAll(/\bkind:\s*"([a-z_]+)"/g)].map((
+    [, name],
+  ) => name);
+};
+const sameSet = (actual: string[], expected: string[]) => {
+  assertEquals(
+    new Set(actual).size,
+    actual.length,
+    "inventory entries must be unique",
+  );
+  assertEquals([...actual].sort(), [...expected].sort());
+};
 
-const matrix = JSON.parse(await read("shared/sql/ugoite-sql-rules.json"))
-  .feature_matrix;
-
-Deno.test("SQL feature matrix binds the read-only gate and current UI actions", async () => {
-  assertEquals(matrix.version, 1);
+Deno.test("SQL matrix pins the read-only gate, both parser versions and dialect", async () => {
+  const [backend, parser, domain, manifest, lock, query] = await Promise.all([
+    read("crates/ugoite-iceberg/src/index.rs"),
+    read("crates/ugoite-iceberg/src/sql_parser.rs"),
+    read("crates/ugoite-domain/src/sql_document.rs"),
+    read("crates/ugoite-domain/Cargo.toml"),
+    read("Cargo.lock"),
+    read("crates/ugoite-iceberg/src/query_context.rs"),
+  ]);
   assertEquals(
     matrix.backend.statement_gate,
     "exactly_one_select_query_statement",
   );
-  assertEquals(matrix.backend.query_body_form_restricted, true);
-  assertEquals(
-    matrix.backend.clause_admission,
-    "datafusion_parser_and_planner",
-  );
-  assertEquals(matrix.backend.parser_engine, {
-    crate: "datafusion",
-    version: "54.1.0",
-  });
   assertEquals(matrix.backend.closed_clause_allowlist, false);
-
-  const [
-    backendSource,
-    toolbarSource,
-    frontendSqlSource,
-    sharedRules,
-    cargoLock,
-    icebergManifest,
-  ] = await Promise.all([
-    read("crates/ugoite-iceberg/src/index.rs"),
-    read("frontend/src/components/SqlStructureToolbar.tsx"),
-    read("frontend/src/lib/sql.ts"),
-    read("shared/sql/ugoite-sql-rules.json").then((contents) =>
-      JSON.parse(contents)
-    ),
-    read("Cargo.lock"),
-    read("crates/ugoite-iceberg/Cargo.toml"),
+  assertEquals(matrix.backend.query_body_policy.allowed_set_expr_kinds, [
+    "select",
+    "query",
+    "set_operation",
   ]);
-  const datafusionLockPackage = cargoLock.match(
-    /^name = "datafusion"\nversion = "([^"]+)"/m,
-  )?.[1];
-  assertEquals(datafusionLockPackage, matrix.backend.parser_engine.version);
-  const datafusionDependency = icebergManifest.match(
-    /^datafusion = "([^"]+)"/m,
-  )?.[1];
-  assertEquals(datafusionDependency, matrix.backend.parser_engine.version);
-  const statementGate = backendSource.slice(
-    backendSource.indexOf("pub fn validate_read_only_sql"),
-    backendSource.indexOf(
-      "pub async fn query_index_authorized",
-      backendSource.indexOf("pub fn validate_read_only_sql"),
-    ),
-  );
-  assertEquals(statementGate.includes("parsed.len() != 1"), true);
+  assertEquals(matrix.backend.query_body_policy.unknown_set_expr, "reject");
   assertEquals(
-    statementGate.includes("query_contains_only_select_bodies(query)"),
-    true,
-  );
-
-  assertEquals(
-    matrix.direct_sql_lint.require_from,
-    sharedRules.lint.require_from,
-  );
-  assertEquals(matrix.direct_sql_lint.require_from, false);
-  assertEquals(matrix.direct_sql_lint.fromless_select_diagnostic, "none");
-  const sqlLint = frontendSqlSource.slice(
-    frontendSqlSource.indexOf("export function sqlLintDiagnostics"),
-  );
-  assertEquals(sqlLint.includes("lintRules.require_from"), false);
-  assertEquals(
-    sqlLint.includes('message: "Read-only query must include FROM"'),
-    false,
-  );
-
-  const toolbarActions = toolbarSource.match(
-    /type StructureAction\s*=([\s\S]*?);/,
-  )?.[1]?.match(/"([a-z_]+)"/g)?.map((action) => action.slice(1, -1)) ?? [];
-  const matrixActions = matrix.editor.operations.map((
-    operation: { action: string },
-  ) => operation.action);
-  assertEquals([...matrixActions].sort(), [...toolbarActions].sort());
-
-  const constructs = matrix.editor.constructs as Array<{
-    id: string;
-    sql: string;
-    backend_admission: string;
-    editor_coverage: string;
-    limits: string[];
-  }>;
-  assertEquals(
-    new Set(constructs.map((construct) => construct.id)).size,
-    constructs.length,
+    matrix.backend.parser_engine.version,
+    lock.match(/^name = "datafusion"\nversion = "([^"]+)"/m)?.[1],
   );
   assertEquals(
-    constructs.map((construct) => construct.id).sort(),
-    [
-      "common_table_expressions",
-      "from_relation",
-      "general_expressions",
-      "grouping",
-      "having",
-      "joins",
-      "ordering",
-      "projection",
-      "row_limit",
-      "set_operations",
-      "table_query",
-      "where_predicate",
-      "values_query",
-    ].sort(),
+    matrix.editor.source_parser.version,
+    manifest.match(/^sqlparser = \{ version = "([^"]+)"/m)?.[1],
   );
   assertEquals(
-    constructs.find((construct) => construct.id === "projection")?.limits
-      .includes(
-        "relation-free integer/string/boolean/NULL literal projections",
-      ),
-    true,
-  );
-  assertEquals(
-    constructs.find((construct) => construct.id === "projection")?.limits
-      .includes(
-        "simple Form-column projection aliases are inspected and edited independently by SQL-document-scoped projection slot identity",
-      ),
-    true,
-  );
-  assertEquals(
-    constructs.find((construct) => construct.id === "projection")?.limits
-      .includes(
-        "repeated source columns remain editable, reorderable, and independently aliasable by projection slot",
-      ),
-    true,
-  );
-  const valuesQuery = constructs.find((construct) =>
-    construct.id === "values_query"
-  );
-  assertEquals(
-    valuesQuery?.backend_admission,
-    "statement_gate_rejects",
-  );
-  assertEquals(
-    constructs.every((construct) =>
-      [
-        "planner_decides",
-        "statement_gate_rejects",
-      ].includes(
-        construct.backend_admission,
-      )
+    lock.includes(
+      `name = "sqlparser"\nversion = "${matrix.editor.source_parser.version}"`,
     ),
     true,
   );
+  assertEquals(matrix.backend.parser_dialect, "GenericDialect");
+  assertEquals(matrix.editor.parser_dialect, matrix.backend.parser_dialect);
   assertEquals(
-    constructs.every((construct) =>
-      typeof construct.sql === "string" && construct.sql.length > 0 &&
-      Object.hasOwn(construct, "editor_coverage")
-    ),
+    domain.includes("use sqlparser::dialect::GenericDialect;"),
     true,
   );
   assertEquals(
-    constructs.every((construct) =>
-      ["bounded", "context_only", "preserved_only", "none"].includes(
-        construct.editor_coverage,
-      )
-    ),
+    parser.includes("SQL_PARSER_RECURSION_LIMIT: usize = 256"),
+    true,
+  );
+  assertEquals(
+    domain.includes("SQL_DOCUMENT_PARSER_RECURSION_LIMIT: usize = 256"),
+    true,
+  );
+  assertEquals(parser.includes("with_recursion_limit("), true);
+  assertEquals(query.includes('"datafusion.sql_parser.recursion_limit"'), true);
+  const validator = backend.slice(
+    backend.indexOf("fn set_expr_is_select_only("),
+    backend.indexOf("struct SelectBodyValidator"),
+  );
+  sameSet(
+    [...validator.matchAll(
+      /SetExpr::([A-Za-z0-9_]+)\s*(?:\([^)]*\)|\{[^}]*\})?\s*=>/g,
+    )].map(([, name]) => snake(name)),
+    matrix.backend.query_body_policy.allowed_set_expr_kinds,
+  );
+  assertEquals(validator.includes("_ => false"), true);
+  assertEquals(
+    backend.includes("query_contains_only_select_bodies(query)"),
     true,
   );
 });
 
-Deno.test("SQL projection alias editing stays in the Rust-backed Columns contract", async () => {
-  const [domainSql, toolbarSource, protocolSource] = await Promise.all([
-    read("crates/ugoite-domain/src/sql_structure.rs"),
-    read("frontend/src/components/SqlStructureToolbar.tsx"),
+Deno.test("executor-admitted constructs map to the shared typed SQL document", async () => {
+  const [domain, protocol] = await Promise.all([
+    read("crates/ugoite-domain/src/sql_document.rs"),
     read("frontend/src/lib/ugoite-client/protocol.ts"),
   ]);
-  const projectionParser = domainSql.slice(
-    domainSql.indexOf("fn parse_projection("),
-    domainSql.indexOf(
-      "fn parse_aggregate(",
-      domainSql.indexOf("fn parse_projection("),
+  const contract = matrix.editor.typed_document_contract;
+  assertEquals(
+    contract.version,
+    Number(
+      domain.match(/SQL_DOCUMENT_CONTRACT_VERSION:\s*u32\s*=\s*(\d+)/)?.[1],
     ),
   );
-  assertEquals(
-    projectionParser.includes("expr: Expr::Identifier(identifier)"),
-    true,
+  assertEquals(contract.parser_engine, matrix.backend.parser_engine);
+  sameSet(contract.node_kinds, rustVariants(domain, "SqlDocumentNodeKind"));
+  const union =
+    protocol.match(/export type SqlDocumentNodeKind\s*=([\s\S]*?);/)?.[1] ?? "";
+  sameSet(
+    contract.node_kinds,
+    [...union.matchAll(/"([a-z_]+)"/g)].map(([, name]) => name),
   );
-  assertEquals(domainSql.includes("fn rewrite_projection_aliases("), true);
-  assertEquals(toolbarSource.includes("projection_aliases"), true);
-  assertEquals(
-    toolbarSource.includes('"sqlPage.structure.aliasForSlot"'),
-    true,
+  sameSet(contract.semantic_kinds, rustVariants(domain, "SqlDocumentNodeData"));
+  sameSet(
+    contract.semantic_kinds,
+    tsKinds(protocol, "SqlDocumentNodeData", "SqlDocumentNode"),
   );
-  assertEquals(
-    protocolSource.includes("aliases?: (SqlStructureAlias | null)[]"),
-    true,
-  );
+  const represented = new Set<string>(contract.statement_nodes);
+  const ids: string[] = [];
+  for (const construct of matrix.editor.constructs) {
+    ids.push(construct.id);
+    if (construct.backend_admission === "planner_decides") {
+      assertEquals(construct.document_handling, "typed_tree");
+      assertEquals(construct.document_nodes.length > 0, true);
+      assertEquals(construct.limits.length > 0, true);
+    } else {
+      assertEquals(construct.backend_admission, "statement_gate_rejects");
+      assertEquals(construct.document_handling, "rejected_by_executor_gate");
+      assertEquals(construct.document_nodes, []);
+    }
+    assertEquals(
+      ["bounded", "context_only", "preserved_only", "none"].includes(
+        construct.editor_coverage,
+      ),
+      true,
+    );
+    for (const kind of construct.document_nodes) {
+      assertEquals(contract.node_kinds.includes(kind), true);
+      represented.add(kind);
+    }
+  }
+  sameSet([...represented], contract.node_kinds);
+  assertEquals(new Set(ids).size, ids.length);
+  assertEquals(matrix.editor.coverage_complete, false);
+  assertEquals(matrix.editor.verification_gaps.length > 0, true);
 });
 
-Deno.test("SQL feature matrix aggregate catalog remains present in the typed UI picker", async () => {
-  const [frontendSql, domainSql, functionRegistry, clientProtocol] =
-    await Promise.all([
-      read("frontend/src/lib/sql.ts"),
-      read("crates/ugoite-domain/src/sql_structure.rs"),
-      read("crates/ugoite-domain/src/sql_functions.rs"),
-      read("frontend/src/lib/ugoite-client/protocol.ts"),
-    ]);
-  const aggregateCapability = frontendSql.slice(
-    frontendSql.indexOf("const aggregateFunctionsForType"),
-    frontendSql.indexOf("const sqlStructureTypeSupportsGrouping"),
-  );
-  const backendFunctions = matrix.backend.functions.aggregate as string[];
-  const backendAggregateAliases = matrix.backend.function_aliases
-    .aggregate as Record<string, string>;
-  const editorFunctions = matrix.editor.operations.find(
-    (operation: { action: string }) => operation.action === "aggregate",
-  )?.functions as string[] | undefined;
-
-  const descriptors = [...functionRegistry.matchAll(
-    /const ([A-Z]+): SqlAggregateFunction = SqlAggregateFunction \{([\s\S]*?)\n\};/g,
-  )].map(([, , body]) => ({
-    name: body.match(/\n\s*name: "([^"]+)"/)?.[1],
-    aliases: [...(body.match(/\n\s*aliases: &\[([^\]]*)\]/)?.[1] ?? "")
-      .matchAll(/"([^"]+)"/g)].map(([, alias]) => alias),
-  }));
-  const registryFunctions = descriptors.map((descriptor) => descriptor.name);
-  const registryAliases = Object.fromEntries(
-    descriptors.flatMap((descriptor) =>
-      descriptor.aliases.map((alias) => [alias, descriptor.name])
-    ),
-  );
-  const frontendFunctionUnion = clientProtocol.match(
-    /export type SqlStructureAggregateFunction =([\s\S]*?);/,
-  )?.[1];
-  const frontendFunctions = [...(frontendFunctionUnion ?? "").matchAll(
-    /"([a-z_]+)"/g,
-  )].map(([, name]) => name);
-
-  const guiFunctions = [
-    ...backendFunctions,
-    ...Object.keys(backendAggregateAliases),
-  ].sort();
-  assertEquals(editorFunctions?.slice().sort(), guiFunctions);
-  assertEquals(registryFunctions, backendFunctions);
-  assertEquals(backendAggregateAliases, registryAliases);
-  assertEquals(frontendFunctions.slice().sort(), guiFunctions);
-  assertEquals(
-    matrix.editor.aggregate_contract.checked,
-    "registry_signature_and_gui_roundtrip",
-  );
-  assertEquals(
-    matrix.editor.aggregate_contract.known_editor_rejections,
-    [],
-  );
-  assertEquals(
-    matrix.editor.aggregate_contract.verification_gaps,
-    [
-      "aggregate_expression_arguments_outside_form_columns",
-    ],
-  );
-  assertEquals(matrix.editor.literal_projection_operation, {
-    action: "columns",
-    protocol: "set_literal_projection",
-    sql: ["relation-free SELECT literal projection"],
-    coverage: "bounded",
-    values: ["integer", "string", "boolean", "null"],
-  });
-  const aggregateParser = domainSql.slice(
-    domainSql.indexOf("fn parse_aggregate("),
-    domainSql.indexOf(
-      "fn parse_group_by(",
-      domainSql.indexOf("fn parse_aggregate("),
-    ),
-  );
-  assertEquals(aggregateParser.includes("FunctionArgExpr::Wildcard"), true);
-  assertEquals(aggregateParser.includes("if distinct"), true);
-  assertEquals(
-    aggregateParser.includes("SqlStructureReason::AggregateUnsupported"),
-    true,
-  );
-  assertEquals(
-    backendFunctions.every((name) =>
-      new RegExp(`\\"${name}\\"`).test(aggregateCapability)
-    ),
-    true,
-  );
-});
-
-Deno.test("JOIN editor coverage is bounded without changing runtime admission", async () => {
-  const [backendSource, domainSource, toolbarSource] = await Promise.all([
-    read("crates/ugoite-iceberg/src/index.rs"),
-    read("crates/ugoite-domain/src/sql_structure.rs"),
+Deno.test("every typed semantic operation is inventoried in Rust, TypeScript and the current GUI", async () => {
+  const [domain, protocol, editor, toolbar] = await Promise.all([
+    read("crates/ugoite-domain/src/sql_document.rs"),
+    read("frontend/src/lib/ugoite-client/protocol.ts"),
+    read("frontend/src/components/SqlDocumentTreeEditor.tsx"),
     read("frontend/src/components/SqlStructureToolbar.tsx"),
   ]);
-  const joinConstruct = matrix.editor.constructs.find((construct: {
-    id: string;
-  }) => construct.id === "joins");
-  assertEquals(joinConstruct.backend_admission, "planner_decides");
-  assertEquals(joinConstruct.editor_coverage, "bounded");
+  sameSet(
+    matrix.editor.semantic_operations,
+    rustVariants(domain, "SqlDocumentSemanticEdit"),
+  );
+  sameSet(
+    matrix.editor.semantic_operations,
+    tsKinds(
+      protocol,
+      "SqlDocumentSemanticEdit",
+      "SqlDocumentSemanticEditTransaction",
+    ),
+  );
+  assertEquals(matrix.editor.active_engine, "sql_document");
+  for (const operation of matrix.editor.semantic_operations) {
+    assertEquals(
+      editor.includes(`"${operation}"`),
+      true,
+      `${operation} must be reachable from the current inspector`,
+    );
+  }
+  const actions = toolbar.match(/type StructureAction\s*=([\s\S]*?);/)?.[1] ??
+    "";
+  sameSet(
+    matrix.editor.operations.map((operation: { action: string }) =>
+      operation.action
+    ),
+    [...actions.matchAll(/"([a-z_]+)"/g)].map(([, name]) => name),
+  );
   assertEquals(
-    joinConstruct.limits.includes(
-      "one INNER self-join of the selected Form with explicit distinct aliases",
+    matrix.editor.operations.every((operation: { protocol_family: string }) =>
+      operation.protocol_family === "sql_document"
     ),
     true,
   );
-  assertEquals(
-    joinConstruct.limits.includes(
-      "ON must be left_alias.column = right_alias.column with matching supported scalar types; reversed equality operands fail closed",
-    ),
-    true,
-  );
-  assertEquals(
-    joinConstruct.limits.includes(
-      "WHERE supports bounded AND/OR/NOT trees of qualified parameter comparisons plus IS NULL/IS NOT NULL on qualified columns; adding a JOIN qualifies every supported predicate leaf; ORDER BY supports simple qualified columns with ASC/DESC and no NULLS FIRST/LAST; unqualified references fail closed",
-    ),
-    true,
-  );
-  assertEquals(
-    joinConstruct.limits.includes(
-      "adding a join qualifies existing supported single-relation WHERE/ORDER BY columns with the left alias and preserves surrounding clause text",
-    ),
-    true,
-  );
-  assertEquals(
-    matrix.editor.operations.some((operation: { action: string }) =>
-      operation.action === "join"
-    ),
-    true,
-  );
-  assertEquals(
-    matrix.editor.operations.find((operation: { action: string }) =>
-      operation.action === "join"
-    )?.toolbar_category,
-    "structure",
-  );
-  assertEquals(
-    toolbarSource.includes('kind: action === "join" ? "structure" : action'),
-    true,
-  );
-  assertEquals(toolbarSource.includes('? "plus"'), false);
-  assertEquals(toolbarSource.includes('"join"'), true);
-  assertEquals(domainSource.includes("JoinOperator::Inner"), true);
-  assertEquals(domainSource.includes("resolve_column_reference"), true);
-  assertEquals(domainSource.includes("qualify_join_input_references"), true);
-  assertEquals(
-    domainSource.includes("SqlStructureReason::JoinUnsupported"),
-    true,
-  );
+  assertEquals(toolbar.includes("SqlDocumentTreeEditor"), true);
+  for (const old of ["analyzeSqlStructure", "proposeSqlStructureOperation"]) {
+    assertEquals(toolbar.includes(old) || editor.includes(old), false);
+  }
+});
 
-  const statementGate = backendSource.slice(
-    backendSource.indexOf("pub fn validate_read_only_sql"),
-    backendSource.indexOf(
-      "pub async fn query_index_authorized",
-      backendSource.indexOf("pub fn validate_read_only_sql"),
-    ),
-  );
-  assertEquals(statementGate.includes("parsed.len() != 1"), true);
+Deno.test("runtime and editor parsers share a checked grammar fixture corpus", async () => {
+  const path = "shared/sql/sql-document-parser-parity.json";
+  const [fixture, domain, parser] = await Promise.all([
+    read(path).then(JSON.parse),
+    read("crates/ugoite-domain/src/sql_document.rs"),
+    read("crates/ugoite-iceberg/src/sql_parser.rs"),
+  ]);
+  assertEquals(matrix.backend.parser_parity_fixture, path);
+  assertEquals(matrix.editor.parser_parity_fixture, path);
   assertEquals(
-    statementGate.includes("query_contains_only_select_bodies(query)"),
+    new Set(fixture.cases.map((item: { id: string }) => item.id)).size,
+    fixture.cases.length,
+  );
+  assertEquals(fixture.cases.length >= 13, true);
+  assertEquals(
+    domain.includes(
+      "fn shared_parser_parity_cases_are_parsed_by_the_sql_document()",
+    ),
+    true,
+  );
+  assertEquals(
+    parser.includes(
+      "fn shared_parser_parity_cases_are_accepted_by_datafusion_and_sql_document()",
+    ),
+    true,
+  );
+  assertEquals(domain.includes(path) && parser.includes(path), true);
+});
+
+Deno.test("active aggregate picker follows only the enabled runtime registry", async () => {
+  const [registry, protocol, editor, core] = await Promise.all([
+    read("crates/ugoite-domain/src/sql_functions.rs"),
+    read("frontend/src/lib/ugoite-client/protocol.ts"),
+    read("frontend/src/components/SqlDocumentTreeEditor.tsx"),
+    read("crates/ugoite-core/src/query.rs"),
+  ]);
+  const enabled =
+    registry.match(/pub const USER_SQL_AGGREGATES:[^=]*=\s*&\[([^\]]+)\]/)
+      ?.[1] ?? "";
+  const names: string[] = [];
+  const aliases: Record<string, string> = {};
+  for (const id of enabled.match(/[A-Z][A-Z_]+/g) ?? []) {
+    const body = registry.match(
+      new RegExp(
+        `const ${id}: SqlAggregateFunction = SqlAggregateFunction \\{([\\s\\S]*?)\\n\\};`,
+      ),
+    )?.[1];
+    if (!body) throw new Error(`missing enabled descriptor ${id}`);
+    const name = body.match(/name: "([^"]+)"/)?.[1];
+    if (!name) throw new Error(`missing aggregate name ${id}`);
+    names.push(name);
+    for (
+      const [, alias] of (body.match(/aliases: &\[([^\]]*)\]/)?.[1] ?? "")
+        .matchAll(/"([^"]+)"/g)
+    ) aliases[alias] = name;
+  }
+  assertEquals(names, matrix.backend.functions.aggregate);
+  assertEquals(aliases, matrix.backend.function_aliases.aggregate);
+  const union =
+    protocol.match(/export type SqlDocumentAggregateFunction\s*=([\s\S]*?);/)
+      ?.[1] ?? "";
+  sameSet([...union.matchAll(/"([a-z_]+)"/g)].map(([, name]) => name), names);
+  for (const name of names) assertEquals(editor.includes(`"${name}"`), true);
+  assertEquals(
+    core.includes(
+      "fn shared_sql_feature_matrix_matches_read_only_runtime_function_policy()",
+    ),
     true,
   );
 });
 
-Deno.test("ORDER BY editor resolves projection aliases before Form columns", () => {
-  const ordering = matrix.editor.constructs.find((construct: {
-    id: string;
-  }) => construct.id === "ordering");
-  assertEquals(ordering.backend_admission, "planner_decides");
-  assertEquals(ordering.editor_coverage, "bounded");
-  assertEquals(
-    ordering.limits.includes(
-      "unqualified identifiers resolve explicit projection aliases before same-named Form columns; the editor retains the typed source binding",
-    ),
-    true,
-  );
+Deno.test("document evidence points to current executable tests without claiming this inventory executes them", async () => {
+  for (const entry of matrix.editor.evidence) {
+    for (const [path, selector] of entry.selectors as [string, string][]) {
+      const source = await read(path);
+      assertEquals(
+        source.includes(selector),
+        true,
+        `${entry.id}: stale selector ${selector} in ${path}`,
+      );
+    }
+  }
+  const [tasks, workflow] = await Promise.all([
+    read("mise.toml"),
+    read(".github/workflows/ci.yml"),
+  ]);
+  assertEquals(tasks.includes("deno test -A tools/*_test.ts"), true);
+  assertEquals(tasks.includes("cargo nextest run --workspace --locked"), true);
+  assertEquals(tasks.includes('"test:frontend:coverage"'), true);
+  assertEquals(workflow.includes("merge_group:"), true);
+  assertEquals(workflow.includes("mise run ci:lane:web"), true);
+  assertEquals(workflow.includes("mise run ci:lane:rust-test"), true);
 });

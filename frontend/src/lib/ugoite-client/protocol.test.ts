@@ -1,8 +1,9 @@
 import { http, HttpResponse } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  analyzeSqlStructure,
   applySqlDocumentEditTransaction,
+  applySqlDocumentNodeEditTransaction,
+  applySqlDocumentSemanticEditTransaction,
   buildSpreadsheetCsvRequest,
   canonicalizeCompositionDocument,
   compileVariableGraph,
@@ -12,9 +13,7 @@ import {
   parseVariableGraphInput,
   parseVariableGraphInputSync,
   prepareApiRequest,
-  prepareSqlStructureParser,
   prepareVariableGraphInputParser,
-  proposeSqlStructureOperation,
   protocolFetch,
   protocolFetchResponse,
   renameSqlDocumentParameter,
@@ -261,136 +260,13 @@ describe("portable Ugoite API protocol WASM", () => {
     );
   });
 
-  it("analyzes SQL structure and returns confirmation proposals through Rust/WASM", async () => {
-    await prepareSqlStructureParser();
-
-    const sql =
-      'SELECT * FROM "Task" WHERE "field_101" = $status ORDER BY "_ugoite_id"';
-    const context = {
-      relation: "Task",
-      columns: [
-        { name: "_ugoite_id", type: "string" },
-        { name: "field_101", type: "string" },
-        { name: "field_102", type: "integer" },
-      ],
-      variables: [
-        { name: "status", type: "string" },
-        { name: "priority", type: "integer" },
-      ],
-      stable_key: ["_ugoite_id"],
-    } as const;
-
-    const analysis = await analyzeSqlStructure(sql, context);
-    expect(analysis).toMatchObject({
-      status: "supported",
-      projection: ["*"],
-      referenced_variables: ["status"],
-      stable_pagination: true,
-    });
-
-    const proposal = await proposeSqlStructureOperation(
-      sql,
-      context,
-      { kind: "set_columns", columns: ["field_101", "field_102"] },
-    );
-    expect(proposal).toMatchObject({
-      status: "supported",
-      base_sql: sql,
-      requires_confirmation: true,
-    });
-    expect(proposal.proposed_sql).toContain('"field_101", "field_102"');
-    expect(sql).toContain('SELECT * FROM "Task"');
-
-    const repeatedProjectionSql =
-      'SELECT "field_101" AS first, "field_101" AS second FROM "Task"';
-    const repeatedProjection = await analyzeSqlStructure(
-      repeatedProjectionSql,
-      context,
-    );
-    expect(repeatedProjection.projection_aliases).toEqual([
-      { column: "field_101", alias: { name: "first", quoted: false } },
-      { column: "field_101", alias: { name: "second", quoted: false } },
-    ]);
-    const slotProposal = await proposeSqlStructureOperation(
-      repeatedProjectionSql,
-      context,
-      {
-        kind: "set_projection_slots",
-        slots: [
-          {
-            id: "projection-1",
-            column: "field_101",
-            alias: { name: "second_copy", quoted: false },
-          },
-          {
-            id: "projection-0",
-            column: "field_101",
-            alias: { name: "first_copy", quoted: false },
-          },
-        ],
-      },
-    );
-    expect(slotProposal).toMatchObject({
-      status: "supported",
-      base_sql: repeatedProjectionSql,
-      requires_confirmation: true,
-    });
-    expect(slotProposal.proposed_sql).toContain(
-      '"field_101" AS second_copy, "field_101" AS first_copy',
-    );
-
-    const aggregateSql =
-      'SELECT DISTINCT "field_101", COUNT(DISTINCT "field_102") AS unique_count FROM "Task" GROUP BY "field_101"';
-    const aggregateAnalysis = await analyzeSqlStructure(aggregateSql, context);
-    expect(aggregateAnalysis).toMatchObject({
-      status: "supported",
-      projection: ["field_101"],
-      aggregates: [{
-        function: "count",
-        column: "field_102",
-        distinct: true,
-        alias: { name: "unique_count", quoted: false },
-      }],
-      group_by: ["field_101"],
-      distinct: true,
-    });
-
-    const aggregateProposal = await proposeSqlStructureOperation(
-      'SELECT "field_101" FROM "Task" GROUP BY "field_101"',
-      context,
-      {
-        kind: "set_aggregates",
-        aggregates: [{
-          function: "sum",
-          column: "field_102",
-          distinct: true,
-          alias: { name: "total", quoted: true },
-        }],
-      },
-    );
-    expect(aggregateProposal).toMatchObject({
-      status: "supported",
-      requires_confirmation: true,
-    });
-    expect(aggregateProposal.proposed_sql).toContain(
-      'SUM(DISTINCT "field_102") AS "total"',
-    );
-
-    const distinctProposal = await proposeSqlStructureOperation(
-      'SELECT "field_101" FROM "Task"',
-      context,
-      { kind: "set_distinct", distinct: true },
-    );
-    expect(distinctProposal.proposed_sql).toContain("SELECT DISTINCT");
-  });
-
   it("parses bounded SQL drafts through the typed Rust/WASM document contract", async () => {
     const sql = '-- 日本語\nSELECT $day FROM "G"';
     const document = await parseSqlDocument(sql);
     const sourceBytes = new TextEncoder().encode(sql);
 
     expect(document).toMatchObject({
-      contract_version: 1,
+      contract_version: 17,
       source: sql,
       status: "parsed",
     });
@@ -404,6 +280,22 @@ describe("portable Ugoite API protocol WASM", () => {
       .toBe(true);
     expect(document.nodes.some((node) => node.kind === "select_item"))
       .toBe(true);
+    expect(document.nodes.some((node) =>
+      node.kind === "relation" &&
+      node.semantic?.kind === "relation" &&
+      node.semantic.name.some((part) => part.value === "G")
+    )).toBe(true);
+    expect(document.nodes.some((node) =>
+      node.kind === "literal_expression" &&
+      node.semantic?.kind === "literal" &&
+      node.semantic.literal_kind === "placeholder" &&
+      node.semantic.raw === "$day"
+    )).toBe(true);
+    expect(
+      document.nodes.filter((node) => node.kind.endsWith("_expression")).every((
+        node,
+      ) => node.semantic !== null),
+    ).toBe(true);
 
     await expect(parseSqlDocument("SELECT (")).resolves.toMatchObject({
       source: "SELECT (",
@@ -434,6 +326,947 @@ describe("portable Ugoite API protocol WASM", () => {
       edited.undo,
     );
     expect(restored.document.source).toBe(source);
+  });
+
+  it("applies Rust-classified SQL Document node edits and returns a usable undo", async () => {
+    const source =
+      '-- report\nSELECT /* left */ amount AS total FROM "G" WHERE amount > 1 ORDER BY total DESC /* tail */';
+    const parsed = await parseSqlDocument(source);
+    const predicate = parsed.nodes.find((node) =>
+      node.kind === "binary_expression"
+    );
+    expect(predicate).toBeDefined();
+
+    const edited = await applySqlDocumentNodeEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [{
+        node_id: predicate!.id,
+        expected_kind: "binary_expression",
+        replacement: "amount >= 2",
+      }],
+    });
+    expect(edited.document.source).toBe(
+      '-- report\nSELECT /* left */ amount AS total FROM "G" WHERE amount >= 2 ORDER BY total DESC /* tail */',
+    );
+    expect(edited.document.status).toBe("parsed");
+
+    const restored = await applySqlDocumentEditTransaction(
+      edited.document.source,
+      edited.undo,
+    );
+    expect(restored.document.source).toBe(source);
+  });
+
+  it("applies typed SQL Document semantic edits through the Rust protocol", async () => {
+    const source = '-- 日本語\nSELECT amount FROM "G" WHERE amount > 1';
+    const parsed = await parseSqlDocument(source);
+    const identifier = parsed.nodes.find((node) =>
+      node.kind === "identifier_expression" &&
+      node.semantic?.kind === "identifier" &&
+      node.semantic.value === "amount"
+    );
+    const literal = parsed.nodes.find((node) =>
+      node.kind === "value" &&
+      node.semantic?.kind === "literal" &&
+      node.semantic.raw === "1"
+    );
+    expect(identifier).toBeDefined();
+    expect(literal).toBeDefined();
+
+    const edited = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [
+        {
+          kind: "replace_identifier",
+          node_id: identifier!.id,
+          expected_kind: "identifier_expression",
+          parts: [{ value: "total", quote_style: '"' }],
+        },
+        {
+          kind: "replace_literal",
+          node_id: literal!.id,
+          expected_kind: "value",
+          literal: { kind: "number", value: "9007199254740993" },
+        },
+      ],
+    });
+
+    expect(edited.document.source).toBe(
+      '-- 日本語\nSELECT "total" FROM "G" WHERE amount > 9007199254740993',
+    );
+    const restored = await applySqlDocumentEditTransaction(
+      edited.document.source,
+      edited.undo,
+    );
+    expect(restored.document.source).toBe(source);
+  });
+
+  it("edits set operators and quantifiers through the Rust protocol", async () => {
+    const source = "SELECT 1 UNION ALL SELECT 2";
+    const parsed = await parseSqlDocument(source);
+    const setOperation = parsed.nodes.find((node) =>
+      node.kind === "set_operation" &&
+      node.semantic?.kind === "set_operation"
+    );
+    expect(setOperation).toBeDefined();
+
+    const edited = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [{
+        kind: "replace_set_operation",
+        node_id: setOperation!.id,
+        expected_kind: "set_operation",
+        operator: "except",
+        quantifier: "distinct",
+      }],
+    });
+
+    expect(edited.document.source).toBe("SELECT 1 EXCEPT DISTINCT SELECT 2");
+    const restored = await applySqlDocumentEditTransaction(
+      edited.document.source,
+      edited.undo,
+    );
+    expect(restored.document.source).toBe(source);
+  });
+
+  it("swaps set-operation operands through the Rust protocol", async () => {
+    const source = "SELECT 1 UNION ALL SELECT 2";
+    const parsed = await parseSqlDocument(source);
+    const setOperation = parsed.nodes.find((node) =>
+      node.kind === "set_operation" &&
+      node.semantic?.kind === "set_operation"
+    );
+    expect(setOperation).toBeDefined();
+
+    const edited = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [{
+        kind: "swap_set_operation_operands",
+        node_id: setOperation!.id,
+        expected_kind: "set_operation",
+      }],
+    });
+
+    expect(edited.document.source).toBe("SELECT 2 UNION ALL SELECT 1");
+    const restored = await applySqlDocumentEditTransaction(
+      edited.document.source,
+      edited.undo,
+    );
+    expect(restored.document.source).toBe(source);
+  });
+
+  it("edits CAST target types through the Rust protocol", async () => {
+    const source = "SELECT CAST(amount + 1 AS BIGINT)";
+    const parsed = await parseSqlDocument(source);
+    const cast = parsed.nodes.find((node) =>
+      node.kind === "cast_expression" && node.semantic?.kind === "cast"
+    );
+    expect(cast).toBeDefined();
+
+    const edited = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [{
+        kind: "replace_cast_target_type",
+        node_id: cast!.id,
+        expected_kind: "cast_expression",
+        target_type: "double",
+      }],
+    });
+
+    expect(edited.document.source).toBe("SELECT CAST(amount + 1 AS DOUBLE)");
+    const restored = await applySqlDocumentEditTransaction(
+      edited.document.source,
+      edited.undo,
+    );
+    expect(restored.document.source).toBe(source);
+  });
+
+  it("wraps a typed expression in CAST through the Rust protocol", async () => {
+    const source = 'SELECT amount + 1 FROM "G"';
+    const parsed = await parseSqlDocument(source);
+    const expression = parsed.nodes.find((node) =>
+      node.kind === "binary_expression"
+    );
+    expect(expression).toBeDefined();
+
+    const edited = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [{
+        kind: "wrap_expression_in_cast",
+        node_id: expression!.id,
+        expected_kind: "binary_expression",
+        target_type: "double",
+      }],
+    });
+
+    expect(edited.document.source).toBe(
+      'SELECT CAST(amount + 1 AS DOUBLE) FROM "G"',
+    );
+    const restored = await applySqlDocumentEditTransaction(
+      edited.document.source,
+      edited.undo,
+    );
+    expect(restored.document.source).toBe(source);
+  });
+
+  it("builds registered aggregate expressions through the Rust protocol", async () => {
+    const source = 'SELECT amount + 1 FROM "G"';
+    const parsed = await parseSqlDocument(source);
+    const expression = parsed.nodes.find((node) =>
+      node.kind === "binary_expression"
+    );
+    expect(expression).toBeDefined();
+
+    const edited = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [{
+        kind: "wrap_expression_in_aggregate",
+        node_id: expression!.id,
+        expected_kind: "binary_expression",
+        function: "sum",
+        distinct: true,
+      }],
+    });
+
+    expect(edited.document.source).toBe(
+      'SELECT SUM(DISTINCT amount + 1) FROM "G"',
+    );
+    const restored = await applySqlDocumentEditTransaction(
+      edited.document.source,
+      edited.undo,
+    );
+    expect(restored.document.source).toBe(source);
+  });
+
+  it("wraps a typed expression in an editable searched CASE in Rust", async () => {
+    const source = 'SELECT amount + 1 FROM "G"';
+    const parsed = await parseSqlDocument(source);
+    const expression = parsed.nodes.find((node) =>
+      node.kind === "binary_expression"
+    );
+    expect(expression).toBeDefined();
+
+    const edited = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [{
+        kind: "wrap_expression_in_case",
+        node_id: expression!.id,
+        expected_kind: "binary_expression",
+      }],
+    });
+
+    expect(edited.document.source).toBe(
+      'SELECT CASE WHEN TRUE THEN amount + 1 ELSE NULL END FROM "G"',
+    );
+    const restored = await applySqlDocumentEditTransaction(
+      edited.document.source,
+      edited.undo,
+    );
+    expect(restored.document.source).toBe(source);
+  });
+
+  it("adds WHERE before GROUP BY, ORDER BY, and LIMIT through Rust", async () => {
+    const source = 'SELECT 1 FROM "G" GROUP BY 1 ORDER BY 1 LIMIT 2';
+    const parsed = await parseSqlDocument(source);
+    const select = parsed.nodes.find((node) => node.kind === "select");
+    expect(select).toBeDefined();
+    const edited = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [{
+        kind: "add_where_clause",
+        node_id: select!.id,
+        expected_kind: "select",
+      }],
+    });
+    expect(edited.document.source).toBe(
+      'SELECT 1 FROM "G" WHERE TRUE GROUP BY 1 ORDER BY 1 LIMIT 2',
+    );
+    const restored = await applySqlDocumentEditTransaction(
+      edited.document.source,
+      edited.undo,
+    );
+    expect(restored.document.source).toBe(source);
+  });
+
+  it("builds BETWEEN with independently editable bounds through Rust", async () => {
+    const source = 'SELECT amount + 1 FROM "G"';
+    const parsed = await parseSqlDocument(source);
+    const expression = parsed.nodes.find((node) =>
+      node.kind === "binary_expression"
+    );
+    expect(expression).toBeDefined();
+    const edited = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [{
+        kind: "wrap_expression_in_predicate",
+        node_id: expression!.id,
+        expected_kind: "binary_expression",
+        template: "between",
+      }],
+    });
+    expect(edited.document.source).toBe(
+      'SELECT (amount + 1) BETWEEN NULL AND NULL FROM "G"',
+    );
+    expect(
+      edited.document.nodes.filter((node) => node.kind === "literal_expression")
+        .length,
+    ).toBeGreaterThanOrEqual(2);
+    const restored = await applySqlDocumentEditTransaction(
+      edited.document.source,
+      edited.undo,
+    );
+    expect(restored.document.source).toBe(source);
+  });
+
+  it("appends and removes typed values in IN lists through Rust", async () => {
+    const source = 'SELECT amount FROM "G" WHERE amount IN (1, 2) /* keep */';
+    const parsed = await parseSqlDocument(source);
+    const predicate = parsed.nodes.find((node) =>
+      node.kind === "predicate_expression" &&
+      node.semantic?.kind === "predicate" &&
+      node.semantic.operator === "in"
+    );
+    expect(predicate).toBeDefined();
+
+    const appended = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [{
+        kind: "append_in_list_value",
+        node_id: predicate!.id,
+        expected_kind: "predicate_expression",
+      }],
+    });
+    expect(appended.document.source).toBe(
+      'SELECT amount FROM "G" WHERE amount IN (1, 2, NULL) /* keep */',
+    );
+
+    const appendedPredicate = appended.document.nodes.find((node) =>
+      node.kind === "predicate_expression" &&
+      node.semantic?.kind === "predicate" &&
+      node.semantic.operator === "in"
+    );
+    expect(appendedPredicate).toBeDefined();
+    const removed = await applySqlDocumentSemanticEditTransaction(
+      appended.document.source,
+      {
+        contract_version: appended.document.contract_version,
+        expected_source: appended.document.source,
+        edits: [{
+          kind: "remove_last_in_list_value",
+          node_id: appendedPredicate!.id,
+          expected_kind: "predicate_expression",
+        }],
+      },
+    );
+    expect(removed.document.source).toBe(source);
+    const restored = await applySqlDocumentEditTransaction(
+      removed.document.source,
+      removed.undo,
+    );
+    expect(restored.document.source).toBe(appended.document.source);
+  });
+
+  it("adds and removes CASE branches through the Rust protocol", async () => {
+    const source = "SELECT CASE WHEN amount > 0 THEN 1 ELSE 0 END";
+    const parsed = await parseSqlDocument(source);
+    const caseNode = parsed.nodes.find((node) =>
+      node.kind === "case_expression" && node.semantic?.kind === "case"
+    );
+    expect(caseNode).toBeDefined();
+
+    const added = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [{
+        kind: "add_case_branch",
+        node_id: caseNode!.id,
+        expected_kind: "case_expression",
+      }],
+    });
+    expect(added.document.source).toBe(
+      "SELECT CASE WHEN amount > 0 THEN 1 WHEN TRUE THEN NULL ELSE 0 END",
+    );
+
+    const addedCase = added.document.nodes.find((node) =>
+      node.kind === "case_expression" && node.semantic?.kind === "case"
+    );
+    expect(addedCase?.semantic).toMatchObject({ kind: "case", when_count: 2 });
+    const removed = await applySqlDocumentSemanticEditTransaction(
+      added.document.source,
+      {
+        contract_version: added.document.contract_version,
+        expected_source: added.document.source,
+        edits: [{
+          kind: "remove_case_branch",
+          node_id: addedCase!.id,
+          expected_kind: "case_expression",
+        }],
+      },
+    );
+    expect(removed.document.source).toBe(source);
+    const restored = await applySqlDocumentEditTransaction(
+      added.document.source,
+      added.undo,
+    );
+    expect(restored.document.source).toBe(source);
+  });
+
+  it("toggles CASE ELSE through the Rust protocol", async () => {
+    const source = "SELECT CASE WHEN amount > 0 THEN 1 END";
+    const parsed = await parseSqlDocument(source);
+    const caseNode = parsed.nodes.find((node) =>
+      node.kind === "case_expression" && node.semantic?.kind === "case"
+    );
+    expect(caseNode).toBeDefined();
+
+    const added = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [{
+        kind: "set_case_else",
+        node_id: caseNode!.id,
+        expected_kind: "case_expression",
+        has_else: true,
+      }],
+    });
+    expect(added.document.source).toBe(
+      "SELECT CASE WHEN amount > 0 THEN 1 ELSE NULL END",
+    );
+  });
+
+  it("edits aggregate arguments from typed expression nodes through Rust", async () => {
+    const source = 'SELECT COUNT(field_100) AS item_count, field_100 FROM "G"';
+    const parsed = await parseSqlDocument(source);
+    const count = parsed.nodes.find((node) =>
+      node.kind === "function_expression" &&
+      node.semantic?.kind === "function" &&
+      node.semantic.name.at(-1)?.value.toLowerCase() === "count"
+    );
+    const argument = parsed.nodes.find((node) =>
+      node.kind === "identifier_expression" &&
+      node.parent === count?.id &&
+      node.semantic?.kind === "identifier" &&
+      node.semantic.value === "field_100"
+    );
+    expect(count?.semantic).toMatchObject({
+      kind: "function",
+      argument_count: 1,
+      can_replace_argument: true,
+      can_add_argument: true,
+      can_remove_argument: true,
+    });
+    expect(argument).toBeDefined();
+
+    const appended = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [{
+        kind: "set_function_argument",
+        node_id: count!.id,
+        expected_kind: "function_expression",
+        argument_index: 1,
+        expression_node_id: argument!.id,
+        expression_expected_kind: "identifier_expression",
+      }],
+    });
+    expect(appended.document.source).toBe(
+      'SELECT COUNT(field_100, field_100) AS item_count, field_100 FROM "G"',
+    );
+
+    const editedFunction = appended.document.nodes.find((node) =>
+      node.kind === "function_expression" &&
+      node.semantic?.kind === "function"
+    );
+    const removed = await applySqlDocumentSemanticEditTransaction(
+      appended.document.source,
+      {
+        contract_version: appended.document.contract_version,
+        expected_source: appended.document.source,
+        edits: [{
+          kind: "remove_last_function_argument",
+          node_id: editedFunction!.id,
+          expected_kind: "function_expression",
+        }],
+      },
+    );
+    expect(removed.document.source).toBe(source);
+    const restored = await applySqlDocumentEditTransaction(
+      appended.document.source,
+      appended.undo,
+    );
+    expect(restored.document.source).toBe(source);
+  });
+
+  it("replaces a SELECT expression with another typed tree expression", async () => {
+    const source =
+      "SELECT field_100, CASE WHEN field_100 = 'alpha' THEN field_100 ELSE 'other' END AS label FROM \"G\"";
+    const parsed = await parseSqlDocument(source);
+    const items = parsed.nodes.filter((node) => node.kind === "select_item")
+      .sort((left, right) =>
+        (left.range?.start ?? 0) - (right.range?.start ?? 0)
+      );
+    const expression = parsed.nodes.find((node) =>
+      node.parent === items[1]?.id && node.kind === "case_expression"
+    );
+    expect(items).toHaveLength(2);
+    expect(expression).toBeDefined();
+
+    const edited = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [{
+        kind: "set_projection_expression",
+        node_id: items[0].id,
+        expected_kind: "select_item",
+        expression_node_id: expression!.id,
+        expression_expected_kind: "case_expression",
+      }],
+    });
+    expect(edited.document.source).toBe(
+      "SELECT CASE WHEN field_100 = 'alpha' THEN field_100 ELSE 'other' END, CASE WHEN field_100 = 'alpha' THEN field_100 ELSE 'other' END AS label FROM \"G\"",
+    );
+    const restored = await applySqlDocumentEditTransaction(
+      edited.document.source,
+      edited.undo,
+    );
+    expect(restored.document.source).toBe(source);
+  });
+
+  it("composes a SELECT expression from typed SQL nodes in Rust", async () => {
+    const source = `SELECT field_100, 'x' FROM "G"`;
+    const parsed = await parseSqlDocument(source);
+    const items = parsed.nodes.filter((node) => node.kind === "select_item")
+      .sort((left, right) =>
+        (left.range?.start ?? 0) - (right.range?.start ?? 0)
+      );
+    const left = parsed.nodes.find((node) =>
+      node.parent === items[0]?.id && node.kind === "identifier_expression"
+    );
+    const right = parsed.nodes.find((node) =>
+      node.semantic?.kind === "literal" && node.semantic.raw === "'x'"
+    );
+    expect(left).toBeDefined();
+    expect(right).toBeDefined();
+
+    const edited = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [{
+        kind: "compose_binary_expression",
+        node_id: items[0].id,
+        expected_kind: "select_item",
+        left_expression_node_id: left!.id,
+        left_expression_expected_kind: left!.kind,
+        operator: "concat",
+        right_expression_node_id: right!.id,
+        right_expression_expected_kind: right!.kind,
+      }],
+    });
+    expect(edited.document.source).toBe(
+      `SELECT (field_100\n) || ('x'\n), 'x' FROM "G"`,
+    );
+    const restored = await applySqlDocumentEditTransaction(
+      edited.document.source,
+      edited.undo,
+    );
+    expect(restored.document.source).toBe(source);
+  });
+
+  it("composes a non-projection expression from typed SQL nodes in Rust", async () => {
+    const source = "SELECT 1 WHERE 1 = 2";
+    const parsed = await parseSqlDocument(source);
+    const whereOffset = source.indexOf("WHERE");
+    const values = parsed.nodes.filter((node) =>
+      node.kind === "value" && node.range
+    );
+    const projectionValue = values.find((node) =>
+      node.range!.start < whereOffset &&
+      source.slice(node.range!.start, node.range!.end) === "1"
+    );
+    const whereLeft = values.find((node) =>
+      node.range!.start > whereOffset &&
+      source.slice(node.range!.start, node.range!.end) === "1"
+    );
+    const whereRight = values.find((node) =>
+      node.range!.start > whereOffset &&
+      source.slice(node.range!.start, node.range!.end) === "2"
+    );
+    expect(projectionValue).toBeDefined();
+    expect(whereLeft).toBeDefined();
+    expect(whereRight).toBeDefined();
+
+    const edited = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [{
+        kind: "compose_binary_expression",
+        node_id: whereLeft!.id,
+        expected_kind: whereLeft!.kind,
+        left_expression_node_id: projectionValue!.id,
+        left_expression_expected_kind: projectionValue!.kind,
+        operator: "add",
+        right_expression_node_id: whereRight!.id,
+        right_expression_expected_kind: whereRight!.kind,
+      }],
+    });
+    expect(edited.document.source).toBe(
+      "SELECT 1 WHERE (1\n) + (2\n) = 2",
+    );
+    const restored = await applySqlDocumentEditTransaction(
+      edited.document.source,
+      edited.undo,
+    );
+    expect(restored.document.source).toBe(source);
+  });
+
+  it("adds a typed expression to GROUP BY in Rust", async () => {
+    const source = `SELECT field_100 FROM "G" ORDER BY field_100`;
+    const parsed = await parseSqlDocument(source);
+    const select = parsed.nodes.find((node) => node.kind === "select");
+    const expression = parsed.nodes.find((node) =>
+      node.kind === "identifier_expression" &&
+      node.parent !== null &&
+      parsed.nodes[node.parent]?.kind === "select_item"
+    );
+    expect(select).toBeDefined();
+    expect(expression).toBeDefined();
+
+    const edited = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [{
+        kind: "add_group_by_expression",
+        node_id: select!.id,
+        expected_kind: "select",
+        expression_node_id: expression!.id,
+        expression_expected_kind: expression!.kind,
+      }],
+    });
+    expect(edited.document.source).toBe(
+      `SELECT field_100 FROM "G" GROUP BY field_100 ORDER BY field_100`,
+    );
+    const restored = await applySqlDocumentEditTransaction(
+      edited.document.source,
+      edited.undo,
+    );
+    expect(restored.document.source).toBe(source);
+  });
+
+  it("adds a typed expression to ORDER BY before the row limit in Rust", async () => {
+    const source = 'SELECT field_100 FROM "G" LIMIT 10';
+    const parsed = await parseSqlDocument(source);
+    const query = parsed.nodes.find((node) => node.kind === "query");
+    const expression = parsed.nodes.find((node) =>
+      node.kind === "identifier_expression" &&
+      node.parent !== null &&
+      parsed.nodes[node.parent]?.kind === "select_item"
+    );
+    expect(query).toBeDefined();
+    expect(expression).toBeDefined();
+
+    const edited = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [{
+        kind: "add_order_by_expression",
+        node_id: query!.id,
+        expected_kind: "query",
+        expression_node_id: expression!.id,
+        expression_expected_kind: expression!.kind,
+        direction: "desc",
+        nulls_order: "last",
+      }],
+    });
+    expect(edited.document.source).toBe(
+      'SELECT field_100 FROM "G" ORDER BY field_100 DESC NULLS LAST LIMIT 10',
+    );
+    const restored = await applySqlDocumentEditTransaction(
+      edited.document.source,
+      edited.undo,
+    );
+    expect(restored.document.source).toBe(source);
+  });
+
+  it("creates a literal leaf from an existing typed expression in Rust", async () => {
+    const source = 'SELECT field_100 + 1 FROM "G"';
+    const parsed = await parseSqlDocument(source);
+    const expression = parsed.nodes.find((node) =>
+      node.kind === "binary_expression"
+    );
+    expect(expression).toBeDefined();
+
+    const edited = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [{
+        kind: "replace_literal",
+        node_id: expression!.id,
+        expected_kind: "binary_expression",
+        literal: { kind: "number", value: "7" },
+      }],
+    });
+    expect(edited.document.source).toBe('SELECT 7 FROM "G"');
+    const restored = await applySqlDocumentEditTransaction(
+      edited.document.source,
+      edited.undo,
+    );
+    expect(restored.document.source).toBe(source);
+  });
+
+  it("replaces any expression from another typed node in the same query", async () => {
+    const source = 'SELECT field_100 + 1, field_100 FROM "G"';
+    const parsed = await parseSqlDocument(source);
+    const target = parsed.nodes.find((node) =>
+      node.kind === "binary_expression" &&
+      node.range &&
+      source.slice(node.range.start, node.range.end) === "field_100 + 1"
+    );
+    const expression = parsed.nodes.find((node) =>
+      node.kind === "identifier_expression" &&
+      node.range && node.range.start > (target?.range?.end ?? 0)
+    );
+    expect(target).toBeDefined();
+    expect(expression).toBeDefined();
+
+    const edited = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [{
+        kind: "replace_expression_from_node",
+        node_id: target!.id,
+        expected_kind: "binary_expression",
+        expression_node_id: expression!.id,
+        expression_expected_kind: "identifier_expression",
+      }],
+    });
+    expect(edited.document.source).toBe(
+      'SELECT field_100, field_100 FROM "G"',
+    );
+    const restored = await applySqlDocumentEditTransaction(
+      edited.document.source,
+      edited.undo,
+    );
+    expect(restored.document.source).toBe(source);
+  });
+
+  it("adds a SELECT expression from another typed node in Rust", async () => {
+    const source = 'SELECT field_100 FROM "G" WHERE field_100 > 10';
+    const parsed = await parseSqlDocument(source);
+    const list = parsed.nodes.find((node) => node.kind === "select_list");
+    const expression = parsed.nodes.find((node) =>
+      node.kind === "binary_expression"
+    );
+    expect(list).toBeDefined();
+    expect(expression).toBeDefined();
+
+    const edited = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [{
+        kind: "add_projection_expression",
+        node_id: list!.id,
+        expected_kind: "select_list",
+        expression_node_id: expression!.id,
+        expression_expected_kind: "binary_expression",
+      }],
+    });
+    expect(edited.document.source).toBe(
+      'SELECT field_100, field_100 > 10 FROM "G" WHERE field_100 > 10',
+    );
+    const restored = await applySqlDocumentEditTransaction(
+      edited.document.source,
+      edited.undo,
+    );
+    expect(restored.document.source).toBe(source);
+  });
+
+  it("adds a relation-free scalar subquery projection through Rust", async () => {
+    const source = 'SELECT 1 FROM "G"';
+    const parsed = await parseSqlDocument(source);
+    const list = parsed.nodes.find((node) => node.kind === "select_list");
+    expect(list).toBeDefined();
+
+    const edited = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [{
+        kind: "add_scalar_subquery_projection",
+        node_id: list!.id,
+        expected_kind: "select_list",
+      }],
+    });
+    expect(edited.document.source).toBe(
+      'SELECT 1, (SELECT 1) AS __ugoite_scalar_subquery FROM "G"',
+    );
+    expect(
+      edited.document.nodes.some((node) => node.kind === "subquery_expression"),
+    ).toBe(true);
+    const restored = await applySqlDocumentEditTransaction(
+      edited.document.source,
+      edited.undo,
+    );
+    expect(restored.document.source).toBe(source);
+  });
+
+  it("renames a CTE and its relation references through the Rust protocol", async () => {
+    const source = "WITH c AS (SELECT 1 AS n) SELECT n FROM c";
+    const parsed = await parseSqlDocument(source);
+    const cte = parsed.nodes.find((node) =>
+      node.kind === "common_table_expression" &&
+      node.semantic?.kind === "common_table_expression"
+    );
+    expect(cte).toBeDefined();
+
+    const edited = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [{
+        kind: "rename_common_table_expression",
+        node_id: cte!.id,
+        expected_kind: "common_table_expression",
+        name: { value: "rows", quote_style: '"' },
+      }],
+    });
+
+    expect(edited.document.source).toBe(
+      'WITH "rows" AS (SELECT 1 AS n) SELECT n FROM "rows"',
+    );
+    const restored = await applySqlDocumentEditTransaction(
+      edited.document.source,
+      edited.undo,
+    );
+    expect(restored.document.source).toBe(source);
+  });
+
+  it("respects nested CTE shadowing through the Rust protocol", async () => {
+    const source =
+      "WITH c AS (SELECT 1 AS n), d AS (WITH c AS (SELECT 2 AS n) SELECT n FROM c), e AS (SELECT n FROM c) SELECT n FROM c";
+    const parsed = await parseSqlDocument(source);
+    const cte = parsed.nodes.find((node) =>
+      node.kind === "common_table_expression" &&
+      node.semantic?.kind === "common_table_expression" &&
+      node.semantic.name.value === "c"
+    );
+    expect(cte).toBeDefined();
+
+    const edited = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [{
+        kind: "rename_common_table_expression",
+        node_id: cte!.id,
+        expected_kind: "common_table_expression",
+        name: { value: "rows", quote_style: null },
+      }],
+    });
+
+    expect(edited.document.source).toBe(
+      "WITH rows AS (SELECT 1 AS n), d AS (WITH c AS (SELECT 2 AS n) SELECT n FROM c), e AS (SELECT n FROM rows) SELECT n FROM rows",
+    );
+  });
+
+  it("toggles predicate negation through the Rust protocol and preserves comments", async () => {
+    const source = 'SELECT amount FROM "G" WHERE amount IS /* keep */ NULL';
+    const parsed = await parseSqlDocument(source);
+    const predicate = parsed.nodes.find((node) =>
+      node.kind === "predicate_expression" &&
+      node.semantic?.kind === "predicate" &&
+      node.semantic.operator === "is_null"
+    );
+    expect(predicate).toBeDefined();
+
+    const edited = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [{
+        kind: "replace_predicate_negation",
+        node_id: predicate!.id,
+        expected_kind: "predicate_expression",
+        negated: true,
+      }],
+    });
+
+    expect(edited.document.source).toBe(
+      'SELECT amount FROM "G" WHERE amount IS NOT /* keep */ NULL',
+    );
+    const restored = await applySqlDocumentEditTransaction(
+      edited.document.source,
+      edited.undo,
+    );
+    expect(restored.document.source).toBe(source);
+  });
+
+  it("edits arithmetic unary signs through the Rust protocol and preserves comments", async () => {
+    const source = "SELECT - /* keep */ amount";
+    const parsed = await parseSqlDocument(source);
+    const unary = parsed.nodes.find((node) =>
+      node.kind === "unary_expression" &&
+      node.semantic?.kind === "unary_operator" &&
+      node.semantic.operator === "-"
+    );
+    expect(unary).toBeDefined();
+
+    const edited = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [{
+        kind: "replace_unary_sign",
+        node_id: unary!.id,
+        expected_kind: "unary_expression",
+        sign: "positive",
+      }],
+    });
+
+    expect(edited.document.source).toBe("SELECT + /* keep */ amount");
+    const restored = await applySqlDocumentEditTransaction(
+      edited.document.source,
+      edited.undo,
+    );
+    expect(restored.document.source).toBe(source);
+  });
+
+  it("reports typed SQL Document node edit failures with stable codes", async () => {
+    const source = 'SELECT amount FROM "G"';
+    const parsed = await parseSqlDocument(source);
+    const projection = parsed.nodes.find((node) => node.kind === "select_item");
+    expect(projection).toBeDefined();
+
+    await expect(
+      applySqlDocumentNodeEditTransaction(source, {
+        contract_version: parsed.contract_version + 1,
+        expected_source: source,
+        edits: [],
+      }),
+    ).rejects.toMatchObject({
+      kind: "sql_document_edit",
+      code: "contract_version_mismatch",
+    });
+
+    await expect(
+      applySqlDocumentNodeEditTransaction(source, {
+        contract_version: parsed.contract_version,
+        expected_source: source,
+        edits: [{
+          node_id: projection!.id,
+          expected_kind: "relation",
+          replacement: "other",
+        }],
+      }),
+    ).rejects.toMatchObject({
+      kind: "sql_document_edit",
+      code: "node_kind_mismatch",
+    });
   });
 
   it("keeps incomplete SQL Document edit drafts and reports stable stale/range failures", async () => {

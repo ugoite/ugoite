@@ -1,0 +1,75 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: sql
+category: Authorized SQL planning
+features:
+  - id: FEAT-SQL-003
+    title: Authorized schema-only SQL planning
+    summary: Reuse the authorized query planner for schema diagnostics and guarded draft-save preflight without executing results.
+    status: implemented
+    bindings:
+      - id: core
+        role: implementation
+        facet: core
+        responsibility: Build and authorize the physical query plan, returning its schema without executing it.
+        targets:
+          - id: schema-plan
+            adapter: rust
+            path: crates/ugoite-iceberg/src/query_context.rs
+            selector: { kind: symbol, name: stateless_result_schema }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-002#criterion.schema-without-execution
+      - id: backend
+        role: implementation
+        facet: backend
+        responsibility: Apply current Space authorization and expose schema-only planning through the REST adapter.
+        targets:
+          - id: plan-route
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: plan_sql }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-002#criterion.schema-without-execution
+      - id: frontend
+        role: implementation
+        facet: frontend
+        responsibility: Keep current definition diagnostics separate from transient preview values and exact-revision execution state.
+        targets:
+          - id: planning-state
+            adapter: typescript
+            path: frontend/src/lib/sql-workspace.ts
+            selector: { kind: symbol, name: createSqlWorkspaceController }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-002#criterion.definition-preflight
+          - id: saved-draft
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id]/index.tsx
+            selector: { kind: symbol, name: selectSavedSqlPreviewRevision }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-002#criterion.definition-preflight
+      - id: api
+        role: contract-source
+        facet: api
+        responsibility: Describe the stateless planning request and schema-only response in the authoritative OpenAPI contract.
+        targets:
+          - id: plan-contract
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: POST, path: '/spaces/{space_id}/sql/query/plan' }
+            claims:
+              - kind: documents
+                anchor: REQ-SQL-002#criterion.schema-without-execution
+    contracts:
+      - id: authorized-planning-schema
+        kind: custom
+        source: FEAT-SQL-003#binding.api/target.plan-contract
+        participants:
+          - target: FEAT-SQL-003#binding.core/target.schema-plan
+            role: core
+          - target: FEAT-SQL-003#binding.backend/target.plan-route
+            role: backend
+        guarantees: [REQ-SQL-002#criterion.schema-without-execution]

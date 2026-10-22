@@ -1,0 +1,74 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: sql
+category: Authorized SQL planning
+requirements:
+  - id: REQ-SQL-002
+    title: Authorized schema-only SQL planning
+    description: Inspect the planned output of read-only SQL without materializing result rows or treating planning as permission for a later operation.
+    priority: high
+    status: implemented
+    criteria:
+      - id: schema-without-execution
+        kind: behavior
+        statement: >-
+          A schema-only planning request binds typed parameters, validates the
+          logical and physical plan against its authorized relation context,
+          and returns output column metadata without executing the physical
+          plan or collecting result rows. Parser acceptance, statement
+          admission, logical planning, physical planning and actual execution
+          remain distinct outcomes; success is specific to the input and
+          authorization context and is not an authorization credential.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: definition-preflight
+        kind: behavior
+        statement: >-
+          Editing a query definition checks draft SQL and declared parameter
+          types independently of transient preview input. Pending, rejected or
+          stale planning results cannot enable Save. Editing parameter types
+          does not apply the previous exact revision's type contract to the
+          draft; unchanged exact-revision previews retain their stored
+          bindings and current authorization is checked by each later request.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+    bindings:
+      - id: verification
+        role: verification
+        facet: verification
+        responsibility: Verify physical execution is absent during planning and that definition and exact-revision preview state remain distinct.
+        targets:
+          - id: physical-execution-probe
+            adapter: rust
+            path: crates/ugoite-iceberg/src/query_context.rs
+            selector: { kind: symbol, name: function_policy_tests::schema_only_planning_never_executes_the_physical_plan }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-002#criterion.schema-without-execution
+                covers: [FEAT-SQL-003#binding.core/target.schema-plan]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: query_context::function_policy_tests::schema_only_planning_never_executes_the_physical_plan } }
+          - id: rest-schema-contract
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::stateless_sql_plan_returns_typed_schema_without_saved_results }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-002#criterion.schema-without-execution
+                covers: [FEAT-SQL-003#binding.backend/target.plan-route]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::stateless_sql_plan_returns_typed_schema_without_saved_results } }
+          - id: definition-values
+            adapter: typescript
+            path: frontend/src/lib/sql-workspace.test.ts
+            selector: { kind: test, name: keeps definition preflight independent of invalid transient preview values }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-002#criterion.definition-preflight
+                covers: [FEAT-SQL-003#binding.frontend/target.planning-state]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-workspace.test.ts, test: keeps definition preflight independent of invalid transient preview values } }
+          - id: exact-revision-after-type-edit
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
+            selector: { kind: test, name: plans and saves an argument type change as a draft while keeping exact revision previews }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-002#criterion.definition-preflight
+                covers: [FEAT-SQL-003#binding.frontend/target.saved-draft]
+                runner: { runner: frontend-vitest-file, arguments: { file: 'src/routes/spaces/[space_id]/sql/[sql_id].test.tsx', test: plans and saves an argument type change as a draft while keeping exact revision previews } }

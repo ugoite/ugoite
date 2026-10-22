@@ -1,22 +1,26 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import type { Diagnostic } from "@codemirror/lint";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { BackLink } from "~/components/BackLink";
 import { ButtonSpinner } from "~/components/ButtonSpinner";
 import { SQLWorkspace, SQLWorkspaceActionBar } from "~/components/SQLWorkspace";
 import type { SQLWorkspaceAction } from "~/components/SQLWorkspace";
 import { SqlStructureToolbar } from "~/components/SqlStructureToolbar";
-import { SqlVariableDefaultsEditor } from "~/components/SqlVariableDefaultsEditor";
-import { formApi, sqlApi } from "~/lib/ugoite-client";
+import {
+  formApi,
+  renameSqlDocumentParameter,
+  sqlApi,
+} from "~/lib/ugoite-client";
 import type { SqlStructureVariableType } from "~/lib/ugoite-client";
 import {
   applySqlVariableDefaultDrafts,
   buildSqlSchema,
   buildSqlStructureContexts,
+  mergeSqlStructureVariables,
   normalizeSqlVariables,
 } from "~/lib/sql";
 import type { SqlVariableDefaultDraft } from "~/lib/sql";
-import type { Form } from "~/lib/types";
+import type { Form, SqlVariable } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
 import { formatUserFacingError } from "~/lib/user-facing-error";
@@ -37,9 +41,15 @@ export default function SpaceQueryCreateRoute() {
   const [defaultDrafts, setDefaultDrafts] = createSignal<
     Record<string, SqlVariableDefaultDraft>
   >({});
-  const [createdVariableTypes, setCreatedVariableTypes] = createSignal<
-    Record<string, SqlStructureVariableType>
-  >({});
+  const [argumentDefinitions, setArgumentDefinitions] = createSignal<
+    SqlVariable[]
+  >([]);
+  const [sqlVariables, setSqlVariables] = createSignal<SqlVariable[]>([]);
+  const [normalizedSql, setNormalizedSql] = createSignal("");
+  const [undeclaredArgument, setUndeclaredArgument] = createSignal<
+    string | null
+  >(null);
+  const [normalizationPending, setNormalizationPending] = createSignal(true);
   const [structureActions, setStructureActions] = createSignal<
     readonly SQLWorkspaceAction[]
   >([]);
@@ -49,48 +59,104 @@ export default function SpaceQueryCreateRoute() {
   });
 
   const schema = () => buildSqlSchema((forms() || []) as Form[]);
-  const variables = createMemo(() =>
-    normalizeSqlVariables(
-      sqlInput().trim(),
-      Object.entries(createdVariableTypes()).map(([name, type]) => ({
-        name,
-        type,
-        description: "",
-      })),
-    ).variables
-  );
+  let normalizationGeneration = 0;
+  createEffect(() => {
+    const sql = sqlInput().trim();
+    const existing = argumentDefinitions();
+    const generation = ++normalizationGeneration;
+    setNormalizationPending(true);
+    setNormalizedSql("");
+    setSqlVariables([]);
+    setUndeclaredArgument(null);
+    void normalizeSqlVariables(sql, existing).then((normalized) => {
+      if (generation !== normalizationGeneration) return;
+      setNormalizedSql(normalized.sql);
+      const declared = new Set(existing.map((variable) => variable.name));
+      setSqlVariables(
+        normalized.variables.filter((variable) => declared.has(variable.name)),
+      );
+      setUndeclaredArgument(
+        normalized.variables.find((variable) => !declared.has(variable.name))
+          ?.name ?? null,
+      );
+    }).catch((error) => {
+      if (generation !== normalizationGeneration) return;
+      setNormalizedSql("");
+      setSqlVariables([]);
+    }).finally(() => {
+      if (generation === normalizationGeneration) {
+        setNormalizationPending(false);
+      }
+    });
+  });
+  const variables = sqlVariables;
   const workspaceVariables = createMemo(() => {
     const defaults = applySqlVariableDefaultDrafts(
       variables(),
       defaultDrafts(),
     );
-    return defaults.invalid ? variables() : defaults.variables;
+    const resolved = defaults.invalid ? variables() : defaults.variables;
+    return resolved.map((variable) => ({
+      ...variable,
+      required: variable.default === undefined,
+    }));
   });
   const workspace = createSqlWorkspaceController({
     spaceId,
-    sql: sqlInput,
+    sql: normalizedSql,
     variables: workspaceVariables,
+    planParameters: "definition",
+    planSavedSql: () => undefined,
   });
 
   const handleSqlChange = (sql: string) => {
     setSqlInput(sql);
-    const referenced = new Set(
-      normalizeSqlVariables(sql).variables.map((variable) => variable.name),
-    );
-    setCreatedVariableTypes((current) =>
-      Object.fromEntries(
-        Object.entries(current).filter(([name]) => referenced.has(name)),
-      )
-    );
   };
 
   const registerCreatedVariables = (
     added: readonly { name: string; type: SqlStructureVariableType }[],
   ) => {
-    setCreatedVariableTypes((current) => ({
-      ...current,
-      ...Object.fromEntries(added.map(({ name, type }) => [name, type])),
-    }));
+    setArgumentDefinitions((current) =>
+      mergeSqlStructureVariables(current, added)
+    );
+  };
+
+  const updateArgument = async (oldName: string, variable: SqlVariable) => {
+    if (oldName !== variable.name) {
+      const source = sqlInput();
+      try {
+        const document = await renameSqlDocumentParameter(
+          (await normalizeSqlVariables(source)).sql,
+          oldName,
+          variable.name,
+        );
+        if (sqlInput() !== source) return false;
+        setSqlInput(document.source);
+      } catch {
+        return false;
+      }
+      setDefaultDrafts((current) => {
+        if (!current[oldName]) return current;
+        const next = { ...current, [variable.name]: current[oldName] };
+        delete next[oldName];
+        return next;
+      });
+    }
+    setArgumentDefinitions((current) =>
+      current.map((item) => item.name === oldName ? variable : item)
+    );
+  };
+
+  const removeArgument = (name: string) => {
+    if (variables().some((variable) => variable.name === name)) return false;
+    setArgumentDefinitions((current) =>
+      current.filter((item) => item.name !== name)
+    );
+    setDefaultDrafts((current) => {
+      const next = { ...current };
+      delete next[name];
+      return next;
+    });
   };
 
   // Line/column rendering for editor diagnostics. Offsets come from the
@@ -108,18 +174,63 @@ export default function SpaceQueryCreateRoute() {
     setError(null);
     const name = queryName().trim();
     const sql = sqlInput().trim();
+    const saveIdentity = JSON.stringify({
+      sql: sqlInput(),
+      arguments: argumentDefinitions(),
+      defaults: defaultDrafts(),
+    });
     if (!sql) {
       setError(t("sqlPage.sqlRequired"));
       return;
     }
-    const normalized = normalizeSqlVariables(sql);
-    const withTypes = variables();
+    let normalized: Awaited<ReturnType<typeof normalizeSqlVariables>>;
+    try {
+      normalized = await normalizeSqlVariables(sql, argumentDefinitions());
+    } catch (err) {
+      setError(formatUserFacingError(err, "sqlPage.failedSave"));
+      return;
+    }
+    const referenced = new Set(
+      normalized.variables.map((variable) => variable.name),
+    );
+    const declared = new Set(
+      argumentDefinitions().map((variable) => variable.name),
+    );
+    const undeclared = normalized.variables.find((variable) =>
+      !declared.has(variable.name)
+    );
+    if (undeclared) {
+      setError(t("sqlPage.undeclaredArgument", { name: undeclared.name }));
+      return;
+    }
+    const unused = argumentDefinitions().filter((variable) =>
+      !referenced.has(variable.name)
+    );
+    if (unused.length > 0) {
+      setError(t("sqlPage.unusedArgument", { name: unused[0].name }));
+      return;
+    }
+    const withTypes = normalized.variables;
     const defaults = applySqlVariableDefaultDrafts(
       withTypes,
       defaultDrafts(),
     );
     if (defaults.invalid) {
       setError(t("sqlPage.defaultInvalid", defaults.invalid));
+      return;
+    }
+
+    const currentPlan = workspace.plan();
+    if (
+      JSON.stringify({
+          sql: sqlInput(),
+          arguments: argumentDefinitions(),
+          defaults: defaultDrafts(),
+        }) !== saveIdentity ||
+      currentPlan.status !== "success" ||
+      !currentPlan.isCurrent
+    ) {
+      setError(currentPlan.error ?? t("sqlPage.planPending"));
       return;
     }
 
@@ -175,6 +286,19 @@ export default function SpaceQueryCreateRoute() {
             )}
           onSqlChange={handleSqlChange}
           onVariablesAdded={registerCreatedVariables}
+          argumentDefinitions={argumentDefinitions}
+          onArgumentAdded={(variable) => {
+            if (
+              argumentDefinitions().some((item) => item.name === variable.name)
+            ) {
+              return false;
+            }
+            setArgumentDefinitions((current) => [...current, variable]);
+          }}
+          onArgumentUpdated={updateArgument}
+          onArgumentRemoved={removeArgument}
+          argumentDefaults={defaultDrafts}
+          onArgumentDefaultsChange={setDefaultDrafts}
           onActionsChange={setStructureActions}
           disabled={isSaving}
         />
@@ -191,23 +315,16 @@ export default function SpaceQueryCreateRoute() {
           onParameterChange={workspace.onParameterChange}
           readOnly={isSaving()}
           onDiagnostics={setDiagnostics}
-          previewDisabled={isSaving()}
+          planner={workspace.plan()}
+          previewDisabled={isSaving() || normalizationPending() ||
+            undeclaredArgument() !== null ||
+            !normalizedSql().trim()}
           onPreview={workspace.run}
           onCount={workspace.count}
           onPrevious={workspace.previous}
           onNext={workspace.next}
           preview={workspace.preview()}
         />
-
-        <Show when={variables().length > 0}>
-          <SqlVariableDefaultsEditor
-            idPrefix="new-sql"
-            variables={variables()}
-            defaults={defaultDrafts()}
-            onDefaultsChange={setDefaultDrafts}
-            disabled={isSaving()}
-          />
-        </Show>
 
         <Show when={diagnostics().length > 0}>
           <ul class="text-sm ui-text-warning ui-stack-sm">
@@ -224,6 +341,13 @@ export default function SpaceQueryCreateRoute() {
             </For>
           </ul>
         </Show>
+        <Show when={undeclaredArgument()}>
+          {(name) => (
+            <p class="ui-alert ui-alert-error" role="alert">
+              {t("sqlPage.undeclaredArgument", { name: name() })}
+            </p>
+          )}
+        </Show>
         <Show when={error()}>
           <p class="text-sm ui-text-danger">{error()}</p>
         </Show>
@@ -232,7 +356,8 @@ export default function SpaceQueryCreateRoute() {
           type="button"
           class="btn primary"
           onClick={() => void handleSave()}
-          disabled={isSaving()}
+          disabled={isSaving() || workspace.plan().status !== "success" ||
+            !workspace.plan().isCurrent}
           aria-busy={isSaving() || undefined}
         >
           <Show when={isSaving()}>

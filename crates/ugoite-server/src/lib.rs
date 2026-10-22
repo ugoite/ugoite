@@ -1768,6 +1768,7 @@ fn protected_routes(state: AppState) -> Router<AppState> {
             delete(revoke_member),
         )
         .route("/spaces/{space_id}/sql/query", post(query_sql))
+        .route("/spaces/{space_id}/sql/query/plan", post(plan_sql))
         .route("/spaces/{space_id}/sql/query/count", post(count_sql))
         .route(
             "/spaces/{space_id}/entries",
@@ -9800,6 +9801,24 @@ async fn query_sql(
         state
             .service
             .query_sql_authorized_for_principals(&space_id, &principals, request)
+            .await
+            .map_err(ApiError::from_core)?,
+    ))
+}
+
+async fn plan_sql(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path(space_id): Path<String>,
+    Json(request): Json<ugoite_core::sql_query::SqlQueryPlanRequest>,
+) -> ApiResult<Json<ugoite_core::sql_query::SqlQueryPlan>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    Ok(Json(
+        state
+            .service
+            .plan_sql_authorized_for_principals(&space_id, &principals, request)
             .await
             .map_err(ApiError::from_core)?,
     ))
@@ -18911,6 +18930,45 @@ spec:
         validate_action_names(&defaults).expect("CLI default actions are known");
         validate_access_credential_actions(&defaults)
             .expect("CLI default actions require no unavailable approval flow");
+    }
+
+    #[tokio::test]
+    async fn stateless_sql_plan_returns_typed_schema_without_saved_results() -> anyhow::Result<()> {
+        let principal_id = Uuid::from_u128(29749);
+        let (client, space_id, _) =
+            production_rest_fixture("stateless-sql-plan", principal_id, true).await?;
+        let (_, before) = client
+            .json(Method::GET, &format!("/spaces/{space_id}/sql"), None)
+            .await?;
+        let (status, plan) = client.json(Method::POST, &format!("/spaces/{space_id}/sql/query/plan"), Some(json!({
+            "sql": "SELECT $value AS value", "parameters": {"value": null}, "parameter_types": {"value": "integer"}
+        }))).await?;
+        assert_eq!(status, StatusCode::OK, "{plan}");
+        assert_eq!(plan["result_schema"][0]["name"], "value");
+        assert_eq!(plan["result_schema"][0]["type"], "integer");
+        assert!(plan.get("rows").is_none());
+        assert!(plan.get("next").is_none());
+        let (_, after) = client
+            .json(Method::GET, &format!("/spaces/{space_id}/sql"), None)
+            .await?;
+        assert_eq!(before, after, "planning must not create Saved SQL");
+        for sql in [
+            "SELECT * FROM hidden_form",
+            "SELECT 1; SELECT 2",
+            "SELECT LOWER('value')",
+        ] {
+            let (status, _) = client
+                .json(
+                    Method::POST,
+                    &format!("/spaces/{space_id}/sql/query/plan"),
+                    Some(json!({
+                        "sql": sql, "parameters": {}, "parameter_types": {}
+                    })),
+                )
+                .await?;
+            assert!(!status.is_success(), "plan unexpectedly admitted {sql}");
+        }
+        Ok(())
     }
 
     #[tokio::test]

@@ -8,6 +8,7 @@ export type UiIconName =
   | "spaces"
   | "menu"
   | "plus"
+  | "minus"
   | "entry"
   | "asset"
   | "sql"
@@ -35,6 +36,8 @@ export type UiIconName =
   | "aggregate"
   | "group-by"
   | "distinct"
+  | "row-limit"
+  | "tree"
   | "canvas-text"
   | "canvas-metric"
   | "canvas-table"
@@ -86,6 +89,7 @@ const paths: Record<UiIconName, () => JSX.Element> = {
       <path d="M5 12h14" />
     </>
   ),
+  minus: () => <path d="M5 12h14" />,
   entry: () => (
     <>
       <path d="m12 3 7 7-7 11-7-11Z" />
@@ -234,6 +238,20 @@ const paths: Record<UiIconName, () => JSX.Element> = {
       <circle cx="8" cy="12" r="4" />
       <circle cx="16" cy="12" r="4" />
       <path d="M5 19 19 5" />
+    </>
+  ),
+  "row-limit": () => (
+    <>
+      <path d="M4 6h16M4 11h13M4 16h9" />
+      <path d="m16 17 2 2 3-4" />
+    </>
+  ),
+  tree: () => (
+    <>
+      <rect x="3" y="3" width="7" height="5" rx="1" />
+      <rect x="14" y="3" width="7" height="5" rx="1" />
+      <rect x="8.5" y="16" width="7" height="5" rx="1" />
+      <path d="M6.5 8v4h9V8M12 12v4" />
     </>
   ),
   "canvas-text": () => (

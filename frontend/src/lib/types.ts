@@ -426,6 +426,19 @@ export interface SqlQueryCountRequest {
   saved_sql?: { id: string; revision_id: string };
 }
 
+/** Request for authorized SQL planning without reading result rows. */
+export interface SqlQueryPlanRequest {
+  sql: string;
+  parameters: Record<string, unknown>;
+  parameter_types: Record<string, string>;
+  saved_sql?: { id: string; revision_id: string };
+}
+
+/** Planned, server-owned portable output schema. */
+export interface SqlQueryPlan {
+  result_schema: SqlResultColumn[];
+}
+
 export interface SqlMetadata {
   searchCriteria?: {
     formName: string;
