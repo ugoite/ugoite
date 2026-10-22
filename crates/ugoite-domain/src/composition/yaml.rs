@@ -74,7 +74,6 @@ fn strict_v1_options() -> serde_saphyr::Options {
         no_schema: true,
         strict_booleans: true,
         reject_unsupported_tags: true,
-        emit_comments: false,
         with_snippet: false,
     }
 }
@@ -99,7 +98,6 @@ fn version_probe_options() -> serde_saphyr::Options {
         strict_booleans: false,
         no_schema: false,
         reject_unsupported_tags: false,
-        emit_comments: false,
         with_snippet: false,
     }
 }

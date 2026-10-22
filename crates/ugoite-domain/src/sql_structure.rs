@@ -11,7 +11,7 @@ use sqlparser::ast::{
     BinaryOperator, Distinct, DuplicateTreatment, Expr, Function, FunctionArg, FunctionArgExpr,
     FunctionArgumentList, FunctionArguments, GroupByExpr, Ident, JoinConstraint, JoinOperator,
     LimitClause, ObjectName, ObjectNamePart, OrderBy, OrderByExpr, OrderByKind, OrderByOptions,
-    Query, Select, SelectFlavor, SelectItem, SetExpr, Spanned, Statement, TableFactor,
+    OrderBySort, Query, Select, SelectFlavor, SelectItem, SetExpr, Spanned, Statement, TableFactor,
     TableWithJoins, UnaryOperator, Value,
 };
 use sqlparser::dialect::PostgreSqlDialect;
@@ -2131,6 +2131,12 @@ fn parse_order_by(
             if expression.with_fill.is_some() || expression.options.nulls_first.is_some() {
                 return Err(SqlStructureReason::SortUnsupported);
             }
+            if matches!(
+                expression.options.sort.as_ref(),
+                Some(OrderBySort::Using(_))
+            ) {
+                return Err(SqlStructureReason::SortUnsupported);
+            }
             let (column, qualifier, projection_alias) = if joins.is_empty() {
                 if let Expr::Identifier(identifier) = &expression.expr {
                     if let Some((column, alias)) =
@@ -2176,7 +2182,7 @@ fn parse_order_by(
                 column: column.name.clone(),
                 qualifier,
                 projection_alias,
-                direction: if expression.options.asc == Some(false) {
+                direction: if expression.options.sort.as_ref() == Some(&OrderBySort::Desc) {
                     SqlStructureSortDirection::Desc
                 } else {
                     SqlStructureSortDirection::Asc
@@ -3306,7 +3312,10 @@ fn set_sort(
                         alias_reference_expr,
                     ),
                     options: OrderByOptions {
-                        asc: Some(sort.direction == SqlStructureSortDirection::Asc),
+                        sort: Some(match sort.direction {
+                            SqlStructureSortDirection::Asc => OrderBySort::Asc,
+                            SqlStructureSortDirection::Desc => OrderBySort::Desc,
+                        }),
                         nulls_first: None,
                     },
                     with_fill: None,
@@ -6447,6 +6456,18 @@ mod tests {
             Some(SqlStructureReason::StableOrderRequired)
         );
         assert!(result.capabilities.sort.enabled);
+    }
+
+    #[test]
+    fn rejects_postgres_custom_ordering_operators() {
+        let result = analyze_sql_structure(
+            "SELECT \"field_101\" FROM \"Task\" ORDER BY \"field_101\" USING <",
+            &context(),
+        );
+
+        assert_eq!(result.status, SqlStructureStatus::Unsupported);
+        assert_eq!(result.reason, Some(SqlStructureReason::SortUnsupported));
+        assert!(!result.capabilities.sort.enabled);
     }
 
     #[test]
