@@ -63,6 +63,7 @@ export interface CompositionVariableBindingPickerProps {
   kind: BindingComponentKind;
   draft: CompositionGraphDraft;
   forms: readonly CompositionFormChoice[];
+  formsLoading?: boolean;
   savedSql: readonly CompositionSavedSqlChoice[];
   provider: CompositionBindingProvider;
   session: CompositionBindingSession;
@@ -558,7 +559,11 @@ export function CompositionVariableBindingPicker(
           >
             <Show
               when={eligibleVariables().length > 0}
-              fallback={<div class="compositionBindingPickerEmpty" />}
+              fallback={
+                <p class="compositionBindingPickerEmpty" role="status">
+                  {t("composition.noCompatibleVariables")}
+                </p>
+              }
             >
               <RowList label={tabLabel("variables")}>
                 <For each={eligibleVariables()}>
@@ -595,6 +600,16 @@ export function CompositionVariableBindingPicker(
             aria-labelledby="binding-tab-forms"
             hidden={tab() !== "forms"}
           >
+            <Show when={props.formsLoading}>
+              <p class="compositionBindingPickerEmpty" role="status">
+                {t("common.loading")}
+              </p>
+            </Show>
+            <Show when={!props.formsLoading && props.forms.length === 0}>
+              <p class="compositionBindingPickerEmpty" role="status">
+                {t("formsPage.empty")}
+              </p>
+            </Show>
             <RowList label={tabLabel("forms")}>
               <For each={props.forms}>
                 {(form) => (
@@ -727,7 +742,17 @@ export function CompositionVariableBindingPicker(
             hidden={tab() !== "saved_sql"}
           >
             <Show when={props.savedSqlLoading}>
-              <div class="compositionBindingPickerEmpty" aria-hidden="true" />
+              <p class="compositionBindingPickerEmpty" role="status">
+                {t("common.loading")}
+              </p>
+            </Show>
+            <Show
+              when={!props.savedSqlLoading && !props.savedSqlSeedUnavailable &&
+                props.savedSql.length === 0}
+            >
+              <p class="compositionBindingPickerEmpty" role="status">
+                {t("composition.noSavedSql")}
+              </p>
             </Show>
             <Show when={props.savedSqlSeedUnavailable}>
               <p class="compositionBindingUnavailableReason" role="status">

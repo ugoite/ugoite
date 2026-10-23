@@ -149,6 +149,8 @@ describe("CompositionGraphDesignCanvas", () => {
     expect(screen.getByRole("heading", { name: "Report title" })).toHaveClass(
       "compositionGraphText--title",
     );
+    expect(screen.queryByRole("complementary", { name: "Inspector" }))
+      .toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "metric, total" }));
     const move = screen.getByRole("button", { name: "Move earlier" });
     move.focus();
@@ -178,6 +180,9 @@ describe("CompositionGraphDesignCanvas", () => {
     );
     expect(draft().components.some((item) => item.id === "metric")).toBe(false);
     expect(draft().variables).toEqual(initial.variables);
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("complementary", { name: "Inspector" }))
+      .toBeNull();
     expect(evaluateMock).toHaveBeenCalledOnce();
     expect(JSON.stringify(draft())).not.toContain("Alpha");
   });
@@ -185,7 +190,6 @@ describe("CompositionGraphDesignCanvas", () => {
   it("inserts literal text without selecting it for Inspector editing", () => {
     const onDraftChange = vi.fn();
     renderCanvas(onDraftChange);
-    fireEvent.click(screen.getByRole("button", { name: "Add to design" }));
     fireEvent.click(screen.getByRole("button", { name: "Text" }));
     expect(onDraftChange).toHaveBeenCalledOnce();
     expect(onDraftChange.mock.calls[0][0].components).toEqual([{

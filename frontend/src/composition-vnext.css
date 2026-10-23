@@ -190,32 +190,36 @@
 }
 .compositionGraphDesigner {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--ui-spacing-md);
+}
+.compositionGraphDesigner--selected {
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
+}
+.compositionGraphToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-spacing-sm);
+  margin-block: var(--ui-spacing-md);
+}
+.compositionGraphToolbar .studioMode {
+  margin-top: 0;
+}
+.compositionGraphSave {
+  min-height: 44px;
 }
 .compositionGraphCanvas,
 .compositionGraphInspector {
   min-width: 0;
 }
-.compositionGraphCanvasHeader {
-  position: relative;
-  display: flex;
-  min-height: 48px;
-  align-items: center;
-  margin-bottom: var(--ui-spacing-md);
-}
 .compositionGraphPalette {
-  position: absolute;
-  z-index: 2;
-  top: calc(100% + var(--ui-spacing-xs));
-  left: 0;
-  display: grid;
-  min-width: 13rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-spacing-xs);
   padding: var(--ui-spacing-xs);
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-md);
-  background: var(--ui-surface-1);
-  box-shadow: var(--ui-shadow-md);
+  margin-bottom: var(--ui-spacing-md);
+  border-bottom: 1px solid var(--ui-border);
 }
 .compositionGraphPalette button,
 .compositionGraphInputChoice {
@@ -224,8 +228,9 @@
   align-items: center;
   gap: var(--ui-spacing-sm);
   padding: var(--ui-spacing-xs) var(--ui-spacing-sm);
-  border: 0;
-  background: transparent;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface-1);
   color: var(--ui-foreground);
   text-align: left;
 }
@@ -260,6 +265,31 @@
 .compositionGraphTableViewport {
   width: 100%;
   min-width: 0;
+  overflow-wrap: normal;
+}
+.compositionGraphTableViewport .result-table {
+  width: max-content;
+  min-width: 100%;
+}
+.compositionGraphTableViewport th,
+.compositionGraphTableViewport td {
+  white-space: nowrap;
+}
+.compositionGraphPalette button:focus-visible,
+.compositionGraphEmptyText:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+.compositionGraphEmptyText {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: var(--ui-spacing-sm);
+  border: 1px dashed var(--ui-border);
+  border-radius: var(--ui-radius-md);
+  background: transparent;
+  color: var(--ui-muted-foreground);
+  text-align: left;
 }
 .compositionGraphMetricLabel {
   margin: 0;
@@ -294,8 +324,15 @@
   min-height: 5rem;
 }
 .compositionGraphInspector {
+  align-self: start;
+  position: sticky;
+  top: 5rem;
   padding: var(--ui-spacing-sm);
   border-left: 1px solid var(--ui-border);
+}
+.compositionGraphInspectorHeader {
+  display: flex;
+  justify-content: flex-end;
 }
 .compositionGraphVariableBinding,
 .compositionGraphVariableChange {
@@ -324,6 +361,8 @@
 }
 .compositionBindingPickerEmpty {
   min-height: 2.75rem;
+  padding-block: var(--ui-spacing-md);
+  color: var(--ui-muted-foreground);
 }
 .compositionBindingPickerStatus {
   min-height: 4px;
@@ -339,10 +378,18 @@
   }
 }
 @media (max-width: 560px) {
-  .compositionGraphDesigner {
+  .compositionGraphDesigner,
+  .compositionGraphDesigner--selected {
     grid-template-columns: minmax(0, 1fr);
   }
   .compositionGraphInspector {
+    position: sticky;
+    top: auto;
+    bottom: 4.5rem;
+    max-height: 45dvh;
+    overflow-y: auto;
+    background: var(--ui-surface-1);
+    box-shadow: var(--ui-shadow-md);
     border-top: 1px solid var(--ui-border);
     border-left: 0;
   }

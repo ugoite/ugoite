@@ -488,7 +488,6 @@ describe("CompositionStudio graph surface", () => {
     expect(variablesTab).toHaveClass("studioModeOption");
     expect(screen.queryByRole("tab", { name: "Data" })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Add to design" }));
     fireEvent.click(screen.getByRole("button", { name: "Table" }));
     const dialog = screen.getByRole("dialog", { name: "Table" });
     fireEvent.click(
@@ -507,9 +506,6 @@ describe("CompositionStudio graph surface", () => {
       plan: { queries: [] },
     });
     renderStudio(createCompositionGraphDraft("Report"));
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Add to design" }),
-    );
     fireEvent.click(screen.getByRole("button", { name: "Input" }));
 
     expect(await screen.findByRole("button", { name: "input, input_1" }))
@@ -996,7 +992,6 @@ describe("CompositionStudio graph surface", () => {
       fields: { amount: { type: "float", sql_column: "amount" } },
     }]);
     renderStudio(createCompositionGraphDraft("Report"));
-    fireEvent.click(screen.getByRole("button", { name: "Add to design" }));
     fireEvent.click(screen.getByRole("button", { name: "Table" }));
     const picker = screen.getByRole("dialog", { name: "Table" });
     fireEvent.click(within(picker).getByRole("tab", { name: "Forms" }));
@@ -1049,7 +1044,6 @@ describe("CompositionStudio graph surface", () => {
       })
     );
     renderStudio(createCompositionGraphDraft("Report"));
-    fireEvent.click(screen.getByRole("button", { name: "Add to design" }));
     fireEvent.click(screen.getByRole("button", { name: "Metric" }));
     const picker = screen.getByRole("dialog", { name: "Metric" });
     fireEvent.click(within(picker).getByRole("tab", { name: "Forms" }));
@@ -1110,7 +1104,6 @@ describe("CompositionStudio graph surface", () => {
       account: { account_id: "editor-1", display_name: "Editor" },
     });
     renderStudio(createCompositionGraphDraft("Report"));
-    fireEvent.click(screen.getByRole("button", { name: "Add to design" }));
     fireEvent.click(screen.getByRole("button", { name: "Table" }));
     const picker = screen.getByRole("dialog", { name: "Table" });
     fireEvent.click(within(picker).getByRole("tab", { name: "Forms" }));
@@ -1152,7 +1145,6 @@ describe("CompositionStudio graph surface", () => {
       })
     );
     renderStudio(createCompositionGraphDraft("Report"));
-    fireEvent.click(screen.getByRole("button", { name: "Add to design" }));
     fireEvent.click(screen.getByRole("button", { name: "Metric" }));
     const picker = screen.getByRole("dialog", { name: "Metric" });
     fireEvent.click(within(picker).getByRole("tab", { name: "Saved SQL" }));
@@ -1194,7 +1186,6 @@ describe("CompositionStudio graph surface", () => {
       variables: [],
     }]);
     renderStudio(createCompositionGraphDraft("Report"));
-    fireEvent.click(screen.getByRole("button", { name: "Add to design" }));
     fireEvent.click(screen.getByRole("button", { name: "Table" }));
     const picker = screen.getByRole("dialog", { name: "Table" });
     fireEvent.click(within(picker).getByRole("tab", { name: "Saved SQL" }));
@@ -1271,7 +1262,6 @@ describe("CompositionStudio graph surface", () => {
       })
     );
     renderStudio(createCompositionGraphDraft("Report"));
-    fireEvent.click(screen.getByRole("button", { name: "Add to design" }));
     fireEvent.click(screen.getByRole("button", { name: "Table" }));
     const picker = screen.getByRole("dialog", { name: "Table" });
     fireEvent.click(within(picker).getByRole("tab", { name: "Saved SQL" }));

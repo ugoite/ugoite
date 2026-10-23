@@ -321,8 +321,6 @@ async function addCanvasDisplay(
 ): Promise<void> {
   const mode = page.getByRole("tablist", { name: "Studio mode" });
   await mode.getByRole("tab", { name: "Design", exact: true }).click();
-  await page.getByRole("button", { name: "Add to design", exact: true })
-    .first().click();
   const palette = page.getByRole("group", { name: "Add to design" });
   await palette.getByRole("button", { name: kind, exact: true }).click();
   const dialog = page.getByRole("dialog", { name: kind, exact: true });
@@ -390,8 +388,6 @@ async function placeStudioInput(
 ): Promise<void> {
   await page.getByRole("tablist", { name: "Studio mode" })
     .getByRole("tab", { name: "Design", exact: true }).click();
-  await page.getByRole("button", { name: "Add to design", exact: true })
-    .first().click();
   await page.getByRole("group", { name: "Add to design" })
     .getByLabel("Input", { exact: true }).selectOption({ label: variableId });
 }
@@ -399,8 +395,6 @@ async function placeStudioInput(
 async function addStudioText(page: Page, variableId: string): Promise<void> {
   await page.getByRole("tablist", { name: "Studio mode" })
     .getByRole("tab", { name: "Design", exact: true }).click();
-  await page.getByRole("button", { name: "Add to design", exact: true })
-    .first().click();
   await page.getByRole("group", { name: "Add to design" })
     .getByRole("button", { name: "Text", exact: true }).click();
   const textBlock = page.getByRole("button", {
@@ -734,7 +728,7 @@ test.describe("Composition Studio Journey", () => {
       // The edit studio loads the exact revision asynchronously; wait for
       // the canvas before asserting the restored name.
       await expect(
-        page.getByRole("button", { name: "Add to design", exact: true })
+        page.getByRole("group", { name: "Add to design", exact: true })
           .first(),
       ).toBeVisible({ timeout: 30_000 });
       await expect(page.getByLabel("Name", { exact: true })).toHaveValue(
@@ -859,18 +853,44 @@ test.describe("Composition Studio Journey", () => {
         getFrontendUrl(`/spaces/${seed.spaceId}/compositions/new`),
         { waitUntil: "domcontentloaded" },
       );
+      await expect(page.getByPlaceholder("Composition name")).toBeVisible();
+      await expect(page.getByRole("complementary", { name: "Inspector" }))
+        .toHaveCount(0);
+      for (const name of ["Table", "Metric", "Input", "Text"]) {
+        await expect(
+          page.getByRole("group", { name: "Add to design" }).getByRole(
+            "button",
+            { name, exact: true },
+          ),
+        ).toBeVisible();
+      }
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.screenshot({
+        path: test.info().outputPath("new-composition-1280.png"),
+        fullPage: true,
+      });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.screenshot({
+        path: test.info().outputPath("new-composition-390.png"),
+        fullPage: true,
+      });
+      await page.setViewportSize({ width: 1280, height: 900 });
       await page.getByLabel("Name", { exact: true }).fill(
         `${seed.toolName} Form bindings`,
       );
-
-      await page.getByRole("button", { name: "Add to design", exact: true })
-        .first().click();
       const palette = page.getByRole("group", { name: "Add to design" });
       await palette.getByRole("button", { name: "Table", exact: true }).click();
       const tablePicker = page.getByRole("dialog", {
         name: "Table",
         exact: true,
       });
+      await page.screenshot({
+        path: test.info().outputPath("new-table-picker.png"),
+        fullPage: true,
+      });
+      await expect(tablePicker.getByRole("status")).toContainText(
+        "No compatible variables",
+      );
       await tablePicker.getByRole("tab", { name: "Forms", exact: true })
         .click();
       await tablePicker.getByRole("button", {
@@ -880,9 +900,6 @@ test.describe("Composition Studio Journey", () => {
       await expect(tablePicker).toHaveCount(0);
       await expect(page.getByRole("button", { name: /Change variable/ }))
         .toHaveCount(0);
-
-      await page.getByRole("button", { name: "Add to design", exact: true })
-        .first().click();
       await page.getByRole("group", { name: "Add to design" })
         .getByRole("button", { name: "Metric", exact: true }).click();
       const metricPicker = page.getByRole("dialog", {
@@ -947,9 +964,23 @@ test.describe("Composition Studio Journey", () => {
           ),
         ).toBe(true);
         await expect(designTable).toContainText(seed.purposes[0]);
+        const tableRegion = page.getByRole("region", {
+          name: `${formSlug}_rows results`,
+        });
+        const dimensions = await tableRegion.evaluate((element) => ({
+          width: element.clientWidth,
+          content: element.scrollWidth,
+          whitespace: getComputedStyle(element.querySelector("th")!).whiteSpace,
+        }));
+        expect(dimensions.content).toBeGreaterThan(dimensions.width);
+        expect(dimensions.whitespace).toBe("nowrap");
       }
+      await page.screenshot({
+        path: test.info().outputPath("composition-live-design-390.png"),
+        fullPage: true,
+      });
       await test.info().attach("Composition live Design at 390px", {
-        body: await page.screenshot({ fullPage: true }),
+        path: test.info().outputPath("composition-live-design-390.png"),
         contentType: "image/png",
       });
       await page.getByRole("button", { name: "Save", exact: true }).click();
@@ -1335,9 +1366,6 @@ test.describe("Composition Studio Journey", () => {
         name: "Change variable, studio_total",
         exact: true,
       })).toBeVisible();
-
-      await page.getByRole("button", { name: "Add to design", exact: true })
-        .first().click();
       const palette = page.getByRole("group", { name: "Add to design" });
       await palette.getByRole("button", { name: "Table", exact: true }).tap();
       const picker = page.getByRole("dialog", { name: "Table", exact: true });
@@ -1356,10 +1384,7 @@ test.describe("Composition Studio Journey", () => {
       await expect(page.getByRole("dialog")).toHaveCount(0);
       await expect(page.locator("#app")).not.toHaveAttribute("inert", "");
       await expect(
-        page.getByRole("button", {
-          name: "Add to design",
-          exact: true,
-        }).first(),
+        palette.getByRole("button", { name: "Table", exact: true }),
       ).toBeFocused();
 
       // 320px represents the effective content width at 200% browser zoom;

@@ -85,9 +85,6 @@ describe("CompositionStudio narrow binding picker", () => {
       />
     ));
 
-    const add = screen.getByRole("button", { name: "Add to design" });
-    add.focus();
-    fireEvent.click(add);
     const table = screen.getByRole("button", { name: "Table" });
     table.focus();
     fireEvent.click(table);
@@ -110,7 +107,7 @@ describe("CompositionStudio narrow binding picker", () => {
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).toBeNull();
       expect(appRoot).not.toHaveAttribute("inert");
-      expect(add).toHaveFocus();
+      expect(table).toHaveFocus();
     });
     appRoot.remove();
   });

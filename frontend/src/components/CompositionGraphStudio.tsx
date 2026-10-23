@@ -24,6 +24,7 @@ export interface CompositionGraphStudioProps {
   draft: CompositionGraphDraft;
   previewBase?: { entryId: string; revisionId: string };
   forms: readonly CompositionFormChoice[];
+  formsLoading?: boolean;
   savedSql: readonly CompositionSavedSqlChoice[];
   savedSqlLoading?: boolean;
   savedSqlSeedUnavailable?: boolean;
@@ -154,27 +155,29 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
 
   return (
     <>
-      <nav
-        class="studioMode"
-        role="tablist"
-        aria-label={t("composition.studioMode")}
-      >
-        <For each={["design", "variables"] as const}>
-          {(entry) => (
-            <button
-              type="button"
-              role="tab"
-              class="studioModeOption"
-              classList={{ "studioModeOption--active": mode() === entry }}
-              aria-selected={mode() === entry}
-              onClick={() => setMode(entry)}
-            >
-              {entry === "design"
-                ? t("composition.studioDesign")
-                : t("composition.studioVariables")}
-            </button>
-          )}
-        </For>
+      <div class="compositionGraphToolbar">
+        <nav
+          class="studioMode"
+          role="tablist"
+          aria-label={t("composition.studioMode")}
+        >
+          <For each={["design", "variables"] as const}>
+            {(entry) => (
+              <button
+                type="button"
+                role="tab"
+                class="studioModeOption"
+                classList={{ "studioModeOption--active": mode() === entry }}
+                aria-selected={mode() === entry}
+                onClick={() => setMode(entry)}
+              >
+                {entry === "design"
+                  ? t("composition.studioDesign")
+                  : t("composition.studioVariables")}
+              </button>
+            )}
+          </For>
+        </nav>
         <Show when={props.onSave}>
           <button
             type="button"
@@ -185,12 +188,13 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
             {t("composition.save")}
           </button>
         </Show>
-      </nav>
+      </div>
       <section hidden={mode() !== "design"}>
         <CompositionGraphDesignCanvas
           draft={props.draft}
           previewBase={props.previewBase}
           forms={props.forms}
+          formsLoading={props.formsLoading}
           savedSql={props.savedSql}
           savedSqlLoading={props.savedSqlLoading}
           savedSqlSeedUnavailable={props.savedSqlSeedUnavailable}
@@ -201,6 +205,10 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
           isSessionCurrent={props.isSessionCurrent}
           onDraftChange={props.onDraftChange}
           onCreateInput={createDesignInput}
+          onEditVariable={(id) => {
+            setSelectedVariableId(id);
+            setMode("variables");
+          }}
         />
       </section>
       <section hidden={mode() !== "variables"}>

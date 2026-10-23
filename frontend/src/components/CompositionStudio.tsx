@@ -1212,6 +1212,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
             <input
               class="ui-input compositionGraphName"
               aria-label={t("composition.name")}
+              placeholder={t("composition.namePlaceholder")}
               value={draft().name}
               onInput={(event) =>
                 onDraftChange({
@@ -1233,6 +1234,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
             }
             : undefined}
           forms={forms()}
+          formsLoading={formsResource.loading}
           savedSql={savedSqlForPicker()}
           savedSqlLoading={sqlResource.loading}
           savedSqlSeedUnavailable={savedSqlSeedUnavailable()}

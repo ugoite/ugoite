@@ -295,8 +295,6 @@ async function addDateVariable(
 async function addInput(page: Page, variableId: string): Promise<void> {
   await page.getByRole("tablist", { name: "Studio mode" })
     .getByRole("tab", { name: "Design", exact: true }).click();
-  await page.getByRole("button", { name: "Add to design", exact: true })
-    .first().click();
   await page.getByRole("group", { name: "Add to design" })
     .getByLabel("Input", { exact: true }).selectOption({ label: variableId });
 }
@@ -422,11 +420,6 @@ test.describe("Composition Golden Journey", () => {
       await addInput(initialPage, "month_end");
       await initialPage.getByRole("tablist", { name: "Studio mode" })
         .getByRole("tab", { name: "Design", exact: true }).click();
-      await initialPage.getByRole("button", {
-        name: "Add to design",
-        exact: true,
-      })
-        .first().click();
       await initialPage.getByRole("group", { name: "Add to design" })
         .getByRole("button", { name: "Table", exact: true }).click();
       const picker = initialPage.getByRole("dialog", {
