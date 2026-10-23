@@ -10,10 +10,12 @@ complete executable-SQL GUI coverage or device acceptance.
 The criteria remain those of
 [ADR-025](../contracts/adr-025-composition-query-variable-graph.md), the
 [SQL coverage matrix](../contracts/sql-gui-feature-matrix.md), and the
-[Studio](../../spec/ui/components/composition-studio.yaml) /
-[Workspace](../../spec/ui/components/sql-workspace.yaml) contracts. Missing
-implementation and missing evidence are separate. No criterion is narrowed to
-turn a gap into a pass. No goal is declared out of scope.
+[Studio](https://github.com/ugoite/ugoite/blob/main/docs/spec/ui/components/composition-studio.yaml)
+/
+[Workspace](https://github.com/ugoite/ugoite/blob/main/docs/spec/ui/components/sql-workspace.yaml)
+contracts. Missing implementation and missing evidence are separate. No
+criterion is narrowed to turn a gap into a pass. No goal is declared out of
+scope.
 
 ## Evidence ledger
 
