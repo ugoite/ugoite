@@ -29,6 +29,12 @@ The browser and device gates below remain separate from these checks.
 | `deno test --allow-read tools/sql_feature_matrix_test.ts tools/sql_aggregate_registry_test.ts` | 7 passed        | Declared registry/matrix and runner wiring; source checks do not execute the executor or GUI                           |
 | Focused SQL Document/Toolbar/controller DOM tests                                              | 64 passed       | Existing typed operations and round trips within the tested constructs                                                 |
 
+The corrected continuation regression also ran directly with the owning
+integration binary: **1 passed**. The canonical
+`v01_knowledge_fixture_is_semantically_recoverable` fixture ran separately: **1
+passed**. The baseline adapter count remains nine; these additional checks do
+not retroactively change that baseline result.
+
 The original adapter task silently named a retired paging test. This change
 selects the actual
 `local_graph_table_pages_keep_query_continuations_across_unrelated_input_changes`
@@ -83,11 +89,11 @@ partial corrective changes, not a release or full-acceptance declaration.
 1. Runtime input parsing and retained-page authority: route-scoped parse epochs,
    cache clearing on errors/authority changes, and no replay of an old cursor.
    Focused runtime suite: 10 passed.
-   [#4583](https://github.com/ugoite/ugoite/issues/4583).
+   [PR #4591](https://github.com/ugoite/ugoite/pull/4591).
 2. Standalone SQL definition preflight: unused/undeclared arguments and invalid
    defaults invalidate plan/results/continuations and block plan/run/count.
    Focused controller/new/saved SQL suite: 31 passed.
-   [#4584](https://github.com/ugoite/ugoite/issues/4584).
+   [PR #4592](https://github.com/ugoite/ugoite/pull/4592).
 3. Live Design and layout: shared renderer, transient draft evaluation, stable
    reordering/row movement, direct Text styles, Rust-owned Form SQL seeds, and
    human-derived Saved SQL variable IDs. Domain suite: 60 passed; focused
@@ -95,9 +101,9 @@ partial corrective changes, not a release or full-acceptance declaration.
    expanded controller suite: 8 passed. Full frontend suite: **166 files / 1,395
    tests passed**, with protocol coverage **100%
    statements/branches/functions/lines**.
-   [#4585](https://github.com/ugoite/ugoite/issues/4585).
+   [PR #4594](https://github.com/ugoite/ugoite/pull/4594).
 4. This audit and focused adapter selector repair.
-   [#4586](https://github.com/ugoite/ugoite/issues/4586).
+   [PR #4593](https://github.com/ugoite/ugoite/pull/4593).
 
 Independent code reviews cover the exact corrective commits. They do not replace
 hosted CI, browser journeys or device QA. Outstanding scope is tracked in
@@ -125,3 +131,10 @@ hosted CI, browser journeys or device QA. Outstanding scope is tracked in
 A future completion report must attach the required execution results for every
 remaining row. Passing these corrective PRs must not flip `coverage_complete` or
 turn missing evidence into an achieved requirement.
+
+The initial broad native-host browser run hit the existing Golden Journey's
+300-second `beforeAll` fixture timeout. Later fixtures that create Spaces then
+received `RECENT_PASSKEY_REQUIRED` after the five-minute privileged session
+window expired. These are reported in
+[#4595](https://github.com/ugoite/ugoite/issues/4595), separately from product
+assertions; the suite must not be reported as passing.
