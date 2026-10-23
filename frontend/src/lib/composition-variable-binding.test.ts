@@ -41,6 +41,46 @@ const scalarNode: CompositionVariableNode = {
 };
 
 describe("strict variable-only Composition bindings", () => {
+  it.each([tableNode, scalarNode])(
+    "normalizes omitted canonical arguments into editable Work for $query.kind",
+    (node) => {
+      const { arguments: _arguments, ...query } = node.query;
+      const canonical = compositionGraphDocumentDraft({
+        ...createCompositionGraphDraft("Report"),
+        variables: [node],
+      });
+      const document = {
+        ...canonical,
+        spec: { ...canonical.spec, variables: [{ ...node, query }] },
+      };
+      const decoded = compositionGraphDraftFromDocument(document);
+      expect(decoded.variables[0]).toMatchObject({
+        query: { ...query, arguments: [] },
+      });
+      expect(document.spec.variables[0].query).not.toHaveProperty("arguments");
+    },
+  );
+
+  it("rejects malformed argument collections instead of treating them as empty", () => {
+    const canonical = compositionGraphDocumentDraft({
+      ...createCompositionGraphDraft("Report"),
+      variables: [tableNode],
+    });
+    const document = {
+      ...canonical,
+      spec: {
+        ...canonical.spec,
+        variables: [{
+          ...tableNode,
+          query: { ...tableNode.query, arguments: null },
+        }],
+      },
+    };
+    expect(() => compositionGraphDraftFromDocument(document)).toThrow(
+      "Invalid graph query arguments",
+    );
+  });
+
   it.each([
     ["legacy source list", { sources: [] }],
     ["legacy source reference", {

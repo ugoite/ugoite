@@ -177,15 +177,27 @@ export const compositionGraphDraftFromDocument = (
       Object.hasOwn(component, "source_id")
     ) throw new Error("Invalid graph component binding");
   }
-  for (const node of spec.variables) {
+  const variables = spec.variables.map((node) => {
     if (
       !node || typeof node !== "object" ||
       !["constant", "input", "query"].includes(node.kind)
     ) throw new Error("Invalid graph variable");
-  }
+    if (node.kind !== "query") return node;
+    if (
+      !node.query || typeof node.query !== "object" ||
+      (node.query.arguments !== undefined &&
+        !Array.isArray(node.query.arguments))
+    ) throw new Error("Invalid graph query arguments");
+    // Rust's canonical representation omits empty argument collections.
+    // Editor Work keeps a uniform array without changing the source document.
+    return {
+      ...node,
+      query: { ...node.query, arguments: node.query.arguments ?? [] },
+    };
+  });
   return {
     name: document.name,
-    variables: spec.variables,
+    variables,
     components: spec.components,
     layout: spec.layout,
   } as CompositionGraphDraft;
