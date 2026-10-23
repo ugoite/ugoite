@@ -472,6 +472,119 @@ describe("Composition saved revision graph evaluation", () => {
     expect(screen.queryByText("999")).not.toBeInTheDocument();
   });
 
+  it("ignores late input parsing from a previous Space with the same input ID", async () => {
+    let finishOldParse!: (value: unknown) => void;
+    let finishNewParse!: (value: unknown) => void;
+    parseMock
+      .mockImplementationOnce(() =>
+        new Promise((resolve) => {
+          finishOldParse = resolve;
+        })
+      )
+      .mockImplementationOnce(() =>
+        new Promise((resolve) => {
+          finishNewParse = resolve;
+        })
+      );
+    evaluateMock.mockImplementation((
+      _spaceId: string,
+      request: { evaluation_id: string },
+    ) =>
+      Promise.resolve(
+        evaluation(request.evaluation_id, "auth-1", { rows: 1, stable: 10 }),
+      )
+    );
+    render(() => <CompositionRevisionRoute />);
+    await screen.findByLabelText("day");
+    fireEvent.input(screen.getByLabelText("day"), { target: { value: "old" } });
+    updateRouteParams({
+      space_id: "space-2",
+      composition_id: "comp-1",
+      revision_id: "rev-1",
+    });
+    await waitFor(() =>
+      expect(getMock).toHaveBeenCalledWith("space-2", "comp-1", "rev-1")
+    );
+    await waitFor(() => expect(screen.getByLabelText("day")).toHaveValue(""));
+    fireEvent.input(screen.getByLabelText("day"), {
+      target: { value: "2026-10-23" },
+    });
+    finishNewParse({ status: "valid", value: "2026-10-23" });
+    await waitFor(() =>
+      expect(evaluateMock.mock.calls.at(-1)?.[1].variables).toEqual({
+        day: "2026-10-23",
+      })
+    );
+    finishOldParse({ status: "valid", value: "2026-01-01" });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(evaluateMock.mock.calls.at(-1)?.[1].variables).toEqual({
+      day: "2026-10-23",
+    });
+    expect(screen.getByLabelText("day")).toHaveValue("2026-10-23");
+  });
+
+  it("discards page history and restarts without a cursor when authority changes", async () => {
+    lintMock.mockResolvedValue({
+      ok: true,
+      value: { document: tableGraphDocument },
+    });
+    let finishRefresh!: (value: unknown) => void;
+    const result = (id: string, auth: string, text: string, next?: string) => ({
+      ...evaluation(id, auth, {}, ["rows"]),
+      query_results: {
+        rows: {
+          value: {
+            kind: "table",
+            columns: tableGraphDocument.spec.variables[0].returns.columns,
+            rows: [[{ kind: "string", value: text }]],
+          },
+          has_more: Boolean(next),
+          ...(next ? { next } : {}),
+        },
+      },
+    });
+    evaluateMock
+      .mockImplementationOnce((
+        _space: string,
+        request: { evaluation_id: string },
+      ) =>
+        Promise.resolve(
+          result(request.evaluation_id, "auth-1", "old page", "cursor"),
+        )
+      )
+      .mockImplementationOnce((
+        _space: string,
+        request: { evaluation_id: string },
+      ) =>
+        Promise.resolve(result(request.evaluation_id, "auth-2", "changed page"))
+      )
+      .mockImplementationOnce(() =>
+        new Promise((resolve) => {
+          finishRefresh = resolve;
+        })
+      );
+    render(() => <CompositionRevisionRoute />);
+    await screen.findByText("old page");
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(3));
+    expect(evaluateMock.mock.calls[2][1]).not.toHaveProperty("page");
+    expect(evaluateMock.mock.calls[2][1]).not.toHaveProperty(
+      "requested_queries",
+    );
+    expect(screen.queryByText("old page")).not.toBeInTheDocument();
+    finishRefresh(
+      result(
+        evaluateMock.mock.calls[2][1].evaluation_id,
+        "auth-2",
+        "fresh page",
+      ),
+    );
+    await screen.findByText("fresh page");
+    expect(screen.queryByRole("button", { name: "Previous", hidden: false }))
+      .not.toBeInTheDocument();
+    expect(screen.queryByText("old page")).not.toBeInTheDocument();
+  });
+
   it("renders the typed table result returned for its query variable", async () => {
     lintMock.mockResolvedValue({
       ok: true,
@@ -790,6 +903,49 @@ describe("Composition saved revision graph evaluation", () => {
     await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(3));
 
     expect(evaluateMock.mock.calls[2][1].requested_queries).toEqual(["rows"]);
+  });
+
+  it("does not retry a required-unset result without an evaluation identity", async () => {
+    evaluateMock
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        Promise.resolve({
+          ...evaluation(request.evaluation_id, "auth-1", {
+            rows: 1,
+            stable: 10,
+          }),
+        })
+      )
+      .mockImplementation((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        Promise.resolve({
+          evaluation_id: request.evaluation_id,
+          ok: false,
+          variable_values: {},
+          queries: [],
+          component_bindings: [],
+          dependencies: { variable_consumers: {} },
+          query_results: {},
+          computed_query_ids: [],
+          diagnostics: [{ code: "variable_missing", variable_id: "day" }],
+          query_diagnostics: [],
+        })
+      );
+    render(() => <CompositionRevisionRoute />);
+    await screen.findByText("10");
+
+    fireEvent.input(screen.getByLabelText("day"), {
+      target: { value: "" },
+    });
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(2));
+    expect(evaluateMock.mock.calls[1][1].unset_variables).toEqual(["day"]);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    expect(evaluateMock).toHaveBeenCalledTimes(2);
   });
 
   it("retries a partial failure when its evaluation identity changed", async () => {
