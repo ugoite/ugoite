@@ -64,6 +64,7 @@ vi.mock("~/lib/ugoite-client", async (importOriginal) => {
   const actual = await importOriginal<typeof UgoiteClient>();
   return {
     compositionFormQuerySql: actual.compositionFormQuerySql,
+    renameSqlDocumentParameter: actual.renameSqlDocumentParameter,
     authApi: { getSession: (...args: unknown[]) => authSessionMock(...args) },
     formApi: { list: (...args: unknown[]) => formsMock(...args) },
     sqlApi: {
@@ -377,6 +378,9 @@ describe("CompositionStudio graph surface", () => {
     renderStudio(renderedDraftWithTable());
     fireEvent.click(await screen.findByRole("tab", { name: "Variables" }));
     fireEvent.click(screen.getByRole("button", { name: "rows" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Run query" })).toBeEnabled()
+    );
     fireEvent.click(screen.getByRole("button", { name: "Run query" }));
     await waitFor(() =>
       expect(screen.getByTestId("query-preview-status")).toHaveTextContent(
@@ -451,6 +455,9 @@ describe("CompositionStudio graph surface", () => {
     ));
     fireEvent.click(await screen.findByRole("tab", { name: "Variables" }));
     fireEvent.click(screen.getByRole("button", { name: "rows" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Run query" })).toBeEnabled()
+    );
     fireEvent.click(screen.getByRole("button", { name: "Run query" }));
     await waitFor(() => expect(evaluateMock).toHaveBeenCalledOnce());
     setSpaceId("space-2");
@@ -841,6 +848,9 @@ describe("CompositionStudio graph surface", () => {
     renderStudio(draft);
     fireEvent.click(await screen.findByRole("tab", { name: "Variables" }));
     fireEvent.click(screen.getByRole("button", { name: "query_1" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Run query" })).toBeEnabled()
+    );
     fireEvent.click(screen.getByRole("button", { name: "Run query" }));
     await waitFor(() => expect(evaluateMock).toHaveBeenCalledOnce());
 
@@ -910,6 +920,9 @@ describe("CompositionStudio graph surface", () => {
     renderStudio(draft);
     fireEvent.click(await screen.findByRole("tab", { name: "Variables" }));
     fireEvent.click(screen.getByRole("button", { name: "query_1" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Run query" })).toBeEnabled()
+    );
     fireEvent.click(screen.getByRole("button", { name: "Run query" }));
     await waitFor(() => expect(evaluateMock).toHaveBeenCalledOnce());
 
@@ -953,6 +966,9 @@ describe("CompositionStudio graph surface", () => {
     renderStudio(draft);
     fireEvent.click(await screen.findByRole("tab", { name: "Variables" }));
     fireEvent.click(screen.getByRole("button", { name: "query_1" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Run query" })).toBeEnabled()
+    );
     fireEvent.click(screen.getByRole("button", { name: "Run query" }));
     await waitFor(() =>
       expect(screen.getByTestId("query-preview-status")).toHaveTextContent(
@@ -985,6 +1001,9 @@ describe("CompositionStudio graph surface", () => {
     renderStudio(draft);
     fireEvent.click(await screen.findByRole("tab", { name: "Variables" }));
     fireEvent.click(screen.getByRole("button", { name: "query_1" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Run query" })).toBeEnabled()
+    );
     fireEvent.click(screen.getByRole("button", { name: "Run query" }));
 
     await waitFor(() => expect(evaluateMock).toHaveBeenCalledOnce());

@@ -464,7 +464,7 @@ type NormalizedSqlDocument = {
   replacements: SqlParameterReference[];
 };
 
-async function normalizeSqlDocument(
+export async function normalizeSqlDocument(
   sql: string,
   existingVariables: SqlVariable[] = [],
 ): Promise<NormalizedSqlDocument> {

@@ -1,4 +1,12 @@
-import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import {
+  batch,
+  createEffect,
+  createResource,
+  createSignal,
+  For,
+  onCleanup,
+  Show,
+} from "solid-js";
 import { Portal } from "solid-js/web";
 import { IconButton } from "~/components/IconButton";
 import {
@@ -18,7 +26,8 @@ import {
 } from "~/lib/composition-variable-binding";
 import { SqlStructureToolbar } from "~/components/SqlStructureToolbar";
 import { buildSqlStructureContexts, type SqlSchema } from "~/lib/sql";
-import type { Form } from "~/lib/types";
+import type { Form, SqlVariable } from "~/lib/types";
+import { normalizeSqlDocument } from "~/lib/sql";
 import { t } from "~/lib/i18n";
 import { parseVariableGraphInput } from "~/lib/ugoite-client";
 
@@ -64,6 +73,16 @@ export interface CompositionVariableGraphWorkspaceProps {
     variableId: string,
     variables: readonly { name: string; type: CompositionSqlArgumentType }[],
   ) => boolean | void;
+  onVariableRenamed?: (oldId: string, newId: string) => void;
+  onArgumentUpdated?: (
+    id: string,
+    oldName: string,
+    argument: SqlVariable,
+  ) => boolean | void | Promise<boolean | void>;
+  onArgumentRemoved?: (
+    id: string,
+    name: string,
+  ) => boolean | void | Promise<boolean | void>;
   onEditValidityChange?: (
     variableId: string,
     valid: boolean | undefined,
@@ -293,8 +312,11 @@ export function CompositionVariableGraphWorkspace(
       if (wasPendingOrInvalid && hasRaw) {
         props.onEditValidityChange?.(newId, false);
       }
-      props.onDraftChange(next);
-      if (props.selectedVariableId === node.id) props.onSelect(raw.trim());
+      batch(() => {
+        props.onVariableRenamed?.(node.id, newId);
+        props.onDraftChange(next);
+        if (props.selectedVariableId === node.id) props.onSelect(raw.trim());
+      });
       if (hasRaw && (node.kind === "constant" || node.kind === "input")) {
         queueMicrotask(() =>
           parseLiteral(
@@ -644,13 +666,83 @@ export function CompositionVariableGraphWorkspace(
                   };
                   const declarations = () =>
                     props.parameterDeclarations?.[query().id] ?? [];
+                  const [sqlArguments] = createResource(
+                    () => ({
+                      sql: sql(),
+                      declarations: declarations().map((entry) => ({
+                        ...entry,
+                        description: "",
+                      })),
+                    }),
+                    async (source) =>
+                      await normalizeSqlDocument(
+                        source.sql,
+                        source.declarations,
+                      ),
+                  );
+                  const argumentError = () => {
+                    if (sqlArguments.loading || sqlArguments.error) {return t(
+                        "composition.queryFailed",
+                      );}
+                    if (sqlArguments()?.document.status !== "parsed") {
+                      return t(
+                        "composition.queryFailed",
+                      );
+                    }
+                    const referenced = sqlArguments()?.variables ?? [];
+                    const undeclared = referenced.find((argument) =>
+                      !declarations().some((entry) =>
+                        entry.name === argument.name
+                      )
+                    );
+                    if (undeclared) {
+                      return t("sqlPage.undeclaredArgument", {
+                        name: undeclared.name,
+                      });
+                    }
+                    if (
+                      declarations().some((argument) =>
+                        !referenced.some((entry) =>
+                          entry.name === argument.name
+                        )
+                      )
+                    ) return t("sqlPage.structure.argumentUnused");
+                    for (const argument of declarations()) {
+                      const binding = query().query.arguments.find((entry) =>
+                        entry.name === argument.name
+                      );
+                      const bound = props.draft.variables.find((entry) =>
+                        entry.id === binding?.variable
+                      );
+                      const type = bound?.kind === "query"
+                        ? bound.returns.kind === "scalar"
+                          ? bound.returns.value_type.scalar_type
+                          : undefined
+                        : bound?.value_type.scalar_type;
+                      if (type !== argument.type) {
+                        return t(
+                          "composition.chooseSqlArgumentVariable",
+                          { name: argument.name },
+                        );
+                      }
+                    }
+                    return undefined;
+                  };
+                  createEffect(() => {
+                    if (query().query.kind === "inline_sql") {
+                      props.onEditValidityChange?.(
+                        query().id,
+                        !argumentError(),
+                      );
+                    }
+                  });
                   const [actions, setActions] = createSignal<
                     SQLWorkspaceAction[]
                   >([]);
                   const structureContexts = () =>
                     buildSqlStructureContexts(
                       props.sqlForms ?? [],
-                      declarations().map((argument) => ({
+                      (sqlArguments()?.variables ?? []).map((argument) => ({
                         name: argument.name,
                         type: argument.type,
                       })),
@@ -681,7 +773,7 @@ export function CompositionVariableGraphWorkspace(
                         ]}
                         variables={[]}
                         onPreview={() => props.onRunQuery?.(query().id)}
-                        previewDisabled={!props.onRunQuery}
+                        previewDisabled={!props.onRunQuery || !!argumentError()}
                         preview={props.previewForQuery?.(query().id) ??
                           { status: "idle", isCurrent: false }}
                         onNext={() => props.onNextQuery?.(query().id)}
@@ -703,8 +795,34 @@ export function CompositionVariableGraphWorkspace(
                             query().query.arguments.map((argument) =>
                               argument.name
                             )}
+                          argumentDefinitions={() =>
+                            declarations().map((entry) => ({
+                              ...entry,
+                              description: "",
+                            }))}
+                          argumentDefaultsEnabled={false}
+                          onArgumentAdded={(argument) =>
+                            props.onVariablesAdded?.(query().id, [{
+                              name: argument.name,
+                              type: argument.type as CompositionSqlArgumentType,
+                            }])}
+                          onArgumentUpdated={(oldName, argument) =>
+                            props.onArgumentUpdated?.(
+                              query().id,
+                              oldName,
+                              argument,
+                            )}
+                          onArgumentRemoved={(name) =>
+                            props.onArgumentRemoved?.(query().id, name)}
+                          disabled={() =>
+                            sqlArguments.loading || !!sqlArguments.error}
                           onActionsChange={setActions}
                         />
+                      </Show>
+                      <Show when={argumentError()}>
+                        {(error) => (
+                          <p class="ui-text-danger" role="alert">{error()}</p>
+                        )}
                       </Show>
                       <Show when={declarations().length}>
                         <section

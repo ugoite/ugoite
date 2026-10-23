@@ -300,3 +300,63 @@ features:
                 criterion: REQ-COMP-009#criterion.exact-query-identities
                 covers: [FEAT-COMP-010#binding.sql-first-resolution-implementation/target.portable-query-sql]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Pinned Saved SQL source supports an explicit inline copy and explicit counts" } }
+
+          - id: shared-argument-rename
+            adapter: typescript
+            path: frontend/src/components/CompositionGraphArguments.test.tsx
+            selector: { kind: test, name: "renames through Rust while preserving bindings and comment lookalikes" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-uses-shared-workspace
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "renames through Rust while preserving bindings and comment lookalikes" } }
+
+          - id: shared-argument-type-binding
+            adapter: typescript
+            path: frontend/src/components/CompositionGraphArguments.test.tsx
+            selector: { kind: test, name: "disconnects an incompatible type and requires an explicit matching binding" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-uses-shared-workspace
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "disconnects an incompatible type and requires an explicit matching binding" } }
+
+          - id: shared-argument-removal
+            adapter: typescript
+            path: frontend/src/components/CompositionGraphArguments.test.tsx
+            selector: { kind: test, name: "removes a declaration only after its SQL use is removed and does not restore old Work" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-uses-shared-workspace
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "removes a declaration only after its SQL use is removed and does not restore old Work" } }
+
+          - id: shared-argument-stale-rename
+            adapter: typescript
+            path: frontend/src/components/CompositionGraphArguments.test.tsx
+            selector: { kind: test, name: "discards a rename if the SQL changes before Rust completes" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-uses-shared-workspace
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "discards a rename if the SQL changes before Rust completes" } }
+
+          - id: shared-argument-declaration-recovery
+            adapter: typescript
+            path: frontend/src/components/CompositionGraphArguments.test.tsx
+            selector: { kind: test, name: "declares a directly typed parameter without deleting it from SQL first" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-uses-shared-workspace
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: "declares a directly typed parameter without deleting it from SQL first" } }
+
+          - id: shared-argument-browser-persistence
+            adapter: typescript
+            path: e2e/composition-studio-journey.test.ts
+            selector: { kind: test, name: "Composition shared Arguments rename and type editing persist explicit bindings" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-uses-shared-workspace
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Composition shared Arguments rename and type editing persist explicit bindings" } }

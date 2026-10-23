@@ -1,4 +1,4 @@
-import { createEffect, createSignal, For, Show } from "solid-js";
+import { batch, createEffect, createSignal, For, Show } from "solid-js";
 import { CompositionGraphDesignCanvas } from "~/components/CompositionGraphDesignCanvas";
 import { CompositionVariableGraphWorkspace } from "~/components/CompositionVariableGraphWorkspace";
 import {
@@ -17,7 +17,9 @@ import type {
   SQLWorkspacePreview,
 } from "~/components/SQLWorkspace";
 import type { SqlSchema } from "~/lib/sql";
-import type { Form } from "~/lib/types";
+import type { Form, SqlVariable } from "~/lib/types";
+import { normalizeSqlVariables } from "~/lib/sql";
+import { renameSqlDocumentParameter } from "~/lib/ugoite-client";
 import { t } from "~/lib/i18n";
 
 export interface CompositionGraphStudioProps {
@@ -116,6 +118,130 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
         }),
       ]),
     );
+
+  const updateArgumentDefinition = async (
+    id: string,
+    oldName: string,
+    argument: SqlVariable,
+  ) => {
+    if (
+      !argumentTypes.has(argument.type as CompositionSqlArgumentType) ||
+      argument.default !== undefined
+    ) return false;
+    const draft = props.draft;
+    const scope = props.session.session_id;
+    const node = draft.variables.find((node) =>
+      node.id === id && node.kind === "query"
+    );
+    if (
+      !node || node.kind !== "query" || node.query.kind !== "inline_sql" ||
+      !node.query.arguments.some((entry) => entry.name === oldName) ||
+      node.query.arguments.some((entry) =>
+        entry.name === argument.name && entry.name !== oldName
+      )
+    ) return false;
+    let sql = node.query.sql;
+    if (oldName !== argument.name) {
+      try {
+        sql = (await renameSqlDocumentParameter(
+          (await normalizeSqlVariables(sql)).sql,
+          oldName,
+          argument.name,
+        )).source;
+      } catch {
+        return false;
+      }
+    }
+    if (
+      props.draft !== draft || props.session.session_id !== scope ||
+      selectedVariableId() !== id
+    ) {
+      return false;
+    }
+    const args = node.query.arguments.map((entry) => {
+      if (entry.name !== oldName) return entry;
+      const bound = draft.variables.find((variable) =>
+        variable.id === entry.variable
+      );
+      return {
+        name: argument.name,
+        variable: bound && typeOfVariable(bound) === argument.type
+          ? entry.variable
+          : "",
+      };
+    });
+    batch(() => {
+      setUnboundArgumentTypes((current) => {
+        const next = { ...current[id] };
+        delete next[oldName];
+        return {
+          ...current,
+          [id]: {
+            ...next,
+            [argument.name]: argument.type as CompositionSqlArgumentType,
+          },
+        };
+      });
+      props.onDraftChange({
+        ...draft,
+        variables: draft.variables.map((entry) =>
+          entry.id === id
+            ? { ...node, query: { ...node.query, sql, arguments: args } }
+            : entry
+        ),
+      });
+    });
+    return true;
+  };
+  const removeArgumentDefinition = async (id: string, name: string) => {
+    const draft = props.draft;
+    const scope = props.session.session_id;
+    const node = draft.variables.find((node) =>
+      node.id === id && node.kind === "query"
+    );
+    if (!node || node.kind !== "query" || node.query.kind !== "inline_sql") {
+      return false;
+    }
+    try {
+      if (
+        (await normalizeSqlVariables(node.query.sql)).variables.some((entry) =>
+          entry.name === name
+        )
+      ) return false;
+    } catch {
+      return false;
+    }
+    if (
+      props.draft !== draft || props.session.session_id !== scope ||
+      selectedVariableId() !== id
+    ) {
+      return false;
+    }
+    batch(() => {
+      setUnboundArgumentTypes((current) => {
+        const next = { ...current[id] };
+        delete next[name];
+        return { ...current, [id]: next };
+      });
+      props.onDraftChange({
+        ...draft,
+        variables: draft.variables.map((entry) =>
+          entry.id === id
+            ? {
+              ...node,
+              query: {
+                ...node.query,
+                arguments: node.query.arguments.filter((entry) =>
+                  entry.name !== name
+                ),
+              },
+            }
+            : entry
+        ),
+      });
+    });
+    return true;
+  };
 
   const createDesignInput = () => {
     const variableId = (() => {
@@ -224,6 +350,11 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
           onSelect={setSelectedVariableId}
           onDraftChange={props.onDraftChange}
           onRemove={(id) => {
+            setUnboundArgumentTypes((current) =>
+              Object.fromEntries(
+                Object.entries(current).filter(([key]) => key !== id),
+              )
+            );
             const next = {
               ...props.draft,
               variables: props.draft.variables.filter((node) => node.id !== id),
@@ -235,6 +366,16 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
           sqlForms={props.sqlForms}
           sqlBodies={props.sqlBodies}
           parameterDeclarations={parameterDeclarations()}
+          onVariableRenamed={(oldId, newId) => {
+            setUnboundArgumentTypes((current) => {
+              const next = { ...current };
+              delete next[oldId];
+              if (current[oldId]) next[newId] = current[oldId];
+              return next;
+            });
+          }}
+          onArgumentUpdated={updateArgumentDefinition}
+          onArgumentRemoved={removeArgumentDefinition}
           onVariablesAdded={(variableId, added) => {
             const query = props.draft.variables.find((node) =>
               node.id === variableId && node.kind === "query"
