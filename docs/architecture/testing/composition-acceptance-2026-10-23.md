@@ -181,8 +181,13 @@ panels announce local state. Narrow tables keep readable cells inside their own
 horizontal scroll region. The updated three-case browser run passed at
 integrated `99c895fee5fd2f3ddff2b274e228f5661b774098`, and full frontend
 coverage again passed **166 files / 1,399 tests** with protocol coverage at
-**100%**. Subsequent focus and parser corrections have focused mock tests (**24
-passed**) and facet tests.
+**100%**. The final rebuilt product, including focus, mobile Inspector and
+parser corrections, also passed **3 tests, 0 failures, 0 skipped** at integrated
+`83e8171b06e094ff3f975c4c01e5dca202140e06`. The final mock suite passed **24
+tests**; facet verification passed **7 tests**. Visual inspection at 390px
+confirmed the Inspector follows the table and does not cover result rows. The
+tools task passed **172 tests, 0 failed, 1 ignored**; the ignored test is not
+counted as evidence.
 
 The audit's two YAML contract links now point to their repository sources; the
 published docsite navigation and internal-link checks passed **2 tests, 0
