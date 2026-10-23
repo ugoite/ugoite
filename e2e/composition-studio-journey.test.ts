@@ -796,7 +796,7 @@ test.describe("Composition Studio Journey", () => {
         { timeout: 30_000 },
       );
       await expect(
-        page.getByRole("heading", { name: "total", exact: true }),
+        page.getByRole("heading", { name: totalVariable, exact: true }),
       ).toBeVisible({ timeout: 30_000 });
       await page.getByRole("button", {
         name: "Restore this revision",
@@ -820,7 +820,7 @@ test.describe("Composition Studio Journey", () => {
       expect(restored.revisionId).not.toBe(editedRevisionId);
       await expectHistoryTotal(request, seed.spaceId, compositionId, 3);
       await expect(
-        page.getByRole("heading", { name: "total", exact: true }),
+        page.getByRole("heading", { name: totalVariable, exact: true }),
       ).toBeVisible({ timeout: 30_000 });
       await expect(
         page.getByText("Total spent", { exact: true }),
@@ -920,7 +920,12 @@ test.describe("Composition Studio Journey", () => {
       });
       await expect(designTable).toContainText(seed.purposes[0]);
       await expect(designTable).toContainText(seed.purposes[1]);
-      await expect(page.getByLabel(`${formSlug}_sum_amount`, { exact: true }))
+      await expect(
+        page.getByRole("region", {
+          name: `${formSlug}_sum_amount`,
+          exact: true,
+        }),
+      )
         .toContainText("50");
       await page.getByRole("button", {
         name: `metric, ${formSlug}_sum_amount`,
@@ -955,7 +960,12 @@ test.describe("Composition Studio Journey", () => {
       await expect(
         page.getByRole("table", { name: `${formSlug}_rows results` }),
       ).toContainText(seed.purposes[0]);
-      await expect(page.getByLabel(`${formSlug}_sum_amount`, { exact: true }))
+      await expect(
+        page.getByRole("region", {
+          name: `${formSlug}_sum_amount`,
+          exact: true,
+        }),
+      )
         .toContainText("50");
       const saved = revisionFromUrl(page.url());
       const response = await request.get(
