@@ -905,6 +905,49 @@ describe("Composition saved revision graph evaluation", () => {
     expect(evaluateMock.mock.calls[2][1].requested_queries).toEqual(["rows"]);
   });
 
+  it("does not retry a required-unset result without an evaluation identity", async () => {
+    evaluateMock
+      .mockImplementationOnce((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        Promise.resolve({
+          ...evaluation(request.evaluation_id, "auth-1", {
+            rows: 1,
+            stable: 10,
+          }),
+        })
+      )
+      .mockImplementation((
+        _spaceId: string,
+        request: { evaluation_id: string },
+      ) =>
+        Promise.resolve({
+          evaluation_id: request.evaluation_id,
+          ok: false,
+          variable_values: {},
+          queries: [],
+          component_bindings: [],
+          dependencies: { variable_consumers: {} },
+          query_results: {},
+          computed_query_ids: [],
+          diagnostics: [{ code: "variable_missing", variable_id: "day" }],
+          query_diagnostics: [],
+        })
+      );
+    render(() => <CompositionRevisionRoute />);
+    await screen.findByText("10");
+
+    fireEvent.input(screen.getByLabelText("day"), {
+      target: { value: "" },
+    });
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(2));
+    expect(evaluateMock.mock.calls[1][1].unset_variables).toEqual(["day"]);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    expect(evaluateMock).toHaveBeenCalledTimes(2);
+  });
+
   it("retries a partial failure when its evaluation identity changed", async () => {
     evaluateMock
       .mockImplementationOnce((

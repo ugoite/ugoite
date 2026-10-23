@@ -248,7 +248,7 @@ export default function CompositionRevisionRoute() {
       let reusablePrevious = previous;
       const responseIdentity = compositionEvaluationIdentity(response);
       if (
-        previous &&
+        previous && responseIdentity &&
         !sameCompositionEvaluationIdentity(
           previousIdentity,
           responseIdentity,
