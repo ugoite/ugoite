@@ -155,6 +155,7 @@ export default function CompositionRevisionRoute() {
   });
   const parseGenerations = new Map<string, number>();
   let evaluationGeneration = 0;
+  let parseEpoch = 0;
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   let activeEvaluationId = "";
   let lastEvaluatedInputs:
@@ -204,7 +205,7 @@ export default function CompositionRevisionRoute() {
     const values = currentInputSnapshot();
     const previous = evaluation().response;
     const previousIdentity = compositionEvaluationIdentity(previous);
-    const requestedQueries = !page && previous && lastEvaluatedInputs &&
+    let requestedQueries = !page && previous && lastEvaluatedInputs &&
         previousIdentity
       ? [
         ...new Set([
@@ -247,8 +248,7 @@ export default function CompositionRevisionRoute() {
       let reusablePrevious = previous;
       const responseIdentity = compositionEvaluationIdentity(response);
       if (
-        !page && requestedQueries !== undefined && previous &&
-        responseIdentity &&
+        previous &&
         !sameCompositionEvaluationIdentity(
           previousIdentity,
           responseIdentity,
@@ -257,6 +257,9 @@ export default function CompositionRevisionRoute() {
         // ACL, publication, or revision changed. Discard every retained value
         // and ask Core for the entire graph under the new authorization view.
         reusablePrevious = undefined;
+        page = undefined;
+        requestedQueries = undefined;
+        setTablePages({});
         evaluationId = crypto.randomUUID();
         activeEvaluationId = evaluationId;
         setEvaluation({ status: "loading", evaluationId });
@@ -331,6 +334,8 @@ export default function CompositionRevisionRoute() {
       if (routeScope !== routeKey() || generation !== evaluationGeneration) {
         return;
       }
+      setTablePages({});
+      lastEvaluatedInputs = undefined;
       setEvaluation({
         status: "error",
         evaluationId,
@@ -374,10 +379,15 @@ export default function CompositionRevisionRoute() {
       });
     }
     setInputStates((current) => ({ ...current, [variableId]: "pending" }));
+    const routeScope = routeKey();
+    const epoch = parseEpoch;
+    const isCurrent = () =>
+      routeScope === routeKey() && epoch === parseEpoch &&
+      parseGenerations.get(variableId) === generation;
     const generation = (parseGenerations.get(variableId) ?? 0) + 1;
     parseGenerations.set(variableId, generation);
     void parseVariableGraphInput(node.value_type, raw).then((parsed) => {
-      if (parseGenerations.get(variableId) !== generation) return;
+      if (!isCurrent()) return;
       if (parsed.status === "valid") {
         setInputValues((current) => ({
           ...current,
@@ -410,7 +420,7 @@ export default function CompositionRevisionRoute() {
       }
       debounceTimer = setTimeout(() => void evaluate(), 250);
     }).catch(() => {
-      if (parseGenerations.get(variableId) !== generation) return;
+      if (!isCurrent()) return;
       setInputStates((current) => ({ ...current, [variableId]: "invalid" }));
     });
   };
@@ -430,6 +440,7 @@ export default function CompositionRevisionRoute() {
       setInputStates({});
       setBlockedQueryIds(new Set());
       setTablePages({});
+      parseEpoch++;
       parseGenerations.clear();
       setEvaluation({ status: "loading" });
       return;
@@ -449,12 +460,14 @@ export default function CompositionRevisionRoute() {
     setInputStates({});
     setBlockedQueryIds(new Set());
     setTablePages({});
+    parseEpoch++;
     parseGenerations.clear();
     setEvaluation({ status: "loading" });
     lastEvaluatedInputs = undefined;
     void untrack(() => evaluate());
   });
   onCleanup(() => {
+    parseEpoch++;
     if (debounceTimer) clearTimeout(debounceTimer);
     evaluationGeneration++;
   });
