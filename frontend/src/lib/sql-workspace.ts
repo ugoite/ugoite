@@ -51,6 +51,8 @@ interface SqlWorkspaceControllerOptions {
   spaceId: () => string;
   sql: () => string;
   variables: () => readonly SqlWorkspaceVariableDefinition[];
+  /** Invalid declarations remain editable but cannot plan or execute. */
+  definitionError?: () => string | undefined;
   savedSql?: () => { id: string; revisionId: string } | undefined;
   /** Draft saves resolve current Form names; exact revision previews retain bindings. */
   planSavedSql?: () => { id: string; revisionId: string } | undefined;
@@ -168,14 +170,16 @@ export function createSqlWorkspaceController(
     const values = parameterValues();
     const sql = options.sql().trim();
     const savedSql = options.savedSql?.();
+    const definitionError = options.definitionError?.();
     const identity = JSON.stringify({
       spaceId: options.spaceId(),
       sql,
       variables,
       values,
       savedSql,
+      definitionError,
     });
-    return { identity, sql, variables, values, savedSql };
+    return { identity, sql, variables, values, savedSql, definitionError };
   });
 
   const planParts = createMemo(
@@ -193,6 +197,7 @@ export function createSqlWorkspaceController(
         variables: parts.variables,
         values,
         savedSql,
+        definitionError: parts.definitionError,
       });
       return { ...parts, values, savedSql, identity };
     },
@@ -346,6 +351,7 @@ export function createSqlWorkspaceController(
     continuation?: string,
     parts = requestParts(),
   ): BuiltRequest => {
+    if (parts.definitionError) throw new Error(parts.definitionError);
     const parameters: Record<string, unknown> = {};
     const parameterTypes: Record<string, string> = {};
     for (const variable of parts.variables) {

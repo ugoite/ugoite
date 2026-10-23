@@ -101,10 +101,30 @@ export default function SpaceQueryCreateRoute() {
       required: variable.default === undefined,
     }));
   });
+  const definitionError = createMemo(() => {
+    if (normalizationPending()) return t("common.loading");
+    const undeclared = undeclaredArgument();
+    if (undeclared) {
+      return t("sqlPage.undeclaredArgument", { name: undeclared });
+    }
+    const referenced = new Set(variables().map((variable) => variable.name));
+    const unused = argumentDefinitions().find((variable) =>
+      !referenced.has(variable.name)
+    );
+    if (unused) return t("sqlPage.unusedArgument", { name: unused.name });
+    const defaults = applySqlVariableDefaultDrafts(
+      argumentDefinitions(),
+      defaultDrafts(),
+    );
+    return defaults.invalid
+      ? t("sqlPage.defaultInvalid", defaults.invalid)
+      : undefined;
+  });
   const workspace = createSqlWorkspaceController({
     spaceId,
     sql: normalizedSql,
     variables: workspaceVariables,
+    definitionError,
     planParameters: "definition",
     planSavedSql: () => undefined,
   });
@@ -316,7 +336,8 @@ export default function SpaceQueryCreateRoute() {
           readOnly={isSaving()}
           onDiagnostics={setDiagnostics}
           planner={workspace.plan()}
-          previewDisabled={isSaving() || normalizationPending() ||
+          previewDisabled={isSaving() || Boolean(definitionError()) ||
+            normalizationPending() ||
             undeclaredArgument() !== null ||
             !normalizedSql().trim()}
           onPreview={workspace.run}

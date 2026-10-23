@@ -145,6 +145,24 @@ export default function SpaceSqlDetailRoute() {
       defaultDrafts(),
     );
   });
+  const definitionError = createMemo(() => {
+    if (normalizationPending()) return t("common.loading");
+    const undeclared = undeclaredArgument();
+    if (undeclared) {
+      return t("sqlPage.undeclaredArgument", { name: undeclared });
+    }
+    const referenced = new Set(
+      normalized().variables.map((variable) => variable.name),
+    );
+    const unused = savedVariables().find((variable) =>
+      !referenced.has(variable.name)
+    );
+    if (unused) return t("sqlPage.unusedArgument", { name: unused.name });
+    const defaults = declaredVariablesWithDefaults();
+    return defaults.invalid
+      ? t("sqlPage.defaultInvalid", defaults.invalid)
+      : undefined;
+  });
   const workspaceVariables = createMemo(() => {
     const values = variablesWithDefaults();
     const declared = new Set(savedVariables().map((variable) => variable.name));
@@ -187,6 +205,7 @@ export default function SpaceSqlDetailRoute() {
     spaceId,
     sql: () => normalized().sql,
     variables: workspaceVariables,
+    definitionError,
     planParameters: "definition",
     planSavedSql: () => undefined,
     savedSql: () => {
@@ -564,7 +583,8 @@ export default function SpaceSqlDetailRoute() {
                   parametersReadOnly={data().kind !== "user-query" ||
                     busy() !== null}
                   planner={workspace.plan()}
-                  previewDisabled={data().kind !== "user-query" ||
+                  previewDisabled={Boolean(definitionError()) ||
+                    data().kind !== "user-query" ||
                     busy() !== null || normalizationPending() ||
                     undeclaredArgument() !== null ||
                     !normalized().sql.trim()}

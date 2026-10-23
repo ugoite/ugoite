@@ -658,7 +658,7 @@ jobs:
 
       - name: Install browser dependencies
         id: browser-deps
-        run: scripts/measure-step.sh browser-deps deno task e2e:install:browsers
+        run: scripts/measure-step.sh browser-deps deno task e2e:install:browsers:ci
 
       - name: Start artifact transfer measurement
         id: transfer-start
@@ -777,7 +777,7 @@ jobs:
           restore-keys: playwright-v1-${{ runner.os }}-${{ runner.arch }}-
       - name: Install browser dependencies
         id: browser-deps
-        run: scripts/measure-step.sh browser-deps deno task e2e:install:browsers
+        run: scripts/measure-step.sh browser-deps deno task e2e:install:browsers:ci
       - name: Start artifact transfer measurement
         id: transfer-start
         run: echo "epoch=$(date +%s)" >>"$GITHUB_OUTPUT"
@@ -880,7 +880,7 @@ jobs:
           restore-keys: playwright-v1-${{ runner.os }}-${{ runner.arch }}-
       - name: Install browser dependencies
         id: browser-deps
-        run: scripts/measure-step.sh browser-deps deno task e2e:install:browsers
+        run: scripts/measure-step.sh browser-deps deno task e2e:install:browsers:ci
       - name: Start artifact transfer measurement
         id: transfer-start
         run: echo "epoch=$(date +%s)" >>"$GITHUB_OUTPUT"
@@ -950,6 +950,8 @@ jobs:
     if: needs.impact.result == 'success' && needs.impact.outputs.plan_docsite_nav == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      UGOITE_SKIP_PLAYWRIGHT_DEPS: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -988,6 +990,10 @@ jobs:
           key: playwright-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('e2e/deno.json', 'deno.lock') }}
           restore-keys: |
             playwright-v1-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Install Playwright browser dependencies
+        id: browser-deps
+        run: scripts/measure-step.sh browser-deps deno task e2e:install:browsers:ci
 
       - name: Run docsite navigation and link checks
         id: docsite-nav
@@ -1176,7 +1182,7 @@ jobs:
 
       - name: Install Playwright browser dependencies
         id: browser-deps
-        run: scripts/measure-step.sh browser-deps deno task e2e:install:browsers
+        run: scripts/measure-step.sh browser-deps deno task e2e:install:browsers:ci
 
       - name: Start artifact transfer measurement
         id: transfer-start

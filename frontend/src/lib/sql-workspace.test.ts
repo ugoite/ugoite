@@ -33,6 +33,52 @@ describe("SQL workspace planning", () => {
     countMock.mockReset();
   });
 
+  it("invalidates retained results and rejects plan, run, and count for an invalid definition", async () => {
+    vi.useFakeTimers();
+    planMock.mockResolvedValue({ result_schema: [] });
+    queryMock.mockResolvedValue({
+      columns: ["value"],
+      column_types: ["integer"],
+      rows: [[1]],
+      has_more: false,
+    });
+    let controller!: ReturnType<typeof createSqlWorkspaceController>;
+    let updateError!: (value: string | undefined) => void;
+    const disposeRoot = createRoot((dispose) => {
+      const [error, setError] = createSignal<string>();
+      updateError = setError;
+      controller = createSqlWorkspaceController({
+        spaceId: () => "space",
+        sql: () => "SELECT 1",
+        variables: () => [],
+        definitionError: error,
+      });
+      return dispose;
+    });
+    await vi.advanceTimersByTimeAsync(350);
+    controller.run();
+    await vi.waitFor(() => expect(controller.preview().status).toBe("success"));
+    expect(queryMock).toHaveBeenCalledOnce();
+    updateError("Invalid integer default");
+    await vi.advanceTimersByTimeAsync(350);
+    expect(controller.preview().page).toBeUndefined();
+    expect(controller.plan()).toMatchObject({
+      status: "error",
+      isCurrent: true,
+      error: expect.stringContaining("Invalid integer default"),
+    });
+    controller.run();
+    await controller.count();
+    expect(queryMock).toHaveBeenCalledOnce();
+    expect(countMock).not.toHaveBeenCalled();
+    expect(planMock).toHaveBeenCalledOnce();
+    updateError(undefined);
+    await vi.advanceTimersByTimeAsync(350);
+    controller.run();
+    await vi.waitFor(() => expect(queryMock).toHaveBeenCalledTimes(2));
+    disposeRoot();
+  });
+
   it("debounces planning and sends typed nulls for declared arguments", async () => {
     vi.useFakeTimers();
     planMock.mockResolvedValue({ result_schema: [] });

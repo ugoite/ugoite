@@ -25,6 +25,7 @@
     "docsite:coverage": "deno task --cwd docsite coverage",
     "docsite:e2e:navigation": "deno task --cwd e2e docsite:navigation",
     "e2e:install:browsers": "deno task --cwd e2e install:browsers",
+    "e2e:install:browsers:ci": "deno task --cwd e2e install:browsers:ci",
     "e2e:smoke": "bash e2e/scripts/run-e2e-parity.sh smoke",
     "e2e:composition-metric": "bash e2e/scripts/run-e2e-parity.sh composition-metric",
     "e2e:composition-source-acl-isolation": "bash e2e/scripts/run-e2e-parity.sh composition-source-acl-isolation",

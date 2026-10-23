@@ -512,15 +512,11 @@ describe("/spaces/:space_id/sql/new", () => {
       within(dialog).getAllByRole("button", { name: "Close" }).slice(-1)[0],
     );
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
+      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled()
     );
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    expect(
-      await screen.findByText(
-        "Argument page_size must be referenced before saving.",
-      ),
-    ).toBeInTheDocument();
     expect(sqlCreateMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Run Query" })).toBeDisabled();
+    expect(sqlQueryMock).not.toHaveBeenCalled();
 
     fireEvent.input(editor, { target: { value: "SELECT $page_size" } });
     await waitFor(() =>
