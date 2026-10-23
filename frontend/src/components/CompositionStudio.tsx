@@ -453,7 +453,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
           }
           : {}),
         variables: {},
-        ...(!cursor ? { requested_queries: [variableId] } : {}),
+        requested_queries: [variableId],
         ...(cursor ? { page: { variable_id: variableId, cursor } } : {}),
       }, controller.signal);
       if (

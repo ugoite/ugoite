@@ -396,6 +396,8 @@ describe("CompositionStudio graph surface", () => {
       variable_id: "rows",
       cursor: "next-page",
     });
+    // Paging one Workspace query must not execute unrelated graph branches.
+    expect(evaluateMock.mock.calls[1][1].requested_queries).toEqual(["rows"]);
     fireEvent.click(
       screen.getByRole("button", { name: "Previous query page" }),
     );
