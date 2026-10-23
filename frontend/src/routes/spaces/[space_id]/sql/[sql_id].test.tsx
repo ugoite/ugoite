@@ -683,6 +683,39 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     update.mockRestore();
   });
 
+  it("blocks preview and clears results for an invalid declared default until repaired", async () => {
+    seedSqlEntry("default", {
+      id: "saved-query",
+      name: "Typed default",
+      kind: "user-query",
+      sql: "SELECT $count",
+      variables: [{
+        type: "integer",
+        name: "count",
+        default: 12,
+        description: "",
+      }],
+      created_at: "2025-03-01T00:00:00Z",
+      updated_at: "2025-03-02T00:00:00Z",
+      revision_id: "rev-1",
+    });
+    const query = vi.spyOn(sqlApi, "query");
+    render(() => <SpaceSqlDetailRoute />);
+    const preview = await screen.findByRole("button", {
+      name: "Run Query",
+    });
+    await waitFor(() => expect(preview).toBeEnabled());
+    const field = screen.getByRole("textbox", { name: "Default for count" });
+    fireEvent.input(field, { target: { value: "abc" } });
+    await waitFor(() => expect(preview).toBeDisabled());
+    fireEvent.click(preview);
+    expect(query).not.toHaveBeenCalled();
+    expect(field).toHaveValue("abc");
+    fireEvent.input(field, { target: { value: "24" } });
+    await waitFor(() => expect(preview).toBeEnabled());
+    query.mockRestore();
+  });
+
   it("blocks saving a declared SQL argument while it is unused", async () => {
     seedSqlEntry("default", {
       id: "saved-query",
@@ -705,15 +738,11 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     expect(await screen.findByText("Argument is not referenced in SQL."))
       .toBeInTheDocument();
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
+      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled()
     );
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    expect(
-      await screen.findByText(
-        "Argument unused must be referenced before saving.",
-      ),
-    ).toBeInTheDocument();
     expect(update).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Run Query" }))
+      .toBeDisabled();
     update.mockRestore();
   });
 
