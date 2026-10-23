@@ -156,6 +156,14 @@ results do not stand in for the unresolved broad or device gates.
 
 All four corrective branches also merged together locally without conflicts. The
 combined frontend gate passed **166 files / 1,399 tests**, with **100%**
-protocol statements, branches, functions and lines. Repository checks,
-formatting and native/WASM Composition parity passed. Hosted pull-request CI
-remains a separate gate and is not represented by these local results.
+protocol statements, branches, functions and lines. The individual OpenAPI,
+operation registry, architecture, Space compatibility, release authority,
+current-stack, supported-contract and legacy-auth checks passed, as did
+formatting and native/WASM Composition parity. The aggregate
+`mise run check:repo` **failed** in Mitase with unresolved verification
+artifacts and readiness errors. A direct repeat in the primary checkout
+reproduced 3,205 errors; the unchanged baseline passed `mise run mitase:check`
+with zero errors in a clean worktree. This discrepancy is tracked in
+[#4596](https://github.com/ugoite/ugoite/issues/4596). The aggregate repository
+gate is not reported as passing. Hosted pull-request CI remains a separate gate
+and is not represented by these local results.
