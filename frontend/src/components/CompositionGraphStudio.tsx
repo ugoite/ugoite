@@ -90,6 +90,7 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
   const [unboundArgumentTypes, setUnboundArgumentTypes] = createSignal<
     Record<string, Record<string, CompositionSqlArgumentType>>
   >({});
+  let variablePanel: HTMLElement | undefined;
   let sessionId = props.session.session_id;
   createEffect(() => {
     const next = props.session.session_id;
@@ -208,10 +209,15 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
           onEditVariable={(id) => {
             setSelectedVariableId(id);
             setMode("variables");
+            queueMicrotask(() =>
+              variablePanel?.querySelector<HTMLInputElement>(
+                ".compositionVariableName",
+              )?.focus()
+            );
           }}
         />
       </section>
-      <section hidden={mode() !== "variables"}>
+      <section ref={variablePanel} hidden={mode() !== "variables"}>
         <CompositionVariableGraphWorkspace
           draft={props.draft}
           selectedVariableId={selectedVariableId()}

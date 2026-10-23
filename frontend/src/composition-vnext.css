@@ -383,13 +383,8 @@
     grid-template-columns: minmax(0, 1fr);
   }
   .compositionGraphInspector {
-    position: sticky;
-    top: auto;
-    bottom: 4.5rem;
-    max-height: 45dvh;
-    overflow-y: auto;
+    position: static;
     background: var(--ui-surface-1);
-    box-shadow: var(--ui-shadow-md);
     border-top: 1px solid var(--ui-border);
     border-left: 0;
   }

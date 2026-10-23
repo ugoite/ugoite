@@ -515,6 +515,15 @@ describe("CompositionStudio graph surface", () => {
       "aria-selected",
       "true",
     );
+    fireEvent.click(screen.getByRole("button", { name: "input, input_1" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "input_1", exact: true }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Variable ID" }))
+        .toHaveFocus()
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Design" }));
     const saveCall = screen.getByRole("button", { name: "Save" });
     expect(saveCall).toBeEnabled();
     fireEvent.click(saveCall);
