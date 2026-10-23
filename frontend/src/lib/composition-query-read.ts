@@ -22,8 +22,8 @@ export function compositionQueryCountRequest(
   ) {
     throw new Error("A current validated table query is required");
   }
-  const parameters: Record<string, unknown> = {};
-  const parameter_types: Record<string, string> = {};
+  const parameters: Record<string, unknown> = Object.create(null);
+  const parameter_types: Record<string, string> = Object.create(null);
   for (const argument of node.query.arguments) {
     const variable = draft.variables.find((entry) =>
       entry.id === argument.variable

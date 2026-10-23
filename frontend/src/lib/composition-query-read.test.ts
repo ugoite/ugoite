@@ -102,6 +102,43 @@ describe("Composition explicit query count", () => {
     );
   });
 
+  it("preserves prototype-shaped SQL parameter names across JSON transport", () => {
+    // Deno omits this legacy setter, while browsers retain it.
+    const original = Object.getOwnPropertyDescriptor(
+      Object.prototype,
+      "__proto__",
+    );
+    if (!original) {
+      Object.defineProperty(Object.prototype, "__proto__", {
+        configurable: true,
+        set(this: object, value: unknown) {
+          if (
+            value === null || typeof value === "object" ||
+            typeof value === "function"
+          ) {
+            Object.setPrototypeOf(this, value);
+          }
+        },
+      });
+    }
+    try {
+      const { draft, response } = fixture();
+      const node = draft.variables[2];
+      if (node.kind !== "query") throw new Error("query fixture");
+      node.query.arguments = [{ name: "__proto__", variable: "floor" }];
+      response.queries[0].portable_sql = "SELECT $__proto__";
+      const wire = JSON.parse(JSON.stringify(
+        compositionQueryCountRequest(draft, response, "rows"),
+      ));
+      expect(Object.hasOwn(wire.parameters, "__proto__")).toBe(true);
+      expect(wire.parameters["__proto__"]).toBeNull();
+      expect(Object.hasOwn(wire.parameter_types, "__proto__")).toBe(true);
+      expect(wire.parameter_types["__proto__"]).toBe("integer");
+    } finally {
+      if (!original) Reflect.deleteProperty(Object.prototype, "__proto__");
+    }
+  });
+
   it("refuses a missing result or an unvalidated scalar dependency", () => {
     const { draft, response } = fixture();
     delete response.query_results.floor;
