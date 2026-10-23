@@ -22,12 +22,12 @@ use variable_binding::{compile_variable_graph_bindings, VariableGraphComponentBi
 
 pub use variable_graph::{
     compile_variable_graph, validate_variable_graph_result, variable_graph_dependency_order,
-    CompiledVariableGraph, VariableGraph, VariableGraphArgumentBinding, VariableGraphColumn,
-    VariableGraphDiagnostic, VariableGraphDiagnosticCode, VariableGraphFormBinding,
-    VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind, VariableGraphQuery,
-    VariableGraphQueryDefinition, VariableGraphResultDiagnostic, VariableGraphResultDiagnosticCode,
-    VariableGraphResultType, VariableGraphScalarDescriptor, VariableGraphScalarType,
-    VariableGraphValidatedResult,
+    variable_graph_literal_matches, CompiledVariableGraph, VariableGraph,
+    VariableGraphArgumentBinding, VariableGraphColumn, VariableGraphDiagnostic,
+    VariableGraphDiagnosticCode, VariableGraphFormBinding, VariableGraphLiteral, VariableGraphNode,
+    VariableGraphNodeKind, VariableGraphQuery, VariableGraphQueryDefinition,
+    VariableGraphResultDiagnostic, VariableGraphResultDiagnosticCode, VariableGraphResultType,
+    VariableGraphScalarDescriptor, VariableGraphScalarType, VariableGraphValidatedResult,
 };
 pub use variable_graph_input::{
     parse_variable_graph_input, resolve_variable_graph_inputs, ResolvedVariableGraphInputs,

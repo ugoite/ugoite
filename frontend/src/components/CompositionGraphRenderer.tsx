@@ -135,7 +135,18 @@ export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
                       const blocked = () =>
                         Boolean(
                           variableId() &&
-                            props.blockedQueryIds.has(variableId()!),
+                            (props.blockedQueryIds.has(variableId()!) ||
+                              entry().kind !== "input" &&
+                                node()?.kind === "input" &&
+                                !!props.inputStates[variableId()!] &&
+                                (props.inputStates[variableId()!] !==
+                                    "pending" ||
+                                  (node() as Extract<
+                                      CompositionGraphDraft["variables"][
+                                        number
+                                      ],
+                                      { kind: "input" }
+                                    >).value_type.scalar_type !== "string")),
                         );
                       const error = () =>
                         variableId() && !blocked()

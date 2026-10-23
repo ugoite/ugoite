@@ -150,7 +150,12 @@ describe("Composition Design Work evaluation", () => {
     );
     state.onInput("minimum", "bad");
     await vi.advanceTimersByTimeAsync(300);
-    expect(evaluate).toHaveBeenCalledTimes(2);
+    expect(evaluate).toHaveBeenCalledTimes(3);
+    expect(evaluate.mock.calls[2][1]).toMatchObject({
+      requested_queries: [],
+      variables: {},
+      unset_variables: ["minimum"],
+    });
     expect(state.inputStates().minimum).toBe("invalid");
     expect(state.blocked().has("rows")).toBe(true);
   });
@@ -256,5 +261,88 @@ describe("Composition Design Work evaluation", () => {
     expect(state.evaluation()?.authorization_fingerprint).toBe("new-auth");
     expect(state.evaluation()?.query_results.stable).toBeDefined();
     expect(state.blocked().size).toBe(0);
+  });
+  it("updates and pages an independent branch while another input is invalid or pending", async () => {
+    const { state, changeDraft } = setup();
+    const graph = draft();
+    graph.variables.push({
+      id: "other",
+      kind: "input",
+      value_type: { scalar_type: "integer", nullable: false },
+      required: true,
+      default: { kind: "integer", value: 10 },
+    });
+    const stable = graph.variables.find((node) => node.id === "stable")!;
+    if (stable.kind !== "query") throw new Error("query fixture");
+    stable.query = {
+      kind: "inline_sql",
+      sql: "SELECT $other AS value",
+      arguments: [{ name: "other", variable: "other" }],
+    };
+    stable.returns = {
+      kind: "table",
+      columns: [{
+        name: "value",
+        value_type: { scalar_type: "integer", nullable: false },
+      }],
+    };
+    evaluate.mockImplementation(async (_space, request) => {
+      const result = response(request);
+      if (request.page || result.query_results.stable) {
+        result.query_results.stable = {
+          value: {
+            kind: "table",
+            columns: [{
+              name: "value",
+              value_type: { scalar_type: "integer", nullable: false },
+            }],
+            rows: [[{
+              kind: "integer",
+              value: request.page ? 8 : request.variables?.other ?? 10,
+            }]],
+          },
+          has_more: !request.page,
+          next: request.page ? undefined : "stable-next",
+        } as never;
+      }
+      return result;
+    });
+    changeDraft(graph);
+    await vi.advanceTimersByTimeAsync(250);
+    state.onInput("minimum", "bad");
+    await vi.advanceTimersByTimeAsync(250);
+    state.onInput("other", "7");
+    await vi.advanceTimersByTimeAsync(250);
+    expect(evaluate.mock.calls.at(-1)?.[1]).toMatchObject({
+      requested_queries: ["stable"],
+      variables: { other: 7 },
+      unset_variables: ["minimum"],
+    });
+    expect(state.blocked().has("rows")).toBe(true);
+    expect(state.blocked().has("stable")).toBe(false);
+    state.onNext("stable", "stable-next");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(evaluate.mock.calls.at(-1)?.[1]).toMatchObject({
+      requested_queries: ["stable"],
+      page: { variable_id: "stable", cursor: "stable-next" },
+    });
+    expect(state.previousIds().has("stable")).toBe(true);
+    state.onPrevious("stable");
+    expect(state.previousIds().has("stable")).toBe(false);
+    let finish!: (value: unknown) => void;
+    parse.mockImplementationOnce(() =>
+      new Promise((resolve) => finish = resolve)
+    );
+    state.onInput("minimum", "pending");
+    state.onInput("other", "9");
+    await vi.advanceTimersByTimeAsync(250);
+    expect(evaluate.mock.calls.at(-1)?.[1].requested_queries).toEqual([
+      "stable",
+    ]);
+    expect(state.inputStates().minimum).toBe("pending");
+    finish({ status: "invalid" });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(state.rawInputs().minimum).toBe("pending");
+    expect(state.busy()).toBe(false);
   });
 });

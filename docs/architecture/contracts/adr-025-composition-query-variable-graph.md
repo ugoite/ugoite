@@ -159,6 +159,18 @@ within that snapshot. Generation and fingerprint checks discard stale responses.
 Every run rechecks current authorization and fails closed for deleted Forms,
 changed schemas, unavailable Saved SQL revisions, or revoked access.
 
+An explicit query selection validates the complete graph and the caller's input
+identities, then requires values only for inputs consumed by its server-derived
+query dependency closure. Missing or invalid unrelated inputs remain unset Work;
+they cannot block a valid independent query or its table continuation. Selected
+and transitive inputs remain strict, and a request without a query selection
+retains full-evaluation validation. The browser excludes pending or invalid
+branches from its requested subset and suppresses their stale displays. A page
+request names its selected table query explicitly. Authorization, Publication,
+exact query revisions, descriptors and cursor bindings remain checked by Core
+and the storage-backed resolver for each request.
+
+
 Composition Knowledge stores query definitions, typed declarations, bindings,
 and layout. Input values, previews, pages, results, cursors, loading state, and
 errors remain transient Work. Query results are not written as Entries or

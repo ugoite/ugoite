@@ -741,6 +741,42 @@ async fn local_graph_table_pages_keep_query_continuations_across_unrelated_input
         matches!(value, VariableGraphLiteral::String(value) if value == "after-snapshot")
     }));
 
+    for supplied in [
+        BTreeMap::new(),
+        BTreeMap::from([("unrelated_input".to_owned(), json!("invalid"))]),
+    ] {
+        let page = service
+            .evaluate_composition_graph_local(
+                &space_id,
+                target(),
+                Uuid::now_v7(),
+                None,
+                None,
+                &supplied,
+                &["unrelated_input".to_owned()],
+                Some(&requested_queries),
+                Some(CompositionQueryEvaluationPage {
+                    variable_id: "source".to_owned(),
+                    cursor: cursor.clone(),
+                }),
+            )
+            .await?;
+        assert!(
+            page.ok,
+            "{:?} {:?}",
+            page.diagnostics, page.query_diagnostics
+        );
+        assert!(!page
+            .plan
+            .as_ref()
+            .context("continuation plan")?
+            .variable_values
+            .contains_key("unrelated_input"));
+        assert!(
+            matches!(page.query_results.get("source").map(|result| &result.result), Some(VariableGraphValidatedResult::Table { rows, .. }) if rows.len() == 1)
+        );
+    }
+
     // A new Publication invalidates a continuation rather than mixing rows
     // from two storage snapshots into one graph result.
     service
@@ -1565,5 +1601,76 @@ async fn portable_saved_sql_copy_keeps_pinned_revision_and_selected_scalar_colum
         .await?;
     assert_eq!(page.columns, vec!["a\"b"]);
     assert_eq!(page.rows, vec![json!({"a\"b": 11})]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn authorized_saved_and_draft_query_selection_isolates_unrelated_missing_and_invalid_inputs(
+) -> Result<()> {
+    let (service, space_id, mut document, _) = setup_preview_space().await?;
+    document.spec.variables.push(VariableGraphNode {
+        id: "other".to_owned(),
+        kind: VariableGraphNodeKind::Input {
+            value_type: VariableGraphScalarDescriptor {
+                scalar_type: VariableGraphScalarType::Integer,
+                nullable: false,
+            },
+            required: true,
+            default: None,
+        },
+    });
+    document.spec.components.push(CompositionComponent::Input {
+        id: "other-input".to_owned(),
+        variable: "other".to_owned(),
+    });
+    document.spec.layout.rows[0]
+        .items
+        .push(FlowItem::Component {
+            component: "other-input".to_owned(),
+        });
+    let saved = save_local_composition(&service, &space_id, document).await?;
+    let yaml = canonicalize_composition(&saved.document)
+        .map_err(|code| anyhow::anyhow!(code.as_str()))?
+        .yaml;
+    for supplied in [
+        BTreeMap::new(),
+        BTreeMap::from([("other".to_owned(), json!("invalid"))]),
+        BTreeMap::from([("other".to_owned(), json!(9_007_199_254_740_992_i64))]),
+    ] {
+        for target in [
+            CompositionQueryEvaluationTarget::SavedRevision {
+                composition_id: saved.entry_id.to_string(),
+                revision_id: saved.revision_id.to_string(),
+            },
+            CompositionQueryEvaluationTarget::Draft { yaml: yaml.clone() },
+        ] {
+            let result = service
+                .evaluate_composition_graph_authorized_for_principals(
+                    &space_id,
+                    &[Uuid::from_u128(3_434_001)],
+                    target,
+                    Uuid::now_v7(),
+                    None,
+                    None,
+                    &supplied,
+                    &[],
+                    Some(&["source".to_owned()]),
+                    None,
+                )
+                .await?;
+            assert!(
+                result.ok,
+                "{:?} {:?}",
+                result.diagnostics, result.query_diagnostics
+            );
+            assert_eq!(result.computed_query_ids, ["source"]);
+            assert!(!result
+                .plan
+                .as_ref()
+                .context("authorized evaluation plan")?
+                .variable_values
+                .contains_key("other"));
+        }
+    }
     Ok(())
 }

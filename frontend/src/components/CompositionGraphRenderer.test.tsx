@@ -525,4 +525,36 @@ describe("CompositionGraphRenderer", () => {
       "Waiting for input…",
     );
   });
+  it("hides stale scalar displays for an invalid input while leaving independent results usable", () => {
+    const graph = structuredClone(draft);
+    graph.components.push({
+      id: "input-value",
+      kind: "metric",
+      variable: "minimum",
+    });
+    graph.layout.rows[0].items.push({
+      kind: "component",
+      component: "input-value",
+    });
+    render(() => (
+      <CompositionGraphRenderer
+        draft={graph}
+        evaluation={evaluation}
+        rawInputs={{ minimum: "bad" }}
+        inputStates={{ minimum: "invalid" }}
+        blockedQueryIds={new Set()}
+        previousPageQueryIds={new Set()}
+        pageBusy={false}
+        onInput={vi.fn()}
+        onNext={vi.fn()}
+        onPrevious={vi.fn()}
+      />
+    ));
+    expect(screen.getByRole("textbox", { name: "minimum" })).toHaveValue("bad");
+    expect(screen.getByRole("status")).toHaveTextContent("Waiting for input");
+    expect(screen.getByRole("table")).toHaveTextContent("Alpha");
+    expect(screen.getByRole("region", { name: "total" })).toHaveTextContent(
+      "2",
+    );
+  });
 });

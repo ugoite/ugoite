@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::Duration;
 use ugoite_core::composition::{
-    bind_variables_with_unset, resolve_composition_authoring_preview_with_query_selection,
+    bind_variables_for_queries, resolve_composition_authoring_preview_with_query_selection,
     resolve_composition_preview_with_query_selection, resolve_composition_with_query_selection,
     returns_from_schema, CompositionDiagnostic, CompositionRevisionRef, CurrentQueryDescriptor,
     InlineSqlQueryMetadata, PreviewCompositionPlan, ResolveInput, ResolvedCompositionPlan,
@@ -863,8 +863,12 @@ impl UgoiteService {
         };
         let variable_definitions = Some(ordered_variable_definitions(&document.spec));
 
-        let variable_bindings =
-            bind_variables_with_unset(&document.spec.variables, variables, unset_variables);
+        let variable_bindings = bind_variables_for_queries(
+            &document.spec.variables,
+            variables,
+            unset_variables,
+            requested_queries,
+        );
         if !variable_bindings.diagnostics.is_empty() {
             return Ok(CompositionResolution {
                 variable_definitions,

@@ -10,12 +10,12 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use ugoite_domain::composition::{
-    variable_graph_dependency_order, CompositionComponent, CompositionDiagnosticCode,
-    CompositionMetricPresentation, CompositionResultFieldType, CompositionSpec,
-    CompositionTextContent, VariableGraph, VariableGraphColumn, VariableGraphFormBinding,
-    VariableGraphInputDiagnosticCode, VariableGraphLiteral, VariableGraphNode,
-    VariableGraphNodeKind, VariableGraphQueryDefinition, VariableGraphResultType,
-    VariableGraphScalarDescriptor, VariableGraphScalarType,
+    variable_graph_dependency_order, variable_graph_literal_matches, CompositionComponent,
+    CompositionDiagnosticCode, CompositionMetricPresentation, CompositionResultFieldType,
+    CompositionSpec, CompositionTextContent, VariableGraph, VariableGraphColumn,
+    VariableGraphFormBinding, VariableGraphInputDiagnosticCode, VariableGraphLiteral,
+    VariableGraphNode, VariableGraphNodeKind, VariableGraphQueryDefinition,
+    VariableGraphResultType, VariableGraphScalarDescriptor, VariableGraphScalarType,
 };
 use ugoite_domain::id::{EntryId, RevisionId};
 use uuid::Uuid;
@@ -182,6 +182,61 @@ pub fn bind_variables_with_unset(
             }
         }
     }
+}
+
+/// Bind inputs for an explicit query selection. Graph structure and caller
+/// identities are always validated; unrelated known inputs cannot prevent a
+/// selected dependency closure from running. Full evaluation remains strict.
+pub fn bind_variables_for_queries(
+    variables: &[VariableGraphNode],
+    supplied: &BTreeMap<String, Value>,
+    unset_variables: &[String],
+    requested_queries: Option<&[String]>,
+) -> VariableGraphBindings {
+    let Some(requested) = requested_queries else {
+        return bind_variables_with_unset(variables, supplied, unset_variables);
+    };
+    let graph = VariableGraph {
+        variables: variables.to_vec(),
+    };
+    let selected = match crate::composition_query::selected_query_dependency_closure_for_graph(
+        &graph,
+        Some(requested),
+    ) {
+        Ok(selected) => selected,
+        Err(_) => {
+            return VariableGraphBindings {
+                values: BTreeMap::new(),
+                diagnostics: vec![CompositionDiagnostic::without_variable(
+                    CompositionDiagnosticCode::InvalidComposition,
+                )],
+            }
+        }
+    };
+    let required = crate::composition_query::input_dependencies_for_queries(&graph, &selected);
+    let mut scoped_variables = variables.to_vec();
+    let mut scoped_values = supplied.clone();
+    for node in &mut scoped_variables {
+        if required.contains(&node.id) {
+            continue;
+        }
+        if let VariableGraphNodeKind::Input {
+            value_type,
+            required,
+            default,
+        } = &mut node.kind
+        {
+            *required = false;
+            if supplied.get(&node.id).is_some_and(|value| {
+                literal_from_json(*value_type, value)
+                    .is_none_or(|literal| !variable_graph_literal_matches(value_type, &literal))
+            }) {
+                scoped_values.remove(&node.id);
+                *default = None;
+            }
+        }
+    }
+    bind_variables_with_unset(&scoped_variables, &scoped_values, unset_variables)
 }
 
 fn literal_from_json(
@@ -632,7 +687,11 @@ fn resolve_parts(
     let (bindings, missing_inputs) = if options.allow_unset_inputs {
         bind_authoring_preview_inputs(&spec.variables, variables, unset)?
     } else {
-        let bindings = bind_variables_with_unset(&spec.variables, variables, unset);
+        let requested = options
+            .selected_query_ids
+            .map(|ids| ids.iter().cloned().collect::<Vec<_>>());
+        let bindings =
+            bind_variables_for_queries(&spec.variables, variables, unset, requested.as_deref());
         if !bindings.diagnostics.is_empty() {
             return Err(bindings.diagnostics);
         }

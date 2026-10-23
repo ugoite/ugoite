@@ -6,6 +6,7 @@ import {
 import {
   changedCompositionQueryIds,
   dependentCompositionQueryIds,
+  unavailableCompositionQueryIds,
 } from "./composition-evaluation";
 import {
   compositionGraphDocumentDraft,
@@ -72,15 +73,20 @@ export function createCompositionDesignEvaluation(options: {
     page?: { variable_id: string; cursor: string },
     full = false,
   ) => {
-    if (page && (pending.size > 0 || Object.keys(inputStates()).length > 0)) {
-      return;
-    }
-    cancel();
+    const unavailable = new Set(
+      unavailableCompositionQueryIds(
+        options.draft(),
+        inputStates(),
+        values,
+        unset,
+      ),
+    );
     if (
-      Object.values(inputStates()).some((state) =>
-        state === "pending" || state === "invalid"
-      )
+      page &&
+      (unavailable.has(page.variable_id) || pending.has(page.variable_id) ||
+        [...pending].some((id) => !unavailable.has(id)))
     ) return;
+    cancel();
     const scope = options.scope();
     const draft = options.draft();
     const requestGeneration = generation;
@@ -89,8 +95,15 @@ export function createCompositionDesignEvaluation(options: {
     const current = () =>
       !signal.aborted && requestGeneration === generation &&
       scope === options.scope();
-    const requested = full ? undefined : [...pending];
-    if (!page && requested?.length === 0) return;
+    const requested = full && unavailable.size === 0
+      ? undefined
+      : (full
+        ? draft.variables.filter((node) => node.kind === "query").map((node) =>
+          node.id
+        )
+        : [...pending]).filter((id) => !unavailable.has(id));
+    if (!page && requested?.length === 0 && pending.size === 0) return;
+    setBlocked((current) => new Set([...current, ...unavailable]));
     setBusy(true);
     setError(undefined);
     try {
@@ -116,7 +129,7 @@ export function createCompositionDesignEvaluation(options: {
         variables: { ...values },
         ...(unset.size ? { unset_variables: [...unset] } : {}),
         ...(!page && requested ? { requested_queries: requested } : {}),
-        ...(page ? { page } : {}),
+        ...(page ? { page, requested_queries: [page.variable_id] } : {}),
       }, signal);
       if (!current() || response.evaluation_id !== id) return;
       if (options.principal && principal !== await options.principal()) {
@@ -134,7 +147,10 @@ export function createCompositionDesignEvaluation(options: {
         previous.authorization_fingerprint ===
           response.authorization_fingerprint &&
         previous.publication_fingerprint === response.publication_fingerprint;
-      if (previous && !sameAuthority && !full) {
+      if (
+        previous && response.authorization_fingerprint &&
+        response.publication_fingerprint && !sameAuthority && !full
+      ) {
         setEvaluation(undefined);
         setPages({});
         invalidate(
@@ -292,6 +308,8 @@ export function createCompositionDesignEvaluation(options: {
     const parse = ++parseGeneration;
     parses.set(id, parse);
     cancel();
+    delete values[id];
+    unset.add(id);
     setRawInputs((current) => ({ ...current, [id]: raw }));
     setInputStates((current) => ({ ...current, [id]: "pending" }));
     invalidate(dependentCompositionQueryIds(options.draft(), new Set([id])));
@@ -314,17 +332,18 @@ export function createCompositionDesignEvaluation(options: {
         }
         return next;
       });
-      if (result.status !== "invalid") schedule();
+      schedule();
     }).catch(() => {
       if (current()) {
         setInputStates((previous) => ({ ...previous, [id]: "invalid" }));
+        schedule();
       }
     });
   };
   const restorePage = (id: string, index: number) => {
     const state = pages()[id];
     const result = state?.values[index];
-    if (!result || busy() || blocked().size > 0) return;
+    if (!result || busy() || blocked().has(id)) return;
     setPages((current) => ({ ...current, [id]: { ...state, index } }));
     setEvaluation((current) =>
       current
@@ -344,7 +363,7 @@ export function createCompositionDesignEvaluation(options: {
     rawInputs,
     inputStates,
     blocked,
-    busy: () => busy() || blocked().size > 0,
+    busy,
     error,
     onInput,
     previousIds: () =>
@@ -355,7 +374,7 @@ export function createCompositionDesignEvaluation(options: {
       ),
     onPrevious: (id: string) => restorePage(id, (pages()[id]?.index ?? 0) - 1),
     onNext: (id: string, cursor: string) => {
-      if (blocked().size > 0) return;
+      if (blocked().has(id)) return;
       const state = pages()[id];
       if (state && state.index + 1 < state.values.length) {
         restorePage(
