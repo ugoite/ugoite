@@ -24,8 +24,10 @@ import {
 import {
   affectedCompositionQueries,
   compositionEvaluationIdentity,
+  dependentCompositionQueryIds,
   mergeCompositionEvaluation,
   sameCompositionEvaluationIdentity,
+  unavailableCompositionQueryIds,
 } from "~/lib/composition-evaluation";
 import { t } from "~/lib/i18n";
 import { parseVariableGraphInput } from "~/lib/ugoite-client";
@@ -190,11 +192,27 @@ export default function CompositionRevisionRoute() {
 
   const evaluate = async (page?: { variable_id: string; cursor: string }) => {
     if (!currentRevision()) return;
-    if (
-      Object.values(inputStates()).some((state) =>
-        state === "pending" || state === "invalid"
-      )
-    ) return;
+    const draft = currentRevision()!.draft;
+    const unavailable = new Set(
+      unavailableCompositionQueryIds(
+        draft,
+        inputStates(),
+        inputValues(),
+        new Set(unsetInputs()),
+      ),
+    );
+    const prior = evaluation().response;
+    if (prior) {
+      for (
+        const id of affectedCompositionQueries(
+          prior.queries,
+          prior.dependencies,
+          new Set(Object.keys(inputStates())),
+        )
+      ) unavailable.add(id);
+    }
+    if (page && unavailable.has(page.variable_id)) return;
+    setBlockedQueryIds((current) => new Set([...current, ...unavailable]));
     const routeScope = routeKey();
     const spaceId = params.space_id;
     const compositionId = params.composition_id;
@@ -218,6 +236,13 @@ export default function CompositionRevisionRoute() {
         ]),
       ]
       : undefined;
+    if (!page && unavailable.size > 0) {
+      requestedQueries = (requestedQueries ?? draft.variables.filter((node) =>
+        node.kind === "query"
+      ).map((node) =>
+        node.id
+      )).filter((id) => !unavailable.has(id));
+    }
     setEvaluation((current) => ({
       ...current,
       status: "loading",
@@ -235,7 +260,11 @@ export default function CompositionRevisionRoute() {
           },
           variables: values.variables,
           ...(values.unset.length ? { unset_variables: values.unset } : {}),
-          ...(requested ? { requested_queries: requested } : {}),
+          ...(page
+            ? { requested_queries: [page.variable_id] }
+            : requested
+            ? { requested_queries: requested }
+            : {}),
           ...(page ? { page } : {}),
         });
       let response = await request(evaluationId, requestedQueries);
@@ -258,12 +287,16 @@ export default function CompositionRevisionRoute() {
         // and ask Core for the entire graph under the new authorization view.
         reusablePrevious = undefined;
         page = undefined;
-        requestedQueries = undefined;
+        requestedQueries = unavailable.size > 0
+          ? draft.variables.filter((node) =>
+            node.kind === "query" && !unavailable.has(node.id)
+          ).map((node) => node.id)
+          : undefined;
         setTablePages({});
         evaluationId = crypto.randomUUID();
         activeEvaluationId = evaluationId;
         setEvaluation({ status: "loading", evaluationId });
-        response = await request(evaluationId);
+        response = await request(evaluationId, requestedQueries);
         if (
           routeScope !== routeKey() ||
           generation !== evaluationGeneration ||
@@ -378,6 +411,19 @@ export default function CompositionRevisionRoute() {
         return next;
       });
     }
+    setInputValues((current) => {
+      const next = { ...current };
+      delete next[variableId];
+      return next;
+    });
+    setUnsetInputs((current) =>
+      current.includes(variableId) ? current : [...current, variableId]
+    );
+    const affected = dependentCompositionQueryIds(
+      currentRevision()!.draft,
+      new Set([variableId]),
+    );
+    setBlockedQueryIds((current) => new Set([...current, ...affected]));
     setInputStates((current) => ({ ...current, [variableId]: "pending" }));
     const routeScope = routeKey();
     const epoch = parseEpoch;
@@ -416,12 +462,12 @@ export default function CompositionRevisionRoute() {
         });
       } else {
         setInputStates((current) => ({ ...current, [variableId]: "invalid" }));
-        return;
       }
       debounceTimer = setTimeout(() => void evaluate(), 250);
     }).catch(() => {
       if (!isCurrent()) return;
       setInputStates((current) => ({ ...current, [variableId]: "invalid" }));
+      debounceTimer = setTimeout(() => void evaluate(), 250);
     });
   };
 

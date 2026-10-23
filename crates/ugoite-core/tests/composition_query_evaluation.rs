@@ -573,3 +573,226 @@ fn table_pages_are_validated_and_keep_bounded_continuation_metadata() {
         }
     );
 }
+
+#[test]
+fn selected_query_inputs_do_not_require_unrelated_inputs_but_keep_request_validation() {
+    use ugoite_core::composition::bind_variables_for_queries;
+    let graph = VariableGraph {
+        variables: vec![
+            input("b", VariableGraphScalarType::Integer),
+            scalar_query(
+                "independent",
+                VariableGraphQueryDefinition::InlineSql {
+                    sql: "SELECT 1 AS value".to_owned(),
+                },
+                vec![],
+            ),
+            scalar_query(
+                "dependent",
+                VariableGraphQueryDefinition::InlineSql {
+                    sql: "SELECT $b AS value".to_owned(),
+                },
+                vec![argument("b", "b")],
+            ),
+            scalar_query(
+                "downstream",
+                VariableGraphQueryDefinition::InlineSql {
+                    sql: "SELECT $value AS value".to_owned(),
+                },
+                vec![argument("value", "dependent")],
+            ),
+        ],
+    };
+    let requested = vec!["independent".to_owned()];
+    for values in [
+        BTreeMap::new(),
+        BTreeMap::from([("b".to_owned(), json!("invalid"))]),
+    ] {
+        let bindings = bind_variables_for_queries(&graph.variables, &values, &[], Some(&requested));
+        assert!(
+            bindings.diagnostics.is_empty(),
+            "{:?}",
+            bindings.diagnostics
+        );
+        assert!(!bindings.values.contains_key("b"));
+    }
+    for inputs in [
+        BTreeMap::new(),
+        BTreeMap::from([(
+            "b".to_owned(),
+            VariableGraphLiteral::String("invalid".to_owned()),
+        )]),
+    ] {
+        let state = VariableGraphQueryEvaluation::new_for_queries(
+            &graph,
+            Uuid::from_u128(0x4490),
+            &inputs,
+            Some(&requested),
+        )
+        .expect("unrelated input cannot block independent query");
+        assert_eq!(state.selected_query_ids(), requested);
+        for selection in [
+            None,
+            Some(vec!["dependent".to_owned()]),
+            Some(vec!["downstream".to_owned()]),
+        ] {
+            assert!(VariableGraphQueryEvaluation::new_for_queries(
+                &graph,
+                Uuid::from_u128(0x4490),
+                &inputs,
+                selection.as_deref()
+            )
+            .is_err());
+        }
+    }
+    for values in [
+        BTreeMap::from([("unknown".to_owned(), json!(1))]),
+        BTreeMap::from([("independent".to_owned(), json!(1))]),
+    ] {
+        assert!(
+            !bind_variables_for_queries(&graph.variables, &values, &[], Some(&requested))
+                .diagnostics
+                .is_empty()
+        );
+    }
+    for unset in [vec!["unknown".to_owned()], vec!["independent".to_owned()]] {
+        assert!(!bind_variables_for_queries(
+            &graph.variables,
+            &BTreeMap::new(),
+            &unset,
+            Some(&requested)
+        )
+        .diagnostics
+        .is_empty());
+    }
+    assert!(!bind_variables_for_queries(
+        &graph.variables,
+        &BTreeMap::new(),
+        &[],
+        Some(&["unknown".to_owned()])
+    )
+    .diagnostics
+    .is_empty());
+}
+
+#[test]
+fn selected_query_inputs_apply_complete_domain_value_constraints() {
+    use ugoite_core::composition::bind_variables_for_queries;
+    use ugoite_domain::composition::{
+        MAX_COMPOSITION_VARIABLE_INTEGER, MAX_COMPOSITION_VARIABLE_STRING_BYTES,
+    };
+    for (kind, json_value, literal) in [
+        (
+            VariableGraphScalarType::Integer,
+            json!(MAX_COMPOSITION_VARIABLE_INTEGER + 1),
+            VariableGraphLiteral::Integer(MAX_COMPOSITION_VARIABLE_INTEGER + 1),
+        ),
+        (
+            VariableGraphScalarType::Date,
+            json!("2026-02-30"),
+            VariableGraphLiteral::Date("2026-02-30".to_owned()),
+        ),
+        (
+            VariableGraphScalarType::String,
+            json!("x".repeat(MAX_COMPOSITION_VARIABLE_STRING_BYTES + 1)),
+            VariableGraphLiteral::String("x".repeat(MAX_COMPOSITION_VARIABLE_STRING_BYTES + 1)),
+        ),
+        (
+            VariableGraphScalarType::String,
+            json!("invalid\u{0000}value"),
+            VariableGraphLiteral::String("invalid\u{0000}value".to_owned()),
+        ),
+    ] {
+        let graph = VariableGraph {
+            variables: vec![
+                input("b", kind),
+                scalar_query(
+                    "independent",
+                    VariableGraphQueryDefinition::InlineSql {
+                        sql: "SELECT 1 AS value".to_owned(),
+                    },
+                    vec![],
+                ),
+                scalar_query(
+                    "dependent",
+                    VariableGraphQueryDefinition::InlineSql {
+                        sql: "SELECT 1 AS value WHERE $b IS NOT NULL".to_owned(),
+                    },
+                    vec![argument("b", "b")],
+                ),
+            ],
+        };
+        let supplied = BTreeMap::from([("b".to_owned(), json_value)]);
+        let inputs = BTreeMap::from([("b".to_owned(), literal)]);
+        for selection in [None, Some(vec!["dependent".to_owned()])] {
+            assert!(!bind_variables_for_queries(
+                &graph.variables,
+                &supplied,
+                &[],
+                selection.as_deref()
+            )
+            .diagnostics
+            .is_empty());
+            assert!(VariableGraphQueryEvaluation::new_for_queries(
+                &graph,
+                Uuid::from_u128(0x4490),
+                &inputs,
+                selection.as_deref()
+            )
+            .is_err());
+        }
+        let selected = vec!["independent".to_owned()];
+        let bindings =
+            bind_variables_for_queries(&graph.variables, &supplied, &[], Some(&selected));
+        assert!(
+            bindings.diagnostics.is_empty(),
+            "{:?}",
+            bindings.diagnostics
+        );
+        assert!(!bindings.values.contains_key("b"));
+        assert!(VariableGraphQueryEvaluation::new_for_queries(
+            &graph,
+            Uuid::from_u128(0x4490),
+            &inputs,
+            Some(&selected)
+        )
+        .is_ok());
+    }
+}
+
+#[test]
+fn unrelated_explicit_unset_does_not_restore_a_declared_default() {
+    use ugoite_core::composition::bind_variables_for_queries;
+    let mut node = input("b", VariableGraphScalarType::Integer);
+    if let VariableGraphNodeKind::Input { default, .. } = &mut node.kind {
+        *default = Some(VariableGraphLiteral::Integer(7));
+    }
+    let graph = VariableGraph {
+        variables: vec![
+            node,
+            scalar_query(
+                "independent",
+                VariableGraphQueryDefinition::InlineSql {
+                    sql: "SELECT 1 AS value".to_owned(),
+                },
+                vec![],
+            ),
+        ],
+    };
+    let result = bind_variables_for_queries(
+        &graph.variables,
+        &BTreeMap::new(),
+        &["b".to_owned()],
+        Some(&["independent".to_owned()]),
+    );
+    assert!(result.diagnostics.is_empty());
+    assert!(!result.values.contains_key("b"));
+    let result = bind_variables_for_queries(
+        &graph.variables,
+        &BTreeMap::from([("b".to_owned(), json!("invalid"))]),
+        &[],
+        Some(&["independent".to_owned()]),
+    );
+    assert!(result.diagnostics.is_empty());
+    assert!(!result.values.contains_key("b"));
+}

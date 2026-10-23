@@ -2,6 +2,7 @@ import {
   type APIRequestContext,
   expect,
   type Page,
+  type Request,
   test,
 } from "@playwright/test";
 import {
@@ -13,6 +14,7 @@ import {
 import {
   completeCompositionGraphYaml,
   type CompositionGraphSeed,
+  saveCompositionGraph,
 } from "./lib/composition-graph.ts";
 
 type SeedState = {
@@ -230,6 +232,18 @@ test.describe("Composition invalid variable Input", () => {
     expect(evaluationCount).toBeGreaterThan(0);
     const successfulEvaluationCount = evaluationCount;
 
+    const invalidEvaluation = page.waitForResponse((response) => {
+      if (
+        response.request().method() !== "POST" ||
+        new URL(response.url()).pathname !== evaluationPath
+      ) return false;
+      const body = response.request().postDataJSON() as {
+        requested_queries?: string[];
+        unset_variables?: string[];
+      };
+      return body.requested_queries?.length === 0 &&
+        body.unset_variables?.includes("minimum_amount") === true;
+    });
     await firstInput.fill("-");
     await expect(firstInput).toHaveValue("-");
     await expect(secondInput).toHaveValue("-");
@@ -237,10 +251,13 @@ test.describe("Composition invalid variable Input", () => {
     await expect(secondInput).toHaveAttribute("aria-invalid", "true");
     await expect(metric).toHaveCount(0);
     await expect(page.getByRole("alert").first()).toBeVisible();
+    const invalidResult = await (await invalidEvaluation).json();
+    expect(invalidResult.ok).toBe(true);
+    expect(invalidResult.computed_query_ids).toEqual([]);
     await settleWithoutMetricQuery(
       page,
       () => evaluationCount,
-      successfulEvaluationCount,
+      successfulEvaluationCount + 1,
     );
 
     const explicitUnsetEvaluation = page.waitForResponse((response) => {
@@ -269,17 +286,14 @@ test.describe("Composition invalid variable Input", () => {
     expect(unsetResponse.ok()).toBe(true);
     const unsetResult = await unsetResponse.json() as {
       ok?: boolean;
-      diagnostics?: Array<{ code?: string; variable_id?: string }>;
+      computed_query_ids?: string[];
     };
-    expect(unsetResult.ok).toBe(false);
-    expect(unsetResult.diagnostics).toContainEqual({
-      code: "variable_missing",
-      variable_id: "minimum_amount",
-    });
+    expect(unsetResult.ok).toBe(true);
+    expect(unsetResult.computed_query_ids).toEqual([]);
     await settleWithoutMetricQuery(
       page,
       () => evaluationCount,
-      successfulEvaluationCount + 1,
+      successfulEvaluationCount + 2,
     );
 
     await firstInput.fill("2");
@@ -288,4 +302,100 @@ test.describe("Composition invalid variable Input", () => {
     await expect(metric).toHaveText("3", { timeout: 30_000 });
     expect(evaluationCount).toBeGreaterThan(successfulEvaluationCount);
   });
+});
+
+test("independent Composition results update while another Input is invalid in Design and runtime", async ({ page, request }) => {
+  test.setTimeout(120_000);
+  await waitForServers(request);
+  const spaceId = await getDefaultSpaceId(request);
+  const yaml = await completeCompositionGraphYaml(request, spaceId, {
+    name: `Independent inputs ${crypto.randomUUID().slice(0, 8)}`,
+    variables: [
+      ...["bad", "other"].map((id, index) => ({
+        id,
+        kind: "input" as const,
+        value_type: { scalar_type: "integer", nullable: false },
+        required: true,
+        default: { kind: "integer", value: index + 1 },
+      })),
+      ...["dependent", "stable"].map((id, index) => ({
+        id,
+        kind: "query" as const,
+        returns: {
+          kind: "scalar",
+          value_type: { scalar_type: "integer", nullable: false },
+        },
+        query: {
+          kind: "inline_sql",
+          sql: "SELECT $value AS value",
+          arguments: [{
+            name: "value",
+            variable: index === 0 ? "bad" : "other",
+          }],
+          form_bindings: [],
+          schema_fingerprint: "",
+        },
+      })),
+    ],
+    components: [
+      { id: "bad_input", kind: "input", variable: "bad" },
+      { id: "other_input", kind: "input", variable: "other" },
+      { id: "dependent_metric", kind: "metric", variable: "dependent" },
+      { id: "stable_metric", kind: "metric", variable: "stable" },
+    ],
+    rows: [{
+      id: "inputs",
+      items: ["bad_input", "other_input"].map((component) => ({
+        kind: "component",
+        component,
+      })),
+    }, {
+      id: "results",
+      items: ["dependent_metric", "stable_metric"].map((component) => ({
+        kind: "component",
+        component,
+      })),
+    }],
+  });
+  const saved = await saveCompositionGraph(request, spaceId, yaml);
+  const url =
+    `/spaces/${spaceId}/compositions/${saved.composition_id}/${saved.revision_id}`;
+  for (const suffix of ["", "/edit"]) {
+    const evaluations: Array<
+      {
+        requested_queries?: string[];
+        variables?: Record<string, unknown>;
+        unset_variables?: string[];
+      }
+    > = [];
+    const record = (req: Request) => {
+      if (
+        req.method() === "POST" &&
+        new URL(req.url()).pathname.endsWith("/compositions/evaluate")
+      ) evaluations.push(req.postDataJSON());
+    };
+    page.on("request", record);
+    await page.goto(getFrontendUrl(url + suffix), {
+      waitUntil: "domcontentloaded",
+    });
+    const bad = page.getByRole("textbox", { name: "bad", exact: true });
+    const other = page.getByRole("textbox", { name: "other", exact: true });
+    const metrics = page.locator(".compositionGraphMetric strong");
+    await expect(metrics).toHaveText(["1", "2"], { timeout: 30_000 });
+    await bad.fill("-");
+    await expect(bad).toHaveAttribute("aria-invalid", "true");
+    await expect(metrics).toHaveText(["2"]);
+    await other.fill("7");
+    await expect(metrics).toHaveText(["7"], { timeout: 30_000 });
+    const requestForStable = evaluations.findLast((value) =>
+      value.variables?.other === 7
+    );
+    expect(requestForStable?.requested_queries).toEqual(["stable"]);
+    expect(requestForStable?.variables).not.toHaveProperty("bad");
+    expect(requestForStable?.unset_variables).toContain("bad");
+    await bad.fill("3");
+    await expect(metrics).toHaveText(["3", "7"], { timeout: 30_000 });
+    expect(evaluations.at(-1)?.requested_queries).toEqual(["dependent"]);
+    page.off("request", record);
+  }
 });

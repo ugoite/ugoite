@@ -345,6 +345,10 @@ describe("Composition saved revision graph evaluation", () => {
             resolve({ ...value, evaluation_id: request.evaluation_id });
         })
       );
+    evaluateMock.mockImplementation((
+      _space: string,
+      request: { evaluation_id: string },
+    ) => Promise.resolve(evaluation(request.evaluation_id, "auth-1", {}, [])));
     parseMock.mockImplementation(async (_type: unknown, raw: string) =>
       raw === "bad"
         ? { status: "invalid" }
@@ -385,7 +389,12 @@ describe("Composition saved revision graph evaluation", () => {
     expect(input).toHaveAttribute("aria-invalid", "true");
     await new Promise((resolve) => setTimeout(resolve, 300));
 
-    expect(evaluateMock).toHaveBeenCalledTimes(2);
+    expect(evaluateMock).toHaveBeenCalledTimes(3);
+    expect(evaluateMock.mock.calls[2][1]).toMatchObject({
+      requested_queries: [],
+      variables: {},
+      unset_variables: ["day"],
+    });
     expect(screen.getByRole("status")).toHaveTextContent(
       "Waiting for input…",
     );
@@ -856,7 +865,7 @@ describe("Composition saved revision graph evaluation", () => {
     expect(screen.getByLabelText("stable")).toHaveTextContent("20");
   });
 
-  it("recomputes affected queries when an input returns to its value after a failed evaluation", async () => {
+  it("retries affected queries with unchanged valid input after a failed evaluation", async () => {
     evaluateMock
       .mockImplementationOnce((
         _spaceId: string,
@@ -898,7 +907,7 @@ describe("Composition saved revision graph evaluation", () => {
     await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(2));
 
     fireEvent.input(screen.getByLabelText("day"), {
-      target: { value: "" },
+      target: { value: "2026-10-20" },
     });
     await waitFor(() => expect(evaluateMock).toHaveBeenCalledTimes(3));
 
@@ -1002,5 +1011,79 @@ describe("Composition saved revision graph evaluation", () => {
     );
     await screen.findByText("20");
     expect(screen.queryByText("10")).not.toBeInTheDocument();
+  });
+  it("keeps an independent input branch live while another input is invalid", async () => {
+    const document = structuredClone(graphDocument);
+    document.spec.variables[0] = {
+      id: "day",
+      kind: "input",
+      value_type: { scalar_type: "integer", nullable: false },
+      required: true,
+      default: { kind: "integer", value: 1 },
+    } as never;
+    document.spec.variables.push(
+      {
+        id: "other",
+        kind: "input",
+        value_type: { scalar_type: "integer", nullable: false },
+        required: true,
+        default: { kind: "integer", value: 3 },
+      } as never,
+    );
+    for (const [id, input] of [["rows", "day"], ["stable", "other"]]) {
+      const node = document.spec.variables.find((node) => node.id === id) as {
+        query: unknown;
+      };
+      node.query = {
+        kind: "inline_sql",
+        sql: `SELECT $${input} AS value`,
+        arguments: [{ name: input, variable: input }],
+      };
+    }
+    document.spec.components.push({
+      id: "other-input",
+      kind: "input",
+      variable: "other",
+    });
+    document.spec.layout.rows[0].items.push({
+      kind: "component",
+      component: "other-input",
+    });
+    lintMock.mockResolvedValue({ ok: true, value: { document } });
+    parseMock.mockImplementation(async (_type, raw) =>
+      raw === "bad"
+        ? { status: "invalid" }
+        : { status: "valid", value: Number(raw) }
+    );
+    evaluateMock.mockImplementation(async (_space, request) => {
+      const ids = request.requested_queries ?? ["rows", "stable"];
+      const values = Object.fromEntries(
+        ids.map((id: string) => [
+          id,
+          id === "rows"
+            ? request.variables.day ?? 1
+            : request.variables.other ?? 3,
+        ]),
+      ) as { rows: number; stable: number };
+      return evaluation(request.evaluation_id, "auth-1", values, ids);
+    });
+    render(() => <CompositionRevisionRoute />);
+    await screen.findByText("3");
+    fireEvent.input(screen.getByLabelText("day"), { target: { value: "bad" } });
+    await screen.findByText("Enter a valid value.");
+    fireEvent.input(screen.getByLabelText("other"), { target: { value: "7" } });
+    await screen.findByText("7");
+    expect(evaluateMock.mock.calls.at(-1)?.[1]).toMatchObject({
+      requested_queries: ["stable"],
+      variables: { other: 7 },
+      unset_variables: ["day"],
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("Waiting for input");
+    fireEvent.input(screen.getByLabelText("day"), { target: { value: "2" } });
+    await screen.findByText("2");
+    expect(screen.getByLabelText("stable")).toHaveTextContent("7");
+    expect(evaluateMock.mock.calls.at(-1)?.[1].requested_queries).toEqual([
+      "rows",
+    ]);
   });
 });

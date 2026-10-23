@@ -1,7 +1,7 @@
 //! Resolve typed constants and caller-supplied inputs for a variable graph.
 
 use super::variable_graph::{
-    compile_variable_graph, literal_matches, VariableGraph, VariableGraphDiagnostic,
+    compile_variable_graph, variable_graph_literal_matches, VariableGraph, VariableGraphDiagnostic,
     VariableGraphLiteral, VariableGraphNodeKind,
 };
 use serde::{Deserialize, Serialize};
@@ -55,7 +55,7 @@ pub fn parse_variable_graph_input(
             Err(_) => return VariableGraphInputValue::Invalid,
         },
     };
-    if super::variable_graph::literal_matches(&descriptor, &literal) {
+    if super::variable_graph::variable_graph_literal_matches(&descriptor, &literal) {
         VariableGraphInputValue::Valid(literal)
     } else {
         VariableGraphInputValue::Invalid
@@ -147,7 +147,7 @@ pub fn resolve_variable_graph_inputs(
                 input_ids.insert(node.id.as_str());
                 let value = supplied.get(&node.id).or(default.as_ref());
                 match value {
-                    Some(value) if literal_matches(value_type, value) => {
+                    Some(value) if variable_graph_literal_matches(value_type, value) => {
                         values.insert(node.id.clone(), value.clone());
                     }
                     Some(_) => diagnostics.push(VariableGraphInputDiagnostic {

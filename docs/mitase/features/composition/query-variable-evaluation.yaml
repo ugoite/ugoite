@@ -22,6 +22,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-COMP-009#criterion.query-results-validated-before-preview
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
       - id: composition-graph-evaluation
         role: implementation
         facet: storage
@@ -36,8 +38,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-COMP-009#criterion.query-results-validated-before-preview
-              - kind: evidences
-                anchor: REQ-COMP-009#criterion.snapshot-reactive-execution
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
               - kind: evidences
                 anchor: REQ-COMP-009#criterion.query-results-validated-before-preview
       - id: authoring-query-metadata
@@ -80,3 +82,74 @@ features:
                 anchor: REQ-COMP-009#criterion.authoring-query-metadata-preview
               - kind: documents
                 anchor: REQ-COMP-009#criterion.exact-query-identities
+
+      - id: dependency-scoped-browser
+        role: implementation
+        facet: frontend
+        responsibility: Schedule independent graph branches and suppress stale dependent displays while input parsing remains transient Work.
+        targets:
+          - id: design-scheduler
+            adapter: typescript
+            path: frontend/src/lib/composition-design-evaluation.ts
+            selector: { kind: symbol, name: createCompositionDesignEvaluation }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+          - id: saved-runtime
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx
+            selector: { kind: symbol, name: CompositionRevisionRoute }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+      - id: dependency-selection-verification
+        role: verification
+        facet: verification
+        responsibility: Verify required input scoping without weakening selected-input, identity, authorization, or snapshot checks.
+        targets:
+          - id: selected-input-validation
+            adapter: rust
+            path: crates/ugoite-core/tests/composition_query_evaluation.rs
+            selector: { kind: test, name: "selected_query_inputs_do_not_require_unrelated_inputs_but_keep_request_validation" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-011#binding.query-result-validation/target.composition-query-evaluation]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-core, harness: composition_query_evaluation, test: selected_query_inputs_do_not_require_unrelated_inputs_but_keep_request_validation } }
+          - id: authorized-input-selection
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_preview.rs
+            selector: { kind: test, name: "authorized_saved_and_draft_query_selection_isolates_unrelated_missing_and_invalid_inputs" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-011#binding.composition-graph-evaluation/target.stateless-query-evaluation]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: authorized_saved_and_draft_query_selection_isolates_unrelated_missing_and_invalid_inputs } }
+          - id: design-independent-branch
+            adapter: typescript
+            path: frontend/src/lib/composition-design-evaluation.test.ts
+            selector: { kind: test, name: "updates and pages an independent branch while another input is invalid or pending" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-011#binding.dependency-scoped-browser/target.design-scheduler]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-design-evaluation.test.ts, test: "updates and pages an independent branch while another input is invalid or pending" } }
+          - id: runtime-independent-branch
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: "keeps an independent input branch live while another input is invalid" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-011#binding.dependency-scoped-browser/target.saved-runtime]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: "keeps an independent input branch live while another input is invalid" } }
+
+          - id: browser-independent-input-branches
+            adapter: typescript
+            path: e2e/composition-invalid-variable-input.test.ts
+            selector: { kind: test, name: "independent Composition results update while another Input is invalid in Design and runtime" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+                covers: [FEAT-COMP-011#binding.dependency-scoped-browser/target.design-scheduler, FEAT-COMP-011#binding.dependency-scoped-browser/target.saved-runtime]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-invalid-variable-input.test.ts, test: "independent Composition results update while another Input is invalid in Design and runtime" } }

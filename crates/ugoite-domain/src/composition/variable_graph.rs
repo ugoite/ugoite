@@ -417,7 +417,7 @@ pub fn compile_variable_graph(
     for node in nodes.values().copied() {
         match &node.kind {
             VariableGraphNodeKind::Constant { value_type, value } => {
-                if !literal_matches(value_type, value) {
+                if !variable_graph_literal_matches(value_type, value) {
                     diagnostics.push(VariableGraphDiagnostic::for_variable(
                         VariableGraphDiagnosticCode::InvalidConstantValue,
                         &node.id,
@@ -431,7 +431,7 @@ pub fn compile_variable_graph(
             } => {
                 if default
                     .as_ref()
-                    .is_some_and(|value| !literal_matches(value_type, value))
+                    .is_some_and(|value| !variable_graph_literal_matches(value_type, value))
                 {
                     diagnostics.push(VariableGraphDiagnostic::for_variable(
                         VariableGraphDiagnosticCode::InvalidInputDefault,
@@ -715,7 +715,8 @@ fn scalar_type_assignable(
     expected.scalar_type == actual.scalar_type && (!actual.nullable || expected.nullable)
 }
 
-pub(crate) fn literal_matches(
+/// Check a caller-supplied scalar against the complete graph value contract.
+pub fn variable_graph_literal_matches(
     descriptor: &VariableGraphScalarDescriptor,
     literal: &VariableGraphLiteral,
 ) -> bool {
@@ -758,7 +759,7 @@ fn query_result_literal_matches(
     {
         return true;
     }
-    literal_matches(descriptor, literal)
+    variable_graph_literal_matches(descriptor, literal)
 }
 
 /// Stable diagnostics for a query result that violates its declared contract.

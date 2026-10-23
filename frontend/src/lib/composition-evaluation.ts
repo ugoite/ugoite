@@ -45,6 +45,24 @@ export const dependentCompositionQueryIds = (
   return [...affected];
 };
 
+/** Scheduling hints only; Core independently validates the selected dependency closure. */
+export const unavailableCompositionQueryIds = (
+  draft: CompositionGraphDraft,
+  states: Readonly<Record<string, "pending" | "invalid" | "missing">>,
+  supplied: Readonly<Record<string, unknown>>,
+  unset: ReadonlySet<string>,
+): string[] => {
+  const unavailable = new Set(Object.keys(states));
+  for (const node of draft.variables) {
+    if (
+      node.kind === "input" && node.required &&
+      (unset.has(node.id) ||
+        (!Object.hasOwn(supplied, node.id) && node.default === undefined))
+    ) unavailable.add(node.id);
+  }
+  return dependentCompositionQueryIds(draft, unavailable);
+};
+
 export const changedCompositionQueryIds = (
   previous: CompositionGraphDraft,
   next: CompositionGraphDraft,

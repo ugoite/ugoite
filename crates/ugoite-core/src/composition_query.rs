@@ -14,11 +14,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use ugoite_domain::composition::{
-    compile_variable_graph, validate_variable_graph_result, CompiledVariableGraph, VariableGraph,
-    VariableGraphArgumentBinding, VariableGraphColumn, VariableGraphDiagnostic,
-    VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind, VariableGraphQueryDefinition,
-    VariableGraphResultDiagnostic, VariableGraphResultType, VariableGraphScalarDescriptor,
-    VariableGraphScalarType, VariableGraphValidatedResult, MAX_COMPOSITION_COLLECTION_ITEMS,
+    compile_variable_graph, validate_variable_graph_result, variable_graph_literal_matches,
+    CompiledVariableGraph, VariableGraph, VariableGraphArgumentBinding, VariableGraphColumn,
+    VariableGraphDiagnostic, VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind,
+    VariableGraphQueryDefinition, VariableGraphResultDiagnostic, VariableGraphResultType,
+    VariableGraphScalarDescriptor, VariableGraphScalarType, VariableGraphValidatedResult,
+    MAX_COMPOSITION_COLLECTION_ITEMS,
 };
 use ugoite_domain::sql_document::{parse_sql_document, SqlDocumentStatus};
 use uuid::Uuid;
@@ -390,6 +391,8 @@ impl VariableGraphQueryEvaluation {
         let selected_query_ids =
             selected_query_dependency_closure(graph, &compiled, requested_queries)?;
 
+        let required_inputs =
+            requested_queries.map(|_| input_dependencies_for_queries(graph, &selected_query_ids));
         let nodes = graph
             .variables
             .iter()
@@ -419,7 +422,11 @@ impl VariableGraphQueryEvaluation {
                     .cloned()
                     .or_else(|| default.clone())
                     .or_else(|| {
-                        if *required {
+                        if *required
+                            && required_inputs
+                                .as_ref()
+                                .is_none_or(|ids| ids.contains(&node.id))
+                        {
                             diagnostics.push(VariableGraphQueryEvaluationDiagnostic::for_variable(
                                 VariableGraphQueryEvaluationDiagnosticCode::MissingInputValue,
                                 &node.id,
@@ -432,11 +439,16 @@ impl VariableGraphQueryEvaluation {
             if let Some(value) = value {
                 let descriptor = scalar_descriptor_of(&node.kind)
                     .expect("constant and input variables have scalar descriptors");
-                if !literal_matches_descriptor(descriptor, &value) {
-                    diagnostics.push(VariableGraphQueryEvaluationDiagnostic::for_variable(
-                        VariableGraphQueryEvaluationDiagnosticCode::InvalidInputValue,
-                        &node.id,
-                    ));
+                if !variable_graph_literal_matches(&descriptor, &value) {
+                    if required_inputs
+                        .as_ref()
+                        .is_none_or(|ids| ids.contains(&node.id))
+                    {
+                        diagnostics.push(VariableGraphQueryEvaluationDiagnostic::for_variable(
+                            VariableGraphQueryEvaluationDiagnosticCode::InvalidInputValue,
+                            &node.id,
+                        ));
+                    }
                 } else {
                     resolved_scalar_values.insert(node.id.clone(), value);
                 }
@@ -828,6 +840,32 @@ pub fn selected_query_dependency_closure_for_graph(
             .collect::<Vec<_>>()
     })?;
     selected_query_dependency_closure(graph, &compiled, requested_queries)
+}
+
+/// Input nodes consumed by an already validated query dependency closure.
+pub(crate) fn input_dependencies_for_queries(
+    graph: &VariableGraph,
+    selected_queries: &[String],
+) -> BTreeSet<String> {
+    let input_ids = graph
+        .variables
+        .iter()
+        .filter(|node| matches!(node.kind, VariableGraphNodeKind::Input { .. }))
+        .map(|node| node.id.as_str())
+        .collect::<BTreeSet<_>>();
+    graph
+        .variables
+        .iter()
+        .filter_map(|node| match &node.kind {
+            VariableGraphNodeKind::Query { query, .. } if selected_queries.contains(&node.id) => {
+                Some(query)
+            }
+            _ => None,
+        })
+        .flat_map(|query| query.arguments.iter())
+        .filter(|argument| input_ids.contains(argument.variable.as_str()))
+        .map(|argument| argument.variable.clone())
+        .collect()
 }
 
 fn nodes_kind<'a>(
