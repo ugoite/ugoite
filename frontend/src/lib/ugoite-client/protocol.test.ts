@@ -7,6 +7,7 @@ import {
   buildSpreadsheetCsvRequest,
   canonicalizeCompositionDocument,
   compileVariableGraph,
+  compositionFormQuerySql,
   encodeSpreadsheetCsv,
   getWasmSupportedOperations,
   parseSqlDocument,
@@ -144,6 +145,19 @@ describe("portable Ugoite API protocol WASM", () => {
       )
     )
       .toThrow("Variable graph input parser is not prepared");
+  });
+
+  it("constructs Form table and explicit metric SQL through Rust with quoted identities", async () => {
+    expect(await compositionFormQuerySql('form"identity')).toEqual({
+      sql: 'SELECT * FROM "form""identity"',
+    });
+    expect(await compositionFormQuerySql("form_id", { kind: "count" })).toEqual(
+      { sql: 'SELECT COUNT(*) AS value FROM "form_id"' },
+    );
+    expect(
+      await compositionFormQuerySql("form_id", { kind: "sum", column: 'a"b' }),
+    ).toEqual({ sql: 'SELECT SUM("a""b") AS value FROM "form_id"' });
+    await expect(compositionFormQuerySql("")).rejects.toThrow();
   });
 
   it("canonicalizes a strict variable-graph Composition through Rust/WASM", async () => {

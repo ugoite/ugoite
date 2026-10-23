@@ -1134,6 +1134,19 @@ export const applySqlDocumentSemanticEditTransaction = async (
     value: { current_source: currentSource, transaction },
   });
 
+/** Rust owns Form SQL construction; server planning still binds and authorizes it. */
+export const compositionFormQuerySql = async (
+  relation: string,
+  aggregate?: { kind: "count" } | {
+    kind: "sum" | "avg" | "min" | "max";
+    column: string;
+  },
+): Promise<{ sql: string }> =>
+  await invokeProtocol({
+    action: "domain.composition_form_query_sql",
+    value: { relation, aggregate: aggregate ?? null },
+  });
+
 export type SqlStructureColumnType =
   | "string"
   | "boolean"

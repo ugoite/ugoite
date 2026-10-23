@@ -60,7 +60,12 @@ import {
   dependentCompositionQueryIds,
 } from "~/lib/composition-evaluation";
 import { spaceCompositionRevisionPath } from "~/lib/space-path";
-import { authApi, formApi, sqlApi } from "~/lib/ugoite-client";
+import {
+  authApi,
+  compositionFormQuerySql,
+  formApi,
+  sqlApi,
+} from "~/lib/ugoite-client";
 import type { Form, SqlEntry } from "~/lib/types";
 import { buildSqlSchema } from "~/lib/sql";
 import type { SqlResultColumnType } from "~/lib/types";
@@ -75,9 +80,6 @@ export interface CompositionStudioProps {
   backHref: string;
   backLabel: string;
 }
-
-const quoteIdentifier = (identifier: string) =>
-  `"${identifier.replaceAll('"', '""')}"`;
 
 const draftQuery = (
   kind: "inline_sql" | "saved_sql",
@@ -777,31 +779,32 @@ export function CompositionStudio(props: CompositionStudioProps) {
     resolveForm: async ({ form_id, component, aggregate, draft: current }) => {
       const form = forms().find((candidate) => candidate.id === form_id);
       if (!form) throw new Error("Form unavailable");
-      const relation = quoteIdentifier(form.relation);
-      let sql = `SELECT * FROM ${relation}`;
-      let returns: CompositionQueryReturn = { kind: "table", columns: [] };
-      if (component === "metric") {
-        if (!aggregate) throw new Error("Aggregate selection required");
-        if (aggregate.kind === "count") {
-          sql = `SELECT COUNT(*) AS value FROM ${relation}`;
-        } else {
-          if (!aggregate.column) throw new Error("Aggregate column required");
-          const field = form.fields.find((candidate) =>
-            candidate.column === aggregate.column
-          );
-          if (!field) throw new Error("Aggregate field unavailable");
-          sql = `SELECT ${aggregate.kind.toUpperCase()}(${
-            quoteIdentifier(field.column)
-          }) AS value FROM ${relation}`;
-        }
-        returns = {
+      if (component === "metric" && !aggregate) {
+        throw new Error("Aggregate selection required");
+      }
+      if (
+        aggregate && aggregate.kind !== "count" &&
+        !form.fields.some((field) => field.column === aggregate.column)
+      ) {
+        throw new Error("Aggregate field unavailable");
+      }
+      const { sql } = await compositionFormQuerySql(
+        form.relation,
+        component === "table"
+          ? undefined
+          : aggregate!.kind === "count"
+          ? { kind: "count" }
+          : { kind: aggregate!.kind, column: aggregate!.column! },
+      );
+      const returns: CompositionQueryReturn = component === "table"
+        ? { kind: "table", columns: [] }
+        : {
           kind: "scalar",
           value_type: scalarFor(
             "integer",
-            aggregate.kind === "sum" || aggregate.kind === "avg",
+            aggregate!.kind === "sum" || aggregate!.kind === "avg",
           ),
         };
-      }
       const formSlug = variableSlug(form.name);
       const formPrefix = /^[a-z]/.test(formSlug)
         ? formSlug
@@ -859,8 +862,18 @@ export function CompositionStudio(props: CompositionStudioProps) {
       const withId = (column?: string) => ({
         ...base,
         id: (() => {
-          const stem = `query_${entry_id.replace(/[^a-zA-Z0-9_-]/g, "_")}_${
-            column ?? (component === "table" ? "table" : "value")
+          const name = variableSlug(entry.name);
+          const prefix = name && /^[a-z]/.test(name)
+            ? name
+            : name
+            ? `query_${name}`
+            : "query";
+          const stem = `${prefix}_${
+            column
+              ? variableSlug(column) || "value"
+              : component === "table"
+              ? "table"
+              : "value"
           }`;
           let value = stem;
           let suffix = 2;
@@ -1199,6 +1212,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
             <input
               class="ui-input compositionGraphName"
               aria-label={t("composition.name")}
+              placeholder={t("composition.namePlaceholder")}
               value={draft().name}
               onInput={(event) =>
                 onDraftChange({
@@ -1213,7 +1227,14 @@ export function CompositionStudio(props: CompositionStudioProps) {
         </Show>
         <CompositionGraphStudio
           draft={draft()}
+          previewBase={props.saveMode.kind === "update"
+            ? {
+              entryId: props.saveMode.compositionId,
+              revisionId: props.saveMode.baseRevisionId,
+            }
+            : undefined}
           forms={forms()}
+          formsLoading={formsResource.loading}
           savedSql={savedSqlForPicker()}
           savedSqlLoading={sqlResource.loading}
           savedSqlSeedUnavailable={savedSqlSeedUnavailable()}

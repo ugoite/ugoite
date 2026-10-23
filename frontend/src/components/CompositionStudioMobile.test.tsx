@@ -1,4 +1,5 @@
 import "@testing-library/jest-dom/vitest";
+import type * as UgoiteClient from "~/lib/ugoite-client";
 import {
   cleanup,
   fireEvent,
@@ -36,10 +37,14 @@ vi.mock("@solidjs/router", () => ({
   ),
 }));
 
-vi.mock("~/lib/ugoite-client", () => ({
-  formApi: { list: (...args: unknown[]) => formsMock(...args) },
-  sqlApi: { list: (...args: unknown[]) => savedSqlMock(...args) },
-}));
+vi.mock("~/lib/ugoite-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof UgoiteClient>();
+  return {
+    compositionFormQuerySql: actual.compositionFormQuerySql,
+    formApi: { list: (...args: unknown[]) => formsMock(...args) },
+    sqlApi: { list: (...args: unknown[]) => savedSqlMock(...args) },
+  };
+});
 
 const tableDraft = (): CompositionGraphDraft => {
   const draft = createCompositionGraphDraft("Mobile");
@@ -82,9 +87,6 @@ describe("CompositionStudio narrow binding picker", () => {
       />
     ));
 
-    const add = screen.getByRole("button", { name: "Add to design" });
-    add.focus();
-    fireEvent.click(add);
     const table = screen.getByRole("button", { name: "Table" });
     table.focus();
     fireEvent.click(table);
@@ -107,7 +109,7 @@ describe("CompositionStudio narrow binding picker", () => {
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).toBeNull();
       expect(appRoot).not.toHaveAttribute("inert");
-      expect(add).toHaveFocus();
+      expect(table).toHaveFocus();
     });
     appRoot.remove();
   });

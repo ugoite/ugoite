@@ -1,8 +1,9 @@
-import { For, Show } from "solid-js";
+import { For, type JSX, Show } from "solid-js";
 import { ResultPagination } from "~/components/ResultPagination";
 import { UiIcon } from "~/components/UiIcon";
 import type { CompositionEvaluationResponse } from "~/lib/composition-api";
 import type {
+  CompositionComponent,
   CompositionGraphDraft,
   CompositionLiteral,
   CompositionScalarType,
@@ -12,6 +13,11 @@ import { t } from "~/lib/i18n";
 
 export interface CompositionGraphRendererProps {
   draft: CompositionGraphDraft;
+  /** Editor-only frame around the same semantic value renderer. */
+  decorateComponent?: (
+    component: () => CompositionComponent,
+    value: JSX.Element,
+  ) => JSX.Element;
   evaluation?: CompositionEvaluationResponse;
   rawInputs: Readonly<Record<string, string>>;
   inputStates: Readonly<Record<string, "pending" | "invalid" | "missing">>;
@@ -135,12 +141,18 @@ export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
                         variableId() && !blocked()
                           ? queryError(props.evaluation, variableId()!)
                           : undefined;
-                      return (
+                      const rendered = (
                         <Show
-                          when={!blocked()}
+                          when={!blocked() &&
+                            !(node()?.kind === "query" && !queryResult() &&
+                              !error())}
                           fallback={
                             <p role="status">
-                              {t("composition.waitingForInputs")}
+                              {t(
+                                blocked()
+                                  ? "composition.waitingForInputs"
+                                  : "composition.queryLoading",
+                              )}
                             </p>
                           }
                         >
@@ -241,8 +253,20 @@ export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
                                       ? "h2"
                                       : "p";
                                     return tag === "h2"
-                                      ? <h2>{value}</h2>
-                                      : <p>{value}</p>;
+                                      ? (
+                                        <h2
+                                          class={`compositionGraphText compositionGraphText--${entry().style}`}
+                                        >
+                                          {value}
+                                        </h2>
+                                      )
+                                      : (
+                                        <p
+                                          class={`compositionGraphText compositionGraphText--${entry().style}`}
+                                        >
+                                          {value}
+                                        </p>
+                                      );
                                   }
                                   const value = evaluated()?.kind === "scalar"
                                     ? literalValue(evaluated()!.value)
@@ -372,6 +396,16 @@ export function CompositionGraphRenderer(props: CompositionGraphRendererProps) {
                           </Show>
                         </Show>
                       );
+                      return props.decorateComponent
+                        ? props.decorateComponent(entry, rendered)
+                        : (
+                          <div
+                            class="compositionGraphValue"
+                            data-component-id={entry().id}
+                          >
+                            {rendered}
+                          </div>
+                        );
                     }}
                   </Show>
                 );

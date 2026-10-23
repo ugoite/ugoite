@@ -322,6 +322,15 @@ fn invoke_domain(request: serde_json::Value) -> String {
             .cloned()
             .ok_or_else(|| "value is required".to_string())?;
         match action {
+            "domain.composition_form_query_sql" => {
+                let query = serde_json::from_value::<
+                    ugoite_domain::composition::CompositionFormQuery,
+                >(payload)
+                .map_err(|error| error.to_string())?;
+                let sql = ugoite_domain::composition::composition_form_query_sql(query)
+                    .map_err(str::to_owned)?;
+                Ok(serde_json::json!({ "sql": sql }))
+            }
             "domain.analyze_sql_structure" => {
                 let sql = payload
                     .get("sql")

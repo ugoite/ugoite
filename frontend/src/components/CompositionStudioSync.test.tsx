@@ -1,4 +1,5 @@
 import "@testing-library/jest-dom/vitest";
+import type * as UgoiteClient from "~/lib/ugoite-client";
 import {
   cleanup,
   fireEvent,
@@ -59,15 +60,19 @@ vi.mock("@solidjs/router", () => ({
   ),
 }));
 
-vi.mock("~/lib/ugoite-client", () => ({
-  authApi: { getSession: (...args: unknown[]) => authSessionMock(...args) },
-  formApi: { list: (...args: unknown[]) => formsMock(...args) },
-  sqlApi: {
-    list: (...args: unknown[]) => savedSqlMock(...args),
-    count: (...args: unknown[]) => countMock(...args),
-  },
-  parseVariableGraphInput: (...args: unknown[]) => parseInputMock(...args),
-}));
+vi.mock("~/lib/ugoite-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof UgoiteClient>();
+  return {
+    compositionFormQuerySql: actual.compositionFormQuerySql,
+    authApi: { getSession: (...args: unknown[]) => authSessionMock(...args) },
+    formApi: { list: (...args: unknown[]) => formsMock(...args) },
+    sqlApi: {
+      list: (...args: unknown[]) => savedSqlMock(...args),
+      count: (...args: unknown[]) => countMock(...args),
+    },
+    parseVariableGraphInput: (...args: unknown[]) => parseInputMock(...args),
+  };
+});
 
 vi.mock("~/lib/composition-api", () => ({
   compositionApi: {
@@ -485,7 +490,6 @@ describe("CompositionStudio graph surface", () => {
     expect(variablesTab).toHaveClass("studioModeOption");
     expect(screen.queryByRole("tab", { name: "Data" })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Add to design" }));
     fireEvent.click(screen.getByRole("button", { name: "Table" }));
     const dialog = screen.getByRole("dialog", { name: "Table" });
     fireEvent.click(
@@ -504,9 +508,6 @@ describe("CompositionStudio graph surface", () => {
       plan: { queries: [] },
     });
     renderStudio(createCompositionGraphDraft("Report"));
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Add to design" }),
-    );
     fireEvent.click(screen.getByRole("button", { name: "Input" }));
 
     expect(await screen.findByRole("button", { name: "input, input_1" }))
@@ -516,6 +517,15 @@ describe("CompositionStudio graph surface", () => {
       "aria-selected",
       "true",
     );
+    fireEvent.click(screen.getByRole("button", { name: "input, input_1" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "input_1", exact: true }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Variable ID" }))
+        .toHaveFocus()
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Design" }));
     const saveCall = screen.getByRole("button", { name: "Save" });
     expect(saveCall).toBeEnabled();
     fireEvent.click(saveCall);
@@ -993,7 +1003,6 @@ describe("CompositionStudio graph surface", () => {
       fields: { amount: { type: "float", sql_column: "amount" } },
     }]);
     renderStudio(createCompositionGraphDraft("Report"));
-    fireEvent.click(screen.getByRole("button", { name: "Add to design" }));
     fireEvent.click(screen.getByRole("button", { name: "Table" }));
     const picker = screen.getByRole("dialog", { name: "Table" });
     fireEvent.click(within(picker).getByRole("tab", { name: "Forms" }));
@@ -1046,7 +1055,6 @@ describe("CompositionStudio graph surface", () => {
       })
     );
     renderStudio(createCompositionGraphDraft("Report"));
-    fireEvent.click(screen.getByRole("button", { name: "Add to design" }));
     fireEvent.click(screen.getByRole("button", { name: "Metric" }));
     const picker = screen.getByRole("dialog", { name: "Metric" });
     fireEvent.click(within(picker).getByRole("tab", { name: "Forms" }));
@@ -1107,7 +1115,6 @@ describe("CompositionStudio graph surface", () => {
       account: { account_id: "editor-1", display_name: "Editor" },
     });
     renderStudio(createCompositionGraphDraft("Report"));
-    fireEvent.click(screen.getByRole("button", { name: "Add to design" }));
     fireEvent.click(screen.getByRole("button", { name: "Table" }));
     const picker = screen.getByRole("dialog", { name: "Table" });
     fireEvent.click(within(picker).getByRole("tab", { name: "Forms" }));
@@ -1149,7 +1156,6 @@ describe("CompositionStudio graph surface", () => {
       })
     );
     renderStudio(createCompositionGraphDraft("Report"));
-    fireEvent.click(screen.getByRole("button", { name: "Add to design" }));
     fireEvent.click(screen.getByRole("button", { name: "Metric" }));
     const picker = screen.getByRole("dialog", { name: "Metric" });
     fireEvent.click(within(picker).getByRole("tab", { name: "Saved SQL" }));
@@ -1161,7 +1167,7 @@ describe("CompositionStudio graph surface", () => {
 
     expect(
       await screen.findByRole("button", {
-        name: "metric, query_sql-1_value",
+        name: "metric, revenue_total_value",
       }),
     ).toBeVisible();
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -1191,7 +1197,6 @@ describe("CompositionStudio graph surface", () => {
       variables: [],
     }]);
     renderStudio(createCompositionGraphDraft("Report"));
-    fireEvent.click(screen.getByRole("button", { name: "Add to design" }));
     fireEvent.click(screen.getByRole("button", { name: "Table" }));
     const picker = screen.getByRole("dialog", { name: "Table" });
     fireEvent.click(within(picker).getByRole("tab", { name: "Saved SQL" }));
@@ -1241,14 +1246,14 @@ describe("CompositionStudio graph surface", () => {
       { id: "table_1", kind: "table", variable: "rows" },
       expect.objectContaining({
         kind: "table",
-        variable: "query_sql-table_table",
+        variable: "one_column_table",
       }),
     ]));
     fireEvent.click(savedSql);
 
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.getByRole("button", {
-      name: "table, query_sql-table_table",
+      name: "table, one_column_table",
     })).toBeVisible();
     expect(screen.getAllByRole("button", { name: /^table,/ })).toHaveLength(1);
   });
@@ -1268,7 +1273,6 @@ describe("CompositionStudio graph surface", () => {
       })
     );
     renderStudio(createCompositionGraphDraft("Report"));
-    fireEvent.click(screen.getByRole("button", { name: "Add to design" }));
     fireEvent.click(screen.getByRole("button", { name: "Table" }));
     const picker = screen.getByRole("dialog", { name: "Table" });
     fireEvent.click(within(picker).getByRole("tab", { name: "Saved SQL" }));

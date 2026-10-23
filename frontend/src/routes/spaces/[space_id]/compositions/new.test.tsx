@@ -40,7 +40,7 @@ describe("new Composition route", () => {
     expect(screen.getByRole("tab", { name: "Variables" })).toBeVisible();
     expect(screen.queryByRole("tab", { name: "Data" })).toBeNull();
     expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("");
-    expect(screen.getByRole("button", { name: "Add to design" }))
+    expect(screen.getByRole("group", { name: "Add to design" }))
       .toBeVisible();
   });
 });

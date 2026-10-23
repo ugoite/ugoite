@@ -1,5 +1,7 @@
 import { createEffect, createSignal, For, Show } from "solid-js";
 import { IconButton } from "~/components/IconButton";
+import { CompositionGraphRenderer } from "~/components/CompositionGraphRenderer";
+import { createCompositionDesignEvaluation } from "~/lib/composition-design-evaluation";
 import { UiIcon } from "~/components/UiIcon";
 import { CompositionVariableBindingPicker } from "~/components/CompositionVariableBindingPicker";
 import {
@@ -13,14 +15,15 @@ import {
   compositionNodeReturnsTable,
   type CompositionSavedSqlChoice,
   type CompositionSavedSqlRevisionRef,
-  type CompositionVariableNode,
   removeCompositionGraphComponent,
 } from "~/lib/composition-variable-binding";
 import { t } from "~/lib/i18n";
 
 export interface CompositionGraphDesignCanvasProps {
   draft: CompositionGraphDraft;
+  previewBase?: { entryId: string; revisionId: string };
   forms: readonly CompositionFormChoice[];
+  formsLoading?: boolean;
   savedSql: readonly CompositionSavedSqlChoice[];
   savedSqlLoading?: boolean;
   savedSqlSeedUnavailable?: boolean;
@@ -33,25 +36,13 @@ export interface CompositionGraphDesignCanvasProps {
   ) => boolean | Promise<boolean>;
   onDraftChange: (draft: CompositionGraphDraft) => void;
   onCreateInput?: () => void;
+  onEditVariable?: (id: string) => void;
 }
 
 const nextId = (prefix: string, values: readonly string[]) => {
   let index = 1;
   while (values.includes(`${prefix}_${index}`)) index++;
   return `${prefix}_${index}`;
-};
-
-const variableFor = (
-  draft: CompositionGraphDraft,
-  component: CompositionGraphDraft["components"][number],
-): CompositionVariableNode | undefined => {
-  if (component.kind === "text") {
-    const content = component.content;
-    return content.kind === "variable"
-      ? draft.variables.find((variable) => variable.id === content.variable)
-      : undefined;
-  }
-  return draft.variables.find((variable) => variable.id === component.variable);
 };
 
 const componentName = (
@@ -67,10 +58,22 @@ const componentName = (
     ?.id ?? component.variable;
 };
 
+const isEmptyLiteralText = (
+  component: CompositionGraphDraft["components"][number],
+) =>
+  component.kind === "text" && component.content.kind === "literal" &&
+  !component.content.text;
+
 export function CompositionGraphDesignCanvas(
   props: CompositionGraphDesignCanvasProps,
 ) {
-  const [paletteOpen, setPaletteOpen] = createSignal(false);
+  const preview = createCompositionDesignEvaluation({
+    draft: () => props.draft,
+    scope: () => JSON.stringify(props.session),
+    spaceId: () => props.session.space_id,
+    principal: props.getPrincipalGeneration,
+    base: () => props.previewBase,
+  });
   const [pickerKind, setPickerKind] = createSignal<BindingComponentKind | null>(
     props.initialSavedSqlBinding ? "table" : null,
   );
@@ -80,7 +83,6 @@ export function CompositionGraphDesignCanvas(
     const next = props.session.session_id;
     if (sessionId === next) return;
     sessionId = next;
-    setPaletteOpen(false);
     setSelectedId(null);
     setPickerKind(props.initialSavedSqlBinding ? "table" : null);
   });
@@ -108,7 +110,6 @@ export function CompositionGraphDesignCanvas(
     bindingOpener = document.activeElement instanceof HTMLElement
       ? document.activeElement
       : null;
-    setPaletteOpen(false);
     setSelectedId(componentId ?? null);
     setPickerKind(kind);
   };
@@ -123,7 +124,6 @@ export function CompositionGraphDesignCanvas(
     });
     if (!next) return;
     props.onDraftChange(next);
-    setPaletteOpen(false);
   };
 
   const insertInput = (variableId: string) => {
@@ -135,16 +135,75 @@ export function CompositionGraphDesignCanvas(
     });
     if (!next) return;
     props.onDraftChange(next);
-    setPaletteOpen(false);
   };
 
+  const orderedIds = () =>
+    props.draft.layout.rows.flatMap((row) =>
+      row.items.map((item) => item.component)
+    );
+  const moveSelected = (direction: -1 | 1) => {
+    const ids = orderedIds();
+    const index = ids.indexOf(selectedId() ?? "");
+    const target = ids[index + direction];
+    if (index < 0 || !target) return;
+    const id = ids[index];
+    props.onDraftChange({
+      ...props.draft,
+      layout: {
+        ...props.draft.layout,
+        rows: props.draft.layout.rows.map((row) => ({
+          ...row,
+          items: row.items.map((item) =>
+            item.component === id
+              ? { ...item, component: target }
+              : item.component === target
+              ? { ...item, component: id }
+              : item
+          ),
+        })),
+      },
+    });
+    queueMicrotask(() =>
+      document.querySelector<HTMLElement>(
+        ".compositionGraphDesignValue--selected button",
+      )?.focus()
+    );
+  };
+  const moveToNewRow = () => {
+    const id = selectedId();
+    if (!id) return;
+    const rows = props.draft.layout.rows.map((row) => ({
+      ...row,
+      items: row.items.filter((item) => item.component !== id),
+    })).filter((row) => row.items.length > 0);
+    rows.push({
+      id: nextId("row", props.draft.layout.rows.map((row) => row.id)),
+      items: [{ kind: "component", component: id }],
+    });
+    props.onDraftChange({ ...props.draft, layout: { kind: "flow", rows } });
+    queueMicrotask(() =>
+      document.querySelector<HTMLElement>(
+        ".compositionGraphDesignValue--selected button",
+      )?.focus()
+    );
+  };
   const removeSelected = () => {
     const id = selectedId();
     if (!id) return;
     const next = removeCompositionGraphComponent(props.draft, id);
     if (!next) return;
     props.onDraftChange(next);
-    setSelectedId(null);
+    const ids = orderedIds();
+    const index = ids.indexOf(id);
+    const adjacent = ids[index + 1] ?? ids[index - 1];
+    setSelectedId(adjacent ?? null);
+    queueMicrotask(() => {
+      if (adjacent) {
+        document.querySelector<HTMLElement>(
+          ".compositionGraphDesignValue--selected button",
+        )?.focus();
+      } else addButton?.focus();
+    });
   };
 
   const updateText = (value: string) => {
@@ -193,297 +252,298 @@ export function CompositionGraphDesignCanvas(
   };
 
   return (
-    <div class="compositionGraphDesigner">
+    <div
+      class="compositionGraphDesigner"
+      classList={{ "compositionGraphDesigner--selected": !!selected() }}
+    >
       <section
         class="compositionGraphCanvas"
         aria-label={t("composition.studioDesign")}
       >
-        <header class="compositionGraphCanvasHeader">
-          <IconButton
-            icon="plus"
-            label={t("composition.studioAddToDesign")}
+        <div
+          class="compositionGraphPalette"
+          role="group"
+          aria-label={t("composition.studioAddToDesign")}
+        >
+          <button
+            type="button"
             ref={(element) => addButton = element}
-            onClick={() => setPaletteOpen((open) => !open)}
-          />
-          <Show when={paletteOpen()}>
-            <div
-              class="compositionGraphPalette"
-              role="group"
-              aria-label={t("composition.studioAddToDesign")}
-            >
-              <button type="button" onClick={() => openBinding("table")}>
-                <UiIcon name="canvas-table" />
-                {t("composition.studioTable")}
+            onClick={() => openBinding("table")}
+          >
+            <UiIcon name="canvas-table" />
+            {t("composition.studioTable")}
+          </button>
+          <button type="button" onClick={() => openBinding("metric")}>
+            <UiIcon name="canvas-metric" />
+            {t("composition.studioMetric")}
+          </button>
+          <Show
+            when={props.draft.variables.some((node) => node.kind === "input")}
+            fallback={
+              <button
+                type="button"
+                onClick={() => {
+                  props.onCreateInput?.();
+                }}
+              >
+                <UiIcon name="canvas-input" />
+                {t("composition.studioAddInput")}
               </button>
-              <button type="button" onClick={() => openBinding("metric")}>
-                <UiIcon name="canvas-metric" />
-                {t("composition.studioMetric")}
+            }
+          >
+            <label class="compositionGraphInputChoice">
+              <UiIcon name="canvas-input" />
+              <span>{t("composition.studioAddInput")}</span>
+              <select
+                aria-label={t("composition.studioAddInput")}
+                value=""
+                onChange={(event) =>
+                  event.currentTarget.value &&
+                  insertInput(event.currentTarget.value)}
+              >
+                <option value="">—</option>
+                <For
+                  each={props.draft.variables.filter((node) =>
+                    node.kind === "input"
+                  )}
+                >
+                  {(node) => <option value={node.id}>{node.id}</option>}
+                </For>
+              </select>
+            </label>
+          </Show>
+          <button type="button" onClick={insertText}>
+            <UiIcon name="canvas-text" />
+            {t("composition.studioText")}
+          </button>
+        </div>
+        <Show when={preview.error()}>
+          {(error) => <p role="alert" class="ui-text-danger">{error()}</p>}
+        </Show>
+        <CompositionGraphRenderer
+          draft={props.draft}
+          evaluation={preview.evaluation()}
+          rawInputs={preview.rawInputs()}
+          inputStates={preview.inputStates()}
+          blockedQueryIds={preview.blocked()}
+          previousPageQueryIds={preview.previousIds()}
+          pageBusy={preview.busy()}
+          onInput={preview.onInput}
+          onNext={preview.onNext}
+          onPrevious={preview.onPrevious}
+          decorateComponent={(entry, value) => (
+            <div
+              class="compositionGraphValue compositionGraphDesignValue"
+              classList={{
+                "compositionGraphDesignValue--selected":
+                  selectedId() === entry().id,
+              }}
+              data-component-id={entry().id}
+            >
+              <button
+                type="button"
+                class="compositionGraphSelect"
+                aria-label={`${entry().kind}, ${
+                  componentName(props.draft, entry())
+                }`}
+                aria-pressed={selectedId() === entry().id}
+                onClick={() => setSelectedId(entry().id)}
+              >
+                <UiIcon name="edit" />
               </button>
               <Show
-                when={props.draft.variables.some((node) =>
-                  node.kind === "input"
-                )}
-                fallback={
+                when={isEmptyLiteralText(entry())}
+                fallback={value}
+              >
+                <button
+                  type="button"
+                  class="compositionGraphEmptyText"
+                  onClick={() => setSelectedId(entry().id)}
+                >
+                  {t("composition.studioTextUseLiteral")}
+                </button>
+              </Show>
+            </div>
+          )}
+        />
+      </section>
+
+      <Show when={selected()}>
+        <aside
+          class="compositionGraphInspector"
+          aria-label={t("composition.studioInspector")}
+        >
+          <Show
+            when={selected()}
+          >
+            {(component) => (
+              <>
+                <div class="compositionGraphInspectorHeader">
+                  <IconButton
+                    icon="close"
+                    label={t("common.close")}
+                    onClick={() => {
+                      setSelectedId(null);
+                      queueMicrotask(() => addButton?.focus());
+                    }}
+                  />
+                </div>
+                <Show
+                  when={component().kind === "table" ||
+                    component().kind === "metric"}
+                >
+                  {(() => {
+                    const item = component() as Extract<
+                      CompositionGraphDraft["components"][number],
+                      { kind: "table" | "metric" }
+                    >;
+                    const variable = () =>
+                      props.draft.variables.find((node) =>
+                        node.id === item.variable
+                      );
+                    return (
+                      <div class="compositionGraphVariableBinding">
+                        <span>{t("composition.studioVariables")}</span>
+                        <button
+                          type="button"
+                          class="compositionGraphVariableChange"
+                          aria-label={t("composition.studioChangeVariable", {
+                            name: variable()?.id ?? item.variable,
+                          })}
+                          onClick={() => openBinding(item.kind, item.id)}
+                        >
+                          <span>{variable()?.id ?? item.variable}</span>
+                          <UiIcon name="chevron-right" />
+                        </button>
+                      </div>
+                    );
+                  })()}
+                </Show>
+                <Show when={component().kind === "input"}>
                   <button
                     type="button"
+                    class="compositionGraphVariableChange"
                     onClick={() => {
-                      props.onCreateInput?.();
-                      setPaletteOpen(false);
+                      const item = component();
+                      if (item.kind === "input") {
+                        props.onEditVariable?.(
+                          item.variable,
+                        );
+                      }
                     }}
                   >
                     <UiIcon name="canvas-input" />
-                    {t("composition.studioAddInput")}
+                    <span>{componentName(props.draft, component())}</span>
+                    <UiIcon name="chevron-right" />
                   </button>
-                }
-              >
-                <label class="compositionGraphInputChoice">
-                  <UiIcon name="canvas-input" />
-                  <span>{t("composition.studioAddInput")}</span>
-                  <select
-                    aria-label={t("composition.studioAddInput")}
-                    value=""
-                    onChange={(event) => event.currentTarget.value &&
-                      insertInput(event.currentTarget.value)}
-                  >
-                    <option value="">—</option>
-                    <For
-                      each={props.draft.variables.filter((node) =>
-                        node.kind === "input"
-                      )}
-                    >
-                      {(node) => <option value={node.id}>{node.id}</option>}
-                    </For>
-                  </select>
-                </label>
-              </Show>
-              <button type="button" onClick={insertText}>
-                <UiIcon name="canvas-text" />
-                {t("composition.studioText")}
-              </button>
-            </div>
-          </Show>
-        </header>
-        <For each={props.draft.layout.rows}>
-          {(row) => (
-            <div class="compositionGraphCanvasRow">
-              <For each={row.items}>
-                {(item) => {
-                  const component = () =>
-                    props.draft.components.find((entry) =>
-                      entry.id === item.component
-                    );
-                  return (
-                    <Show when={component()}>
-                      {(entry) => {
-                        const value = () => variableFor(props.draft, entry());
-                        const kind = () => entry().kind;
-                        const icon = () =>
-                          kind() === "table"
-                            ? "canvas-table"
-                            : kind() === "metric"
-                            ? "canvas-metric"
-                            : kind() === "input"
-                            ? "canvas-input"
-                            : "canvas-text";
-                        return (
-                          <button
-                            type="button"
-                            class="compositionGraphBlock"
-                            classList={{
-                              "compositionGraphBlock--selected":
-                                selectedId() === entry().id,
-                            }}
-                            aria-label={`${kind()}, ${
-                              componentName(props.draft, entry())
-                            }`}
-                            aria-pressed={selectedId() === entry().id}
-                            data-component-id={entry().id}
-                            onClick={() => setSelectedId(entry().id)}
+                </Show>
+                <Show when={component().kind === "text"}>
+                  {(() => {
+                    const item = component() as Extract<
+                      CompositionGraphDraft["components"][number],
+                      { kind: "text" }
+                    >;
+                    return (
+                      <div class="compositionGraphTextInspector">
+                        <textarea
+                          class="ui-input"
+                          aria-label={t("composition.studioText")}
+                          value={item.content.kind === "literal"
+                            ? item.content.text
+                            : ""}
+                          onInput={(event) =>
+                            updateText(event.currentTarget.value)}
+                        />
+                        <select
+                          class="ui-input"
+                          aria-label={t("composition.studioTextStyle")}
+                          value={item.style}
+                          onChange={(event) =>
+                            updateTextStyle(
+                              event.currentTarget.value as typeof item.style,
+                            )}
+                        >
+                          <For
+                            each={[
+                              "title",
+                              "heading",
+                              "body",
+                              "caption",
+                            ] as const}
                           >
-                            <UiIcon name={icon()} />
-                            <span>{componentName(props.draft, entry())}</span>
-                            <Show
-                              when={value()?.kind === "query" &&
-                                compositionNodeReturnsTable(value()!)}
-                            >
-                              <span
-                                class="compositionGraphShape"
-                                aria-hidden="true"
-                              >
-                                ▦
-                              </span>
-                            </Show>
-                            <Show
-                              when={value()?.kind === "query" &&
-                                compositionNodeReturnsScalar(value()!)}
-                            >
-                              <span
-                                class="compositionGraphShape"
-                                aria-hidden="true"
-                              >
-                                ◉
-                              </span>
-                            </Show>
-                          </button>
-                        );
-                      }}
-                    </Show>
-                  );
-                }}
-              </For>
-              <Show
-                when={row.items.length === 0 &&
-                  props.draft.components.length === 0}
-              >
-                <div class="compositionGraphCanvasEmpty" aria-hidden="true">
-                  <UiIcon name="columns" />
-                </div>
-              </Show>
-            </div>
-          )}
-        </For>
-      </section>
-
-      <aside
-        class="compositionGraphInspector"
-        aria-label={t("composition.studioInspector")}
-      >
-        <Show
-          when={selected()}
-          fallback={<div class="compositionGraphInspectorEmpty" />}
-        >
-          {(component) => (
-            <>
-              <Show
-                when={component().kind === "table" ||
-                  component().kind === "metric"}
-              >
-                {(() => {
-                  const item = component() as Extract<
-                    CompositionGraphDraft["components"][number],
-                    { kind: "table" | "metric" }
-                  >;
-                  const variable = () =>
-                    props.draft.variables.find((node) =>
-                      node.id === item.variable
+                            {(style) => (
+                              <option value={style}>
+                                {t(`composition.studioTextStyle.${style}`)}
+                              </option>
+                            )}
+                          </For>
+                        </select>
+                        <select
+                          class="ui-input"
+                          aria-label={t("composition.studioVariables")}
+                          value={item.content.kind === "variable"
+                            ? item.content.variable
+                            : ""}
+                          onChange={(event) =>
+                            updateTextVariable(event.currentTarget.value)}
+                        >
+                          <option value="">
+                            {t("composition.studioTextUseLiteral")}
+                          </option>
+                          <For
+                            each={props.draft.variables.filter((node) =>
+                              node.kind === "constant" &&
+                                node.value_type.scalar_type === "string" ||
+                              node.kind === "input" &&
+                                node.value_type.scalar_type === "string" ||
+                              node.kind === "query" &&
+                                node.returns.kind === "scalar" &&
+                                node.returns.value_type.scalar_type === "string"
+                            )}
+                          >
+                            {(node) => (
+                              <option value={node.id}>{node.id}</option>
+                            )}
+                          </For>
+                        </select>
+                      </div>
                     );
-                  return (
-                    <div class="compositionGraphVariableBinding">
-                      <span>{t("composition.studioVariables")}</span>
-                      <button
-                        type="button"
-                        class="compositionGraphVariableChange"
-                        aria-label={t("composition.studioChangeVariable", {
-                          name: variable()?.id ?? item.variable,
-                        })}
-                        onClick={() => openBinding(item.kind, item.id)}
-                      >
-                        <span>{variable()?.id ?? item.variable}</span>
-                        <UiIcon name="chevron-right" />
-                      </button>
-                    </div>
-                  );
-                })()}
-              </Show>
-              <Show when={component().kind === "input"}>
-                <div class="compositionGraphVariableBinding">
-                  <UiIcon name="canvas-input" />
-                  <span>
-                    {props.draft.variables.find((node) =>
-                      node.id === (component() as Extract<
-                        CompositionGraphDraft["components"][number],
-                        { kind: "input" }
-                      >).variable
-                    )?.id}
-                  </span>
+                  })()}
+                </Show>
+                <div class="compositionGraphInspectorActions">
+                  <IconButton
+                    icon="arrow-up"
+                    label={t("composition.studioMoveEarlier")}
+                    disabled={orderedIds().indexOf(selectedId() ?? "") <= 0}
+                    onClick={() => moveSelected(-1)}
+                  />
+                  <IconButton
+                    icon="arrow-down"
+                    label={t("composition.studioMoveLater")}
+                    disabled={orderedIds().indexOf(selectedId() ?? "") >=
+                      orderedIds().length - 1}
+                    onClick={() => moveSelected(1)}
+                  />
+                  <IconButton
+                    icon="plus"
+                    label={t("composition.studioMoveToNewRow")}
+                    onClick={moveToNewRow}
+                  />
+                  <IconButton
+                    icon="trash"
+                    label={t("composition.studioRemoveDisplay", {
+                      name: selected()
+                        ? componentName(props.draft, selected()!)
+                        : "",
+                    })}
+                    onClick={removeSelected}
+                  />
                 </div>
-              </Show>
-              <Show when={component().kind === "text"}>
-                {(() => {
-                  const item = component() as Extract<
-                    CompositionGraphDraft["components"][number],
-                    { kind: "text" }
-                  >;
-                  return (
-                    <div class="compositionGraphTextInspector">
-                      <textarea
-                        class="ui-input"
-                        aria-label={t("composition.studioText")}
-                        value={item.content.kind === "literal"
-                          ? item.content.text
-                          : ""}
-                        onInput={(event) =>
-                          updateText(event.currentTarget.value)}
-                      />
-                      <select
-                        class="ui-input"
-                        aria-label={t("composition.studioTextStyle")}
-                        value={item.style}
-                        onChange={(event) =>
-                          updateTextStyle(
-                            event.currentTarget.value as typeof item.style,
-                          )}
-                      >
-                        <For
-                          each={[
-                            "title",
-                            "heading",
-                            "body",
-                            "caption",
-                          ] as const}
-                        >
-                          {(style) => (
-                            <option value={style}>
-                              {t(`composition.studioTextStyle.${style}`)}
-                            </option>
-                          )}
-                        </For>
-                      </select>
-                      <select
-                        class="ui-input"
-                        aria-label={t("composition.studioVariables")}
-                        value={item.content.kind === "variable"
-                          ? item.content.variable
-                          : ""}
-                        onChange={(event) =>
-                          updateTextVariable(event.currentTarget.value)}
-                      >
-                        <option value="">
-                          {t("composition.studioTextUseLiteral")}
-                        </option>
-                        <For
-                          each={props.draft.variables.filter((node) =>
-                            node.kind === "constant" &&
-                              node.value_type.scalar_type === "string" ||
-                            node.kind === "input" &&
-                              node.value_type.scalar_type === "string" ||
-                            node.kind === "query" &&
-                              node.returns.kind === "scalar" &&
-                              node.returns.value_type.scalar_type === "string"
-                          )}
-                        >
-                          {(node) => <option value={node.id}>{node.id}</option>}
-                        </For>
-                      </select>
-                    </div>
-                  );
-                })()}
-              </Show>
-              <div class="compositionGraphInspectorActions">
-                <IconButton
-                  icon="trash"
-                  label={t("composition.studioRemoveDisplay", {
-                    name: selected()
-                      ? componentName(props.draft, selected()!)
-                      : "",
-                  })}
-                  onClick={removeSelected}
-                />
-              </div>
-            </>
-          )}
-        </Show>
-      </aside>
+              </>
+            )}
+          </Show>
+        </aside>
+      </Show>
 
       <Show when={pickerKind()}>
         {(kind) => (
@@ -491,6 +551,7 @@ export function CompositionGraphDesignCanvas(
             kind={kind()}
             draft={props.draft}
             forms={props.forms}
+            formsLoading={props.formsLoading}
             savedSql={savedSqlChoices()}
             savedSqlLoading={props.savedSqlLoading}
             savedSqlSeedUnavailable={savedSqlSeedUnavailable()}
