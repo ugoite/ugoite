@@ -115,18 +115,18 @@ hosted CI, browser journeys or device QA. Outstanding scope is tracked in
 
 ## Representative scenarios
 
-| Scenario                                                           | Audit status                                                                                 |
-| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
-| Form → Table → reorder → save → reopen                             | Added to the real browser Studio journey; result pending                                     |
-| Form → Metric → explicit aggregate → saved variable-only document  | Existing browser journey extended to assert actual Design and runtime values; result pending |
-| Saved SQL exact revision, reuse, original change and explicit copy | Code/native evidence exists; complete browser run pending                                    |
-| Inputs/constants → dependent queries only                          | Focused DOM/controller evidence exists; invalid-independent-branch gap remains #4588         |
-| Alternating GUI/text edits with all admitted constructs            | Not complete, #4565                                                                          |
-| Complex SQL with comments/aliases and untouched clauses            | Bounded round-trip evidence exists; complete corpus not established                          |
-| Invalid SQL/arguments/cardinality → local errors → repair          | Focused tests pass for the repaired definition gate; browser coverage still required         |
-| Reversed replies/Space switch/ACL/schema changes                   | Focused regressions and native authorization tests pass; complete browser run pending        |
-| 320/375/390px, Safari, VoiceOver/NVDA, actual 200% zoom            | Automated narrow-width run pending; device/assistive-technology checks unverified            |
-| Old Comp rejection and released raw history/export preservation    | Native strict rejection passes; complete preservation gate remains unverified                |
+| Scenario                                                           | Audit status                                                                                                                          |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Form → Table → reorder → save → reopen                             | Passed in the isolated three-case Studio browser run (including keyboard movement and saved layout)                                   |
+| Form → Metric → explicit aggregate → saved variable-only document  | Passed in the isolated Studio run; saved documents contain variable-only bindings and explicit aggregation                            |
+| Saved SQL exact revision, reuse, original change and explicit copy | Reuse/save/reopen and explicit copy/count browser cases passed; complete broad-run acceptance remains open                            |
+| Inputs/constants → dependent queries only                          | Focused DOM/controller evidence exists; invalid-independent-branch gap remains #4588                                                  |
+| Alternating GUI/text edits with all admitted constructs            | Not complete, #4565                                                                                                                   |
+| Complex SQL with comments/aliases and untouched clauses            | Bounded round-trip evidence exists; complete corpus not established                                                                   |
+| Invalid SQL/arguments/cardinality → local errors → repair          | Focused tests pass for the repaired definition gate; browser coverage still required                                                  |
+| Reversed replies/Space switch/ACL/schema changes                   | Focused regressions and native authorization tests pass; complete browser run pending                                                 |
+| 320/375/390px, Safari, VoiceOver/NVDA, actual 200% zoom            | Responsive keyboard/touch case and the Form Design case at 320/375/390px passed; device/assistive-technology checks remain unverified |
+| Old Comp rejection and released raw history/export preservation    | Native strict rejection passes; complete preservation gate remains unverified                                                         |
 
 A future completion report must attach the required execution results for every
 remaining row. Passing these corrective PRs must not flip `coverage_complete` or
@@ -138,3 +138,24 @@ received `RECENT_PASSKEY_REQUIRED` after the five-minute privileged session
 window expired. These are reported in
 [#4595](https://github.com/ugoite/ugoite/issues/4595), separately from product
 assertions; the suite must not be reported as passing.
+
+## Final bounded browser and integration evidence
+
+The broad native-host run completed with **7 passed / 6 failed**. Two failures
+were test expectations for the newly readable generated variable headings and an
+ambiguous metric locator; both assertions were corrected without weakening the
+value checks. The remaining fixture/session failures are tracked in #4595. The
+broad suite is not a passing gate.
+
+An isolated run then passed **3 tests, 0 failures, 0 skipped**: reusable tool
+creation/save/reopen, Form-backed Table/explicit Metric with live Design and
+keyboard layout movement, and responsive keyboard/touch interaction. It used the
+unchanged product build from `a69901049d88014ad63d52c734cb82a5ccfaee74` with the
+corrected test assertions at `85c51040875b5f34bec00515e2017bdbff128c5d`. These
+results do not stand in for the unresolved broad or device gates.
+
+All four corrective branches also merged together locally without conflicts. The
+combined frontend gate passed **166 files / 1,399 tests**, with **100%**
+protocol statements, branches, functions and lines. Repository checks,
+formatting and native/WASM Composition parity passed. Hosted pull-request CI
+remains a separate gate and is not represented by these local results.
