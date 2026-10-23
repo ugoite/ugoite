@@ -44,7 +44,10 @@ interface SqlStructureToolbarProps {
     oldName: string,
     variable: SqlVariable,
   ) => boolean | void | Promise<boolean | void>;
-  onArgumentRemoved?: (name: string) => boolean | void;
+  onArgumentRemoved?: (
+    name: string,
+  ) => boolean | void | Promise<boolean | void>;
+  argumentDefaultsEnabled?: boolean;
   argumentDefaults?: () => Record<string, SqlVariableDefaultDraft>;
   onArgumentDefaultsChange?: (
     defaults: Record<string, SqlVariableDefaultDraft>,
@@ -125,7 +128,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     for (const variable of props.argumentDefinitions?.() ?? []) {
       variables.set(variable.name, variable);
     }
-    for (const context of props.contexts()) {
+    for (const context of props.argumentDefinitions ? [] : props.contexts()) {
       for (const variable of context.parser.variables ?? []) {
         if (!variables.has(variable.name)) {
           variables.set(variable.name, {
@@ -338,6 +341,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                     variables={argumentVariables()}
                     referencedNames={referencedArgumentNames()}
                     defaults={props.argumentDefaults?.() ?? {}}
+                    allowDefaults={props.argumentDefaultsEnabled}
                     disabled={readOnly()}
                     onAdd={(variable) =>
                       props.onArgumentAdded

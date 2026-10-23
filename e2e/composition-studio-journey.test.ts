@@ -1434,3 +1434,117 @@ test.describe("Composition Studio Journey", () => {
     }
   });
 });
+
+test("Composition shared Arguments rename and type editing persist explicit bindings", async ({ page, request }) => {
+  test.setTimeout(120_000);
+  await waitForServers(request);
+  const spaceId = await getDefaultSpaceId(request);
+  const yaml = await completeCompositionGraphYaml(request, spaceId, {
+    name: `Argument editor ${crypto.randomUUID().slice(0, 8)}`,
+    variables: [
+      {
+        id: "threshold",
+        kind: "constant",
+        value_type: { scalar_type: "integer", nullable: false },
+        value: { kind: "integer", value: 3 },
+      },
+      {
+        id: "caption",
+        kind: "constant",
+        value_type: { scalar_type: "string", nullable: false },
+        value: { kind: "string", value: "hello" },
+      },
+      {
+        id: "rows",
+        kind: "query",
+        returns: {
+          kind: "scalar",
+          value_type: { scalar_type: "integer", nullable: false },
+        },
+        query: {
+          kind: "inline_sql",
+          sql: "SELECT $limit AS value -- $limit stays in a comment",
+          arguments: [{ name: "limit", variable: "threshold" }],
+          form_bindings: [],
+          schema_fingerprint: "",
+        },
+      },
+    ],
+    components: [{ id: "result", kind: "metric", variable: "rows" }],
+    rows: [{
+      id: "results",
+      items: [{ kind: "component", component: "result" }],
+    }],
+  });
+  const saved = await saveCompositionGraph(request, spaceId, yaml);
+  await page.goto(
+    getFrontendUrl(
+      `/spaces/${spaceId}/compositions/${saved.composition_id}/${saved.revision_id}/edit`,
+    ),
+    { waitUntil: "domcontentloaded" },
+  );
+  await expect(page.locator(".compositionGraphMetric strong")).toHaveText("3", {
+    timeout: 30_000,
+  });
+  await page.getByRole("tab", { name: "Variables", exact: true }).click();
+  await page.getByRole("button", { name: "rows", exact: true }).click();
+  await page.getByRole("button", { name: "Arguments", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Arguments", exact: true });
+  await dialog.getByLabel("Argument name for limit", { exact: true }).fill(
+    "minimum",
+  );
+  await dialog.getByRole("button", { name: "Rename argument", exact: true })
+    .click();
+  await expect(dialog.getByLabel("Argument name for minimum", { exact: true }))
+    .toHaveValue("minimum");
+  await expect(
+    dialog.getByRole("button", { name: "Remove minimum", exact: true }),
+  ).toBeDisabled();
+  await dialog.getByRole("combobox", { name: "Type for minimum", exact: true })
+    .focus();
+  await dialog.getByRole("combobox", { name: "Type for minimum", exact: true })
+    .selectOption(
+      "string",
+    );
+  await expect(dialog).toContainText("minimum");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  const binding = page.getByRole("combobox", { name: "minimum", exact: true });
+  await expect(binding).toHaveValue("");
+  await expect(page.getByRole("button", { name: "Save", exact: true }))
+    .toBeDisabled();
+  await binding.selectOption("caption");
+  await page.getByRole("button", { name: "Arguments", exact: true }).click();
+  await dialog.getByRole("combobox", { name: "Type for minimum", exact: true })
+    .focus();
+  await dialog.getByRole("combobox", { name: "Type for minimum", exact: true })
+    .selectOption(
+      "integer",
+    );
+  await expect(dialog).toContainText("minimum");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(binding).toHaveValue("");
+  await binding.selectOption("threshold");
+  await expect(page.getByRole("button", { name: "Save", exact: true }))
+    .toBeEnabled();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page).toHaveURL(
+    new RegExp(`/compositions/${saved.composition_id}/[^/]+$`),
+    { timeout: 30_000 },
+  );
+  await expect(page.locator(".compositionGraphMetric strong")).toHaveText("3", {
+    timeout: 30_000,
+  });
+  const revisionUrl = new URL(page.url()).pathname;
+  await page.goto(getFrontendUrl(revisionUrl + "/edit"), {
+    waitUntil: "domcontentloaded",
+  });
+  await page.getByRole("tab", { name: "Variables", exact: true }).click();
+  await page.getByRole("button", { name: "rows", exact: true }).click();
+  await expect(page.getByRole("combobox", { name: "minimum", exact: true }))
+    .toHaveValue("threshold");
+  await expect(page.locator(".cm-content")).toContainText(
+    "SELECT $minimum AS value -- $limit stays in a comment",
+  );
+});

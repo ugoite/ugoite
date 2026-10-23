@@ -21,12 +21,13 @@ interface Props {
   referencedNames: readonly string[];
   defaults: Record<string, SqlVariableDefaultDraft>;
   disabled?: boolean;
+  allowDefaults?: boolean;
   onAdd: (variable: SqlVariable) => boolean | void;
   onUpdate: (
     oldName: string,
     variable: SqlVariable,
   ) => boolean | void | Promise<boolean | void>;
-  onRemove: (name: string) => boolean | void;
+  onRemove: (name: string) => boolean | void | Promise<boolean | void>;
   onDefaultsChange: (defaults: Record<string, SqlVariableDefaultDraft>) => void;
 }
 
@@ -40,6 +41,23 @@ export function SqlArgumentDefinitionsEditor(props: Props) {
   );
   const [pendingName, setPendingName] = createSignal<string>();
   const [error, setError] = createSignal<string>();
+  let editorRoot: HTMLDivElement | undefined;
+
+  // Host updates can replace the edited row. Keep keyboard focus in this
+  // dialog, unless the user has deliberately focused another control.
+  const restoreEditedFocus = (id: string, ownedFocus: boolean) => {
+    queueMicrotask(() => {
+      if (
+        !ownedFocus || !editorRoot?.isConnected ||
+        document.activeElement !== document.body
+      ) return;
+      const target = document.getElementById(id);
+      if (target && editorRoot.contains(target)) target.focus();
+      if (document.activeElement === document.body) {
+        editorRoot.closest<HTMLElement>('[role="dialog"]')?.focus();
+      }
+    });
+  };
 
   const draftName = (variable: SqlVariable) =>
     renameDrafts()[variable.name] ?? variable.name;
@@ -92,6 +110,8 @@ export function SqlArgumentDefinitionsEditor(props: Props) {
       props.disabled || !validName(nextName) || nextName === variable.name ||
       nameTaken(nextName, variable.name) || pendingName()
     ) return;
+    const ownedFocus = editorRoot?.contains(document.activeElement) ?? false;
+    let focusName = variable.name;
     setPendingName(variable.name);
     setError(undefined);
     try {
@@ -107,36 +127,60 @@ export function SqlArgumentDefinitionsEditor(props: Props) {
         delete next[variable.name];
         return next;
       });
+      focusName = nextName;
     } catch {
       setError(t("sqlPage.structureUnavailable"));
     } finally {
       setPendingName(undefined);
+      restoreEditedFocus(`${props.idPrefix}-${focusName}-rename`, ownedFocus);
     }
   };
 
-  const changeType = (variable: SqlVariable, type: string) => {
-    if (!variableTypes.includes(type as SqlStructureVariableType)) return;
-    const next = { ...variable, type };
-    if (props.onUpdate(variable.name, next) === false) {
-      setError(t("sqlPage.structureUnavailable"));
-      return;
-    }
+  const changeType = async (variable: SqlVariable, type: string) => {
+    if (
+      props.disabled || pendingName() ||
+      !variableTypes.includes(type as SqlStructureVariableType)
+    ) return;
+    const ownedFocus = editorRoot?.contains(document.activeElement) ?? false;
+    setPendingName(variable.name);
     setError(undefined);
+    try {
+      if (
+        await props.onUpdate(variable.name, { ...variable, type }) === false
+      ) setError(t("sqlPage.structureUnavailable"));
+    } catch {
+      setError(t("sqlPage.structureUnavailable"));
+    } finally {
+      setPendingName(undefined);
+      restoreEditedFocus(`${props.idPrefix}-${variable.name}-type`, ownedFocus);
+    }
   };
 
-  const removeArgument = (variable: SqlVariable) => {
-    if (props.disabled || usedNames().has(variable.name)) return;
-    if (props.onRemove(variable.name) === false) {
-      setError(t("sqlPage.structureUnavailable"));
+  const removeArgument = async (variable: SqlVariable) => {
+    if (props.disabled || pendingName() || usedNames().has(variable.name)) {
       return;
     }
-    props.onDefaultsChange(
-      Object.fromEntries(
-        Object.entries(props.defaults).filter(([name]) =>
-          name !== variable.name
+    const ownedFocus = editorRoot?.contains(document.activeElement) ?? false;
+    setPendingName(variable.name);
+    setError(undefined);
+    try {
+      if (await props.onRemove(variable.name) === false) {
+        setError(t("sqlPage.structureUnavailable"));
+        return;
+      }
+      props.onDefaultsChange(
+        Object.fromEntries(
+          Object.entries(props.defaults).filter(([name]) =>
+            name !== variable.name
+          ),
         ),
-      ),
-    );
+      );
+    } catch {
+      setError(t("sqlPage.structureUnavailable"));
+    } finally {
+      setPendingName(undefined);
+      restoreEditedFocus(`${props.idPrefix}-argument-name`, ownedFocus);
+    }
   };
 
   const argumentDefaultInvalid = (variable: SqlVariable) => {
@@ -146,7 +190,10 @@ export function SqlArgumentDefinitionsEditor(props: Props) {
   };
 
   return (
-    <div class="sql-structure-arguments">
+    <div
+      class="sql-structure-arguments"
+      ref={(element) => editorRoot = element}
+    >
       <div class="sql-structure-argument-list" role="list">
         <For each={props.variables}>
           {(variable) => {
@@ -194,7 +241,7 @@ export function SqlArgumentDefinitionsEditor(props: Props) {
                       spellcheck={false}
                       value={draftName(variable)}
                       aria-invalid={Boolean(renameError()) || undefined}
-                      disabled={props.disabled ||
+                      disabled={props.disabled || pendingName() !== undefined ||
                         pendingName() === variable.name}
                       onInput={(event) =>
                         setRenameDrafts((current) => ({
@@ -222,9 +269,10 @@ export function SqlArgumentDefinitionsEditor(props: Props) {
                       id={typeId}
                       class="ui-input"
                       value={variable.type}
-                      disabled={props.disabled || !variableTypes.includes(
-                        variable.type as SqlStructureVariableType,
-                      )}
+                      disabled={props.disabled || pendingName() !== undefined ||
+                        !variableTypes.includes(
+                          variable.type as SqlStructureVariableType,
+                        )}
                       onChange={(event) =>
                         changeType(variable, event.currentTarget.value)}
                     >
@@ -233,82 +281,89 @@ export function SqlArgumentDefinitionsEditor(props: Props) {
                       </For>
                     </select>
                   </label>
-                  <label
-                    class="flex min-h-11 items-center gap-2"
-                    for={checkboxId}
-                  >
-                    <input
-                      id={checkboxId}
-                      type="checkbox"
-                      aria-label={inputLabel}
-                      checked={draft().enabled}
-                      disabled={props.disabled || !variableTypes.includes(
-                        variable.type as SqlStructureVariableType,
-                      )}
-                      onChange={(event) => {
-                        const enabled = event.currentTarget.checked;
-                        updateDraft(variable, {
-                          enabled,
-                          raw: enabled && variable.type === "boolean" &&
-                              draft().raw === ""
-                            ? "true"
-                            : draft().raw,
-                        });
-                      }}
-                    />
-                    {t("sqlPage.defaultValue")}
-                  </label>
-                  <Show
-                    when={variable.type === "boolean"}
-                    fallback={
+                  <Show when={props.allowDefaults !== false}>
+                    <label
+                      class="flex min-h-11 items-center gap-2"
+                      for={checkboxId}
+                    >
                       <input
-                        id={defaultId}
-                        class="ui-input"
-                        type="text"
-                        inputMode={variable.type === "integer"
-                          ? "numeric"
-                          : variable.type === "float"
-                          ? "decimal"
-                          : "text"}
+                        id={checkboxId}
+                        type="checkbox"
                         aria-label={inputLabel}
-                        aria-invalid={draft().enabled && !parsed().valid ||
-                          undefined}
-                        disabled={props.disabled || !draft().enabled ||
+                        checked={draft().enabled}
+                        disabled={props.disabled ||
+                          pendingName() !== undefined ||
                           !variableTypes.includes(
                             variable.type as SqlStructureVariableType,
                           )}
+                        onChange={(event) => {
+                          const enabled = event.currentTarget.checked;
+                          updateDraft(variable, {
+                            enabled,
+                            raw: enabled && variable.type === "boolean" &&
+                                draft().raw === ""
+                              ? "true"
+                              : draft().raw,
+                          });
+                        }}
+                      />
+                      {t("sqlPage.defaultValue")}
+                    </label>
+                    <Show
+                      when={variable.type === "boolean"}
+                      fallback={
+                        <input
+                          id={defaultId}
+                          class="ui-input"
+                          type="text"
+                          inputMode={variable.type === "integer"
+                            ? "numeric"
+                            : variable.type === "float"
+                            ? "decimal"
+                            : "text"}
+                          aria-label={inputLabel}
+                          aria-invalid={draft().enabled && !parsed().valid ||
+                            undefined}
+                          disabled={props.disabled ||
+                            pendingName() !== undefined || !draft().enabled ||
+                            !variableTypes.includes(
+                              variable.type as SqlStructureVariableType,
+                            )}
+                          value={draft().raw}
+                          onInput={(event) =>
+                            updateDraft(variable, {
+                              raw: event.currentTarget.value,
+                            })}
+                        />
+                      }
+                    >
+                      <select
+                        id={defaultId}
+                        class="ui-input"
+                        aria-label={inputLabel}
+                        aria-invalid={draft().enabled && !parsed().valid ||
+                          undefined}
+                        disabled={props.disabled ||
+                          pendingName() !== undefined || !draft().enabled}
                         value={draft().raw}
-                        onInput={(event) =>
+                        onChange={(event) =>
                           updateDraft(variable, {
                             raw: event.currentTarget.value,
                           })}
-                      />
-                    }
-                  >
-                    <select
-                      id={defaultId}
-                      class="ui-input"
-                      aria-label={inputLabel}
-                      aria-invalid={draft().enabled && !parsed().valid ||
-                        undefined}
-                      disabled={props.disabled || !draft().enabled}
-                      value={draft().raw}
-                      onChange={(event) =>
-                        updateDraft(variable, {
-                          raw: event.currentTarget.value,
-                        })}
-                    >
-                      <option value=""></option>
-                      <option value="true">true</option>
-                      <option value="false">false</option>
-                    </select>
+                      >
+                        <option value=""></option>
+                        <option value="true">true</option>
+                        <option value="false">false</option>
+                      </select>
+                    </Show>
                   </Show>
                   <IconButton
                     icon="trash"
                     label={t("sqlPage.structure.removeArgument", {
                       name: variable.name,
                     })}
-                    disabled={props.disabled || isUsed()}
+                    disabled={props.disabled || pendingName() !== undefined ||
+                      isUsed()}
                     title={isUsed()
                       ? t("sqlPage.structure.argumentRemoveUsed")
                       : undefined}
@@ -351,7 +406,7 @@ export function SqlArgumentDefinitionsEditor(props: Props) {
             spellcheck={false}
             value={newName()}
             aria-invalid={Boolean(newNameError()) || undefined}
-            disabled={props.disabled}
+            disabled={props.disabled || pendingName() !== undefined}
             onInput={(event) => setNewName(event.currentTarget.value)}
           />
         </label>
@@ -361,7 +416,7 @@ export function SqlArgumentDefinitionsEditor(props: Props) {
             id={`${props.idPrefix}-argument-type`}
             class="ui-input"
             value={newType()}
-            disabled={props.disabled}
+            disabled={props.disabled || pendingName() !== undefined}
             onChange={(event) =>
               setNewType(event.currentTarget.value as SqlStructureVariableType)}
           >
@@ -374,7 +429,8 @@ export function SqlArgumentDefinitionsEditor(props: Props) {
           type="button"
           class="ui-button ui-button-primary"
           onClick={addArgument}
-          disabled={props.disabled || !validName(newName()) ||
+          disabled={props.disabled || pendingName() !== undefined ||
+            !validName(newName()) ||
             Boolean(newNameError())}
         >
           {t("sqlPage.structure.addArgument")}
