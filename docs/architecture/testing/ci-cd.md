@@ -100,6 +100,9 @@ the three E2E groups use their corresponding Mise lane task and keep the
 Playwright worker count at one. The standalone
 docsite-navigation lane runs through `mise run ci:lane:docsite-nav` so broken
 links and navigation can fail before the artifact build completes.
+Hosted Playwright lanes install Chromium, which is used by their selected test
+sets; local setup continues to install Chromium and WebKit for the broader E2E
+suite.
 
 The split-E2E pilot decision (#3307) is to keep the three independent E2E
 consumer jobs. Fourteen successful merge-group runs on 2026-09-28 showed
