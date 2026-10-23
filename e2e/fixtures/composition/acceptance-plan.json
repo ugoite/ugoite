@@ -318,10 +318,12 @@
           "path": "e2e/composition-golden-journey.test.ts",
           "kind": "test",
           "name": "Browser saves a tool once, reopens its exact revision from Home, and pages parameterized results with model connection disabled"
+        },
+        {
+          "path": "e2e/composition-studio-journey.test.ts",
+          "kind": "test",
+          "name": "Composition Studio builds a reusable tool from existing knowledge"
         }
-      ],
-      "manual_evidence_gaps": [
-        "Composition history browser route is paused; raw history remains covered by API recovery E2E."
       ]
     },
     {
