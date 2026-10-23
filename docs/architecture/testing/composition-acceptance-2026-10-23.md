@@ -161,11 +161,34 @@ combined frontend gate passed **166 files / 1,399 tests**, with **100%**
 protocol statements, branches, functions and lines. The individual OpenAPI,
 operation registry, architecture, Space compatibility, release authority,
 current-stack, supported-contract and legacy-auth checks passed, as did
-formatting and native/WASM Composition parity. The aggregate
-`mise run check:repo` **failed** in Mitase with unresolved verification
-artifacts and readiness errors. A direct repeat in the primary checkout
-reproduced 3,205 errors; the unchanged baseline passed `mise run mitase:check`
-with zero errors in a clean worktree. This discrepancy is tracked in
-[#4596](https://github.com/ugoite/ugoite/issues/4596). The aggregate repository
-gate is not reported as passing. Hosted pull-request CI remains a separate gate
-and is not represented by these local results.
+formatting and native/WASM Composition parity.
+
+The first aggregate `mise run check:repo` failed with 3,205 Mitase diagnostics.
+Independent baseline/change isolation traced this to two new test type queries
+that the pinned TSX inventory parser rejected. This was caused by the Design
+change, rather than unrelated specification drift. Equivalent type-only module
+imports preserve the test behavior without weakening inventory or validation.
+After that correction, the complete `mise run check:repo` passed with **zero
+Mitase errors**, and the facet suites passed **7 tests**. The regression and
+resolution are tracked in [#4596](https://github.com/ugoite/ugoite/issues/4596).
+The earlier failed run remains failed evidence; it is superseded by this actual
+successful rerun.
+
+The creation UX was also checked separately: the four insertion actions stay
+visible, Save is separate from the mode control, the name field has a
+placeholder, and only explicit selection opens the Inspector. Empty picker
+panels announce local state. Narrow tables keep readable cells inside their own
+horizontal scroll region. The updated three-case browser run passed at
+integrated `99c895fee5fd2f3ddff2b274e228f5661b774098`, and full frontend
+coverage again passed **166 files / 1,399 tests** with protocol coverage at
+**100%**. Subsequent focus and parser corrections have focused mock tests (**24
+passed**) and facet tests.
+
+The audit's two YAML contract links now point to their repository sources; the
+published docsite navigation and internal-link checks passed **2 tests, 0
+skipped**.
+
+Hosted pull-request CI remains a separate gate. A smoke/mobile lane exceeded its
+job window while installing browser system dependencies, before test execution;
+this is tracked in [#4597](https://github.com/ugoite/ugoite/issues/4597). It
+does not establish a product assertion failure or a passing browser lane.
