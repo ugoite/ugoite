@@ -1,5 +1,7 @@
 import { createEffect, createSignal, For, Show } from "solid-js";
 import { IconButton } from "~/components/IconButton";
+import { CompositionGraphRenderer } from "~/components/CompositionGraphRenderer";
+import { createCompositionDesignEvaluation } from "~/lib/composition-design-evaluation";
 import { UiIcon } from "~/components/UiIcon";
 import { CompositionVariableBindingPicker } from "~/components/CompositionVariableBindingPicker";
 import {
@@ -13,13 +15,13 @@ import {
   compositionNodeReturnsTable,
   type CompositionSavedSqlChoice,
   type CompositionSavedSqlRevisionRef,
-  type CompositionVariableNode,
   removeCompositionGraphComponent,
 } from "~/lib/composition-variable-binding";
 import { t } from "~/lib/i18n";
 
 export interface CompositionGraphDesignCanvasProps {
   draft: CompositionGraphDraft;
+  previewBase?: { entryId: string; revisionId: string };
   forms: readonly CompositionFormChoice[];
   savedSql: readonly CompositionSavedSqlChoice[];
   savedSqlLoading?: boolean;
@@ -41,19 +43,6 @@ const nextId = (prefix: string, values: readonly string[]) => {
   return `${prefix}_${index}`;
 };
 
-const variableFor = (
-  draft: CompositionGraphDraft,
-  component: CompositionGraphDraft["components"][number],
-): CompositionVariableNode | undefined => {
-  if (component.kind === "text") {
-    const content = component.content;
-    return content.kind === "variable"
-      ? draft.variables.find((variable) => variable.id === content.variable)
-      : undefined;
-  }
-  return draft.variables.find((variable) => variable.id === component.variable);
-};
-
 const componentName = (
   draft: CompositionGraphDraft,
   component: CompositionGraphDraft["components"][number],
@@ -70,6 +59,13 @@ const componentName = (
 export function CompositionGraphDesignCanvas(
   props: CompositionGraphDesignCanvasProps,
 ) {
+  const preview = createCompositionDesignEvaluation({
+    draft: () => props.draft,
+    scope: () => JSON.stringify(props.session),
+    spaceId: () => props.session.space_id,
+    principal: props.getPrincipalGeneration,
+    base: () => props.previewBase,
+  });
   const [paletteOpen, setPaletteOpen] = createSignal(false);
   const [pickerKind, setPickerKind] = createSignal<BindingComponentKind | null>(
     props.initialSavedSqlBinding ? "table" : null,
@@ -138,13 +134,73 @@ export function CompositionGraphDesignCanvas(
     setPaletteOpen(false);
   };
 
+  const orderedIds = () =>
+    props.draft.layout.rows.flatMap((row) =>
+      row.items.map((item) => item.component)
+    );
+  const moveSelected = (direction: -1 | 1) => {
+    const ids = orderedIds();
+    const index = ids.indexOf(selectedId() ?? "");
+    const target = ids[index + direction];
+    if (index < 0 || !target) return;
+    const id = ids[index];
+    props.onDraftChange({
+      ...props.draft,
+      layout: {
+        ...props.draft.layout,
+        rows: props.draft.layout.rows.map((row) => ({
+          ...row,
+          items: row.items.map((item) =>
+            item.component === id
+              ? { ...item, component: target }
+              : item.component === target
+              ? { ...item, component: id }
+              : item
+          ),
+        })),
+      },
+    });
+    queueMicrotask(() =>
+      document.querySelector<HTMLElement>(
+        ".compositionGraphDesignValue--selected button",
+      )?.focus()
+    );
+  };
+  const moveToNewRow = () => {
+    const id = selectedId();
+    if (!id) return;
+    const rows = props.draft.layout.rows.map((row) => ({
+      ...row,
+      items: row.items.filter((item) => item.component !== id),
+    })).filter((row) => row.items.length > 0);
+    rows.push({
+      id: nextId("row", props.draft.layout.rows.map((row) => row.id)),
+      items: [{ kind: "component", component: id }],
+    });
+    props.onDraftChange({ ...props.draft, layout: { kind: "flow", rows } });
+    queueMicrotask(() =>
+      document.querySelector<HTMLElement>(
+        ".compositionGraphDesignValue--selected button",
+      )?.focus()
+    );
+  };
   const removeSelected = () => {
     const id = selectedId();
     if (!id) return;
     const next = removeCompositionGraphComponent(props.draft, id);
     if (!next) return;
     props.onDraftChange(next);
-    setSelectedId(null);
+    const ids = orderedIds();
+    const index = ids.indexOf(id);
+    const adjacent = ids[index + 1] ?? ids[index - 1];
+    setSelectedId(adjacent ?? null);
+    queueMicrotask(() => {
+      if (adjacent) {
+        document.querySelector<HTMLElement>(
+          ".compositionGraphDesignValue--selected button",
+        )?.focus();
+      } else addButton?.focus();
+    });
   };
 
   const updateText = (value: string) => {
@@ -263,85 +319,44 @@ export function CompositionGraphDesignCanvas(
             </div>
           </Show>
         </header>
-        <For each={props.draft.layout.rows}>
-          {(row) => (
-            <div class="compositionGraphCanvasRow">
-              <For each={row.items}>
-                {(item) => {
-                  const component = () =>
-                    props.draft.components.find((entry) =>
-                      entry.id === item.component
-                    );
-                  return (
-                    <Show when={component()}>
-                      {(entry) => {
-                        const value = () => variableFor(props.draft, entry());
-                        const kind = () => entry().kind;
-                        const icon = () =>
-                          kind() === "table"
-                            ? "canvas-table"
-                            : kind() === "metric"
-                            ? "canvas-metric"
-                            : kind() === "input"
-                            ? "canvas-input"
-                            : "canvas-text";
-                        return (
-                          <button
-                            type="button"
-                            class="compositionGraphBlock"
-                            classList={{
-                              "compositionGraphBlock--selected":
-                                selectedId() === entry().id,
-                            }}
-                            aria-label={`${kind()}, ${
-                              componentName(props.draft, entry())
-                            }`}
-                            aria-pressed={selectedId() === entry().id}
-                            data-component-id={entry().id}
-                            onClick={() => setSelectedId(entry().id)}
-                          >
-                            <UiIcon name={icon()} />
-                            <span>{componentName(props.draft, entry())}</span>
-                            <Show
-                              when={value()?.kind === "query" &&
-                                compositionNodeReturnsTable(value()!)}
-                            >
-                              <span
-                                class="compositionGraphShape"
-                                aria-hidden="true"
-                              >
-                                ▦
-                              </span>
-                            </Show>
-                            <Show
-                              when={value()?.kind === "query" &&
-                                compositionNodeReturnsScalar(value()!)}
-                            >
-                              <span
-                                class="compositionGraphShape"
-                                aria-hidden="true"
-                              >
-                                ◉
-                              </span>
-                            </Show>
-                          </button>
-                        );
-                      }}
-                    </Show>
-                  );
-                }}
-              </For>
-              <Show
-                when={row.items.length === 0 &&
-                  props.draft.components.length === 0}
+        <Show when={preview.error()}>
+          {(error) => <p role="alert" class="ui-text-danger">{error()}</p>}
+        </Show>
+        <CompositionGraphRenderer
+          draft={props.draft}
+          evaluation={preview.evaluation()}
+          rawInputs={preview.rawInputs()}
+          inputStates={preview.inputStates()}
+          blockedQueryIds={preview.blocked()}
+          previousPageQueryIds={preview.previousIds()}
+          pageBusy={preview.busy()}
+          onInput={preview.onInput}
+          onNext={preview.onNext}
+          onPrevious={preview.onPrevious}
+          decorateComponent={(entry, value) => (
+            <div
+              class="compositionGraphValue compositionGraphDesignValue"
+              classList={{
+                "compositionGraphDesignValue--selected":
+                  selectedId() === entry().id,
+              }}
+              data-component-id={entry().id}
+            >
+              <button
+                type="button"
+                class="compositionGraphSelect"
+                aria-label={`${entry().kind}, ${
+                  componentName(props.draft, entry())
+                }`}
+                aria-pressed={selectedId() === entry().id}
+                onClick={() => setSelectedId(entry().id)}
               >
-                <div class="compositionGraphCanvasEmpty" aria-hidden="true">
-                  <UiIcon name="columns" />
-                </div>
-              </Show>
+                <UiIcon name="edit" />
+              </button>
+              {value}
             </div>
           )}
-        </For>
+        />
       </section>
 
       <aside
@@ -470,6 +485,24 @@ export function CompositionGraphDesignCanvas(
                 })()}
               </Show>
               <div class="compositionGraphInspectorActions">
+                <IconButton
+                  icon="arrow-up"
+                  label={t("composition.studioMoveEarlier")}
+                  disabled={orderedIds().indexOf(selectedId() ?? "") <= 0}
+                  onClick={() => moveSelected(-1)}
+                />
+                <IconButton
+                  icon="arrow-down"
+                  label={t("composition.studioMoveLater")}
+                  disabled={orderedIds().indexOf(selectedId() ?? "") >=
+                    orderedIds().length - 1}
+                  onClick={() => moveSelected(1)}
+                />
+                <IconButton
+                  icon="plus"
+                  label={t("composition.studioMoveToNewRow")}
+                  onClick={moveToNewRow}
+                />
                 <IconButton
                   icon="trash"
                   label={t("composition.studioRemoveDisplay", {

@@ -37,6 +37,7 @@ export {
   type CompiledVariableGraph,
   compileVariableGraph,
   type CompositionDocumentCanonicalization,
+  compositionFormQuerySql,
   encodeSpreadsheetCsv,
   getWasmSupportedOperations,
   invokeKonase,

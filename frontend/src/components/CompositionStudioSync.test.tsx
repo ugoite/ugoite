@@ -59,7 +59,10 @@ vi.mock("@solidjs/router", () => ({
   ),
 }));
 
-vi.mock("~/lib/ugoite-client", () => ({
+vi.mock("~/lib/ugoite-client", async (importOriginal) => ({
+  compositionFormQuerySql:
+    (await importOriginal<typeof import("~/lib/ugoite-client")>())
+      .compositionFormQuerySql,
   authApi: { getSession: (...args: unknown[]) => authSessionMock(...args) },
   formApi: { list: (...args: unknown[]) => formsMock(...args) },
   sqlApi: {
@@ -1161,7 +1164,7 @@ describe("CompositionStudio graph surface", () => {
 
     expect(
       await screen.findByRole("button", {
-        name: "metric, query_sql-1_value",
+        name: "metric, revenue_total_value",
       }),
     ).toBeVisible();
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -1241,14 +1244,14 @@ describe("CompositionStudio graph surface", () => {
       { id: "table_1", kind: "table", variable: "rows" },
       expect.objectContaining({
         kind: "table",
-        variable: "query_sql-table_table",
+        variable: "one_column_table",
       }),
     ]));
     fireEvent.click(savedSql);
 
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.getByRole("button", {
-      name: "table, query_sql-table_table",
+      name: "table, one_column_table",
     })).toBeVisible();
     expect(screen.getAllByRole("button", { name: /^table,/ })).toHaveLength(1);
   });

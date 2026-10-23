@@ -10,6 +10,8 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
 mod canonical;
+mod form_query;
+pub use form_query::{composition_form_query_sql, CompositionFormAggregate, CompositionFormQuery};
 pub mod variable_binding;
 pub mod variable_graph;
 pub mod variable_graph_input;

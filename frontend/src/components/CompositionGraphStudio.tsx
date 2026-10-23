@@ -22,6 +22,7 @@ import { t } from "~/lib/i18n";
 
 export interface CompositionGraphStudioProps {
   draft: CompositionGraphDraft;
+  previewBase?: { entryId: string; revisionId: string };
   forms: readonly CompositionFormChoice[];
   savedSql: readonly CompositionSavedSqlChoice[];
   savedSqlLoading?: boolean;
@@ -188,6 +189,7 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
       <section hidden={mode() !== "design"}>
         <CompositionGraphDesignCanvas
           draft={props.draft}
+          previewBase={props.previewBase}
           forms={props.forms}
           savedSql={props.savedSql}
           savedSqlLoading={props.savedSqlLoading}

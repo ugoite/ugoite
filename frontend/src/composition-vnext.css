@@ -391,3 +391,48 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.compositionGraphValue {
+  flex: 1 1 14rem;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.compositionGraphDesignValue {
+  position: relative;
+  padding: 2.75rem var(--ui-spacing-sm) var(--ui-spacing-sm);
+  outline: 1px solid var(--ui-border);
+}
+.compositionGraphDesignValue--selected {
+  outline: 2px solid var(--ui-focus);
+}
+.compositionGraphSelect {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  color: var(--ui-foreground);
+  background: transparent;
+}
+.compositionGraphText--title {
+  font-size: 2rem;
+  font-weight: 700;
+}
+.compositionGraphText--heading {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+.compositionGraphText--body {
+  font-size: 1rem;
+}
+.compositionGraphText--caption {
+  font-size: 0.875rem;
+  color: var(--ui-muted-foreground);
+}
+.compositionGraphInput input {
+  font-size: 1rem;
+}

@@ -66,7 +66,7 @@
     "spaceShell.title.savedSqlDetail": "Saved SQL detail",
     "spaceShell.title.spaceHistory": "Space / History",
     "entryHistory.title": "Entry history",
-    "entryHistory.loading": "Loading entry history...",
+    "entryHistory.loading": "Loading history...",
     "entryHistory.loadError": "Failed to load entry history.",
     "entryHistory.empty": "No revisions yet.",
     "entryHistory.backToEntry": "Back to Entry",
@@ -887,7 +887,6 @@
     "entryDetail.technicalDetails": "Technical details",
     "entryDetail.history": "History & recovery",
     "entryHistory.loadMore": "Load more history",
-    "entryHistory.loading": "Loading history...",
     "entryHistory.loadingMore": "Loading more history...",
     "entryHistory.failedLoadMore": "Failed to load more history.",
     "entryDetail.discard": "Discard draft changes",
@@ -1678,7 +1677,10 @@
     "konase.knowledgeWriteFailed": "write failed",
     "konase.undo": "Undo",
     "konase.undone": "Work undone",
-    "konase.error": "Konase could not complete the Work."
+    "konase.error": "Konase could not complete the Work.",
+    "composition.studioMoveEarlier": "Move earlier",
+    "composition.studioMoveLater": "Move later",
+    "composition.studioMoveToNewRow": "Move to new row"
   },
   "ja": {
     "nav.home": "ホーム",
@@ -1747,7 +1749,7 @@
     "spaceShell.title.savedSqlDetail": "保存済みSQL詳細",
     "spaceShell.title.spaceHistory": "スペース / 履歴",
     "entryHistory.title": "エントリー履歴",
-    "entryHistory.loading": "エントリー履歴を読み込み中...",
+    "entryHistory.loading": "履歴を読み込み中...",
     "entryHistory.loadError": "エントリー履歴を読み込めませんでした。",
     "entryHistory.empty": "リビジョンはまだありません。",
     "entryHistory.backToEntry": "エントリーに戻る",
@@ -2568,7 +2570,6 @@
     "entryDetail.technicalDetails": "技術情報",
     "entryDetail.history": "履歴と復元",
     "entryHistory.loadMore": "履歴をさらに読み込む",
-    "entryHistory.loading": "履歴を読み込み中...",
     "entryHistory.loadingMore": "履歴を追加読み込み中...",
     "entryHistory.failedLoadMore": "履歴を追加読み込みできませんでした。",
     "entryDetail.discard": "下書きの変更を破棄",
@@ -3359,6 +3360,9 @@
     "sqlPage.structure.documentMoveProjectionDown": "列を下へ移動",
     "sqlPage.structure.documentNoFunctionExpressions": "選べる式がありません。",
     "sqlPage.structure.documentUnarySign": "符号",
-    "konase.error": "Konase が Work を完了できませんでした。"
+    "konase.error": "Konase が Work を完了できませんでした。",
+    "composition.studioMoveEarlier": "前へ移動",
+    "composition.studioMoveLater": "後へ移動",
+    "composition.studioMoveToNewRow": "新しい行へ移動"
   }
 }

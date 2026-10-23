@@ -50,6 +50,12 @@ type StudioRawRevision = {
   fields: Record<string, unknown>;
 };
 
+function savedSqlVariablePrefix(name: string): string {
+  const slug = name.normalize("NFKD").toLowerCase().replace(/\p{M}/gu, "")
+    .replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return slug && /^[a-z]/.test(slug) ? slug : slug ? `query_${slug}` : "query";
+}
+
 function sqlIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
@@ -608,7 +614,7 @@ test.describe("Composition Studio Journey", () => {
       await addMetricDisplay(page, seed.savedSqlName, "total", args);
       await addMetricDisplay(page, seed.savedSqlName, "quantity", args);
       const canvasBlocks = page.locator(
-        ".compositionGraphCanvas .compositionGraphBlock",
+        ".compositionGraphCanvas .compositionGraphDesignValue",
       );
       await expect(canvasBlocks).toHaveCount(7);
 
@@ -734,9 +740,9 @@ test.describe("Composition Studio Journey", () => {
       await expect(page.getByLabel("Name", { exact: true })).toHaveValue(
         seed.toolName,
       );
-      const entryId = seed.savedSqlId.replace(/[^a-zA-Z0-9_-]/g, "_");
-      const totalVariable = `query_${entryId}_total`;
-      const quantityVariable = `query_${entryId}_quantity`;
+      const prefix = savedSqlVariablePrefix(seed.savedSqlName);
+      const totalVariable = `${prefix}_total`;
+      const quantityVariable = `${prefix}_quantity`;
       await page.getByRole("button", {
         name: `metric, ${totalVariable}`,
         exact: true,
@@ -909,11 +915,48 @@ test.describe("Composition Studio Journey", () => {
       await expect(page.getByRole("button", { name: /Change variable/ }))
         .toHaveCount(0);
 
+      const designTable = page.getByRole("table", {
+        name: `${formSlug}_rows results`,
+      });
+      await expect(designTable).toContainText(seed.purposes[0]);
+      await expect(designTable).toContainText(seed.purposes[1]);
+      await expect(page.getByLabel(`${formSlug}_sum_amount`, { exact: true }))
+        .toContainText("50");
+      await page.getByRole("button", {
+        name: `metric, ${formSlug}_sum_amount`,
+        exact: true,
+      }).click();
+      const moveEarlier = page.getByRole("button", {
+        name: "Move earlier",
+        exact: true,
+      });
+      await moveEarlier.focus();
+      await page.keyboard.press("Enter");
+      await expect(page.locator(".compositionGraphDesignValue").first())
+        .toContainText("50");
+      for (const width of [320, 375, 390]) {
+        await page.setViewportSize({ width, height: 844 });
+        expect(
+          await page.evaluate(() =>
+            document.documentElement.scrollWidth <= window.innerWidth
+          ),
+        ).toBe(true);
+        await expect(designTable).toContainText(seed.purposes[0]);
+      }
+      await test.info().attach("Composition live Design at 390px", {
+        body: await page.screenshot({ fullPage: true }),
+        contentType: "image/png",
+      });
       await page.getByRole("button", { name: "Save", exact: true }).click();
       await expect(page).toHaveURL(
         new RegExp(`/spaces/${seed.spaceId}/compositions/[^/]+/[^/]+$`),
         { timeout: 30_000 },
       );
+      await expect(
+        page.getByRole("table", { name: `${formSlug}_rows results` }),
+      ).toContainText(seed.purposes[0]);
+      await expect(page.getByLabel(`${formSlug}_sum_amount`, { exact: true }))
+        .toContainText("50");
       const saved = revisionFromUrl(page.url());
       const response = await request.get(
         getBackendUrl(
@@ -1081,12 +1124,8 @@ test.describe("Composition Studio Journey", () => {
       );
       expect(evaluatePayloads.at(-1)?.requested_queries).toEqual(
         expect.arrayContaining([
-          `query_${
-            seed.savedSqlId.replace(/[^a-zA-Z0-9_-]/g, "_")
-          }_matching_count`,
-          `query_${
-            seed.savedSqlId.replace(/[^a-zA-Z0-9_-]/g, "_")
-          }_total_amount`,
+          `${savedSqlVariablePrefix(seed.savedSqlName)}_matching_count`,
+          `${savedSqlVariablePrefix(seed.savedSqlName)}_total_amount`,
         ]),
       );
 

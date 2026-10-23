@@ -36,7 +36,10 @@ vi.mock("@solidjs/router", () => ({
   ),
 }));
 
-vi.mock("~/lib/ugoite-client", () => ({
+vi.mock("~/lib/ugoite-client", async (importOriginal) => ({
+  compositionFormQuerySql:
+    (await importOriginal<typeof import("~/lib/ugoite-client")>())
+      .compositionFormQuerySql,
   formApi: { list: (...args: unknown[]) => formsMock(...args) },
   sqlApi: { list: (...args: unknown[]) => savedSqlMock(...args) },
 }));
