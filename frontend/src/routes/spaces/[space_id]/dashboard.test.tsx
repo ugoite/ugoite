@@ -9,7 +9,8 @@ import {
 import { createMemo, createSignal, type JSX, Show } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
-import { formApi } from "~/lib/ugoite-client";
+import { compositionApi } from "~/lib/composition-api";
+import { formApi, protocolFetch } from "~/lib/ugoite-client";
 import SpaceDashboardRoute from "./dashboard";
 
 const navigate = vi.fn();
@@ -44,6 +45,7 @@ vi.mock(
   "~/lib/ugoite-client",
   () => ({
     formApi: { list: vi.fn(), listTypes: vi.fn(), create: vi.fn() },
+    protocolFetch: vi.fn(),
   }),
 );
 
@@ -55,6 +57,12 @@ describe("v5 space Home", () => {
     entryStoreMock.loadEntries.mockResolvedValue(undefined);
     entryStoreMock.error.mockReturnValue(null);
     vi.mocked(formApi.listTypes).mockResolvedValue([]);
+    vi.mocked(protocolFetch).mockResolvedValue({
+      items: [],
+      offset: 0,
+      limit: 3,
+      has_more: false,
+    } as never);
   });
   it("renders Continue, Pinned and Recent without metric cards", async () => {
     vi.mocked(formApi.list).mockResolvedValue([{
@@ -219,14 +227,44 @@ describe("v5 space Home", () => {
       "/spaces/default/entries/entry-delta",
     ]);
   });
-  it("does not expose unfinished Composition entry points on Home", async () => {
+  it("rediscovers saved tools from Home and opens the listed exact revision", async () => {
+    vi.mocked(formApi.list).mockResolvedValue([]);
+    vi.mocked(protocolFetch).mockResolvedValue({
+      items: [{
+        composition_id: "composition-1",
+        revision_id: "revision-7",
+        updated_at: 1772960822,
+        name: "Monthly expenses",
+        kind: "dashboard",
+        format_version: 1,
+        tags: [],
+      }],
+      offset: 0,
+      limit: 3,
+      has_more: false,
+    } as never);
+    render(() => <SpaceDashboardRoute />);
+
+    const row = await screen.findByRole("link", { name: /Monthly expenses/ });
+    expect(row).toHaveAttribute(
+      "href",
+      "/spaces/default/compositions/composition-1/revision-7",
+    );
+    expect(screen.getByRole("link", { name: "All" })).toHaveAttribute(
+      "href",
+      "/spaces/default/compositions",
+    );
+    expect(document.querySelector(".rowList .card")).toBeNull();
+  });
+  it("links saved tools to the new tool studio action", async () => {
     vi.mocked(formApi.list).mockResolvedValue([]);
     render(() => <SpaceDashboardRoute />);
 
-    await screen.findByRole("heading", { name: "Recent" });
-    expect(screen.queryByRole("heading", { name: "Saved tools" }))
-      .not.toBeInTheDocument();
-    expect(document.querySelector('a[href*="/compositions"]')).toBeNull();
+    await screen.findByRole("heading", { name: "Saved tools" });
+    expect(screen.getByRole("link", { name: "New tool" })).toHaveAttribute(
+      "href",
+      "/spaces/default/compositions/new",
+    );
   });
 
   it("starts the dedicated New Entry route when a creatable Form exists", async () => {

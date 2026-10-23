@@ -1,4 +1,4 @@
-import { createSignal, For, Show } from "solid-js";
+import { createEffect, createSignal, For, Show } from "solid-js";
 import { CompositionGraphDesignCanvas } from "~/components/CompositionGraphDesignCanvas";
 import { CompositionVariableGraphWorkspace } from "~/components/CompositionVariableGraphWorkspace";
 import {
@@ -42,6 +42,8 @@ export interface CompositionGraphStudioProps {
   onQueryChange?: (variableId: string, sql: string) => void;
   onRunQuery?: (variableId: string) => void;
   onNextQuery?: (variableId: string) => void;
+  onPreviousQuery?: (variableId: string) => void;
+  onCountQuery?: (variableId: string) => void;
   onEditorValidityChange?: (
     variableId: string,
     valid: boolean | undefined,
@@ -86,6 +88,15 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
   const [unboundArgumentTypes, setUnboundArgumentTypes] = createSignal<
     Record<string, Record<string, CompositionSqlArgumentType>>
   >({});
+  let sessionId = props.session.session_id;
+  createEffect(() => {
+    const next = props.session.session_id;
+    if (sessionId === next) return;
+    sessionId = next;
+    setMode("design");
+    setSelectedVariableId(null);
+    setUnboundArgumentTypes({});
+  });
   const parameterDeclarations = () =>
     Object.fromEntries(
       props.draft.variables.filter((node) => node.kind === "query").map((
@@ -250,6 +261,8 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
           onQueryChange={props.onQueryChange}
           onRunQuery={props.onRunQuery}
           onNextQuery={props.onNextQuery}
+          onPreviousQuery={props.onPreviousQuery}
+          onCountQuery={props.onCountQuery}
           onEditValidityChange={props.onEditorValidityChange}
         />
       </section>

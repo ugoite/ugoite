@@ -263,6 +263,94 @@ describe("CompositionVariableGraphWorkspace", () => {
     });
   });
 
+  it("keeps SQL and argument bindings current through consecutive graph edits", async () => {
+    setLocale("en");
+    const [draft, setDraft] = createSignal<CompositionGraphDraft>({
+      ...createCompositionGraphDraft("Report"),
+      variables: [
+        {
+          id: "floor",
+          kind: "constant",
+          value_type: { scalar_type: "integer", nullable: false },
+          value: { kind: "integer", value: 1 },
+        },
+        {
+          id: "ceiling",
+          kind: "constant",
+          value_type: { scalar_type: "integer", nullable: false },
+          value: { kind: "integer", value: 10 },
+        },
+        {
+          id: "rows",
+          kind: "query",
+          returns: { kind: "table", columns: [] },
+          query: {
+            kind: "inline_sql",
+            sql: "SELECT $minimum",
+            arguments: [{ name: "minimum", variable: "floor" }],
+          },
+        },
+      ],
+    });
+    render(() => (
+      <CompositionVariableGraphWorkspace
+        draft={draft()}
+        selectedVariableId="rows"
+        onSelect={() => {}}
+        onDraftChange={setDraft}
+        onRemove={() => {}}
+        sqlSchema={buildSqlSchema([])}
+        parameterDeclarations={{ rows: [{ name: "minimum", type: "integer" }] }}
+        onQueryChange={(id, sql) =>
+          setDraft((current) => ({
+            ...current,
+            variables: current.variables.map((node) =>
+              node.id === id && node.kind === "query"
+                ? { ...node, query: { ...node.query, kind: "inline_sql", sql } }
+                : node
+            ),
+          }))}
+      />
+    ));
+    const binding = screen.getByRole("combobox", { name: "minimum" });
+    fireEvent.change(binding, { target: { value: "ceiling" } });
+    await waitFor(() => expect(binding).toHaveValue("ceiling"));
+    const editedSql = "SELECT $minimum + 1 AS amount";
+    setDraft((current) => ({
+      ...current,
+      variables: current.variables.map((node) =>
+        node.id === "rows" && node.kind === "query"
+          ? {
+            ...node,
+            query: { ...node.query, kind: "inline_sql", sql: editedSql },
+          }
+          : node
+      ),
+    }));
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "SQL" }).textContent)
+        .toContain(editedSql)
+    );
+    fireEvent.change(binding, { target: { value: "floor" } });
+    expect(draft().variables.find((node) => node.id === "rows")).toMatchObject({
+      query: {
+        sql: editedSql,
+        arguments: [{ name: "minimum", variable: "floor" }],
+      },
+    });
+    setDraft((current) => ({
+      ...current,
+      variables: [...current.variables, {
+        id: "next_floor",
+        kind: "constant",
+        value_type: { scalar_type: "integer", nullable: false },
+        value: { kind: "integer", value: 2 },
+      }],
+    }));
+    expect(within(binding).getByRole("option", { name: "next_floor" }))
+      .toBeInTheDocument();
+  });
+
   it("traps and restores focus when the mobile variable drawer closes", async () => {
     setLocale("en");
     const draft = createCompositionGraphDraft("Report");

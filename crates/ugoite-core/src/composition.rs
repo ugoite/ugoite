@@ -278,6 +278,10 @@ pub struct ResolvedQueryRequest {
     /// Exact source text for Saved SQL; absent for inline SQL.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sql_text: Option<String>,
+    /// Authorized source rebound to immutable Form relation IDs by the service.
+    /// It may be used as a new inline definition; it grants no read authority.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub portable_sql: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub deferred_arguments:
         Vec<crate::composition_query::VariableGraphQueryRequestDeferredArgument>,
@@ -977,6 +981,7 @@ fn resolve_parts(
                 variable_id: item.variable_id,
                 request,
                 sql_text,
+                portable_sql: None,
                 deferred_arguments: item.deferred_arguments,
                 scalar_cardinality: matches!(returns, VariableGraphResultType::Scalar { .. })
                     .then_some(CompositionScalarCardinality::ExactlyOneRow),

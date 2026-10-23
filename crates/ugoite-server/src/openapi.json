@@ -16860,6 +16860,13 @@
           },
           "scalar_cardinality": {
             "$ref": "#/components/schemas/CompositionScalarCardinality"
+          },
+          "portable_sql": {
+            "description": "Authorized SQL using immutable Form relation IDs, suitable for an explicit inline copy; every subsequent request rechecks authorization.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "additionalProperties": false

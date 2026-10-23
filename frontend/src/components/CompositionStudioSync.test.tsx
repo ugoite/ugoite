@@ -26,6 +26,7 @@ const {
   savedSqlMock,
   previewGraphMock,
   evaluateMock,
+  countMock,
   canonicalizeMock,
   parseInputMock,
   saveMock,
@@ -38,6 +39,7 @@ const {
     savedSqlMock: vi.fn(),
     previewGraphMock: vi.fn(),
     evaluateMock: vi.fn(),
+    countMock: vi.fn(),
     canonicalizeMock: vi.fn(),
     parseInputMock: vi.fn(),
     saveMock: vi.fn(),
@@ -60,7 +62,10 @@ vi.mock("@solidjs/router", () => ({
 vi.mock("~/lib/ugoite-client", () => ({
   authApi: { getSession: (...args: unknown[]) => authSessionMock(...args) },
   formApi: { list: (...args: unknown[]) => formsMock(...args) },
-  sqlApi: { list: (...args: unknown[]) => savedSqlMock(...args) },
+  sqlApi: {
+    list: (...args: unknown[]) => savedSqlMock(...args),
+    count: (...args: unknown[]) => countMock(...args),
+  },
   parseVariableGraphInput: (...args: unknown[]) => parseInputMock(...args),
 }));
 
@@ -76,15 +81,28 @@ vi.mock("~/lib/composition-api", () => ({
 vi.mock("~/components/SQLWorkspace", () => ({
   SQLWorkspace: (props: {
     sql: string;
+    readOnly?: boolean;
+    actions?: Array<
+      { label: string; disabled?: boolean; onActivate: () => void }
+    >;
+    onCount?: () => void;
+    onPrevious?: () => void;
+    onNext?: () => void;
     onSqlChange?: (value: string) => void;
     onPreview?: () => void;
     previewDisabled?: boolean;
-    preview?: { status: string; isCurrent: boolean };
+    preview?: {
+      status: string;
+      isCurrent: boolean;
+      page?: { pageNumber?: number };
+      count?: { status: string; value?: number };
+    };
   }) => (
     <>
       <textarea
         aria-label="SQL"
         value={props.sql}
+        readOnly={props.readOnly}
         onInput={(event) => props.onSqlChange?.(event.currentTarget.value)}
       />
       <button
@@ -94,7 +112,25 @@ vi.mock("~/components/SQLWorkspace", () => ({
       >
         Run query
       </button>
+      {props.actions?.map((action) => (
+        <button
+          type="button"
+          disabled={action.disabled}
+          onClick={action.onActivate}
+        >
+          {action.label}
+        </button>
+      ))}
+      <button type="button" onClick={props.onCount}>Count query</button>
+      <button type="button" onClick={props.onPrevious}>
+        Previous query page
+      </button>
+      <button type="button" onClick={props.onNext}>Next query page</button>
       <span data-testid="query-preview-status">{props.preview?.status}</span>
+      <span data-testid="query-page">{props.preview?.page?.pageNumber}</span>
+      <span data-testid="query-count">
+        {props.preview?.count?.value ?? props.preview?.count?.status ?? ""}
+      </span>
     </>
   ),
 }));
@@ -197,6 +233,7 @@ describe("CompositionStudio graph surface", () => {
     });
     formsMock.mockResolvedValue([]);
     savedSqlMock.mockResolvedValue([]);
+    countMock.mockReset().mockResolvedValue(102);
     previewGraphMock.mockImplementation((_spaceId: string, yaml: string) =>
       plannedQuery(yaml, {
         kind: "table",
@@ -235,6 +272,204 @@ describe("CompositionStudio graph surface", () => {
     );
   });
   afterEach(() => cleanup());
+
+  it("displays the authorized pinned Saved SQL source without reading the moving head", async () => {
+    const initial = renderedDraftWithTable();
+    initial.variables[0] = {
+      id: "rows",
+      kind: "query",
+      returns: { kind: "table", columns: [] },
+      query: {
+        kind: "saved_sql",
+        entry_id: "saved-1",
+        revision_id: "revision-pinned",
+        arguments: [],
+      },
+    };
+    previewGraphMock.mockResolvedValue({
+      ok: true,
+      plan: {
+        queries: [{
+          variable_id: "rows",
+          sql_text: "SELECT 11 AS pinned_value",
+          portable_sql: "SELECT 11 AS pinned_value",
+          deferred_arguments: [],
+          returns: { kind: "table", columns: [] },
+          result_columns: [],
+          form_bindings: [],
+          schema_fingerprint: "pinned-schema",
+          query_semantic_fingerprint: "pinned-meaning",
+        }],
+      },
+    });
+    savedSqlMock.mockResolvedValue([{
+      id: "saved-1",
+      name: "Latest",
+      revision_id: "revision-latest",
+      kind: "user-query",
+      sql: "SELECT 99 AS latest_value",
+      variables: [],
+    }]);
+    renderStudio(initial);
+    fireEvent.click(await screen.findByRole("tab", { name: "Variables" }));
+    fireEvent.click(screen.getByRole("button", { name: "rows" }));
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "SQL" })).toHaveValue(
+        "SELECT 11 AS pinned_value",
+      )
+    );
+    const requested = JSON.parse(previewGraphMock.mock.calls[0][1]);
+    expect(requested.spec.variables[0].query).toMatchObject({
+      entry_id: "saved-1",
+      revision_id: "revision-pinned",
+    });
+    expect(screen.getByRole("textbox", { name: "SQL" })).toHaveAttribute(
+      "readonly",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Edit an inline copy" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "SQL" })).not.toHaveAttribute(
+        "readonly",
+      )
+    );
+    expect(screen.getByRole("textbox", { name: "SQL" })).toHaveValue(
+      "SELECT 11 AS pinned_value",
+    );
+    expect(saveMock).not.toHaveBeenCalled();
+    expect(evaluateMock).not.toHaveBeenCalled();
+  });
+
+  it("counts only on request, pages in both directions, and rejects an obsolete count", async () => {
+    evaluateMock.mockImplementation((
+      _space: string,
+      request: { evaluation_id: string; page?: unknown },
+    ) => ({
+      evaluation_id: request.evaluation_id,
+      ok: true,
+      variable_values: {},
+      queries: [{
+        variable_id: "rows",
+        portable_sql: "SELECT field_100 FROM form_immutable",
+        returns: { kind: "table", columns: [] },
+      }],
+      query_results: {
+        rows: {
+          value: {
+            kind: "table",
+            columns: [{
+              name: "amount",
+              value_type: { scalar_type: "integer", nullable: false },
+            }],
+            rows: [[{ kind: "integer", value: request.page ? 2 : 1 }]],
+          },
+          has_more: !request.page,
+          next: request.page ? undefined : "next-page",
+        },
+      },
+    }));
+    renderStudio(renderedDraftWithTable());
+    fireEvent.click(await screen.findByRole("tab", { name: "Variables" }));
+    fireEvent.click(screen.getByRole("button", { name: "rows" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run query" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("query-preview-status")).toHaveTextContent(
+        "success",
+      )
+    );
+    expect(countMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Count query" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("query-count")).toHaveTextContent("102")
+    );
+    expect(countMock.mock.calls[0][1]).toEqual({
+      sql: "SELECT field_100 FROM form_immutable",
+      parameters: {},
+      parameter_types: {},
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Next query page" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("query-page")).toHaveTextContent("2")
+    );
+    expect(evaluateMock.mock.calls[1][1].page).toEqual({
+      variable_id: "rows",
+      cursor: "next-page",
+    });
+    // Paging one Workspace query must not execute unrelated graph branches.
+    expect(evaluateMock.mock.calls[1][1].requested_queries).toEqual(["rows"]);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Previous query page" }),
+    );
+    expect(screen.getByTestId("query-page")).toHaveTextContent("1");
+    expect(evaluateMock).toHaveBeenCalledTimes(2);
+    let completeCount!: (value: number) => void;
+    countMock.mockImplementationOnce(() =>
+      new Promise<number>((resolve) => {
+        completeCount = resolve;
+      })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Count query" }));
+    await waitFor(() => expect(countMock).toHaveBeenCalledTimes(2));
+    fireEvent.input(screen.getByRole("textbox", { name: "SQL" }), {
+      target: { value: "SELECT 2" },
+    });
+    completeCount(999);
+    await Promise.resolve();
+    expect(screen.getByTestId("query-preview-status")).toHaveTextContent(
+      "idle",
+    );
+    expect(screen.getByTestId("query-count")).not.toHaveTextContent("999");
+    expect(countMock.mock.calls[1][2].aborted).toBe(true);
+  });
+
+  it("clears draft and preview Work when a mounted create route changes Space", async () => {
+    const [spaceId, setSpaceId] = createSignal("space-1");
+    let finish!: (value: unknown) => void;
+    evaluateMock.mockImplementation((
+      _space: string,
+      request: { evaluation_id: string },
+    ) =>
+      new Promise((resolve) => {
+        finish = (value) =>
+          resolve({ evaluation_id: request.evaluation_id, ...value as object });
+      })
+    );
+    render(() => (
+      <CompositionStudio
+        spaceId={spaceId()}
+        initialDraft={renderedDraftWithTable()}
+        saveMode={{ kind: "create" }}
+        backHref="/spaces"
+        backLabel="Back"
+      />
+    ));
+    fireEvent.click(await screen.findByRole("tab", { name: "Variables" }));
+    fireEvent.click(screen.getByRole("button", { name: "rows" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run query" }));
+    await waitFor(() => expect(evaluateMock).toHaveBeenCalledOnce());
+    setSpaceId("space-2");
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("");
+    expect(screen.getByRole("tab", { name: "Design" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(evaluateMock.mock.calls[0][2].aborted).toBe(true);
+    finish({
+      ok: true,
+      query_results: {
+        rows: {
+          value: { kind: "table", columns: [], rows: [] },
+          has_more: false,
+        },
+      },
+    });
+    await Promise.resolve();
+    fireEvent.click(screen.getByRole("tab", { name: "Variables" }));
+    expect(screen.queryByRole("button", { name: "rows" })).toBeNull();
+    expect(screen.queryByTestId("query-preview-status")).toBeNull();
+    expect(saveMock).not.toHaveBeenCalled();
+  });
 
   it("offers only Design and Variables and inserts a Table without opening an Inspector", async () => {
     renderStudio();

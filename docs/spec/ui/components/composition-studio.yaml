@@ -2,7 +2,7 @@
 title: "Composition Studio"
 ---
 
-**Status: browser routes are temporarily unavailable until PR3 completes the Studio gates. This document records the target design; complete SQL grammar coverage remains a separate gate.** The normative next Composition model is [ADR-025](../../../architecture/contracts/adr-025-composition-query-variable-graph.md). The unreleased source-based model in [ADR-024](../../../architecture/contracts/adr-024-composition-sql-first.md) is superseded and has no compatibility path.
+**Status: implementation in progress; complete SQL grammar coverage remains a separate gate.** The normative next Composition model is [ADR-025](../../../architecture/contracts/adr-025-composition-query-variable-graph.md). The unreleased source-based model in [ADR-024](../../../architecture/contracts/adr-024-composition-sql-first.md) is superseded and has no compatibility path.
 
 ## Modes and variable graph
 
@@ -31,6 +31,8 @@ Reuse is based on semantic query identity, exact bindings, result descriptor, an
 Adding a component closes the picker and leaves the canvas visible; it does not open an Inspector. Selecting a placed Table or Value exposes one variable reference action. That action opens the same picker and changes only the selected component reference, leaving shared query variables intact. Removing a component does not remove its variable.
 
 At runtime, each Input component presents its variable name with an accessible name and an input control at least 44px high. Repeated controls follow component order during keyboard navigation and fit a 390px viewport without page-level horizontal overflow.
+
+A successful Table result with zero rows retains its column headings and announces the shared SQL empty-result status. It does not retain previous rows or display a loading message.
 
 The picker has one modal focus owner. Full rows select candidates; Escape closes the picker and restores focus. Controls expose accessible names, visible focus, and at least 44px targets. The picker and drawer fit 320px layouts without horizontal page overflow or a second navigation surface over the canvas.
 

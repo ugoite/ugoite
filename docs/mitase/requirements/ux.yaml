@@ -206,6 +206,33 @@ requirements:
                 criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
                 covers: [FEAT-UX-007#binding.back-control-implementation/target.sql-run-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx", test: "REQ-FE-068: omits persistent explanatory copy from saved SQL results" } }
+          - id: composition-studio-leading-back
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: "fits the destination-named back link, name, and Save in one 390px header row" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "fits the destination-named back link, name, and Save in one 390px header row" } }
+          - id: composition-history-leading-back
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx"
+            selector: { kind: test, name: "lists revisions with human labels and opens the exact revision" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.composition-history-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx", test: "lists revisions with human labels and opens the exact revision" } }
+          - id: composition-edit-leading-back
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx"
+            selector: { kind: test, name: "keeps the single back link at the header start when loading fails" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.composition-edit-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "keeps the single back link at the header start when loading fails" } }
           - id: storage-test-leading-back
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/test-connection.test.tsx"

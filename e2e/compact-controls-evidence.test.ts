@@ -14,17 +14,21 @@ import {
   getFrontendUrl,
   waitForServers,
 } from "./lib/client.ts";
+import { completeCompositionGraphYaml } from "./lib/composition-graph.ts";
+
 type CompactControlSeed = {
   spaceId: string;
   entryId: string;
   entryRevisionId: string;
   sqlId: string;
+  compositionId: string;
+  compositionRevisionId: string;
 };
 
 type Surface = {
   id: string;
   path: (seed: CompactControlSeed) => string;
-  layout: "screen-head" | "entry-detail";
+  layout: "screen-head" | "composition-studio" | "entry-detail";
   backName: string;
 };
 type EvidenceResult = {
@@ -72,6 +76,18 @@ const surfaces: Surface[] = [
     path: (s) => `/spaces/${s.spaceId}/sql/${s.sqlId}/run`,
   },
   {
+    id: "composition-new",
+    layout: "composition-studio",
+    backName: "Saved tools",
+    path: (s) => `/spaces/${s.spaceId}/compositions/new`,
+  },
+  {
+    id: "composition-history",
+    layout: "screen-head",
+    backName: "Back to saved tools",
+    path: (s) => `/spaces/${s.spaceId}/compositions/${s.compositionId}/history`,
+  },
+  {
     id: "entry-detail",
     layout: "entry-detail",
     backName: "Back to Form",
@@ -110,6 +126,7 @@ const evidenceGap =
 let seed: CompactControlSeed;
 let sqlCreated = false;
 let entryCreated = false;
+let compositionCreated = false;
 
 async function seedCompactControlSurfaces(
   request: APIRequestContext,
@@ -188,6 +205,21 @@ async function seedCompactControlSurfaces(
   );
   expect(updateResponse.ok()).toBe(true);
 
+  const compositionDataEntry = await request.post(
+    getBackendUrl(`/spaces/${spaceId}/entries`),
+    {
+      data: {
+        form: formName,
+        fields: {
+          Date: "2026-01-15",
+          Merchant: "Compact Controls",
+          Amount: 1.25,
+        },
+      },
+    },
+  );
+  expect(compositionDataEntry.status()).toBe(201);
+
   const sqlResponse = await request.post(
     getBackendUrl(`/spaces/${spaceId}/sql`),
     {
@@ -211,11 +243,52 @@ async function seedCompactControlSurfaces(
   };
   sqlCreated = true;
 
+  const completeYaml = await completeCompositionGraphYaml(
+    request,
+    spaceId,
+    {
+      name: `Compact Controls ${suffix}`,
+      variables: [{
+        id: "compact_rows",
+        kind: "query",
+        returns: { kind: "table", columns: [] },
+        query: {
+          kind: "inline_sql",
+          sql:
+            `SELECT \"${merchantColumn!}\" AS merchant FROM \"${relation!}\"`,
+          arguments: [],
+          form_bindings: [],
+          schema_fingerprint: "",
+        },
+      }],
+      components: [{ id: "rows", kind: "table", variable: "compact_rows" }],
+      rows: [{
+        id: "main",
+        items: [{ kind: "component", component: "rows" }],
+      }],
+    },
+  );
+  const compositionResponse = await request.post(
+    getBackendUrl(`/spaces/${spaceId}/compositions`),
+    {
+      headers: { "Idempotency-Key": crypto.randomUUID() },
+      data: { yaml: completeYaml },
+    },
+  );
+  expect([200, 201]).toContain(compositionResponse.status());
+  const composition = await compositionResponse.json() as {
+    composition_id: string;
+    revision_id: string;
+  };
+  compositionCreated = true;
+
   return {
     spaceId,
     entryId: entry.id,
     entryRevisionId: entry.revision_id,
     sqlId: sql.id,
+    compositionId: composition.composition_id,
+    compositionRevisionId: composition.revision_id,
   };
 }
 
@@ -250,6 +323,14 @@ async function focusBackLinkWithKeyboard(page: Page, backLink: Locator) {
 }
 
 function selectorsForSurface(surface: Surface) {
+  if (surface.layout === "composition-studio") {
+    return {
+      header: "header.screenHead",
+      back: "header.screenHead .screenHeadStart > a.back-link",
+      title: "header.screenHead input[aria-label]",
+      actions: "header.screenHead button, header.screenHead a:not(.back-link)",
+    };
+  }
   if (surface.layout === "entry-detail") {
     return {
       header: ".ui-entry-header",
@@ -370,6 +451,13 @@ test.describe("compact BackLink header evidence", () => {
 
   test.afterAll(async ({ request }) => {
     if (!seed) return;
+    if (compositionCreated) {
+      await request.delete(
+        getBackendUrl(
+          `/spaces/${seed.spaceId}/compositions/${seed.compositionId}`,
+        ),
+      );
+    }
     if (sqlCreated) {
       await request.delete(
         getBackendUrl(`/spaces/${seed.spaceId}/sql/${seed.sqlId}`),
@@ -379,22 +467,6 @@ test.describe("compact BackLink header evidence", () => {
       await request.delete(
         getBackendUrl(`/spaces/${seed.spaceId}/entries/${seed.entryId}`),
       );
-    }
-  });
-
-  test("Composition browser routes remain unavailable", async ({ page }) => {
-    const unavailablePaths = [
-      `/spaces/${seed.spaceId}/compositions`,
-      `/spaces/${seed.spaceId}/compositions/new`,
-      `/spaces/${seed.spaceId}/compositions/composition/revision`,
-      `/spaces/${seed.spaceId}/compositions/composition/revision/edit`,
-      `/spaces/${seed.spaceId}/compositions/composition/history`,
-    ];
-
-    for (const path of unavailablePaths) {
-      await page.goto(getFrontendUrl(path), { waitUntil: "domcontentloaded" });
-      await expect(page.getByRole("heading", { name: "Page not found" }))
-        .toBeVisible();
     }
   });
 

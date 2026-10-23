@@ -1080,6 +1080,7 @@ fn composition_queries_and_bindings(
                 variable_id: query.variable_id,
                 request,
                 sql_text: query.sql_text,
+                portable_sql: query.portable_sql,
                 deferred_arguments,
                 returns: composition_query_result_type(query.returns),
                 result_columns,

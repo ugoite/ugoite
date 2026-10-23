@@ -250,7 +250,7 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
     expect(countMock).not.toHaveBeenCalled();
   });
 
-  it("keeps the unfinished Composition save action unavailable", async () => {
+  it("only offers save-as after a successful user-query result", async () => {
     getMock.mockResolvedValueOnce({
       id: "saved-query",
       name: "History query",
@@ -274,7 +274,7 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
       .not.toBeInTheDocument();
   });
 
-  it("does not navigate from SQL results into the unfinished Composition Studio", async () => {
+  it("navigates to the studio with the exact saved sql revision", async () => {
     getMock.mockResolvedValue({
       id: "saved-query",
       name: "Monthly query",
@@ -300,14 +300,18 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
     });
     render(() => <SpaceSqlRunRoute />);
 
-    await screen.findByRole("columnheader", { name: "amount" });
-    expect(screen.queryByRole("button", { name: "Save as tool" }))
-      .not.toBeInTheDocument();
-    expect(navigateMock).not.toHaveBeenCalled();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Save as tool" }),
+    );
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(1));
+    expect(navigateMock).toHaveBeenCalledTimes(1);
+    expect(navigateMock).toHaveBeenCalledWith(
+      "/spaces/default/compositions/new?saved_sql_id=saved-query&saved_sql_revision=sql-revision-8",
+    );
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  it("does not expose a Composition save action for duplicate SQL columns", async () => {
+  it("keeps duplicate columns out of the studio without navigating", async () => {
     queryMock.mockReset().mockResolvedValueOnce({
       columns: ["same", "same"],
       rows: [["left", "right"]],
@@ -319,6 +323,7 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
       .toHaveLength(2);
     expect(screen.queryByRole("button", { name: "Save as tool" }))
       .not.toBeInTheDocument();
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 
   it("aborts the old Space page request and never renders its late response", async () => {

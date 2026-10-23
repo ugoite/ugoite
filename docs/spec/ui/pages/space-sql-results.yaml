@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-10-21"
+updated: "2026-10-07"
 page:
   id: space-sql-results
   title: Saved query results
@@ -47,3 +47,9 @@ components:
       title: Count rows
       source: sql.query.count
       description: Explicit action; page loading does not issue a count request.
+    - id: sql-results-save-as-tool
+      type: button
+      title: Save as tool
+      source: current successful user-query result and its exact Saved SQL revision
+      target_page: space-composition-new
+      description: Navigates to the Studio with a saved-sql seed carrying server-owned column types; unique columns stay required and failures keep the concise error without navigating.

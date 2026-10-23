@@ -2,7 +2,7 @@
 title: "Shared SQL Workspace"
 ---
 
-**Status: shared editor implemented; complete grammar coverage remains in progress.** The /sql/new route and Saved SQL detail/edit use the same Workspace component. Composition integration is temporarily unavailable while its browser routes are paused. [ADR-025](../../../architecture/contracts/adr-025-composition-query-variable-graph.md) defines the required lossless document and executor-to-GUI coverage contract. The owning route supplies SQL state, schema, parameters, preview, count, pagination, save, and execution callbacks. The Workspace presents them without becoming another query or persistence authority.
+**Status: shared editor implemented; complete grammar coverage remains in progress.** The /sql/new route and Saved SQL detail/edit use the same Workspace component. Composition query variables use the same Workspace component and the authorized graph resolver for exact Saved SQL source. [ADR-025](../../../architecture/contracts/adr-025-composition-query-variable-graph.md) defines the required lossless document and executor-to-GUI coverage contract. The owning route supplies SQL state, schema, parameters, preview, count, pagination, save, and execution callbacks. The Workspace presents them without becoming another query or persistence authority.
 
 ## Editing and parameter presentation
 
