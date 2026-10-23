@@ -1,4 +1,5 @@
 import "@testing-library/jest-dom/vitest";
+import type * as UgoiteClient from "~/lib/ugoite-client";
 import {
   cleanup,
   fireEvent,
@@ -59,18 +60,19 @@ vi.mock("@solidjs/router", () => ({
   ),
 }));
 
-vi.mock("~/lib/ugoite-client", async (importOriginal) => ({
-  compositionFormQuerySql:
-    (await importOriginal<typeof import("~/lib/ugoite-client")>())
-      .compositionFormQuerySql,
-  authApi: { getSession: (...args: unknown[]) => authSessionMock(...args) },
-  formApi: { list: (...args: unknown[]) => formsMock(...args) },
-  sqlApi: {
-    list: (...args: unknown[]) => savedSqlMock(...args),
-    count: (...args: unknown[]) => countMock(...args),
-  },
-  parseVariableGraphInput: (...args: unknown[]) => parseInputMock(...args),
-}));
+vi.mock("~/lib/ugoite-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof UgoiteClient>();
+  return {
+    compositionFormQuerySql: actual.compositionFormQuerySql,
+    authApi: { getSession: (...args: unknown[]) => authSessionMock(...args) },
+    formApi: { list: (...args: unknown[]) => formsMock(...args) },
+    sqlApi: {
+      list: (...args: unknown[]) => savedSqlMock(...args),
+      count: (...args: unknown[]) => countMock(...args),
+    },
+    parseVariableGraphInput: (...args: unknown[]) => parseInputMock(...args),
+  };
+});
 
 vi.mock("~/lib/composition-api", () => ({
   compositionApi: {

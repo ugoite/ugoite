@@ -1,4 +1,5 @@
 import "@testing-library/jest-dom/vitest";
+import type * as UgoiteClient from "~/lib/ugoite-client";
 import {
   cleanup,
   fireEvent,
@@ -36,13 +37,14 @@ vi.mock("@solidjs/router", () => ({
   ),
 }));
 
-vi.mock("~/lib/ugoite-client", async (importOriginal) => ({
-  compositionFormQuerySql:
-    (await importOriginal<typeof import("~/lib/ugoite-client")>())
-      .compositionFormQuerySql,
-  formApi: { list: (...args: unknown[]) => formsMock(...args) },
-  sqlApi: { list: (...args: unknown[]) => savedSqlMock(...args) },
-}));
+vi.mock("~/lib/ugoite-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof UgoiteClient>();
+  return {
+    compositionFormQuerySql: actual.compositionFormQuerySql,
+    formApi: { list: (...args: unknown[]) => formsMock(...args) },
+    sqlApi: { list: (...args: unknown[]) => savedSqlMock(...args) },
+  };
+});
 
 const tableDraft = (): CompositionGraphDraft => {
   const draft = createCompositionGraphDraft("Mobile");
