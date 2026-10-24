@@ -150,6 +150,40 @@ test(
       await page.keyboard.press("Escape");
       await expect(opener).toBeFocused();
     }
+    await page.getByRole("button", { name: "Filter", exact: true }).click();
+    const filterDialog = page.getByRole("dialog", {
+      name: "Filter",
+      exact: true,
+    });
+    await filterDialog.getByRole("combobox", { name: "Column" }).selectOption({
+      label: "Amount",
+    });
+    await filterDialog.getByRole("combobox", { name: "Operator" }).selectOption(
+      "gte",
+    );
+    await filterDialog.getByRole("combobox", { name: "Value type" })
+      .selectOption(
+        "number",
+      );
+    await filterDialog.getByRole("textbox", { name: "Value" }).fill("10");
+    await filterDialog.getByRole("button", { name: "Add filter" }).click();
+    await expect(filterDialog).toBeHidden();
+    await page.getByRole("button", { name: "Sort", exact: true }).click();
+    const sortDialog = page.getByRole("dialog", { name: "Sort", exact: true });
+    await sortDialog.getByRole("combobox", { name: "Column" }).selectOption({
+      label: "Amount",
+    });
+    await sortDialog.getByRole("combobox", { name: "Direction" }).selectOption(
+      "desc",
+    );
+    await sortDialog.getByRole("button", { name: "Add sort" }).click();
+    await expect(sortDialog).toBeHidden();
+    const taskEditedSql = await page.getByRole("textbox", {
+      name: "SQL",
+      exact: true,
+    }).innerText();
+    expect(taskEditedSql).toContain("amount >= 10");
+    expect(taskEditedSql).toContain("ORDER BY amount DESC");
     await page.getByRole("button", { name: "Run Query", exact: true }).click();
     await expect(page.getByRole("table")).toContainText("11", {
       timeout: 30_000,
@@ -178,6 +212,8 @@ test(
     const definition = await (await request.get(
       getBackendUrl(`/spaces/${spaceId}/sql/${saved.id}`),
     )).json() as { sql: string };
+    expect(definition.sql).toContain("amount >= 10");
+    expect(definition.sql).toContain("ORDER BY amount DESC");
     const yaml = await completeCompositionGraphYaml(request, spaceId, {
       name: `Columns Composition ${formName}`,
       variables: [{
