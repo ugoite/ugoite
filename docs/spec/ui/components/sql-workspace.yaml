@@ -43,6 +43,9 @@ query through the same Rust-owned typed transaction; an incomplete nonempty
 SQL draft cannot be overwritten with a starter. Pending operations are guarded
 by host identity as well as exact SQL source, including when two query variables
 have identical SQL. Closing the editor invalidates unfinished operations.
+Argument discovery can temporarily disable argument mutations, but must not
+disable the Form opener or prevent focus restoration after a document edit.
+Run and Save remain subject to current argument validation.
 
 The argument action is available with no arguments declared. SQL placeholders
 are paired with explicit, typed declarations; unused, undefined, duplicated,

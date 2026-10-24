@@ -815,7 +815,7 @@ export function CompositionVariableGraphWorkspace(
                             )}
                           onArgumentRemoved={(name) =>
                             props.onArgumentRemoved?.(query().id, name)}
-                          disabled={() =>
+                          argumentsDisabled={() =>
                             sqlArguments.loading || !!sqlArguments.error}
                           onActionsChange={setActions}
                         />
