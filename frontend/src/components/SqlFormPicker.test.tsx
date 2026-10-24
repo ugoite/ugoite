@@ -19,17 +19,18 @@ const forms = [
 function setup(source: string) {
   const [sql, setSql] = createSignal(source);
   const [scope, setScope] = createSignal("query-a");
+  const [choices, setChoices] = createSignal(forms);
   const advanced = vi.fn();
   const view = render(() => (
     <SqlFormPicker
       sql={sql}
       scope={scope}
-      forms={() => forms}
+      forms={choices}
       onSqlChange={setSql}
       onAdvanced={advanced}
     />
   ));
-  return { sql, setSql, scope, setScope, advanced, ...view };
+  return { sql, setSql, scope, setScope, setChoices, advanced, ...view };
 }
 
 describe("Form selection through the actual Rust SQL Document", () => {
@@ -110,6 +111,28 @@ describe("Form selection through the actual Rust SQL Document", () => {
     );
     expect(advanced).toHaveBeenCalledOnce();
     expect(applyMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the focused Form row through refreshed metadata and a failed operation", async () => {
+    let fail!: (error: Error) => void;
+    applyMock.mockImplementationOnce(() =>
+      new Promise((_, reject) => {
+        fail = reject;
+      })
+    );
+    const { setChoices, sql } = setup("SELECT 1");
+    const form = await screen.findByRole("button", { name: "Expenses" });
+    await waitFor(() => expect(form).toBeEnabled());
+    form.focus();
+    fireEvent.click(form);
+    await waitFor(() => expect(applyMock).toHaveBeenCalledOnce());
+    setChoices(forms.map((item) => ({ ...item })));
+    expect(screen.getByRole("button", { name: "Expenses" })).toBe(form);
+    expect(form).toHaveFocus();
+    fail(new Error("unavailable"));
+    await screen.findByRole("alert");
+    expect(form).toHaveFocus();
+    expect(sql()).toBe("SELECT 1");
   });
 
   it.each(["source", "scope", "unmount"])(

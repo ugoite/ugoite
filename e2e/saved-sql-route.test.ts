@@ -172,8 +172,13 @@ test.describe("Saved SQL route", () => {
       await expect(page.locator(".ui-sql-editor")).toContainText(
         `SELECT 1 FROM "${relation}"`,
       );
-      await dialog.getByRole("button", { name: "Close", exact: true }).last()
-        .click();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await expect(
+        page.getByRole("group", { name: "SQL", exact: true }).getByRole(
+          "button",
+          { name: "Form", exact: true },
+        ),
+      ).toBeFocused();
 
       await expect(page.locator(".ui-sql-editor")).toContainText(
         `SELECT 1 FROM "${relation}"`,
@@ -467,8 +472,13 @@ test.describe("Saved SQL route", () => {
       await expect(page.locator(".ui-sql-editor")).toContainText(
         `SELECT 1 FROM "${relation}"`,
       );
-      await formDialog.getByRole("button", { name: "Close", exact: true })
-        .last().click();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await expect(
+        page.getByRole("group", { name: "SQL", exact: true }).getByRole(
+          "button",
+          { name: "Form", exact: true },
+        ),
+      ).toBeFocused();
       await expect(page.locator(".ui-sql-editor")).toContainText(
         `SELECT 1 FROM "${relation}"`,
       );
@@ -539,10 +549,13 @@ test.describe("Saved SQL route", () => {
       await expect(page.locator(".ui-sql-editor")).toContainText(
         `FROM "${alternateRelation}"`,
       );
-      await replacementDialog.getByRole("button", {
-        name: "Close",
-        exact: true,
-      }).last().click();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await expect(
+        page.getByRole("group", { name: "SQL", exact: true }).getByRole(
+          "button",
+          { name: "Form", exact: true },
+        ),
+      ).toBeFocused();
       await expect(page.locator(".ui-sql-editor")).toContainText(
         `FROM "${alternateRelation}"`,
       );

@@ -24,6 +24,7 @@ interface SqlFormPickerProps {
   onSqlChange: (sql: string) => void;
   forms: () => readonly { relation: string; label: string }[];
   onAdvanced: () => void;
+  onApplied?: () => void;
 }
 
 /** A task-oriented view of Rust's document, never a second SQL parser or writer. */
@@ -154,6 +155,7 @@ export function SqlFormPicker(props: SqlFormPickerProps) {
         throw new Error("invalid result");
       }
       props.onSqlChange(result.document.source);
+      props.onApplied?.();
     } catch {
       if (request === generation) {
         setError(t("sqlPage.structure.documentEditUnavailable"));
@@ -195,16 +197,17 @@ export function SqlFormPicker(props: SqlFormPickerProps) {
         role="group"
         aria-label={t("sqlPage.structure.availableForms")}
       >
-        <For each={props.forms()}>
-          {(form) => (
+        <For each={props.forms().map((form) => form.relation)}>
+          {(relation) => (
             <button
               type="button"
               class="sql-form-picker__option ui-button ui-button-secondary"
-              aria-pressed={relationName(target()) === form.relation}
-              disabled={!available() || busy() || props.disabled?.()}
-              onClick={() => void selectForm(form.relation)}
+              aria-pressed={relationName(target()) === relation}
+              aria-disabled={busy() || undefined}
+              disabled={!available() || props.disabled?.()}
+              onClick={() => void selectForm(relation)}
             >
-              {form.label}
+              {props.forms().find((form) => form.relation === relation)?.label}
             </button>
           )}
         </For>

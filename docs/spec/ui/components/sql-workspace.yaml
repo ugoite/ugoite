@@ -36,7 +36,8 @@ same document tree. Operations that cannot preserve a selected source span
 must fail locally with a diagnostic and leave the SQL unchanged. They must not
 silently replace the whole query with a starter statement.
 
-Only SQL with multiple sources asks which source to change. Detailed tree
+A successful Form selection closes the dialog and restores focus to the Form
+button. Only SQL with multiple sources asks which source to change. Detailed tree
 editing is an explicit advanced action. Empty or trivia-only SQL can start a
 query through the same Rust-owned typed transaction; an incomplete nonempty
 SQL draft cannot be overwritten with a starter. Pending operations are guarded
