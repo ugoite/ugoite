@@ -3908,6 +3908,80 @@ mod tests {
     }
 
     #[test]
+    fn sql_document_task_filter_sort_constructors_match_native() {
+        use ugoite_domain::sql_document::{
+            SqlDocumentColumnReference, SqlDocumentFilterOperator, SqlDocumentIdentifier,
+            SqlDocumentNodeKind, SqlDocumentOrderDirection, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction, SqlDocumentSemanticLiteral,
+            SQL_DOCUMENT_CONTRACT_VERSION,
+        };
+
+        let source = "SELECT * FROM \"Form Expenses\" AS e WHERE a = 1 OR b = 2";
+        let document = ugoite_domain::sql_document::parse_sql_document(source);
+        let select = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::Select)
+            .unwrap();
+        let query = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::Query)
+            .unwrap();
+        let column = SqlDocumentColumnReference {
+            qualifier: Some(SqlDocumentIdentifier {
+                value: "e".into(),
+                quote_style: None,
+            }),
+            column: SqlDocumentIdentifier {
+                value: "field amount".into(),
+                quote_style: Some('"'),
+            },
+        };
+        let transaction = SqlDocumentSemanticEditTransaction {
+            contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+            expected_source: source.to_owned(),
+            edits: vec![
+                SqlDocumentSemanticEdit::AddFilterComparison {
+                    node_id: select.id,
+                    expected_kind: select.kind,
+                    column: column.clone(),
+                    operator: SqlDocumentFilterOperator::Gte,
+                    literal: Some(SqlDocumentSemanticLiteral::Number { value: "3".into() }),
+                },
+                SqlDocumentSemanticEdit::AddOrderByColumn {
+                    node_id: query.id,
+                    expected_kind: query.kind,
+                    column,
+                    direction: SqlDocumentOrderDirection::Desc,
+                    nulls_order: None,
+                },
+            ],
+        };
+        let native = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            source,
+            &transaction,
+        )
+        .expect("the native typed edits succeed");
+        assert!(native
+            .document
+            .source
+            .contains("WHERE (a = 1 OR b = 2) AND (e.\"field amount\" >= 3)"));
+        assert!(native
+            .document
+            .source
+            .ends_with("ORDER BY e.\"field amount\" DESC"));
+        let request = serde_json::json!({
+            "action": "domain.apply_sql_document_semantic_edit_transaction",
+            "value": { "current_source": source, "transaction": transaction },
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"], serde_json::to_value(&native).unwrap());
+    }
+
+    #[test]
     fn sql_document_expression_leaf_protocol_matches_native() {
         use ugoite_domain::sql_document::{
             SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
