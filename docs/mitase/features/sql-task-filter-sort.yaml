@@ -1,0 +1,113 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: sql
+category: SQL task-oriented editing
+features:
+  - id: FEAT-SQL-004
+    title: Bounded task-oriented Filter and Sort editing
+    summary: Construct common comparisons and ordered column keys through typed Rust SQL Document transactions for one unambiguous named Form relation.
+    status: implemented
+    bindings:
+      - id: rust-edit-core
+        role: contract-source
+        facet: core
+        responsibility: Construct bounded filter comparisons and sort keys from typed identifiers, operators, values, and sort options while preserving guarded inverse edits.
+        targets:
+          - id: add-filter-comparison
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: add_filter_comparison }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-003#criterion.bounded-task-editing
+          - id: add-order-by-column
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: add_order_by_column }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-003#criterion.bounded-task-editing
+      - id: frontend-editor
+        role: implementation
+        facet: frontend
+        responsibility: Present context-filtered common Filter and Sort controls and apply their drafts through the typed Rust protocol with stale-source and scope guards.
+        targets:
+          - id: task-editor
+            adapter: typescript
+            path: frontend/src/components/SqlFilterSortEditor.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-003#criterion.bounded-task-editing
+      - id: wasm-protocol
+        role: implementation
+        facet: wasm
+        responsibility: Expose the typed semantic edit constructors through the portable Rust JSON/WASM protocol.
+        targets:
+          - id: semantic-edit-action
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: symbol, name: invoke_json }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-003#criterion.bounded-task-editing
+      - id: task-edit-verification
+        role: verification
+        facet: verification
+        responsibility: Verify typed Rust construction and inverse edits, WASM protocol parity, and browser task-editor behavior for stable drafts, aliases, complex predicate preservation, and stale responses.
+        targets:
+          - id: native-filter-sort-construction
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: tests::task_filter_and_sort_constructors_create_typed_columns_and_undo }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-003#criterion.bounded-task-editing
+                covers:
+                  - FEAT-SQL-004#binding.rust-edit-core/target.add-filter-comparison
+                  - FEAT-SQL-004#binding.rust-edit-core/target.add-order-by-column
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-domain
+                    test: sql_document::tests::task_filter_and_sort_constructors_create_typed_columns_and_undo
+          - id: browser-task-editor
+            adapter: typescript
+            path: frontend/src/components/SqlFilterSortEditor.test.tsx
+            selector: { kind: test, name: keeps a typed filter draft stable while typing and applies it through Rust }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-003#criterion.bounded-task-editing
+                covers:
+                  - FEAT-SQL-004#binding.frontend-editor/target.task-editor
+                runner:
+                  runner: frontend-vitest-file
+                  arguments:
+                    file: src/components/SqlFilterSortEditor.test.tsx
+                    test: keeps a typed filter draft stable while typing and applies it through Rust
+          - id: wasm-protocol-parity
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: symbol, name: sql_document_task_filter_sort_constructors_match_native }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-003#criterion.bounded-task-editing
+                covers:
+                  - FEAT-SQL-004#binding.wasm-protocol/target.semantic-edit-action
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-wasm
+                    test: sql_document_task_filter_sort_constructors_match_native
+    contracts:
+      - id: typed-task-filter-sort-protocol
+        kind: custom
+        source: FEAT-SQL-004#binding.rust-edit-core/target.add-filter-comparison
+        participants:
+          - target: FEAT-SQL-004#binding.frontend-editor/target.task-editor
+            role: frontend-task-editor
+          - target: FEAT-SQL-004#binding.wasm-protocol/target.semantic-edit-action
+            role: wasm-protocol
+          - target: FEAT-SQL-004#binding.rust-edit-core/target.add-order-by-column
+            role: native-domain
+        guarantees: [REQ-SQL-003#criterion.bounded-task-editing]

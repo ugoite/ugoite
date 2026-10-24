@@ -3875,7 +3875,32 @@ fn add_filter_comparison(
         }) {
             return Err(SqlDocumentEditError::InvalidSemanticReplacement);
         }
-        return source_insertion(document, range.end, format!(" AND ({condition})"));
+        let where_token = document
+            .tokens
+            .iter()
+            .find(|token| {
+                token.range.start >= range.start
+                    && token.range.end <= range.end
+                    && token_text(&document.source, token)
+                        .is_some_and(|text| text.eq_ignore_ascii_case("WHERE"))
+            })
+            .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+        let predicate = document
+            .source
+            .get(where_token.range.end..range.end)
+            .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?
+            .trim();
+        if predicate.is_empty() {
+            return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+        }
+        let expected_text = document
+            .source_slice(range)
+            .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+        return Ok(SqlDocumentEdit {
+            range,
+            expected_text: expected_text.to_owned(),
+            replacement: format!("WHERE ({predicate}) AND ({condition})"),
+        });
     }
     let mut edit = add_where_clause(document, select)?;
     edit.replacement = edit
@@ -13386,6 +13411,41 @@ mod tests {
         let restored =
             apply_sql_document_edit_transaction(&appended.document.source, &appended.undo)
                 .expect("the appended projection has an exact inverse");
+        assert_eq!(restored.document.source, source);
+
+        let source = "SELECT * FROM \"G\" WHERE a = 1 OR b = 2";
+        let document = parse_sql_document(source);
+        let select = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::Select)
+            .unwrap();
+        let grouped = apply_sql_document_semantic_edit_transaction(
+            source,
+            &semantic_transaction(
+                source,
+                vec![SqlDocumentSemanticEdit::AddFilterComparison {
+                    node_id: select.id,
+                    expected_kind: select.kind,
+                    column: SqlDocumentColumnReference {
+                        qualifier: None,
+                        column: SqlDocumentIdentifier {
+                            value: "count".into(),
+                            quote_style: None,
+                        },
+                    },
+                    operator: SqlDocumentFilterOperator::Gt,
+                    literal: Some(SqlDocumentSemanticLiteral::Number { value: "3".into() }),
+                }],
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            grouped.document.source,
+            "SELECT * FROM \"G\" WHERE (a = 1 OR b = 2) AND (count > 3)"
+        );
+        let restored =
+            apply_sql_document_edit_transaction(&grouped.document.source, &grouped.undo).unwrap();
         assert_eq!(restored.document.source, source);
     }
 

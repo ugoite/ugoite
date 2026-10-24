@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { createSignal } from "solid-js";
-import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { describe, expect, it } from "vitest";
 import type { SqlStructureAdapterContext } from "~/lib/sql";
 import { SqlFilterSortEditor } from "./SqlFilterSortEditor";
@@ -31,7 +31,9 @@ describe("SQL Filter and Sort task editors", () => {
         onAdvanced={() => {}}
       />
     ));
-    fireEvent.change(await screen.findByRole("combobox", { name: "Column" }), {
+    const filterColumn = await screen.findByRole("combobox", { name: "Column" });
+    await waitFor(() => expect(filterColumn.querySelectorAll("option").length).toBe(2));
+    fireEvent.change(filterColumn, {
       target: { value: "field_amount" },
     });
     fireEvent.change(screen.getByRole("combobox", { name: "Operator" }), {
@@ -46,7 +48,15 @@ describe("SQL Filter and Sort task editors", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add filter" }));
     await waitFor(() =>
       expect(sql()).toBe(
-        'SELECT * FROM "form_expenses" WHERE form_expenses.field_amount >= 9007199254740993',
+        'SELECT * FROM "form_expenses" WHERE "form_expenses".field_amount >= 9007199254740993',
+      )
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await waitFor(() => expect(sql()).toBe('SELECT * FROM "form_expenses"'));
+    fireEvent.click(screen.getByRole("button", { name: "Redo" }));
+    await waitFor(() =>
+      expect(sql()).toBe(
+        'SELECT * FROM "form_expenses" WHERE "form_expenses".field_amount >= 9007199254740993',
       )
     );
   });
@@ -62,7 +72,9 @@ describe("SQL Filter and Sort task editors", () => {
         onAdvanced={() => {}}
       />
     ));
-    fireEvent.change(await screen.findByRole("combobox", { name: "Column" }), {
+    const sortColumn = await screen.findByRole("combobox", { name: "Column" });
+    await waitFor(() => expect(sortColumn.querySelectorAll("option").length).toBe(2));
+    fireEvent.change(sortColumn, {
       target: { value: "field_amount" },
     });
     fireEvent.change(screen.getByRole("combobox", { name: "Direction" }), {
@@ -74,8 +86,107 @@ describe("SQL Filter and Sort task editors", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add sort" }));
     await waitFor(() =>
       expect(sql()).toBe(
-        'SELECT * FROM "form_expenses" ORDER BY form_expenses.field_amount DESC NULLS LAST',
+        'SELECT * FROM "form_expenses" ORDER BY "form_expenses".field_amount DESC NULLS LAST',
       )
     );
+  });
+
+  it("edits and removes an existing simple sort row", async () => {
+    const [sql, setSql] = createSignal(
+      'SELECT * FROM "form_expenses" ORDER BY field_amount ASC',
+    );
+    render(() => (
+      <SqlFilterSortEditor
+        action="sort"
+        sql={sql}
+        contexts={() => [context]}
+        onSqlChange={setSql}
+        onAdvanced={() => {}}
+      />
+    ));
+    const row = await screen.findByRole("group", { name: "Sort 1" });
+    const direction = within(row).getByRole("combobox", { name: "Direction" });
+    fireEvent.change(direction, { target: { value: "desc" } });
+    fireEvent.click(within(row).getByRole("button", { name: "Apply sort changes" }));
+    await waitFor(() => expect(sql()).toContain("ORDER BY field_amount DESC"));
+  });
+
+  it("removes a simple existing sort row through the typed Rust edit", async () => {
+    const [sql, setSql] = createSignal('SELECT * FROM "form_expenses" ORDER BY field_amount');
+    render(() => (
+      <SqlFilterSortEditor
+        action="sort"
+        sql={sql}
+        contexts={() => [context]}
+        onSqlChange={setSql}
+        onAdvanced={() => {}}
+      />
+    ));
+    const row = await screen.findByRole("group", { name: "Sort 1" });
+    fireEvent.click(within(row).getByRole("button", { name: "Remove sort" }));
+    await waitFor(() => expect(sql()).toBe('SELECT * FROM "form_expenses" '));
+  });
+
+  it("uses the referenced Form alias and quotes typed field identifiers", async () => {
+    const aliased: SqlStructureAdapterContext = {
+      ...context,
+      parser: {
+        ...context.parser,
+        relation: "Form Expenses",
+        columns: [{ name: "display value", type: "string" }],
+      },
+      columnLabels: { "display value": "Display value" },
+    };
+    const unrelated = { ...context, parser: { ...context.parser, relation: "other_form" } };
+    const [sql, setSql] = createSignal(
+      `SELECT * FROM "Form Expenses" AS e WHERE status = 'open' OR status = 'pending'`,
+    );
+    render(() => (
+      <SqlFilterSortEditor
+        action="filter"
+        sql={sql}
+        contexts={() => [unrelated, aliased]}
+        onSqlChange={setSql}
+        onAdvanced={() => {}}
+      />
+    ));
+    const columnSelect = await screen.findByRole("combobox", { name: "Column" });
+    await waitFor(() => expect(columnSelect.querySelectorAll("option").length).toBe(2));
+    expect(screen.queryByRole("option", { name: "field_amount" })).toBeNull();
+    fireEvent.change(columnSelect, { target: { value: "display value" } });
+    fireEvent.input(screen.getByRole("textbox", { name: "Value" }), {
+      target: { value: "closed" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add filter" }));
+    await waitFor(() =>
+      expect(sql()).toContain(
+        `WHERE (status = 'open' OR status = 'pending') AND (e."display value" = 'closed')`,
+      )
+    );
+  });
+
+  it("rejects sort callbacks from an old source or switched scope", async () => {
+    const [sql, setSql] = createSignal(
+      'SELECT * FROM "form_expenses" ORDER BY field_amount',
+    );
+    const [scope, setScope] = createSignal("saved-query-a");
+    render(() => (
+      <SqlFilterSortEditor
+        action="sort"
+        sql={sql}
+        scope={scope}
+        contexts={() => [context]}
+        onSqlChange={setSql}
+        onAdvanced={() => {}}
+      />
+    ));
+    const oldRow = await screen.findByRole("group", { name: "Sort 1" });
+    const oldDirection = within(oldRow).getByRole("combobox", { name: "Direction" });
+    setSql('SELECT * FROM "form_expenses" ORDER BY field_amount NULLS LAST');
+    fireEvent.change(oldDirection, { target: { value: "desc" } });
+    const afterSourceChange = sql();
+    setScope("saved-query-b");
+    fireEvent.change(oldDirection, { target: { value: "asc" } });
+    expect(sql()).toBe(afterSourceChange);
   });
 });
