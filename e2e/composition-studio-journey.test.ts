@@ -1007,15 +1007,16 @@ test.describe("Composition Studio Journey", () => {
       expect(response.ok()).toBe(true);
       const revision = await response.json() as StudioRawRevision;
       const savedYaml = String(revision.fields["spec"]);
+      expect(savedYaml).toContain(String(form?.id));
       const components =
         savedYaml.split("components:")[1]?.split("layout:")[0] ??
           "";
 
       expect(savedYaml).toContain(
-        `SELECT * FROM "${form?.sql_relation}"`,
+        `SELECT * FROM "${seed.formName}"`,
       );
       expect(savedYaml).toContain(
-        `SUM("${amountColumn}") AS value FROM "${form?.sql_relation}"`,
+        `SUM("${amountColumn}") AS value FROM "${seed.formName}"`,
       );
       expect(components).toContain(`variable: ${formSlug}_rows`);
       expect(components).toContain(
