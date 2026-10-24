@@ -1701,10 +1701,6 @@ test(
       },
     );
     expect([200, 201]).toContain(created.status());
-    const forms =
-      await (await request.get(getBackendUrl(`/spaces/${spaceId}/forms`)))
-        .json() as Array<{ name: string; sql_relation: string }>;
-    const relation = forms.find((form) => form.name === formName)!.sql_relation;
     const yaml = await completeCompositionGraphYaml(request, spaceId, {
       name: `Form focus ${formName}`,
       variables: [{
@@ -1761,7 +1757,7 @@ test(
         });
         await choice.click();
         await expect(page.locator(".ui-sql-editor")).toContainText(
-          `SELECT 1 FROM "${relation}"`,
+          `SELECT 1 FROM "${formName}"`,
         );
       } else {
         await page.keyboard.press("Escape");
