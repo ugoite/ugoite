@@ -1683,7 +1683,14 @@
     "konase.error": "Konase could not complete the Work.",
     "composition.studioMoveEarlier": "Move earlier",
     "composition.studioMoveLater": "Move later",
-    "composition.studioMoveToNewRow": "Move to new row"
+    "composition.studioMoveToNewRow": "Move to new row",
+    "sqlPage.structure.startQuery": "Start a query",
+    "sqlPage.structure.noForm": "No Form selected",
+    "sqlPage.structure.nestedSource": "Subquery",
+    "sqlPage.structure.sourceToChange": "Source to change",
+    "sqlPage.structure.availableForms": "Available Forms",
+    "sqlPage.structure.fixSqlBeforeForm": "Complete the SQL before choosing a Form.",
+    "sqlPage.structure.advancedStructure": "Advanced structure…"
   },
   "ja": {
     "nav.home": "ホーム",
@@ -3369,6 +3376,13 @@
     "konase.error": "Konase が Work を完了できませんでした。",
     "composition.studioMoveEarlier": "前へ移動",
     "composition.studioMoveLater": "後へ移動",
-    "composition.studioMoveToNewRow": "新しい行へ移動"
+    "composition.studioMoveToNewRow": "新しい行へ移動",
+    "sqlPage.structure.startQuery": "クエリを作成",
+    "sqlPage.structure.noForm": "フォーム未選択",
+    "sqlPage.structure.nestedSource": "サブクエリ",
+    "sqlPage.structure.sourceToChange": "変更する参照先",
+    "sqlPage.structure.availableForms": "選択できるフォーム",
+    "sqlPage.structure.fixSqlBeforeForm": "フォームを選ぶ前に SQL を修正してください。",
+    "sqlPage.structure.advancedStructure": "詳細な構造を編集…"
   }
 }

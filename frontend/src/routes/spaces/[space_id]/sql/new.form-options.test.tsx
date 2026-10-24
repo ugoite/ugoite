@@ -87,7 +87,7 @@ describe("/spaces/:space_id/sql/new Form loading", () => {
     sqlPlanMock.mockReset().mockResolvedValue({ result_schema: [] });
   });
 
-  it("offers resolved Form choices in the SQL relation tree", async () => {
+  it("offers resolved Form names directly without the SQL relation tree", async () => {
     let resolveForms!: (forms: {
       id: string;
       name: string;
@@ -177,10 +177,8 @@ describe("/spaces/:space_id/sql/new Form loading", () => {
     fireEvent.click(formAction);
 
     const dialog = await screen.findByRole("dialog", { name: "Form" });
-    const relationPicker = within(dialog).getByRole("combobox", {
-      name: "Form",
-    });
-    expect(within(relationPicker).getByRole("option", { name: "Orders" }))
+    expect(within(dialog).getByRole("button", { name: "Orders" }))
       .toBeInTheDocument();
+    expect(within(dialog).queryByRole("tree")).not.toBeInTheDocument();
   });
 });

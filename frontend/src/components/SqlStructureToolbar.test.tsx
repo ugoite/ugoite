@@ -235,11 +235,7 @@ describe("SqlStructureToolbar typed SQL Document actions", () => {
 
     await waitFor(() => expect(actions()).toHaveLength(12));
     fireEvent.click(screen.getByRole("button", { name: "Form" }));
-    fireEvent.change(await screen.findByRole("combobox", { name: "Form" }), {
-      target: { value: "G" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Add FROM relation" }));
-    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    fireEvent.click(await screen.findByRole("button", { name: "G" }));
 
     await waitFor(() =>
       expect(applySemanticEditMock).toHaveBeenCalledWith(initialSql, {
@@ -272,9 +268,11 @@ describe("SqlStructureToolbar typed SQL Document actions", () => {
     const { actions, currentSql } = setup(source, [formContext, reserved]);
     await waitFor(() => expect(actions()).toHaveLength(12));
     fireEvent.click(screen.getByRole("button", { name: "Form" }));
-    const choices = await screen.findByRole("combobox", { name: "Form" });
-    expect(choices.querySelector('option[value="G"]')).not.toBeNull();
-    expect(choices.querySelector('option[value="Reserved"]')).toBeNull();
+    expect(await screen.findByRole("button", { name: "G" }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reserved" })).not
+      .toBeInTheDocument();
+    expect(screen.queryByRole("tree")).not.toBeInTheDocument();
     expect(currentSql()).toBe(source);
     expect(applySemanticEditMock).not.toHaveBeenCalled();
   });

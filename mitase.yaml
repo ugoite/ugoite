@@ -266,6 +266,8 @@ inventory:
         - frontend/src/components/CompositionDataWorkspace.test.tsx
         - frontend/src/components/SQLWorkspace.tsx
         - frontend/src/components/SQLWorkspace.test.tsx
+        - frontend/src/components/SqlFormPicker.tsx
+        - frontend/src/components/SqlFormPicker.test.tsx
         - frontend/src/components/SqlStructureToolbar.tsx
         - frontend/src/components/SqlStructureToolbar.test.tsx
         - frontend/src/components/SourceNavigator.tsx

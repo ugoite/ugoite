@@ -297,6 +297,7 @@ export default function SpaceQueryCreateRoute() {
         />
 
         <SqlStructureToolbar
+          scope={() => `new-sql:${spaceId()}`}
           sql={sqlInput}
           contexts={() =>
             buildSqlStructureContexts(
