@@ -636,6 +636,7 @@ async fn saved_sql_acl_is_applied_before_payload_decode() -> Result<()> {
             &[viewer],
             SqlQueryRequest {
                 form_binding_guards: Vec::new(),
+                binding_base: None,
                 sql: String::new(),
                 parameters: Map::new(),
                 parameter_types: BTreeMap::new(),
@@ -655,6 +656,7 @@ async fn saved_sql_acl_is_applied_before_payload_decode() -> Result<()> {
                 &[viewer],
                 SqlQueryCountRequest {
                     form_binding_guards: Vec::new(),
+                    binding_base: None,
                     sql: String::new(),
                     parameters: Map::new(),
                     parameter_types: BTreeMap::new(),
@@ -700,6 +702,7 @@ async fn saved_sql_acl_is_applied_before_payload_decode() -> Result<()> {
             &[viewer],
             SqlQueryRequest {
                 form_binding_guards: Vec::new(),
+                binding_base: None,
                 sql: String::new(),
                 parameters: Map::new(),
                 parameter_types: BTreeMap::new(),
@@ -718,6 +721,7 @@ async fn saved_sql_acl_is_applied_before_payload_decode() -> Result<()> {
             &[viewer],
             SqlQueryCountRequest {
                 form_binding_guards: Vec::new(),
+                binding_base: None,
                 sql: String::new(),
                 parameters: Map::new(),
                 parameter_types: BTreeMap::new(),
@@ -794,6 +798,7 @@ async fn saved_sql_form_authorization_is_rechecked_for_continuation_and_count() 
             &[viewer],
             SqlQueryRequest {
                 form_binding_guards: Vec::new(),
+                binding_base: None,
                 sql: String::new(),
                 parameters: Map::new(),
                 parameter_types: BTreeMap::new(),
@@ -831,6 +836,7 @@ async fn saved_sql_form_authorization_is_rechecked_for_continuation_and_count() 
                 &[viewer],
                 SqlQueryRequest {
                     form_binding_guards: Vec::new(),
+                    binding_base: None,
                     sql: String::new(),
                     parameters: Map::new(),
                     parameter_types: BTreeMap::new(),
@@ -852,6 +858,7 @@ async fn saved_sql_form_authorization_is_rechecked_for_continuation_and_count() 
                 &[viewer],
                 SqlQueryCountRequest {
                     form_binding_guards: Vec::new(),
+                    binding_base: None,
                     sql: String::new(),
                     parameters: Map::new(),
                     parameter_types: BTreeMap::new(),

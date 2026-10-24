@@ -476,6 +476,7 @@ mod export_sink_tests {
 
         let run_request = SqlQueryRequest {
             form_binding_guards: Vec::new(),
+            binding_base: None,
             sql: String::new(),
             parameters,
             parameter_types,
