@@ -155,6 +155,7 @@ function setup(
 ) {
   const [actions, setActions] = createSignal<readonly SQLWorkspaceAction[]>([]);
   const [currentSql, setCurrentSql] = createSignal(sql);
+  const [scope, setScope] = createSignal("space-a:query-1");
   render(() => (
     <>
       <div>
@@ -172,6 +173,7 @@ function setup(
       </div>
       <SqlStructureToolbar
         sql={currentSql}
+        scope={scope}
         contexts={() => contexts}
         onSqlChange={setCurrentSql}
         onVariablesAdded={() => true}
@@ -179,7 +181,7 @@ function setup(
       />
     </>
   ));
-  return { actions, currentSql };
+  return { actions, currentSql, setScope };
 }
 
 describe("SqlStructureToolbar typed SQL Document actions", () => {
@@ -275,6 +277,51 @@ describe("SqlStructureToolbar typed SQL Document actions", () => {
     expect(screen.queryByRole("tree")).not.toBeInTheDocument();
     expect(currentSql()).toBe(source);
     expect(applySemanticEditMock).not.toHaveBeenCalled();
+  });
+
+  it("closes successful Form selection and restores the toolbar focus owner", async () => {
+    const { currentSql } = setup("SELECT 1", [formContext]);
+    applySemanticEditMock.mockResolvedValue({
+      document: makeSqlDocument('SELECT 1 FROM "G"'),
+      undo: { expected_source: "", edits: [] },
+    });
+    const opener = await screen.findByRole("button", { name: "Form" });
+    opener.focus();
+    fireEvent.click(opener);
+    const form = await screen.findByRole("button", { name: "G" });
+    await waitFor(() => expect(form).toBeEnabled());
+    fireEvent.click(form);
+    await waitFor(() => expect(currentSql()).toBe('SELECT 1 FROM "G"'));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    );
+    await waitFor(() => expect(opener).toHaveFocus());
+  });
+
+  it("invalidates a pending Form edit across Spaces with identical query SQL and IDs", async () => {
+    const { currentSql, setScope } = setup("SELECT 1", [formContext]);
+    let finish!: (value: unknown) => void;
+    applySemanticEditMock.mockImplementationOnce(() =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    const opener = await screen.findByRole("button", { name: "Form" });
+    fireEvent.click(opener);
+    const form = await screen.findByRole("button", { name: "G" });
+    await waitFor(() => expect(form).toBeEnabled());
+    fireEvent.click(form);
+    await waitFor(() => expect(applySemanticEditMock).toHaveBeenCalledOnce());
+    setScope("space-b:query-1");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    );
+    finish({
+      document: makeSqlDocument('SELECT 1 FROM "G"'),
+      undo: { expected_source: "", edits: [] },
+    });
+    await Promise.resolve();
+    expect(currentSql()).toBe("SELECT 1");
   });
 
   it("keeps Arguments available without Form context", async () => {

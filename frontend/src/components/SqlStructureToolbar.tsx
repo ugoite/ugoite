@@ -233,39 +233,46 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     close();
   };
 
-  createEffect(() => {
-    const actions = ([
-      "form",
-      "join",
-      "columns",
-      "filter",
-      "sort",
-      "aggregate",
-      "group_by",
-      "having",
-      "distinct",
-      "row_limit",
-      "document",
-      "arguments",
-    ] as const).map((action): SQLWorkspaceAction => ({
-      kind: action === "join" || action === "having" || action === "document"
-        ? "structure"
-        : action,
-      icon: actionIcons[action],
-      label: t(`sqlPage.structure.${action}`),
-      disabled: isDisabled(action),
-      disabledReason: isDisabled(action)
+  // Stable action identities preserve the opener DOM through active-state changes.
+  const actions = ([
+    "form",
+    "join",
+    "columns",
+    "filter",
+    "sort",
+    "aggregate",
+    "group_by",
+    "having",
+    "distinct",
+    "row_limit",
+    "document",
+    "arguments",
+  ] as const).map((action): SQLWorkspaceAction => ({
+    kind: action === "join" || action === "having" || action === "document"
+      ? "structure"
+      : action,
+    icon: actionIcons[action],
+    get label() {
+      return t(`sqlPage.structure.${action}`);
+    },
+    get disabled() {
+      return isDisabled(action);
+    },
+    get disabledReason() {
+      return isDisabled(action)
         ? readOnly()
           ? t("sqlPage.structureReadOnly")
           : t("sqlPage.structureUnavailable")
-        : undefined,
-      active: activeAction() === action ||
+        : undefined;
+    },
+    get active() {
+      return activeAction() === action ||
         (isStructuralAction(action) && activeAction() === "document" &&
-          targetNodeKinds().join() === actionNodeKinds[action].join()),
-      onActivate: (returnFocus) => openAction(action, returnFocus),
-    }));
-    props.onActionsChange(actions);
-  });
+          targetNodeKinds().join() === actionNodeKinds[action].join());
+    },
+    onActivate: (returnFocus) => openAction(action, returnFocus),
+  }));
+  createEffect(() => props.onActionsChange(actions));
 
   return (
     <Show when={activeAction()}>
@@ -383,6 +390,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                       relation: context.parser.relation,
                       label: context.label ?? context.parser.relation,
                     }))}
+                  onApplied={close}
                   onAdvanced={() => openAction("document", dialogReturnFocus())}
                 />
               </Show>
