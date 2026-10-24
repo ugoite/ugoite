@@ -11134,10 +11134,9 @@ async fn list_compositions(
 
 // Work may consume 1 MiB and YAML may expand sixfold when JSON-escaped.
 // The small extra allowance covers the request envelope and target IDs.
-const COMPOSITION_SAVE_MAX_REQUEST_BYTES: usize =
-    ugoite_api_client::MAX_COMPOSITION_SAVE_WORK_BYTES
-        + ugoite_domain::composition::MAX_COMPOSITION_YAML_BYTES * 6
-        + 4096;
+const COMPOSITION_SAVE_MAX_REQUEST_BYTES: usize = ugoite_api_client::MAX_COMPOSITION_SAVE_WORK_BYTES
+    + ugoite_domain::composition::MAX_COMPOSITION_YAML_BYTES * 6
+    + 4096;
 
 async fn save_composition(
     State(state): State<AppState>,
@@ -11214,7 +11213,10 @@ async fn save_composition(
         variables: request.variables,
         unset_variables: request.unset_variables,
     };
-    if work.variables.len().saturating_add(work.unset_variables.len())
+    if work
+        .variables
+        .len()
+        .saturating_add(work.unset_variables.len())
         > ugoite_api_client::MAX_COMPOSITION_SAVE_WORK_ITEMS
     {
         return Err(ApiError::new(
