@@ -514,6 +514,17 @@ requirements:
           applies the same user-creatable Form eligibility rule as entry
           creation.
         governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+      - id: task-oriented-result-fields
+        kind: behavior
+        statement: >-
+          Shared SQL Columns presents ordered result fields and authorized
+          human field labels directly, without requiring statement or syntax
+          node selection. Users can expand a plain wildcard, add, remove and
+          move fields, and use guarded Undo and Redo. Complex or ambiguous
+          edits remain available through an explicit advanced action without
+          silently replacing source. Pending operations cannot cross host
+          identity, and field controls retain focus during a reorder.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
       - id: explicit-preview-count-and-paging
         kind: behavior
         statement: >-

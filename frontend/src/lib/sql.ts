@@ -152,6 +152,8 @@ export interface SqlStructureAdapterContext {
   label?: string;
   parser: SqlStructureContext;
   columnCapabilities: Readonly<Record<string, SqlStructureColumnCapabilities>>;
+  /** Human field names keyed by immutable SQL column identifiers. */
+  columnLabels?: Readonly<Record<string, string>>;
 }
 
 const queryOperators = (
@@ -227,6 +229,13 @@ export const buildSqlStructureContexts = (
         return [{ name, type }];
       }),
     ];
+    const columnLabels: Record<string, string> = Object.fromEntries(
+      Object.entries(form.fields ?? {}).flatMap(([label, field]) =>
+        field.sql_column?.trim()
+          ? [[field.sql_column.trim(), field.label?.trim() || label]]
+          : []
+      ),
+    );
     const columnCapabilities: Record<string, SqlStructureColumnCapabilities> = {
       _ugoite_id: {
         projectable: true,
@@ -310,11 +319,13 @@ export const buildSqlStructureContexts = (
         relationSelectable: !isReservedMetadataForm(form.name),
         parser,
         columnCapabilities,
+        columnLabels,
       }),
       relationSelectable: !isReservedMetadataForm(form.name),
       label: form.name.trim() || relation,
       parser,
       columnCapabilities,
+      columnLabels,
     }];
   });
   const parser: SqlStructureContext = {

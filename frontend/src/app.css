@@ -6016,3 +6016,61 @@ a.tool {
 .sql-workspace__error {
   margin: 0;
 }
+
+.sql-columns-editor,
+.sql-columns-editor__list {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.sql-columns-editor__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sql-columns-editor__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--ui-border);
+  padding-block: 8px;
+}
+
+.sql-columns-editor__name {
+  flex: 1 1 140px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sql-columns-editor__row-actions,
+.sql-columns-editor__add,
+.sql-columns-editor__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sql-columns-editor__add .ui-field {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.sql-columns-editor .ui-input {
+  width: 100%;
+  min-height: 44px;
+  font-size: 16px;
+}
+
+.sql-columns-editor__footer {
+  justify-content: space-between;
+}
+
+.sql-columns-editor [aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: default;
+}

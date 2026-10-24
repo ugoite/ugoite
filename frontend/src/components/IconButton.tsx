@@ -8,6 +8,8 @@ interface IconButtonProps {
   /** Optional hover/AT description, e.g. a blocked-action reason. */
   title?: string;
   disabled?: boolean;
+  /** Block activation while retaining the control as the focus owner. */
+  ariaDisabled?: boolean;
   active?: boolean;
   ariaExpanded?: boolean;
   ariaControls?: string;
@@ -44,7 +46,17 @@ export function IconButton(props: IconButtonProps) {
       aria-controls={props.ariaControls}
       title={props.title}
       disabled={props.disabled}
-      onClick={props.onClick}
+      aria-disabled={props.ariaDisabled || undefined}
+      onClick={(event) => {
+        if (props.ariaDisabled) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        const handler = props.onClick;
+        if (Array.isArray(handler)) handler[0](handler[1], event);
+        else handler?.(event);
+      }}
     >
       <UiIcon name={props.icon} />
       <span class="ui-sr-only">{props.label}</span>

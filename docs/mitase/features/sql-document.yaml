@@ -571,3 +571,77 @@ features:
           - target: FEAT-SQL-001#binding.sql-document-guarded-edit-frontend-client/target.edit-transaction-client
             role: frontend-client
         guarantees: [REQ-SQL-001#criterion.portable-protocol]
+      - id: projection-positions
+        role: implementation
+        facet: domain
+        responsibility: Preserve positional references during a projection edit or reject the complete transaction when its bindings are ambiguous.
+        targets:
+          - id: position-edits
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: projection_position_edits }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.projection-position-bindings
+      - id: projection-position-protocol
+        role: implementation
+        facet: protocol
+        responsibility: Expose the same guarded projection edit and stable positional conflict through the Rust WASM dispatcher.
+        targets:
+          - id: semantic-edit-action
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: symbol, name: invoke_sql_document_semantic_edit_transaction }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.projection-position-bindings
+      - id: projection-position-verification
+        role: verification
+        facet: verification
+        responsibility: Verify source preservation, nested scope isolation, fail-closed ambiguity, actual authorized execution and native/WASM parity.
+        targets:
+          - id: position-reorder
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: tests::projection_reordering_preserves_positional_sort_and_group_bindings }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.projection-position-bindings
+                covers: [FEAT-SQL-001#binding.projection-positions/target.position-edits]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: tests::projection_reordering_preserves_positional_sort_and_group_bindings } }
+          - id: position-remove
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: tests::projection_removal_preserves_shifted_positions_and_rejects_removed_references }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.projection-position-bindings
+                covers: [FEAT-SQL-001#binding.projection-positions/target.position-edits]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: tests::projection_removal_preserves_shifted_positions_and_rejects_removed_references } }
+          - id: position-scope
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: tests::projection_position_edits_do_not_touch_nested_query_positions_or_guess_wildcard_widths }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.projection-position-bindings
+                covers: [FEAT-SQL-001#binding.projection-positions/target.position-edits]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: tests::projection_position_edits_do_not_touch_nested_query_positions_or_guess_wildcard_widths } }
+          - id: position-authorized-execution
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/authorized_query.rs
+            selector: { kind: test, name: projection_reorder_keeps_authorized_grouping_and_sort_meaning }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.projection-position-bindings
+                covers: [FEAT-SQL-001#binding.projection-positions/target.position-edits]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: projection_reorder_keeps_authorized_grouping_and_sort_meaning } }
+          - id: position-actual-wasm
+            adapter: typescript
+            path: frontend/src/components/SqlColumnsEditor.test.tsx
+            selector: { kind: test, name: preserves positional sorting and rejects removing its referenced field with a local cause }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.projection-position-bindings
+                covers: [FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlColumnsEditor.test.tsx, test: preserves positional sorting and rejects removing its referenced field with a local cause } }
