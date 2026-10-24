@@ -37,6 +37,12 @@ export interface CompositionGraphDesignCanvasProps {
   onDraftChange: (draft: CompositionGraphDraft) => void;
   onCreateInput?: () => void;
   onEditVariable?: (id: string) => void;
+  onSaveSnapshotReady?: (
+    getter: () => {
+      variables: Record<string, unknown>;
+      unset_variables: string[];
+    } | undefined,
+  ) => void;
 }
 
 const nextId = (prefix: string, values: readonly string[]) => {
@@ -144,6 +150,7 @@ export function CompositionGraphDesignCanvas(
     principal: props.getPrincipalGeneration,
     base: () => props.previewBase,
   });
+  props.onSaveSnapshotReady?.(preview.saveSnapshot);
   const [pickerKind, setPickerKind] = createSignal<BindingComponentKind | null>(
     props.initialSavedSqlBinding ? "table" : null,
   );

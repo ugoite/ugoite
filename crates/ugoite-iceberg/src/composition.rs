@@ -8,6 +8,7 @@ use chrono::Utc;
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::EntryScope;
@@ -20,7 +21,9 @@ use ugoite_domain::entry::{
     EntryMetadata, EntryOperation, EntryRevision, EntryRevisionDraft, FieldValue,
 };
 use ugoite_domain::form::FormDefinition;
-use ugoite_domain::id::{validate_entry_id, validate_revision_id, EntryId, FieldId, RevisionId};
+use ugoite_domain::id::{
+    validate_entry_id, validate_revision_id, EntryId, FieldId, FormId, RevisionId,
+};
 use uuid::Uuid;
 
 pub const COMPOSITION_HISTORY_MAX_PAGE_SIZE: usize = 100;
@@ -100,6 +103,15 @@ pub struct CompositionSaveRequest {
     pub document: CompositionDocument,
 }
 
+/// Transient, typed input Work supplied for one strict save preflight. Only a
+/// digest is included in the durable command identity; values are never added
+/// to the Composition carrier or history.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct CompositionSaveWork {
+    pub variables: BTreeMap<String, Value>,
+    pub unset_variables: Vec<String>,
+}
+
 /// Result of one committed Composition publication.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CompositionSaveResult {
@@ -166,13 +178,132 @@ pub(crate) fn validate_operation_id(operation_id: &str) -> Result<()> {
     Ok(())
 }
 
+fn composition_work_fingerprint(work: &CompositionSaveWork) -> Result<String> {
+    // Unset order has no execution meaning. Sort it so equivalent retries
+    // share an operation identity while preserving duplicates for request
+    // validation to reject rather than silently normalizing them away.
+    let mut unset_variables = work.unset_variables.clone();
+    unset_variables.sort();
+    Ok(hex::encode(Sha256::digest(serde_json::to_vec(&(
+        &work.variables,
+        unset_variables,
+    ))?)))
+}
+
+/// Recover a completed save before resolving current SQL descriptors. The
+/// caller must already have checked current authorization. Reusing an
+/// operation ID with changed definition or Work is rejected by the durable
+/// publication digest.
+pub(crate) async fn recover_published_composition_save(
+    operator: &Operator,
+    space_id: &str,
+    workspace_path: &str,
+    request: &CompositionSaveRequest,
+    request_yaml: &str,
+    author: &str,
+    operation_id: &str,
+    work: &CompositionSaveWork,
+) -> Result<Option<CompositionSaveResult>> {
+    validate_operation_id(operation_id)?;
+    let entry_id = request
+        .entry_id
+        .unwrap_or_else(|| composition_entry_id_for_operation(space_id, operation_id));
+    let revision_id = composition_revision_id_for_operation(space_id, operation_id);
+    let command_id = composition_command_id_for_operation(space_id, operation_id);
+    let work_fingerprint = composition_work_fingerprint(work)?;
+    let identity = CompositionSaveIdentity {
+        space_id,
+        entry_id,
+        is_create: request.entry_id.is_none(),
+        base_revision_id: request.base_revision_id,
+        request_yaml,
+        work_fingerprint: &work_fingerprint,
+        actor: author,
+    };
+    let publication =
+        crate::publication_context(command_id.clone(), "composition.save", &identity)?
+            .with_change_descriptor(ChangeDescriptor {
+                run_id: None,
+                actor_principal_id: author.to_string(),
+                message: Some(if request.entry_id.is_some() {
+                    "Update Composition".to_string()
+                } else {
+                    "Create Composition".to_string()
+                }),
+                reverts_change_id: None,
+                // Outcome lookup does not publish a Change; the timestamp is not
+                // part of the durable request identity.
+                created_at_micros: 0,
+            })
+            .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
+    let workspace =
+        crate::iceberg_store::native_mutation_workspace(operator, workspace_path).await?;
+    let coordinator = workspace.commit(publication.clone())?;
+    let outcome = match coordinator.publication_outcome().await {
+        Ok(outcome) => outcome,
+        Err(error) if publication_content_conflict(&error) => {
+            return Err(AppError::conflict(
+                ErrorCode::IdempotencyConflict,
+                "Composition operation identity was reused with different save content or inputs",
+            )
+            .into());
+        }
+        Err(error) => return Err(error),
+    };
+    let Some(outcome) = outcome else {
+        return Ok(None);
+    };
+    let raw = read_composition_raw_revision(
+        operator,
+        workspace_path,
+        &entry_id.to_string(),
+        &revision_id.to_string(),
+    )
+    .await?
+    .ok_or_else(|| registry_conflict("published Composition revision is missing"))?;
+    let stored_yaml = raw
+        .fields
+        .get("spec")
+        .and_then(Value::as_str)
+        .ok_or_else(|| registry_conflict("published Composition spec carrier is missing"))?;
+    let canonical = canonicalize_composition_yaml(stored_yaml)
+        .map_err(|diagnostic| registry_conflict(diagnostic.as_str()))?;
+    let document = validate_saved_composition_revision(
+        &raw,
+        entry_id,
+        revision_id,
+        request.base_revision_id,
+        &command_id,
+        &canonical.yaml,
+        author,
+    )?;
+    let snapshot_id = outcome
+        .snapshot_id
+        .context("Composition publication did not create an Iceberg snapshot")?;
+    Ok(Some(CompositionSaveResult {
+        entry_id,
+        revision_id: raw.revision.revision_id,
+        document,
+        canonical_yaml: canonical.yaml,
+        receipt: crate::CommitReceipt {
+            command_id: outcome.command_id,
+            catalog_generation: outcome.catalog_generation,
+            snapshot_id,
+            committed_revision_ids: vec![raw.revision.revision_id],
+            committed_at_micros: raw.revision.committed_at_micros,
+            data_file_count: outcome.data_file_count,
+        },
+    }))
+}
+
 #[derive(Serialize)]
 struct CompositionSaveIdentity<'a> {
     space_id: &'a str,
     entry_id: EntryId,
     is_create: bool,
     base_revision_id: Option<RevisionId>,
-    canonical_yaml: &'a str,
+    request_yaml: &'a str,
+    work_fingerprint: &'a str,
     actor: &'a str,
 }
 
@@ -348,6 +479,7 @@ pub(crate) fn validate_composition_revision(
 /// held by the service boundary; the coordinator rechecks Entry revision
 /// parentage against the latest Catalog Head before publication.
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 pub(crate) async fn save_composition(
     operator: &Operator,
     space_id: &str,
@@ -357,6 +489,66 @@ pub(crate) async fn save_composition(
     canonical: CanonicalComposition,
     author: &str,
     operation_id: &str,
+) -> Result<CompositionSaveResult> {
+    let request_yaml = canonical.yaml.clone();
+    save_composition_with_work(
+        operator,
+        space_id,
+        workspace_path,
+        request,
+        entry_id,
+        canonical,
+        author,
+        operation_id,
+        &request_yaml,
+        &CompositionSaveWork::default(),
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+#[cfg(test)]
+pub(crate) async fn save_composition_with_work(
+    operator: &Operator,
+    space_id: &str,
+    workspace_path: &str,
+    request: CompositionSaveRequest,
+    entry_id: EntryId,
+    canonical: CanonicalComposition,
+    author: &str,
+    operation_id: &str,
+    request_yaml: &str,
+    work: &CompositionSaveWork,
+) -> Result<CompositionSaveResult> {
+    save_composition_with_work_and_head_proof(
+        operator,
+        space_id,
+        workspace_path,
+        request,
+        entry_id,
+        canonical,
+        author,
+        operation_id,
+        request_yaml,
+        work,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn save_composition_with_work_and_head_proof(
+    operator: &Operator,
+    space_id: &str,
+    workspace_path: &str,
+    request: CompositionSaveRequest,
+    entry_id: EntryId,
+    canonical: CanonicalComposition,
+    author: &str,
+    operation_id: &str,
+    request_yaml: &str,
+    work: &CompositionSaveWork,
+    exact_head_proof: Option<&crate::ExactCatalogHeadProof>,
 ) -> Result<CompositionSaveResult> {
     validate_operation_id(operation_id)?;
     if request.entry_id.is_some() != request.base_revision_id.is_some() {
@@ -368,12 +560,14 @@ pub(crate) async fn save_composition(
     }
     let command_id = composition_command_id_for_operation(space_id, operation_id);
     let revision_id = composition_revision_id_for_operation(space_id, operation_id);
+    let work_fingerprint = composition_work_fingerprint(work)?;
     let identity = CompositionSaveIdentity {
         space_id,
         entry_id,
         is_create: request.entry_id.is_none(),
         base_revision_id: request.base_revision_id,
-        canonical_yaml: &canonical.yaml,
+        request_yaml,
+        work_fingerprint: &work_fingerprint,
         actor: author,
     };
     let publication =
@@ -449,11 +643,28 @@ pub(crate) async fn save_composition(
             .into());
         }
     }
-    // Do not create the Registry for a failed update of a missing Entry. A
-    // current Composition update has already proved that its carrier exists;
-    // creates still ensure the Registry only after the canonical input reaches
-    // this storage boundary.
-    let form = ensure_composition_registry(operator, workspace_path).await?;
+    // Read the Registry without publishing it. First-save initialization is
+    // staged with the initial Entry snapshot below and becomes reachable only
+    // through the same Catalog Head CAS.
+    let mut expected_registry = composition_registry_definition()?;
+    let space_uid = crate::iceberg_store::stable_space_id(operator, workspace_path).await?;
+    expected_registry.id = FormId::from(Uuid::new_v5(
+        &space_uid.as_uuid(),
+        COMPOSITION_REGISTRY_FORM_NAME.as_bytes(),
+    ));
+    let read_workspace =
+        crate::iceberg_store::native_workspace_read_only(operator, workspace_path).await?;
+    let registry = read_workspace.list_forms().await?.into_iter().find(|form| {
+        form.name
+            .eq_ignore_ascii_case(COMPOSITION_REGISTRY_FORM_NAME)
+    });
+    let (form, registry_exists) = match registry {
+        Some(form) => {
+            validate_composition_registry_form(&form)?;
+            (form, true)
+        }
+        None => (expected_registry, false),
+    };
 
     let timestamp = Utc::now().timestamp_micros().max(
         current
@@ -530,11 +741,23 @@ pub(crate) async fn save_composition(
     crate::authorization::ensure_authorization_write_fence().await?;
     let workspace =
         crate::iceberg_store::native_mutation_workspace(operator, workspace_path).await?;
-    let mut receipt = match workspace
-        .commit(publication.clone())?
-        .append_composition_revision_authorized(revision.clone())
-        .await
-    {
+    let coordinator = workspace.commit(publication.clone())?;
+    let append_result = if registry_exists {
+        coordinator
+            .append_composition_revision_authorized_with_head_proof(
+                revision.clone(),
+                exact_head_proof,
+            )
+            .await
+    } else {
+        coordinator
+            .initialize_composition_registry_with_revision_authorized_and_proof(
+                revision.clone(),
+                exact_head_proof,
+            )
+            .await
+    };
+    let mut receipt = match append_result {
         Ok(receipt) => receipt,
         Err(error) => {
             // Another retry with the same operation identity may have

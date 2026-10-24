@@ -100,6 +100,24 @@ requirements:
           POL-000#rule.foundation-precedence,
           POL-004#rule.governance,
         ]
+      - id: strict-save-current-snapshot
+        kind: security
+        statement: >-
+          A Composition save evaluates every query in the current typed
+          variable graph against one exact bound Publication and authorization
+          snapshot, using supplied transient Input values, declared defaults,
+          and explicit unsets. Missing required Inputs, invalid scalar
+          cardinality, result type/nullability mismatches, or changed snapshot
+          reject the whole save before any Registry, Entry, revision, or Change
+          becomes reachable. The exact proof cannot be refreshed during a
+          generic append retry. Input values and results are not stored in the
+          Composition document, history, or export. A successful retry with the
+          same operation and same Work recovers its original receipt before
+          revalidating sources, subject to current authorization.
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
       - id: full-executor-to-gui-sql-coverage
         kind: behavior
         statement: >-

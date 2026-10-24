@@ -57,6 +57,12 @@ export interface CompositionGraphStudioProps {
   onSave?: () => void;
   saveDisabled?: boolean;
   saving?: boolean;
+  onSaveSnapshotReady?: (
+    getter: () => {
+      variables: Record<string, unknown>;
+      unset_variables: string[];
+    } | undefined,
+  ) => void;
 }
 
 type StudioMode = "design" | "variables";
@@ -332,6 +338,7 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
           session={props.session}
           getPrincipalGeneration={props.getPrincipalGeneration}
           isSessionCurrent={props.isSessionCurrent}
+          onSaveSnapshotReady={props.onSaveSnapshotReady}
           onDraftChange={props.onDraftChange}
           onCreateInput={createDesignInput}
           onEditVariable={(id) => {

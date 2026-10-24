@@ -113,6 +113,8 @@ pub enum CompositionSubCmd {
     Import {
         #[arg(value_name = "FILE")]
         file: PathBuf,
+        #[arg(long = "var", value_name = "ID=VALUE", action = clap::ArgAction::Append, help = "Set a typed input; use ID= to explicitly unset it")]
+        variables: Vec<String>,
         #[arg(long, value_name = "KEY")]
         idempotency_key: String,
     },
@@ -127,6 +129,8 @@ pub enum CompositionSubCmd {
         composition_id: Option<String>,
         #[arg(long, value_name = "REVISION_ID", requires = "composition_id")]
         base_revision: Option<String>,
+        #[arg(long = "var", value_name = "ID=VALUE", action = clap::ArgAction::Append, help = "Set a typed input; use ID= to explicitly unset it")]
+        variables: Vec<String>,
         #[arg(long, value_name = "KEY")]
         idempotency_key: String,
     },
@@ -232,17 +236,19 @@ pub async fn run(
         }
         CompositionSubCmd::Import {
             file,
+            variables,
             idempotency_key,
         } => {
             let target =
                 resolve_command_target(explicit_config, context_override, "composition import")?;
-            let saved = save_composition_file(&target, &file, None, None, &idempotency_key).await?;
+            let saved = save_composition_file(&target, &file, None, None, &variables, &idempotency_key).await?;
             crate::output::print_json(&saved);
         }
         CompositionSubCmd::Save {
             file,
             composition_id,
             base_revision,
+            variables,
             idempotency_key,
         } => {
             let target =
@@ -252,6 +258,7 @@ pub async fn run(
                 &file,
                 composition_id.as_deref(),
                 base_revision.as_deref(),
+                &variables,
                 &idempotency_key,
             )
             .await?;
@@ -304,6 +311,7 @@ async fn save_composition_file(
     file: &Path,
     composition_id: Option<&str>,
     base_revision_id: Option<&str>,
+    variable_assignments: &[String],
     idempotency_key: &str,
 ) -> Result<CompositionSaveResponse> {
     anyhow::ensure!(
@@ -314,6 +322,8 @@ async fn save_composition_file(
     // Validate and canonicalize the shared Domain document before a request
     // can create or mutate the Composition Registry.
     let canonical = canonicalize_composition_file(file)?;
+    let (variables, unset_variables) =
+        parse_cli_variables(&canonical.document.spec.variables, variable_assignments)?;
     let parsed_entry_id = composition_id
         .map(|value| parse_composition_uuid(value, "Composition ID").map(EntryId::from_uuid))
         .transpose()?;
@@ -324,6 +334,8 @@ async fn save_composition_file(
         composition_id: composition_id.map(str::to_owned),
         base_revision_id: base_revision_id.map(str::to_owned),
         yaml: canonical.yaml.clone(),
+        variables: variables.clone(),
+        unset_variables: unset_variables.clone(),
     };
     let arguments = json!({
         "space_id": target_space_id(target),
@@ -338,7 +350,7 @@ async fn save_composition_file(
         SpaceTarget::Core { root, space_id } => {
             let service = UgoiteService::new_without_background_refresh(root)?;
             let result = service
-                .save_composition_local_with_operation_id(
+                .save_composition_local_with_work(
                     space_id,
                     ugoite_iceberg::composition::CompositionSaveRequest {
                         entry_id: parsed_entry_id,
@@ -347,6 +359,10 @@ async fn save_composition_file(
                     },
                     "local-cli",
                     idempotency_key,
+                    ugoite_iceberg::composition::CompositionSaveWork {
+                        variables: variables.clone(),
+                        unset_variables: unset_variables.clone(),
+                    },
                 )
                 .await?;
             CompositionSaveResponse {

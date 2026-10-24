@@ -5279,10 +5279,30 @@ impl UgoiteService {
     pub async fn save_composition_authorized_for_principals_with_operation_id(
         &self,
         space_id: &str,
+        request: composition::CompositionSaveRequest,
+        author: &str,
+        principal_ids: &[Uuid],
+        operation_id: &str,
+    ) -> Result<composition::CompositionSaveResult> {
+        self.save_composition_authorized_for_principals_with_work(
+            space_id,
+            request,
+            author,
+            principal_ids,
+            operation_id,
+            composition::CompositionSaveWork::default(),
+        )
+        .await
+    }
+
+    pub async fn save_composition_authorized_for_principals_with_work(
+        &self,
+        space_id: &str,
         mut request: composition::CompositionSaveRequest,
         author: &str,
         principal_ids: &[Uuid],
         operation_id: &str,
+        work: composition::CompositionSaveWork,
     ) -> Result<composition::CompositionSaveResult> {
         require_nonempty_authorized_principals(principal_ids)?;
         composition::validate_operation_id(operation_id)?;
@@ -5295,9 +5315,11 @@ impl UgoiteService {
         }
         // Validate before any Registry Form creation so malformed or
         // unsupported documents leave the Space unchanged.
-        ugoite_domain::composition::canonicalize_composition(&request.document).map_err(
-            |diagnostic| AppError::invalid_input(ErrorCode::InvalidInput, diagnostic.as_str()),
-        )?;
+        let request_yaml = ugoite_domain::composition::canonicalize_composition(&request.document)
+            .map_err(|diagnostic| {
+                AppError::invalid_input(ErrorCode::InvalidInput, diagnostic.as_str())
+            })?
+            .yaml;
         self.ensure_mutation_admitted(space_id).await?;
         self.validate_complete_space(space_id).await?;
         let entry_id = request.entry_id.unwrap_or_else(|| {
@@ -5335,6 +5357,77 @@ impl UgoiteService {
             {
                 return Err(AppError::forbidden("Form is not readable").into());
             }
+        }
+        // Idempotent receipt recovery skips current query planning, but it
+        // must still honor current read authority for every submitted source.
+        let current_form_scopes = self
+            .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+            .await?;
+        let current_forms = iceberg_store::native_workspace_read_only(
+            &self.operator,
+            &self.workspace_path(space_id),
+        )
+        .await?
+        .list_forms_bounded(
+            MAX_AUTHORIZED_SCOPE_FORMS,
+            MAX_AUTHORIZED_SCOPE_FORM_DEFINITION_BYTES,
+        )
+        .await?;
+        for node in &request.document.spec.variables {
+            let ugoite_domain::composition::VariableGraphNodeKind::Query { query, .. } = &node.kind
+            else {
+                continue;
+            };
+            match &query.definition {
+                ugoite_domain::composition::VariableGraphQueryDefinition::SavedSql {
+                    entry_id: Some(entry_id),
+                    revision_id,
+                    ..
+                } => ensure_saved_sql_access(
+                    &state,
+                    principal_ids,
+                    &ugoite_core::sql_query::SavedSqlRevisionRef {
+                        id: entry_id.clone(),
+                        revision_id: revision_id.clone().unwrap_or_default(),
+                    },
+                )?,
+                ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } => {
+                    let mut referenced = index::quoted_form_name_references(sql)?;
+                    referenced.extend(index::quoted_form_relation_names(sql)?);
+                    referenced.extend(
+                        query
+                            .form_bindings
+                            .iter()
+                            .map(|binding| binding.relation.clone()),
+                    );
+                    for form in &current_forms {
+                        if referenced.iter().any(|name| {
+                            name.eq_ignore_ascii_case(&form.name)
+                                || name.eq_ignore_ascii_case(
+                                    &ugoite_domain::form::sql_relation_name(form.id),
+                                )
+                        }) && !current_form_scopes.contains_key(&form.name.to_ascii_lowercase())
+                        {
+                            return Err(AppError::forbidden("Form is not readable").into());
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        if let Some(result) = composition::recover_published_composition_save(
+            &self.operator,
+            space_id,
+            &self.workspace_path(space_id),
+            &request,
+            &request_yaml,
+            author,
+            operation_id,
+            &work,
+        )
+        .await?
+        {
+            return Ok(result);
         }
         let workspace = self.workspace_path(space_id);
         let readable_form_scopes = self
@@ -5404,6 +5497,7 @@ impl UgoiteService {
                             &variables,
                             Some(principal_ids),
                             Some(&state),
+                            None,
                         )
                         .await?
                         .ok_or_else(|| {
@@ -5431,6 +5525,7 @@ impl UgoiteService {
                             &source_for_planning,
                             Some(principal_ids),
                             Some(&state),
+                            None,
                         )
                         .await?
                         .ok_or_else(|| {
@@ -5478,21 +5573,35 @@ impl UgoiteService {
             })?;
         request.document = canonical.document.clone();
 
+        let exact_head_proof = self
+            .preflight_composition_save_authorized(
+                space_id,
+                principal_ids,
+                &canonical.yaml,
+                &work.variables,
+                &work.unset_variables,
+                &state,
+            )
+            .await?;
+
         authorization_lease.prepare_mutation().await?;
-        let registry = crate::authorization::with_authorization_write_fence(
-            authorization_lease.write_fence(),
-            composition::ensure_composition_registry(&self.operator, &workspace),
-        )
-        .await?;
         let scopes = self
             .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
             .await?;
-        if !scopes.contains_key(&registry.name.to_ascii_lowercase()) {
+        // A first save may initialize the Registry Form and Entry in one
+        // publication. The explicit Form read authorization above is checked
+        // against the held state even when the Form is not yet published, so
+        // requiring a materialized EntryScope here would force a preparatory
+        // Registry publication and make a failed save visible.
+        if request.entry_id.is_some()
+            && !scopes
+                .contains_key(&composition::COMPOSITION_REGISTRY_FORM_NAME.to_ascii_lowercase())
+        {
             return Err(AppError::forbidden("Form is not readable").into());
         }
         let result = crate::authorization::with_authorization_write_fence(
             authorization_lease.write_fence(),
-            composition::save_composition(
+            composition::save_composition_with_work_and_head_proof(
                 &self.operator,
                 space_id,
                 &workspace,
@@ -5501,6 +5610,9 @@ impl UgoiteService {
                 canonical,
                 author,
                 operation_id,
+                &request_yaml,
+                &work,
+                Some(&exact_head_proof),
             ),
         )
         .await?;
@@ -7162,8 +7274,16 @@ impl UgoiteService {
         principal_ids: &[Uuid],
         request: SqlQueryRequest,
     ) -> Result<SqlQueryPage> {
-        self.query_sql_authorized_with_context(space_id, principal_ids, request, None, None, None)
-            .await
+        self.query_sql_authorized_with_context(
+            space_id,
+            principal_ids,
+            request,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
     }
 
     /// Plans one SQL request against the current authorized publication and
@@ -7251,6 +7371,29 @@ impl UgoiteService {
             composition_entry_id,
             Some(publication),
             Some(context_fingerprint),
+            None,
+        )
+        .await
+    }
+
+    pub(crate) async fn query_sql_authorized_for_composition_with_state(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        request: SqlQueryRequest,
+        composition_entry_id: Option<&str>,
+        publication: &PublicationRef,
+        context_fingerprint: &str,
+        authorization_state: &AuthorizationState,
+    ) -> Result<SqlQueryPage> {
+        self.query_sql_authorized_with_context(
+            space_id,
+            principal_ids,
+            request,
+            composition_entry_id,
+            Some(publication),
+            Some(context_fingerprint),
+            Some(authorization_state),
         )
         .await
     }
@@ -7263,6 +7406,7 @@ impl UgoiteService {
         composition_entry_id: Option<&str>,
         pinned_publication: Option<&PublicationRef>,
         continuation_context_fingerprint: Option<&str>,
+        authorization_state: Option<&AuthorizationState>,
     ) -> Result<SqlQueryPage> {
         request.validate().map_err(sql_query_contract_error)?;
         let request_fingerprint = if request.execution_id.is_some() {
@@ -7276,9 +7420,18 @@ impl UgoiteService {
         };
         require_nonempty_authorized_principals(principal_ids)?;
         self.validate_complete_space(space_id).await?;
-        let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
-            .acquire_state_lease(space_id)
-            .await?;
+        let (owned_state, _authorization_lease) = match authorization_state {
+            Some(_) => (None, None),
+            None => {
+                let (state, lease) = Authorizer::new(self.operator.clone())
+                    .acquire_state_lease(space_id)
+                    .await?;
+                (Some(state), Some(lease))
+            }
+        };
+        let state = authorization_state
+            .or(owned_state.as_ref())
+            .expect("authorized SQL execution has authorization state");
         for principal_id in principal_ids {
             if !effective_actions_for_state(&state, *principal_id, None)?.contains(&Action::Read) {
                 return Err(

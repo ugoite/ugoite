@@ -109,6 +109,13 @@ pub struct CompositionSaveRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_revision_id: Option<String>,
     pub yaml: String,
+    /// Current typed input Work used only to validate this save attempt.
+    /// These values are never persisted with the Composition.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub variables: BTreeMap<String, Value>,
+    /// Inputs explicitly left unset instead of using declared defaults.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unset_variables: Vec<String>,
 }
 
 /// Portable commit receipt for one Composition publication.
