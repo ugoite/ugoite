@@ -4,7 +4,7 @@
 //! does not resolve identity or grant authorization; those remain server duties.
 
 use sqlparser_datafusion::ast::{
-    Ident, ObjectName, ObjectNamePart, Statement, VisitMut, VisitorMut,
+    Ident, ObjectName, ObjectNamePart, Statement, TableAlias, TableFactor, VisitMut, VisitorMut,
 };
 use sqlparser_datafusion::dialect::GenericDialect;
 use sqlparser_datafusion::parser::Parser;
@@ -78,6 +78,40 @@ pub fn resolve_form_name_references_in_statements<'a>(
             _query: &mut sqlparser_datafusion::ast::Query,
         ) -> ControlFlow<()> {
             self.cte_scopes.pop();
+            ControlFlow::Continue(())
+        }
+
+        fn pre_visit_table_factor(&mut self, table_factor: &mut TableFactor) -> ControlFlow<()> {
+            let TableFactor::Table { name, alias, .. } = table_factor else {
+                return ControlFlow::Continue(());
+            };
+            let Some(identifier) = name.0.last().and_then(|part| part.as_ident()) else {
+                return ControlFlow::Continue(());
+            };
+            let normalized_name = if identifier.quote_style.is_some() {
+                identifier.value.clone()
+            } else {
+                identifier.value.to_ascii_lowercase()
+            };
+            let is_shadowed_cte = name.0.len() == 1
+                && self
+                    .cte_scopes
+                    .iter()
+                    .rev()
+                    .any(|scope| scope.contains(&normalized_name));
+            if name.0.len() == 1
+                && identifier.quote_style == Some('"')
+                && !is_shadowed_cte
+                && self.aliases.contains_key(&identifier.value)
+                && alias.is_none()
+            {
+                *alias = Some(TableAlias {
+                    explicit: true,
+                    name: Ident::with_quote('"', identifier.value.clone()),
+                    columns: Vec::new(),
+                    at: None,
+                });
+            }
             ControlFlow::Continue(())
         }
 
@@ -163,8 +197,10 @@ pub fn collect_quoted_form_name_references(sql: &str) -> Result<BTreeSet<String>
 
 #[cfg(test)]
 mod tests {
-    use super::collect_quoted_form_name_references;
-    use std::collections::BTreeSet;
+    use super::{collect_quoted_form_name_references, resolve_form_name_references_in_statements};
+    use sqlparser_datafusion::dialect::GenericDialect;
+    use sqlparser_datafusion::parser::Parser;
+    use std::collections::{BTreeMap, BTreeSet};
 
     #[test]
     fn excludes_cte_shadowed_form_names() {
@@ -188,6 +224,34 @@ mod tests {
         )
         .unwrap();
         assert_eq!(mixed, BTreeSet::from(["Expenses".to_string()]));
+    }
+
+    #[test]
+    fn rewriting_human_form_relation_preserves_its_qualifier() {
+        let aliases = BTreeMap::from([("Expenses".to_string(), "form_123".to_string())]);
+        let mut statements = Parser::parse_sql(
+            &GenericDialect {},
+            "SELECT \"Expenses\".amount FROM \"Expenses\"",
+        )
+        .unwrap();
+        resolve_form_name_references_in_statements(&mut statements, &aliases).unwrap();
+        let rendered = statements[0].to_string();
+        assert!(
+            rendered.contains("FROM form_123 AS \"Expenses\""),
+            "{rendered}"
+        );
+        assert!(rendered.contains("\"Expenses\".amount"), "{rendered}");
+
+        let mut aliased = Parser::parse_sql(
+            &GenericDialect {},
+            "SELECT chosen.amount FROM \"Expenses\" AS chosen",
+        )
+        .unwrap();
+        resolve_form_name_references_in_statements(&mut aliased, &aliases).unwrap();
+        assert_eq!(
+            aliased[0].to_string(),
+            "SELECT chosen.amount FROM form_123 AS chosen"
+        );
     }
 
     #[test]
