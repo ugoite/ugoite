@@ -557,20 +557,18 @@ features:
                   runner: mise-task
                   arguments:
                     task: check:wasm:sql-structure-fixtures
-    contracts:
-      - id: guarded-edit-portable-protocol
-        kind: custom
-        source: FEAT-SQL-001#binding.sql-document-edit-protocol-contract/target.edit-request
-        participants:
-          - target: FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parser-action
-            role: rust-wasm
-          - target: FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parameter-rename-action
-            role: rust-wasm
-          - target: FEAT-SQL-001#binding.sql-document-guarded-edit-wasm-protocol/target.edit-transaction-action
-            role: rust-wasm
-          - target: FEAT-SQL-001#binding.sql-document-guarded-edit-frontend-client/target.edit-transaction-client
-            role: frontend-client
-        guarantees: [REQ-SQL-001#criterion.portable-protocol]
+      - id: projection-position-contract
+        role: contract-source
+        facet: domain
+        responsibility: Define the typed projection operation requests shared by native and WASM callers.
+        targets:
+          - id: semantic-request
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: SqlDocumentSemanticEdit }
+            claims:
+              - kind: documents
+                anchor: REQ-SQL-001#criterion.projection-position-bindings
       - id: projection-positions
         role: implementation
         facet: domain
@@ -645,3 +643,26 @@ features:
                 criterion: REQ-SQL-001#criterion.projection-position-bindings
                 covers: [FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlColumnsEditor.test.tsx, test: preserves positional sorting and rejects removing its referenced field with a local cause } }
+    contracts:
+      - id: guarded-edit-portable-protocol
+        kind: custom
+        source: FEAT-SQL-001#binding.sql-document-edit-protocol-contract/target.edit-request
+        participants:
+          - target: FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parser-action
+            role: rust-wasm
+          - target: FEAT-SQL-001#binding.sql-document-wasm-protocol/target.parameter-rename-action
+            role: rust-wasm
+          - target: FEAT-SQL-001#binding.sql-document-guarded-edit-wasm-protocol/target.edit-transaction-action
+            role: rust-wasm
+          - target: FEAT-SQL-001#binding.sql-document-guarded-edit-frontend-client/target.edit-transaction-client
+            role: frontend-client
+        guarantees: [REQ-SQL-001#criterion.portable-protocol]
+      - id: projection-position-native-wasm
+        kind: custom
+        source: FEAT-SQL-001#binding.projection-position-contract/target.semantic-request
+        participants:
+          - target: FEAT-SQL-001#binding.projection-positions/target.position-edits
+            role: native-domain
+          - target: FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action
+            role: rust-wasm
+        guarantees: [REQ-SQL-001#criterion.projection-position-bindings]
