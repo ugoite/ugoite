@@ -8,8 +8,17 @@ features:
     summary: Construct common comparisons and ordered column keys through typed Rust SQL Document transactions for one unambiguous named Form relation.
     status: implemented
     bindings:
-      - id: rust-edit-core
+      - id: typed-edit-contract
         role: contract-source
+        facet: core
+        responsibility: Define the shared typed SQL Document semantic edit request.
+        targets:
+          - id: edit-request
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: SqlDocumentSemanticEdit }
+      - id: rust-edit-core
+        role: implementation
         facet: core
         responsibility: Construct bounded filter comparisons and sort keys from typed identifiers, operators, values, and sort options while preserving guarded inverse edits.
         targets:
@@ -102,7 +111,7 @@ features:
     contracts:
       - id: typed-task-filter-sort-protocol
         kind: custom
-        source: FEAT-SQL-004#binding.rust-edit-core/target.add-filter-comparison
+        source: FEAT-SQL-004#binding.typed-edit-contract/target.edit-request
         participants:
           - target: FEAT-SQL-004#binding.frontend-editor/target.task-editor
             role: frontend-task-editor
