@@ -14,10 +14,13 @@ import {
   CompositionStudio,
   type CompositionStudioSaveMode,
 } from "./CompositionStudio";
+import { CompositionVariableGraphWorkspace } from "./CompositionVariableGraphWorkspace";
 import {
   type CompositionGraphDraft,
   createCompositionGraphDraft,
 } from "~/lib/composition-variable-binding";
+import { buildSqlSchema } from "~/lib/sql";
+import type { Form } from "~/lib/types";
 import { setLocale } from "~/lib/i18n";
 
 const {
@@ -31,6 +34,7 @@ const {
   canonicalizeMock,
   parseInputMock,
   saveMock,
+  formReferenceGateMock,
   routePathMock,
 } = vi.hoisted(
   () => ({
@@ -44,6 +48,7 @@ const {
     canonicalizeMock: vi.fn(),
     parseInputMock: vi.fn(),
     saveMock: vi.fn(),
+    formReferenceGateMock: vi.fn(),
     routePathMock: { value: "/spaces/space-1/compositions/new" },
   }),
 );
@@ -64,6 +69,9 @@ vi.mock("~/lib/ugoite-client", async (importOriginal) => {
   const actual = await importOriginal<typeof UgoiteClient>();
   return {
     compositionFormQuerySql: actual.compositionFormQuerySql,
+    parseSqlDocument: actual.parseSqlDocument,
+    applySqlDocumentSemanticEditTransaction:
+      actual.applySqlDocumentSemanticEditTransaction,
     renameSqlDocumentParameter: actual.renameSqlDocumentParameter,
     authApi: { getSession: (...args: unknown[]) => authSessionMock(...args) },
     formApi: { list: (...args: unknown[]) => formsMock(...args) },
@@ -72,6 +80,19 @@ vi.mock("~/lib/ugoite-client", async (importOriginal) => {
       count: (...args: unknown[]) => countMock(...args),
     },
     parseVariableGraphInput: (...args: unknown[]) => parseInputMock(...args),
+  };
+});
+
+vi.mock("~/lib/ugoite-client/protocol", async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import("~/lib/ugoite-client/protocol")
+  >();
+  return {
+    ...actual,
+    collectSqlFormNameReferences: async (sql: string) => {
+      const references = await actual.collectSqlFormNameReferences(sql);
+      return await formReferenceGateMock(references);
+    },
   };
 });
 
@@ -122,7 +143,7 @@ vi.mock("~/components/SQLWorkspace", () => ({
         <button
           type="button"
           disabled={action.disabled}
-          onClick={action.onActivate}
+          onClick={() => action.onActivate()}
         >
           {action.label}
         </button>
@@ -221,10 +242,15 @@ const renderStudio = (
     />
   ));
 
+let releasePendingFormReferences: ((references: string[]) => void) | undefined;
+
 describe("CompositionStudio graph surface", () => {
   beforeEach(() => {
     setLocale("en");
     vi.clearAllMocks();
+    formReferenceGateMock.mockImplementation(async (references: string[]) =>
+      references
+    );
     routePathMock.value = "/spaces/space-1/compositions/new";
     parseInputMock.mockImplementation(async (_type: unknown, raw: string) =>
       raw === "bad"
@@ -280,7 +306,11 @@ describe("CompositionStudio graph surface", () => {
       })
     );
   });
-  afterEach(() => cleanup());
+  afterEach(() => {
+    releasePendingFormReferences?.(["Receipts"]);
+    releasePendingFormReferences = undefined;
+    cleanup();
+  });
 
   it("displays the authorized pinned Saved SQL source without reading the moving head", async () => {
     const initial = renderedDraftWithTable();
@@ -1015,6 +1045,173 @@ describe("CompositionStudio graph surface", () => {
       requested_queries: ["query_1"],
     });
     expect(evaluateMock.mock.calls[0][1]).not.toHaveProperty("query_results");
+  });
+
+  it("writes the real SQL toolbar Form selection into the host before first preview and clears pending per query", async () => {
+    const pendingReferenceResolvers: Array<(references: string[]) => void> = [];
+    formReferenceGateMock.mockImplementation((references: string[]) =>
+      references.length === 0 ? Promise.resolve([]) : new Promise((resolve) => {
+        pendingReferenceResolvers.push(resolve);
+        releasePendingFormReferences = resolve;
+      })
+    );
+    const forms: Form[] = [
+      {
+        id: "form-id",
+        name: "Receipts",
+        sql_relation: "form_receipts",
+        version: 1,
+        template: "",
+        fields: {
+          amount: { type: "float", required: false, sql_column: "amount" },
+        },
+      },
+      {
+        id: "form-id-b",
+        name: "Expenses",
+        sql_relation: "form_expenses",
+        version: 1,
+        template: "",
+        fields: {
+          amount: { type: "float", required: false, sql_column: "amount" },
+        },
+      },
+    ];
+    const draft = draftWithTable();
+    draft.variables[0] = {
+      ...draft.variables[0],
+      query: {
+        kind: "inline_sql",
+        sql: "SELECT 1",
+        arguments: [],
+        form_bindings: [],
+        schema_fingerprint: "",
+      },
+    };
+    draft.variables.push({
+      id: "other",
+      kind: "query",
+      returns: {
+        kind: "scalar",
+        value_type: { scalar_type: "integer", nullable: false },
+      },
+      query: { kind: "inline_sql", sql: "SELECT 2", arguments: [] },
+    });
+    const [hostDraft, setHostDraft] = createSignal(draft);
+    const [selectedVariableId, setSelectedVariableId] = createSignal<
+      string | null
+    >("rows");
+    const runDrafts: CompositionGraphDraft[] = [];
+    render(() => (
+      <>
+        <CompositionVariableGraphWorkspace
+          draft={hostDraft()}
+          selectedVariableId={selectedVariableId()}
+          onSelect={setSelectedVariableId}
+          onDraftChange={setHostDraft}
+          onRemove={(id) =>
+            setHostDraft((current) => ({
+              ...current,
+              variables: current.variables.filter((node) => node.id !== id),
+            }))}
+          sqlSchema={buildSqlSchema([])}
+          sqlForms={forms}
+          onQueryChange={(id, sql, bindings) =>
+            setHostDraft((current) => ({
+              ...current,
+              variables: current.variables.map((node) =>
+                node.id === id && node.kind === "query" &&
+                  node.query.kind === "inline_sql"
+                  ? {
+                    ...node,
+                    query: {
+                      ...node.query,
+                      sql,
+                      form_bindings: bindings ?? [],
+                    },
+                  }
+                  : node
+              ),
+            }))}
+          onRunQuery={() => runDrafts.push(hostDraft())}
+          onCountQuery={() => {}}
+        />
+        <output data-testid="host-draft">{JSON.stringify(hostDraft())}</output>
+      </>
+    ));
+    const formAction = await screen.findByRole("button", { name: "Form" });
+    await waitFor(() => expect(formAction).toBeEnabled());
+    fireEvent.click(formAction);
+    const picker = screen.getByRole("dialog");
+    const receipts = within(picker).getByRole("button", { name: "Receipts" });
+    await waitFor(() => expect(receipts).toBeEnabled());
+    fireEvent.click(receipts);
+
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "SQL" })).toHaveValue(
+        'SELECT 1 FROM "Receipts"',
+      )
+    );
+    expect(
+      JSON.parse(screen.getByTestId("host-draft").textContent!).variables
+        .find((node: { id: string }) => node.id === "rows").query,
+    ).toMatchObject({
+      sql: 'SELECT 1 FROM "Receipts"',
+      form_bindings: [{ relation: "Receipts", form_id: "form-id" }],
+    });
+    await waitFor(() => expect(pendingReferenceResolvers).toHaveLength(1));
+    expect(screen.getByRole("button", { name: "Run query" })).toBeDisabled();
+    expect(runDrafts).toHaveLength(0);
+
+    // Completion while another query is selected must clear only the rows
+    // query's pending state; switching back must not leave its actions stuck.
+    fireEvent.click(screen.getByRole("button", { name: "other" }));
+    pendingReferenceResolvers[0](["Receipts"]);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Run query" })).toBeEnabled()
+    );
+    fireEvent.click(screen.getByRole("button", { name: "rows" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Run query" })).toBeEnabled()
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Run query" }));
+    expect(runDrafts).toHaveLength(1);
+    expect(runDrafts[0].variables.find((node) => node.id === "rows"))
+      .toMatchObject({
+        query: {
+          sql: 'SELECT 1 FROM "Receipts"',
+          form_bindings: [{ relation: "Receipts", form_id: "form-id" }],
+        },
+      });
+
+    fireEvent.click(screen.getByRole("button", { name: "Form" }));
+    const expenses = within(screen.getByRole("dialog")).getByRole("button", {
+      name: "Expenses",
+    });
+    await waitFor(() => expect(expenses).toBeEnabled());
+    fireEvent.click(expenses);
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "SQL" })).toHaveValue(
+        'SELECT 1 FROM "Expenses"',
+      )
+    );
+    expect(
+      JSON.parse(screen.getByTestId("host-draft").textContent!).variables
+        .find((node: { id: string }) => node.id === "rows").query,
+    ).toMatchObject({
+      sql: 'SELECT 1 FROM "Expenses"',
+      form_bindings: [
+        { relation: "Receipts", form_id: "form-id" },
+        { relation: "Expenses", form_id: "form-id-b" },
+      ],
+    });
+    await waitFor(() => expect(pendingReferenceResolvers).toHaveLength(2));
+    fireEvent.click(screen.getByRole("button", { name: "other" }));
+    pendingReferenceResolvers[1](["Expenses"]);
+    fireEvent.click(screen.getByRole("button", { name: "rows" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Run query" })).toBeEnabled()
+    );
   });
 
   it("creates a Form-backed table query and component in one picker selection", async () => {

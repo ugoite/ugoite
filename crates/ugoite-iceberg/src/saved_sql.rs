@@ -1630,6 +1630,41 @@ mod name_field_tests {
                 form_id: replacement.to_string()
             }],
         );
+        let renamed = BTreeMap::from([
+            ("Reimbursement".to_string(), old),
+            ("Expense".to_string(), replacement),
+        ]);
+        for guards in [
+            Vec::new(),
+            vec![SqlFormBinding {
+                name: "Expense".into(),
+                form_id: old.to_string(),
+            }],
+        ] {
+            assert_eq!(
+                derive_form_bindings("SELECT * FROM \"Expense\"", &renamed, &parent, &guards)
+                    .unwrap(),
+                parent,
+                "the exact parent identity stays pinned after its name changes"
+            );
+        }
+        assert_eq!(
+            derive_form_bindings(
+                "SELECT * FROM \"Expense\"",
+                &renamed,
+                &parent,
+                &[SqlFormBinding {
+                    name: "Expense".into(),
+                    form_id: replacement.to_string(),
+                }],
+            )
+            .unwrap(),
+            vec![SqlFormBinding {
+                name: "Expense".into(),
+                form_id: replacement.to_string(),
+            }],
+            "a different currently readable Form guard explicitly rebinds"
+        );
         assert!(derive_form_bindings(
             "SELECT 1",
             &current,

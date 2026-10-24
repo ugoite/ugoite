@@ -2127,6 +2127,10 @@ fn openapi_documents_saved_sql_variable_defaults() {
     for request in ["SqlQueryRequest", "SqlQueryCountRequest"] {
         assert!(schemas[request]["properties"].get("default").is_none());
         assert_eq!(
+            schemas[request]["properties"]["binding_base"]["$ref"],
+            "#/components/schemas/SavedSqlRevisionRef"
+        );
+        assert_eq!(
             schemas[request]["properties"]["form_binding_guards"]["items"]["$ref"],
             "#/components/schemas/SqlFormBindingGuard"
         );
@@ -2134,6 +2138,10 @@ fn openapi_documents_saved_sql_variable_defaults() {
     assert_eq!(
         schemas["SqlQueryPlanRequest"]["properties"]["form_binding_guards"]["items"]["$ref"],
         "#/components/schemas/SqlFormBindingGuard"
+    );
+    assert_eq!(
+        schemas["SqlQueryPlanRequest"]["properties"]["binding_base"]["$ref"],
+        "#/components/schemas/SavedSqlRevisionRef"
     );
 }
 

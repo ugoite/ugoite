@@ -689,6 +689,21 @@ export function CompositionVariableGraphWorkspace(
                     const generation =
                       (formGuardGenerations.get(variableId) ?? 0) + 1;
                     formGuardGenerations.set(variableId, generation);
+                    const stillOwnsSql = () =>
+                      props.draft.variables.some((entry) =>
+                        entry.id === variableId && entry.kind === "query" &&
+                        entry.query.kind === "inline_sql" &&
+                        entry.query.sql === nextSql
+                      );
+                    const finishPruning = () => {
+                      if (
+                        formGuardGenerations.get(variableId) !== generation
+                      ) return;
+                      setFormGuardPruningPending((current) => ({
+                        ...current,
+                        [variableId]: false,
+                      }));
+                    };
                     const guards = query().query.kind === "inline_sql"
                       ? query().query.form_bindings ?? []
                       : [];
@@ -730,30 +745,25 @@ export function CompositionVariableGraphWorkspace(
                       );
                     void pruning.then((retained) => {
                       if (
-                        formGuardGenerations.get(variableId) !== generation ||
-                        query().id !== variableId || sql() !== nextSql
-                      ) return;
-                      props.onQueryChange?.(
-                        variableId,
-                        nextSql,
-                        retained.map((guard) => ({
-                          relation: guard.name,
-                          form_id: guard.formId,
-                        })),
-                      );
-                      setFormGuardPruningPending((current) => ({
-                        ...current,
-                        [variableId]: false,
-                      }));
+                        formGuardGenerations.get(variableId) === generation &&
+                        stillOwnsSql()
+                      ) {
+                        props.onQueryChange?.(
+                          variableId,
+                          nextSql,
+                          retained.map((guard) => ({
+                            relation: guard.name,
+                            form_id: guard.formId,
+                          })),
+                        );
+                      }
+                      // Pending belongs to the edited query, not whichever
+                      // query happens to be selected when Rust completes.
+                      // Clear it even after navigation; only the generation
+                      // that set it may clear it.
+                      finishPruning();
                     }).catch(() => {
-                      if (
-                        formGuardGenerations.get(variableId) !== generation ||
-                        query().id !== variableId || sql() !== nextSql
-                      ) return;
-                      setFormGuardPruningPending((current) => ({
-                        ...current,
-                        [variableId]: false,
-                      }));
+                      finishPruning();
                     });
                   };
                   const declarations = () =>

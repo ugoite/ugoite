@@ -239,6 +239,13 @@ export default function SpaceSqlDetailRoute() {
     planParameters: "definition",
     planSavedSql: () => undefined,
     formBindingGuards,
+    bindingBase: () => {
+      const current = entry();
+      const baseRevisionId = revisionId() ?? current?.revision_id;
+      return current && baseRevisionId
+        ? { id: current.id, revisionId: baseRevisionId }
+        : undefined;
+    },
     savedSql: () => {
       const current = entry();
       if (!current) return undefined;

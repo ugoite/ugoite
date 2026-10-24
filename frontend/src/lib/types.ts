@@ -382,6 +382,7 @@ export interface SqlQueryRequest {
   /** Optional nonce used internally to bind a Composition result to its request. */
   execution_id?: string;
   saved_sql?: { id: string; revision_id: string };
+  binding_base?: { id: string; revision_id: string };
   form_binding_guards?: SqlFormBinding[];
 }
 
@@ -425,6 +426,7 @@ export interface SqlQueryCountRequest {
   parameters?: Record<string, unknown>;
   parameter_types?: Record<string, string>;
   saved_sql?: { id: string; revision_id: string };
+  binding_base?: { id: string; revision_id: string };
   form_binding_guards?: SqlFormBinding[];
 }
 
@@ -434,6 +436,7 @@ export interface SqlQueryPlanRequest {
   parameters: Record<string, unknown>;
   parameter_types: Record<string, string>;
   saved_sql?: { id: string; revision_id: string };
+  binding_base?: { id: string; revision_id: string };
   form_binding_guards?: SqlFormBinding[];
 }
 

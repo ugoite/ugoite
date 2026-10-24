@@ -14274,6 +14274,10 @@
           "saved_sql": {
             "$ref": "#/components/schemas/SavedSqlRevisionRef"
           },
+          "binding_base": {
+            "$ref": "#/components/schemas/SavedSqlRevisionRef",
+            "description": "Exact Saved SQL revision whose Form bindings are inherited for a human-name SQL draft; mutually exclusive with saved_sql."
+          },
           "parameters": {
             "type": "object",
             "additionalProperties": true
@@ -14407,6 +14411,10 @@
           "saved_sql": {
             "$ref": "#/components/schemas/SavedSqlRevisionRef"
           },
+          "binding_base": {
+            "$ref": "#/components/schemas/SavedSqlRevisionRef",
+            "description": "Exact Saved SQL revision whose Form bindings are inherited for a human-name SQL draft; mutually exclusive with saved_sql."
+          },
           "parameters": {
             "type": "object",
             "additionalProperties": true
@@ -14450,6 +14458,10 @@
           },
           "saved_sql": {
             "$ref": "#/components/schemas/SavedSqlRevisionRef"
+          },
+          "binding_base": {
+            "$ref": "#/components/schemas/SavedSqlRevisionRef",
+            "description": "Exact Saved SQL revision whose Form bindings are inherited for a human-name SQL draft; mutually exclusive with saved_sql."
           },
           "parameters": {
             "type": "object",

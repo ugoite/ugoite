@@ -281,6 +281,7 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
         sql: 'SELECT * FROM "Expense"',
         parameters: {},
         parameter_types: {},
+        binding_base: { id: "saved-query", revision_id: "rev-1" },
         form_binding_guards: [{ name: "Expense", form_id: "form-stable-id" }],
       }, expect.any(AbortSignal))
     );
@@ -497,6 +498,7 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
         sql: "SELECT $value",
         parameters: { value: null },
         parameter_types: { value: "string" },
+        binding_base: { id: "saved-query", revision_id: "rev-1" },
       }, expect.any(AbortSignal))
     );
     await waitFor(() =>

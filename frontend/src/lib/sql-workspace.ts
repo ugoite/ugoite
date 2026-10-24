@@ -55,6 +55,7 @@ interface SqlWorkspaceControllerOptions {
   /** Invalid declarations remain editable but cannot plan or execute. */
   definitionError?: () => string | undefined;
   savedSql?: () => { id: string; revisionId: string } | undefined;
+  bindingBase?: () => { id: string; revisionId: string } | undefined;
   /** Draft saves resolve current Form names; exact revision previews retain bindings. */
   planSavedSql?: () => { id: string; revisionId: string } | undefined;
   formBindingGuards?: () => readonly { name: string; formId: string }[];
@@ -84,6 +85,7 @@ type QueryRequest = {
   limit: number;
   continuation?: string;
   saved_sql?: { id: string; revision_id: string };
+  binding_base?: { id: string; revision_id: string };
   form_binding_guards?: { name: string; form_id: string }[];
 };
 
@@ -173,6 +175,7 @@ export function createSqlWorkspaceController(
     const values = parameterValues();
     const sql = options.sql().trim();
     const savedSql = options.savedSql?.();
+    const bindingBase = options.bindingBase?.();
     const formBindingGuards = options.formBindingGuards?.() ?? [];
     const definitionError = options.definitionError?.();
     const identity = JSON.stringify({
@@ -181,6 +184,7 @@ export function createSqlWorkspaceController(
       variables,
       values,
       savedSql,
+      bindingBase,
       formBindingGuards,
       definitionError,
     });
@@ -190,6 +194,7 @@ export function createSqlWorkspaceController(
       variables,
       values,
       savedSql,
+      bindingBase,
       formBindingGuards,
       definitionError,
     };
@@ -204,16 +209,18 @@ export function createSqlWorkspaceController(
       const savedSql = options.planSavedSql
         ? options.planSavedSql()
         : parts.savedSql;
+      const bindingBase = savedSql ? undefined : parts.bindingBase;
       const identity = JSON.stringify({
         spaceId: options.spaceId(),
         sql: parts.sql,
         variables: parts.variables,
         values,
         savedSql,
+        bindingBase,
         formBindingGuards: parts.formBindingGuards,
         definitionError: parts.definitionError,
       });
-      return { ...parts, values, savedSql, identity };
+      return { ...parts, values, savedSql, bindingBase, identity };
     },
     undefined,
     { equals: (previous, next) => previous.identity === next.identity },
@@ -299,6 +306,9 @@ export function createSqlWorkspaceController(
         parameter_types: built.request.parameter_types,
         ...(built.request.saved_sql
           ? { saved_sql: built.request.saved_sql }
+          : {}),
+        ...(built.request.binding_base
+          ? { binding_base: built.request.binding_base }
           : {}),
         ...(built.request.form_binding_guards?.length
           ? { form_binding_guards: built.request.form_binding_guards }
@@ -406,6 +416,14 @@ export function createSqlWorkspaceController(
           form_binding_guards: parts.formBindingGuards.map((
             { name, formId },
           ) => ({ name, form_id: formId })),
+        }
+        : {}),
+      ...(!parts.savedSql && parts.bindingBase
+        ? {
+          binding_base: {
+            id: parts.bindingBase.id,
+            revision_id: parts.bindingBase.revisionId,
+          },
         }
         : {}),
       ...(continuation ? { continuation } : {}),
@@ -531,6 +549,9 @@ export function createSqlWorkspaceController(
         ...(built.request.saved_sql
           ? { saved_sql: built.request.saved_sql }
           : {}),
+        ...(built.request.binding_base
+          ? { binding_base: built.request.binding_base }
+          : {}),
         ...(built.request.form_binding_guards?.length
           ? { form_binding_guards: built.request.form_binding_guards }
           : {}),
@@ -607,6 +628,9 @@ export function createSqlWorkspaceController(
       parameter_types: built.request.parameter_types,
       ...(built.request.saved_sql
         ? { saved_sql: built.request.saved_sql }
+        : {}),
+      ...(built.request.binding_base
+        ? { binding_base: built.request.binding_base }
         : {}),
     });
     if (!isCurrent()) {

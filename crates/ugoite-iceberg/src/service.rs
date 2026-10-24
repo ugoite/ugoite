@@ -7298,6 +7298,9 @@ impl UgoiteService {
         let saved_revision = self
             .read_saved_sql_query_revision(space_id, request.saved_sql.as_ref())
             .await?;
+        let binding_base = self
+            .read_saved_sql_query_revision(space_id, request.binding_base.as_ref())
+            .await?;
         let query_sql = saved_revision
             .as_ref()
             .map_or(request.sql.as_str(), |revision| revision.sql.as_str());
@@ -7325,7 +7328,15 @@ impl UgoiteService {
         let execution_sql = if let Some(revision) = &saved_revision {
             bound_sql_for_revision(revision, &forms, &relation_scopes, &normalized_sql)?
         } else {
-            normalized_sql
+sql_execution::bind_human_form_names(
+                &normalized_sql,
+                &request.form_binding_guards,
+                binding_base
+                    .as_ref()
+                    .map_or(&[], |base| base.bindings.as_slice()),
+                &forms,
+                &relation_scopes,
+            )?
         };
         index::execute_sql_query_authorized_by_form_count_at_checkpoint_stateless(
             &self.operator,
@@ -7391,6 +7402,8 @@ impl UgoiteService {
             continuation: None,
             execution_id: None,
             saved_sql: request.saved_sql,
+            binding_base: request.binding_base,
+            form_binding_guards: request.form_binding_guards,
         };
         let prepared = sql_execution::prepare_sql_request(
             self,
@@ -7698,8 +7711,14 @@ impl UgoiteService {
         if let Some(source) = request.saved_sql.as_ref() {
             ensure_saved_sql_access(&state, principal_ids, source)?;
         }
+        if let Some(source) = request.binding_base.as_ref() {
+            ensure_saved_sql_access(&state, principal_ids, source)?;
+        }
         let saved_revision = self
             .read_saved_sql_query_revision(space_id, request.saved_sql.as_ref())
+            .await?;
+        let binding_base = self
+            .read_saved_sql_query_revision(space_id, request.binding_base.as_ref())
             .await?;
         let query_sql = saved_revision
             .as_ref()
@@ -7740,7 +7759,15 @@ impl UgoiteService {
             )?;
             bound_sql_for_revision(revision, &forms, &relation_scopes, &normalized_sql)?
         } else {
-            normalized_sql
+sql_execution::bind_human_form_names(
+                &normalized_sql,
+                &request.form_binding_guards,
+                binding_base
+                    .as_ref()
+                    .map_or(&[], |base| base.bindings.as_slice()),
+                &forms,
+                &relation_scopes,
+            )?
         };
         index::execute_sql_query_authorized_by_form_count_at_checkpoint_stateless(
             &self.operator,

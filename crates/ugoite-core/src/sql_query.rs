@@ -65,6 +65,10 @@ pub struct SqlQueryRequest {
     /// stateless page execution contract. `sql` must match that revision.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub saved_sql: Option<SavedSqlRevisionRef>,
+    /// Exact Saved SQL revision whose bindings are inherited while editing a
+    /// human-name SQL draft. This is a source context, not an execution target.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binding_base: Option<SavedSqlRevisionRef>,
     /// Expected identities for human Form names selected in the SQL picker.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub form_binding_guards: Vec<SqlFormBindingGuard>,
@@ -79,7 +83,9 @@ pub struct SavedSqlRevisionRef {
 
 impl SqlQueryRequest {
     pub fn validate(&self) -> Result<(), SqlQueryError> {
-        if self.saved_sql.is_some() && !self.form_binding_guards.is_empty() {
+        if self.saved_sql.is_some()
+            && (!self.form_binding_guards.is_empty() || self.binding_base.is_some())
+        {
             return Err(SqlQueryError::Invalid(
                 "Form binding guards cannot be supplied with an exact Saved SQL revision"
                     .to_string(),
@@ -97,12 +103,20 @@ impl SqlQueryRequest {
                 "SQL query page limit is out of range".to_string(),
             ));
         }
-        let parameter_bytes = if self.form_binding_guards.is_empty() {
+        let parameter_bytes = if self.form_binding_guards.is_empty() && self.binding_base.is_none()
+        {
             serde_json::to_vec(&(&self.parameters, &self.parameter_types))
+        } else if self.binding_base.is_none() {
+            serde_json::to_vec(&(
+                &self.parameters,
+                &self.parameter_types,
+                &self.form_binding_guards,
+            ))
         } else {
             serde_json::to_vec(&(
                 &self.parameters,
                 &self.parameter_types,
+                &self.binding_base,
                 &self.form_binding_guards,
             ))
         }
@@ -131,12 +145,19 @@ impl SqlQueryRequest {
     }
 
     pub fn parameter_fingerprint(&self) -> Result<String, SqlQueryError> {
-        let bytes = if self.form_binding_guards.is_empty() {
+        let bytes = if self.form_binding_guards.is_empty() && self.binding_base.is_none() {
             serde_json::to_vec(&(&self.parameters, &self.parameter_types))
+        } else if self.binding_base.is_none() {
+            serde_json::to_vec(&(
+                &self.parameters,
+                &self.parameter_types,
+                &self.form_binding_guards,
+            ))
         } else {
             serde_json::to_vec(&(
                 &self.parameters,
                 &self.parameter_types,
+                &self.binding_base,
                 &self.form_binding_guards,
             ))
         }
@@ -147,7 +168,7 @@ impl SqlQueryRequest {
     /// Fingerprint every client-held coordinate that distinguishes one page
     /// request, including a continuation token on later pages.
     pub fn execution_fingerprint(&self) -> Result<String, SqlQueryError> {
-        let bytes = if self.form_binding_guards.is_empty() {
+        let bytes = if self.form_binding_guards.is_empty() && self.binding_base.is_none() {
             serde_json::to_vec(&(
                 &self.sql,
                 &self.parameters,
@@ -157,6 +178,18 @@ impl SqlQueryRequest {
                 &self.continuation,
                 self.execution_id,
                 &self.saved_sql,
+            ))
+        } else if self.binding_base.is_none() {
+            serde_json::to_vec(&(
+                &self.sql,
+                &self.parameters,
+                &self.parameter_types,
+                self.include_exact_integer_values,
+                self.limit,
+                &self.continuation,
+                self.execution_id,
+                &self.saved_sql,
+                &self.form_binding_guards,
             ))
         } else {
             serde_json::to_vec(&(
@@ -168,6 +201,7 @@ impl SqlQueryRequest {
                 &self.continuation,
                 self.execution_id,
                 &self.saved_sql,
+                &self.binding_base,
                 &self.form_binding_guards,
             ))
         }
@@ -187,6 +221,8 @@ pub struct SqlQueryCountRequest {
     pub parameter_types: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub saved_sql: Option<SavedSqlRevisionRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binding_base: Option<SavedSqlRevisionRef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub form_binding_guards: Vec<SqlFormBindingGuard>,
 }
@@ -202,6 +238,7 @@ impl SqlQueryCountRequest {
             continuation: None,
             execution_id: None,
             saved_sql: self.saved_sql.clone(),
+            binding_base: self.binding_base.clone(),
             form_binding_guards: self.form_binding_guards.clone(),
         }
         .validate()
@@ -221,6 +258,10 @@ pub struct SqlQueryPlanRequest {
     pub parameter_types: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub saved_sql: Option<SavedSqlRevisionRef>,
+    /// Exact Saved SQL revision whose bindings are inherited while planning
+    /// an edited human-name draft.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binding_base: Option<SavedSqlRevisionRef>,
     /// Expected identities for human Form names selected in the SQL picker.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub form_binding_guards: Vec<SqlFormBindingGuard>,
@@ -228,7 +269,9 @@ pub struct SqlQueryPlanRequest {
 
 impl SqlQueryPlanRequest {
     pub fn validate(&self) -> Result<(), SqlQueryError> {
-        if self.saved_sql.is_some() && !self.form_binding_guards.is_empty() {
+        if self.saved_sql.is_some()
+            && (!self.form_binding_guards.is_empty() || self.binding_base.is_some())
+        {
             return Err(SqlQueryError::Invalid(
                 "Form binding guards cannot be supplied with an exact Saved SQL revision"
                     .to_string(),
@@ -249,6 +292,7 @@ impl SqlQueryPlanRequest {
             parameters: self.parameters.clone(),
             parameter_types: self.parameter_types.clone(),
             saved_sql: self.saved_sql.clone(),
+            binding_base: self.binding_base.clone(),
             form_binding_guards: self.form_binding_guards.clone(),
         }
         .validate()
@@ -538,6 +582,7 @@ mod tests {
             parameters: Map::new(),
             parameter_types: BTreeMap::new(),
             saved_sql: None,
+            binding_base: None,
             form_binding_guards: Vec::new(),
         }
         .validate()
@@ -551,6 +596,7 @@ mod tests {
                 id: "saved-1".to_string(),
                 revision_id: "revision-1".to_string(),
             }),
+            binding_base: None,
             form_binding_guards: Vec::new(),
         }
         .validate()
@@ -571,6 +617,7 @@ mod tests {
                 id: "saved".into(),
                 revision_id: "revision".into(),
             }),
+            binding_base: None,
             form_binding_guards: vec![guard.clone()],
         };
         assert!(exact.validate().is_err());
@@ -584,6 +631,7 @@ mod tests {
             continuation: None,
             execution_id: None,
             saved_sql: None,
+            binding_base: None,
             form_binding_guards: vec![SqlFormBindingGuard {
                 name: "Expense".into(),
                 form_id: form_id.into(),
@@ -592,6 +640,17 @@ mod tests {
         assert_ne!(
             request("form-a").parameter_fingerprint().unwrap(),
             request("form-b").parameter_fingerprint().unwrap()
+        );
+        let with_base = |revision_id: &str| SqlQueryRequest {
+            binding_base: Some(SavedSqlRevisionRef {
+                id: "saved".into(),
+                revision_id: revision_id.into(),
+            }),
+            ..request("form-a")
+        };
+        assert_ne!(
+            with_base("revision-a").execution_fingerprint().unwrap(),
+            with_base("revision-b").execution_fingerprint().unwrap()
         );
     }
 
