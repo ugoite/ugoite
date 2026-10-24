@@ -1837,7 +1837,7 @@ mod graph_metadata_tests {
                     form_id: replacement_id
                 }],
                 Some(&base),
-                &[replacement.clone()],
+                std::slice::from_ref(&replacement),
             )
             .expect("explicit reselect"),
             Some(vec![VariableGraphFormBinding {
@@ -1854,7 +1854,7 @@ mod graph_metadata_tests {
                     form_id: original_id
                 }],
                 Some(&base),
-                &[replacement.clone()],
+                std::slice::from_ref(&replacement),
             )
             .expect("stale guard"),
             None,
@@ -1868,7 +1868,7 @@ mod graph_metadata_tests {
                     form_id: original_id,
                 }],
                 Some(&base),
-                &[replacement.clone()],
+                std::slice::from_ref(&replacement),
             )
             .expect("removed pinned source"),
             Some(Vec::new()),
