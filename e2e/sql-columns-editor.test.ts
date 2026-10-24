@@ -41,9 +41,16 @@ test(
     await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/new`), {
       waitUntil: "domcontentloaded",
     });
-    await page.getByRole("textbox", { name: "SQL", exact: true }).fill(
-      "SELECT *",
-    );
+    const sqlEditor = page.getByRole("textbox", {
+      name: "SQL",
+      exact: true,
+    });
+    await expect(sqlEditor).toHaveAttribute("contenteditable", "true");
+    await expect(sqlEditor).toHaveText("SELECT 1");
+    await sqlEditor.click();
+    await sqlEditor.press("ControlOrMeta+A");
+    await sqlEditor.pressSequentially("SELECT *");
+    await expect(sqlEditor).toHaveText("SELECT *");
     await page.getByRole("button", { name: "Form", exact: true }).click();
     await page.getByRole("dialog", { name: "Form", exact: true }).getByRole(
       "button",
