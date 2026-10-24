@@ -111,13 +111,34 @@ export function SqlFilterSortEditor(props: Props) {
   const eligibleContexts = createMemo(() => {
     const relation = parsedScope()?.relation;
     if (!relation) return [];
-    return contexts().filter((context) =>
-      context.parser.relation === relation ||
-      context.parser.relation === relation.split(".").at(-1)
-    );
+    return contexts().filter((context) => context.parser.relation === relation);
   });
   const selected = createMemo(() => eligibleContexts()[contextIndex()]);
   const columns = () => selected()?.parser.columns ?? [];
+  const filterColumns = () => columns().filter((item) =>
+    selected()?.columnCapabilities[item.name]?.filterable === true
+  );
+  const sortColumns = () => columns().filter((item) =>
+    selected()?.columnCapabilities[item.name]?.sortable === true
+  );
+  const supportedFilterOperators = (fieldName = column()) => {
+    const capability = selected()?.columnCapabilities[fieldName];
+    if (!capability?.filterable) return [];
+    const supported = new Set(capability.supportedOperators);
+    const mapping: Partial<Record<SqlDocumentFilterOperator, string>> = {
+      eq: "eq",
+      not_eq: "not_eq",
+      lt: "lt",
+      lte: "lt_eq",
+      gt: "gt",
+      gte: "gt_eq",
+      like: "like",
+      not_like: "not_like",
+      is_null: "is_null",
+      is_not_null: "is_not_null",
+    };
+    return operators.filter((item) => supported.has(mapping[item.value] ?? ""));
+  };
   const currentOperator = () =>
     operators.find((item) => item.value === operator()) ?? operators[0];
   const locked = () => props.disabled?.() === true;
@@ -143,32 +164,38 @@ export function SqlFilterSortEditor(props: Props) {
       setParsedScope(resolved);
       setContextIndex(0);
       setSortDrafts({});
-      const hasAuthorizedContext = resolved !== null && contexts().some((context) =>
-        context.parser.relation === resolved.relation ||
-        context.parser.relation === resolved.relation.split(".").at(-1)
+      const exactContext = resolved === null ? undefined : contexts().find(
+        (context) => context.parser.relation === resolved.relation,
       );
       setSortItems(
-        hasAuthorizedContext ? document.nodes.flatMap((node) =>
+        exactContext ? document.nodes.flatMap((node) =>
           node.kind === "order_by_item" &&
             node.semantic?.kind === "order_by_item" &&
             resolved !== null && queryAncestor(document.nodes, node) === resolved.queryId
-            ? [{
+            ? (() => {
+              const expression = document.nodes.find((child) =>
+                child.parent === node.id &&
+                ["identifier_expression", "compound_identifier_expression"]
+                  .includes(child.kind)
+              );
+              const fieldName = expression?.semantic?.kind === "identifier"
+                ? expression.semantic.value
+                : expression?.semantic?.kind === "compound_identifier"
+                ? expression.semantic.parts.at(-1)?.value
+                : undefined;
+              if (!fieldName || exactContext.columnCapabilities[fieldName]?.sortable !== true) return [];
+              return [{
               id: node.id,
               label: (() => {
-                const expression = document.nodes.find((child) =>
-                  child.parent === node.id &&
-                  ["identifier_expression", "compound_identifier_expression"]
-                    .includes(child.kind)
-                );
                 if (expression?.semantic?.kind === "identifier") {
-                  return selected()?.columnLabels[expression.semantic.value] ??
+                  return exactContext.columnLabels?.[expression.semantic.value] ??
                     expression.semantic.value;
                 }
                 if (expression?.semantic?.kind === "compound_identifier") {
                   const parts = expression.semantic.parts;
                   const name = parts.at(-1)?.value;
                   const label = name
-                    ? selected()?.columnLabels[name]
+                    ? exactContext.columnLabels?.[name]
                     : undefined;
                   return label
                     ? [...parts.slice(0, -1).map((part) => part.value), label]
@@ -181,7 +208,8 @@ export function SqlFilterSortEditor(props: Props) {
               nulls: node.semantic.nulls_order,
               source,
               scope: scopeKey,
-            }]
+              }];
+            })()
             : []
         ) : [],
       );
@@ -233,13 +261,23 @@ export function SqlFilterSortEditor(props: Props) {
       const document = await parseSqlDocument(source);
       if (props.sql() !== source || props.scope?.() !== scope || locked()) return;
       const resolved = rootScope(document.nodes);
-      if (!resolved || !selected() || !eligibleContexts().includes(selected()!)) {
+      const activeContext = selected();
+      if (!resolved || !activeContext || !eligibleContexts().includes(activeContext) ||
+        activeContext.parser.relation !== resolved.relation) {
         throw new Error(t("sqlPage.structure.documentNoOperationTarget"));
       }
       const targetId = props.action === "filter" ? resolved.selectId : resolved.queryId;
       const target = document.nodes.find((node) => node.id === targetId);
       if (!target || !column()) {
         throw new Error(t("sqlPage.structure.documentChooseColumn"));
+      }
+      const capability = activeContext.columnCapabilities[column()];
+      if (props.action === "filter" &&
+        (!capability?.filterable || !supportedFilterOperators().some((item) => item.value === operator()))) {
+        throw new Error(t("sqlPage.structure.documentNoOperationTarget"));
+      }
+      if (props.action === "sort" && !capability?.sortable) {
+        throw new Error(t("sqlPage.structure.documentNoOperationTarget"));
       }
       let literal: SqlDocumentSemanticLiteral | null = null;
       if (props.action === "filter" && currentOperator().valueInput) {
@@ -353,10 +391,15 @@ export function SqlFilterSortEditor(props: Props) {
             class="ui-input"
             disabled={busy() || locked()}
             value={column()}
-            onChange={(event) => setColumn(event.currentTarget.value)}
+            onChange={(event) => {
+              const fieldName = event.currentTarget.value;
+              setColumn(fieldName);
+              const nextOperator = supportedFilterOperators(fieldName)[0]?.value;
+              if (nextOperator) setOperator(nextOperator);
+            }}
           >
             <option value="" />
-            <For each={columns()}>
+            <For each={filterColumns()}>
               {(item) => (
                 <option value={item.name}>
                   {selected()?.columnLabels[item.name] ?? item.name}
@@ -376,7 +419,7 @@ export function SqlFilterSortEditor(props: Props) {
                 event.currentTarget.value as SqlDocumentFilterOperator,
               )}
           >
-            <For each={operators}>
+            <For each={supportedFilterOperators()}>
               {(item) => <option value={item.value}>{item.label}</option>}
             </For>
           </select>
@@ -554,7 +597,7 @@ export function SqlFilterSortEditor(props: Props) {
             onChange={(event) => setColumn(event.currentTarget.value)}
           >
             <option value="" />
-            <For each={columns()}>
+            <For each={sortColumns()}>
               {(item) => <option value={item.name}>{selected()?.columnLabels[item.name] ?? item.name}</option>}
             </For>
           </select>
