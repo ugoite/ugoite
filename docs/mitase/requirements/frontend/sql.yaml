@@ -534,6 +534,7 @@ requirements:
           Ambiguous projection scope, unavailable or duplicate names, and
           stale SQL, host or parameter snapshots leave source unchanged in
           both primary and advanced editors. Planning does not execute rows.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
       - id: human-form-name-binding
         kind: behavior
         statement: >-
