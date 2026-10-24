@@ -1,11 +1,14 @@
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show, untrack } from "solid-js";
 import type { SqlStructureAdapterContext } from "~/lib/sql";
 import {
   applySqlDocumentSemanticEditTransaction,
+  applySqlDocumentEditTransaction,
   parseSqlDocument,
   type SqlDocumentFilterOperator,
   type SqlDocumentSemanticEdit,
   type SqlDocumentSemanticLiteral,
+  type SqlDocumentNode,
+  type SqlDocumentEditTransaction,
 } from "~/lib/ugoite-client";
 import { t } from "~/lib/i18n";
 import { IconButton } from "~/components/IconButton";
@@ -14,6 +17,7 @@ interface Props {
   action: "filter" | "sort";
   sql: () => string;
   scope?: () => string;
+  disabled?: () => boolean;
   contexts: () => readonly SqlStructureAdapterContext[];
   onSqlChange: (sql: string) => void;
   onAdvanced: () => void;
@@ -23,7 +27,50 @@ type SortItem = {
   label: string;
   direction: "asc" | "desc" | null;
   nulls: "first" | "last" | null;
+  source: string;
+  scope: string | undefined;
 };
+type SortDraft = { direction: "asc" | "desc"; nulls: "first" | "last" | null };
+type RootScope = {
+  queryId: number;
+  selectId: number;
+  relation: string;
+  qualifier: { value: string; quote_style: string | null };
+};
+
+function rootScope(nodes: readonly SqlDocumentNode[]): RootScope | null {
+  const queries = nodes.filter((node) => node.kind === "query");
+  const selects = nodes.filter((node) => node.kind === "select");
+  if (queries.length !== 1 || selects.length !== 1 || nodes.some((node) =>
+    node.kind === "with_clause"
+  )) return null;
+  const factors = nodes.filter((node) => node.kind === "table_factor");
+  if (factors.length !== 1 || factors[0].semantic?.kind !== "table_factor" ||
+    factors[0].semantic.factor_kind !== "table") return null;
+  const relationNode = nodes.find((node) =>
+    node.kind === "relation" && node.parent === factors[0].id &&
+    node.semantic?.kind === "relation"
+  );
+  if (relationNode?.semantic?.kind !== "relation") return null;
+  const parts = relationNode.semantic.name;
+  const relation = parts.map((part) => part.value).join(".");
+  const factor = factors[0].semantic;
+  return {
+    queryId: queries[0].id,
+    selectId: selects[0].id,
+    relation,
+    qualifier: factor.alias ?? parts.at(-1) ?? { value: "", quote_style: null },
+  };
+}
+
+function queryAncestor(nodes: readonly SqlDocumentNode[], node: SqlDocumentNode) {
+  let current: SqlDocumentNode | undefined = node;
+  while (current) {
+    if (current.kind === "query") return current.id;
+    current = nodes.find((candidate) => candidate.id === current?.parent);
+  }
+  return undefined;
+}
 
 const operators: {
   value: SqlDocumentFilterOperator;
@@ -55,20 +102,56 @@ export function SqlFilterSortEditor(props: Props) {
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string>();
   const [sortItems, setSortItems] = createSignal<readonly SortItem[]>([]);
+  const [sortDrafts, setSortDrafts] = createSignal<Record<number, SortDraft>>({});
+  const [history, setHistory] = createSignal<SqlDocumentEditTransaction[]>([]);
+  const [redoHistory, setRedoHistory] = createSignal<SqlDocumentEditTransaction[]>([]);
+  const [parsedScope, setParsedScope] = createSignal<RootScope | null>(null);
+  let previousScope = props.scope?.();
   const contexts = () => props.contexts();
-  const selected = createMemo(() => contexts()[contextIndex()]);
+  const eligibleContexts = createMemo(() => {
+    const relation = parsedScope()?.relation;
+    if (!relation) return [];
+    return contexts().filter((context) =>
+      context.parser.relation === relation ||
+      context.parser.relation === relation.split(".").at(-1)
+    );
+  });
+  const selected = createMemo(() => eligibleContexts()[contextIndex()]);
   const columns = () => selected()?.parser.columns ?? [];
   const currentOperator = () =>
     operators.find((item) => item.value === operator()) ?? operators[0];
+  const locked = () => props.disabled?.() === true;
   createEffect(() => {
     const source = props.sql();
+    const scopeKey = props.scope?.();
+    if (scopeKey !== previousScope) {
+      previousScope = scopeKey;
+      setHistory([]);
+      setRedoHistory([]);
+    } else if (
+      untrack(history).at(-1)?.expected_source !== source &&
+      untrack(redoHistory).at(-1)?.expected_source !== source
+    ) {
+      setHistory([]);
+      setRedoHistory([]);
+    }
     let current = true;
+    onCleanup(() => { current = false; });
     void parseSqlDocument(source).then((document) => {
-      if (!current || props.sql() !== source) return;
+      if (!current || props.sql() !== source || props.scope?.() !== scopeKey) return;
+      const resolved = rootScope(document.nodes);
+      setParsedScope(resolved);
+      setContextIndex(0);
+      setSortDrafts({});
+      const hasAuthorizedContext = resolved !== null && contexts().some((context) =>
+        context.parser.relation === resolved.relation ||
+        context.parser.relation === resolved.relation.split(".").at(-1)
+      );
       setSortItems(
-        document.nodes.flatMap((node) =>
+        hasAuthorizedContext ? document.nodes.flatMap((node) =>
           node.kind === "order_by_item" &&
-            node.semantic?.kind === "order_by_item"
+            node.semantic?.kind === "order_by_item" &&
+            resolved !== null && queryAncestor(document.nodes, node) === resolved.queryId
             ? [{
               id: node.id,
               label: (() => {
@@ -96,32 +179,39 @@ export function SqlFilterSortEditor(props: Props) {
               })(),
               direction: node.semantic.direction,
               nulls: node.semantic.nulls_order,
+              source,
+              scope: scopeKey,
             }]
             : []
-        ),
+        ) : [],
       );
     }).catch(() => {
-      if (current) setSortItems([]);
+      if (current && props.sql() === source && props.scope?.() === scopeKey) {
+        setParsedScope(null);
+        setSortItems([]);
+      }
     });
-    return () => {
-      current = false;
-    };
   });
-  const applyOrderEdit = async (edit: SqlDocumentSemanticEdit) => {
-    if (busy()) return;
-    const source = props.sql();
-    const scope = props.scope?.();
+  const applyOrderEdit = async (
+    edit: SqlDocumentSemanticEdit,
+    source: string,
+    scope: string | undefined,
+  ) => {
+    if (busy() || locked()) return;
+    if (props.sql() !== source || props.scope?.() !== scope || locked()) return;
     setBusy(true);
     setError(undefined);
     try {
       const document = await parseSqlDocument(source);
-      if (props.sql() !== source || props.scope?.() !== scope) return;
+      if (props.sql() !== source || props.scope?.() !== scope || locked()) return;
       const result = await applySqlDocumentSemanticEditTransaction(source, {
         contract_version: document.contract_version,
         expected_source: source,
         edits: [edit],
       });
-      if (props.sql() !== source || props.scope?.() !== scope) return;
+      if (props.sql() !== source || props.scope?.() !== scope || locked()) return;
+      setHistory([...history(), result.undo].slice(-32));
+      setRedoHistory([]);
       props.onSqlChange(result.document.source);
     } catch (cause) {
       setError(
@@ -134,22 +224,21 @@ export function SqlFilterSortEditor(props: Props) {
     }
   };
   const submit = async () => {
-    if (busy()) return;
+    if (busy() || locked()) return;
     const source = props.sql();
     const scope = props.scope?.();
     setBusy(true);
     setError(undefined);
     try {
       const document = await parseSqlDocument(source);
-      if (props.sql() !== source || props.scope?.() !== scope) return;
-      const targetKind = props.action === "filter" ? "select" : "query";
-      const targets = document.nodes.filter((node) => node.kind === targetKind);
-      if (targets.length !== 1) {
+      if (props.sql() !== source || props.scope?.() !== scope || locked()) return;
+      const resolved = rootScope(document.nodes);
+      if (!resolved || !selected() || !eligibleContexts().includes(selected()!)) {
         throw new Error(t("sqlPage.structure.documentNoOperationTarget"));
       }
-      const target = targets[0];
-      const relation = selected()?.parser.relation;
-      if (!column() || !relation) {
+      const targetId = props.action === "filter" ? resolved.selectId : resolved.queryId;
+      const target = document.nodes.find((node) => node.id === targetId);
+      if (!target || !column()) {
         throw new Error(t("sqlPage.structure.documentChooseColumn"));
       }
       let literal: SqlDocumentSemanticLiteral | null = null;
@@ -169,8 +258,11 @@ export function SqlFilterSortEditor(props: Props) {
           node_id: target.id,
           expected_kind: "select",
           column: {
-            qualifier: { value: relation, quote_style: null },
-            column: { value: column(), quote_style: null },
+          qualifier: resolved.qualifier,
+          column: {
+            value: column(),
+            quote_style: /^[A-Za-z_][A-Za-z0-9_$]*$/.test(column()) ? null : '"',
+          },
           },
           operator: operator(),
           literal,
@@ -180,8 +272,11 @@ export function SqlFilterSortEditor(props: Props) {
           node_id: target.id,
           expected_kind: "query",
           column: {
-            qualifier: { value: relation, quote_style: null },
-            column: { value: column(), quote_style: null },
+          qualifier: resolved.qualifier,
+          column: {
+            value: column(),
+            quote_style: /^[A-Za-z_][A-Za-z0-9_$]*$/.test(column()) ? null : '"',
+          },
           },
           direction: direction(),
           nulls_order: nulls() || null,
@@ -191,7 +286,9 @@ export function SqlFilterSortEditor(props: Props) {
         expected_source: source,
         edits: [edit],
       });
-      if (props.sql() !== source || props.scope?.() !== scope) return;
+      if (props.sql() !== source || props.scope?.() !== scope || locked()) return;
+      setHistory([...history(), result.undo].slice(-32));
+      setRedoHistory([]);
       props.onSqlChange(result.document.source);
     } catch (cause) {
       setError(
@@ -203,9 +300,34 @@ export function SqlFilterSortEditor(props: Props) {
       setBusy(false);
     }
   };
+  const applyHistory = async (direction: "undo" | "redo") => {
+    if (busy() || locked()) return;
+    const source = props.sql();
+    const scope = props.scope?.();
+    const transaction = (direction === "undo" ? history() : redoHistory()).at(-1);
+    if (!transaction || transaction.expected_source !== source) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      const result = await applySqlDocumentEditTransaction(source, transaction);
+      if (props.sql() !== source || props.scope?.() !== scope || locked()) return;
+      if (direction === "undo") {
+        setHistory(history().slice(0, -1));
+        setRedoHistory([...redoHistory(), result.undo].slice(-32));
+      } else {
+        setRedoHistory(redoHistory().slice(0, -1));
+        setHistory([...history(), result.undo].slice(-32));
+      }
+      props.onSqlChange(result.document.source);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t("sqlPage.structure.editFailed"));
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <div class="sql-filter-sort-editor" aria-busy={busy() || undefined}>
-      <Show when={contexts().length > 1}>
+      <Show when={eligibleContexts().length > 1}>
         <label class="ui-field">
           <span>{t("sqlPage.structure.filterSortScope")}</span>
           <select
@@ -214,7 +336,7 @@ export function SqlFilterSortEditor(props: Props) {
             onChange={(event) =>
               setContextIndex(Number(event.currentTarget.value))}
           >
-            <For each={contexts()}>
+            <For each={eligibleContexts()}>
               {(context, index) => (
                 <option value={index()}>
                   {context.label ?? context.parser.relation}
@@ -229,6 +351,7 @@ export function SqlFilterSortEditor(props: Props) {
           <span>{t("sqlPage.structure.column")}</span>
           <select
             class="ui-input"
+            disabled={busy() || locked()}
             value={column()}
             onChange={(event) => setColumn(event.currentTarget.value)}
           >
@@ -246,6 +369,7 @@ export function SqlFilterSortEditor(props: Props) {
           <span>{t("sqlPage.structure.operator")}</span>
           <select
             class="ui-input"
+            disabled={busy() || locked()}
             value={operator()}
             onChange={(event) =>
               setOperator(
@@ -265,6 +389,7 @@ export function SqlFilterSortEditor(props: Props) {
               fallback={
                 <input
                   class="ui-input"
+                  disabled={busy() || locked()}
                   value={value()}
                   onInput={(event) => setValue(event.currentTarget.value)}
                 />
@@ -272,6 +397,7 @@ export function SqlFilterSortEditor(props: Props) {
             >
               <select
                 class="ui-input"
+                disabled={busy() || locked()}
                 value={value()}
                 onChange={(event) => setValue(event.currentTarget.value)}
               >
@@ -285,6 +411,7 @@ export function SqlFilterSortEditor(props: Props) {
             <span>{t("sqlPage.structure.documentValueKind")}</span>
             <select
               class="ui-input"
+              disabled={busy() || locked()}
               value={valueKind()}
               onChange={(event) =>
                 setValueKind(event.currentTarget.value as ValueKind)}
@@ -304,7 +431,12 @@ export function SqlFilterSortEditor(props: Props) {
       </Show>
       <Show when={props.action === "sort"}>
         <For each={sortItems()}>
-          {(item, index) => (
+          {(item, index) => {
+            const draft = () => sortDrafts()[item.id] ?? {
+              direction: item.direction ?? "asc",
+              nulls: item.nulls,
+            };
+            return (
             <div
               class="sql-filter-sort-editor__sort-row"
               role="group"
@@ -313,19 +445,14 @@ export function SqlFilterSortEditor(props: Props) {
               <span>{item.label}</span>
               <select
                 class="ui-input"
+                disabled={busy() || locked()}
                 aria-label={t("sqlPage.structure.direction")}
-                value={item.direction ?? "asc"}
+                value={draft().direction}
                 onChange={(event) => {
-                  const current = sortItems()[index()];
-                  if (current) {
-                    void applyOrderEdit({
-                      kind: "set_order_by_options",
-                      node_id: current.id,
-                      expected_kind: "order_by_item",
-                      direction: event.currentTarget.value as "asc" | "desc",
-                      nulls_order: current.nulls,
-                    });
-                  }
+                  setSortDrafts({
+                    ...sortDrafts(),
+                    [item.id]: { ...draft(), direction: event.currentTarget.value as "asc" | "desc" },
+                  });
                 }}
               >
                 <option value="asc">{t("sqlPage.structure.ascending")}</option>
@@ -335,22 +462,17 @@ export function SqlFilterSortEditor(props: Props) {
               </select>
               <select
                 class="ui-input"
+                disabled={busy() || locked()}
                 aria-label={t("sqlPage.structure.nullOrder")}
-                value={item.nulls ?? ""}
+                value={draft().nulls ?? ""}
                 onChange={(event) => {
-                  const current = sortItems()[index()];
-                  if (current) {
-                    void applyOrderEdit({
-                      kind: "set_order_by_options",
-                      node_id: current.id,
-                      expected_kind: "order_by_item",
-                      direction: current.direction ?? "asc",
-                      nulls_order: (event.currentTarget.value || null) as
-                        | "first"
-                        | "last"
-                        | null,
-                    });
-                  }
+                  setSortDrafts({
+                    ...sortDrafts(),
+                    [item.id]: {
+                      ...draft(),
+                      nulls: (event.currentTarget.value || null) as "first" | "last" | null,
+                    },
+                  });
                 }}
               >
                 <option value="">
@@ -363,65 +485,77 @@ export function SqlFilterSortEditor(props: Props) {
                   {t("sqlPage.structure.nullOrderLast")}
                 </option>
               </select>
+              <button
+                type="button"
+                class="ui-button ui-button-secondary"
+                disabled={busy() || locked()}
+                onClick={() => void applyOrderEdit({
+                  kind: "set_order_by_options",
+                  node_id: item.id,
+                  expected_kind: "order_by_item",
+                  direction: draft().direction,
+                  nulls_order: draft().nulls,
+                }, item.source, item.scope)}
+              >
+                {t("sqlPage.structure.applySort")}
+              </button>
               <IconButton
                 icon="close"
                 label={t("sqlPage.structure.removeSort")}
                 onClick={() => {
-                  const current = sortItems()[index()];
-                  if (current) {
+                  if (item) {
                     void applyOrderEdit({
                       kind: "remove_order_by_item",
-                      node_id: current.id,
+                      node_id: item.id,
                       expected_kind: "order_by_item",
-                    });
+                    }, item.source, item.scope);
                   }
                 }}
               />
               <IconButton
                 icon="arrow-up"
                 label={t("sqlPage.structure.documentMoveOrderEarlier")}
-                disabled={index() === 0}
+                disabled={busy() || locked() || index() === 0}
                 onClick={() => {
-                  const current = sortItems()[index()];
-                  if (current) {
+                  if (item) {
                     void applyOrderEdit({
                       kind: "move_order_by_item",
-                      node_id: current.id,
+                      node_id: item.id,
                       expected_kind: "order_by_item",
                       to_index: index() - 1,
-                    });
+                    }, item.source, item.scope);
                   }
                 }}
               />
               <IconButton
                 icon="arrow-down"
                 label={t("sqlPage.structure.documentMoveOrderLater")}
-                disabled={index() === sortItems().length - 1}
+                disabled={busy() || locked() || index() === sortItems().length - 1}
                 onClick={() => {
-                  const current = sortItems()[index()];
-                  if (current) {
+                  if (item) {
                     void applyOrderEdit({
                       kind: "move_order_by_item",
-                      node_id: current.id,
+                      node_id: item.id,
                       expected_kind: "order_by_item",
                       to_index: index() + 1,
-                    });
+                    }, item.source, item.scope);
                   }
                 }}
               />
             </div>
-          )}
+          );}}
         </For>
         <label class="ui-field">
           <span>{t("sqlPage.structure.column")}</span>
           <select
             class="ui-input"
+            disabled={busy() || locked()}
             value={column()}
             onChange={(event) => setColumn(event.currentTarget.value)}
           >
             <option value="" />
             <For each={columns()}>
-              {(item) => <option value={item.name}>{item.name}</option>}
+              {(item) => <option value={item.name}>{selected()?.columnLabels[item.name] ?? item.name}</option>}
             </For>
           </select>
         </label>
@@ -429,6 +563,7 @@ export function SqlFilterSortEditor(props: Props) {
           <span>{t("sqlPage.structure.direction")}</span>
           <select
             class="ui-input"
+            disabled={busy() || locked()}
             value={direction()}
             onChange={(event) =>
               setDirection(event.currentTarget.value as "asc" | "desc")}
@@ -441,6 +576,7 @@ export function SqlFilterSortEditor(props: Props) {
           <span>{t("sqlPage.structure.nullOrder")}</span>
           <select
             class="ui-input"
+            disabled={busy() || locked()}
             value={nulls()}
             onChange={(event) =>
               setNulls(event.currentTarget.value as "" | "first" | "last")}
@@ -456,11 +592,29 @@ export function SqlFilterSortEditor(props: Props) {
       <Show when={error()}>
         <p role="alert" class="ui-text-danger">{error()}</p>
       </Show>
+      <div class="sql-filter-sort-editor__history">
+        <button
+          type="button"
+          class="ui-button ui-button-secondary"
+          disabled={busy() || locked() || history().at(-1)?.expected_source !== props.sql()}
+          onClick={() => void applyHistory("undo")}
+        >
+          {t("sqlPage.columns.undo")}
+        </button>
+        <button
+          type="button"
+          class="ui-button ui-button-secondary"
+          disabled={busy() || locked() || redoHistory().at(-1)?.expected_source !== props.sql()}
+          onClick={() => void applyHistory("redo")}
+        >
+          {t("sqlPage.columns.redo")}
+        </button>
+      </div>
       <button
         type="button"
         class="ui-button ui-button-primary"
         onClick={submit}
-        disabled={busy()}
+        disabled={busy() || locked()}
       >
         {props.action === "filter"
           ? t("sqlPage.structure.addFilter")
@@ -470,6 +624,7 @@ export function SqlFilterSortEditor(props: Props) {
         type="button"
         class="ui-button ui-button-secondary"
         onClick={props.onAdvanced}
+        disabled={busy() || locked()}
       >
         {t("sqlPage.structure.advancedStructure")}
       </button>

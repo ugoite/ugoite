@@ -420,6 +420,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                   sql={props.sql}
                   scope={props.scope}
                   contexts={props.contexts}
+                  disabled={props.disabled}
                   onSqlChange={(sql) => props.onSqlChange?.(sql)}
                   onAdvanced={() => openAction("document", dialogReturnFocus())}
                 />
