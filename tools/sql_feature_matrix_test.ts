@@ -155,13 +155,14 @@ Deno.test("executor-admitted constructs map to the shared typed SQL document", a
 });
 
 Deno.test("every typed semantic operation is inventoried in Rust, TypeScript and the current GUI", async () => {
-  const [domain, protocol, editor, filterSortEditor, toolbar] = await Promise.all([
-    read("crates/ugoite-domain/src/sql_document.rs"),
-    read("frontend/src/lib/ugoite-client/protocol.ts"),
-    read("frontend/src/components/SqlDocumentTreeEditor.tsx"),
-    read("frontend/src/components/SqlFilterSortEditor.tsx"),
-    read("frontend/src/components/SqlStructureToolbar.tsx"),
-  ]);
+  const [domain, protocol, editor, filterSortEditor, toolbar] = await Promise
+    .all([
+      read("crates/ugoite-domain/src/sql_document.rs"),
+      read("frontend/src/lib/ugoite-client/protocol.ts"),
+      read("frontend/src/components/SqlDocumentTreeEditor.tsx"),
+      read("frontend/src/components/SqlFilterSortEditor.tsx"),
+      read("frontend/src/components/SqlStructureToolbar.tsx"),
+    ]);
   sameSet(
     matrix.editor.semantic_operations,
     rustVariants(domain, "SqlDocumentSemanticEdit"),
