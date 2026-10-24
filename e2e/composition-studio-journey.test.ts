@@ -1551,6 +1551,7 @@ test("Composition shared Arguments rename and type editing persist explicit bind
 
 test("unnamed mobile Composition keeps Text focus and inserts existing data before naming", async ({ page, request }) => {
   test.setTimeout(120_000);
+  page.setDefaultTimeout(15_000);
   await waitForServers(request);
   const spaceId = await getDefaultSpaceId(request);
   const suffix = crypto.randomUUID().slice(0, 8);
@@ -1619,7 +1620,10 @@ test("unnamed mobile Composition keeps Text focus and inserts existing data befo
   expect(await page.evaluate(() => window.visualViewport?.scale ?? 1)).toBe(
     scale,
   );
-  await page.getByRole("complementary", { name: "Inspector", exact: true })
+  await page.getByRole("complementary", {
+    name: "Selected component",
+    exact: true,
+  })
     .getByRole("button", { name: "Close", exact: true }).click();
   await palette.getByRole("button", { name: "Table", exact: true }).click();
   const table = page.getByRole("dialog", { name: "Table", exact: true });
