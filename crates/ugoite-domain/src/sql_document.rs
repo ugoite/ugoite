@@ -616,6 +616,23 @@ pub struct SqlDocumentNodeEditTransaction {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SqlDocumentSemanticEdit {
+    /// Add a typed comparison against a column in one SELECT scope. This is
+    /// the task-facing constructor used when the document has no predicate node.
+    AddFilterComparison {
+        node_id: u32,
+        expected_kind: SqlDocumentNodeKind,
+        column: SqlDocumentColumnReference,
+        operator: SqlDocumentFilterOperator,
+        literal: Option<SqlDocumentSemanticLiteral>,
+    },
+    /// Add a typed column sort key without requiring an existing expression.
+    AddOrderByColumn {
+        node_id: u32,
+        expected_kind: SqlDocumentNodeKind,
+        column: SqlDocumentColumnReference,
+        direction: SqlDocumentOrderDirection,
+        nulls_order: Option<SqlDocumentNullsOrder>,
+    },
     /// Construct the first SELECT in an empty (possibly trivia-only) draft.
     /// Rust renders the optional relation as one identifier; nonempty invalid
     /// SQL is never replaced by this operation.
@@ -1308,6 +1325,42 @@ impl SqlDocumentNullsOrder {
             Self::First => " NULLS FIRST",
             Self::Last => " NULLS LAST",
         }
+    }
+}
+
+/// Closed operators accepted by the task-facing Filter editor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SqlDocumentFilterOperator {
+    Eq,
+    NotEq,
+    Lt,
+    Lte,
+    Gt,
+    Gte,
+    Like,
+    NotLike,
+    IsNull,
+    IsNotNull,
+}
+
+impl SqlDocumentFilterOperator {
+    fn sql_spelling(self) -> &'static str {
+        match self {
+            Self::Eq => "=",
+            Self::NotEq => "<>",
+            Self::Lt => "<",
+            Self::Lte => "<=",
+            Self::Gt => ">",
+            Self::Gte => ">=",
+            Self::Like => "LIKE",
+            Self::NotLike => "NOT LIKE",
+            Self::IsNull => "IS NULL",
+            Self::IsNotNull => "IS NOT NULL",
+        }
+    }
+    fn needs_value(self) -> bool {
+        !matches!(self, Self::IsNull | Self::IsNotNull)
     }
 }
 
@@ -2043,6 +2096,22 @@ pub fn apply_sql_document_semantic_edit_transaction(
             edits.push(add_where_clause(&document, node)?);
             continue;
         }
+        if let SqlDocumentSemanticEdit::AddFilterComparison {
+            column,
+            operator,
+            literal,
+            ..
+        } = semantic_edit
+        {
+            edits.push(add_filter_comparison(
+                &document,
+                node,
+                column,
+                *operator,
+                literal.as_ref(),
+            )?);
+            continue;
+        }
         if matches!(
             semantic_edit,
             SqlDocumentSemanticEdit::AddHavingClause { .. }
@@ -2353,6 +2422,22 @@ pub fn apply_sql_document_semantic_edit_transaction(
             )?);
             continue;
         }
+        if let SqlDocumentSemanticEdit::AddOrderByColumn {
+            column,
+            direction,
+            nulls_order,
+            ..
+        } = semantic_edit
+        {
+            edits.push(add_order_by_column(
+                &document,
+                node,
+                column,
+                *direction,
+                *nulls_order,
+            )?);
+            continue;
+        }
         if let SqlDocumentSemanticEdit::SetOrderByExpression {
             expression_node_id,
             expression_expected_kind,
@@ -2442,6 +2527,10 @@ pub fn apply_sql_document_semantic_edit_transaction(
 
         let (range, replacement) = match semantic_edit {
             SqlDocumentSemanticEdit::InitializeSelect { .. } => {
+                return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+            }
+            SqlDocumentSemanticEdit::AddFilterComparison { .. }
+            | SqlDocumentSemanticEdit::AddOrderByColumn { .. } => {
                 return Err(SqlDocumentEditError::InvalidSemanticReplacement);
             }
             SqlDocumentSemanticEdit::ReplaceIdentifier { parts, .. } => {
@@ -2664,7 +2753,17 @@ impl SqlDocumentSemanticEdit {
     fn target(&self) -> Option<(u32, SqlDocumentNodeKind)> {
         match self {
             Self::InitializeSelect { .. } => None,
-            Self::ReplaceIdentifier {
+            Self::AddFilterComparison {
+                node_id,
+                expected_kind,
+                ..
+            }
+            | Self::AddOrderByColumn {
+                node_id,
+                expected_kind,
+                ..
+            }
+            | Self::ReplaceIdentifier {
                 node_id,
                 expected_kind,
                 ..
@@ -3741,6 +3840,110 @@ fn add_where_clause(
         " WHERE TRUE".to_owned()
     };
     source_insertion(document, offset, replacement)
+}
+
+fn add_filter_comparison(
+    document: &SqlDocument,
+    select: &SqlDocumentNode,
+    column: &SqlDocumentColumnReference,
+    operator: SqlDocumentFilterOperator,
+    literal: Option<&SqlDocumentSemanticLiteral>,
+) -> Result<SqlDocumentEdit, SqlDocumentEditError> {
+    if select.kind != SqlDocumentNodeKind::Select || operator.needs_value() != literal.is_some() {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
+    let left = render_column_reference(column)?;
+    let right = literal
+        .map(render_semantic_literal)
+        .transpose()?
+        .map(|(sql, _)| sql);
+    let condition = right.map_or_else(
+        || format!("{left} {}", operator.sql_spelling()),
+        |value| format!("{left} {} {value}", operator.sql_spelling()),
+    );
+    let where_clause = document.nodes.iter().find(|candidate| {
+        candidate.parent == Some(select.id) && candidate.kind == SqlDocumentNodeKind::WhereClause
+    });
+    if let Some(clause) = where_clause {
+        let range = clause
+            .range
+            .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+        if document.tokens.iter().any(|token| {
+            matches!(token.kind, SqlDocumentTokenKind::Comment)
+                && token.range.start >= range.start
+                && token.range.end <= range.end
+        }) {
+            return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+        }
+        return source_insertion(document, range.end, format!(" AND ({condition})"));
+    }
+    let mut edit = add_where_clause(document, select)?;
+    edit.replacement = edit
+        .replacement
+        .replace("WHERE TRUE", &format!("WHERE {condition}"));
+    Ok(edit)
+}
+
+fn add_order_by_column(
+    document: &SqlDocument,
+    query: &SqlDocumentNode,
+    column: &SqlDocumentColumnReference,
+    direction: SqlDocumentOrderDirection,
+    nulls_order: Option<SqlDocumentNullsOrder>,
+) -> Result<SqlDocumentEdit, SqlDocumentEditError> {
+    if query.kind != SqlDocumentNodeKind::Query {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
+    let expression = render_column_reference(column)?;
+    let clause = document.nodes.iter().find(|candidate| {
+        candidate.parent == Some(query.id) && candidate.kind == SqlDocumentNodeKind::OrderByClause
+    });
+    if let Some(clause) = clause {
+        return source_insertion(
+            document,
+            clause
+                .range
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?
+                .end,
+            format!(
+                ", {expression} {}{}",
+                direction.sql_spelling(),
+                nulls_order.map_or("", SqlDocumentNullsOrder::sql_suffix)
+            ),
+        );
+    }
+    let query_range = query
+        .range
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let next_clause = document
+        .nodes
+        .iter()
+        .filter(|candidate| {
+            candidate.parent == Some(query.id)
+                && matches!(
+                    candidate.kind,
+                    SqlDocumentNodeKind::LimitClause | SqlDocumentNodeKind::OffsetClause
+                )
+        })
+        .filter_map(|candidate| candidate.range)
+        .min_by_key(|range| range.start);
+    let insert_at = next_clause.map_or(query_range.end, |range| range.start);
+    let preceding_is_space = document
+        .source
+        .get(..insert_at)
+        .and_then(|prefix| prefix.chars().next_back())
+        .is_some_and(char::is_whitespace);
+    let prefix = if preceding_is_space { "" } else { " " };
+    let suffix = if next_clause.is_some() { " " } else { "" };
+    source_insertion(
+        document,
+        insert_at,
+        format!(
+            "{prefix}ORDER BY {expression} {}{}{suffix}",
+            direction.sql_spelling(),
+            nulls_order.map_or("", SqlDocumentNullsOrder::sql_suffix)
+        ),
+    )
 }
 
 fn add_having_clause(
@@ -14661,6 +14864,74 @@ mod tests {
         }));
         let restored = apply_sql_document_edit_transaction(&edited.document.source, &edited.undo)
             .expect("the WHERE seed has an exact inverse");
+        assert_eq!(restored.document.source, source);
+    }
+
+    #[test]
+    fn task_filter_and_sort_constructors_create_typed_columns_and_undo() {
+        let source = "SELECT * FROM \"G\" LIMIT 20";
+        let document = parse_sql_document(source);
+        let select = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::Select)
+            .unwrap();
+        let query = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::Query)
+            .unwrap();
+        let column = SqlDocumentColumnReference {
+            qualifier: None,
+            column: SqlDocumentIdentifier {
+                value: "count".into(),
+                quote_style: None,
+            },
+        };
+        let filtered = apply_sql_document_semantic_edit_transaction(
+            source,
+            &semantic_transaction(
+                source,
+                vec![SqlDocumentSemanticEdit::AddFilterComparison {
+                    node_id: select.id,
+                    expected_kind: SqlDocumentNodeKind::Select,
+                    column: column.clone(),
+                    operator: SqlDocumentFilterOperator::Gte,
+                    literal: Some(SqlDocumentSemanticLiteral::Number {
+                        value: "9007199254740993".into(),
+                    }),
+                }],
+            ),
+        )
+        .expect("the task editor adds a typed comparison without copying an AST node");
+        assert_eq!(
+            filtered.document.source,
+            "SELECT * FROM \"G\" WHERE count >= 9007199254740993 LIMIT 20"
+        );
+        let restored =
+            apply_sql_document_edit_transaction(&filtered.document.source, &filtered.undo).unwrap();
+        assert_eq!(restored.document.source, source);
+
+        let sorted = apply_sql_document_semantic_edit_transaction(
+            source,
+            &semantic_transaction(
+                source,
+                vec![SqlDocumentSemanticEdit::AddOrderByColumn {
+                    node_id: query.id,
+                    expected_kind: SqlDocumentNodeKind::Query,
+                    column,
+                    direction: SqlDocumentOrderDirection::Desc,
+                    nulls_order: Some(SqlDocumentNullsOrder::Last),
+                }],
+            ),
+        )
+        .expect("the task editor inserts a typed sort key before LIMIT");
+        assert_eq!(
+            sorted.document.source,
+            "SELECT * FROM \"G\" ORDER BY count DESC NULLS LAST LIMIT 20"
+        );
+        let restored =
+            apply_sql_document_edit_transaction(&sorted.document.source, &sorted.undo).unwrap();
         assert_eq!(restored.document.source, source);
     }
 
