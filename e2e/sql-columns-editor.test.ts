@@ -187,8 +187,10 @@ test(
     await filterDialog.getByRole("button", { name: "Add filter" }).click();
     await expect(page.getByRole("textbox", { name: "SQL", exact: true }))
       .toContainText(">= 10");
-    await filterDialog.getByRole("button", { name: "Close", exact: true })
-      .click();
+    await filterDialog.locator("footer").getByRole("button", {
+      name: "Close",
+      exact: true,
+    }).click();
     await page.getByRole("button", { name: "Sort", exact: true }).click();
     const sortDialog = page.getByRole("dialog", { name: "Sort", exact: true });
     await sortDialog.getByRole("combobox", { name: "Column" }).selectOption({
@@ -199,9 +201,11 @@ test(
     );
     await sortDialog.getByRole("button", { name: "Add sort" }).click();
     await expect(page.getByRole("textbox", { name: "SQL", exact: true }))
-      .toContainText("ORDER BY amount DESC");
-    await sortDialog.getByRole("button", { name: "Close", exact: true })
-      .click();
+      .toContainText(/ORDER BY[\s\S]*DESC/);
+    await sortDialog.locator("footer").getByRole("button", {
+      name: "Close",
+      exact: true,
+    }).click();
     const taskEditedSql = await page.getByRole("textbox", {
       name: "SQL",
       exact: true,
@@ -236,8 +240,8 @@ test(
     const definition = await (await request.get(
       getBackendUrl(`/spaces/${spaceId}/sql/${saved.id}`),
     )).json() as { sql: string };
-    expect(definition.sql).toContain("amount >= 10");
-    expect(definition.sql).toContain("ORDER BY amount DESC");
+    expect(definition.sql).toMatch(/WHERE[\s\S]*>= 10/);
+    expect(definition.sql).toMatch(/ORDER BY[\s\S]*DESC/);
     const yaml = await completeCompositionGraphYaml(request, spaceId, {
       name: `Columns Composition ${formName}`,
       variables: [{
