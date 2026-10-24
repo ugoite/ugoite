@@ -65,7 +65,13 @@ requirements:
           value, Core checks that exact request, pinned Saved SQL revision,
           result schema, types, nullability, and scalar or table contract
           against the query's declared return descriptor. A rejected page is
-          not retained or rendered, and accepted results remain transient Work.
+          not retained or rendered. The server-derived selected dependency
+          closure is one result publication unit: if any selected query fails,
+          no newly computed value, page, or cursor from that closure is exposed.
+          Original failure diagnostics are retained and otherwise valid selected
+          queries receive an evaluation-aborted diagnostic. Previously accepted
+          unselected results may survive only under the same authority snapshot.
+          Accepted results remain transient Work.
         governed_by: [
           POL-000#rule.foundation-precedence,
           POL-004#rule.governance,

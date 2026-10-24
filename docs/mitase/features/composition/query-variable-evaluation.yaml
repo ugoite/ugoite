@@ -102,6 +102,145 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
+      - id: selected-evaluation-rest
+        role: implementation
+        facet: api
+        responsibility: Return the validated selected-closure result map and local failure diagnostics without partial values.
+        targets:
+          - id: evaluate-response
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: composition_evaluation_handler }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.query-results-validated-before-preview
+      - id: selected-evaluation-browser
+        role: implementation
+        facet: frontend
+        responsibility: Invalidate failed selected results and cursors, keep only same-authority unselected results, and render an aborted evaluation locally.
+        targets:
+          - id: merge-results
+            adapter: typescript
+            path: frontend/src/lib/composition-evaluation.ts
+            selector: { kind: symbol, name: mergeCompositionEvaluation }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.query-results-validated-before-preview
+          - id: render-results
+            adapter: typescript
+            path: frontend/src/components/CompositionGraphRenderer.tsx
+            selector: { kind: symbol, name: CompositionGraphRenderer }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.query-results-validated-before-preview
+      - id: atomic-selected-evaluation-verification
+        role: verification
+        facet: verification
+        responsibility: Verify that one rejected selected result cannot expose valid siblings, and that repairing the input restores the affected closure.
+        targets:
+          - id: service-atomic-results
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_preview.rs
+            selector: {
+              kind: test,
+              name: graph_evaluation_commits_no_selected_results_when_one_query_fails,
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.query-results-validated-before-preview
+                covers: [
+                  FEAT-COMP-011#binding.composition-graph-evaluation/target.stateless-query-evaluation,
+                ]
+                runner: {
+                  runner: cargo-test-integration,
+                  arguments: {
+                    package: ugoite-iceberg,
+                    harness: test_composition_preview,
+                    test: graph_evaluation_commits_no_selected_results_when_one_query_fails,
+                  },
+                }
+          - id: rest-atomic-results
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: {
+              kind: test,
+              name: authentication_regression_tests::composition_evaluate_route_executes_the_selected_saved_graph,
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.query-results-validated-before-preview
+                covers: [
+                  FEAT-COMP-011#binding.selected-evaluation-rest/target.evaluate-response,
+                ]
+                runner: {
+                  runner: cargo-test-unit,
+                  arguments: {
+                    package: ugoite-server,
+                    test: authentication_regression_tests::composition_evaluate_route_executes_the_selected_saved_graph,
+                  },
+                }
+          - id: browser-result-invalidation
+            adapter: typescript
+            path: frontend/src/lib/composition-evaluation.test.ts
+            selector: {
+              kind: test,
+              name: "retains unaffected results after a failed partial evaluation in the same snapshot",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.query-results-validated-before-preview
+                covers: [
+                  FEAT-COMP-011#binding.selected-evaluation-browser/target.merge-results,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/lib/composition-evaluation.test.ts,
+                    test: "retains unaffected results after a failed partial evaluation in the same snapshot",
+                  },
+                }
+          - id: browser-aborted-diagnostic
+            adapter: typescript
+            path: frontend/src/components/CompositionGraphRenderer.test.tsx
+            selector: {
+              kind: test,
+              name: "shows a local aborted state for successful siblings of a failed selected evaluation",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.query-results-validated-before-preview
+                covers: [
+                  FEAT-COMP-011#binding.selected-evaluation-browser/target.render-results,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/CompositionGraphRenderer.test.tsx,
+                    test: "shows a local aborted state for successful siblings of a failed selected evaluation",
+                  },
+                }
+          - id: browser-selected-failure-repair
+            adapter: typescript
+            path: e2e/composition-invalid-variable-input.test.ts
+            selector: {
+              kind: test,
+              name: "a failed selected evaluation clears successful siblings and repairs together",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.query-results-validated-before-preview
+                covers: [
+                  FEAT-COMP-011#binding.selected-evaluation-browser/target.merge-results,
+                  FEAT-COMP-011#binding.selected-evaluation-browser/target.render-results,
+                  FEAT-COMP-011#binding.selected-evaluation-rest/target.evaluate-response,
+                ]
+                runner: {
+                  runner: e2e-playwright,
+                  arguments: {
+                    file: e2e/composition-invalid-variable-input.test.ts,
+                    test: "a failed selected evaluation clears successful siblings and repairs together",
+                  },
+                }
       - id: dependency-selection-verification
         role: verification
         facet: verification
@@ -110,46 +249,104 @@ features:
           - id: selected-input-validation
             adapter: rust
             path: crates/ugoite-core/tests/composition_query_evaluation.rs
-            selector: { kind: test, name: "selected_query_inputs_do_not_require_unrelated_inputs_but_keep_request_validation" }
+            selector: {
+              kind: test,
+              name: "selected_query_inputs_do_not_require_unrelated_inputs_but_keep_request_validation",
+            }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
-                covers: [FEAT-COMP-011#binding.query-result-validation/target.composition-query-evaluation]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-core, harness: composition_query_evaluation, test: selected_query_inputs_do_not_require_unrelated_inputs_but_keep_request_validation } }
+                covers: [
+                  FEAT-COMP-011#binding.query-result-validation/target.composition-query-evaluation,
+                ]
+                runner: {
+                  runner: cargo-test-integration,
+                  arguments: {
+                    package: ugoite-core,
+                    harness: composition_query_evaluation,
+                    test: selected_query_inputs_do_not_require_unrelated_inputs_but_keep_request_validation,
+                  },
+                }
           - id: authorized-input-selection
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_composition_preview.rs
-            selector: { kind: test, name: "authorized_saved_and_draft_query_selection_isolates_unrelated_missing_and_invalid_inputs" }
+            selector: {
+              kind: test,
+              name: "authorized_saved_and_draft_query_selection_isolates_unrelated_missing_and_invalid_inputs",
+            }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
-                covers: [FEAT-COMP-011#binding.composition-graph-evaluation/target.stateless-query-evaluation]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: authorized_saved_and_draft_query_selection_isolates_unrelated_missing_and_invalid_inputs } }
+                covers: [
+                  FEAT-COMP-011#binding.composition-graph-evaluation/target.stateless-query-evaluation,
+                ]
+                runner: {
+                  runner: cargo-test-integration,
+                  arguments: {
+                    package: ugoite-iceberg,
+                    harness: test_composition_preview,
+                    test: authorized_saved_and_draft_query_selection_isolates_unrelated_missing_and_invalid_inputs,
+                  },
+                }
           - id: design-independent-branch
             adapter: typescript
             path: frontend/src/lib/composition-design-evaluation.test.ts
-            selector: { kind: test, name: "updates and pages an independent branch while another input is invalid or pending" }
+            selector: {
+              kind: test,
+              name: "updates and pages an independent branch while another input is invalid or pending",
+            }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
-                covers: [FEAT-COMP-011#binding.dependency-scoped-browser/target.design-scheduler]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-design-evaluation.test.ts, test: "updates and pages an independent branch while another input is invalid or pending" } }
+                covers: [
+                  FEAT-COMP-011#binding.dependency-scoped-browser/target.design-scheduler,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/lib/composition-design-evaluation.test.ts,
+                    test: "updates and pages an independent branch while another input is invalid or pending",
+                  },
+                }
           - id: runtime-independent-branch
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
-            selector: { kind: test, name: "keeps an independent input branch live while another input is invalid" }
+            selector: {
+              kind: test,
+              name: "keeps an independent input branch live while another input is invalid",
+            }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
-                covers: [FEAT-COMP-011#binding.dependency-scoped-browser/target.saved-runtime]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: "keeps an independent input branch live while another input is invalid" } }
+                covers: [
+                  FEAT-COMP-011#binding.dependency-scoped-browser/target.saved-runtime,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx",
+                    test: "keeps an independent input branch live while another input is invalid",
+                  },
+                }
 
           - id: browser-independent-input-branches
             adapter: typescript
             path: e2e/composition-invalid-variable-input.test.ts
-            selector: { kind: test, name: "independent Composition results update while another Input is invalid in Design and runtime" }
+            selector: {
+              kind: test,
+              name: "independent Composition results update while another Input is invalid in Design and runtime",
+            }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-009#criterion.snapshot-reactive-execution
-                covers: [FEAT-COMP-011#binding.dependency-scoped-browser/target.design-scheduler, FEAT-COMP-011#binding.dependency-scoped-browser/target.saved-runtime]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-invalid-variable-input.test.ts, test: "independent Composition results update while another Input is invalid in Design and runtime" } }
+                covers: [
+                  FEAT-COMP-011#binding.dependency-scoped-browser/target.design-scheduler,
+                  FEAT-COMP-011#binding.dependency-scoped-browser/target.saved-runtime,
+                ]
+                runner: {
+                  runner: e2e-playwright,
+                  arguments: {
+                    file: e2e/composition-invalid-variable-input.test.ts,
+                    test: "independent Composition results update while another Input is invalid in Design and runtime",
+                  },
+                }

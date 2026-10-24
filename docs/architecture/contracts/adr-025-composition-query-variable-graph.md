@@ -170,6 +170,11 @@ request names its selected table query explicitly. Authorization, Publication,
 exact query revisions, descriptors and cursor bindings remain checked by Core
 and the storage-backed resolver for each request.
 
+The selected dependency closure is the atomic result publication boundary
+specified by `REQ-COMP-009#criterion.query-results-validated-before-preview`.
+Failed runs expose no newly staged values, pages, or cursors from that closure.
+Successful independent selections remain possible; this does not weaken full
+validation when a request selects the whole graph.
 
 Composition Knowledge stores query definitions, typed declarations, bindings,
 and layout. Input values, previews, pages, results, cursors, loading state, and
