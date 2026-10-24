@@ -159,6 +159,7 @@ test(
     const response = await savedResponse;
     expect([200, 201]).toContain(response.status());
     const saved = await response.json() as { id: string };
+    await page.waitForURL((url) => url.pathname === `/spaces/${spaceId}/sql`);
     await page.goto(getFrontendUrl(`/spaces/${spaceId}/sql/${saved.id}`));
     await page.getByRole("button", { name: "Columns", exact: true }).click();
     await expect(
