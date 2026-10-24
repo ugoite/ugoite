@@ -440,7 +440,12 @@ export type SqlDocumentLiteralKind =
 /** Parser-derived syntax metadata; this is not an execution or type contract. */
 export type SqlDocumentNodeData =
   | { kind: "select"; distinct: boolean; distinct_on: boolean }
-  | { kind: "wildcard"; qualifier: SqlDocumentIdentifier | null }
+  | {
+    kind: "wildcard";
+    qualifier: SqlDocumentIdentifier[];
+    qualifier_is_expression: boolean;
+    has_options: boolean;
+  }
   | {
     kind: "order_by_item";
     direction: SqlDocumentOrderDirection | null;
@@ -1080,6 +1085,8 @@ export type SqlDocumentEditErrorCode =
   | "node_kind_mismatch"
   | "node_range_unavailable"
   | "invalid_semantic_replacement"
+  | "projection_position_conflict"
+  | "projection_alias_conflict"
   | "duplicate_node_target"
   | "invalid_range"
   | "range_out_of_bounds"

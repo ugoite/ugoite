@@ -79,6 +79,60 @@ describe("SQL workspace planning", () => {
     disposeRoot();
   });
 
+  it("replans wildcard output against current authorization and rejects stale parameter snapshots", async () => {
+    vi.useFakeTimers();
+    planMock.mockResolvedValue({
+      result_schema: [
+        { name: "old_field", type: "string" },
+      ],
+    });
+    let controller!: ReturnType<typeof createSqlWorkspaceController>;
+    const dispose = createRoot((dispose) => {
+      controller = createSqlWorkspaceController({
+        spaceId: () => "space",
+        sql: () =>
+          'SELECT * FROM "form_expenses" WHERE field_amount >= $minimum',
+        variables: () => [{ name: "minimum", type: "integer", default: 1 }],
+      });
+      return dispose;
+    });
+    await vi.advanceTimersByTimeAsync(350);
+    await vi.waitFor(() => expect(planMock).toHaveBeenCalledOnce());
+    planMock.mockResolvedValueOnce({
+      result_schema: [
+        { name: "residual", type: "string" },
+        { name: "field_amount", type: "integer" },
+        { name: "_ugoite_id", type: "string" },
+        { name: "new_field", type: "boolean" },
+      ],
+    });
+    const planned = await controller.planColumns();
+    expect(planned.columns).toEqual([
+      "residual",
+      "field_amount",
+      "_ugoite_id",
+      "new_field",
+    ]);
+    expect(planned.isCurrent()).toBe(true);
+    expect(planMock).toHaveBeenCalledTimes(2);
+    expect(queryMock).not.toHaveBeenCalled();
+    expect(countMock).not.toHaveBeenCalled();
+    controller.onParameterChange("minimum", "2");
+    expect(planned.isCurrent()).toBe(false);
+    const pending = deferred<
+      { result_schema: Array<{ name: string; type: string }> }
+    >();
+    planMock.mockReturnValueOnce(pending.promise);
+    const changed = controller.planColumns();
+    const rejected = expect(changed).rejects.toThrow();
+    controller.onParameterChange("minimum", "3");
+    pending.resolve({ result_schema: [{ name: "old", type: "string" }] });
+    await rejected;
+    expect(queryMock).not.toHaveBeenCalled();
+    expect(countMock).not.toHaveBeenCalled();
+    dispose();
+  });
+
   it("debounces planning and sends typed nulls for declared arguments", async () => {
     vi.useFakeTimers();
     planMock.mockResolvedValue({ result_schema: [] });

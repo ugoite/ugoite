@@ -3982,3 +3982,73 @@ async fn typed_sql_document_filter_group_and_aggregate_edits_execute_authorized_
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn projection_reorder_keeps_authorized_grouping_and_sort_meaning() -> anyhow::Result<()> {
+    use ugoite_domain::sql_document::{
+        apply_sql_document_edit_transaction, apply_sql_document_semantic_edit_transaction,
+        parse_sql_document, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
+        SqlDocumentSemanticEditTransaction,
+    };
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(501)),
+        "memory://authorized-projection-position",
+    )
+    .await?;
+    let tasks = form(502, "Tasks");
+    create_form(&workspace, &tasks).await?;
+    for (entry, title) in [(503, "zeta"), (505, "alpha")] {
+        append(&workspace, &tasks, entry, entry + 1, title).await?;
+    }
+    let mut authorized_policy = policy(&tasks, &[503, 505]);
+    authorized_policy.limits.function_policy = SqlFunctionPolicy::ReadOnlyAggregateV1;
+    let context = workspace
+        .authorized_query_context(authorized_policy)
+        .await?;
+    for source in [
+        "SELECT field_100 AS title, 1 AS n FROM tasks ORDER BY 1",
+        "SELECT field_100 AS title, COUNT(*) AS n FROM tasks GROUP BY (1) ORDER BY 1",
+    ] {
+        let document = parse_sql_document(source);
+        let item = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+            .unwrap();
+        let edited = apply_sql_document_semantic_edit_transaction(
+            source,
+            &SqlDocumentSemanticEditTransaction {
+                contract_version: document.contract_version,
+                expected_source: source.to_owned(),
+                edits: vec![SqlDocumentSemanticEdit::MoveProjectionItem {
+                    node_id: item.id,
+                    expected_kind: item.kind,
+                    to_index: 1,
+                }],
+            },
+        )?;
+        assert!(edited.document.source.ends_with("ORDER BY 2"));
+        let rows = context.execute(edited.document.to_sql()).await?;
+        let titles = rows
+            .iter()
+            .flat_map(|batch| {
+                batch
+                    .column(1)
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .unwrap()
+                    .iter()
+                    .map(|value| value.unwrap().to_owned())
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(titles, ["alpha", "zeta"]);
+        assert_eq!(rows.iter().map(|batch| batch.num_rows()).sum::<usize>(), 2);
+        assert_eq!(
+            apply_sql_document_edit_transaction(edited.document.to_sql(), &edited.undo)?
+                .document
+                .source,
+            source
+        );
+    }
+    Ok(())
+}

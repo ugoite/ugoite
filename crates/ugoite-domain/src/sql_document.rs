@@ -1637,6 +1637,10 @@ pub enum SqlDocumentEditError {
     /// A typed semantic replacement is invalid or does not form the expected
     /// single SQL expression value.
     InvalidSemanticReplacement,
+    /// Projection position changes cannot preserve a positional grouping or sort reference.
+    ProjectionPositionConflict,
+    /// Removing a projection alias would rebind a same-query identifier reference.
+    ProjectionAliasConflict,
     /// A node ID appears more than once in one typed edit transaction.
     DuplicateNodeTarget,
     /// An edit has a reversed range.
@@ -1676,6 +1680,12 @@ impl core::fmt::Display for SqlDocumentEditError {
             Self::NodeKindMismatch => "SQL document edit node kind does not match",
             Self::NodeRangeUnavailable => "SQL document edit node has no replaceable source range",
             Self::InvalidSemanticReplacement => "SQL document semantic edit replacement is invalid",
+            Self::ProjectionPositionConflict => {
+                "projection edit would change a positional sort or grouping reference"
+            }
+            Self::ProjectionAliasConflict => {
+                "projection removal would change a same-query alias reference"
+            }
             Self::DuplicateNodeTarget => {
                 "SQL document edit transaction targets one node more than once"
             }
@@ -2389,10 +2399,13 @@ pub fn apply_sql_document_semantic_edit_transaction(
             semantic_edit,
             SqlDocumentSemanticEdit::RemoveProjectionItem { .. }
         ) {
+            ensure_projection_alias_unreferenced(&document, node)?;
+            edits.extend(projection_position_edits(&document, node, None)?);
             edits.push(remove_projection_item(&document, node)?);
             continue;
         }
         if let SqlDocumentSemanticEdit::MoveProjectionItem { to_index, .. } = semantic_edit {
+            edits.extend(projection_position_edits(&document, node, Some(*to_index))?);
             edits.push(move_projection_item(&document, node, *to_index)?);
             continue;
         }
@@ -6245,6 +6258,165 @@ fn list_item_prefix_start(
         return Err(SqlDocumentEditError::NodeRangeUnavailable);
     }
     Ok(previous.range.end)
+}
+
+/// Preserve positional GROUP BY / ORDER BY bindings when output fields move.
+/// Removing the referenced field, or changing positions whose wildcard/set
+/// scope cannot be established without execution schema, must fail closed.
+fn projection_position_edits(
+    document: &SqlDocument,
+    item: &SqlDocumentNode,
+    destination: Option<usize>,
+) -> Result<Vec<SqlDocumentEdit>, SqlDocumentEditError> {
+    let items = projection_items_for(document, item)?;
+    let from = items
+        .iter()
+        .position(|candidate| candidate.id == item.id)
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let list = document
+        .nodes
+        .get(
+            item.parent
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)? as usize,
+        )
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let select_id = list
+        .parent
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let query_id =
+        query_ancestor_id(document, select_id).ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let mut order = (0..items.len()).collect::<Vec<_>>();
+    order.remove(from);
+    if let Some(destination) = destination {
+        if destination >= items.len() {
+            return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+        }
+        order.insert(destination, from);
+    }
+    let mut edits = Vec::new();
+    for clause_item in &document.nodes {
+        let parent = clause_item
+            .parent
+            .and_then(|id| document.nodes.get(id as usize));
+        let in_group = clause_item.kind == SqlDocumentNodeKind::GroupByItem
+            && parent.and_then(|node| node.parent) == Some(select_id);
+        let in_order = clause_item.kind == SqlDocumentNodeKind::OrderByItem
+            && parent.and_then(|node| node.parent) == Some(query_id);
+        if !in_group && !in_order {
+            continue;
+        }
+        let mut expression = document
+            .nodes
+            .iter()
+            .find(|node| node.parent == Some(clause_item.id));
+        while !in_order
+            && expression.is_some_and(|node| node.kind == SqlDocumentNodeKind::NestedExpression)
+        {
+            expression = expression.and_then(|node| {
+                document
+                    .nodes
+                    .iter()
+                    .find(|child| child.parent == Some(node.id))
+            });
+        }
+        let Some(expression) = expression else {
+            continue;
+        };
+        let Some(SqlDocumentNodeData::Literal {
+            literal_kind: SqlDocumentLiteralKind::Number,
+            raw: Some(raw),
+        }) = &expression.semantic
+        else {
+            continue;
+        };
+        if raw.is_empty() || !raw.bytes().all(|byte| byte.is_ascii_digit()) {
+            continue;
+        }
+        let ordinal = raw
+            .parse::<usize>()
+            .map_err(|_| SqlDocumentEditError::InvalidSemanticReplacement)?;
+        if ordinal == 0 {
+            return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+        }
+        if items
+            .iter()
+            .any(|node| matches!(node.semantic, Some(SqlDocumentNodeData::Wildcard { .. })))
+            || (in_order
+                && document
+                    .nodes
+                    .get(select_id as usize)
+                    .and_then(|node| node.parent)
+                    != Some(query_id))
+        {
+            return Err(SqlDocumentEditError::ProjectionPositionConflict);
+        }
+        let position = order
+            .iter()
+            .position(|index| *index == ordinal - 1)
+            .ok_or(SqlDocumentEditError::ProjectionPositionConflict)?
+            + 1;
+        if position != ordinal {
+            let range = expression
+                .range
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+            let expected_text = document
+                .source_slice(range)
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+            edits.push(SqlDocumentEdit {
+                range,
+                expected_text: expected_text.to_owned(),
+                replacement: position.to_string(),
+            });
+        }
+    }
+    Ok(edits)
+}
+
+fn ensure_projection_alias_unreferenced(
+    document: &SqlDocument,
+    item: &SqlDocumentNode,
+) -> Result<(), SqlDocumentEditError> {
+    let range = item
+        .range
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let text = document
+        .source_slice(range)
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let statements = parse_generic_sql_statements(&format!("SELECT {text}"))
+        .map_err(|_| SqlDocumentEditError::NodeRangeUnavailable)?;
+    let Some(Statement::Query(query)) = statements.first() else {
+        return Ok(());
+    };
+    let SetExpr::Select(select) = query.body.as_ref() else {
+        return Ok(());
+    };
+    let Some(SelectItem::ExprWithAlias { alias, .. }) = select.projection.first() else {
+        return Ok(());
+    };
+    let item_query = query_ancestor_id(document, item.id);
+    let referenced = document.nodes.iter().any(|candidate| {
+        if candidate.id == item.id || candidate.kind != SqlDocumentNodeKind::IdentifierExpression
+            || query_ancestor_id(document, candidate.id) != item_query
+            || candidate.range.is_some_and(|candidate_range| {
+                range.start <= candidate_range.start && candidate_range.end <= range.end
+            })
+        {
+            return false;
+        }
+        matches!(
+            &candidate.semantic,
+            Some(SqlDocumentNodeData::Identifier { value, quote_style })
+                if sql_identifiers_match(
+                    &SqlDocumentIdentifier { value: value.clone(), quote_style: *quote_style },
+                    &SqlDocumentIdentifier { value: alias.value.clone(), quote_style: alias.quote_style }
+                )
+        )
+    });
+    if referenced {
+        Err(SqlDocumentEditError::ProjectionAliasConflict)
+    } else {
+        Ok(())
+    }
 }
 
 fn remove_projection_item(
@@ -14745,6 +14917,138 @@ mod tests {
         let restored = apply_sql_document_edit_transaction(&edited.document.source, &edited.undo)
             .expect("the expression replacement has an exact inverse");
         assert_eq!(restored.document.source, source);
+    }
+
+    #[test]
+    fn projection_reordering_preserves_positional_sort_and_group_bindings() {
+        let source = "-- 保持\nSELECT amount, day, category FROM \"G\" GROUP BY 1, 2, 3 ORDER BY 2 DESC, (1) ASC LIMIT 10";
+        let document = parse_sql_document(source);
+        let id = semantic_node_id(&document, SqlDocumentNodeKind::SelectItem, "amount");
+        let edited = apply_sql_document_semantic_edit_transaction(
+            source,
+            &semantic_transaction(
+                source,
+                vec![SqlDocumentSemanticEdit::MoveProjectionItem {
+                    node_id: id,
+                    expected_kind: SqlDocumentNodeKind::SelectItem,
+                    to_index: 2,
+                }],
+            ),
+        )
+        .expect("moving a field preserves all positional references");
+        assert_eq!(edited.document.source, "-- 保持\nSELECT day, category, amount FROM \"G\" GROUP BY 3, 1, 2 ORDER BY 1 DESC, (1) ASC LIMIT 10");
+        let restored =
+            apply_sql_document_edit_transaction(&edited.document.source, &edited.undo).unwrap();
+        assert_eq!(restored.document.source, source);
+    }
+
+    #[test]
+    fn projection_removal_preserves_shifted_positions_and_rejects_removed_references() {
+        let source = "SELECT amount, day, category FROM \"G\" GROUP BY 2, 3 ORDER BY 3 DESC";
+        let document = parse_sql_document(source);
+        let id = semantic_node_id(&document, SqlDocumentNodeKind::SelectItem, "amount");
+        let edited = apply_sql_document_semantic_edit_transaction(
+            source,
+            &semantic_transaction(
+                source,
+                vec![SqlDocumentSemanticEdit::RemoveProjectionItem {
+                    node_id: id,
+                    expected_kind: SqlDocumentNodeKind::SelectItem,
+                }],
+            ),
+        )
+        .unwrap();
+        assert!(edited
+            .document
+            .source
+            .ends_with("GROUP BY 1, 2 ORDER BY 2 DESC"));
+        assert_eq!(
+            apply_sql_document_edit_transaction(&edited.document.source, &edited.undo)
+                .unwrap()
+                .document
+                .source,
+            source
+        );
+        let referenced = semantic_node_id(&document, SqlDocumentNodeKind::SelectItem, "day");
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(
+                source,
+                &semantic_transaction(
+                    source,
+                    vec![SqlDocumentSemanticEdit::RemoveProjectionItem {
+                        node_id: referenced,
+                        expected_kind: SqlDocumentNodeKind::SelectItem
+                    }]
+                )
+            ),
+            Err(SqlDocumentEditError::ProjectionPositionConflict)
+        );
+
+        let alias_sql =
+            "SELECT 'fixed' AS field_100, field_100 AS actual FROM tasks ORDER BY field_100";
+        let alias_document = parse_sql_document(alias_sql);
+        let alias_item = alias_document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+            .unwrap();
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(
+                alias_sql,
+                &semantic_transaction(
+                    alias_sql,
+                    vec![SqlDocumentSemanticEdit::RemoveProjectionItem {
+                        node_id: alias_item.id,
+                        expected_kind: SqlDocumentNodeKind::SelectItem,
+                    }],
+                ),
+            ),
+            Err(SqlDocumentEditError::ProjectionAliasConflict)
+        );
+    }
+
+    #[test]
+    fn projection_position_edits_do_not_touch_nested_query_positions_or_guess_wildcard_widths() {
+        let source = "SELECT amount, (SELECT 2 ORDER BY 1) AS nested FROM \"G\" ORDER BY 1";
+        let document = parse_sql_document(source);
+        let id = semantic_node_id(&document, SqlDocumentNodeKind::SelectItem, "amount");
+        let edited = apply_sql_document_semantic_edit_transaction(
+            source,
+            &semantic_transaction(
+                source,
+                vec![SqlDocumentSemanticEdit::MoveProjectionItem {
+                    node_id: id,
+                    expected_kind: SqlDocumentNodeKind::SelectItem,
+                    to_index: 1,
+                }],
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            edited.document.source,
+            "SELECT (SELECT 2 ORDER BY 1) AS nested, amount FROM \"G\" ORDER BY 2"
+        );
+        for source in [
+            "SELECT *, amount FROM \"G\" ORDER BY 1",
+            "SELECT amount, day FROM \"G\" UNION SELECT other_amount, day FROM \"H\" ORDER BY 1",
+        ] {
+            let document = parse_sql_document(source);
+            let id = semantic_node_id(&document, SqlDocumentNodeKind::SelectItem, "amount");
+            assert_eq!(
+                apply_sql_document_semantic_edit_transaction(
+                    source,
+                    &semantic_transaction(
+                        source,
+                        vec![SqlDocumentSemanticEdit::MoveProjectionItem {
+                            node_id: id,
+                            expected_kind: SqlDocumentNodeKind::SelectItem,
+                            to_index: 1
+                        }]
+                    )
+                ),
+                Err(SqlDocumentEditError::ProjectionPositionConflict)
+            );
+        }
     }
 
     #[test]

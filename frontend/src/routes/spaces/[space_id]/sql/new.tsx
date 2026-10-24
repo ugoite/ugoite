@@ -297,6 +297,7 @@ export default function SpaceQueryCreateRoute() {
         />
 
         <SqlStructureToolbar
+          onPlanColumns={workspace.planColumns}
           scope={() => `new-sql:${spaceId()}`}
           sql={sqlInput}
           contexts={() =>

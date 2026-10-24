@@ -47,6 +47,22 @@ Argument discovery can temporarily disable argument mutations, but must not
 disable the Form opener or prevent focus restoration after a document edit.
 Run and Save remain subject to current argument validation.
 
+Columns opens an ordered list of result fields directly. Form field labels and
+system field names identify the choices; stable SQL identifiers remain the
+Rust operation input. A plain wildcard offers Choose fields before individual
+fields can be added, removed, or moved. Expansion uses the authorized planner's
+complete output names and order, including readable fields not present in Form
+metadata. It is limited to a single plain outer projection with an unambiguous
+Form qualifier; multiple output sources, nested queries, modifiers and ambiguous
+schemas remain unchanged and expose a local unavailable state. Qualified
+wildcards use only their own planned output. Both the primary and advanced
+editors enforce this boundary. Complex expressions retain
+their exact source and have an explicit advanced editing entry point. Multiple
+SELECT results expose an explicit result choice instead of a statement tree.
+Edits, Undo, and Redo use exact-source, host-scoped Rust transactions; a moved
+field retains its focused control. Positional sorting and grouping obey
+`REQ-SQL-001#criterion.projection-position-bindings`.
+
 The argument action is available with no arguments declared. SQL placeholders
 are paired with explicit, typed declarations; unused, undefined, duplicated,
 or incompatible arguments produce local lint errors. Text inside string

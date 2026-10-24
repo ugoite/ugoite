@@ -46,6 +46,16 @@ requirements:
           restores the original source; editing does not authorize or execute
           SQL.
         governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: projection-position-bindings
+        kind: behavior
+        statement: >-
+          Reordering or removing a SELECT output field preserves positional
+          GROUP BY and ORDER BY references to the remaining fields in the same
+          query scope. A referenced removed field, or wildcard/set-operation
+          width whose binding cannot be established, rejects the complete edit
+          with a stable local diagnostic. Nested query positions remain
+          unchanged, and guarded Undo restores every original source byte.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
       - id: portable-protocol
         kind: behavior
         statement: >-
