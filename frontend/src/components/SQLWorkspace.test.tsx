@@ -196,8 +196,10 @@ describe("SQLWorkspace", () => {
 
     const columns = screen.getByRole("button", { name: "Columns" });
     expect(columns).toHaveClass("icononly");
+    // Touch Safari may leave focus elsewhere when a button is activated.
+    expect(columns).not.toHaveFocus();
     fireEvent.click(columns);
-    expect(onColumns).toHaveBeenCalledOnce();
+    expect(onColumns).toHaveBeenCalledWith(columns);
     expect(onSqlChange).not.toHaveBeenCalled();
 
     const filter = screen.getByRole("button", {
