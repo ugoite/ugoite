@@ -598,7 +598,7 @@ impl UgoiteService {
             space_id,
             &request,
             Some(sql_execution::SqlSourceAuthorization {
-                state: &state,
+                state,
                 principal_ids,
             }),
         )
@@ -614,7 +614,7 @@ impl UgoiteService {
         let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
         if let Some(composition_id) = composition_id {
             let composition_scopes =
-                Self::authorized_form_entry_scopes_for_forms(&state, principal_ids, forms.clone())?;
+                Self::authorized_form_entry_scopes_for_forms(state, principal_ids, forms.clone())?;
             require_composition_entry_read_scope(
                 &composition_scopes,
                 parse_entry_id(composition_id)?,
@@ -622,7 +622,7 @@ impl UgoiteService {
             )?;
         }
         let relation_scopes =
-            sql_execution::authorized_relation_scopes(&state, principal_ids, &forms)?;
+            sql_execution::authorized_relation_scopes(state, principal_ids, &forms)?;
         let execution_sql = sql_execution::bind_sql_to_forms(&prepared, &forms, &relation_scopes)?;
         let parameters = prepared.parameters;
         let (columns, result_schema, rows) = if let Some(query_limits) =
