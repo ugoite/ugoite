@@ -26,6 +26,7 @@ import { t } from "~/lib/i18n";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
 import { createSqlWorkspaceController } from "~/lib/sql-workspace";
+import { retainReferencedSqlFormBindingGuards } from "~/lib/form-binding-guards";
 
 export const route = spaceRoute({ navigation: "search" });
 
@@ -63,6 +64,7 @@ export default function SpaceQueryCreateRoute() {
 
   const schema = () => buildSqlSchema((forms() || []) as Form[]);
   let normalizationGeneration = 0;
+  let formGuardGeneration = 0;
   createEffect(() => {
     const sql = sqlInput().trim();
     const existing = argumentDefinitions();
@@ -135,6 +137,15 @@ export default function SpaceQueryCreateRoute() {
 
   const handleSqlChange = (sql: string) => {
     setSqlInput(sql);
+    const generation = ++formGuardGeneration;
+    void retainReferencedSqlFormBindingGuards(sql, formBindingGuards()).then(
+      (retained) => {
+        if (generation !== formGuardGeneration || sqlInput() !== sql) {
+          return;
+        }
+        setFormBindingGuards(retained);
+      },
+    );
   };
 
   const registerCreatedVariables = (

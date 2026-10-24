@@ -22,6 +22,9 @@ function setup(source: string) {
   const [choices, setChoices] = createSignal(forms);
   const advanced = vi.fn();
   const selected = vi.fn();
+  selected.mockImplementation((selection: { sql: string }) => {
+    setSql(selection.sql);
+  });
   const view = render(() => (
     <SqlFormPicker
       sql={sql}

@@ -25,6 +25,7 @@ import {
   type SqlVariableDefaultDraft,
 } from "~/lib/sql";
 import { createSqlWorkspaceController } from "~/lib/sql-workspace";
+import { retainReferencedSqlFormBindingGuards } from "~/lib/form-binding-guards";
 import {
   formApi,
   renameSqlDocumentParameter,
@@ -180,8 +181,18 @@ export default function SpaceSqlDetailRoute() {
     }));
   });
   const variableCount = createMemo(() => normalized().variables.length);
+  let formGuardGeneration = 0;
   const handleSqlChange = (sql: string) => {
     setSqlInput(sql);
+    const generation = ++formGuardGeneration;
+    void retainReferencedSqlFormBindingGuards(sql, formBindingGuards()).then(
+      (retained) => {
+        if (generation !== formGuardGeneration || sqlInput() !== sql) {
+          return;
+        }
+        setFormBindingGuards(retained);
+      },
+    );
   };
   const bindingDiagnostics = createMemo(() => {
     if (forms.state !== "ready") return [];

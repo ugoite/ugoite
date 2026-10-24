@@ -22,6 +22,7 @@ const {
   sqlPlanMock,
   parseSqlDocumentMock,
   applySqlDocumentEditTransactionMock,
+  applySqlDocumentSemanticEditTransactionMock,
   renameSqlDocumentParameterMock,
 } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
@@ -32,6 +33,7 @@ const {
   sqlPlanMock: vi.fn(),
   parseSqlDocumentMock: vi.fn(),
   applySqlDocumentEditTransactionMock: vi.fn(),
+  applySqlDocumentSemanticEditTransactionMock: vi.fn(),
   renameSqlDocumentParameterMock: vi.fn(),
 }));
 
@@ -156,6 +158,8 @@ vi.mock("~/lib/ugoite-client", () => ({
   },
   parseSqlDocument: parseSqlDocumentMock,
   applySqlDocumentEditTransaction: applySqlDocumentEditTransactionMock,
+  applySqlDocumentSemanticEditTransaction:
+    applySqlDocumentSemanticEditTransactionMock,
   renameSqlDocumentParameter: renameSqlDocumentParameterMock,
 }));
 
@@ -270,7 +274,13 @@ describe("/spaces/:space_id/sql/new", () => {
         status: "parsed",
         diagnostics: [],
         tokens: [],
-        nodes: [],
+        nodes: [{
+          id: 1,
+          parent: null,
+          kind: "select",
+          semantic: null,
+          range: null,
+        }],
       }),
     );
     applySqlDocumentEditTransactionMock.mockReset().mockImplementation(
@@ -282,6 +292,15 @@ describe("/spaces/:space_id/sql/new", () => {
           source: transaction.edits[0].replacement,
         },
         undo: transaction,
+      }),
+    );
+    applySqlDocumentSemanticEditTransactionMock.mockReset().mockImplementation(
+      async (source: string) => ({
+        document: {
+          status: "parsed",
+          source: `${source} FROM "Entry"`,
+        },
+        undo: { expected_source: source, edits: [] },
       }),
     );
     renameSqlDocumentParameterMock.mockReset().mockImplementation(
@@ -380,6 +399,31 @@ describe("/spaces/:space_id/sql/new", () => {
         sql,
         variables: [],
       })
+    );
+  });
+
+  it("drops a picker guard after manual SQL removes its relation", async () => {
+    render(() => <SpaceQueryCreateRoute />);
+    const editor = await screen.findByRole("textbox", { name: "SQL" });
+    await waitFor(() => expect(editor).toHaveValue("SELECT 1"));
+    fireEvent.click(await screen.findByRole("button", { name: "Form" }));
+    const picker = await screen.findByRole("dialog", { name: "Form" });
+    fireEvent.click(
+      await within(picker).findByRole("button", { name: "Entry" }),
+    );
+    await waitFor(() => expect(editor).toHaveValue('SELECT 1 FROM "Entry"'));
+
+    fireEvent.input(editor, { target: { value: "SELECT 1" } });
+    await waitFor(() => expect(editor).toHaveValue("SELECT 1"));
+    await waitFor(() =>
+      expect(sqlPlanMock).toHaveBeenLastCalledWith(
+        "default",
+        expect.objectContaining({ sql: "SELECT 1" }),
+        expect.any(AbortSignal),
+      )
+    );
+    expect(sqlPlanMock.mock.lastCall?.[1]).not.toHaveProperty(
+      "form_binding_guards",
     );
   });
 
