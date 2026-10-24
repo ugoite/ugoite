@@ -79,13 +79,11 @@ describe("SQL workspace planning", () => {
     disposeRoot();
   });
 
-  it("keeps complete authorized field order and rejects stale parameter snapshots for wildcard planning", async () => {
+  it("replans wildcard output against current authorization and rejects stale parameter snapshots", async () => {
     vi.useFakeTimers();
     planMock.mockResolvedValue({
       result_schema: [
-        { name: "residual", type: "string" },
-        { name: "field_amount", type: "integer" },
-        { name: "_ugoite_id", type: "string" },
+        { name: "old_field", type: "string" },
       ],
     });
     let controller!: ReturnType<typeof createSqlWorkspaceController>;
@@ -98,11 +96,27 @@ describe("SQL workspace planning", () => {
       });
       return dispose;
     });
-    await vi.advanceTimersByTimeAsync(250);
+    await vi.advanceTimersByTimeAsync(350);
+    await vi.waitFor(() => expect(planMock).toHaveBeenCalledOnce());
+    planMock.mockResolvedValueOnce({
+      result_schema: [
+        { name: "residual", type: "string" },
+        { name: "field_amount", type: "integer" },
+        { name: "_ugoite_id", type: "string" },
+        { name: "new_field", type: "boolean" },
+      ],
+    });
     const planned = await controller.planColumns();
-    expect(planned.columns).toEqual(["residual", "field_amount", "_ugoite_id"]);
+    expect(planned.columns).toEqual([
+      "residual",
+      "field_amount",
+      "_ugoite_id",
+      "new_field",
+    ]);
     expect(planned.isCurrent()).toBe(true);
-    expect(planMock).toHaveBeenCalledOnce();
+    expect(planMock).toHaveBeenCalledTimes(2);
+    expect(queryMock).not.toHaveBeenCalled();
+    expect(countMock).not.toHaveBeenCalled();
     controller.onParameterChange("minimum", "2");
     expect(planned.isCurrent()).toBe(false);
     const pending = deferred<
