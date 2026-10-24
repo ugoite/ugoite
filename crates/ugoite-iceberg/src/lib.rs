@@ -335,7 +335,67 @@ pub struct IcebergWorkspace {
     write: WriteConfig,
 }
 
+/// Private evidence for the complete Catalog Head used by validation. `None`
+/// means no Head existed; `Some` also covers authorization-only genesis Heads.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub(crate) struct ExactCatalogHeadProof {
+    space_id: String,
+    head_checksum: Option<String>,
+}
+
 impl IcebergWorkspace {
+    pub(crate) fn require_exact_catalog_head_proof(
+        &self,
+        proof: &ExactCatalogHeadProof,
+    ) -> Result<()> {
+        let catalog = self
+            .space_catalog
+            .as_ref()
+            .context("exact Catalog Head admission requires SpaceCatalog")?;
+        if proof.space_id != self.space_id.to_string()
+            || catalog.bound_exact_head_checksum()? != proof.head_checksum
+        {
+            bail!("Composition validation proof does not match the bound Catalog Head");
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn bound_publication(&self) -> Result<Option<PublicationRef>> {
+        self.space_catalog
+            .as_ref()
+            .context("publication selection requires SpaceCatalog")?
+            .bound_publication()
+            .await
+            .map_err(|error| anyhow!(error.to_string()))
+    }
+
+    pub(crate) async fn bind_exact_catalog_head(&self) -> Result<(Self, ExactCatalogHeadProof)> {
+        let catalog = self
+            .space_catalog
+            .as_ref()
+            .context("exact Catalog Head binding requires SpaceCatalog")?
+            .new_attempt()
+            .bind_exact_head()
+            .await?;
+        let proof = ExactCatalogHeadProof {
+            space_id: self.space_id.to_string(),
+            head_checksum: catalog.bound_exact_head_checksum()?,
+        };
+        let catalog = Arc::new(catalog);
+        Ok((
+            Self {
+                catalog: catalog.clone(),
+                space_catalog: Some(catalog),
+                namespace: self.namespace.clone(),
+                space_id: self.space_id,
+                logical_space_uid: self.logical_space_uid,
+                warehouse: self.warehouse.clone(),
+                write: self.write,
+            },
+            proof,
+        ))
+    }
+
     pub(crate) async fn publish_asset_upload(
         &self,
         asset_id: &str,
@@ -1811,6 +1871,38 @@ impl IcebergWorkspace {
 
     pub fn schema_commit_capability(&self) -> SchemaCommitCapability {
         SchemaCommitCapability::AtomicSchemaEvolution
+    }
+
+    /// Stage the reserved Composition Registry Form without making it visible
+    /// in Catalog Head. Its initial Entry batch must be committed through the
+    /// same bound SpaceCatalog attempt, which registers the table and first
+    /// snapshot together.
+    pub(crate) async fn stage_composition_registry_form(
+        &self,
+        form: &FormDefinition,
+    ) -> Result<()> {
+        crate::composition::validate_composition_registry_form(form)?;
+        validate_field_ids(form)?;
+        let ident = self.form_ident(form.id);
+        if self.catalog.table_exists(&ident).await? {
+            bail!("Composition Registry Form already exists");
+        }
+        let creation = TableCreation::builder()
+            .name(ident.name().to_string())
+            .location(self.form_location(form.id))
+            .schema(form_schema(form)?)
+            .partition_spec(UnboundPartitionSpec::default())
+            .sort_order(SortOrder::unsorted_order())
+            .properties(form_properties(form, self.write)?)
+            .build();
+        let expected_properties = form_properties(form, self.write)?;
+        self.space_catalog
+            .as_ref()
+            .context("Composition Registry initialization requires SpaceCatalog")?
+            .stage_composition_registry_table(creation, form, &expected_properties)
+            .await
+            .map_err(|error| anyhow!(error.to_string()))?;
+        Ok(())
     }
 
     async fn create_form(&self, form: &FormDefinition) -> Result<()> {
@@ -3556,6 +3648,7 @@ impl SpaceCommitCoordinator {
             revisions,
             relation_scopes,
             RevisionBatchAdmission::GenericEntry,
+            None,
         )
         .await
     }
@@ -3567,11 +3660,96 @@ impl SpaceCommitCoordinator {
         &self,
         revision: EntryRevision,
     ) -> Result<CommitReceipt> {
+        self.append_composition_revision_authorized_with_head_proof(revision, None)
+            .await
+    }
+
+    pub(crate) async fn append_composition_revision_authorized_with_head_proof(
+        &self,
+        revision: EntryRevision,
+        proof: Option<&ExactCatalogHeadProof>,
+    ) -> Result<CommitReceipt> {
         let form = self.workspace.load_form(revision.form_id).await?;
         let revisions = vec![revision];
         let admission = RevisionBatchAdmission::composition(&form, &revisions)?;
-        self.append_revisions_authorized_inner(revisions[0].form_id, revisions, None, admission)
-            .await
+        self.append_revisions_authorized_inner(
+            revisions[0].form_id,
+            revisions,
+            None,
+            admission,
+            proof,
+        )
+        .await
+    }
+
+    pub(crate) async fn initialize_composition_registry_with_revision_authorized_and_proof(
+        &self,
+        revision: EntryRevision,
+        proof: Option<&ExactCatalogHeadProof>,
+    ) -> Result<CommitReceipt> {
+        self.ensure_authoritative_mutation_contract()?;
+        let mut form = crate::composition::composition_registry_definition()?;
+        form.id = FormId::from(uuid::Uuid::new_v5(
+            &self.workspace.space_id.as_uuid(),
+            form.name.as_bytes(),
+        ));
+        if revision.form_id != form.id {
+            bail!("initial Composition revision does not target the reserved Registry Form");
+        }
+        let admission =
+            RevisionBatchAdmission::composition(&form, std::slice::from_ref(&revision))?;
+        if self.publication_outcome().await?.is_some() {
+            bail!("a completed publication cannot initialize a new Composition Registry");
+        }
+        let attempt = self.attempt_workspace().await?;
+        if let Some(proof) = proof {
+            attempt.require_exact_catalog_head_proof(proof)?;
+        }
+        let ident = attempt.form_ident(form.id);
+        if attempt.catalog.table_exists(&ident).await? {
+            bail!("Composition Registry appeared after save validation; retry against the current snapshot");
+        }
+        let existing_ids = attempt
+            .existing_entry_external_ids(std::slice::from_ref(&revision.entry.external_id))
+            .await?;
+        if existing_ids.contains(&revision.entry.external_id) {
+            return Err(invalid_revision_input(format!(
+                "Entry ID '{}' is already in use",
+                revision.entry.external_id
+            )));
+        }
+        attempt.stage_composition_registry_form(&form).await?;
+        admission.recheck(form.id, std::slice::from_ref(&revision), &form)?;
+        if self.publication.change.is_some() && revision.change_id != self.publication.command_id {
+            bail!("Change ID must equal the publication command ID for the initial revision");
+        }
+        let batch = revision_batch_from_values(
+            &form,
+            &form_schema(&form)?,
+            std::slice::from_ref(&revision),
+        )
+        .map_err(|error| invalid_revision_input(format!("Form validation failed: {error:#}")))?;
+        #[cfg(debug_assertions)]
+        crate::wait_at_test_validation_gate(std::slice::from_ref(&revision)).await;
+        crate::authorization::ensure_authorization_write_fence().await?;
+        let mut receipt = attempt
+            .append_record_batches_inner(
+                form.id,
+                vec![batch],
+                std::slice::from_ref(&revision),
+                false,
+            )
+            .await?;
+        let publication = self
+            .publication_outcome()
+            .await?
+            .context("Registry initialization is missing its Catalog publication")?;
+        receipt.command_id = publication.command_id;
+        receipt.catalog_generation = publication.catalog_generation;
+        if publication.snapshot_id != Some(receipt.snapshot_id) {
+            bail!("Registry initialization publication snapshot does not match its append receipt");
+        }
+        Ok(receipt)
     }
 
     /// Test-only publication helper for seeding a valid Composition revision.
@@ -3586,7 +3764,7 @@ impl SpaceCommitCoordinator {
     ) -> Result<CommitReceipt> {
         let form = self.workspace.load_form(form_id).await?;
         let admission = RevisionBatchAdmission::raw_composition_fixture(&form, &revisions)?;
-        self.append_revisions_authorized_inner(form_id, revisions, relation_scopes, admission)
+        self.append_revisions_authorized_inner(form_id, revisions, relation_scopes, admission, None)
             .await
     }
 
@@ -3596,6 +3774,7 @@ impl SpaceCommitCoordinator {
         revisions: Vec<EntryRevision>,
         relation_scopes: Option<&BTreeMap<String, EntryScope>>,
         admission: RevisionBatchAdmission,
+        exact_head_proof: Option<&ExactCatalogHeadProof>,
     ) -> Result<CommitReceipt> {
         self.ensure_authoritative_mutation_contract()?;
         let form = self.workspace.load_form(form_id).await?;
@@ -3628,7 +3807,12 @@ impl SpaceCommitCoordinator {
                 data_file_count: receipt.data_file_count,
             });
         }
-        for _ in 0..MAX_PUBLICATION_ATTEMPTS {
+        let attempts = if exact_head_proof.is_some() {
+            1
+        } else {
+            MAX_PUBLICATION_ATTEMPTS
+        };
+        for _ in 0..attempts {
             if let Some(receipt) = self.publication_outcome().await? {
                 return Ok(CommitReceipt {
                     command_id: receipt.command_id,
@@ -3649,11 +3833,16 @@ impl SpaceCommitCoordinator {
                 });
             }
             let attempt = self.attempt_workspace().await?;
+            if let Some(proof) = exact_head_proof {
+                attempt.require_exact_catalog_head_proof(proof)?;
+            }
             let attempt_form = attempt.load_form(form_id).await?;
             admission.recheck(form_id, &revisions, &attempt_form)?;
             let recovered = match attempt.recover_existing_publication().await {
                 Ok(recovered) => recovered,
-                Err(error) if is_publication_conflict(&error) => continue,
+                Err(error) if is_publication_conflict(&error) && exact_head_proof.is_none() => {
+                    continue
+                }
                 Err(error) => return Err(error),
             };
             if let Some(publication) = recovered {

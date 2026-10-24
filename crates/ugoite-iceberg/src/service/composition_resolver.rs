@@ -88,6 +88,8 @@ pub(super) struct CompositionPreviewOptions<'a> {
     pub base: Option<CompositionRevisionRef>,
     pub requested_queries: Option<&'a [String]>,
     pub allow_unset_inputs: bool,
+    pub authorization_state: Option<&'a super::AuthorizationState>,
+    pub publication_override: Option<&'a crate::PublicationRef>,
 }
 
 enum OwnedCurrentQueryDescriptor {
@@ -205,6 +207,33 @@ fn attach_portable_query_sql(
 }
 
 impl UgoiteService {
+    pub(super) async fn preview_composition_for_save_with_access(
+        &self,
+        space_id: &str,
+        yaml: &str,
+        variables: &BTreeMap<String, Value>,
+        unset_variables: &[String],
+        principal_ids: Option<&[Uuid]>,
+        authorization_state: Option<&super::AuthorizationState>,
+        publication_override: Option<&crate::PublicationRef>,
+    ) -> Result<CompositionPreview> {
+        self.preview_composition_from_yaml(
+            space_id,
+            yaml,
+            CompositionPreviewOptions {
+                variables,
+                unset_variables,
+                principal_ids,
+                base: None,
+                requested_queries: None,
+                allow_unset_inputs: false,
+                authorization_state,
+                publication_override,
+            },
+        )
+        .await
+    }
+
     async fn get_composition_source_form_local(
         &self,
         space_id: &str,
@@ -323,6 +352,7 @@ impl UgoiteService {
         variables: &[VariableGraphNode],
         principal_ids: Option<&[Uuid]>,
         authorization_state: Option<&super::AuthorizationState>,
+        publication_override: Option<&crate::PublicationRef>,
     ) -> Result<Option<InlineSqlQueryMetadata>> {
         let VariableGraphNodeKind::Query { query, .. } = &node.kind else {
             return Err(anyhow!("expected a query variable"));
@@ -339,6 +369,7 @@ impl UgoiteService {
                 &parameter_types,
                 principal_ids,
                 authorization_state,
+                publication_override,
             )
             .await?;
         Ok(planned.map(|planned| InlineSqlQueryMetadata {
@@ -357,6 +388,7 @@ impl UgoiteService {
         node: &VariableGraphNode,
         principal_ids: Option<&[Uuid]>,
         authorization_state: Option<&super::AuthorizationState>,
+        publication_override: Option<&crate::PublicationRef>,
     ) -> Result<Option<SavedSqlRevisionMetadata>> {
         let VariableGraphNodeKind::Query { query, returns } = &node.kind else {
             return Err(anyhow!("expected a query variable"));
@@ -441,6 +473,7 @@ impl UgoiteService {
                 &parameter_types,
                 principal_ids,
                 authorization_state,
+                publication_override,
             )
             .await?;
         let Some(planned) = planned else {
@@ -497,6 +530,7 @@ impl UgoiteService {
         parameter_types: &BTreeMap<String, String>,
         principal_ids: Option<&[Uuid]>,
         authorization_state: Option<&super::AuthorizationState>,
+        publication_override: Option<&crate::PublicationRef>,
     ) -> Result<Option<PlannedSqlQueryMetadata>> {
         self.validate_complete_space(space_id).await?;
         let normalized_sql = crate::index::normalize_sql_template(sql)?;
@@ -508,7 +542,12 @@ impl UgoiteService {
             .cloned()
             .collect::<BTreeSet<_>>();
         let (available_forms, available_scopes) = self
-            .composition_form_snapshot(space_id, principal_ids, authorization_state)
+            .composition_form_snapshot(
+                space_id,
+                principal_ids,
+                authorization_state,
+                publication_override,
+            )
             .await?;
 
         let mut bindings = match trusted_bindings {
@@ -662,10 +701,14 @@ impl UgoiteService {
                 ))
             })
             .collect::<Result<BTreeMap<_, _>>>()?;
+        let checkpoint = match publication_override {
+            Some(publication) => Some(workspace.resolve_publication(publication).await?),
+            None => None,
+        };
         let context = workspace
             .authorized_query_context(AuthorizedQueryPolicy {
                 forms: policy_forms,
-                checkpoint: None,
+                checkpoint,
                 limits: QueryLimits {
                     max_memory_bytes: crate::index::SQL_MAX_MEMORY_BYTES,
                     max_rows: crate::index::SQL_MAX_OUTPUT_ROWS,
@@ -706,6 +749,7 @@ impl UgoiteService {
         space_id: &str,
         principal_ids: Option<&[Uuid]>,
         authorization_state: Option<&super::AuthorizationState>,
+        publication_override: Option<&crate::PublicationRef>,
     ) -> Result<(Vec<FormDefinition>, BTreeMap<String, EntryScope>)> {
         self.validate_complete_space(space_id).await?;
         let workspace = iceberg_store::native_workspace_read_only(
@@ -713,12 +757,17 @@ impl UgoiteService {
             &self.workspace_path(space_id),
         )
         .await?;
-        let forms = workspace
-            .list_forms_bounded(
-                MAX_AUTHORIZED_SCOPE_FORMS,
-                MAX_AUTHORIZED_SCOPE_FORM_DEFINITION_BYTES,
-            )
-            .await?;
+        let forms = if let Some(publication) = publication_override {
+            let checkpoint = workspace.resolve_publication(publication).await?;
+            workspace.forms_at_checkpoint(&checkpoint).await?
+        } else {
+            workspace
+                .list_forms_bounded(
+                    MAX_AUTHORIZED_SCOPE_FORMS,
+                    MAX_AUTHORIZED_SCOPE_FORM_DEFINITION_BYTES,
+                )
+                .await?
+        };
         let scopes = match (principal_ids, authorization_state) {
             (Some(principal_ids), Some(state)) => {
                 Self::authorized_form_entry_scopes_for_forms(state, principal_ids, forms.clone())?
@@ -887,6 +936,8 @@ impl UgoiteService {
                 None,
                 false,
                 selected_query_ids.as_ref(),
+                None,
+                None,
             )
             .await?;
         let current_queries = owned_queries
@@ -981,6 +1032,8 @@ impl UgoiteService {
                 base,
                 requested_queries,
                 allow_unset_inputs: true,
+                authorization_state: None,
+                publication_override: None,
             },
         )
         .await
@@ -1030,6 +1083,8 @@ impl UgoiteService {
                 base,
                 requested_queries: None,
                 allow_unset_inputs: false,
+                authorization_state: None,
+                publication_override: None,
             },
         )
         .await
@@ -1056,6 +1111,8 @@ impl UgoiteService {
                 base,
                 requested_queries: None,
                 allow_unset_inputs: true,
+                authorization_state: None,
+                publication_override: None,
             },
         )
         .await
@@ -1167,6 +1224,8 @@ impl UgoiteService {
                 previous_document.as_ref(),
                 true,
                 selected_query_ids.as_ref(),
+                options.authorization_state,
+                options.publication_override,
             )
             .await?;
         let current_queries = owned_queries
@@ -1225,6 +1284,8 @@ impl UgoiteService {
         previous_document: Option<&CompositionDocument>,
         allow_unbound_draft: bool,
         selected_query_ids: Option<&BTreeSet<String>>,
+        authorization_state: Option<&super::AuthorizationState>,
+        publication_override: Option<&crate::PublicationRef>,
     ) -> Result<Vec<OwnedCurrentQueryDescriptor>> {
         let mut owned = Vec::new();
         let mut planning_variables = variables.to_vec();
@@ -1249,7 +1310,12 @@ impl UgoiteService {
                 VariableGraphQueryDefinition::InlineSql { sql } => {
                     let trusted_bindings = if allow_unbound_draft {
                         let (readable_forms, _) = self
-                            .composition_form_snapshot(space_id, principal_ids, None)
+                            .composition_form_snapshot(
+                                space_id,
+                                principal_ids,
+                                authorization_state,
+                                publication_override,
+                            )
                             .await?;
                         preview_inline_form_bindings(
                             &node.id,
@@ -1267,7 +1333,8 @@ impl UgoiteService {
                             Some(&trusted_bindings),
                             &planning_variables,
                             principal_ids,
-                            None,
+                            authorization_state,
+                            publication_override,
                         )
                         .await?
                     } else {
@@ -1297,7 +1364,13 @@ impl UgoiteService {
                     ..
                 } => {
                     let revision = self
-                        .derive_saved_sql_query_metadata(space_id, &node, principal_ids, None)
+                        .derive_saved_sql_query_metadata(
+                            space_id,
+                            &node,
+                            principal_ids,
+                            authorization_state,
+                            publication_override,
+                        )
                         .await?;
                     // The query node carries the exact immutable revision.
                     // No latest-revision lookup is available on this path.

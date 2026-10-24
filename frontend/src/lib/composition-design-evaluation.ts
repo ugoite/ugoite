@@ -354,6 +354,23 @@ export function createCompositionDesignEvaluation(options: {
         : current
     );
   };
+  const saveSnapshot = ():
+    | { variables: Record<string, unknown>; unset_variables: string[] }
+    | undefined => {
+    const states = inputStates();
+    if (Object.keys(states).length > 0) return undefined;
+    const inputIds = new Set(
+      options.draft().variables.filter((node) => node.kind === "input").map((
+        node,
+      ) => node.id),
+    );
+    return {
+      variables: Object.fromEntries(
+        Object.entries(values).filter(([id]) => inputIds.has(id)),
+      ),
+      unset_variables: [...unset].filter((id) => inputIds.has(id)).sort(),
+    };
+  };
   onCleanup(() => {
     cancel();
     parses.clear();
@@ -365,6 +382,7 @@ export function createCompositionDesignEvaluation(options: {
     blocked,
     busy,
     error,
+    saveSnapshot,
     onInput,
     previousIds: () =>
       new Set(

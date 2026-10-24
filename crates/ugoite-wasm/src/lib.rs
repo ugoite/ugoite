@@ -13,6 +13,12 @@ pub use ugoite_domain as domain;
 pub use ugoite_konase as konase;
 
 const MAX_PROTOCOL_REQUEST_BYTES: usize = 256 * 1024;
+const MAX_COMPOSITION_SAVE_REQUEST_BYTES: usize =
+    ugoite_api_client::MAX_COMPOSITION_SAVE_WORK_BYTES
+        + ugoite_domain::composition::MAX_COMPOSITION_YAML_BYTES * 6
+        + 4096;
+const MAX_COMPOSITION_SAVE_PROTOCOL_REQUEST_BYTES: usize =
+    MAX_COMPOSITION_SAVE_REQUEST_BYTES + 1024;
 // JSON can expand each control byte in a SQL source to a six-byte `\u00xx`
 // escape. Allow that worst case plus a small action envelope for parsing.
 const MAX_SQL_DOCUMENT_REQUEST_BYTES: usize =
@@ -86,19 +92,32 @@ fn sql_document_request_limit(action: &str) -> Option<usize> {
     }
 }
 
+fn is_composition_save_prepare(request: &serde_json::Value) -> bool {
+    request.get("action").and_then(serde_json::Value::as_str) == Some("prepare")
+        && request.get("operation").and_then(serde_json::Value::as_str)
+            == Some("composition.save")
+}
+
 pub fn invoke_json(input: &str) -> String {
     if input.len() > MAX_PROTOCOL_REQUEST_BYTES {
-        // Bound JSON decoding before inspecting the action. The edit
-        // transaction envelope is the largest SQL Document request.
-        let max_sql_document_request_bytes =
-            MAX_SQL_DOCUMENT_RENAME_REQUEST_BYTES.max(MAX_SQL_DOCUMENT_EDIT_REQUEST_BYTES);
-        if input.len() <= max_sql_document_request_bytes {
+        // Bound JSON decoding before inspecting the action. Only documented
+        // SQL Document transactions and Composition save Work can exceed the
+        // ordinary protocol request cap.
+        let max_special_request_bytes = MAX_SQL_DOCUMENT_RENAME_REQUEST_BYTES
+            .max(MAX_SQL_DOCUMENT_EDIT_REQUEST_BYTES)
+            .max(MAX_COMPOSITION_SAVE_PROTOCOL_REQUEST_BYTES);
+        if input.len() <= max_special_request_bytes {
             if let Ok(request) = serde_json::from_str::<serde_json::Value>(input) {
                 if let Some(action) = request.get("action").and_then(serde_json::Value::as_str) {
                     if sql_document_request_limit(action).is_some_and(|limit| input.len() <= limit)
                     {
                         return invoke_domain(request);
                     }
+                }
+                if is_composition_save_prepare(&request)
+                    && input.len() <= MAX_COMPOSITION_SAVE_PROTOCOL_REQUEST_BYTES
+                {
+                    return ugoite_api_client::invoke_json(input);
                 }
             }
         }

@@ -3,7 +3,7 @@
 
 use super::*;
 use axum::body::to_bytes;
-use base64::{engine::general_purpose::STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::Deserialize;
 use std::{
     collections::{BTreeMap, HashMap},
@@ -99,7 +99,7 @@ pub async fn handle(
                 -32700,
                 "Parse error",
                 Value::Null,
-            )
+            );
         }
     };
     let raw: Value = match serde_json::from_slice(&body) {
@@ -111,7 +111,7 @@ pub async fn handle(
                 -32700,
                 "Parse error",
                 Value::Null,
-            )
+            );
         }
     };
     let parsed: RpcRequest = match serde_json::from_value(raw) {
@@ -123,7 +123,7 @@ pub async fn handle(
                 -32600,
                 "Invalid Request",
                 Value::Null,
-            )
+            );
         }
     };
     if parsed.jsonrpc != "2.0"
@@ -523,9 +523,13 @@ fn mcp_subject_for_claims(claims: &AccessTokenClaims, account_id: Uuid) -> Authe
 fn auth_error(state: &AppState, scheme: &str) -> Response {
     let issuer = state.identity.public_origin().trim_end_matches('/');
     let challenge = if scheme == "dpop" {
-        format!("DPoP realm=\"ugoite\",resource_metadata=\"{issuer}/.well-known/oauth-protected-resource\",algs=\"ES256\"")
+        format!(
+            "DPoP realm=\"ugoite\",resource_metadata=\"{issuer}/.well-known/oauth-protected-resource\",algs=\"ES256\""
+        )
     } else {
-        format!("Bearer realm=\"ugoite\",resource_metadata=\"{issuer}/.well-known/oauth-protected-resource\"")
+        format!(
+            "Bearer realm=\"ugoite\",resource_metadata=\"{issuer}/.well-known/oauth-protected-resource\""
+        )
     };
     json_http_with_header(
         StatusCode::UNAUTHORIZED,
@@ -670,9 +674,13 @@ fn insufficient_scope(state: &AppState, scheme: &str, actions: &[&str]) -> Respo
     let issuer = state.identity.public_origin().trim_end_matches('/');
     let scope = actions.to_vec().join(" ");
     let challenge = if scheme == "dpop" {
-        format!("DPoP error=\"insufficient_scope\",scope=\"{scope}\",realm=\"ugoite\",resource_metadata=\"{issuer}/.well-known/oauth-protected-resource\",algs=\"ES256\"")
+        format!(
+            "DPoP error=\"insufficient_scope\",scope=\"{scope}\",realm=\"ugoite\",resource_metadata=\"{issuer}/.well-known/oauth-protected-resource\",algs=\"ES256\""
+        )
     } else {
-        format!("Bearer error=\"insufficient_scope\",scope=\"{scope}\",realm=\"ugoite\",resource_metadata=\"{issuer}/.well-known/oauth-protected-resource\"")
+        format!(
+            "Bearer error=\"insufficient_scope\",scope=\"{scope}\",realm=\"ugoite\",resource_metadata=\"{issuer}/.well-known/oauth-protected-resource\""
+        )
     };
     json_http_with_header(
         StatusCode::FORBIDDEN,
@@ -1811,13 +1819,15 @@ mod tests {
             names(&agent_tools),
             vec!["ugoite.search", "ugoite.save", "ugoite.undo"]
         );
-        assert!(delete(
-            &state,
-            &agent,
-            &serde_json::Map::from_iter([(String::from("id"), json!("entry-1"))]),
-        )
-        .await
-        .is_err());
+        assert!(
+            delete(
+                &state,
+                &agent,
+                &serde_json::Map::from_iter([(String::from("id"), json!("entry-1"))]),
+            )
+            .await
+            .is_err()
+        );
 
         let delegated = test_auth(
             space_uid,
@@ -1833,13 +1843,15 @@ mod tests {
             names(&delegated_tools),
             vec!["ugoite.search", "ugoite.save", "ugoite.undo"]
         );
-        assert!(delete(
-            &state,
-            &delegated,
-            &serde_json::Map::from_iter([(String::from("id"), json!("entry-1"))]),
-        )
-        .await
-        .is_err());
+        assert!(
+            delete(
+                &state,
+                &delegated,
+                &serde_json::Map::from_iter([(String::from("id"), json!("entry-1"))]),
+            )
+            .await
+            .is_err()
+        );
     }
 
     #[tokio::test]
@@ -1898,16 +1910,20 @@ mod tests {
         let projection: Value = serde_json::from_str(text).expect("resource JSON");
         assert_eq!(projection["_untrusted_content"], true);
         assert!(!projection["content"].as_str().unwrap().contains("<script"));
-        assert!(!projection["content"]
-            .as_str()
-            .unwrap()
-            .to_ascii_lowercase()
-            .contains("javascript:"));
-        assert!(!projection["content"]
-            .as_str()
-            .unwrap()
-            .to_ascii_lowercase()
-            .contains("data:text/html"));
+        assert!(
+            !projection["content"]
+                .as_str()
+                .unwrap()
+                .to_ascii_lowercase()
+                .contains("javascript:")
+        );
+        assert!(
+            !projection["content"]
+                .as_str()
+                .unwrap()
+                .to_ascii_lowercase()
+                .contains("data:text/html")
+        );
     }
 
     #[tokio::test]
@@ -1954,10 +1970,12 @@ mod tests {
         .expect("Entry projection");
         assert_eq!(projection["form"], "Entry");
         assert_eq!(projection["id"], entry_id);
-        assert!(projection["content"]
-            .as_str()
-            .expect("Entry content")
-            .contains("Structured value"));
+        assert!(
+            projection["content"]
+                .as_str()
+                .expect("Entry content")
+                .contains("Structured value")
+        );
     }
 
     #[tokio::test]

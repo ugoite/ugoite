@@ -1,12 +1,290 @@
 use crate::{composition, iceberg_store, publication_context_for_change, service::UgoiteService};
+use serde_json::json;
+use std::collections::BTreeMap;
+use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::change::ChangeCommand;
 use ugoite_domain::composition::parse_composition_yaml;
+use ugoite_domain::composition::{
+    VariableGraphNode, VariableGraphNodeKind, VariableGraphScalarDescriptor,
+    VariableGraphScalarType,
+};
 use ugoite_domain::entry::{EntryOperation, EntryRevisionDraft};
 use ugoite_domain::id::RevisionId;
 use uuid::Uuid;
 
 const SQL_FIRST_COMPOSITION: &str =
     include_str!("../../tests/fixtures/composition-sql-first.ugcomp.yaml");
+
+#[tokio::test]
+async fn invalid_scalar_first_save_does_not_publish_registry_or_entry() -> anyhow::Result<()> {
+    let service = UgoiteService::new(format!(
+        "memory://composition-invalid-first-save-{}",
+        Uuid::now_v7()
+    ))?;
+    let owner = Uuid::now_v7();
+    let space_id = service
+        .create_space_for_principal("composition-invalid-first-save", owner, "Owner")
+        .await?
+        .to_string();
+    let changes_before = service.list_changes(&space_id).await?;
+    for (invalid_sql, fingerprinted_descriptor) in [
+        ("SELECT 1 AS total WHERE false", false),
+        ("SELECT 1 AS total UNION ALL SELECT 2 AS total", false),
+        ("SELECT 'wrong-type' AS total", true),
+    ] {
+        let mut document = parse_composition_yaml(SQL_FIRST_COMPOSITION)
+            .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+        let ugoite_domain::composition::VariableGraphNodeKind::Query { query, .. } =
+            &mut document.spec.variables[0].kind
+        else {
+            anyhow::bail!("expected scalar query variable")
+        };
+        let ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } =
+            &mut query.definition
+        else {
+            anyhow::bail!("expected inline SQL")
+        };
+        *sql = invalid_sql.to_owned();
+        if fingerprinted_descriptor {
+            query.schema_fingerprint = "previously-resolved-schema".to_owned();
+        }
+        let result = service
+            .save_composition_authorized_for_principals(
+                &space_id,
+                composition::CompositionSaveRequest {
+                    entry_id: None,
+                    base_revision_id: None,
+                    document,
+                },
+                &owner.to_string(),
+                &[owner],
+            )
+            .await;
+        assert!(result.is_err(), "invalid scalar accepted: {invalid_sql}");
+        let forms = iceberg_store::native_workspace_read_only(
+            service.operator(),
+            &service.workspace_path(&space_id),
+        )
+        .await?
+        .list_forms()
+        .await?;
+        assert!(
+            forms.iter().all(|form| !form
+                .name
+                .eq_ignore_ascii_case(composition::COMPOSITION_REGISTRY_FORM_NAME)),
+            "failed first save published Registry for {invalid_sql}"
+        );
+        assert_eq!(service.list_changes(&space_id).await?, changes_before);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn nullable_sql_null_first_save_is_valid_and_resolves_nullable_descriptor(
+) -> anyhow::Result<()> {
+    let service = UgoiteService::new(format!(
+        "memory://composition-nullable-first-save-{}",
+        Uuid::now_v7()
+    ))?;
+    let owner = Uuid::now_v7();
+    let space_id = service
+        .create_space_for_principal("composition-nullable-first-save", owner, "Owner")
+        .await?
+        .to_string();
+    let mut document = parse_composition_yaml(SQL_FIRST_COMPOSITION)
+        .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+    let VariableGraphNodeKind::Query { query, returns } = &mut document.spec.variables[0].kind
+    else {
+        anyhow::bail!("expected scalar query variable")
+    };
+    if let ugoite_domain::composition::VariableGraphResultType::Scalar { value_type } = returns {
+        value_type.nullable = true;
+    }
+    let ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } =
+        &mut query.definition
+    else {
+        anyhow::bail!("expected inline SQL")
+    };
+    *sql = "SELECT CAST(NULL AS BIGINT) AS total".to_owned();
+    let saved = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document,
+            },
+            &owner.to_string(),
+            &[owner],
+        )
+        .await?;
+    let VariableGraphNodeKind::Query { returns, .. } = &saved.document.spec.variables[0].kind
+    else {
+        anyhow::bail!("saved scalar query disappeared")
+    };
+    assert!(matches!(
+        returns,
+        ugoite_domain::composition::VariableGraphResultType::Scalar { value_type }
+            if value_type.nullable
+    ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn missing_or_mistyped_typed_work_rejects_first_save_without_registry() -> anyhow::Result<()>
+{
+    let service = UgoiteService::new(format!(
+        "memory://composition-invalid-work-first-save-{}",
+        Uuid::now_v7()
+    ))?;
+    let owner = Uuid::now_v7();
+    let space_id = service
+        .create_space_for_principal("composition-invalid-work-first-save", owner, "Owner")
+        .await?
+        .to_string();
+    let mut document = parse_composition_yaml(SQL_FIRST_COMPOSITION)
+        .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+    document.spec.variables.push(VariableGraphNode {
+        id: "required_input".to_owned(),
+        kind: VariableGraphNodeKind::Input {
+            value_type: VariableGraphScalarDescriptor {
+                scalar_type: VariableGraphScalarType::Date,
+                nullable: false,
+            },
+            required: true,
+            default: None,
+        },
+    });
+    for variables in [
+        BTreeMap::new(),
+        BTreeMap::from([("required_input".to_owned(), json!(42))]),
+    ] {
+        let result = service
+            .save_composition_authorized_for_principals_with_work(
+                &space_id,
+                composition::CompositionSaveRequest {
+                    entry_id: None,
+                    base_revision_id: None,
+                    document: document.clone(),
+                },
+                &owner.to_string(),
+                &[owner],
+                "invalid-work-first-save",
+                composition::CompositionSaveWork {
+                    variables,
+                    unset_variables: Vec::new(),
+                },
+            )
+            .await;
+        assert!(result.is_err(), "incomplete or mistyped Work was accepted");
+        let forms = iceberg_store::native_workspace_read_only(
+            service.operator(),
+            &service.workspace_path(&space_id),
+        )
+        .await?
+        .list_forms()
+        .await?;
+        assert!(forms.iter().all(|form| {
+            !form
+                .name
+                .eq_ignore_ascii_case(composition::COMPOSITION_REGISTRY_FORM_NAME)
+        }));
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn unauthorized_first_save_does_not_initialize_registry() -> anyhow::Result<()> {
+    let service = UgoiteService::new(format!(
+        "memory://composition-unauthorized-first-save-{}",
+        Uuid::now_v7()
+    ))?;
+    let owner = Uuid::now_v7();
+    let space_id = service
+        .create_space_for_principal("composition-unauthorized-first-save", owner, "Owner")
+        .await?
+        .to_string();
+    let stranger = Uuid::now_v7();
+    let result = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document: parse_composition_yaml(SQL_FIRST_COMPOSITION)
+                    .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?,
+            },
+            &stranger.to_string(),
+            &[stranger],
+        )
+        .await;
+    assert!(
+        result.is_err(),
+        "unauthorized principal created Composition"
+    );
+    let forms = iceberg_store::native_workspace_read_only(
+        service.operator(),
+        &service.workspace_path(&space_id),
+    )
+    .await?
+    .list_forms()
+    .await?;
+    assert!(forms.iter().all(|form| {
+        !form
+            .name
+            .eq_ignore_ascii_case(composition::COMPOSITION_REGISTRY_FORM_NAME)
+    }));
+    Ok(())
+}
+
+#[tokio::test]
+async fn successful_save_rejects_operation_replay_with_changed_work() -> anyhow::Result<()> {
+    let service = UgoiteService::new(format!(
+        "memory://composition-changed-work-replay-{}",
+        Uuid::now_v7()
+    ))?;
+    let owner = Uuid::now_v7();
+    let space_id = service
+        .create_space_for_principal("composition-changed-work-replay", owner, "Owner")
+        .await?
+        .to_string();
+    let request = composition::CompositionSaveRequest {
+        entry_id: None,
+        base_revision_id: None,
+        document: parse_composition_yaml(SQL_FIRST_COMPOSITION)
+            .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?,
+    };
+    service
+        .save_composition_authorized_for_principals_with_work(
+            &space_id,
+            request.clone(),
+            &owner.to_string(),
+            &[owner],
+            "same-operation-changed-work",
+            composition::CompositionSaveWork::default(),
+        )
+        .await?;
+    let error = service
+        .save_composition_authorized_for_principals_with_work(
+            &space_id,
+            request,
+            &owner.to_string(),
+            &[owner],
+            "same-operation-changed-work",
+            composition::CompositionSaveWork {
+                variables: BTreeMap::from([("changed".to_owned(), json!(true))]),
+                unset_variables: Vec::new(),
+            },
+        )
+        .await
+        .expect_err("same operation ID must reject changed Work");
+    assert!(error.chain().any(|cause| {
+        cause
+            .downcast_ref::<AppError>()
+            .is_some_and(|app_error| app_error.code() == ErrorCode::IdempotencyConflict)
+    }));
+    Ok(())
+}
 
 #[tokio::test]
 async fn authorized_composition_history_pages_and_exact_reads_reach_revisions_after_read_cap(
