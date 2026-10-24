@@ -118,6 +118,7 @@ export const OPENAPI_SCHEMA_NAMES = [
   "SpaceDetail",
   "SpacePatchRequest",
   "SpaceSummary",
+  "SqlFormBindingGuard",
   "SqlQueryCountRequest",
   "SqlQueryPage",
   "SqlQueryPlan",
