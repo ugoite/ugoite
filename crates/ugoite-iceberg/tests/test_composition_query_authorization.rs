@@ -762,6 +762,7 @@ async fn source_resolution_and_continuation_recheck_current_authorization() -> R
                 .expect("saved SQL revision id")
                 .to_string(),
         }),
+        binding_base: None,
     };
     let viewer_probe = service
         .probe_sql_scalar_authorized_for_principals(&space_id, &[viewer], probe_request())

@@ -845,6 +845,7 @@ pub async fn run(
                     continuation,
                     execution_id: None,
                     saved_sql: None,
+                    binding_base: None,
                 },
             )
             .await?;
@@ -867,6 +868,7 @@ pub async fn run(
                     parameters,
                     parameter_types,
                     saved_sql: None,
+                    binding_base: None,
                 },
             )
             .await?;
@@ -917,6 +919,7 @@ pub async fn run(
                 continuation: None,
                 execution_id: None,
                 saved_sql: None,
+                binding_base: None,
             };
             let mut rows_exported = 0usize;
             let mut bytes_exported = 0usize;
@@ -1023,6 +1026,7 @@ pub async fn run(
                         id: sql_id,
                         revision_id,
                     }),
+                    binding_base: None,
                 },
             )
             .await?;
