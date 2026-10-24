@@ -17,6 +17,7 @@ use ugoite_core::composition::{
 };
 use ugoite_core::composition_query::{
     VariableGraphQueryEvaluation, VariableGraphQueryEvaluationDiagnostic,
+    VariableGraphQueryEvaluationDiagnosticCode,
 };
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
 use ugoite_core::sql_query::{SqlContinuation, SqlQueryPage, SqlQueryRequest};
@@ -585,19 +586,35 @@ impl UgoiteService {
             }
         }
 
-        query_diagnostics.sort();
-        query_diagnostics.dedup();
+        // One selected dependency closure is the result boundary of a run.
+        // Keep every staged value/cursor private when any selected query fails.
         let preview = if query_diagnostics.is_empty() {
             match evaluation.preview() {
-                Ok(preview) => preview,
+                Ok(preview) => Some(preview),
                 Err(diagnostics) => {
                     query_diagnostics = diagnostics;
-                    evaluation.partial_preview()
+                    None
                 }
             }
         } else {
-            evaluation.partial_preview()
+            None
         };
+        if preview.is_none() {
+            let failed_ids = query_diagnostics
+                .iter()
+                .map(|diagnostic| diagnostic.variable_id.clone())
+                .collect::<BTreeSet<_>>();
+            for variable_id in &computed_query_ids {
+                if !failed_ids.contains(variable_id) {
+                    query_diagnostics.push(VariableGraphQueryEvaluationDiagnostic::for_variable(
+                        VariableGraphQueryEvaluationDiagnosticCode::EvaluationAborted,
+                        variable_id,
+                    ));
+                }
+            }
+        }
+        query_diagnostics.sort();
+        query_diagnostics.dedup();
         let (current_authorization_fingerprint, _) = self
             .capture_graph_snapshot(
                 space_id,
@@ -611,7 +628,8 @@ impl UgoiteService {
             &current_authorization_fingerprint,
         )?;
         let query_results = preview
-            .query_results
+            .map(|preview| preview.query_results)
+            .unwrap_or_default()
             .into_iter()
             .map(|(variable_id, value)| {
                 (

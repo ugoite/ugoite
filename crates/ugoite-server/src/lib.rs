@@ -16226,7 +16226,7 @@ spec:
                 })
                 .to_string(),
             ))?;
-        let (status, body) = route_json(route, request).await?;
+        let (status, body) = route_json(route.clone(), request).await?;
 
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["evaluation_id"], evaluation_id);
@@ -16245,13 +16245,15 @@ spec:
             body["computed_query_ids"],
             json!(["empty_query", "rows_query", "total_query"])
         );
-        assert_eq!(
-            body["query_results"]["total_query"]["value"],
-            json!({
-                "kind": "scalar",
-                "value": {"kind": "integer", "value": 7}
-            })
-        );
+        assert_eq!(body["query_results"], json!({}));
+        assert!(body["query_diagnostics"]
+            .as_array()
+            .is_some_and(
+                |diagnostics| ["rows_query", "total_query"].iter().all(|id| diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic["variable_id"] == *id
+                        && diagnostic["code"] == "evaluation_aborted"))
+            ));
         assert_eq!(
             body["composition_revision"],
             json!({
@@ -16263,14 +16265,6 @@ spec:
             body["component_bindings"][0]["presentation"],
             json!({"kind": "number", "unit": "items"})
         );
-        assert_eq!(
-            body["query_results"]["rows_query"]["value"]["rows"],
-            json!([[{"kind": "integer", "value": 9007199254740991_i64}]])
-        );
-        assert_eq!(
-            body["query_results"]["rows_query"]["exact_integer_rows"],
-            json!([["9007199254740991"]])
-        );
         assert!(body["query_results"].get("empty_query").is_none());
         assert!(body["query_diagnostics"]
             .as_array()
@@ -16279,6 +16273,32 @@ spec:
                     && diagnostic["result_diagnostic"]["result_diagnostic"]["code"]
                         == "scalar_no_rows"
             })));
+        let request = Request::post(format!("/spaces/{space_id}/compositions/evaluate"))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(json!({
+                "evaluation_id": Uuid::now_v7().to_string(),
+                "target": { "kind": "saved_revision", "composition_id": saved.entry_id.to_string(),
+                    "revision_id": saved.revision_id.to_string() },
+                "requested_queries": ["total_query", "rows_query"]
+            }).to_string()))?;
+        let (status, body) = route_json(route, request).await?;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["ok"], true, "{body}");
+        assert_eq!(
+            body["query_results"]["total_query"]["value"],
+            json!({
+                "kind": "scalar",
+                "value": {"kind": "integer", "value": 7}
+            })
+        );
+        assert_eq!(
+            body["query_results"]["rows_query"]["value"]["rows"],
+            json!([[{"kind": "integer", "value": 9007199254740991_i64}]])
+        );
+        assert_eq!(
+            body["query_results"]["rows_query"]["exact_integer_rows"],
+            json!([["9007199254740991"]])
+        );
         Ok(())
     }
 

@@ -1690,7 +1690,8 @@
     "sqlPage.structure.sourceToChange": "Source to change",
     "sqlPage.structure.availableForms": "Available Forms",
     "sqlPage.structure.fixSqlBeforeForm": "Complete the SQL before choosing a Form.",
-    "sqlPage.structure.advancedStructure": "Advanced structure…"
+    "sqlPage.structure.advancedStructure": "Advanced structure…",
+    "composition.evaluationAborted": "Another query failed. This evaluation did not produce a result."
   },
   "ja": {
     "nav.home": "ホーム",
@@ -3383,6 +3384,7 @@
     "sqlPage.structure.sourceToChange": "変更する参照先",
     "sqlPage.structure.availableForms": "選択できるフォーム",
     "sqlPage.structure.fixSqlBeforeForm": "フォームを選ぶ前に SQL を修正してください。",
-    "sqlPage.structure.advancedStructure": "詳細な構造を編集…"
+    "sqlPage.structure.advancedStructure": "詳細な構造を編集…",
+    "composition.evaluationAborted": "別のクエリが失敗したため、この評価の結果を確定できません。"
   }
 }
