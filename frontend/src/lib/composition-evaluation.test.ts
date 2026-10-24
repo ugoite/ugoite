@@ -304,7 +304,10 @@ describe("Composition graph evaluation reuse", () => {
       ok: false,
       computed_query_ids: ["rows", "count"],
       query_results: {},
-      query_diagnostics: [{ code: "sql_error", variable_id: "rows" }],
+      query_diagnostics: [
+        { code: "sql_error", variable_id: "rows" },
+        { code: "evaluation_aborted", variable_id: "count" },
+      ],
     });
 
     const merged = mergeCompositionEvaluation(previous, next, [

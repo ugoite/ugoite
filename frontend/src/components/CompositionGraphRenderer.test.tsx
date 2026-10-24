@@ -504,6 +504,39 @@ describe("CompositionGraphRenderer", () => {
     expect(screen.getByRole("table", { name: "rows results" })).toBeVisible();
   });
 
+  it("shows a local aborted state for successful siblings of a failed selected evaluation", () => {
+    render(() => (
+      <CompositionGraphRenderer
+        draft={draft}
+        evaluation={{
+          ...evaluation,
+          ok: false,
+          query_results: {},
+          query_diagnostics: [
+            { code: "evaluation_aborted", variable_id: "total" },
+            { code: "result_validation_failed", variable_id: "rows" },
+          ],
+        }}
+        rawInputs={{}}
+        inputStates={{}}
+        blockedQueryIds={new Set()}
+        previousPageQueryIds={new Set()}
+        pageBusy={false}
+        onInput={vi.fn()}
+        onNext={vi.fn()}
+        onPrevious={vi.fn()}
+      />
+    ));
+    expect(
+      screen.getAllByRole("alert").some((alert) =>
+        alert.textContent ===
+          "Another query failed. This evaluation did not produce a result."
+      ),
+    ).toBe(true);
+    expect(screen.queryByText("Loading")).not.toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
   it("hides stale metrics while an invalid input blocks their query", () => {
     render(() => (
       <CompositionGraphRenderer

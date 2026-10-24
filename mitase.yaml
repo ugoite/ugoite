@@ -291,6 +291,11 @@ inventory:
         - frontend/src/components/CompositionVariableBindingPicker.tsx
         - frontend/src/components/CompositionVariableBindingPicker.test.tsx
         - frontend/src/components/CompositionStudio.tsx
+        - frontend/src/components/CompositionGraphRenderer.tsx
+        - frontend/src/components/CompositionGraphRenderer.test.tsx
+        - frontend/src/lib/composition-evaluation.ts
+        - frontend/src/lib/composition-evaluation.test.ts
+        - e2e/composition-invalid-variable-input.test.ts
         - frontend/src/lib/composition-studio-sync.ts
         - frontend/src/lib/composition-studio-sync.test.ts
         - frontend/src/components/CompositionStudioSync.test.tsx
