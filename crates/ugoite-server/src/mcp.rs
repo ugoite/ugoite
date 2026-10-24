@@ -3,7 +3,7 @@
 
 use super::*;
 use axum::body::to_bytes;
-use base64::{Engine as _, engine::general_purpose::STANDARD};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::Deserialize;
 use std::{
     collections::{BTreeMap, HashMap},
@@ -1819,15 +1819,13 @@ mod tests {
             names(&agent_tools),
             vec!["ugoite.search", "ugoite.save", "ugoite.undo"]
         );
-        assert!(
-            delete(
-                &state,
-                &agent,
-                &serde_json::Map::from_iter([(String::from("id"), json!("entry-1"))]),
-            )
-            .await
-            .is_err()
-        );
+        assert!(delete(
+            &state,
+            &agent,
+            &serde_json::Map::from_iter([(String::from("id"), json!("entry-1"))]),
+        )
+        .await
+        .is_err());
 
         let delegated = test_auth(
             space_uid,
@@ -1843,15 +1841,13 @@ mod tests {
             names(&delegated_tools),
             vec!["ugoite.search", "ugoite.save", "ugoite.undo"]
         );
-        assert!(
-            delete(
-                &state,
-                &delegated,
-                &serde_json::Map::from_iter([(String::from("id"), json!("entry-1"))]),
-            )
-            .await
-            .is_err()
-        );
+        assert!(delete(
+            &state,
+            &delegated,
+            &serde_json::Map::from_iter([(String::from("id"), json!("entry-1"))]),
+        )
+        .await
+        .is_err());
     }
 
     #[tokio::test]
@@ -1910,20 +1906,16 @@ mod tests {
         let projection: Value = serde_json::from_str(text).expect("resource JSON");
         assert_eq!(projection["_untrusted_content"], true);
         assert!(!projection["content"].as_str().unwrap().contains("<script"));
-        assert!(
-            !projection["content"]
-                .as_str()
-                .unwrap()
-                .to_ascii_lowercase()
-                .contains("javascript:")
-        );
-        assert!(
-            !projection["content"]
-                .as_str()
-                .unwrap()
-                .to_ascii_lowercase()
-                .contains("data:text/html")
-        );
+        assert!(!projection["content"]
+            .as_str()
+            .unwrap()
+            .to_ascii_lowercase()
+            .contains("javascript:"));
+        assert!(!projection["content"]
+            .as_str()
+            .unwrap()
+            .to_ascii_lowercase()
+            .contains("data:text/html"));
     }
 
     #[tokio::test]
@@ -1970,12 +1962,10 @@ mod tests {
         .expect("Entry projection");
         assert_eq!(projection["form"], "Entry");
         assert_eq!(projection["id"], entry_id);
-        assert!(
-            projection["content"]
-                .as_str()
-                .expect("Entry content")
-                .contains("Structured value")
-        );
+        assert!(projection["content"]
+            .as_str()
+            .expect("Entry content")
+            .contains("Structured value"));
     }
 
     #[tokio::test]
