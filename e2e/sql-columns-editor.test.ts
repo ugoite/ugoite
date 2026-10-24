@@ -194,7 +194,14 @@ test(
       ),
     );
     await page.getByRole("tab", { name: "Variables", exact: true }).click();
-    await page.getByRole("button", { name: "results", exact: true }).click();
+    await page.getByRole("button", { name: "Show variables", exact: true })
+      .click();
+    const resultsVariable = page.getByRole("button", {
+      name: "results",
+      exact: true,
+    });
+    await expect(resultsVariable).toBeVisible();
+    await resultsVariable.click();
     await page.getByRole("button", { name: "Columns", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Columns", exact: true });
     await expect(dialog.getByRole("listitem")).toHaveText([/Day/, /Amount/]);
