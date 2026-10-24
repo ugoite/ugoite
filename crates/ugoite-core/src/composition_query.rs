@@ -256,6 +256,7 @@ pub enum VariableGraphQueryEvaluationDiagnosticCode {
     RepeatedPageContinuation,
     ResultValidationFailed,
     QueryResultMissing,
+    EvaluationAborted,
 }
 
 impl VariableGraphQueryEvaluationDiagnosticCode {
@@ -280,6 +281,7 @@ impl VariableGraphQueryEvaluationDiagnosticCode {
             Self::RepeatedPageContinuation => "repeated_page_continuation",
             Self::ResultValidationFailed => "result_validation_failed",
             Self::QueryResultMissing => "query_result_missing",
+            Self::EvaluationAborted => "evaluation_aborted",
         }
     }
 }
@@ -686,8 +688,8 @@ impl VariableGraphQueryEvaluation {
         Ok(())
     }
 
-    /// Expose typed query values only after every query in the graph has
-    /// produced a validated result for this snapshot.
+    /// Expose typed query values only after every query in the selected dependency
+    /// closure has produced a validated result for this snapshot.
     pub fn preview(
         &self,
     ) -> Result<VariableGraphQueryPreview, Vec<VariableGraphQueryEvaluationDiagnostic>> {
@@ -714,15 +716,6 @@ impl VariableGraphQueryEvaluation {
             execution_id: self.execution_id,
             query_results: self.validated_results.clone(),
         })
-    }
-
-    /// Expose only query pages that passed validation, even when another
-    /// independent query in the same snapshot failed.
-    pub fn partial_preview(&self) -> VariableGraphQueryPreview {
-        VariableGraphQueryPreview {
-            execution_id: self.execution_id,
-            query_results: self.validated_results.clone(),
-        }
     }
 }
 

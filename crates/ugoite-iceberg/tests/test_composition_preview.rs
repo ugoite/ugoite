@@ -213,7 +213,7 @@ async fn draft_preview_resolves_without_publication() -> Result<()> {
 }
 
 #[tokio::test]
-async fn graph_evaluation_keeps_valid_results_when_an_independent_query_fails() -> Result<()> {
+async fn graph_evaluation_commits_no_selected_results_when_one_query_fails() -> Result<()> {
     let (service, space_id, mut document, _) = setup_preview_space().await?;
     for (id, sql, scalar_type, nullable) in [
         (
@@ -280,16 +280,21 @@ async fn graph_evaluation_keeps_valid_results_when_an_independent_query_fails() 
         .await?;
 
     assert!(!response.ok);
-    assert!(matches!(
-        response
-            .query_results
-            .get("row_count")
-            .map(|result| &result.result),
-        Some(VariableGraphValidatedResult::Scalar {
-            value: VariableGraphLiteral::Integer(3)
-        })
-    ));
-    assert!(!response.query_results.contains_key("empty_value"));
+    assert!(
+        response.query_results.is_empty(),
+        "a failed selected closure has no values or cursors"
+    );
+    assert!(response
+        .computed_query_ids
+        .contains(&"row_count".to_owned()));
+    assert!(response
+        .computed_query_ids
+        .contains(&"empty_value".to_owned()));
+    assert!(response
+        .query_diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.variable_id == "row_count"
+            && diagnostic.code.as_str() == "evaluation_aborted"));
     assert!(response.query_diagnostics.iter().any(|diagnostic| {
         diagnostic.variable_id == "empty_value"
             && diagnostic
@@ -298,6 +303,35 @@ async fn graph_evaluation_keeps_valid_results_when_an_independent_query_fails() 
                 .and_then(|result| result.result_diagnostic.as_ref())
                 .is_some_and(|result| result.code.as_str() == "scalar_no_rows")
     }));
+    // A separate selection can succeed without evaluating the failing branch.
+    let independent = service
+        .evaluate_composition_graph_local(
+            &space_id,
+            CompositionQueryEvaluationTarget::SavedRevision {
+                composition_id: saved.entry_id.to_string(),
+                revision_id: saved.revision_id.to_string(),
+            },
+            Uuid::now_v7(),
+            None,
+            None,
+            &BTreeMap::new(),
+            &[],
+            Some(&["row_count".to_owned()]),
+            None,
+        )
+        .await?;
+    assert!(independent.ok);
+    assert_eq!(independent.computed_query_ids, vec!["row_count"]);
+    assert!(independent.query_diagnostics.is_empty());
+    assert!(matches!(
+        independent
+            .query_results
+            .get("row_count")
+            .map(|result| &result.result),
+        Some(VariableGraphValidatedResult::Scalar {
+            value: VariableGraphLiteral::Integer(3)
+        })
+    ));
     Ok(())
 }
 
