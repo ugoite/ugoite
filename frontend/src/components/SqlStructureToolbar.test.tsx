@@ -197,7 +197,7 @@ describe("SqlStructureToolbar typed SQL Document actions", () => {
     ["WITH recent AS (SELECT 1) SELECT 1", "Common table expression"],
     ["SELECT d.n FROM (SELECT 1 AS n) AS d", "Table source"],
   ])(
-    "keeps Columns reachable for admitted SQL %s through the document tree",
+    "keeps Columns task-oriented and advanced edits reachable for admitted SQL %s",
     async (sql, expectedLabel) => {
       const { actions } = setup(sql);
       await waitFor(() => expect(actions()).toHaveLength(12));
@@ -216,6 +216,11 @@ describe("SqlStructureToolbar typed SQL Document actions", () => {
           .toBe(false);
       }
       fireEvent.click(screen.getByRole("button", { name: "Columns" }));
+      await screen.findByRole("list", { name: "Result fields" });
+      expect(screen.queryByRole("tree")).not.toBeInTheDocument();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Advanced structure…" }),
+      );
       const tree = await screen.findByRole("tree", { name: "SQL syntax tree" });
       expect(tree).toBeInTheDocument();
       expect(

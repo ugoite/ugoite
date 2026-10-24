@@ -780,6 +780,9 @@ fn sql_document_edit_error(error: ugoite_domain::sql_document::SqlDocumentEditEr
         ugoite_domain::sql_document::SqlDocumentEditError::InvalidSemanticReplacement => {
             "invalid_semantic_replacement"
         }
+        ugoite_domain::sql_document::SqlDocumentEditError::ProjectionPositionConflict => {
+            "projection_position_conflict"
+        }
         ugoite_domain::sql_document::SqlDocumentEditError::DuplicateNodeTarget => {
             "duplicate_node_target"
         }

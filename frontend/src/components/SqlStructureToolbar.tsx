@@ -7,6 +7,7 @@ import {
 } from "solid-js";
 import { IconButton } from "~/components/IconButton";
 import { SqlArgumentDefinitionsEditor } from "~/components/SqlArgumentDefinitionsEditor";
+import { SqlColumnsEditor } from "~/components/SqlColumnsEditor";
 import { SqlFormPicker } from "~/components/SqlFormPicker";
 import { SqlDocumentTreeEditor } from "~/components/SqlDocumentTreeEditor";
 import { handleDialogKeyDown, useDialogFocus } from "~/components/dialog-focus";
@@ -399,7 +400,20 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                   onAdvanced={() => openAction("document", dialogReturnFocus())}
                 />
               </Show>
-              <Show when={action() !== "arguments" && action() !== "form"}>
+              <Show when={action() === "columns"}>
+                <SqlColumnsEditor
+                  sql={props.sql}
+                  scope={props.scope}
+                  contexts={props.contexts}
+                  disabled={props.disabled}
+                  onSqlChange={(sql) => props.onSqlChange?.(sql)}
+                  onAdvanced={() => openAction("document", dialogReturnFocus())}
+                />
+              </Show>
+              <Show
+                when={action() !== "arguments" && action() !== "form" &&
+                  action() !== "columns"}
+              >
                 <SqlDocumentTreeEditor
                   sql={props.sql}
                   scope={props.scope}

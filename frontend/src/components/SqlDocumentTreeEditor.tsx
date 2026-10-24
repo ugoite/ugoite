@@ -1079,9 +1079,13 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
   const wildcardColumns = (
     item: SqlDocumentNode,
   ): SqlDocumentColumnReference[] => {
-    if (item.semantic?.kind !== "wildcard") return [];
+    if (
+      item.semantic?.kind !== "wildcard" || item.semantic.has_options ||
+      item.semantic.qualifier_is_expression ||
+      item.semantic.qualifier.length > 1
+    ) return [];
     const bindings = relationBindingsForQuery(item);
-    const qualifier = item.semantic.qualifier?.value;
+    const qualifier = item.semantic.qualifier.at(-1)?.value;
     const selected = qualifier
       ? bindings.filter(({ option, qualifier: actual }) =>
         actual?.value === qualifier || option.relation === qualifier
