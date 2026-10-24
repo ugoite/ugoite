@@ -254,6 +254,8 @@ features:
                 criterion: REQ-FE-079#criterion.composition-insertion-completes-before-edit
               - kind: satisfies
                 criterion: REQ-FE-079#criterion.composition-table-source-change-is-explicit
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.design-picker-normalizes-to-variable
           - id: composition-revision-route
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx
@@ -282,6 +284,33 @@ features:
         facet: verification
         responsibility: Verify explicit count and paging, obsolete-result suppression, and browser pinning before an independent inline copy.
         targets:
+          - id: selected-sql-only
+            adapter: typescript
+            path: frontend/src/components/CompositionVariableBindingPicker.test.tsx
+            selector: { kind: test, name: "prepares only the selected exact Saved SQL revision without inspecting earlier rows" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.design-picker-normalizes-to-variable
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-variable-binding-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableBindingPicker.test.tsx, test: "prepares only the selected exact Saved SQL revision without inspecting earlier rows" } }
+          - id: explicit-sql-arguments
+            adapter: typescript
+            path: frontend/src/components/CompositionVariableBindingPicker.test.tsx
+            selector: { kind: test, name: "waits for explicit argument binding without creating sample variables" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.design-picker-normalizes-to-variable
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-variable-binding-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableBindingPicker.test.tsx, test: "waits for explicit argument binding without creating sample variables" } }
+          - id: incompatible-selection
+            adapter: typescript
+            path: frontend/src/components/CompositionVariableBindingPicker.test.tsx
+            selector: { kind: test, name: "reports an incompatible selected Saved SQL locally without committing a component" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.design-picker-normalizes-to-variable
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-variable-binding-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionVariableBindingPicker.test.tsx, test: "reports an incompatible selected Saved SQL locally without committing a component" } }
           - id: count-and-page-lifecycle
             adapter: typescript
             path: frontend/src/components/CompositionStudioSync.test.tsx

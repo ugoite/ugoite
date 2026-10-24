@@ -939,54 +939,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
       }));
       return { scalars };
     },
-    inspectSavedSql: async ({
-      session: _session,
-      entry_id,
-      revision_id,
-      component,
-      draft: current,
-    }) => {
-      const entry = savedSql().find((candidate) =>
-        candidate.entry_id === entry_id && candidate.revision_id === revision_id
-      );
-      if (!entry) throw new Error("Saved SQL revision unavailable");
-      const added: CompositionVariableNode[] = [];
-      const arguments_ = entry.arguments.map((argument, index) => {
-        const stem = `__saved_sql_probe_${index}`;
-        let variable = stem;
-        let suffix = 2;
-        while (
-          current.variables.some((node) => node.id === variable) ||
-          added.some((node) => node.id === variable)
-        ) variable = `${stem}_${suffix++}`;
-        const sample: Record<string, unknown> = {
-          string: "",
-          boolean: false,
-          integer: 0,
-          float: 0,
-          date: "1970-01-01",
-          timestamp: "1970-01-01T00:00:00Z",
-        };
-        added.push({
-          id: variable,
-          kind: "constant",
-          value_type: { scalar_type: argument.type, nullable: false },
-          value: {
-            kind: argument.type,
-            value: sample[argument.type],
-          } as CompositionLiteral,
-        });
-        return { name: argument.name, variable };
-      });
-      return await provider.prepareSavedSql({
-        session: _session,
-        entry_id,
-        revision_id,
-        component,
-        arguments: arguments_,
-        draft: { ...current, variables: [...current.variables, ...added] },
-      });
-    },
   };
 
   const saveRequest = async (

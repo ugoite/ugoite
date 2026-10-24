@@ -1,12 +1,4 @@
-import {
-  createEffect,
-  createSignal,
-  For,
-  onCleanup,
-  onMount,
-  Show,
-  untrack,
-} from "solid-js";
+import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { IconButton } from "~/components/IconButton";
 import { RowList, RowListButton, RowListItem } from "~/components/RowList";
@@ -132,13 +124,6 @@ export function CompositionVariableBindingPicker(
   const [savedArgumentBindings, setSavedArgumentBindings] = createSignal<
     Record<string, string>
   >({});
-  const [savedSqlInspection, setSavedSqlInspection] = createSignal<
-    Record<
-      string,
-      { status: "loading" | "ready" | "unavailable"; reason?: string }
-    >
-  >({});
-  let inspectionGeneration = 0;
   let dialog: HTMLDivElement | undefined;
   let opener: HTMLElement | null = null;
 
@@ -160,89 +145,6 @@ export function CompositionVariableBindingPicker(
   const close = () => {
     if (!working()) props.onClose();
   };
-
-  const inspectSavedSqlCandidates = async () => {
-    const inspect = props.provider.inspectSavedSql;
-    if (!inspect) return;
-    const generation = ++inspectionGeneration;
-    for (const entry of props.savedSql) {
-      if (savedSqlInspection()[entry.entry_id]?.status === "ready") continue;
-      setSavedSqlInspection((current) => ({
-        ...current,
-        [entry.entry_id]: { status: "loading" },
-      }));
-      try {
-        const session = {
-          ...props.session,
-          principal_generation: await props.getPrincipalGeneration(),
-        };
-        if (generation !== inspectionGeneration) return;
-        const sessionIsCurrent = await props.isSessionCurrent(session);
-        if (generation !== inspectionGeneration) return;
-        if (!sessionIsCurrent) {
-          props.onClose();
-          return;
-        }
-        const prepared = await inspect({
-          session,
-          entry_id: entry.entry_id,
-          revision_id: entry.revision_id,
-          component: props.kind,
-          draft: props.draft,
-        });
-        if (generation !== inspectionGeneration) return;
-        const sessionMatches =
-          session.session_id === props.session.session_id &&
-          session.space_id === props.session.space_id &&
-          session.document_revision === props.session.document_revision;
-        const sessionStillCurrent = sessionMatches &&
-          await props.isSessionCurrent(session);
-        if (generation !== inspectionGeneration) return;
-        if (!sessionStillCurrent) {
-          props.onClose();
-          return;
-        }
-        const available = props.kind === "table"
-          ? prepared.table?.variable.returns.kind === "table"
-          : prepared.scalars.some((candidate) => {
-            const returns = candidate.binding.variable.returns;
-            return returns.kind === "scalar" &&
-              isCompositionMetricType(returns.value_type.scalar_type);
-          });
-        setSavedSqlInspection((current) => ({
-          ...current,
-          [entry.entry_id]: available ? { status: "ready" } : {
-            status: "unavailable",
-            reason: props.kind === "table"
-              ? t("composition.savedSqlNotTable")
-              : t("composition.savedSqlNoMetricValue"),
-          },
-        }));
-      } catch {
-        if (generation !== inspectionGeneration) return;
-        setSavedSqlInspection((current) => ({
-          ...current,
-          [entry.entry_id]: {
-            status: "unavailable",
-            reason: t("composition.bindingUnavailable"),
-          },
-        }));
-      }
-    }
-  };
-
-  createEffect(() => {
-    if (tab() === "saved_sql" && props.savedSql.length > 0) {
-      void untrack(inspectSavedSqlCandidates);
-    }
-  });
-
-  const savedSqlAvailability = (entry: CompositionSavedSqlChoice) =>
-    savedSqlInspection()[entry.entry_id] ?? {
-      status: props.provider.inspectSavedSql
-        ? "loading" as const
-        : "ready" as const,
-    };
 
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Escape") {
@@ -362,7 +264,7 @@ export function CompositionVariableBindingPicker(
       })
     );
 
-  const inspectSavedSql = async (entry: CompositionSavedSqlChoice) => {
+  const prepareSelectedSavedSql = async (entry: CompositionSavedSqlChoice) => {
     if (working()) return;
     setWorking(true);
     setError(null);
@@ -484,7 +386,7 @@ export function CompositionVariableBindingPicker(
       Object.fromEntries(entry.arguments.map(({ name }) => [name, ""])),
     );
     setError(null);
-    if (entry.arguments.length === 0) void inspectSavedSql(entry);
+    if (entry.arguments.length === 0) void prepareSelectedSavedSql(entry);
   };
 
   const tabLabel = (entry: PickerTab) =>
@@ -538,7 +440,6 @@ export function CompositionVariableBindingPicker(
                   classList={{ active: tab() === entry }}
                   disabled={working()}
                   onClick={() => {
-                    if (tab() !== entry) inspectionGeneration++;
                     setTab(entry);
                     setError(null);
                     setPreparedSavedSql(null);
@@ -766,8 +667,7 @@ export function CompositionVariableBindingPicker(
                     main={
                       <RowListButton
                         onActivate={() => chooseSavedSql(entry)}
-                        disabled={working() ||
-                          savedSqlAvailability(entry).status !== "ready"}
+                        disabled={working()}
                         selected={selectedSavedSql() === entry.entry_id}
                         primary={
                           <>
@@ -777,14 +677,7 @@ export function CompositionVariableBindingPicker(
                         }
                       />
                     }
-                    actions={savedSqlAvailability(entry).status ===
-                        "unavailable"
-                      ? (
-                        <span class="compositionBindingUnavailableReason">
-                          {savedSqlAvailability(entry).reason}
-                        </span>
-                      )
-                      : selectedSavedSql() === entry.entry_id
+                    actions={selectedSavedSql() === entry.entry_id
                       ? (
                         <div class="compositionBindingSavedColumns">
                           <For each={entry.arguments}>
@@ -838,7 +731,8 @@ export function CompositionVariableBindingPicker(
                               type="button"
                               disabled={working() ||
                                 !savedArgumentsComplete(entry)}
-                              onClick={() => void inspectSavedSql(entry)}
+                              onClick={() =>
+                                void prepareSelectedSavedSql(entry)}
                             >
                               {t("composition.studioUseSelection")}
                             </button>

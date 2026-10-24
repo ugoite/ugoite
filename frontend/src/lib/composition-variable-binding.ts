@@ -283,13 +283,6 @@ export interface CompositionBindingProvider {
     arguments: CompositionQueryArgument[];
     draft: CompositionGraphDraft;
   }): Promise<CompositionPreparedSavedSql>;
-  inspectSavedSql?(input: {
-    session: CompositionBindingSession;
-    entry_id: string;
-    revision_id: string;
-    component: BindingComponentKind;
-    draft: CompositionGraphDraft;
-  }): Promise<CompositionPreparedSavedSql>;
 }
 
 export const createCompositionGraphDraft = (
