@@ -70,6 +70,7 @@ export {
   type SqlDocumentNodeEditTransaction,
   type SqlDocumentNodeKind,
   type SqlDocumentNullsOrder,
+  type SqlDocumentFilterOperator,
   type SqlDocumentOrderDirection,
   type SqlDocumentPredicateTemplate,
   type SqlDocumentRelationFactor,

@@ -428,6 +428,9 @@ export type SqlDocumentColumnReference = {
 
 export type SqlDocumentOrderDirection = "asc" | "desc";
 export type SqlDocumentNullsOrder = "first" | "last";
+export type SqlDocumentFilterOperator =
+  | "eq" | "not_eq" | "lt" | "lte" | "gt" | "gte"
+  | "like" | "not_like" | "is_null" | "is_not_null";
 
 export type SqlDocumentLiteralKind =
   | "number"
@@ -677,6 +680,22 @@ export type SqlDocumentJoin = {
 };
 
 export type SqlDocumentSemanticEdit =
+  | {
+    kind: "add_filter_comparison";
+    node_id: number;
+    expected_kind: "select";
+    column: SqlDocumentColumnReference;
+    operator: SqlDocumentFilterOperator;
+    literal: SqlDocumentSemanticLiteral | null;
+  }
+  | {
+    kind: "add_order_by_column";
+    node_id: number;
+    expected_kind: "query";
+    column: SqlDocumentColumnReference;
+    direction: SqlDocumentOrderDirection;
+    nulls_order: SqlDocumentNullsOrder | null;
+  }
   | {
     kind: "initialize_select";
     relation: SqlDocumentIdentifier | null;

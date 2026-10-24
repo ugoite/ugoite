@@ -10,6 +10,7 @@ import { SqlArgumentDefinitionsEditor } from "~/components/SqlArgumentDefinition
 import { SqlColumnsEditor } from "~/components/SqlColumnsEditor";
 import { SqlFormPicker } from "~/components/SqlFormPicker";
 import { SqlDocumentTreeEditor } from "~/components/SqlDocumentTreeEditor";
+import { SqlFilterSortEditor } from "~/components/SqlFilterSortEditor";
 import { handleDialogKeyDown, useDialogFocus } from "~/components/dialog-focus";
 import type { SQLWorkspaceAction } from "~/components/SQLWorkspace";
 import type { SqlStructureAdapterContext } from "~/lib/sql";
@@ -413,9 +414,20 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                   onAdvanced={() => openAction("document", dialogReturnFocus())}
                 />
               </Show>
+              <Show when={action() === "filter" || action() === "sort"}>
+                <SqlFilterSortEditor
+                  action={action() as "filter" | "sort"}
+                  sql={props.sql}
+                  scope={props.scope}
+                  contexts={props.contexts}
+                  onSqlChange={(sql) => props.onSqlChange?.(sql)}
+                  onAdvanced={() => openAction("document", dialogReturnFocus())}
+                />
+              </Show>
               <Show
                 when={action() !== "arguments" && action() !== "form" &&
-                  action() !== "columns"}
+                  action() !== "columns" && action() !== "filter" &&
+                  action() !== "sort"}
               >
                 <SqlDocumentTreeEditor
                   sql={props.sql}
