@@ -83,13 +83,22 @@ test(
         buttons.filter((button) => button.getClientRects().length).map(
           (button) => {
             const box = button.getBoundingClientRect();
-            return { width: box.width, height: box.height };
+            return {
+              name: button.getAttribute("aria-label") || button.textContent ||
+                "",
+              width: box.width,
+              height: box.height,
+            };
           },
         )
       );
-      expect(targets.every((box) => box.width >= 44 && box.height >= 44)).toBe(
-        true,
+      const undersizedTargets = targets.filter((box) =>
+        box.width < 44 || box.height < 44
       );
+      expect(
+        undersizedTargets,
+        `undersized dialog controls: ${JSON.stringify(undersizedTargets)}`,
+      ).toEqual([]);
       expect(
         await page.evaluate(() =>
           document.documentElement.scrollWidth <= innerWidth
