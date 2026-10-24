@@ -115,19 +115,28 @@ test(
       await expect(fields.getByRole("listitem")).toHaveCount(
         expectedSchema.length,
       );
+      const expandedSql = await page.getByRole("textbox", {
+        name: "SQL",
+        exact: true,
+      }).innerText();
       const expandedPlan = await request.post(
         getBackendUrl(`/spaces/${spaceId}/sql/query/plan`),
         {
           data: {
-            sql: await page.getByRole("textbox", { name: "SQL", exact: true })
-              .innerText(),
+            sql: expandedSql,
             parameters: {},
             parameter_types: {},
           },
         },
       );
-      expect(expandedPlan.ok()).toBe(true);
-      expect((await expandedPlan.json()).result_schema).toEqual(expectedSchema);
+      const expandedPlanBody = await expandedPlan.json();
+      expect(
+        expandedPlan.ok(),
+        `expanded SQL plan failed (${expandedPlan.status()}): ${
+          JSON.stringify(expandedPlanBody)
+        }; SQL: ${expandedSql}`,
+      ).toBe(true);
+      expect(expandedPlanBody.result_schema).toEqual(expectedSchema);
       const labels = await fields.locator(".sql-columns-editor__name")
         .allTextContents();
       for (
