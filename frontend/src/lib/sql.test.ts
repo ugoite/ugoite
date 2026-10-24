@@ -148,7 +148,7 @@ describe("sql helpers", () => {
       identity: expect.stringContaining("composition:source-1"),
       label: "Tasks",
       parser: {
-        relation: "form_tasks",
+        relation: "Tasks",
         columns: [
           { name: "_ugoite_id", type: "string" },
           { name: "_ugoite_created_at", type: "timestamp" },
@@ -269,7 +269,7 @@ describe("sql helpers", () => {
     expect(columns).not.toContain("updated_at");
   });
 
-  it("uses the server SQL relation for Form structure contexts", () => {
+  it("uses the human SQL name with stable relation retained separately", () => {
     const form: Form = {
       id: "stable-form-id",
       name: "Renamed Form",
@@ -283,7 +283,8 @@ describe("sql helpers", () => {
 
     expect(formContext).toMatchObject({
       label: "Renamed Form",
-      parser: { relation: "form_00000000000000000000000000000001" },
+      parser: { relation: "Renamed Form" },
+      stableRelation: "form_00000000000000000000000000000001",
     });
     expect(schema.tables).toHaveProperty(
       "form_00000000000000000000000000000001",
@@ -644,12 +645,14 @@ describe("SQL structure adapter context", () => {
     const current = buildSqlStructureContexts([replacement]);
     const guards = [{ name: "Entry", formId: "form-a" }];
 
-    expect(filterSqlStructureContextsByFormGuards(pinned, guards)).toHaveLength(
-      1,
-    );
-    expect(filterSqlStructureContextsByFormGuards(current, guards)).toEqual(
-      [],
-    );
+    expect(
+      filterSqlStructureContextsByFormGuards(pinned, guards)
+        .filter((context) => context.parser.relation === "Entry"),
+    ).toHaveLength(1);
+    expect(
+      filterSqlStructureContextsByFormGuards(current, guards)
+        .filter((context) => context.parser.relation === "Entry"),
+    ).toEqual([]);
   });
 
   it("provides a relation-free context when no Form is selected", () => {
@@ -818,11 +821,11 @@ describe("SQL structure adapter context", () => {
       undefined,
     ]);
     expect(contexts.map((context) => context.parser.relation)).toEqual([
-      "form_reserved_0",
-      "form_reserved_1",
-      "form_reserved_2",
-      "form_reserved_3",
-      "form_orders",
+      "SQL",
+      "User",
+      "UserGroup",
+      "_ugoite_compositions",
+      "Orders",
       "",
     ]);
     expect(contexts.map((context) => context.relationSelectable)).toEqual([

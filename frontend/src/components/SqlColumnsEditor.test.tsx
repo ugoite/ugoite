@@ -160,6 +160,26 @@ describe("Columns task view through the actual Rust SQL document", () => {
     fireEvent.click(screen.getByRole("button", { name: "Undo", exact: true }));
     await waitFor(() => expect(sql()).toBe(source));
   });
+  it("expands a qualified wildcard for a quoted human Form name", async () => {
+    const humanContext: SqlStructureAdapterContext = {
+      ...contexts[0],
+      identity: "form-a",
+      formId: "form-a",
+      stableRelation: "form_expenses",
+      parser: { ...contexts[0].parser, relation: "Expenses" },
+    };
+    const source = 'SELECT Expenses.* FROM "Expenses"';
+    const { sql } = setup(source, [humanContext]);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Choose fields" }),
+    );
+    await waitFor(() =>
+      expect(sql()).toContain(
+        'SELECT "Expenses"."field_amount", "Expenses"."field_day" FROM "Expenses"',
+      )
+    );
+  });
+
   it("expands only the qualified wildcard's Form, preserving joins and their aliases", async () => {
     const source =
       'SELECT e.* FROM "form_expenses" AS e JOIN "form_invoices" AS i ON 1=1';

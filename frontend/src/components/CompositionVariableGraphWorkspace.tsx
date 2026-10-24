@@ -794,9 +794,9 @@ export function CompositionVariableGraphWorkspace(
                             (query().query.kind === "inline_sql"
                               ? query().query.form_bindings ?? []
                               : []).map((binding) => ({
-                              name: binding.relation,
-                              formId: binding.form_id,
-                            }))}
+                                name: binding.relation,
+                                formId: binding.form_id,
+                              }))}
                           scope={() => `composition-query:${query().id}`}
                           sql={sql}
                           contexts={structureContexts}
