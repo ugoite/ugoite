@@ -59,6 +59,8 @@ interface SqlStructureToolbarProps {
   reservedVariableNames?: () => readonly string[];
   onActionsChange: (actions: readonly SQLWorkspaceAction[]) => void;
   disabled?: () => boolean;
+  /** Argument discovery can be pending independently of document editing. */
+  argumentsDisabled?: () => boolean;
 }
 
 const actionNodeKinds: Record<
@@ -159,13 +161,15 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   ];
 
   const readOnly = () => Boolean(props.disabled?.() || !props.onSqlChange);
+  const argumentReadOnly = () => readOnly() || !!props.argumentsDisabled?.();
   const isDisabled = (action: ToolbarAction) => {
     if (readOnly()) return true;
     if (action === "form" || action === "join") {
       return formOptions().length === 0;
     }
     if (action === "arguments") {
-      return !props.onArgumentAdded && !props.onVariablesAdded;
+      return argumentReadOnly() ||
+        (!props.onArgumentAdded && !props.onVariablesAdded);
     }
     return false;
   };
@@ -210,6 +214,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   });
 
   const addArgument = () => {
+    if (argumentReadOnly()) return;
     const name = newArgumentName().trim();
     if (!/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(name)) return;
     if (argumentVariables().some((variable) => variable.name === name)) return;
@@ -360,7 +365,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                     referencedNames={referencedArgumentNames()}
                     defaults={props.argumentDefaults?.() ?? {}}
                     allowDefaults={props.argumentDefaultsEnabled}
-                    disabled={readOnly()}
+                    disabled={argumentReadOnly()}
                     onAdd={(variable) =>
                       props.onArgumentAdded
                         ? props.onArgumentAdded(variable)
