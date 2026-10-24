@@ -180,8 +180,14 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   const readOnly = () => Boolean(props.disabled?.() || !props.onSqlChange);
   const argumentReadOnly = () => readOnly() || !!props.argumentsDisabled?.();
   const isDisabled = (action: ToolbarAction) => {
+    // Keep the Form toolbar trigger focusable while an applied selection is
+    // being parsed. The picker itself remains disabled until that work ends;
+    // otherwise closing the dialog tries to restore focus to a disabled button.
+    if (action === "form") {
+      return !props.onSqlChange || formOptions().length === 0;
+    }
     if (readOnly()) return true;
-    if (action === "form" || action === "join") {
+    if (action === "join") {
       return formOptions().length === 0;
     }
     if (action === "arguments") {

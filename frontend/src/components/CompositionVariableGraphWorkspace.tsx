@@ -910,8 +910,7 @@ export function CompositionVariableGraphWorkspace(
                               name: selection.name,
                               form_id: selection.form_id,
                             })}
-                          disabled={() => isFormGuardPruningPending() ||
-                            !!argumentError()}
+                          disabled={() => isFormGuardPruningPending()}
                           onVariablesAdded={(variables) =>
                             props.onVariablesAdded?.(query().id, variables)}
                           reservedVariableNames={() =>
