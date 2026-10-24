@@ -15,7 +15,17 @@ const context: SqlStructureAdapterContext = {
     variables: [],
     stable_key: [],
   },
-  columnCapabilities: {},
+  columnCapabilities: {
+    field_amount: {
+      projectable: true,
+      filterable: true,
+      sortable: true,
+      supportedOperators: ["eq", "gt_eq", "is_null", "is_not_null"],
+      aggregateFunctions: [],
+      groupable: true,
+      distinctable: true,
+    },
+  },
   columnLabels: { field_amount: "Amount" },
 };
 
@@ -135,6 +145,12 @@ describe("SQL Filter and Sort task editors", () => {
         relation: "Form Expenses",
         columns: [{ name: "display value", type: "string" }],
       },
+      columnCapabilities: {
+        "display value": {
+          ...context.columnCapabilities.field_amount!,
+          supportedOperators: ["eq", "is_null", "is_not_null"],
+        },
+      },
       columnLabels: { "display value": "Display value" },
     };
     const unrelated = { ...context, parser: { ...context.parser, relation: "other_form" } };
@@ -163,6 +179,101 @@ describe("SQL Filter and Sort task editors", () => {
         `WHERE (status = 'open' OR status = 'pending') AND (e."display value" = 'closed')`,
       )
     );
+  });
+
+  it("filters choices by per-field action capability and supported operators", async () => {
+    const restricted: SqlStructureAdapterContext = {
+      ...context,
+      parser: {
+        ...context.parser,
+        columns: [
+          { name: "field_amount", type: "integer" },
+          { name: "secret", type: "string" },
+        ],
+      },
+      columnCapabilities: {
+        field_amount: { ...context.columnCapabilities.field_amount!, sortable: false, supportedOperators: ["eq"] },
+        secret: { ...context.columnCapabilities.field_amount!, filterable: false, sortable: true },
+      },
+    };
+    const [sql, setSql] = createSignal('SELECT * FROM "form_expenses"');
+    const { unmount } = render(() => (
+      <SqlFilterSortEditor
+        action="filter"
+        sql={sql}
+        contexts={() => [restricted]}
+        onSqlChange={setSql}
+        onAdvanced={() => {}}
+      />
+    ));
+    const filterColumn = await screen.findByRole("combobox", { name: "Column" });
+    await waitFor(() => expect(filterColumn.querySelectorAll("option").length).toBe(2));
+    expect(screen.queryByRole("option", { name: "secret" })).toBeNull();
+    fireEvent.change(filterColumn, { target: { value: "field_amount" } });
+    const filterOperators = screen.getByRole("combobox", { name: "Operator" });
+    await waitFor(() => expect(filterOperators.querySelectorAll("option").length).toBe(1));
+    unmount();
+    render(() => (
+      <SqlFilterSortEditor
+        action="sort"
+        sql={sql}
+        contexts={() => [restricted]}
+        onSqlChange={setSql}
+        onAdvanced={() => {}}
+      />
+    ));
+    const sortColumn = await screen.findByRole("combobox", { name: "Column" });
+    await waitFor(() => expect(sortColumn.querySelectorAll("option").length).toBe(2));
+    expect(screen.queryByRole("option", { name: "field_amount" })).toBeNull();
+  });
+
+  it("rejects a selected filter field if its capability is revoked before submit", async () => {
+    const [allowed, setAllowed] = createSignal(true);
+    const [sql, setSql] = createSignal('SELECT * FROM "form_expenses"');
+    render(() => (
+      <SqlFilterSortEditor
+        action="filter"
+        sql={sql}
+        contexts={() => [{
+          ...context,
+          columnCapabilities: {
+            field_amount: {
+              ...context.columnCapabilities.field_amount!,
+              filterable: allowed(),
+            },
+          },
+        }]}
+        onSqlChange={setSql}
+        onAdvanced={() => {}}
+      />
+    ));
+    const column = await screen.findByRole("combobox", { name: "Column" });
+    fireEvent.change(column, { target: { value: "field_amount" } });
+    setAllowed(false);
+    fireEvent.click(screen.getByRole("button", { name: "Add filter" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+    expect(sql()).toBe('SELECT * FROM "form_expenses"');
+  });
+
+  it("does not authorize duplicate relation basenames from another schema", async () => {
+    const otherSchema = {
+      ...context,
+      parser: { ...context.parser, relation: "tenant_b.Form" },
+    };
+    const [sql, setSql] = createSignal("SELECT * FROM tenant_a.Form");
+    render(() => (
+      <SqlFilterSortEditor
+        action="filter"
+        sql={sql}
+        contexts={() => [otherSchema]}
+        onSqlChange={setSql}
+        onAdvanced={() => {}}
+      />
+    ));
+    await waitFor(() => expect(screen.queryByRole("option", { name: "field_amount" })).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Add filter" }));
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(sql()).toBe("SELECT * FROM tenant_a.Form");
   });
 
   it("rejects sort callbacks from an old source or switched scope", async () => {
