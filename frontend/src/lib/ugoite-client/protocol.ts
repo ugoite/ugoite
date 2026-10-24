@@ -1086,6 +1086,7 @@ export type SqlDocumentEditErrorCode =
   | "node_range_unavailable"
   | "invalid_semantic_replacement"
   | "projection_position_conflict"
+  | "projection_alias_conflict"
   | "duplicate_node_target"
   | "invalid_range"
   | "range_out_of_bounds"

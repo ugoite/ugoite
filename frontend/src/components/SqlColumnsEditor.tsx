@@ -11,6 +11,12 @@ import { IconButton } from "~/components/IconButton";
 import { t } from "~/lib/i18n";
 import type { SqlStructureAdapterContext } from "~/lib/sql";
 import {
+  type PlannedSqlColumns,
+  type PlanSqlColumns,
+  usablePlannedColumnNames,
+  wildcardProjectionQualifier,
+} from "~/lib/sql-document-columns";
+import {
   applySqlDocumentEditTransaction,
   applySqlDocumentSemanticEditTransaction,
   parseSqlDocument,
@@ -31,6 +37,7 @@ interface SqlColumnsEditorProps {
   disabled?: () => boolean;
   onSqlChange: (sql: string) => void;
   onAdvanced: () => void;
+  onPlanColumns?: PlanSqlColumns;
 }
 
 /** A projection view of Rust's document. Identifiers and edits stay typed. */
@@ -45,6 +52,7 @@ export function SqlColumnsEditor(props: SqlColumnsEditorProps) {
   const [redoHistory, setRedoHistory] = createSignal<
     SqlDocumentEditTransaction[]
   >([]);
+  let root: HTMLDivElement | undefined;
   let pendingFocus: {
     source: string;
     scope: string | undefined;
@@ -85,9 +93,15 @@ export function SqlColumnsEditor(props: SqlColumnsEditorProps) {
       pendingFocus = undefined;
       if (
         focus?.source === source && focus.scope === scope &&
-        focus.element.isConnected &&
         globalThis.document.activeElement === globalThis.document.body
-      ) focus.element.focus();
+      ) {
+        const target = focus.element.isConnected
+          ? focus.element
+          : root?.querySelector<HTMLElement>(
+            'button:not([disabled]):not([aria-disabled="true"]), select:not([disabled])',
+          );
+        target?.focus();
+      }
     }).catch(() => {
       if (request !== generation) return;
       setDocument(undefined);
@@ -128,7 +142,10 @@ export function SqlColumnsEditor(props: SqlColumnsEditorProps) {
       : "";
   const bindings = createMemo(() => {
     const selected = select();
-    if (!selected) return [];
+    if (
+      !selected ||
+      nodes().some((node) => node.kind === "common_table_expression")
+    ) return [];
     return nodes().flatMap((factor) => {
       if (
         factor.semantic?.kind !== "table_factor" ||
@@ -150,8 +167,11 @@ export function SqlColumnsEditor(props: SqlColumnsEditorProps) {
       return [{ context, qualifier: factor.semantic.alias ?? name }];
     });
   });
-  const fieldLabel = (context: SqlStructureAdapterContext, name: string) =>
-    context.columnLabels?.[name] ??
+  const fieldLabel = (
+    context: SqlStructureAdapterContext | undefined,
+    name: string,
+  ) =>
+    context?.columnLabels?.[name] ??
       (name === "_ugoite_id"
         ? t("entryInfo.entryId")
         : name === "_ugoite_created_at"
@@ -181,19 +201,15 @@ export function SqlColumnsEditor(props: SqlColumnsEditorProps) {
   );
   const choice = () =>
     choices().find((item) => item.id === columnId()) ?? choices()[0];
-  const wildcardColumns = (
-    item: SqlDocumentNode,
-  ): SqlDocumentColumnReference[] => {
-    const semantic = item.semantic;
-    if (
-      semantic?.kind !== "wildcard" || semantic.has_options ||
-      semantic.qualifier_is_expression || semantic.qualifier.length > 1
-    ) return [];
-    const qualifier = semantic.qualifier.at(-1)?.value;
-    return choices().filter((item) =>
-      !qualifier || item.reference.qualifier.value === qualifier
-    )
-      .map((item) => item.reference);
+  const wildcardQualifier = (item: SqlDocumentNode) => {
+    const parsed = document();
+    return parsed && props.onPlanColumns
+      ? wildcardProjectionQualifier(
+        parsed,
+        item,
+        props.contexts().map((context) => context.parser.relation),
+      )
+      : undefined;
   };
   const itemLabel = (item: SqlDocumentNode) => {
     if (item.semantic?.kind === "wildcard" && !item.semantic.has_options) {
@@ -214,9 +230,11 @@ export function SqlColumnsEditor(props: SqlColumnsEditorProps) {
       (reference.length === 1 ||
         candidate.reference.qualifier.value === reference.at(-2))
     );
-    if (
-      matching.length === 1 && sourceSlice(item) === sourceSlice(expression)
-    ) return matching[0].label;
+    if (reference.length > 0 && sourceSlice(item) === sourceSlice(expression)) {
+      return matching.length === 1
+        ? matching[0].label
+        : fieldLabel(undefined, reference.at(-1)!);
+    }
     return sourceSlice(item);
   };
   // Work-only keys keep a field's controls attached while its output order changes.
@@ -246,6 +264,31 @@ export function SqlColumnsEditor(props: SqlColumnsEditorProps) {
     setBusy(true);
     setError(undefined);
     try {
+      let columnPlan: PlannedSqlColumns | undefined;
+      if (edits?.[0]?.kind === "expand_projection_wildcard") {
+        const edit = edits[0];
+        const item = parsed.nodes.find((node) => node.id === edit.node_id);
+        const qualifier = item && wildcardQualifier(item);
+        if (!qualifier || !props.onPlanColumns) {
+          throw new Error("unavailable wildcard schema");
+        }
+        columnPlan = await props.onPlanColumns();
+        if (
+          !(await columnPlan.isCurrent()) ||
+          !usablePlannedColumnNames(columnPlan.columns)
+        ) throw new Error("stale or ambiguous wildcard schema");
+        if (
+          request !== generation || props.sql() !== expectedSource ||
+          props.scope?.() !== expectedScope || props.disabled?.()
+        ) return;
+        edits = [{
+          ...edit,
+          columns: columnPlan.columns.map((name) => ({
+            qualifier,
+            column: { value: name, quote_style: '"' },
+          })),
+        }];
+      }
       const result = direction
         ? await applySqlDocumentEditTransaction(expectedSource, previous!)
         : await applySqlDocumentSemanticEditTransaction(expectedSource, {
@@ -253,6 +296,7 @@ export function SqlColumnsEditor(props: SqlColumnsEditorProps) {
           expected_source: expectedSource,
           edits: edits!,
         });
+      if (columnPlan && !(await columnPlan.isCurrent())) return;
       if (
         request !== generation || props.sql() !== expectedSource ||
         props.scope?.() !== expectedScope || props.disabled?.()
@@ -286,7 +330,9 @@ export function SqlColumnsEditor(props: SqlColumnsEditorProps) {
           t(
             cause instanceof UgoiteApiError &&
               cause.code === "projection_position_conflict"
-              ? "sqlPage.columns.positionConflict"
+                ? "sqlPage.columns.positionConflict"
+                : cause.code === "projection_alias_conflict"
+                  ? "sqlPage.columns.aliasConflict"
               : "sqlPage.structure.documentEditUnavailable",
           ),
         );
@@ -296,7 +342,7 @@ export function SqlColumnsEditor(props: SqlColumnsEditorProps) {
     }
   };
   return (
-    <div class="sql-columns-editor" aria-busy={loading() || busy()}>
+    <div ref={root} class="sql-columns-editor" aria-busy={loading() || busy()}>
       <Show when={loading()}>
         <p role="status">{t("sqlPage.structure.documentLoading")}</p>
       </Show>
@@ -330,18 +376,31 @@ export function SqlColumnsEditor(props: SqlColumnsEditorProps) {
           class="sql-columns-editor__list"
           aria-label={t("sqlPage.columns.resultFields")}
         >
-          <For each={rows().map((row) => row.key)}>
+          <For
+            each={rows().map((row) =>
+              row.key
+            )}
+          >
             {(key, index) => {
-              const item = () => rows().find((row) => row.key === key)!.node;
+              const item = () =>
+                rows().find((row) => row.key === key)!.node;
               return (
                 <li class="sql-columns-editor__row">
                   <span class="sql-columns-editor__name">
                     {itemLabel(item())}
                   </span>
+                  <Show
+                    when={item().semantic?.kind === "wildcard" &&
+                      !wildcardQualifier(item())}
+                  >
+                    <span role="status" class="ui-text-muted">
+                      {t("sqlPage.columns.expansionUnavailable")}
+                    </span>
+                  </Show>
                   <div class="sql-columns-editor__row-actions">
                     <Show
                       when={item().semantic?.kind === "wildcard" &&
-                        wildcardColumns(item()).length > 0}
+                        wildcardQualifier(item())}
                     >
                       <button
                         type="button"
@@ -353,7 +412,7 @@ export function SqlColumnsEditor(props: SqlColumnsEditorProps) {
                               kind: "expand_projection_wildcard",
                               node_id: item().id,
                               expected_kind: "select_item",
-                              columns: wildcardColumns(item()),
+                              columns: [],
                             }],
                             undefined,
                             event.currentTarget,

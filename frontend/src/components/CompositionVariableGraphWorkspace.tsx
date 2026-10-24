@@ -1,3 +1,4 @@
+import type { PlannedSqlColumns } from "~/lib/sql-document-columns";
 import {
   batch,
   createEffect,
@@ -64,6 +65,7 @@ export interface CompositionVariableGraphWorkspaceProps {
   >;
   actionsForQuery?: (variableId: string) => readonly SQLWorkspaceAction[];
   previewForQuery?: (variableId: string) => SQLWorkspacePreview;
+  onPlanColumnsForQuery?: (variableId: string) => Promise<PlannedSqlColumns>;
   onQueryChange?: (variableId: string, sql: string) => void;
   onRunQuery?: (variableId: string) => void;
   onNextQuery?: (variableId: string) => void;
@@ -785,6 +787,9 @@ export function CompositionVariableGraphWorkspace(
                       />
                       <Show when={query().query.kind === "inline_sql"}>
                         <SqlStructureToolbar
+                          onPlanColumns={props.onPlanColumnsForQuery
+                            ? () => props.onPlanColumnsForQuery!(query().id)
+                            : undefined}
                           scope={() => `composition-query:${query().id}`}
                           sql={sql}
                           contexts={structureContexts}

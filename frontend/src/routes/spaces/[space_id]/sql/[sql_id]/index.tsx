@@ -603,6 +603,7 @@ export default function SpaceSqlDetailRoute() {
                 </Show>
                 <Show when={data().kind === "user-query"}>
                   <SqlStructureToolbar
+                    onPlanColumns={workspace.planColumns}
                     scope={() =>
                       `saved-sql:${spaceId()}:${sqlId()}:${revisionId() ?? ""}`}
                     sql={sqlInput}

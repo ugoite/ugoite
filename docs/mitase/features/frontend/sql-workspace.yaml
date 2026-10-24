@@ -62,6 +62,20 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-080#criterion.task-oriented-result-fields
+          - id: composition-columns-schema
+            adapter: typescript
+            path: frontend/src/components/CompositionStudio.tsx
+            selector: { kind: symbol, name: CompositionStudio }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.complete-wildcard-output-schema
+          - id: guarded-wildcard-source
+            adapter: typescript
+            path: frontend/src/lib/sql-document-columns.ts
+            selector: { kind: symbol, name: wildcardProjectionQualifier }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.complete-wildcard-output-schema
           - id: sql-structure-context
             adapter: typescript
             path: frontend/src/lib/sql.ts
@@ -196,3 +210,30 @@ features:
                 criterion: REQ-FE-080#criterion.task-oriented-result-fields
                 covers: [FEAT-FE-008#binding.frontend/target.sql-columns-editor]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/sql-columns-editor.test.ts, test: SQL Columns edits human-labelled fields and preserves focus at narrow widths } }
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.complete-wildcard-output-schema
+                covers: [FEAT-FE-008#binding.frontend/target.composition-columns-schema]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/sql-columns-editor.test.ts, test: SQL Columns edits human-labelled fields and preserves focus at narrow widths } }
+      - id: wildcard-schema-verification
+        role: verification
+        facet: verification
+        responsibility: Verify complete planned output and stale parameter rejection, plus both editor paths and all shared browser hosts.
+        targets:
+          - id: complete-plan-order
+            adapter: typescript
+            path: frontend/src/lib/sql-workspace.test.ts
+            selector: { kind: test, name: keeps complete authorized field order and rejects stale parameter snapshots for wildcard planning }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.complete-wildcard-output-schema
+                covers: [FEAT-SQL-003#binding.frontend/target.planning-state]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-workspace.test.ts, test: keeps complete authorized field order and rejects stale parameter snapshots for wildcard planning } }
+          - id: guarded-qualified-output
+            adapter: typescript
+            path: frontend/src/components/SqlWildcardExpansion.test.tsx
+            selector: { kind: test, name: "uses the qualified wildcard's complete planned output order including residual fields" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.complete-wildcard-output-schema
+                covers: [FEAT-FE-008#binding.frontend/target.guarded-wildcard-source]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlWildcardExpansion.test.tsx, test: "uses the qualified wildcard's complete planned output order including residual fields" } }

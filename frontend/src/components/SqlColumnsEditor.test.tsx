@@ -65,6 +65,10 @@ function setup(source: string) {
       scope={scope}
       contexts={() => contexts}
       onSqlChange={setSql}
+      onPlanColumns={async () => ({
+        columns: ["field_amount", "field_day"],
+        isCurrent: () => true,
+      })}
       onAdvanced={advanced}
     />
   ));
@@ -231,6 +235,22 @@ describe("Columns task view through the actual Rust SQL document", () => {
     expect(sql()).toContain("ORDER BY 2 DESC");
     fireEvent.click(screen.getByRole("button", { name: "Undo", exact: true }));
     await waitFor(() => expect(sql()).toBe(source));
+  });
+  it("keeps focus inside the editor after a focused field is removed", async () => {
+    const { sql } = setup(
+      'SELECT "field_amount", "field_day" FROM "form_expenses"',
+    );
+    const remove = await screen.findByRole("button", { name: "Remove Day" });
+    remove.focus();
+    fireEvent.click(remove);
+    await waitFor(() => expect(sql()).not.toContain('"field_day"'));
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "Add a field" }))
+        .toBeEnabled()
+    );
+    expect(globalThis.document.activeElement?.closest(".sql-columns-editor"))
+      .not.toBeNull();
+    expect(remove.isConnected).toBe(false);
   });
   it("keeps the same field's focused control through a pending reorder", async () => {
     const source = 'SELECT "field_amount", "field_day" FROM "form_expenses"';
