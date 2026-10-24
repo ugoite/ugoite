@@ -28,6 +28,12 @@ The canvas offers Input, Text, Table, and Value. Input references one input vari
 
 Table and Value share one BindingPicker with Variables, Forms, and Saved SQL tabs. Variables is the default tab; the picker never silently applies a previous choice. Empty and loading panels expose a local status instead of a blank panel. Variable choices are filtered by result type. Choosing a Form or exact Saved SQL revision resolves or reuses a compatible query variable and inserts the component atomically. Form Table selection creates the equivalent of SELECT * FROM "G". Form Value requires an explicit aggregate and any required column. Saved SQL pins an exact revision; a scalar result must have exactly one row and one selected column. The picker never assumes COUNT or picks a first row or column.
 
+Opening Saved SQL shows the listed revisions immediately. Only the chosen
+revision is prepared, using explicitly bound Composition variables. Listing
+candidates does not run query probes, wait for other candidates, or fabricate
+argument values. Incompatible results and unavailable revisions are reported
+locally after selection, and leave the draft unchanged.
+
 Reuse is based on semantic query identity, exact bindings, result descriptor, and authorized context, not a matching display name. An edited query variable is not reused just because its name matches. Resolution, permission, descriptor, type, or revision failure leaves no partial query variable or component.
 
 Adding a component closes the picker and leaves the canvas visible; it does not open an Inspector. Selecting a placed Table or Value exposes one variable reference action. That action opens the same picker and changes only the selected component reference, leaving shared query variables intact. Removing a component does not remove its variable.
@@ -41,5 +47,7 @@ The picker has one modal focus owner. Full rows select candidates; Escape closes
 ## Names and state
 
 Composition name, variable name, SQL output alias, Form field name, Text content, and accessible name each appear where they carry meaning. Binding-only UUIDs are not ordinary primary-path labels. There are no Composition tags, source aliases, or editable component labels.
+
+A new Composition can preview and insert existing Forms or exact Saved SQL before it is named. Authoring probes use a transient nonempty document title; the editor name remains untouched, and an unnamed definition still cannot be saved. Text editing retains its input node, focus, selection and composition session while its live definition changes.
 
 Inputs, constants under edit, preview values, query results, pages, cursors, loading state, and errors remain Work. Evaluation is stateless and does not append Entry history or persist result rows.

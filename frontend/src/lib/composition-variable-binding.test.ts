@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { canonicalizeCompositionDocument } from "./ugoite-client";
 import {
   bindCompositionComponent,
   commitResolvedCompositionBinding,
   compositionBindingDiagnostics,
+  compositionGraphAuthoringDocument,
   compositionGraphDocumentDraft,
   compositionGraphDraftFromDocument,
   type CompositionVariableNode,
@@ -41,6 +43,30 @@ const scalarNode: CompositionVariableNode = {
 };
 
 describe("strict variable-only Composition bindings", () => {
+  it.each(["", "   "])(
+    "keeps unnamed authoring Work separate from strict save for %j",
+    async (name) => {
+      const draft = createCompositionGraphDraft(name);
+      draft.components = [{
+        id: "text",
+        kind: "text",
+        content: { kind: "literal", text: "Draft" },
+        style: "body",
+      }];
+      draft.layout.rows[0].items = [{ kind: "component", component: "text" }];
+      await expect(
+        canonicalizeCompositionDocument(
+          compositionGraphAuthoringDocument(draft),
+        ),
+      ).resolves.toHaveProperty("canonical_yaml");
+      await expect(
+        canonicalizeCompositionDocument(compositionGraphDocumentDraft(draft)),
+      ).rejects.toThrow();
+      expect(draft.name).toBe(name);
+      expect(compositionGraphDocumentDraft(draft).name).toBe(name);
+    },
+  );
+
   it.each([tableNode, scalarNode])(
     "normalizes omitted canonical arguments into editable Work for $query.kind",
     (node) => {

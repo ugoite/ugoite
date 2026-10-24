@@ -1054,6 +1054,51 @@ describe("CompositionStudio graph surface", () => {
     }]);
   });
 
+  it("inserts existing Form data before the Composition is named without enabling Save", async () => {
+    formsMock.mockResolvedValue([{
+      id: "form-id",
+      name: "Receipts",
+      sql_relation: "form_receipts",
+      fields: { Amount: { type: "float", sql_column: "amount" } },
+    }]);
+    previewGraphMock.mockImplementation((_spaceId: string, yaml: string) => {
+      if (!JSON.parse(yaml).name.trim()) {
+        return { ok: false, diagnostics: [{ code: "invalid_composition" }] };
+      }
+      return plannedQuery(yaml, {
+        kind: "table",
+        columns: [{
+          name: "amount",
+          value_type: { scalar_type: "float", nullable: false },
+        }],
+      });
+    });
+    renderStudio(createCompositionGraphDraft(""));
+    fireEvent.click(screen.getByRole("button", { name: "Table", exact: true }));
+    const picker = screen.getByRole("dialog", { name: "Table", exact: true });
+    fireEvent.click(
+      within(picker).getByRole("tab", { name: "Forms", exact: true }),
+    );
+    fireEvent.click(
+      await within(picker).findByRole("button", {
+        name: "Receipts",
+        exact: true,
+      }),
+    );
+    expect(
+      await screen.findByRole("button", {
+        name: "table, receipts_rows",
+        exact: true,
+      }),
+    ).toBeVisible();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("textbox", { name: "Name", exact: true }))
+      .toHaveValue("");
+    expect(screen.getByRole("button", { name: "Save", exact: true }))
+      .toBeDisabled();
+    expect(saveMock).not.toHaveBeenCalled();
+  });
+
   it("uses readable Form labels and SQL columns for explicit aggregates", async () => {
     formsMock.mockResolvedValue([{
       id: "form-id",
@@ -1208,6 +1253,15 @@ describe("CompositionStudio graph surface", () => {
   });
 
   it("previews Saved SQL with a temporary component in an empty draft", async () => {
+    previewGraphMock.mockImplementation((_spaceId: string, yaml: string) =>
+      plannedQuery(yaml, {
+        kind: "table",
+        columns: [{
+          name: "amount",
+          value_type: { scalar_type: "float", nullable: true },
+        }],
+      })
+    );
     savedSqlMock.mockResolvedValue([{
       id: "sql-table",
       name: "One column",
@@ -1224,6 +1278,9 @@ describe("CompositionStudio graph surface", () => {
     });
     await waitFor(() => expect(savedSql).toBeEnabled());
 
+    expect(previewGraphMock).not.toHaveBeenCalled();
+    fireEvent.click(savedSql);
+    await waitFor(() => expect(previewGraphMock).toHaveBeenCalled());
     const preview = JSON.parse(previewGraphMock.mock.calls[0][1]);
     expect(preview.spec.components).toHaveLength(1);
     expect(preview.spec.components[0]).toMatchObject({
@@ -1234,13 +1291,22 @@ describe("CompositionStudio graph surface", () => {
       kind: "component",
       component: preview.spec.components[0].id,
     }]);
-    expect(screen.getByRole("button", { name: "One column" })).toBeEnabled();
-    // Inspection is transient. It must not commit a probe component to the draft.
-    expect(screen.queryByRole("button", { name: /query_sql-table/ }))
-      .toBeNull();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getAllByRole("button", { name: /^table,/ })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "table, one_column_table" }))
+      .toBeVisible();
   });
 
   it("keeps the preview probe transient when rebinding in an existing draft", async () => {
+    previewGraphMock.mockImplementation((_spaceId: string, yaml: string) =>
+      plannedQuery(yaml, {
+        kind: "table",
+        columns: [{
+          name: "amount",
+          value_type: { scalar_type: "float", nullable: true },
+        }],
+      })
+    );
     savedSqlMock.mockResolvedValue([{
       id: "sql-table",
       name: "One column",
@@ -1259,6 +1325,9 @@ describe("CompositionStudio graph surface", () => {
     });
     await waitFor(() => expect(savedSql).toBeEnabled());
 
+    expect(previewGraphMock).not.toHaveBeenCalled();
+    fireEvent.click(savedSql);
+    await waitFor(() => expect(previewGraphMock).toHaveBeenCalled());
     const preview = JSON.parse(previewGraphMock.mock.calls[0][1]);
     expect(preview.spec.components).toHaveLength(2);
     expect(preview.spec.components).toEqual(expect.arrayContaining([
@@ -1268,8 +1337,6 @@ describe("CompositionStudio graph surface", () => {
         variable: "one_column_table",
       }),
     ]));
-    fireEvent.click(savedSql);
-
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.getByRole("button", {
       name: "table, one_column_table",
@@ -1277,7 +1344,7 @@ describe("CompositionStudio graph surface", () => {
     expect(screen.getAllByRole("button", { name: /^table,/ })).toHaveLength(1);
   });
 
-  it("shows the incompatible Saved SQL result shape before Table selection", async () => {
+  it("reports the selected incompatible Saved SQL without inserting a Table", async () => {
     savedSqlMock.mockResolvedValue([{
       id: "sql-scalar",
       name: "One value",
@@ -1296,11 +1363,17 @@ describe("CompositionStudio graph surface", () => {
     const picker = screen.getByRole("dialog", { name: "Table" });
     fireEvent.click(within(picker).getByRole("tab", { name: "Saved SQL" }));
 
+    const selected = await within(picker).findByRole("button", {
+      name: "One value",
+    });
+    expect(selected).toBeEnabled();
+    expect(previewGraphMock).not.toHaveBeenCalled();
+    fireEvent.click(selected);
     const reason = await within(picker).findByText(
       "This saved SQL revision does not return a table.",
     );
     expect(reason).toBeVisible();
-    expect(within(picker).getByRole("button", { name: "One value" }))
-      .toBeDisabled();
+    expect(screen.queryByRole("button", { name: /^table,/ })).not
+      .toBeInTheDocument();
   });
 });

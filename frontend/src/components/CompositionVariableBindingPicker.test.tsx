@@ -123,50 +123,139 @@ describe("CompositionVariableBindingPicker", () => {
     );
   });
 
-  it("keeps the picker open when Saved SQL inspection finishes after a tab switch", async () => {
-    const onClose = vi.fn();
-    let finish!: (value: {
-      table: { variable: typeof formQuery };
-      scalars: [];
-    }) => void;
-    const pending = new Promise<{
-      table: { variable: typeof formQuery };
-      scalars: [];
-    }>((resolve) => finish = resolve);
-    const inspectSavedSql = vi.fn(() => pending);
+  it("prepares only the selected exact Saved SQL revision without inspecting earlier rows", async () => {
+    const onCommit = vi.fn();
+    const prepareSavedSql = vi.fn(async (
+      _input: Parameters<CompositionBindingProvider["prepareSavedSql"]>[0],
+    ) => ({
+      table: {
+        variable: {
+          ...formQuery,
+          query: {
+            kind: "saved_sql" as const,
+            arguments: [],
+            form_bindings: [],
+            schema_fingerprint: "fingerprint",
+            entry_id: "entry-39",
+            revision_id: "revision-39",
+          },
+        },
+      },
+      scalars: [],
+    }));
     const provider: CompositionBindingProvider = {
       resolveForm: vi.fn(),
-      prepareSavedSql: vi.fn(),
-      inspectSavedSql,
+      prepareSavedSql,
     };
+    const savedSql = Array.from({ length: 40 }, (_, index) => ({
+      entry_id: `entry-${index}`,
+      revision_id: `revision-${index}`,
+      name: `Saved table ${index}`,
+      arguments: [],
+    }));
+    renderPicker({ kind: "table", provider, savedSql, onCommit });
+    const dialog = screen.getByRole("dialog", { name: "Table" });
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Saved SQL" }));
+    expect(prepareSavedSql).not.toHaveBeenCalled();
+    const selected = within(dialog).getByRole("button", {
+      name: "Saved table 39",
+      exact: true,
+    });
+    expect(selected).toBeEnabled();
+    fireEvent.click(selected);
+    await waitFor(() => expect(onCommit).toHaveBeenCalledOnce());
+    expect(onCommit.mock.calls[0][0].variables[0].query).toMatchObject({
+      kind: "saved_sql",
+      entry_id: "entry-39",
+      revision_id: "revision-39",
+    });
+    expect(onCommit.mock.calls[0][0].components[0]).toEqual({
+      id: "component_1",
+      kind: "table",
+      variable: "customer_rows",
+    });
+    expect(prepareSavedSql).toHaveBeenCalledOnce();
+    expect(prepareSavedSql.mock.calls[0][0]).toMatchObject({
+      entry_id: "entry-39",
+      revision_id: "revision-39",
+      arguments: [],
+    });
+  });
+
+  it("waits for explicit argument binding without creating sample variables", async () => {
+    const period: CompositionVariableNode = {
+      id: "period",
+      kind: "constant",
+      value_type: { scalar_type: "date", nullable: false },
+      value: { kind: "date", value: "2026-10-01" },
+    };
+    const draft = {
+      ...createCompositionGraphDraft("Report"),
+      variables: [period],
+    };
+    const prepareSavedSql = vi.fn(async (
+      _input: Parameters<CompositionBindingProvider["prepareSavedSql"]>[0],
+    ) => ({ table: { variable: formQuery }, scalars: [] }));
     renderPicker({
       kind: "table",
-      provider,
+      draft,
+      provider: { resolveForm: vi.fn(), prepareSavedSql },
       savedSql: [{
-        entry_id: "saved-entry",
-        revision_id: "saved-revision",
-        name: "Saved table",
-        arguments: [],
+        entry_id: "dated",
+        revision_id: "exact",
+        name: "By date",
+        arguments: [{ name: "from", type: "date" }],
       }],
       onCommit: vi.fn(),
-      onClose,
     });
     const dialog = screen.getByRole("dialog", { name: "Table" });
     fireEvent.click(within(dialog).getByRole("tab", { name: "Saved SQL" }));
-    await waitFor(() => expect(inspectSavedSql).toHaveBeenCalledOnce());
-    fireEvent.click(within(dialog).getByRole("tab", { name: "Variables" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "By date" }));
+    expect(prepareSavedSql).not.toHaveBeenCalled();
+    const add = within(dialog).getByRole("button", {
+      name: "Add",
+      exact: true,
+    });
+    expect(add).toBeDisabled();
+    fireEvent.change(
+      within(dialog).getByRole("combobox", {
+        name: "Variable for SQL argument from",
+      }),
+      { target: { value: "period" } },
+    );
+    fireEvent.click(add);
+    await waitFor(() => expect(prepareSavedSql).toHaveBeenCalledOnce());
+    expect(prepareSavedSql.mock.calls[0][0]).toMatchObject({
+      arguments: [{ name: "from", variable: "period" }],
+      draft,
+    });
+    expect(prepareSavedSql.mock.calls[0][0].draft.variables).toEqual([period]);
+  });
 
-    finish({ table: { variable: formQuery }, scalars: [] });
-    await pending;
-    await Promise.resolve();
-
-    expect(onClose).not.toHaveBeenCalled();
-    expect(screen.getByRole("dialog", { name: "Table" })).toBeVisible();
-    expect(within(dialog).getByRole("tab", { name: "Variables" }))
-      .toHaveAttribute(
-        "aria-selected",
-        "true",
-      );
+  it("reports an incompatible selected Saved SQL locally without committing a component", async () => {
+    const onCommit = vi.fn();
+    const prepareSavedSql = vi.fn(async () => ({ scalars: [] }));
+    renderPicker({
+      kind: "metric",
+      provider: { resolveForm: vi.fn(), prepareSavedSql },
+      savedSql: [{
+        entry_id: "no-metric",
+        revision_id: "exact",
+        name: "Text only",
+        arguments: [],
+      }],
+      onCommit,
+    });
+    const dialog = screen.getByRole("dialog", { name: "Metric" });
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Saved SQL" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Text only" }));
+    await waitFor(() =>
+      expect(within(dialog).getByRole("alert")).toHaveTextContent(
+        "No supported single-value result is available.",
+      )
+    );
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(prepareSavedSql).toHaveBeenCalledOnce();
   });
 
   it("requires explicit aggregate selection for a Form metric", async () => {
