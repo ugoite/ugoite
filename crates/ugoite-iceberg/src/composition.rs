@@ -194,6 +194,9 @@ fn composition_work_fingerprint(work: &CompositionSaveWork) -> Result<String> {
 /// caller must already have checked current authorization. Reusing an
 /// operation ID with changed definition or Work is rejected by the durable
 /// publication digest.
+// Keep these publication inputs explicit at the recovery boundary so the
+// durable identity is checked against the exact request and evaluated Work.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn recover_published_composition_save(
     operator: &Operator,
     space_id: &str,

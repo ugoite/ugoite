@@ -206,6 +206,9 @@ impl UgoiteService {
         Ok(proof)
     }
 
+    // This boundary threads one complete save-evaluation context into the
+    // resolver without reconstructing authorization or Work state.
+    #[allow(clippy::too_many_arguments)]
     async fn preflight_unpublished_composition_queries(
         &self,
         space_id: &str,

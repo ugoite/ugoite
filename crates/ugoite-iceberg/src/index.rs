@@ -66,6 +66,9 @@ pub(crate) struct AssetTextSearchBudget {
     used_bytes: Arc<AtomicUsize>,
 }
 
+/// JSON rows plus optional lossless representations for large integer cells.
+pub(crate) type SerializedSqlPageRows = (Vec<Value>, Option<Vec<Vec<Option<String>>>>);
+
 impl AssetTextSearchBudget {
     pub(crate) fn new() -> Self {
         Self {
@@ -3655,7 +3658,7 @@ fn sql_result_batches_to_values_with_exact_integers_bounded(
 pub(crate) fn serialize_stateless_sql_page(
     page: &crate::query_context::StatelessSqlPage,
     include_exact_integer_values: bool,
-) -> Result<(Vec<Value>, Option<Vec<Vec<Option<String>>>>)> {
+) -> Result<SerializedSqlPageRows> {
     let serialized = sql_result_batches_to_values_with_exact_integers_bounded(
         &page.batches,
         &page.result_schema,
@@ -3673,7 +3676,7 @@ pub(crate) fn serialize_stateless_sql_page(
 pub(crate) fn serialize_stateless_sql_page_for_validation(
     page: &crate::query_context::StatelessSqlPage,
     include_exact_integer_values: bool,
-) -> Result<(Vec<Value>, Option<Vec<Vec<Option<String>>>>)> {
+) -> Result<SerializedSqlPageRows> {
     use arrow_array::Array;
 
     let (mut rows, exact_integer_rows) =
