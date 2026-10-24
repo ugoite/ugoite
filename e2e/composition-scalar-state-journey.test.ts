@@ -50,10 +50,11 @@ async function createSavedSql(
   spaceId: string,
   name: string,
   sql: string,
+  variables: Array<{ name: string; type: string; description: string }> = [],
 ): Promise<SavedSqlRevision> {
   const response = await request.post(
     getBackendUrl(`/spaces/${spaceId}/sql`),
-    { data: { name, kind: "user-query", sql, variables: [] } },
+    { data: { name, kind: "user-query", sql, variables } },
   );
   expect([200, 201]).toContain(response.status());
   const savedSql = await response.json() as {
@@ -118,7 +119,7 @@ function compositionGraph(
 
 async function seedScalarStateComposition(
   request: APIRequestContext,
-): Promise<SeedState> {
+): Promise<{ aggregates: SeedState; emptyScalar: SeedState }> {
   const spaceId = await createSpace(request);
   const suffix = crypto.randomUUID().slice(0, 8);
   const formName = `ScalarState${suffix}`;
@@ -169,12 +170,6 @@ async function seedScalarStateComposition(
       `SUM(${amount}) AS amount_sum, AVG(${amount}) AS amount_average ` +
       `FROM ${table}`,
   );
-  const zeroRowsSql = await createSavedSql(
-    request,
-    spaceId,
-    `Scalar empty rows ${suffix}`,
-    `SELECT ${amount} AS value FROM ${table} WHERE ${amount} < 0`,
-  );
   const nullSql = await createSavedSql(
     request,
     spaceId,
@@ -218,13 +213,6 @@ async function seedScalarStateComposition(
       nullable: true,
     },
     {
-      id: "zero_rows",
-      savedSql: zeroRowsSql,
-      column: "value",
-      scalarType: "float",
-      nullable: true,
-    },
-    {
       id: "null_result",
       savedSql: nullSql,
       column: "value",
@@ -244,6 +232,82 @@ async function seedScalarStateComposition(
     spaceId,
     compositionGraph(compositionName, queries),
   );
+  const aggregates = await saveCompositionSeed(
+    request,
+    spaceId,
+    yaml,
+    compositionName,
+  );
+
+  const zeroRowsSql = await createSavedSql(
+    request,
+    spaceId,
+    `Scalar empty rows ${suffix}`,
+    `SELECT ${amount} AS value FROM ${table} WHERE ${amount} = $minimum`,
+    [{
+      name: "minimum",
+      type: "integer",
+      description: "Amount that must match the scalar result.",
+    }],
+  );
+  const zeroRowsYaml = await completeCompositionGraphYaml(request, spaceId, {
+    name: `Empty scalar after Input ${suffix}`,
+    variables: [
+      {
+        id: "minimum",
+        kind: "input",
+        value_type: { scalar_type: "integer", nullable: false },
+        required: true,
+        default: { kind: "integer", value: 10 },
+      },
+      {
+        id: "zero_rows",
+        kind: "query",
+        returns: {
+          kind: "scalar",
+          value_type: { scalar_type: "float", nullable: true },
+        },
+        query: {
+          kind: "saved_sql",
+          entry_id: zeroRowsSql.entryId,
+          revision_id: zeroRowsSql.revisionId,
+          column: "value",
+          arguments: [{ name: "minimum", variable: "minimum" }],
+          form_bindings: [],
+          schema_fingerprint: "",
+        },
+      },
+    ],
+    components: [
+      { id: "minimum_input", kind: "input", variable: "minimum" },
+      { id: "zero_rows", kind: "metric", variable: "zero_rows" },
+    ],
+    rows: [
+      {
+        id: "inputs",
+        items: [{ kind: "component", component: "minimum_input" }],
+      },
+      {
+        id: "scalar_states",
+        items: [{ kind: "component", component: "zero_rows" }],
+      },
+    ],
+  });
+  const emptyScalar = await saveCompositionSeed(
+    request,
+    spaceId,
+    zeroRowsYaml,
+    `Empty scalar after Input ${suffix}`,
+  );
+  return { aggregates, emptyScalar };
+}
+
+async function saveCompositionSeed(
+  request: APIRequestContext,
+  spaceId: string,
+  yaml: string,
+  compositionName: string,
+): Promise<SeedState> {
   const compositionResponse = await request.post(
     getBackendUrl(`/spaces/${spaceId}/compositions`),
     {
@@ -308,17 +372,21 @@ async function openOwnerPage(
 }
 
 test.describe("Composition scalar state journey", () => {
-  let seed: SeedState;
+  let seeds: { aggregates: SeedState; emptyScalar: SeedState };
 
   test.beforeAll(async ({ request }) => {
     test.setTimeout(120_000);
     await waitForServers(request);
-    seed = await seedScalarStateComposition(request);
+    seeds = await seedScalarStateComposition(request);
   });
 
   test("sql_aggregates_preserve_null_and_empty_semantics", async ({ browser, context }) => {
     test.setTimeout(120_000);
-    const { freshContext, page } = await openOwnerPage(browser, context, seed);
+    const { freshContext, page } = await openOwnerPage(
+      browser,
+      context,
+      seeds.aggregates,
+    );
     try {
       await expect(metricOutput(page, "all_rows")).toHaveText("3", {
         timeout: scalarResultTimeoutMs,
@@ -339,8 +407,41 @@ test.describe("Composition scalar state journey", () => {
 
   test("scalar_result_distinguishes_zero_rows_null_and_zero", async ({ browser, context }) => {
     test.setTimeout(120_000);
-    const { freshContext, page } = await openOwnerPage(browser, context, seed);
+    const { freshContext: aggregateContext, page: aggregatePage } =
+      await openOwnerPage(browser, context, seeds.aggregates);
     try {
+      const nullOutput = metricOutput(aggregatePage, "null_result");
+      await expect(nullOutput).toHaveText(
+        await aggregatePage.locator("html").getAttribute("lang").then((
+          locale,
+        ) => locale === "ja" ? "データなし" : "No data"),
+        { timeout: scalarResultTimeoutMs },
+      );
+      await expect(metricOutput(aggregatePage, "zero_result")).toHaveText("0", {
+        timeout: scalarResultTimeoutMs,
+      });
+      await expect(nullOutput).not.toHaveText("0", {
+        timeout: scalarResultTimeoutMs,
+      });
+    } finally {
+      await aggregateContext.close();
+    }
+
+    const { freshContext, page } = await openOwnerPage(
+      browser,
+      context,
+      seeds.emptyScalar,
+    );
+    try {
+      const minimumInput = page.getByRole("textbox", {
+        name: "minimum",
+        exact: true,
+      });
+      await expect(minimumInput).toHaveValue("10");
+      await expect(metricOutput(page, "zero_rows")).toHaveText("10", {
+        timeout: scalarResultTimeoutMs,
+      });
+      await minimumInput.fill("-1");
       const zeroRowsSection = page.getByRole("region", {
         name: "scalar_states",
         exact: true,
@@ -357,20 +458,6 @@ test.describe("Composition scalar state journey", () => {
         name: "zero_rows",
         exact: true,
       })).toHaveCount(0, { timeout: scalarResultTimeoutMs });
-
-      const nullOutput = metricOutput(page, "null_result");
-      await expect(nullOutput).toHaveText(
-        await page.locator("html").getAttribute("lang").then((locale) =>
-          locale === "ja" ? "データなし" : "No data"
-        ),
-        { timeout: scalarResultTimeoutMs },
-      );
-      await expect(metricOutput(page, "zero_result")).toHaveText("0", {
-        timeout: scalarResultTimeoutMs,
-      });
-      await expect(nullOutput).not.toHaveText("0", {
-        timeout: scalarResultTimeoutMs,
-      });
     } finally {
       await freshContext.close();
     }
