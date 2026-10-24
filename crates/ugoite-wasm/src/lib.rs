@@ -13,10 +13,9 @@ pub use ugoite_domain as domain;
 pub use ugoite_konase as konase;
 
 const MAX_PROTOCOL_REQUEST_BYTES: usize = 256 * 1024;
-const MAX_COMPOSITION_SAVE_REQUEST_BYTES: usize =
-    ugoite_api_client::MAX_COMPOSITION_SAVE_WORK_BYTES
-        + ugoite_domain::composition::MAX_COMPOSITION_YAML_BYTES * 6
-        + 4096;
+const MAX_COMPOSITION_SAVE_REQUEST_BYTES: usize = ugoite_api_client::MAX_COMPOSITION_SAVE_WORK_BYTES
+    + ugoite_domain::composition::MAX_COMPOSITION_YAML_BYTES * 6
+    + 4096;
 const MAX_COMPOSITION_SAVE_PROTOCOL_REQUEST_BYTES: usize =
     MAX_COMPOSITION_SAVE_REQUEST_BYTES + 1024;
 // JSON can expand each control byte in a SQL source to a six-byte `\u00xx`
@@ -94,8 +93,7 @@ fn sql_document_request_limit(action: &str) -> Option<usize> {
 
 fn is_composition_save_prepare(request: &serde_json::Value) -> bool {
     request.get("action").and_then(serde_json::Value::as_str) == Some("prepare")
-        && request.get("operation").and_then(serde_json::Value::as_str)
-            == Some("composition.save")
+        && request.get("operation").and_then(serde_json::Value::as_str) == Some("composition.save")
 }
 
 pub fn invoke_json(input: &str) -> String {

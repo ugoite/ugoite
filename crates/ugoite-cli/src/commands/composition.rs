@@ -241,7 +241,9 @@ pub async fn run(
         } => {
             let target =
                 resolve_command_target(explicit_config, context_override, "composition import")?;
-            let saved = save_composition_file(&target, &file, None, None, &variables, &idempotency_key).await?;
+            let saved =
+                save_composition_file(&target, &file, None, None, &variables, &idempotency_key)
+                    .await?;
             crate::output::print_json(&saved);
         }
         CompositionSubCmd::Save {
