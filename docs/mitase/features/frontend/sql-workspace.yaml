@@ -222,12 +222,12 @@ features:
           - id: complete-plan-order
             adapter: typescript
             path: frontend/src/lib/sql-workspace.test.ts
-            selector: { kind: test, name: keeps complete authorized field order and rejects stale parameter snapshots for wildcard planning }
+            selector: { kind: test, name: replans wildcard output against current authorization and rejects stale parameter snapshots }
             claims:
               - kind: verifies
                 criterion: REQ-FE-080#criterion.complete-wildcard-output-schema
                 covers: [FEAT-SQL-003#binding.frontend/target.planning-state]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-workspace.test.ts, test: keeps complete authorized field order and rejects stale parameter snapshots for wildcard planning } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-workspace.test.ts, test: replans wildcard output against current authorization and rejects stale parameter snapshots } }
           - id: guarded-qualified-output
             adapter: typescript
             path: frontend/src/components/SqlWildcardExpansion.test.tsx

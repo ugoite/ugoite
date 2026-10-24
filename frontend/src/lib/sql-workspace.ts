@@ -86,10 +86,7 @@ type QueryRequest = {
 };
 
 type BuiltRequest = { identity: string; request: QueryRequest };
-type PlanState = SQLWorkspacePlanState & {
-  identity: string;
-  columns?: readonly string[];
-};
+type PlanState = SQLWorkspacePlanState & { identity: string };
 
 const abortError = (error: unknown): boolean =>
   !!error && typeof error === "object" &&
@@ -301,7 +298,6 @@ export function createSqlWorkspaceController(
               identity: parts.identity,
               status: "success",
               isCurrent: true,
-              columns: result?.result_schema?.map((column) => column.name),
             });
           }
         },
@@ -578,13 +574,6 @@ export function createSqlWorkspaceController(
   const planColumns = async (): Promise<PlannedSqlColumns> => {
     const parts = planParts();
     const isCurrent = () => parts.identity === planParts().identity;
-    const cached = planState();
-    if (
-      cached.identity === parts.identity && cached.status === "success" &&
-      cached.columns
-    ) {
-      return { columns: [...cached.columns], isCurrent };
-    }
     const built = buildRequest(undefined, parts);
     const result = await sqlApi.plan(options.spaceId(), {
       sql: built.request.sql,
