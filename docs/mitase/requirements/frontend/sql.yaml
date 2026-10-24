@@ -535,6 +535,18 @@ requirements:
           stale SQL, host or parameter snapshots leave source unchanged in
           both primary and advanced editors. Planning does not execute rows.
         governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
+      - id: human-form-name-binding
+        kind: behavior
+        statement: >-
+          Form selection authors SQL with the quoted human Form name and carries
+          its immutable Form ID as a compare-only guard through plan, page,
+          count, preview, and save. Rust resolves the name against the current
+          readable Form snapshot and rejects a guard mismatch. Unguarded
+          first-use human names remain valid; unchanged exact-base bindings stay
+          pinned, and a different guard rebinds only when it matches the
+          currently readable Form. Saved SQL exact revisions use their stored
+          bindings and reject draft guards.
+        governed_by: [POL-000#rule.foundation-precedence, POL-UI-002#rule.governance]
       - id: explicit-preview-count-and-paging
         kind: behavior
         statement: >-
@@ -659,12 +671,12 @@ requirements:
           - id: form-relation-rename
             adapter: typescript
             path: frontend/src/lib/sql.test.ts
-            selector: { kind: test, name: keeps the Form-backed SQL relation stable when its display name changes }
+            selector: { kind: test, name: uses the human Form name for SQL while retaining the stable schema identity }
             claims:
               - kind: verifies
                 criterion: REQ-FE-080#criterion.safe-structured-operations
                 covers: [FEAT-FE-008#binding.frontend/target.sql-structure-context]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: keeps the Form-backed SQL relation stable when its display name changes } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: uses the human Form name for SQL while retaining the stable schema identity } }
           - id: sql-reserved-relation-toolbar
             adapter: typescript
             path: frontend/src/components/SqlStructureToolbar.test.tsx

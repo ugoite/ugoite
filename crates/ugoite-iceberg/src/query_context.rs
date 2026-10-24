@@ -1883,12 +1883,7 @@ fn validate_form_name(name: &str) -> Result<()> {
 }
 
 fn is_legacy_relation_name(name: &str) -> bool {
-    let Some((prefix, id)) = name.split_at_checked("form_".len()) else {
-        return false;
-    };
-    prefix.eq_ignore_ascii_case("form_")
-        && id.len() == 32
-        && id.bytes().all(|byte| byte.is_ascii_hexdigit())
+    ugoite_domain::sql_form_references::is_legacy_sql_relation_name(name)
 }
 
 fn resolve_form_name_references(sql: &str, aliases: &BTreeMap<String, String>) -> Result<String> {
@@ -1918,146 +1913,35 @@ fn resolve_form_name_references_with_references(
     sql: &str,
     aliases: &BTreeMap<String, String>,
 ) -> Result<FormNameReferenceResolution> {
-    use datafusion::sql::sqlparser::ast::{
-        Ident, ObjectName, ObjectNamePart, VisitMut, VisitorMut,
-    };
-    use std::ops::ControlFlow;
-
-    struct AliasReferenceResolver<'a> {
-        aliases: &'a BTreeMap<String, String>,
-        cte_scopes: Vec<BTreeSet<String>>,
-        error: Option<anyhow::Error>,
-        changed: bool,
-        used: BTreeSet<String>,
-        references: BTreeSet<String>,
-        relation_names: BTreeSet<String>,
-    }
-
-    impl VisitorMut for AliasReferenceResolver<'_> {
-        type Break = ();
-
-        fn pre_visit_query(
-            &mut self,
-            query: &mut datafusion::sql::sqlparser::ast::Query,
-        ) -> ControlFlow<Self::Break> {
-            self.cte_scopes.push(
-                query
-                    .with
-                    .as_ref()
-                    .into_iter()
-                    .flat_map(|with| with.cte_tables.iter())
-                    .map(|cte| {
-                        let identifier = &cte.alias.name;
-                        if identifier.quote_style.is_some() {
-                            identifier.value.clone()
-                        } else {
-                            identifier.value.to_ascii_lowercase()
-                        }
-                    })
-                    .collect(),
-            );
-            ControlFlow::Continue(())
-        }
-
-        fn post_visit_query(
-            &mut self,
-            _query: &mut datafusion::sql::sqlparser::ast::Query,
-        ) -> ControlFlow<Self::Break> {
-            self.cte_scopes.pop();
-            ControlFlow::Continue(())
-        }
-
-        fn pre_visit_relation(&mut self, relation: &mut ObjectName) -> ControlFlow<Self::Break> {
-            let Some(identifier) = relation.0.last().and_then(|part| part.as_ident()) else {
-                return ControlFlow::Continue(());
-            };
-            let name = identifier.value.as_str();
-            let normalized_name = if identifier.quote_style.is_some() {
-                name.to_string()
-            } else {
-                name.to_ascii_lowercase()
-            };
-            if relation.0.len() == 1
-                && self
-                    .cte_scopes
-                    .iter()
-                    .rev()
-                    .any(|scope| scope.contains(&normalized_name))
-            {
-                return ControlFlow::Continue(());
-            }
-            if relation.0.len() == 1 && identifier.quote_style == Some('"') {
-                self.relation_names.insert(name.to_string());
-            }
-            if relation.0.len() == 1
-                && identifier.quote_style == Some('"')
-                && !is_legacy_relation_name(name)
-            {
-                self.references.insert(name.to_string());
-            }
-            let case_match = self
-                .aliases
-                .keys()
-                .any(|alias| alias.eq_ignore_ascii_case(name));
-            if !case_match {
-                return ControlFlow::Continue(());
-            }
-            if relation.0.len() != 1
-                || identifier.quote_style != Some('"')
-                || !self.aliases.contains_key(name)
-            {
-                self.error = Some(anyhow!(
-                    "Form name {name} must be referenced as a double-quoted SQL relation"
-                ));
-                return ControlFlow::Break(());
-            }
-            let resolved = self.aliases.get(name).expect("checked alias above");
-            self.used.insert(name.to_string());
-            relation.0 = vec![ObjectNamePart::Identifier(Ident::new(resolved))];
-            self.changed = true;
-            ControlFlow::Continue(())
-        }
-    }
+    use datafusion::sql::parser::Statement as DataFusionStatement;
 
     let mut statements =
         crate::sql_parser::parse_sql(sql).map_err(AuthorizedQueryError::invalid_query)?;
-    let mut resolver = AliasReferenceResolver {
-        aliases,
-        cte_scopes: Vec::new(),
-        error: None,
-        changed: false,
-        used: BTreeSet::new(),
-        references: BTreeSet::new(),
-        relation_names: BTreeSet::new(),
-    };
-    for statement in &mut statements {
-        let datafusion::sql::parser::Statement::Statement(statement) = statement else {
-            continue;
-        };
-        if statement.as_mut().visit(&mut resolver).is_break() {
-            break;
-        }
-    }
-    if let Some(error) = resolver.error {
-        return Err(AuthorizedQueryError::invalid_query(error).into());
-    }
-    if !resolver.changed {
-        return Ok((
-            sql.to_string(),
-            resolver.used,
-            resolver.references,
-            resolver.relation_names,
-        ));
-    }
-    Ok((
+    let resolution =
+        ugoite_domain::sql_form_references::resolve_form_name_references_in_statements(
+            statements
+                .iter_mut()
+                .filter_map(|statement| match statement {
+                    DataFusionStatement::Statement(statement) => Some(statement.as_mut()),
+                    _ => None,
+                }),
+            aliases,
+        )
+        .map_err(|error| AuthorizedQueryError::invalid_query(anyhow!(error)))?;
+    let rendered = if resolution.changed {
         statements
             .iter()
             .map(ToString::to_string)
             .collect::<Vec<_>>()
-            .join(";\n"),
-        resolver.used,
-        resolver.references,
-        resolver.relation_names,
+            .join(";\n")
+    } else {
+        sql.to_string()
+    };
+    Ok((
+        rendered,
+        resolution.used_aliases,
+        resolution.form_names,
+        resolution.quoted_relation_names,
     ))
 }
 

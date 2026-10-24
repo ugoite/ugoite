@@ -20,12 +20,16 @@ import {
   normalizeSqlVariables,
 } from "~/lib/sql";
 import type { SqlVariableDefaultDraft } from "~/lib/sql";
-import type { Form, SqlVariable } from "~/lib/types";
+import type { Form, SqlFormBinding, SqlVariable } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
 import { createSqlWorkspaceController } from "~/lib/sql-workspace";
+import {
+  replaceSqlFormBindingGuard,
+  retainReferencedSqlFormBindingGuards,
+} from "~/lib/form-binding-guards";
 
 export const route = spaceRoute({ navigation: "search" });
 
@@ -45,11 +49,17 @@ export default function SpaceQueryCreateRoute() {
     SqlVariable[]
   >([]);
   const [sqlVariables, setSqlVariables] = createSignal<SqlVariable[]>([]);
+  const [formBindingGuards, setFormBindingGuards] = createSignal<
+    SqlFormBinding[]
+  >([]);
   const [normalizedSql, setNormalizedSql] = createSignal("");
   const [undeclaredArgument, setUndeclaredArgument] = createSignal<
     string | null
   >(null);
   const [normalizationPending, setNormalizationPending] = createSignal(true);
+  const [formGuardPruningPending, setFormGuardPruningPending] = createSignal(
+    false,
+  );
   const [structureActions, setStructureActions] = createSignal<
     readonly SQLWorkspaceAction[]
   >([]);
@@ -60,6 +70,7 @@ export default function SpaceQueryCreateRoute() {
 
   const schema = () => buildSqlSchema((forms() || []) as Form[]);
   let normalizationGeneration = 0;
+  let formGuardGeneration = 0;
   createEffect(() => {
     const sql = sqlInput().trim();
     const existing = argumentDefinitions();
@@ -102,7 +113,9 @@ export default function SpaceQueryCreateRoute() {
     }));
   });
   const definitionError = createMemo(() => {
-    if (normalizationPending()) return t("common.loading");
+    if (formGuardPruningPending() || normalizationPending()) {
+      return t("common.loading");
+    }
     const undeclared = undeclaredArgument();
     if (undeclared) {
       return t("sqlPage.undeclaredArgument", { name: undeclared });
@@ -127,10 +140,27 @@ export default function SpaceQueryCreateRoute() {
     definitionError,
     planParameters: "definition",
     planSavedSql: () => undefined,
+    formBindingGuards,
   });
 
+  const pruneFormGuardsForSql = (sql: string, selected?: SqlFormBinding) => {
+    const generation = ++formGuardGeneration;
+    setFormGuardPruningPending(true);
+    const current = formBindingGuards();
+    const pruning = selected
+      ? replaceSqlFormBindingGuard(sql, current, selected)
+      : retainReferencedSqlFormBindingGuards(sql, current);
+    void pruning.then((retained) => {
+      if (generation !== formGuardGeneration || sqlInput() !== sql) return;
+      setFormBindingGuards(retained);
+      setFormGuardPruningPending(false);
+    });
+  };
+
   const handleSqlChange = (sql: string) => {
+    setFormGuardPruningPending(true);
     setSqlInput(sql);
+    pruneFormGuardsForSql(sql);
   };
 
   const registerCreatedVariables = (
@@ -259,7 +289,14 @@ export default function SpaceQueryCreateRoute() {
       await sqlApi.create(spaceId(), {
         name: name || null,
         kind: "user-query",
-        metadata: name ? undefined : { generatedName: "untitled" },
+        metadata: !name || formBindingGuards().length
+          ? {
+            ...(!name ? { generatedName: "untitled" as const } : {}),
+            ...(formBindingGuards().length
+              ? { formBindings: formBindingGuards() }
+              : {}),
+          }
+          : undefined,
         sql: normalized.sql,
         variables: defaults.variables,
       });
@@ -298,6 +335,7 @@ export default function SpaceQueryCreateRoute() {
 
         <SqlStructureToolbar
           onPlanColumns={workspace.planColumns}
+          formBindingGuards={formBindingGuards}
           scope={() => `new-sql:${spaceId()}`}
           sql={sqlInput}
           contexts={() =>
@@ -307,6 +345,14 @@ export default function SpaceQueryCreateRoute() {
               `new-sql:${spaceId()}`,
             )}
           onSqlChange={handleSqlChange}
+          onFormBindingSelected={(selection) => {
+            setFormGuardPruningPending(true);
+            setSqlInput(selection.sql);
+            pruneFormGuardsForSql(selection.sql, {
+              name: selection.name,
+              formId: selection.form_id,
+            });
+          }}
           onVariablesAdded={registerCreatedVariables}
           argumentDefinitions={argumentDefinitions}
           onArgumentAdded={(variable) => {

@@ -475,6 +475,8 @@ mod export_sink_tests {
         assert_eq!(parameter_types["enabled"], "boolean");
 
         let run_request = SqlQueryRequest {
+            form_binding_guards: Vec::new(),
+            binding_base: None,
             sql: String::new(),
             parameters,
             parameter_types,
@@ -835,6 +837,7 @@ pub async fn run(
             let page = query_sql_page(
                 &target,
                 SqlQueryRequest {
+                    form_binding_guards: Vec::new(),
                     sql,
                     parameters,
                     parameter_types,
@@ -843,6 +846,7 @@ pub async fn run(
                     continuation,
                     execution_id: None,
                     saved_sql: None,
+                    binding_base: None,
                 },
             )
             .await?;
@@ -860,10 +864,12 @@ pub async fn run(
             let result = query_sql_count(
                 &target,
                 SqlQueryCountRequest {
+                    form_binding_guards: Vec::new(),
                     sql,
                     parameters,
                     parameter_types,
                     saved_sql: None,
+                    binding_base: None,
                 },
             )
             .await?;
@@ -905,6 +911,7 @@ pub async fn run(
             );
             let mut sink = ExportSink::new(output)?;
             let request = SqlQueryRequest {
+                form_binding_guards: Vec::new(),
                 sql,
                 parameters,
                 parameter_types,
@@ -913,6 +920,7 @@ pub async fn run(
                 continuation: None,
                 execution_id: None,
                 saved_sql: None,
+                binding_base: None,
             };
             let mut rows_exported = 0usize;
             let mut bytes_exported = 0usize;
@@ -1007,6 +1015,7 @@ pub async fn run(
             let page = query_sql_page(
                 &target,
                 SqlQueryRequest {
+                    form_binding_guards: Vec::new(),
                     sql: String::new(),
                     parameters,
                     parameter_types,
@@ -1018,6 +1027,7 @@ pub async fn run(
                         id: sql_id,
                         revision_id,
                     }),
+                    binding_base: None,
                 },
             )
             .await?;

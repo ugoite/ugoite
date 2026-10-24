@@ -2692,9 +2692,10 @@ mod tests {
     #[test]
     fn sql_query_plan_uses_the_stateless_plan_route() {
         let body = json!({
-            "sql": "SELECT 1",
+            "sql": "SELECT * FROM \"Expense\"",
             "parameters": {},
-            "parameter_types": {}
+            "parameter_types": {},
+            "form_binding_guards": [{"name": "Expense", "form_id": "form-1"}]
         });
         let request = prepare_request("sql.query.plan", &json!({"space_id": "demo"}), Some(&body))
             .expect("SQL plan request");

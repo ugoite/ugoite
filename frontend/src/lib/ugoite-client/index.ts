@@ -43,6 +43,7 @@ export {
   invokeKonase,
   type KonaseProtocolAction,
   parseSqlDocument,
+  collectSqlFormNameReferences,
   parseVariableGraphInput,
   parseVariableGraphInputSync,
   prepareApiRequest,

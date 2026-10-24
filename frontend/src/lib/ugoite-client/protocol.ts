@@ -1121,6 +1121,15 @@ export const parseSqlDocument = async (sql: string): Promise<SqlDocument> =>
     value: { sql },
   });
 
+/** Scope-aware quoted Form references from the shared Rust SQL parser. */
+export const collectSqlFormNameReferences = async (
+  sql: string,
+): Promise<string[]> =>
+  await invokeProtocol<string[]>({
+    action: "domain.collect_quoted_form_name_references",
+    value: { sql },
+  });
+
 /** Rename a SQL parameter through the shared Rust/WASM document contract.
  * Parameter names omit the $ prefix.
  */

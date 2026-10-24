@@ -766,30 +766,83 @@ fn with_server_bindings(payload: &mut SqlPayload, bindings: Vec<SqlFormBinding>)
 fn derive_form_bindings(
     sql: &str,
     authorized_forms: &BTreeMap<String, ugoite_domain::id::FormId>,
+    base_bindings: &[SqlFormBinding],
+    guards: &[SqlFormBinding],
 ) -> Result<Vec<SqlFormBinding>> {
     let references = index::quoted_form_name_references(sql).map_err(validation_error)?;
+    let mut guard_names = BTreeSet::new();
+    if guards
+        .iter()
+        .any(|guard| !guard_names.insert(guard.name.as_str()))
+    {
+        return Err(validation_error("SQL Form binding guards are duplicated"));
+    }
+    if guards.iter().any(|guard| {
+        !references.contains(&guard.name)
+            && !base_bindings
+                .iter()
+                .any(|base| base.name == guard.name && base.form_id == guard.form_id)
+    }) {
+        return Err(validation_error(
+            "SQL Form binding guard does not match a referenced Form name",
+        ));
+    }
+    let mut result = Vec::with_capacity(references.len());
     for name in &references {
-        if !authorized_forms.contains_key(name) {
+        let guard = guards.iter().find(|guard| guard.name == *name);
+        let base = base_bindings.iter().find(|binding| binding.name == *name);
+        if let Some(base) = base {
+            if guard.is_none_or(|guard| guard.form_id == base.form_id) {
+                if !authorized_forms
+                    .values()
+                    .any(|id| id.to_string() == base.form_id)
+                {
+                    return Err(validation_error(format!(
+                        "SQL Form name {name} is not available to bind in this revision"
+                    )));
+                }
+                result.push(base.clone());
+                continue;
+            }
+        }
+        let Some(id) = authorized_forms.get(name) else {
             return Err(validation_error(format!(
                 "SQL Form name {name} is not available to bind in this revision"
             )));
+        };
+        if guard.is_some_and(|guard| guard.form_id != id.to_string()) {
+            return Err(validation_error(format!(
+                "SQL Form binding guard for {name} no longer matches the selected Form"
+            )));
         }
+        result.push(SqlFormBinding {
+            name: name.clone(),
+            form_id: id.to_string(),
+        });
     }
-    let aliases = authorized_forms
+    let mut aliases = authorized_forms
         .iter()
         .map(|(name, id)| (name.clone(), ugoite_domain::form::sql_relation_name(*id)))
         .collect::<BTreeMap<_, _>>();
+    aliases.extend(
+        result
+            .iter()
+            .map(|binding| {
+                let uuid = Uuid::parse_str(&binding.form_id).map_err(validation_error)?;
+                Ok((
+                    binding.name.clone(),
+                    ugoite_domain::form::sql_relation_name(ugoite_domain::id::FormId::from_uuid(
+                        uuid,
+                    )),
+                ))
+            })
+            .collect::<Result<BTreeMap<_, _>>>()?,
+    );
     let (_, used_names) =
         index::resolve_saved_sql_bindings(sql, &aliases).map_err(validation_error)?;
-    Ok(used_names
-        .into_iter()
-        .filter_map(|name| {
-            authorized_forms.get(&name).map(|id| SqlFormBinding {
-                name,
-                form_id: id.to_string(),
-            })
-        })
-        .collect())
+    let used_names = used_names.into_iter().collect::<BTreeSet<_>>();
+    result.retain(|binding| used_names.contains(&binding.name));
+    Ok(result)
 }
 
 /// Storage-compatibility boundary: folds the legacy physical
@@ -1094,7 +1147,12 @@ pub(crate) async fn create_sql_with_bindings<I: IntegrityProvider>(
     validate_sql_metadata(&normalized_payload)?;
     let variables = normalize_sql_variables(Some(&payload.variables))?;
     validate_sql_payload(op, ws_path, &normalized_payload.sql, &variables).await?;
-    let bindings = derive_form_bindings(&normalized_payload.sql, authorized_forms)?;
+    let guards = normalized_payload
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.form_bindings.as_deref())
+        .unwrap_or_default();
+    let bindings = derive_form_bindings(&normalized_payload.sql, authorized_forms, &[], guards)?;
     with_server_bindings(&mut normalized_payload, bindings);
 
     let timestamp = entry::now_ts();
@@ -1243,7 +1301,28 @@ pub(crate) async fn update_sql_with_bindings<I: IntegrityProvider>(
     let variables = normalize_sql_variables(Some(&normalized_payload.variables))?;
     validate_sql_metadata(&normalized_payload)?;
     validate_sql_payload(op, ws_path, &normalized_payload.sql, &variables).await?;
-    let bindings = derive_form_bindings(&normalized_payload.sql, authorized_forms)?;
+    let current_entry = sql_entry_from_row(&row)?;
+    let base_bindings = current_entry
+        .get("metadata")
+        .and_then(|metadata| metadata.get("formBindings"))
+        .and_then(Value::as_array)
+        .map(|bindings| {
+            serde_json::from_value::<Vec<SqlFormBinding>>(Value::Array(bindings.clone()))
+        })
+        .transpose()
+        .context("Saved SQL parent Form bindings are invalid")?
+        .unwrap_or_default();
+    let guards = normalized_payload
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.form_bindings.as_deref())
+        .unwrap_or_default();
+    let bindings = derive_form_bindings(
+        &normalized_payload.sql,
+        authorized_forms,
+        &base_bindings,
+        guards,
+    )?;
     with_server_bindings(&mut normalized_payload, bindings);
     let mut timestamp = entry::now_ts();
     if timestamp <= row.updated_at {
@@ -1481,7 +1560,7 @@ mod name_field_tests {
             .expect("uuid")
             .into();
         let forms = BTreeMap::from([("Expense".to_string(), form_id)]);
-        let bindings = derive_form_bindings("SELECT * FROM \"Expense\"", &forms).unwrap();
+        let bindings = derive_form_bindings("SELECT * FROM \"Expense\"", &forms, &[], &[]).unwrap();
         assert_eq!(
             bindings,
             vec![SqlFormBinding {
@@ -1489,8 +1568,124 @@ mod name_field_tests {
                 form_id: form_id.to_string()
             }]
         );
-        assert!(derive_form_bindings("SELECT * FROM \"Missing\"", &forms).is_err());
-        assert!(derive_form_bindings("SELECT * FROM Expense", &forms).is_err());
+        assert!(derive_form_bindings("SELECT * FROM \"Missing\"", &forms, &[], &[]).is_err());
+        assert!(derive_form_bindings("SELECT * FROM Expense", &forms, &[], &[]).is_err());
+    }
+
+    #[test]
+    fn binding_guards_compare_current_name_while_parent_pins_survive_by_default() {
+        let old = ugoite_domain::id::FormId::from_uuid(
+            Uuid::parse_str("01900000-0000-7000-8000-000000000010").unwrap(),
+        );
+        let replacement = ugoite_domain::id::FormId::from_uuid(
+            Uuid::parse_str("01900000-0000-7000-8000-000000000011").unwrap(),
+        );
+        let current = BTreeMap::from([("Expense".to_string(), replacement)]);
+        let parent = vec![SqlFormBinding {
+            name: "Expense".into(),
+            form_id: old.to_string(),
+        }];
+
+        assert!(derive_form_bindings(
+            "SELECT * FROM \"Expense\"",
+            &current,
+            &[],
+            &[SqlFormBinding {
+                name: "Expense".into(),
+                form_id: old.to_string()
+            }]
+        )
+        .is_err());
+        assert!(derive_form_bindings("SELECT * FROM \"Expense\"", &current, &parent, &[]).is_err());
+        assert!(derive_form_bindings(
+            "SELECT * FROM \"Expense\"",
+            &current,
+            &parent,
+            &[SqlFormBinding {
+                name: "Expense".into(),
+                form_id: old.to_string()
+            }]
+        )
+        .is_err());
+        assert_eq!(
+            derive_form_bindings(
+                "SELECT * FROM \"Expense\"",
+                &current,
+                &parent,
+                &[SqlFormBinding {
+                    name: "Expense".into(),
+                    form_id: replacement.to_string()
+                }]
+            )
+            .unwrap(),
+            vec![SqlFormBinding {
+                name: "Expense".into(),
+                form_id: replacement.to_string()
+            }],
+        );
+        assert_eq!(
+            derive_form_bindings("SELECT * FROM \"Expense\"", &current, &[], &[]).unwrap(),
+            vec![SqlFormBinding {
+                name: "Expense".into(),
+                form_id: replacement.to_string()
+            }],
+        );
+        let renamed = BTreeMap::from([
+            ("Reimbursement".to_string(), old),
+            ("Expense".to_string(), replacement),
+        ]);
+        for guards in [
+            Vec::new(),
+            vec![SqlFormBinding {
+                name: "Expense".into(),
+                form_id: old.to_string(),
+            }],
+        ] {
+            assert_eq!(
+                derive_form_bindings("SELECT * FROM \"Expense\"", &renamed, &parent, &guards)
+                    .unwrap(),
+                parent,
+                "the exact parent identity stays pinned after its name changes"
+            );
+        }
+        assert_eq!(
+            derive_form_bindings(
+                "SELECT * FROM \"Expense\"",
+                &renamed,
+                &parent,
+                &[SqlFormBinding {
+                    name: "Expense".into(),
+                    form_id: replacement.to_string(),
+                }],
+            )
+            .unwrap(),
+            vec![SqlFormBinding {
+                name: "Expense".into(),
+                form_id: replacement.to_string(),
+            }],
+            "a different currently readable Form guard explicitly rebinds"
+        );
+        assert!(derive_form_bindings(
+            "SELECT 1",
+            &current,
+            &parent,
+            &[SqlFormBinding {
+                name: "Expense".into(),
+                form_id: old.to_string()
+            }]
+        )
+        .unwrap()
+        .is_empty());
+        assert!(derive_form_bindings(
+            "SELECT 1",
+            &current,
+            &parent,
+            &[SqlFormBinding {
+                name: "Expense".into(),
+                form_id: replacement.to_string()
+            }]
+        )
+        .is_err());
     }
 
     #[test]

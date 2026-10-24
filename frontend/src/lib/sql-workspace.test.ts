@@ -170,6 +170,49 @@ describe("SQL workspace planning", () => {
     disposeRoot();
   });
 
+  it("carries the trusted SavedSQL binding base and Form guards through plan, run, and count", async () => {
+    vi.useFakeTimers();
+    planMock.mockResolvedValue({ result_schema: [] });
+    queryMock.mockResolvedValue({
+      columns: ["value"],
+      column_types: ["integer"],
+      rows: [[1]],
+      has_more: false,
+    });
+    countMock.mockResolvedValue({ count: 1 });
+    let controller!: ReturnType<typeof createSqlWorkspaceController>;
+    let disposeRoot!: () => void;
+    createRoot((dispose) => {
+      disposeRoot = dispose;
+      controller = createSqlWorkspaceController({
+        spaceId: () => "space-one",
+        sql: () => 'SELECT "Task"',
+        variables: () => [],
+        planSavedSql: () => undefined,
+        bindingBase: () => ({ id: "saved-query", revisionId: "revision-a" }),
+        formBindingGuards: () => [{ name: "Task", formId: "form-a" }],
+      });
+    });
+    await vi.advanceTimersByTimeAsync(350);
+    await vi.waitFor(() => expect(planMock).toHaveBeenCalledOnce());
+    expect(planMock.mock.calls[0][1]).toMatchObject({
+      binding_base: { id: "saved-query", revision_id: "revision-a" },
+      form_binding_guards: [{ name: "Task", form_id: "form-a" }],
+    });
+    controller.run();
+    await vi.waitFor(() => expect(queryMock).toHaveBeenCalledOnce());
+    expect(queryMock.mock.calls[0][1]).toMatchObject({
+      binding_base: { id: "saved-query", revision_id: "revision-a" },
+      form_binding_guards: [{ name: "Task", form_id: "form-a" }],
+    });
+    await controller.count();
+    expect(countMock.mock.calls[0][1]).toMatchObject({
+      binding_base: { id: "saved-query", revision_id: "revision-a" },
+      form_binding_guards: [{ name: "Task", form_id: "form-a" }],
+    });
+    disposeRoot();
+  });
+
   it("keeps definition preflight independent of invalid transient preview values", async () => {
     vi.useFakeTimers();
     planMock.mockResolvedValue({ result_schema: [] });

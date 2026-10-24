@@ -148,12 +148,29 @@ export interface SqlStructureAdapterContext {
   identity: string;
   /** Whether the Form relation may be offered by the relation chooser. */
   relationSelectable: boolean;
-  /** Human-readable Form name for eligible picker rows; SQL uses parser.relation. */
+  /** Human-readable Form name authored as the SQL relation. */
   label?: string;
+  /** Stable Form identity used only as an expected-identity guard. */
+  formId?: string;
+  /** Stable executor relation retained for schema/context diagnostics. */
+  stableRelation?: string;
   parser: SqlStructureContext;
   columnCapabilities: Readonly<Record<string, SqlStructureColumnCapabilities>>;
   /** Human field names keyed by immutable SQL column identifiers. */
   columnLabels?: Readonly<Record<string, string>>;
+}
+
+/** Hide stale same-name schema contexts while a selected Form ID is pinned. */
+export function filterSqlStructureContextsByFormGuards(
+  contexts: readonly SqlStructureAdapterContext[],
+  guards: readonly { name: string; formId: string }[],
+): SqlStructureAdapterContext[] {
+  return contexts.filter((context) => {
+    const guard = guards.find((candidate) =>
+      candidate.name === context.parser.relation
+    );
+    return !guard || context.formId === guard.formId;
+  });
 }
 
 const queryOperators = (
@@ -214,8 +231,9 @@ export const buildSqlStructureContexts = (
   });
 
   const formContexts = forms.flatMap((form) => {
-    const relation = form.sql_relation?.trim();
-    if (!relation) return [];
+    const stableRelation = form.sql_relation?.trim();
+    const relation = form.name?.trim();
+    if (!stableRelation || !relation || !form.id) return [];
     const columns = [
       { name: "_ugoite_id", type: "string" as const },
       { name: "_ugoite_created_at", type: "timestamp" as const },
@@ -315,7 +333,7 @@ export const buildSqlStructureContexts = (
         formId: form.id ?? null,
         formName: form.name,
         formVersion: form.version,
-        relation,
+        relation: stableRelation,
         relationSelectable: !isReservedMetadataForm(form.name),
         parser,
         columnCapabilities,
@@ -323,6 +341,8 @@ export const buildSqlStructureContexts = (
       }),
       relationSelectable: !isReservedMetadataForm(form.name),
       label: form.name.trim() || relation,
+      formId: form.id,
+      stableRelation,
       parser,
       columnCapabilities,
       columnLabels,

@@ -695,6 +695,7 @@ async fn source_resolution_and_continuation_recheck_current_authorization() -> R
             &space_id,
             &[viewer],
             SqlQueryRequest {
+                form_binding_guards: Vec::new(),
                 continuation: Some(cursor),
                 execution_id: None,
                 ..compiled_request
@@ -746,6 +747,7 @@ async fn source_resolution_and_continuation_recheck_current_authorization() -> R
         )
         .await?;
     let probe_request = || SqlQueryRequest {
+        form_binding_guards: Vec::new(),
         sql: String::new(),
         parameters: Map::new(),
         parameter_types: BTreeMap::new(),
@@ -760,6 +762,7 @@ async fn source_resolution_and_continuation_recheck_current_authorization() -> R
                 .expect("saved SQL revision id")
                 .to_string(),
         }),
+        binding_base: None,
     };
     let viewer_probe = service
         .probe_sql_scalar_authorized_for_principals(&space_id, &[viewer], probe_request())

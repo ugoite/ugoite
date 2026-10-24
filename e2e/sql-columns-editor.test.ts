@@ -83,13 +83,22 @@ test(
         buttons.filter((button) => button.getClientRects().length).map(
           (button) => {
             const box = button.getBoundingClientRect();
-            return { width: box.width, height: box.height };
+            return {
+              name: button.getAttribute("aria-label") || button.textContent ||
+                "",
+              width: box.width,
+              height: box.height,
+            };
           },
         )
       );
-      expect(targets.every((box) => box.width >= 44 && box.height >= 44)).toBe(
-        true,
+      const undersizedTargets = targets.filter((box) =>
+        box.width < 44 || box.height < 44
       );
+      expect(
+        undersizedTargets,
+        `undersized dialog controls: ${JSON.stringify(undersizedTargets)}`,
+      ).toEqual([]);
       expect(
         await page.evaluate(() =>
           document.documentElement.scrollWidth <= innerWidth
@@ -106,19 +115,28 @@ test(
       await expect(fields.getByRole("listitem")).toHaveCount(
         expectedSchema.length,
       );
+      const expandedSql = await page.getByRole("textbox", {
+        name: "SQL",
+        exact: true,
+      }).innerText();
       const expandedPlan = await request.post(
         getBackendUrl(`/spaces/${spaceId}/sql/query/plan`),
         {
           data: {
-            sql: await page.getByRole("textbox", { name: "SQL", exact: true })
-              .innerText(),
+            sql: expandedSql,
             parameters: {},
             parameter_types: {},
           },
         },
       );
-      expect(expandedPlan.ok()).toBe(true);
-      expect((await expandedPlan.json()).result_schema).toEqual(expectedSchema);
+      const expandedPlanBody = await expandedPlan.json();
+      expect(
+        expandedPlan.ok(),
+        `expanded SQL plan failed (${expandedPlan.status()}): ${
+          JSON.stringify(expandedPlanBody)
+        }; SQL: ${expandedSql}`,
+      ).toBe(true);
+      expect(expandedPlanBody.result_schema).toEqual(expectedSchema);
       const labels = await fields.locator(".sql-columns-editor__name")
         .allTextContents();
       for (
@@ -167,7 +185,12 @@ test(
       );
     await filterDialog.getByRole("textbox", { name: "Value" }).fill("10");
     await filterDialog.getByRole("button", { name: "Add filter" }).click();
-    await expect(filterDialog).toBeHidden();
+    await expect(page.getByRole("textbox", { name: "SQL", exact: true }))
+      .toContainText(">= 10");
+    await filterDialog.locator("footer").getByRole("button", {
+      name: "Close",
+      exact: true,
+    }).click();
     await page.getByRole("button", { name: "Sort", exact: true }).click();
     const sortDialog = page.getByRole("dialog", { name: "Sort", exact: true });
     await sortDialog.getByRole("combobox", { name: "Column" }).selectOption({
@@ -177,13 +200,18 @@ test(
       "desc",
     );
     await sortDialog.getByRole("button", { name: "Add sort" }).click();
-    await expect(sortDialog).toBeHidden();
+    await expect(page.getByRole("textbox", { name: "SQL", exact: true }))
+      .toContainText(/ORDER BY[\s\S]*DESC/);
+    await sortDialog.locator("footer").getByRole("button", {
+      name: "Close",
+      exact: true,
+    }).click();
     const taskEditedSql = await page.getByRole("textbox", {
       name: "SQL",
       exact: true,
     }).innerText();
-    expect(taskEditedSql).toContain("amount >= 10");
-    expect(taskEditedSql).toContain("ORDER BY amount DESC");
+    expect(taskEditedSql).toMatch(/WHERE\s+.+\s+>=\s+10/);
+    expect(taskEditedSql).toMatch(/ORDER BY\s+.+\s+DESC/);
     await page.getByRole("button", { name: "Run Query", exact: true }).click();
     await expect(page.getByRole("table")).toContainText("11", {
       timeout: 30_000,
@@ -212,8 +240,8 @@ test(
     const definition = await (await request.get(
       getBackendUrl(`/spaces/${spaceId}/sql/${saved.id}`),
     )).json() as { sql: string };
-    expect(definition.sql).toContain("amount >= 10");
-    expect(definition.sql).toContain("ORDER BY amount DESC");
+    expect(definition.sql).toMatch(/WHERE[\s\S]*>= 10/);
+    expect(definition.sql).toMatch(/ORDER BY[\s\S]*DESC/);
     const yaml = await completeCompositionGraphYaml(request, spaceId, {
       name: `Columns Composition ${formName}`,
       variables: [{

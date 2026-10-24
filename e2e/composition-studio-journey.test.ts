@@ -1007,15 +1007,16 @@ test.describe("Composition Studio Journey", () => {
       expect(response.ok()).toBe(true);
       const revision = await response.json() as StudioRawRevision;
       const savedYaml = String(revision.fields["spec"]);
+      expect(savedYaml).toContain(String(form?.id));
       const components =
         savedYaml.split("components:")[1]?.split("layout:")[0] ??
           "";
 
       expect(savedYaml).toContain(
-        `SELECT * FROM "${form?.sql_relation}"`,
+        `SELECT * FROM "${seed.formName}"`,
       );
       expect(savedYaml).toContain(
-        `SUM("${amountColumn}") AS value FROM "${form?.sql_relation}"`,
+        `SUM("${amountColumn}") AS value FROM "${seed.formName}"`,
       );
       expect(components).toContain(`variable: ${formSlug}_rows`);
       expect(components).toContain(
@@ -1701,10 +1702,6 @@ test(
       },
     );
     expect([200, 201]).toContain(created.status());
-    const forms =
-      await (await request.get(getBackendUrl(`/spaces/${spaceId}/forms`)))
-        .json() as Array<{ name: string; sql_relation: string }>;
-    const relation = forms.find((form) => form.name === formName)!.sql_relation;
     const yaml = await completeCompositionGraphYaml(request, spaceId, {
       name: `Form focus ${formName}`,
       variables: [{
@@ -1761,7 +1758,7 @@ test(
         });
         await choice.click();
         await expect(page.locator(".ui-sql-editor")).toContainText(
-          `SELECT 1 FROM "${relation}"`,
+          `SELECT 1 FROM "${formName}"`,
         );
       } else {
         await page.keyboard.press("Escape");

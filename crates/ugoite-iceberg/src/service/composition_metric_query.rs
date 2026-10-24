@@ -736,7 +736,7 @@ mod tests {
     use uuid::Uuid;
 
     #[tokio::test]
-    async fn draft_metric_uses_exact_base_bindings_and_ignores_forged_bindings() -> Result<()> {
+    async fn draft_metric_rebinds_only_after_current_form_guard_matches() -> Result<()> {
         let operator = Operator::new(Memory::default())?;
         let service = UgoiteService::from_operator(
             operator,
@@ -830,8 +830,9 @@ mod tests {
             .await?;
 
         // Rename the originally bound Form, then reuse its old name for a
-        // distinct Form with a different scalar value. The exact base must
-        // retain the original ID; an unbased draft resolves the current name.
+        // distinct Form with a different scalar value. A changed guard is an
+        // explicit rebind request and is accepted only when it matches the
+        // current readable Form.
         let workspace = crate::iceberg_store::native_mutation_workspace(
             service.operator(),
             &service.workspace_path(&space_id),
@@ -928,8 +929,8 @@ mod tests {
             .await?;
         assert!(edited_draft.ok, "base-edited metric should resolve");
         assert_eq!(
-            edited_draft.result.expect("original metric").value,
-            json!("5")
+            edited_draft.result.expect("reselected metric").value,
+            json!("15")
         );
         Ok(())
     }
