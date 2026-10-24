@@ -6690,6 +6690,7 @@ dependencies = [
  "serde-saphyr",
  "serde_json",
  "sha2 0.11.1",
+ "sqlparser 0.62.0",
  "sqlparser 0.63.0",
  "url",
  "uuid",

@@ -427,6 +427,43 @@ describe("/spaces/:space_id/sql/new", () => {
     );
   });
 
+  it("replaces the first Form pin when the picker changes the relation", async () => {
+    applySqlDocumentSemanticEditTransactionMock.mockReset()
+      .mockImplementationOnce(async () => ({
+        document: { status: "parsed", source: 'SELECT 1 FROM "Entry"' },
+        undo: { expected_source: "SELECT 1", edits: [] },
+      }))
+      .mockImplementationOnce(async () => ({
+        document: { status: "parsed", source: 'SELECT 1 FROM "Review"' },
+        undo: { expected_source: 'SELECT 1 FROM "Entry"', edits: [] },
+      }));
+    render(() => <SpaceQueryCreateRoute />);
+    const editor = await screen.findByRole("textbox", { name: "SQL" });
+    await waitFor(() => expect(editor).toHaveValue("SELECT 1"));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Form" }));
+    fireEvent.click(
+      await within(await screen.findByRole("dialog", { name: "Form" }))
+        .findByRole("button", { name: "Entry" }),
+    );
+    await waitFor(() => expect(editor).toHaveValue('SELECT 1 FROM "Entry"'));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Form" }));
+    fireEvent.click(
+      await within(await screen.findByRole("dialog", { name: "Form" }))
+        .findByRole("button", { name: "Review" }),
+    );
+    await waitFor(() => expect(editor).toHaveValue('SELECT 1 FROM "Review"'));
+    await waitFor(() =>
+      expect(sqlPlanMock).toHaveBeenLastCalledWith("default", {
+        sql: 'SELECT 1 FROM "Review"',
+        parameters: {},
+        parameter_types: {},
+        form_binding_guards: [{ name: "Review", form_id: "review-form" }],
+      }, expect.any(AbortSignal))
+    );
+  });
+
   it("keeps Save disabled while the current authorized plan is pending or rejected", async () => {
     let resolvePlan!: (value: { result_schema: [] }) => void;
     sqlPlanMock.mockImplementationOnce(() =>

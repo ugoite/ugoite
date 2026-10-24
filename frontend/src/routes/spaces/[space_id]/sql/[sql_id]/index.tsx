@@ -25,7 +25,10 @@ import {
   type SqlVariableDefaultDraft,
 } from "~/lib/sql";
 import { createSqlWorkspaceController } from "~/lib/sql-workspace";
-import { retainReferencedSqlFormBindingGuards } from "~/lib/form-binding-guards";
+import {
+  replaceSqlFormBindingGuard,
+  retainReferencedSqlFormBindingGuards,
+} from "~/lib/form-binding-guards";
 import {
   formApi,
   renameSqlDocumentParameter,
@@ -82,6 +85,9 @@ export default function SpaceSqlDetailRoute() {
     variables: [] as SqlVariable[],
   });
   const [normalizationPending, setNormalizationPending] = createSignal(true);
+  const [formGuardPruningPending, setFormGuardPruningPending] = createSignal(
+    false,
+  );
   const [undeclaredArgument, setUndeclaredArgument] = createSignal<
     string | null
   >(null);
@@ -151,7 +157,9 @@ export default function SpaceSqlDetailRoute() {
     );
   });
   const definitionError = createMemo(() => {
-    if (normalizationPending()) return t("common.loading");
+    if (formGuardPruningPending() || normalizationPending()) {
+      return t("common.loading");
+    }
     const undeclared = undeclaredArgument();
     if (undeclared) {
       return t("sqlPage.undeclaredArgument", { name: undeclared });
@@ -182,17 +190,24 @@ export default function SpaceSqlDetailRoute() {
   });
   const variableCount = createMemo(() => normalized().variables.length);
   let formGuardGeneration = 0;
-  const handleSqlChange = (sql: string) => {
-    setSqlInput(sql);
+  const pruneFormGuardsForSql = (sql: string, selected?: SqlFormBinding) => {
     const generation = ++formGuardGeneration;
-    void retainReferencedSqlFormBindingGuards(sql, formBindingGuards()).then(
-      (retained) => {
-        if (generation !== formGuardGeneration || sqlInput() !== sql) {
-          return;
-        }
-        setFormBindingGuards(retained);
-      },
-    );
+    setFormGuardPruningPending(true);
+    const current = formBindingGuards();
+    const pruning = selected
+      ? replaceSqlFormBindingGuard(sql, current, selected)
+      : retainReferencedSqlFormBindingGuards(sql, current);
+    void pruning.then((retained) => {
+      if (generation !== formGuardGeneration || sqlInput() !== sql) return;
+      setFormBindingGuards(retained);
+      setFormGuardPruningPending(false);
+    });
+  };
+
+  const handleSqlChange = (sql: string) => {
+    setFormGuardPruningPending(true);
+    setSqlInput(sql);
+    pruneFormGuardsForSql(sql);
   };
   const bindingDiagnostics = createMemo(() => {
     if (forms.state !== "ready") return [];
@@ -639,13 +654,12 @@ export default function SpaceSqlDetailRoute() {
                       )}
                     onSqlChange={handleSqlChange}
                     onFormBindingSelected={(selection) => {
+                      setFormGuardPruningPending(true);
                       setSqlInput(selection.sql);
-                      setFormBindingGuards((current) => [
-                        ...current.filter((item) =>
-                          item.name !== selection.name
-                        ),
-                        { name: selection.name, formId: selection.form_id },
-                      ]);
+                      pruneFormGuardsForSql(selection.sql, {
+                        name: selection.name,
+                        formId: selection.form_id,
+                      });
                     }}
                     onVariablesAdded={registerCreatedVariables}
                     argumentDefinitions={savedVariables}

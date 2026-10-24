@@ -1256,13 +1256,20 @@ export function CompositionStudio(props: CompositionStudioProps) {
             if (evaluation?.next) void runQuery(variableId, evaluation.next);
           }}
           onDraftChange={onDraftChange}
-          onQueryChange={(variableId, sql) => {
+          onQueryChange={(variableId, sql, formBindings) => {
             onDraftChange({
               ...draft(),
               variables: draft().variables.map((node) =>
                 node.id === variableId && node.kind === "query" &&
                   node.query.kind === "inline_sql"
-                  ? { ...node, query: { ...node.query, sql } }
+                  ? {
+                    ...node,
+                    query: {
+                      ...node.query,
+                      sql,
+                      ...(formBindings ? { form_bindings: formBindings } : {}),
+                    },
+                  }
                   : node
               ),
             });

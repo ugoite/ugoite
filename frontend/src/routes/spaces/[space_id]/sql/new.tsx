@@ -26,7 +26,10 @@ import { t } from "~/lib/i18n";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
 import { createSqlWorkspaceController } from "~/lib/sql-workspace";
-import { retainReferencedSqlFormBindingGuards } from "~/lib/form-binding-guards";
+import {
+  replaceSqlFormBindingGuard,
+  retainReferencedSqlFormBindingGuards,
+} from "~/lib/form-binding-guards";
 
 export const route = spaceRoute({ navigation: "search" });
 
@@ -54,6 +57,9 @@ export default function SpaceQueryCreateRoute() {
     string | null
   >(null);
   const [normalizationPending, setNormalizationPending] = createSignal(true);
+  const [formGuardPruningPending, setFormGuardPruningPending] = createSignal(
+    false,
+  );
   const [structureActions, setStructureActions] = createSignal<
     readonly SQLWorkspaceAction[]
   >([]);
@@ -107,7 +113,9 @@ export default function SpaceQueryCreateRoute() {
     }));
   });
   const definitionError = createMemo(() => {
-    if (normalizationPending()) return t("common.loading");
+    if (formGuardPruningPending() || normalizationPending()) {
+      return t("common.loading");
+    }
     const undeclared = undeclaredArgument();
     if (undeclared) {
       return t("sqlPage.undeclaredArgument", { name: undeclared });
@@ -135,17 +143,24 @@ export default function SpaceQueryCreateRoute() {
     formBindingGuards,
   });
 
-  const handleSqlChange = (sql: string) => {
-    setSqlInput(sql);
+  const pruneFormGuardsForSql = (sql: string, selected?: SqlFormBinding) => {
     const generation = ++formGuardGeneration;
-    void retainReferencedSqlFormBindingGuards(sql, formBindingGuards()).then(
-      (retained) => {
-        if (generation !== formGuardGeneration || sqlInput() !== sql) {
-          return;
-        }
-        setFormBindingGuards(retained);
-      },
-    );
+    setFormGuardPruningPending(true);
+    const current = formBindingGuards();
+    const pruning = selected
+      ? replaceSqlFormBindingGuard(sql, current, selected)
+      : retainReferencedSqlFormBindingGuards(sql, current);
+    void pruning.then((retained) => {
+      if (generation !== formGuardGeneration || sqlInput() !== sql) return;
+      setFormBindingGuards(retained);
+      setFormGuardPruningPending(false);
+    });
+  };
+
+  const handleSqlChange = (sql: string) => {
+    setFormGuardPruningPending(true);
+    setSqlInput(sql);
+    pruneFormGuardsForSql(sql);
   };
 
   const registerCreatedVariables = (
@@ -331,11 +346,12 @@ export default function SpaceQueryCreateRoute() {
             )}
           onSqlChange={handleSqlChange}
           onFormBindingSelected={(selection) => {
+            setFormGuardPruningPending(true);
             setSqlInput(selection.sql);
-            setFormBindingGuards((current) => [
-              ...current.filter((item) => item.name !== selection.name),
-              { name: selection.name, formId: selection.form_id },
-            ]);
+            pruneFormGuardsForSql(selection.sql, {
+              name: selection.name,
+              formId: selection.form_id,
+            });
           }}
           onVariablesAdded={registerCreatedVariables}
           argumentDefinitions={argumentDefinitions}

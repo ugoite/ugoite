@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { retainReferencedSqlFormBindingGuards } from "./form-binding-guards";
+import {
+  replaceSqlFormBindingGuard,
+  retainReferencedSqlFormBindingGuards,
+} from "./form-binding-guards";
 
 describe("SQL Form binding guard references", () => {
   const a = { name: "Entry", formId: "form-a" };
@@ -21,5 +24,18 @@ describe("SQL Form binding guard references", () => {
     await expect(
       retainReferencedSqlFormBindingGuards("SELECT (", [a]),
     ).resolves.toEqual([a]);
+  });
+
+  it("replaces the selected identity while preserving another referenced Form guard", async () => {
+    await expect(
+      replaceSqlFormBindingGuard(
+        'SELECT * FROM "Entry" AS e JOIN "Other" AS o ON TRUE',
+        [a, b],
+        { name: "Entry", formId: "form-c" },
+      ),
+    ).resolves.toEqual([
+      b,
+      { name: "Entry", formId: "form-c" },
+    ]);
   });
 });

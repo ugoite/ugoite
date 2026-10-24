@@ -31,6 +31,10 @@ import type { Form, SqlVariable } from "~/lib/types";
 import { normalizeSqlDocument } from "~/lib/sql";
 import { t } from "~/lib/i18n";
 import { parseVariableGraphInput } from "~/lib/ugoite-client";
+import {
+  replaceSqlFormBindingGuard,
+  retainReferencedSqlFormBindingGuards,
+} from "~/lib/form-binding-guards";
 
 const scalarTypes: CompositionScalarType[] = [
   "string",
@@ -66,7 +70,11 @@ export interface CompositionVariableGraphWorkspaceProps {
   actionsForQuery?: (variableId: string) => readonly SQLWorkspaceAction[];
   previewForQuery?: (variableId: string) => SQLWorkspacePreview;
   onPlanColumnsForQuery?: (variableId: string) => Promise<PlannedSqlColumns>;
-  onQueryChange?: (variableId: string, sql: string) => void;
+  onQueryChange?: (
+    variableId: string,
+    sql: string,
+    formBindings?: Array<{ relation: string; form_id: string }>,
+  ) => void;
   onRunQuery?: (variableId: string) => void;
   onNextQuery?: (variableId: string) => void;
   onPreviousQuery?: (variableId: string) => void;
@@ -138,6 +146,11 @@ export function CompositionVariableGraphWorkspace(
     new Set<string>(),
   );
   const parseGenerations = new Map<string, number>();
+  const formGuardGenerations = new Map<string, number>();
+  const [formGuardPruningPending, setFormGuardPruningPending] = createSignal<
+    Record<string, boolean>
+  >({});
+  onCleanup(() => formGuardGenerations.clear());
   let mobileDialog: HTMLElement | undefined;
   let mobileOpener: HTMLElement | null = null;
   const selected = () =>
@@ -666,6 +679,83 @@ export function CompositionVariableGraphWorkspace(
                       ? definition.sql
                       : props.sqlBodies?.[query().id] ?? "";
                   };
+                  const isFormGuardPruningPending = () =>
+                    formGuardPruningPending()[query().id] ?? false;
+                  const updateSqlAndFormGuards = (
+                    nextSql: string,
+                    selected?: { name: string; form_id: string },
+                  ) => {
+                    const variableId = query().id;
+                    const generation =
+                      (formGuardGenerations.get(variableId) ?? 0) + 1;
+                    formGuardGenerations.set(variableId, generation);
+                    const guards = query().query.kind === "inline_sql"
+                      ? query().query.form_bindings ?? []
+                      : [];
+                    setFormGuardPruningPending((current) => ({
+                      ...current,
+                      [variableId]: true,
+                    }));
+                    const candidates = guards.map((guard) => ({
+                      name: guard.relation,
+                      formId: guard.form_id,
+                    }));
+                    const immediateGuards = selected
+                      ? [
+                        ...guards.filter((guard) =>
+                          guard.relation !== selected.name
+                        ),
+                        {
+                          relation: selected.name,
+                          form_id: selected.form_id,
+                        },
+                      ]
+                      : guards;
+                    // Keep edited SQL and the selected identity in the host
+                    // draft together. Plan/run/count stay disabled until Rust
+                    // has pruned guards against the parsed reference set.
+                    props.onQueryChange?.(
+                      variableId,
+                      nextSql,
+                      immediateGuards,
+                    );
+                    const pruning = selected
+                      ? replaceSqlFormBindingGuard(nextSql, candidates, {
+                        name: selected.name,
+                        formId: selected.form_id,
+                      })
+                      : retainReferencedSqlFormBindingGuards(
+                        nextSql,
+                        candidates,
+                      );
+                    void pruning.then((retained) => {
+                      if (
+                        formGuardGenerations.get(variableId) !== generation ||
+                        query().id !== variableId || sql() !== nextSql
+                      ) return;
+                      props.onQueryChange?.(
+                        variableId,
+                        nextSql,
+                        retained.map((guard) => ({
+                          relation: guard.name,
+                          form_id: guard.formId,
+                        })),
+                      );
+                      setFormGuardPruningPending((current) => ({
+                        ...current,
+                        [variableId]: false,
+                      }));
+                    }).catch(() => {
+                      if (
+                        formGuardGenerations.get(variableId) !== generation ||
+                        query().id !== variableId || sql() !== nextSql
+                      ) return;
+                      setFormGuardPruningPending((current) => ({
+                        ...current,
+                        [variableId]: false,
+                      }));
+                    });
+                  };
                   const declarations = () =>
                     props.parameterDeclarations?.[query().id] ?? [];
                   const [sqlArguments] = createResource(
@@ -765,7 +855,7 @@ export function CompositionVariableGraphWorkspace(
                         {...(query().query.kind === "inline_sql"
                           ? {
                             onSqlChange: (sql: string) =>
-                              props.onQueryChange?.(query().id, sql),
+                              updateSqlAndFormGuards(sql),
                           }
                           : { readOnly: true })}
                         schema={props.sqlSchema}
@@ -775,12 +865,15 @@ export function CompositionVariableGraphWorkspace(
                         ]}
                         variables={[]}
                         onPreview={() => props.onRunQuery?.(query().id)}
-                        previewDisabled={!props.onRunQuery || !!argumentError()}
+                        previewDisabled={!props.onRunQuery ||
+                          !!argumentError() ||
+                          isFormGuardPruningPending()}
                         preview={props.previewForQuery?.(query().id) ??
                           { status: "idle", isCurrent: false }}
                         onNext={() => props.onNextQuery?.(query().id)}
                         onPrevious={() => props.onPreviousQuery?.(query().id)}
-                        onCount={query().returns.kind === "table" &&
+                        onCount={!isFormGuardPruningPending() &&
+                            query().returns.kind === "table" &&
                             props.onCountQuery
                           ? () => props.onCountQuery?.(query().id)
                           : undefined}
@@ -801,7 +894,14 @@ export function CompositionVariableGraphWorkspace(
                           sql={sql}
                           contexts={structureContexts}
                           onSqlChange={(nextSql) =>
-                            props.onQueryChange?.(query().id, nextSql)}
+                            updateSqlAndFormGuards(nextSql)}
+                          onFormBindingSelected={(selection) =>
+                            updateSqlAndFormGuards(selection.sql, {
+                              name: selection.name,
+                              form_id: selection.form_id,
+                            })}
+                          disabled={() => isFormGuardPruningPending() ||
+                            !!argumentError()}
                           onVariablesAdded={(variables) =>
                             props.onVariablesAdded?.(query().id, variables)}
                           reservedVariableNames={() =>
