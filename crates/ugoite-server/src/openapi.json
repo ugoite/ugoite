@@ -16330,6 +16330,16 @@
           "yaml": {
             "type": "string",
             "description": "Restricted .ugcomp.yaml v1 document, at most 64 KiB."
+          },
+          "variables": {
+            "type": "object",
+            "description": "Transient typed input Work for current-snapshot save validation; never persisted.",
+            "additionalProperties": true
+          },
+          "unset_variables": {
+            "type": "array",
+            "description": "Input variable IDs explicitly left unset instead of using defaults.",
+            "items": { "type": "string" }
           }
         },
         "additionalProperties": false

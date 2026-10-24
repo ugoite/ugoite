@@ -26,6 +26,7 @@ struct AuthorizedScalarProbeOptions<'a> {
     query_limits_override: Option<&'a QueryLimits>,
     allow_inline_sql: bool,
     publication_override: Option<&'a PublicationRef>,
+    authorization_state: Option<&'a AuthorizationState>,
 }
 
 struct MetricQueryPlan<'a> {
@@ -485,6 +486,7 @@ impl UgoiteService {
                 query_limits_override: None,
                 allow_inline_sql: false,
                 publication_override: None,
+                authorization_state: None,
             },
         )
         .await
@@ -507,6 +509,7 @@ impl UgoiteService {
                 query_limits_override,
                 allow_inline_sql: true,
                 publication_override: None,
+                authorization_state: None,
             },
         )
         .await
@@ -529,6 +532,31 @@ impl UgoiteService {
                 query_limits_override: None,
                 allow_inline_sql: true,
                 publication_override: Some(publication),
+                authorization_state: None,
+            },
+        )
+        .await
+    }
+
+    pub(super) async fn probe_composition_sql_scalar_authorized_at_publication_with_state(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        composition_id: Option<&str>,
+        request: SqlQueryRequest,
+        publication: &PublicationRef,
+        authorization_state: &AuthorizationState,
+    ) -> Result<SqlScalarProbeResult> {
+        self.probe_sql_scalar_authorized_with_composition_access(
+            space_id,
+            principal_ids,
+            composition_id,
+            request,
+            AuthorizedScalarProbeOptions {
+                query_limits_override: None,
+                allow_inline_sql: true,
+                publication_override: Some(publication),
+                authorization_state: Some(authorization_state),
             },
         )
         .await
@@ -545,11 +573,21 @@ impl UgoiteService {
         validate_scalar_probe_request_with_inline(&request, options.allow_inline_sql)?;
         require_nonempty_authorized_principals(principal_ids)?;
         self.validate_complete_space(space_id).await?;
-        let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
-            .acquire_state_lease(space_id)
-            .await?;
+        let (owned_state, _authorization_lease) = match options.authorization_state {
+            Some(_) => (None, None),
+            None => {
+                let (state, lease) = Authorizer::new(self.operator.clone())
+                    .acquire_state_lease(space_id)
+                    .await?;
+                (Some(state), Some(lease))
+            }
+        };
+        let state = options
+            .authorization_state
+            .or(owned_state.as_ref())
+            .expect("authorized scalar probe has authorization state");
         for principal_id in principal_ids {
-            if !effective_actions_for_state(&state, *principal_id, None)?.contains(&Action::Read) {
+            if !effective_actions_for_state(state, *principal_id, None)?.contains(&Action::Read) {
                 return Err(
                     AppError::forbidden("principal is not authorized to read this Space").into(),
                 );
@@ -560,7 +598,7 @@ impl UgoiteService {
             space_id,
             &request,
             Some(sql_execution::SqlSourceAuthorization {
-                state: &state,
+                state,
                 principal_ids,
             }),
         )
@@ -576,7 +614,7 @@ impl UgoiteService {
         let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
         if let Some(composition_id) = composition_id {
             let composition_scopes =
-                Self::authorized_form_entry_scopes_for_forms(&state, principal_ids, forms.clone())?;
+                Self::authorized_form_entry_scopes_for_forms(state, principal_ids, forms.clone())?;
             require_composition_entry_read_scope(
                 &composition_scopes,
                 parse_entry_id(composition_id)?,
@@ -584,7 +622,7 @@ impl UgoiteService {
             )?;
         }
         let relation_scopes =
-            sql_execution::authorized_relation_scopes(&state, principal_ids, &forms)?;
+            sql_execution::authorized_relation_scopes(state, principal_ids, &forms)?;
         let execution_sql = sql_execution::bind_sql_to_forms(&prepared, &forms, &relation_scopes)?;
         let parameters = prepared.parameters;
         let (columns, result_schema, rows) = if let Some(query_limits) =

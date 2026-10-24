@@ -217,6 +217,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const [saveRetryAvailable, setSaveRetryAvailable] = createSignal(
     initialPending?.state === "uncertain",
   );
+  let getSaveInputSnapshot: () =>
+    | { variables: Record<string, unknown>; unset_variables: string[] }
+    | undefined = () => ({ variables: {}, unset_variables: [] });
   createEffect(() => {
     const identity = routeIdentity();
     const stored = getPendingCompositionSaveAttempt(identity);
@@ -955,8 +958,13 @@ export function CompositionStudio(props: CompositionStudioProps) {
           ? {
             compositionId: attempt.saveTarget.compositionId,
             baseRevisionId: attempt.saveTarget.baseRevisionId,
+            variables: attempt.variables ?? {},
+            unset_variables: attempt.unset_variables ?? [],
           }
-          : undefined,
+          : {
+            variables: attempt.variables ?? {},
+            unset_variables: attempt.unset_variables ?? [],
+          },
       );
       if (!sameCompositionSaveIdentity(attempt, routeIdentity())) {
         clearPendingCompositionSaveAttempt(attempt, "completed", undefined);
@@ -1011,6 +1019,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
       setSaveError(t("composition.studioInvalidDocument"));
       return;
     }
+    const inputSnapshot = getSaveInputSnapshot();
+    if (!inputSnapshot) {
+      setSaveError(t("composition.queryFailed"));
+      return;
+    }
     const saveIdentity = routeIdentity();
     const generation = saveGeneration() + 1;
     setSaveGeneration(generation);
@@ -1020,6 +1033,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
       ...saveIdentity,
       name: current.name.trim(),
       yaml: "",
+      variables: { ...inputSnapshot.variables },
+      unset_variables: [...inputSnapshot.unset_variables],
       idempotencyKey: crypto.randomUUID(),
     };
     pendingSave = attempt;
@@ -1196,6 +1211,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
           session={session()}
           getPrincipalGeneration={getPrincipalGeneration}
           isSessionCurrent={isSessionCurrent}
+          onSaveSnapshotReady={(getter) => {
+            getSaveInputSnapshot = getter;
+          }}
           sqlSchema={sqlSchema()}
           sqlForms={formsResource() ?? []}
           sqlBodies={sqlBodies()}

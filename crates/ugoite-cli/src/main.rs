@@ -475,6 +475,7 @@ mod tests {
                 sub: commands::composition::CompositionSubCmd::Import {
                     ref file,
                     ref idempotency_key,
+                    ..
                 }
             }) if file.as_path() == std::path::Path::new("monthly-expense.ugcomp.yaml")
                 && idempotency_key == "import-attempt-1"

@@ -133,6 +133,66 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-COMP-009#criterion.query-results-validated-before-preview
+      - id: strict-save-preflight
+        role: implementation
+        facet: service
+        responsibility: Validate every query and transient typed Input against one bound authorization and Publication snapshot before admitting a save; carry the opaque exact-head proof into a single non-refreshing publication attempt.
+        targets:
+          - id: save-preflight
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service/composition_query_evaluation.rs
+            selector: { kind: symbol, name: preflight_composition_save_with_access }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.strict-save-current-snapshot
+          - id: local-save-admission
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service/composition_local_save.rs
+            selector: { kind: symbol, name: save_composition_local_with_work }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-009#criterion.strict-save-current-snapshot
+      - id: strict-save-preflight-verification
+        role: verification
+        facet: verification
+        responsibility: Verify that strict save failures publish no first Registry and that a proof becomes unusable after the bound Catalog Head changes.
+        targets:
+          - id: invalid-initial-scalar
+            adapter: rust
+            path: crates/ugoite-iceberg/src/composition/history_tests.rs
+            selector: { kind: test, name: invalid_scalar_first_save_does_not_publish_registry_or_entry }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.strict-save-current-snapshot
+                covers: [FEAT-COMP-011#binding.strict-save-preflight/target.save-preflight]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: invalid_scalar_first_save_does_not_publish_registry_or_entry } }
+          - id: stale-first-registry-proof
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition.rs
+            selector: { kind: test, name: strict_first_save_rejects_head_change_after_preflight_without_registry }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.strict-save-current-snapshot
+                covers: [FEAT-COMP-011#binding.strict-save-preflight/target.local-save-admission]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition, test: strict_first_save_rejects_head_change_after_preflight_without_registry } }
+          - id: source-change-retry
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition.rs
+            selector: { kind: test, name: local_composition_retry_recovers_receipt_after_source_cardinality_changes }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.strict-save-current-snapshot
+                covers: [FEAT-COMP-011#binding.strict-save-preflight/target.local-save-admission]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition, test: local_composition_retry_recovers_receipt_after_source_cardinality_changes } }
+          - id: changed-work-replay
+            adapter: rust
+            path: crates/ugoite-iceberg/src/composition/history_tests.rs
+            selector: { kind: test, name: successful_save_rejects_operation_replay_with_changed_work }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-009#criterion.strict-save-current-snapshot
+                covers: [FEAT-COMP-011#binding.strict-save-preflight/target.save-preflight]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: successful_save_rejects_operation_replay_with_changed_work } }
       - id: atomic-selected-evaluation-verification
         role: verification
         facet: verification

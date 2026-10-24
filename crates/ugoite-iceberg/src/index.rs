@@ -66,6 +66,9 @@ pub(crate) struct AssetTextSearchBudget {
     used_bytes: Arc<AtomicUsize>,
 }
 
+/// JSON rows plus optional lossless representations for large integer cells.
+pub(crate) type SerializedSqlPageRows = (Vec<Value>, Option<Vec<Vec<Option<String>>>>);
+
 impl AssetTextSearchBudget {
     pub(crate) fn new() -> Self {
         Self {
@@ -3650,6 +3653,59 @@ fn sql_result_batches_to_values_with_exact_integers_bounded(
         rows,
         exact_integer_rows: Some(exact_integer_rows),
     })
+}
+
+pub(crate) fn serialize_stateless_sql_page(
+    page: &crate::query_context::StatelessSqlPage,
+    include_exact_integer_values: bool,
+) -> Result<SerializedSqlPageRows> {
+    let serialized = sql_result_batches_to_values_with_exact_integers_bounded(
+        &page.batches,
+        &page.result_schema,
+        ugoite_core::sql_query::MAX_SQL_OUTPUT_BYTES,
+        include_exact_integer_values,
+    )?;
+    Ok((serialized.rows, serialized.exact_integer_rows))
+}
+
+/// Serialize SQL rows for strict Composition validation while retaining null
+/// cells even when the planner's Arrow schema incorrectly marks them non-null.
+/// The public SQL row contract may omit schema-nullable values; save
+/// preflight must inspect the actual values so a NULL can never pass a
+/// required scalar descriptor.
+pub(crate) fn serialize_stateless_sql_page_for_validation(
+    page: &crate::query_context::StatelessSqlPage,
+    include_exact_integer_values: bool,
+) -> Result<SerializedSqlPageRows> {
+    use arrow_array::Array;
+
+    let (mut rows, exact_integer_rows) =
+        serialize_stateless_sql_page(page, include_exact_integer_values)?;
+    let mut row_index = 0usize;
+    for batch in &page.batches {
+        for batch_row in 0..batch.num_rows() {
+            let row = rows
+                .get_mut(row_index)
+                .and_then(Value::as_object_mut)
+                .ok_or_else(|| anyhow!("serialized SQL validation row is malformed"))?;
+            for (column_index, array) in batch.columns().iter().enumerate() {
+                if array.is_null(batch_row) {
+                    let name = page
+                        .columns
+                        .get(column_index)
+                        .ok_or_else(|| anyhow!("SQL validation column is missing"))?;
+                    row.insert(name.clone(), Value::Null);
+                }
+            }
+            row_index += 1;
+        }
+    }
+    if row_index != rows.len() {
+        return Err(anyhow!(
+            "SQL validation rows do not match the serialized page"
+        ));
+    }
+    Ok((rows, exact_integer_rows))
 }
 
 /// Creates a positional exact-integer sidecar without changing the ordinary

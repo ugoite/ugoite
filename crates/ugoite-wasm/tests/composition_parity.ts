@@ -1,4 +1,5 @@
 const workspaceRoot = new URL("../../..", import.meta.url).pathname;
+const cargoCommand = Deno.env.get("UGOITE_WASM_PARITY_CARGO") ?? "cargo";
 
 const MAX_COMPOSITION_YAML_BYTES = 64 * 1024;
 const MAX_COMPOSITION_YAML_DEPTH = 64;
@@ -148,7 +149,7 @@ async function invokeWasm(
 }
 
 async function main(): Promise<void> {
-  await runCommand("cargo", [
+  await runCommand(cargoCommand, [
     "build",
     "-p",
     "ugoite-wasm",
@@ -157,7 +158,7 @@ async function main(): Promise<void> {
     "--locked",
   ]);
   const metadata = JSON.parse(
-    await runCommand("cargo", [
+    await runCommand(cargoCommand, [
       "metadata",
       "--no-deps",
       "--format-version",
@@ -200,6 +201,118 @@ async function main(): Promise<void> {
   assertEqual(response.ok, true, "SQL-first Composition parse result");
   assertEqual(responseValue.canonical_yaml, canonicalYaml, "canonical YAML");
   assertEqual(responseValue.fingerprint, fingerprint, "semantic fingerprint");
+
+  const saveArguments = {
+    space_id: "demo",
+    idempotency_key: "composition-save-attempt-1",
+  };
+  const saveBody = {
+    yaml,
+    variables: { month: "2026-10" },
+    unset_variables: ["optional_note"],
+  };
+  const preparedSave = await invokeWasm(instance.exports, {
+    action: "prepare",
+    operation: "composition.save",
+    arguments: saveArguments,
+    body: saveBody,
+  });
+  assertEqual(preparedSave.ok, true, "WASM prepares typed Composition save");
+  const preparedSaveValue = preparedSave.value as Record<string, unknown>;
+  assertEqual(preparedSaveValue.method, "POST", "Composition save method");
+  assertEqual(
+    preparedSaveValue.path,
+    "/spaces/demo/compositions",
+    "Composition save path",
+  );
+  const saveHeaders = preparedSaveValue.headers as Array<{
+    name: string;
+    value: string;
+  }>;
+  assertEqual(
+    saveHeaders.find((header) => header.name === "idempotency-key")?.value,
+    saveArguments.idempotency_key,
+    "Composition save idempotency header",
+  );
+  assertJsonEqual(
+    JSON.parse(preparedSaveValue.body as string),
+    saveBody,
+    "Composition save typed set/unset payload",
+  );
+
+  const emptySave = await invokeWasm(instance.exports, {
+    action: "prepare",
+    operation: "composition.save",
+    arguments: {
+      ...saveArguments,
+      idempotency_key: "composition-save-empty-work",
+    },
+    body: { yaml },
+  });
+  assertEqual(
+    emptySave.ok,
+    true,
+    "WASM prepares legacy save with omitted Work",
+  );
+  assertJsonEqual(
+    JSON.parse((emptySave.value as Record<string, unknown>).body as string),
+    { yaml },
+    "omitted save Work remains omitted on the wire",
+  );
+
+  const emptyWorkBytes = new TextEncoder().encode(
+    JSON.stringify({ variables: { value: "" }, unset_variables: [] }),
+  ).length;
+  const maximumSaveWork = {
+    variables: {
+      value: "x".repeat(1024 * 1024 - emptyWorkBytes),
+    },
+    unset_variables: [] as string[],
+  };
+  assertEqual(
+    new TextEncoder().encode(JSON.stringify(maximumSaveWork)).length,
+    1024 * 1024,
+    "maximum Composition save Work bytes",
+  );
+  const maximumSave = await invokeWasm(instance.exports, {
+    action: "prepare",
+    operation: "composition.save",
+    arguments: {
+      ...saveArguments,
+      idempotency_key: "composition-save-max-work",
+    },
+    body: { yaml, ...maximumSaveWork },
+  });
+  assertEqual(maximumSave.ok, true, "WASM accepts maximum supported save Work");
+  const maximumSaveBody = JSON.parse(
+    (maximumSave.value as Record<string, unknown>).body as string,
+  ) as { variables: { value: string } };
+  assertEqual(
+    maximumSaveBody.variables.value.length,
+    maximumSaveWork.variables.value.length,
+    "maximum save Work survives actual WASM preparation",
+  );
+  const oversizedSave = await invokeWasm(instance.exports, {
+    action: "prepare",
+    operation: "composition.save",
+    arguments: {
+      ...saveArguments,
+      idempotency_key: "composition-save-over-work",
+    },
+    body: {
+      yaml,
+      variables: {
+        value: `${maximumSaveWork.variables.value}x`,
+      },
+      unset_variables: [],
+    },
+  });
+  assertEqual(oversizedSave.ok, false, "WASM rejects Work over 1 MiB");
+  assertEqual(
+    (oversizedSave.error as Record<string, unknown>).kind,
+    "invalid_arguments",
+    "oversized save Work diagnostic",
+  );
 
   const atByteLimit = await invokeWasm(
     instance.exports,

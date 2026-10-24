@@ -2,6 +2,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use fs2::FileExt;
+use futures::future::BoxFuture;
 use futures::TryStreamExt;
 use hmac::{Hmac, KeyInit, Mac};
 use opendal::options::WriteOptions;
@@ -5279,244 +5280,367 @@ impl UgoiteService {
     pub async fn save_composition_authorized_for_principals_with_operation_id(
         &self,
         space_id: &str,
-        mut request: composition::CompositionSaveRequest,
+        request: composition::CompositionSaveRequest,
         author: &str,
         principal_ids: &[Uuid],
         operation_id: &str,
     ) -> Result<composition::CompositionSaveResult> {
-        require_nonempty_authorized_principals(principal_ids)?;
-        composition::validate_operation_id(operation_id)?;
-        if request.entry_id.is_some() != request.base_revision_id.is_some() {
-            return Err(AppError::invalid_input(
-                ErrorCode::InvalidInput,
-                "Composition updates require an entry ID and exact base revision",
-            )
-            .into());
-        }
-        // Validate before any Registry Form creation so malformed or
-        // unsupported documents leave the Space unchanged.
-        ugoite_domain::composition::canonicalize_composition(&request.document).map_err(
-            |diagnostic| AppError::invalid_input(ErrorCode::InvalidInput, diagnostic.as_str()),
-        )?;
-        self.ensure_mutation_admitted(space_id).await?;
-        self.validate_complete_space(space_id).await?;
-        let entry_id = request.entry_id.unwrap_or_else(|| {
-            composition::composition_entry_id_for_operation(space_id, operation_id)
-        });
-        let entry_id_text = entry_id.to_string();
-        validate_storage_id(validate_entry_id(&entry_id_text))?;
-        if let Some(base_revision_id) = request.base_revision_id {
-            validate_storage_id(validate_revision_id(&base_revision_id.to_string()))?;
-        }
-        let action = if request.entry_id.is_some() {
-            Action::Update
-        } else {
-            Action::Create
-        };
-        let is_create = request.entry_id.is_none();
-        let (state, authorization_lease) = Authorizer::new(self.operator.clone())
-            .acquire_state_lease(space_id)
-            .await?;
-        self.require_action_for_principals_in_state(
-            &state,
-            &entry_id_text,
-            ResourceKind::Entry,
-            action,
+        self.save_composition_authorized_for_principals_with_work(
+            space_id,
+            request,
+            author,
             principal_ids,
-        )?;
-        let registry_resource = ResourceRef {
-            kind: ResourceKind::Form,
-            id: composition::COMPOSITION_REGISTRY_FORM_NAME.to_string(),
-            parent: None,
-        };
-        for principal_id in principal_ids {
-            if !effective_actions_for_state(&state, *principal_id, Some(&registry_resource))?
-                .contains(&Action::Read)
-            {
-                return Err(AppError::forbidden("Form is not readable").into());
+            operation_id,
+            composition::CompositionSaveWork::default(),
+        )
+        .await
+    }
+
+    // Save preflight holds query results and an authorization lease across
+    // publication; keep that large future off adapter and test worker stacks.
+    pub fn save_composition_authorized_for_principals_with_work<'a>(
+        &'a self,
+        space_id: &'a str,
+        request: composition::CompositionSaveRequest,
+        author: &'a str,
+        principal_ids: &'a [Uuid],
+        operation_id: &'a str,
+        work: composition::CompositionSaveWork,
+    ) -> BoxFuture<'a, Result<composition::CompositionSaveResult>> {
+        Box::pin(async move {
+            let mut request = request;
+            require_nonempty_authorized_principals(principal_ids)?;
+            composition::validate_operation_id(operation_id)?;
+            if request.entry_id.is_some() != request.base_revision_id.is_some() {
+                return Err(AppError::invalid_input(
+                    ErrorCode::InvalidInput,
+                    "Composition updates require an entry ID and exact base revision",
+                )
+                .into());
             }
-        }
-        let workspace = self.workspace_path(space_id);
-        let readable_form_scopes = self
-            .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
-            .await?;
-        let read_only_workspace =
-            iceberg_store::native_workspace_read_only(&self.operator, &workspace).await?;
-        let readable_forms = read_only_workspace
+            // Validate before any Registry Form creation so malformed or
+            // unsupported documents leave the Space unchanged.
+            let request_yaml =
+                ugoite_domain::composition::canonicalize_composition(&request.document)
+                    .map_err(|diagnostic| {
+                        AppError::invalid_input(ErrorCode::InvalidInput, diagnostic.as_str())
+                    })?
+                    .yaml;
+            self.ensure_mutation_admitted(space_id).await?;
+            self.validate_complete_space(space_id).await?;
+            let entry_id = request.entry_id.unwrap_or_else(|| {
+                composition::composition_entry_id_for_operation(space_id, operation_id)
+            });
+            let entry_id_text = entry_id.to_string();
+            validate_storage_id(validate_entry_id(&entry_id_text))?;
+            if let Some(base_revision_id) = request.base_revision_id {
+                validate_storage_id(validate_revision_id(&base_revision_id.to_string()))?;
+            }
+            let action = if request.entry_id.is_some() {
+                Action::Update
+            } else {
+                Action::Create
+            };
+            let is_create = request.entry_id.is_none();
+            let (state, authorization_lease) = Authorizer::new(self.operator.clone())
+                .acquire_state_lease(space_id)
+                .await?;
+            self.require_action_for_principals_in_state(
+                &state,
+                &entry_id_text,
+                ResourceKind::Entry,
+                action,
+                principal_ids,
+            )?;
+            let registry_resource = ResourceRef {
+                kind: ResourceKind::Form,
+                id: composition::COMPOSITION_REGISTRY_FORM_NAME.to_string(),
+                parent: None,
+            };
+            for principal_id in principal_ids {
+                if !effective_actions_for_state(&state, *principal_id, Some(&registry_resource))?
+                    .contains(&Action::Read)
+                {
+                    return Err(AppError::forbidden("Form is not readable").into());
+                }
+            }
+            // Idempotent receipt recovery skips current query planning, but it
+            // must still honor current read authority for every submitted source.
+            let current_form_scopes = self
+                .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+                .await?;
+            let current_forms = iceberg_store::native_workspace_read_only(
+                &self.operator,
+                &self.workspace_path(space_id),
+            )
+            .await?
             .list_forms_bounded(
                 MAX_AUTHORIZED_SCOPE_FORMS,
                 MAX_AUTHORIZED_SCOPE_FORM_DEFINITION_BYTES,
             )
-            .await?
-            .into_iter()
-            .filter(|form| readable_form_scopes.contains_key(&form.name.to_ascii_lowercase()))
-            .collect::<Vec<_>>();
-        let previous_document = match (request.entry_id, request.base_revision_id) {
-            (Some(entry_id), Some(base_revision_id)) => Some(
-                composition_local_save::read_exact_base_document(
-                    &self.operator,
-                    &workspace,
-                    &entry_id.to_string(),
-                    &base_revision_id.to_string(),
-                )
-                .await?,
-            ),
-            _ => None,
-        };
-        let query_order = composition_resolver::variable_graph_topological_order(
-            &request.document.spec.variables,
-        )
-        .map_err(|_| {
-            AppError::invalid_input(
-                ErrorCode::InvalidInput,
-                "Composition query dependencies are invalid",
-            )
-        })?;
-        for variable_id in query_order {
-            let variables = request.document.spec.variables.clone();
-            let Some(node_index) = variables.iter().position(|node| node.id == variable_id) else {
-                continue;
-            };
-            let source_for_planning = variables[node_index].clone();
-            let node = &mut request.document.spec.variables[node_index];
-            let ugoite_domain::composition::VariableGraphNodeKind::Query { query, returns } =
-                &mut node.kind
-            else {
-                continue;
-            };
-            // Form bindings are never trusted, even when a draft submits a
-            // nonempty spoof. An empty schema fingerprint marks the result
-            // descriptor incomplete and lets the planner fill it in.
-            let draft_descriptor = query.schema_fingerprint.is_empty();
-            match &query.definition {
-                ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } => {
-                    let candidate_bindings = composition_inline_form_bindings_for_save(
-                        &node.id,
-                        sql,
-                        previous_document.as_ref(),
-                        &readable_forms,
-                    )?;
-                    let metadata = self
-                        .derive_inline_sql_query_metadata(
-                            space_id,
-                            &source_for_planning,
-                            Some(&candidate_bindings),
-                            &variables,
-                            Some(principal_ids),
-                            Some(&state),
-                        )
-                        .await?
-                        .ok_or_else(|| {
-                            AppError::not_found(
-                                ErrorCode::FormNotFound,
-                                "Composition query Form is not available",
-                            )
-                        })?;
-                    composition_resolver::reconcile_query_returns_with_schema(
-                        returns,
-                        &metadata.result_columns,
-                        draft_descriptor,
-                    )?;
-                    query.form_bindings = metadata.form_bindings;
-                    query.schema_fingerprint = metadata.schema_fingerprint;
+            .await?;
+            for node in &request.document.spec.variables {
+                let ugoite_domain::composition::VariableGraphNodeKind::Query { query, .. } =
+                    &node.kind
+                else {
+                    continue;
+                };
+                match &query.definition {
+                    ugoite_domain::composition::VariableGraphQueryDefinition::SavedSql {
+                        entry_id: Some(entry_id),
+                        revision_id,
+                        ..
+                    } => ensure_saved_sql_access(
+                        &state,
+                        principal_ids,
+                        &ugoite_core::sql_query::SavedSqlRevisionRef {
+                            id: entry_id.clone(),
+                            revision_id: revision_id.clone().unwrap_or_default(),
+                        },
+                    )?,
+                    ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } => {
+                        let mut referenced = index::quoted_form_name_references(sql)?;
+                        referenced.extend(index::quoted_form_relation_names(sql)?);
+                        referenced.extend(
+                            query
+                                .form_bindings
+                                .iter()
+                                .map(|binding| binding.relation.clone()),
+                        );
+                        for form in &current_forms {
+                            if referenced.iter().any(|name| {
+                                name.eq_ignore_ascii_case(&form.name)
+                                    || name.eq_ignore_ascii_case(
+                                        &ugoite_domain::form::sql_relation_name(form.id),
+                                    )
+                            }) && !current_form_scopes
+                                .contains_key(&form.name.to_ascii_lowercase())
+                            {
+                                return Err(AppError::forbidden("Form is not readable").into());
+                            }
+                        }
+                    }
+                    _ => {}
                 }
-                ugoite_domain::composition::VariableGraphQueryDefinition::SavedSql {
-                    entry_id: Some(entry_id),
-                    revision_id: Some(revision_id),
-                    ..
-                } => {
-                    let metadata = self
-                        .derive_saved_sql_query_metadata(
-                            space_id,
-                            &source_for_planning,
-                            Some(principal_ids),
-                            Some(&state),
-                        )
-                        .await?
-                        .ok_or_else(|| {
-                            AppError::not_found(ErrorCode::EntryNotFound, "Saved SQL not found")
-                        })?;
-                    if metadata.entry_id != *entry_id || metadata.revision_id != *revision_id {
+            }
+            if let Some(result) = composition::recover_published_composition_save(
+                &self.operator,
+                space_id,
+                &self.workspace_path(space_id),
+                &request,
+                &request_yaml,
+                author,
+                operation_id,
+                &work,
+            )
+            .await?
+            {
+                return Ok(result);
+            }
+            let workspace = self.workspace_path(space_id);
+            let readable_form_scopes = self
+                .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+                .await?;
+            let read_only_workspace =
+                iceberg_store::native_workspace_read_only(&self.operator, &workspace).await?;
+            let readable_forms = read_only_workspace
+                .list_forms_bounded(
+                    MAX_AUTHORIZED_SCOPE_FORMS,
+                    MAX_AUTHORIZED_SCOPE_FORM_DEFINITION_BYTES,
+                )
+                .await?
+                .into_iter()
+                .filter(|form| readable_form_scopes.contains_key(&form.name.to_ascii_lowercase()))
+                .collect::<Vec<_>>();
+            let previous_document = match (request.entry_id, request.base_revision_id) {
+                (Some(entry_id), Some(base_revision_id)) => Some(
+                    composition_local_save::read_exact_base_document(
+                        &self.operator,
+                        &workspace,
+                        &entry_id.to_string(),
+                        &base_revision_id.to_string(),
+                    )
+                    .await?,
+                ),
+                _ => None,
+            };
+            let query_order = composition_resolver::variable_graph_topological_order(
+                &request.document.spec.variables,
+            )
+            .map_err(|_| {
+                AppError::invalid_input(
+                    ErrorCode::InvalidInput,
+                    "Composition query dependencies are invalid",
+                )
+            })?;
+            for variable_id in query_order {
+                let variables = request.document.spec.variables.clone();
+                let Some(node_index) = variables.iter().position(|node| node.id == variable_id)
+                else {
+                    continue;
+                };
+                let source_for_planning = variables[node_index].clone();
+                let node = &mut request.document.spec.variables[node_index];
+                let ugoite_domain::composition::VariableGraphNodeKind::Query { query, returns } =
+                    &mut node.kind
+                else {
+                    continue;
+                };
+                // Form bindings are never trusted, even when a draft submits a
+                // nonempty spoof. An empty schema fingerprint marks the result
+                // descriptor incomplete and lets the planner fill it in.
+                let draft_descriptor = query.schema_fingerprint.is_empty();
+                match &query.definition {
+                    ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } => {
+                        let candidate_bindings = composition_inline_form_bindings_for_save(
+                            &node.id,
+                            sql,
+                            previous_document.as_ref(),
+                            &readable_forms,
+                        )?;
+                        let metadata = self
+                            .derive_inline_sql_query_metadata(
+                                space_id,
+                                &source_for_planning,
+                                Some(&candidate_bindings),
+                                &variables,
+                                Some(principal_ids),
+                                Some(&state),
+                                None,
+                            )
+                            .await?
+                            .ok_or_else(|| {
+                                AppError::not_found(
+                                    ErrorCode::FormNotFound,
+                                    "Composition query Form is not available",
+                                )
+                            })?;
+                        composition_resolver::reconcile_query_returns_with_schema(
+                            returns,
+                            &metadata.result_columns,
+                            draft_descriptor,
+                        )?;
+                        query.form_bindings = metadata.form_bindings;
+                        query.schema_fingerprint = metadata.schema_fingerprint;
+                    }
+                    ugoite_domain::composition::VariableGraphQueryDefinition::SavedSql {
+                        entry_id: Some(entry_id),
+                        revision_id: Some(revision_id),
+                        ..
+                    } => {
+                        let metadata = self
+                            .derive_saved_sql_query_metadata(
+                                space_id,
+                                &source_for_planning,
+                                Some(principal_ids),
+                                Some(&state),
+                                None,
+                            )
+                            .await?
+                            .ok_or_else(|| {
+                                AppError::not_found(ErrorCode::EntryNotFound, "Saved SQL not found")
+                            })?;
+                        if metadata.entry_id != *entry_id || metadata.revision_id != *revision_id {
+                            return Err(AppError::not_found(
+                                ErrorCode::EntryNotFound,
+                                "Saved SQL revision not found",
+                            )
+                            .into());
+                        }
+                        composition_save_validation::validate_saved_sql_arguments(
+                            &query.arguments,
+                            &metadata.parameter_types,
+                            &variables,
+                        )?;
+                        composition_resolver::reconcile_query_returns_with_schema(
+                            returns,
+                            &metadata.result_columns,
+                            draft_descriptor,
+                        )?;
+                        query.form_bindings = metadata.form_bindings;
+                        query.schema_fingerprint = metadata.schema_fingerprint;
+                    }
+                    ugoite_domain::composition::VariableGraphQueryDefinition::SavedSql {
+                        ..
+                    } => {
                         return Err(AppError::not_found(
                             ErrorCode::EntryNotFound,
                             "Saved SQL revision not found",
                         )
                         .into());
                     }
-                    composition_save_validation::validate_saved_sql_arguments(
-                        &query.arguments,
-                        &metadata.parameter_types,
-                        &variables,
-                    )?;
-                    composition_resolver::reconcile_query_returns_with_schema(
-                        returns,
-                        &metadata.result_columns,
-                        draft_descriptor,
-                    )?;
-                    query.form_bindings = metadata.form_bindings;
-                    query.schema_fingerprint = metadata.schema_fingerprint;
-                }
-                ugoite_domain::composition::VariableGraphQueryDefinition::SavedSql { .. } => {
-                    return Err(AppError::not_found(
-                        ErrorCode::EntryNotFound,
-                        "Saved SQL revision not found",
-                    )
-                    .into());
                 }
             }
-        }
-        if !request.document.has_complete_query_descriptors() {
-            return Err(AppError::invalid_input(
-                ErrorCode::InvalidInput,
-                "Composition queries require server-confirmed result descriptors",
-            )
-            .into());
-        }
-        let canonical = ugoite_domain::composition::canonicalize_composition(&request.document)
-            .map_err(|diagnostic| {
-                AppError::invalid_input(ErrorCode::InvalidInput, diagnostic.as_str())
-            })?;
-        request.document = canonical.document.clone();
+            if !request.document.has_complete_query_descriptors() {
+                return Err(AppError::invalid_input(
+                    ErrorCode::InvalidInput,
+                    "Composition queries require server-confirmed result descriptors",
+                )
+                .into());
+            }
+            let canonical = ugoite_domain::composition::canonicalize_composition(&request.document)
+                .map_err(|diagnostic| {
+                    AppError::invalid_input(ErrorCode::InvalidInput, diagnostic.as_str())
+                })?;
+            request.document = canonical.document.clone();
 
-        authorization_lease.prepare_mutation().await?;
-        let registry = crate::authorization::with_authorization_write_fence(
-            authorization_lease.write_fence(),
-            composition::ensure_composition_registry(&self.operator, &workspace),
-        )
-        .await?;
-        let scopes = self
-            .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+            let exact_head_proof = self
+                .preflight_composition_save_authorized(
+                    space_id,
+                    principal_ids,
+                    &canonical.yaml,
+                    &work.variables,
+                    &work.unset_variables,
+                    &state,
+                )
+                .await?;
+
+            authorization_lease.prepare_mutation().await?;
+            let scopes = self
+                .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+                .await?;
+            // A first save may initialize the Registry Form and Entry in one
+            // publication. The explicit Form read authorization above is checked
+            // against the held state even when the Form is not yet published, so
+            // requiring a materialized EntryScope here would force a preparatory
+            // Registry publication and make a failed save visible.
+            if request.entry_id.is_some()
+                && !scopes
+                    .contains_key(&composition::COMPOSITION_REGISTRY_FORM_NAME.to_ascii_lowercase())
+            {
+                return Err(AppError::forbidden("Form is not readable").into());
+            }
+            let result = crate::authorization::with_authorization_write_fence(
+                authorization_lease.write_fence(),
+                composition::save_composition_with_work_and_head_proof(
+                    &self.operator,
+                    space_id,
+                    &workspace,
+                    request,
+                    entry_id,
+                    canonical,
+                    author,
+                    operation_id,
+                    &request_yaml,
+                    &work,
+                    Some(&exact_head_proof),
+                ),
+            )
             .await?;
-        if !scopes.contains_key(&registry.name.to_ascii_lowercase()) {
-            return Err(AppError::forbidden("Form is not readable").into());
-        }
-        let result = crate::authorization::with_authorization_write_fence(
-            authorization_lease.write_fence(),
-            composition::save_composition(
-                &self.operator,
+            let committed_revision_id = result.revision_id.to_string();
+            self.record_committed_entry_revision_id(
                 space_id,
-                &workspace,
-                request,
-                entry_id,
-                canonical,
-                author,
-                operation_id,
-            ),
-        )
-        .await?;
-        let committed_revision_id = result.revision_id.to_string();
-        self.record_committed_entry_revision_id(
-            space_id,
-            &entry_id_text,
-            &committed_revision_id,
-            if is_create {
-                crate::mutation_audit::ENTRY_CREATED_ACTION
-            } else {
-                crate::mutation_audit::ENTRY_UPDATED_ACTION
-            },
-        )
-        .await;
-        Ok(result)
+                &entry_id_text,
+                &committed_revision_id,
+                if is_create {
+                    crate::mutation_audit::ENTRY_CREATED_ACTION
+                } else {
+                    crate::mutation_audit::ENTRY_UPDATED_ACTION
+                },
+            )
+            .await;
+            Ok(result)
+        })
     }
 
     /// Reads exactly the requested raw Composition revision for the
@@ -7162,8 +7286,16 @@ impl UgoiteService {
         principal_ids: &[Uuid],
         request: SqlQueryRequest,
     ) -> Result<SqlQueryPage> {
-        self.query_sql_authorized_with_context(space_id, principal_ids, request, None, None, None)
-            .await
+        self.query_sql_authorized_with_context(
+            space_id,
+            principal_ids,
+            request,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
     }
 
     /// Plans one SQL request against the current authorized publication and
@@ -7251,10 +7383,39 @@ impl UgoiteService {
             composition_entry_id,
             Some(publication),
             Some(context_fingerprint),
+            None,
         )
         .await
     }
 
+    // Composition query authorization passes the pinned snapshot alongside
+    // the saved-entry/publication context to prevent a fresh-state fallback.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn query_sql_authorized_for_composition_with_state(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        request: SqlQueryRequest,
+        composition_entry_id: Option<&str>,
+        publication: &PublicationRef,
+        context_fingerprint: &str,
+        authorization_state: &AuthorizationState,
+    ) -> Result<SqlQueryPage> {
+        self.query_sql_authorized_with_context(
+            space_id,
+            principal_ids,
+            request,
+            composition_entry_id,
+            Some(publication),
+            Some(context_fingerprint),
+            Some(authorization_state),
+        )
+        .await
+    }
+
+    // These optional context fields represent a single pinned continuation
+    // boundary and remain explicit to avoid mixing fresh and pinned state.
+    #[allow(clippy::too_many_arguments)]
     async fn query_sql_authorized_with_context(
         &self,
         space_id: &str,
@@ -7263,6 +7424,7 @@ impl UgoiteService {
         composition_entry_id: Option<&str>,
         pinned_publication: Option<&PublicationRef>,
         continuation_context_fingerprint: Option<&str>,
+        authorization_state: Option<&AuthorizationState>,
     ) -> Result<SqlQueryPage> {
         request.validate().map_err(sql_query_contract_error)?;
         let request_fingerprint = if request.execution_id.is_some() {
@@ -7276,11 +7438,20 @@ impl UgoiteService {
         };
         require_nonempty_authorized_principals(principal_ids)?;
         self.validate_complete_space(space_id).await?;
-        let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
-            .acquire_state_lease(space_id)
-            .await?;
+        let (owned_state, _authorization_lease) = match authorization_state {
+            Some(_) => (None, None),
+            None => {
+                let (state, lease) = Authorizer::new(self.operator.clone())
+                    .acquire_state_lease(space_id)
+                    .await?;
+                (Some(state), Some(lease))
+            }
+        };
+        let state = authorization_state
+            .or(owned_state.as_ref())
+            .expect("authorized SQL execution has authorization state");
         for principal_id in principal_ids {
-            if !effective_actions_for_state(&state, *principal_id, None)?.contains(&Action::Read) {
+            if !effective_actions_for_state(state, *principal_id, None)?.contains(&Action::Read) {
                 return Err(
                     AppError::forbidden("principal is not authorized to read this Space").into(),
                 );
@@ -7291,7 +7462,7 @@ impl UgoiteService {
             space_id,
             &request,
             Some(sql_execution::SqlSourceAuthorization {
-                state: &state,
+                state,
                 principal_ids,
             }),
         )
@@ -7316,7 +7487,7 @@ impl UgoiteService {
         let sql_fingerprint = request
             .sql_fingerprint(&prepared.normalized_sql)
             .map_err(sql_query_contract_error)?;
-        let authorization_fingerprint = sql_query_authorization_fingerprint(&state, principal_ids)?;
+        let authorization_fingerprint = sql_query_authorization_fingerprint(state, principal_ids)?;
         let workspace =
             iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
         let (publication, offset) = match continuation {
@@ -7371,7 +7542,7 @@ impl UgoiteService {
         let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
         if let Some(composition_entry_id) = composition_entry_id {
             let composition_scopes =
-                Self::authorized_form_entry_scopes_for_forms(&state, principal_ids, forms.clone())?;
+                Self::authorized_form_entry_scopes_for_forms(state, principal_ids, forms.clone())?;
             require_composition_entry_read_scope(
                 &composition_scopes,
                 parse_entry_id(composition_entry_id)?,
@@ -7379,7 +7550,7 @@ impl UgoiteService {
             )?;
         }
         let relation_scopes =
-            sql_execution::authorized_relation_scopes(&state, principal_ids, &forms)?;
+            sql_execution::authorized_relation_scopes(state, principal_ids, &forms)?;
         let execution_sql = sql_execution::bind_sql_to_forms(&prepared, &forms, &relation_scopes)?;
         let fetch_limit = request
             .limit

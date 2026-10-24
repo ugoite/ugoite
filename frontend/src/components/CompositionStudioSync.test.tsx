@@ -258,20 +258,23 @@ describe("CompositionStudio graph surface", () => {
     });
     evaluateMock.mockImplementation((
       _spaceId: string,
-      request: { evaluation_id: string },
+      request: { evaluation_id: string; requested_queries?: string[] },
     ) =>
       Promise.resolve({
         evaluation_id: request.evaluation_id,
         ok: true,
-        query_results: {
-          query_1: {
-            value: {
-              kind: "scalar",
-              value: { kind: "integer", value: 1 },
+        query_results: Object.fromEntries(
+          (request.requested_queries ?? ["query_1"]).map((queryId) => [
+            queryId,
+            {
+              value: {
+                kind: "scalar",
+                value: { kind: "integer", value: 1 },
+              },
+              has_more: false,
             },
-            has_more: false,
-          },
-        },
+          ]),
+        ),
         query_diagnostics: [],
         diagnostics: [],
       })
@@ -708,7 +711,7 @@ describe("CompositionStudio graph surface", () => {
       "space-1",
       expect.any(String),
       expect.any(String),
-      undefined,
+      { variables: {}, unset_variables: [] },
     ]);
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "Retry" })).toBeNull()

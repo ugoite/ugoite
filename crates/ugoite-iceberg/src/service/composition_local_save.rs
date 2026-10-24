@@ -56,9 +56,27 @@ impl UgoiteService {
     pub async fn save_composition_local_with_operation_id(
         &self,
         space_id: &str,
+        request: composition::CompositionSaveRequest,
+        author: &str,
+        operation_id: &str,
+    ) -> Result<composition::CompositionSaveResult> {
+        self.save_composition_local_with_work(
+            space_id,
+            request,
+            author,
+            operation_id,
+            composition::CompositionSaveWork::default(),
+        )
+        .await
+    }
+
+    pub async fn save_composition_local_with_work(
+        &self,
+        space_id: &str,
         mut request: composition::CompositionSaveRequest,
         author: &str,
         operation_id: &str,
+        work: composition::CompositionSaveWork,
     ) -> Result<composition::CompositionSaveResult> {
         composition::validate_operation_id(operation_id)?;
         if request.entry_id.is_some() != request.base_revision_id.is_some() {
@@ -71,9 +89,11 @@ impl UgoiteService {
 
         // Reject unsupported or invalid documents before registry creation or
         // any other persistent side effect.
-        ugoite_domain::composition::canonicalize_composition(&request.document).map_err(
-            |diagnostic| AppError::invalid_input(ErrorCode::InvalidInput, diagnostic.as_str()),
-        )?;
+        let request_yaml = ugoite_domain::composition::canonicalize_composition(&request.document)
+            .map_err(|diagnostic| {
+                AppError::invalid_input(ErrorCode::InvalidInput, diagnostic.as_str())
+            })?
+            .yaml;
         self.ensure_mutation_admitted(space_id).await?;
         self.validate_complete_space(space_id).await?;
 
@@ -82,6 +102,20 @@ impl UgoiteService {
         // Forms and exact Saved SQL revisions. This lets the CLI remain fully
         // usable without routing Composition saves through the server.
         let workspace_path = self.workspace_path(space_id);
+        if let Some(result) = composition::recover_published_composition_save(
+            &self.operator,
+            space_id,
+            &workspace_path,
+            &request,
+            &request_yaml,
+            author,
+            operation_id,
+            &work,
+        )
+        .await?
+        {
+            return Ok(result);
+        }
         let previous_document = match (request.entry_id, request.base_revision_id) {
             (Some(entry_id), Some(base_revision_id)) => Some(
                 read_exact_base_document(
@@ -142,6 +176,7 @@ impl UgoiteService {
                             &variables,
                             None,
                             None,
+                            None,
                         )
                         .await?
                         .ok_or_else(|| {
@@ -164,7 +199,13 @@ impl UgoiteService {
                     ..
                 } => {
                     let metadata = self
-                        .derive_saved_sql_query_metadata(space_id, &source_for_planning, None, None)
+                        .derive_saved_sql_query_metadata(
+                            space_id,
+                            &source_for_planning,
+                            None,
+                            None,
+                            None,
+                        )
                         .await?
                         .ok_or_else(|| {
                             AppError::not_found(ErrorCode::EntryNotFound, "Saved SQL not found")
@@ -210,6 +251,15 @@ impl UgoiteService {
                 AppError::invalid_input(ErrorCode::InvalidInput, diagnostic.as_str())
             })?;
 
+        let exact_head_proof = self
+            .preflight_composition_save_local(
+                space_id,
+                &canonical.yaml,
+                &work.variables,
+                &work.unset_variables,
+            )
+            .await?;
+
         let is_create = request.entry_id.is_none();
         let entry_id = request.entry_id.unwrap_or_else(|| {
             composition::composition_entry_id_for_operation(space_id, operation_id)
@@ -220,7 +270,7 @@ impl UgoiteService {
             validate_storage_id(validate_revision_id(&base_revision_id.to_string()))?;
         }
 
-        let result = composition::save_composition(
+        let result = composition::save_composition_with_work_and_head_proof(
             &self.operator,
             space_id,
             &self.workspace_path(space_id),
@@ -229,6 +279,9 @@ impl UgoiteService {
             canonical,
             author,
             operation_id,
+            &request_yaml,
+            &work,
+            Some(&exact_head_proof),
         )
         .await?;
         let committed_revision_id = result.revision_id.to_string();
