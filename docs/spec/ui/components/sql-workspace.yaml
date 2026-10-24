@@ -26,13 +26,26 @@ quoted identifiers, aliases, and untouched clauses. Text edits and tree edits
 share the same Rust parser, diagnostics, transaction checks, and undo history.
 
 Form metadata is context for the editor, not a second saved query model. The
-Form action can choose or replace a relation while retaining other clauses;
+Form action presents eligible human-readable names directly, without requiring
+statement/query/parser-node selection. It can choose or replace a relation
+while retaining aliases and other clauses;
 relation-free SELECT statements such as `SELECT 1` remain editable. Nested
 relations, joins, CTEs, set operations, projections, filters, grouping,
 ordering, row limits, expressions, and SQL arguments are edited through the
 same document tree. Operations that cannot preserve a selected source span
 must fail locally with a diagnostic and leave the SQL unchanged. They must not
 silently replace the whole query with a starter statement.
+
+A successful Form selection closes the dialog and restores focus to the Form
+button. Only SQL with multiple sources asks which source to change. Detailed tree
+editing is an explicit advanced action. Empty or trivia-only SQL can start a
+query through the same Rust-owned typed transaction; an incomplete nonempty
+SQL draft cannot be overwritten with a starter. Pending operations are guarded
+by host identity as well as exact SQL source, including when two query variables
+have identical SQL. Closing the editor invalidates unfinished operations.
+Argument discovery can temporarily disable argument mutations, but must not
+disable the Form opener or prevent focus restoration after a document edit.
+Run and Save remain subject to current argument validation.
 
 The argument action is available with no arguments declared. SQL placeholders
 are paired with explicit, typed declarations; unused, undefined, duplicated,

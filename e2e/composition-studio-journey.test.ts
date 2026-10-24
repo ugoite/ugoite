@@ -1680,3 +1680,94 @@ test("unnamed mobile Composition keeps Text focus and inserts existing data befo
     "42",
   ], { timeout: 30_000 });
 });
+
+test(
+  "Composition Form choice keeps keyboard focus through document revalidation at narrow widths",
+  async ({ page, request }, testInfo) => {
+    test.setTimeout(120_000);
+    page.setDefaultTimeout(15_000);
+    await waitForServers(request);
+    const spaceId = await getDefaultSpaceId(request);
+    const formName = `FocusForm${crypto.randomUUID().slice(0, 8)}`;
+    const created = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/forms`),
+      {
+        data: {
+          name: formName,
+          version: 1,
+          template: `# ${formName}\n`,
+          fields: {},
+        },
+      },
+    );
+    expect([200, 201]).toContain(created.status());
+    const forms =
+      await (await request.get(getBackendUrl(`/spaces/${spaceId}/forms`)))
+        .json() as Array<{ name: string; sql_relation: string }>;
+    const relation = forms.find((form) => form.name === formName)!.sql_relation;
+    const yaml = await completeCompositionGraphYaml(request, spaceId, {
+      name: `Form focus ${formName}`,
+      variables: [{
+        id: "value",
+        kind: "query",
+        returns: {
+          kind: "scalar",
+          value_type: { scalar_type: "integer", nullable: false },
+        },
+        query: {
+          kind: "inline_sql",
+          sql: "SELECT 1",
+          arguments: [],
+          form_bindings: [],
+          schema_fingerprint: "",
+        },
+      }],
+      components: [{ id: "metric", kind: "metric", variable: "value" }],
+      rows: [{
+        id: "row",
+        items: [{ kind: "component", component: "metric" }],
+      }],
+    });
+    const saved = await saveCompositionGraph(request, spaceId, yaml);
+    await page.goto(
+      getFrontendUrl(
+        `/spaces/${spaceId}/compositions/${saved.composition_id}/${saved.revision_id}/edit`,
+      ),
+    );
+    await page.getByRole("tab", { name: "Variables", exact: true }).click();
+    await page.getByRole("button", { name: "value", exact: true }).click();
+    const opener = page.getByRole("button", { name: "Form", exact: true });
+    for (const width of [320, 375, 390]) {
+      await page.setViewportSize({ width, height: 844 });
+      await opener.click();
+      const dialog = page.getByRole("dialog", { name: "Form", exact: true });
+      const choice = dialog.getByRole("button", {
+        name: formName,
+        exact: true,
+      });
+      await expect(choice).toBeEnabled();
+      await expect(dialog.getByRole("tree")).toHaveCount(0);
+      const size = await choice.boundingBox();
+      expect(size?.height).toBeGreaterThanOrEqual(44);
+      expect(
+        await page.evaluate(() =>
+          document.documentElement.scrollWidth <= innerWidth
+        ),
+      ).toBe(true);
+      if (width === 390) {
+        await page.screenshot({
+          path: testInfo.outputPath("sql-form-picker-390.png"),
+          fullPage: true,
+        });
+        await choice.click();
+        await expect(page.locator(".ui-sql-editor")).toContainText(
+          `SELECT 1 FROM "${relation}"`,
+        );
+      } else {
+        await page.keyboard.press("Escape");
+      }
+      await expect(dialog).toHaveCount(0);
+      await expect(opener).toBeFocused();
+    }
+  },
+);

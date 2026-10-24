@@ -432,6 +432,32 @@ features:
         facet: verification
         responsibility: Verify transactional edits and guarded undo natively; verify bounded requests, output, and edit behavior through the compiled WASM smoke; verify typed frontend use.
         targets:
+          - id: initialize-select-trivia-undo
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: tests::semantic_initialize_select_preserves_empty_draft_trivia_and_has_guarded_undo }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.guarded-edit-transaction
+                covers: [FEAT-SQL-001#binding.sql-document-guarded-edit-core/target.edit-transaction]
+                runner:
+                  runner: cargo-test-unit
+                  arguments:
+                    package: ugoite-domain
+                    test: tests::semantic_initialize_select_preserves_empty_draft_trivia_and_has_guarded_undo
+          - id: initialize-select-actual-wasm
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.test.ts
+            selector: { kind: test, name: initializes empty SQL through the actual WASM transaction and restores exact trivia }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.portable-protocol
+                covers: [FEAT-SQL-001#binding.sql-document-guarded-edit-frontend-client/target.edit-transaction-client]
+                runner:
+                  runner: frontend-vitest-file
+                  arguments:
+                    file: src/lib/ugoite-client/protocol.test.ts
+                    test: initializes empty SQL through the actual WASM transaction and restores exact trivia
           - id: guarded-edit-undo
             adapter: rust
             path: crates/ugoite-domain/src/sql_document.rs

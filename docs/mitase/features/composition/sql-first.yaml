@@ -330,6 +330,16 @@ features:
                 covers: [FEAT-COMP-010#binding.sql-first-resolution-implementation/target.portable-query-sql]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Pinned Saved SQL source supports an explicit inline copy and explicit counts" } }
 
+          - id: shared-form-focus-after-parse
+            adapter: typescript
+            path: frontend/src/components/CompositionGraphArguments.test.tsx
+            selector: { kind: test, name: returns focus after Composition Form selection while SQL validity reparses }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-uses-shared-workspace
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphArguments.test.tsx, test: returns focus after Composition Form selection while SQL validity reparses } }
+
           - id: shared-argument-rename
             adapter: typescript
             path: frontend/src/components/CompositionGraphArguments.test.tsx

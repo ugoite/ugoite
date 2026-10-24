@@ -249,12 +249,12 @@ requirements:
           - id: form-options-readiness
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/sql/new.form-options.test.tsx
-            selector: { kind: test, name: offers resolved Form choices in the SQL relation tree }
+            selector: { kind: test, name: offers resolved Form names directly without the SQL relation tree }
             claims:
               - kind: verifies
                 criterion: REQ-FE-063#criterion.shared-structure-actions
                 covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.form-options.test.tsx", test: "offers resolved Form choices in the SQL relation tree" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.form-options.test.tsx", test: "offers resolved Form names directly without the SQL relation tree" } }
 
   - id: REQ-FE-061
     title: Saved SQL List Route Guidance

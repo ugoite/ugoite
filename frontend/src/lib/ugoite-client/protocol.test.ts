@@ -1250,6 +1250,38 @@ describe("portable Ugoite API protocol WASM", () => {
     expect(restored.document.source).toBe(source);
   });
 
+  it("initializes empty SQL through the actual WASM transaction and restores exact trivia", async () => {
+    const source = "-- 日本語";
+    const parsed = await parseSqlDocument(source);
+    expect(parsed.status).toBe("empty");
+    const result = await applySqlDocumentSemanticEditTransaction(source, {
+      contract_version: parsed.contract_version,
+      expected_source: source,
+      edits: [{
+        kind: "initialize_select",
+        relation: { value: 'Travel "Costs"', quote_style: '"' },
+      }],
+    });
+    expect(result.document.source).toBe(
+      '-- 日本語\nSELECT * FROM "Travel ""Costs"""',
+    );
+    expect(result.document.status).toBe("parsed");
+    expect(
+      (await applySqlDocumentEditTransaction(
+        result.document.source,
+        result.undo,
+      )).document.source,
+    ).toBe(source);
+    await expect(applySqlDocumentSemanticEditTransaction("SELECT (", {
+      contract_version: parsed.contract_version,
+      expected_source: "SELECT (",
+      edits: [{ kind: "initialize_select", relation: null }],
+    })).rejects.toMatchObject({
+      kind: "sql_document_edit",
+      code: "invalid_semantic_replacement",
+    });
+  });
+
   it("reports typed SQL Document node edit failures with stable codes", async () => {
     const source = 'SELECT amount FROM "G"';
     const parsed = await parseSqlDocument(source);

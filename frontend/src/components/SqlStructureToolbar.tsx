@@ -7,6 +7,7 @@ import {
 } from "solid-js";
 import { IconButton } from "~/components/IconButton";
 import { SqlArgumentDefinitionsEditor } from "~/components/SqlArgumentDefinitionsEditor";
+import { SqlFormPicker } from "~/components/SqlFormPicker";
 import { SqlDocumentTreeEditor } from "~/components/SqlDocumentTreeEditor";
 import { handleDialogKeyDown, useDialogFocus } from "~/components/dialog-focus";
 import type { SQLWorkspaceAction } from "~/components/SQLWorkspace";
@@ -33,6 +34,8 @@ type ToolbarAction = StructureAction | "arguments";
 
 interface SqlStructureToolbarProps {
   sql: () => string;
+  /** Host identity, independent of SQL text, invalidates pending operations. */
+  scope?: () => string;
   contexts: () => readonly SqlStructureAdapterContext[];
   onSqlChange?: (sql: string) => void;
   onVariablesAdded?: (
@@ -56,6 +59,8 @@ interface SqlStructureToolbarProps {
   reservedVariableNames?: () => readonly string[];
   onActionsChange: (actions: readonly SQLWorkspaceAction[]) => void;
   disabled?: () => boolean;
+  /** Argument discovery can be pending independently of document editing. */
+  argumentsDisabled?: () => boolean;
 }
 
 const actionNodeKinds: Record<
@@ -156,13 +161,15 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   ];
 
   const readOnly = () => Boolean(props.disabled?.() || !props.onSqlChange);
+  const argumentReadOnly = () => readOnly() || !!props.argumentsDisabled?.();
   const isDisabled = (action: ToolbarAction) => {
     if (readOnly()) return true;
     if (action === "form" || action === "join") {
       return formOptions().length === 0;
     }
     if (action === "arguments") {
-      return !props.onArgumentAdded && !props.onVariablesAdded;
+      return argumentReadOnly() ||
+        (!props.onArgumentAdded && !props.onVariablesAdded);
     }
     return false;
   };
@@ -190,6 +197,14 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   };
 
   const close = () => setActiveAction(null);
+  let previousScope = props.scope?.();
+  createEffect(() => {
+    const scope = props.scope?.();
+    if (scope !== previousScope) {
+      previousScope = scope;
+      setActiveAction(null);
+    }
+  });
 
   useDialogFocus(() => activeAction() !== null, {
     dialog: () => dialog,
@@ -199,6 +214,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   });
 
   const addArgument = () => {
+    if (argumentReadOnly()) return;
     const name = newArgumentName().trim();
     if (!/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(name)) return;
     if (argumentVariables().some((variable) => variable.name === name)) return;
@@ -222,39 +238,46 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     close();
   };
 
-  createEffect(() => {
-    const actions = ([
-      "form",
-      "join",
-      "columns",
-      "filter",
-      "sort",
-      "aggregate",
-      "group_by",
-      "having",
-      "distinct",
-      "row_limit",
-      "document",
-      "arguments",
-    ] as const).map((action): SQLWorkspaceAction => ({
-      kind: action === "join" || action === "having" || action === "document"
-        ? "structure"
-        : action,
-      icon: actionIcons[action],
-      label: t(`sqlPage.structure.${action}`),
-      disabled: isDisabled(action),
-      disabledReason: isDisabled(action)
+  // Stable action identities preserve the opener DOM through active-state changes.
+  const actions = ([
+    "form",
+    "join",
+    "columns",
+    "filter",
+    "sort",
+    "aggregate",
+    "group_by",
+    "having",
+    "distinct",
+    "row_limit",
+    "document",
+    "arguments",
+  ] as const).map((action): SQLWorkspaceAction => ({
+    kind: action === "join" || action === "having" || action === "document"
+      ? "structure"
+      : action,
+    icon: actionIcons[action],
+    get label() {
+      return t(`sqlPage.structure.${action}`);
+    },
+    get disabled() {
+      return isDisabled(action);
+    },
+    get disabledReason() {
+      return isDisabled(action)
         ? readOnly()
           ? t("sqlPage.structureReadOnly")
           : t("sqlPage.structureUnavailable")
-        : undefined,
-      active: activeAction() === action ||
+        : undefined;
+    },
+    get active() {
+      return activeAction() === action ||
         (isStructuralAction(action) && activeAction() === "document" &&
-          targetNodeKinds().join() === actionNodeKinds[action].join()),
-      onActivate: (returnFocus) => openAction(action, returnFocus),
-    }));
-    props.onActionsChange(actions);
-  });
+          targetNodeKinds().join() === actionNodeKinds[action].join());
+    },
+    onActivate: (returnFocus) => openAction(action, returnFocus),
+  }));
+  createEffect(() => props.onActionsChange(actions));
 
   return (
     <Show when={activeAction()}>
@@ -342,7 +365,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                     referencedNames={referencedArgumentNames()}
                     defaults={props.argumentDefaults?.() ?? {}}
                     allowDefaults={props.argumentDefaultsEnabled}
-                    disabled={readOnly()}
+                    disabled={argumentReadOnly()}
                     onAdd={(variable) =>
                       props.onArgumentAdded
                         ? props.onArgumentAdded(variable)
@@ -361,9 +384,25 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                 </Show>
               </Show>
 
-              <Show when={action() !== "arguments"}>
+              <Show when={action() === "form"}>
+                <SqlFormPicker
+                  sql={props.sql}
+                  scope={props.scope}
+                  onSqlChange={(sql) => props.onSqlChange?.(sql)}
+                  disabled={props.disabled}
+                  forms={() =>
+                    formOptions().map((context) => ({
+                      relation: context.parser.relation,
+                      label: context.label ?? context.parser.relation,
+                    }))}
+                  onApplied={close}
+                  onAdvanced={() => openAction("document", dialogReturnFocus())}
+                />
+              </Show>
+              <Show when={action() !== "arguments" && action() !== "form"}>
                 <SqlDocumentTreeEditor
                   sql={props.sql}
+                  scope={props.scope}
                   onSqlChange={(sql) => props.onSqlChange?.(sql)}
                   disabled={props.disabled}
                   initialNodeKinds={() => targetNodeKinds()}

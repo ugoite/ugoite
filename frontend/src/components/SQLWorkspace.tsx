@@ -214,12 +214,12 @@ export function SQLWorkspaceActionBar(props: SQLWorkspaceActionBarProps) {
                     : visibleAction.active}
                   ariaExpanded={isStructure ? structureOpen() : undefined}
                   ariaControls={isStructure ? structureMenuId : undefined}
-                  onClick={() => {
+                  onClick={(event) => {
                     if (isStructure) {
-                      visibleAction.onActivate();
+                      visibleAction.onActivate(event.currentTarget);
                     } else {
                       setStructureOpen(false);
-                      visibleAction.onActivate();
+                      visibleAction.onActivate(event.currentTarget);
                     }
                   }}
                 />

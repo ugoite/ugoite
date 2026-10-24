@@ -785,6 +785,7 @@ export function CompositionVariableGraphWorkspace(
                       />
                       <Show when={query().query.kind === "inline_sql"}>
                         <SqlStructureToolbar
+                          scope={() => `composition-query:${query().id}`}
                           sql={sql}
                           contexts={structureContexts}
                           onSqlChange={(nextSql) =>
@@ -814,7 +815,7 @@ export function CompositionVariableGraphWorkspace(
                             )}
                           onArgumentRemoved={(name) =>
                             props.onArgumentRemoved?.(query().id, name)}
-                          disabled={() =>
+                          argumentsDisabled={() =>
                             sqlArguments.loading || !!sqlArguments.error}
                           onActionsChange={setActions}
                         />

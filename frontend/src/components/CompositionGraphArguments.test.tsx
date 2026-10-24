@@ -321,4 +321,80 @@ describe("Composition shared SQL argument editing", () => {
       arguments: [{ name: "fresh", variable: "threshold" }],
     });
   });
+  it("returns focus after Composition Form selection while SQL validity reparses", async () => {
+    const initial = createCompositionGraphDraft("Report");
+    initial.variables = [{
+      id: "rows",
+      kind: "query",
+      returns: {
+        kind: "scalar",
+        value_type: { scalar_type: "integer", nullable: false },
+      },
+      query: { kind: "inline_sql", sql: "SELECT 1", arguments: [] },
+    }];
+    const [draft, setDraft] = createSignal(initial);
+    const form = {
+      id: "f",
+      name: "Expenses",
+      version: 1,
+      template: "# Expenses",
+      sql_relation: "form_123",
+      fields: { Amount: { type: "float", sql_column: "amount" } },
+    };
+    render(() => (
+      <CompositionGraphStudio
+        draft={draft()}
+        forms={[]}
+        savedSql={[]}
+        provider={{ resolveForm: vi.fn(), prepareSavedSql: vi.fn() }}
+        session={{
+          session_id: "s",
+          space_id: "space",
+          document_revision: null,
+          principal_generation: "p",
+        }}
+        getPrincipalGeneration={async () => "p"}
+        isSessionCurrent={() => true}
+        sqlSchema={buildSqlSchema([form])}
+        sqlForms={[form]}
+        onDraftChange={setDraft}
+        onQueryChange={(id, sql) =>
+          setDraft((current) => ({
+            ...current,
+            variables: current.variables.map((node) =>
+              node.id === id && node.kind === "query"
+                ? { ...node, query: { ...node.query, kind: "inline_sql", sql } }
+                : node
+            ),
+          }))}
+      />
+    ));
+    fireEvent.click(
+      screen.getByRole("tab", { name: "Variables", exact: true }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "rows", exact: true }));
+    const opener = await screen.findByRole("button", {
+      name: "Form",
+      exact: true,
+    });
+    await waitFor(() => expect(opener).toBeEnabled());
+    opener.focus();
+    fireEvent.click(opener);
+    const choice = await screen.findByRole("button", {
+      name: "Expenses",
+      exact: true,
+    });
+    await waitFor(() => expect(choice).toBeEnabled());
+    choice.focus();
+    fireEvent.click(choice);
+    await waitFor(() =>
+      expect(draft().variables[0]).toMatchObject({
+        query: { sql: 'SELECT 1 FROM "form_123"' },
+      })
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    );
+    await waitFor(() => expect(opener).toHaveFocus());
+  });
 });

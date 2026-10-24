@@ -5470,6 +5470,26 @@ a.tool {
   min-width: 0;
 }
 
+.sql-form-picker,
+.sql-form-picker__list {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.sql-form-picker__option {
+  justify-content: flex-start;
+  min-height: 44px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: start;
+}
+
+.sql-form-picker__option[aria-pressed="true"] {
+  background: var(--ui-surface-2);
+  font-weight: 600;
+}
+
 .sql-document-tree__layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
