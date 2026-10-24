@@ -185,7 +185,10 @@ test(
       );
     await filterDialog.getByRole("textbox", { name: "Value" }).fill("10");
     await filterDialog.getByRole("button", { name: "Add filter" }).click();
-    await expect(filterDialog).toBeHidden();
+    await expect(page.getByRole("textbox", { name: "SQL", exact: true }))
+      .toContainText(">= 10");
+    await filterDialog.getByRole("button", { name: "Close", exact: true })
+      .click();
     await page.getByRole("button", { name: "Sort", exact: true }).click();
     const sortDialog = page.getByRole("dialog", { name: "Sort", exact: true });
     await sortDialog.getByRole("combobox", { name: "Column" }).selectOption({
@@ -195,13 +198,16 @@ test(
       "desc",
     );
     await sortDialog.getByRole("button", { name: "Add sort" }).click();
-    await expect(sortDialog).toBeHidden();
+    await expect(page.getByRole("textbox", { name: "SQL", exact: true }))
+      .toContainText("ORDER BY amount DESC");
+    await sortDialog.getByRole("button", { name: "Close", exact: true })
+      .click();
     const taskEditedSql = await page.getByRole("textbox", {
       name: "SQL",
       exact: true,
     }).innerText();
-    expect(taskEditedSql).toContain("amount >= 10");
-    expect(taskEditedSql).toContain("ORDER BY amount DESC");
+    expect(taskEditedSql).toMatch(/WHERE\s+.+\s+>=\s+10/);
+    expect(taskEditedSql).toMatch(/ORDER BY\s+.+\s+DESC/);
     await page.getByRole("button", { name: "Run Query", exact: true }).click();
     await expect(page.getByRole("table")).toContainText("11", {
       timeout: 30_000,
