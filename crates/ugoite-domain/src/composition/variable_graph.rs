@@ -63,9 +63,9 @@ pub struct VariableGraphFormBinding {
 
 /// A query definition and its shared server-derived descriptor contract.
 ///
-/// `form_bindings` and `schema_fingerprint` are empty together only in an
-/// editable draft. Core replaces them after authorized planning and persisted
-/// canonical documents require the complete descriptor.
+/// An editable draft may carry compare-only Form identity guards before Core
+/// derives the schema fingerprint. Core replaces them after authorized
+/// planning and persisted canonical documents require the complete descriptor.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VariableGraphQuery {
     #[serde(flatten)]
@@ -440,8 +440,18 @@ pub fn compile_variable_graph(
                 }
             }
             VariableGraphNodeKind::Query { returns, query } => {
-                let incomplete_descriptor =
-                    query.form_bindings.is_empty() && query.schema_fingerprint.is_empty();
+                let incomplete_descriptor = query.schema_fingerprint.is_empty()
+                    && query.form_bindings.iter().all(|binding| {
+                        !binding.relation.trim().is_empty()
+                            && binding.relation.len() <= super::MAX_COMPOSITION_YAML_BYTES
+                    })
+                    && query
+                        .form_bindings
+                        .iter()
+                        .map(|binding| binding.relation.as_str())
+                        .collect::<BTreeSet<_>>()
+                        .len()
+                        == query.form_bindings.len();
                 let incomplete_table_return = incomplete_descriptor
                     && matches!(returns, VariableGraphResultType::Table { columns } if columns.is_empty());
                 if !result_descriptor_is_valid(returns) && !incomplete_table_return {

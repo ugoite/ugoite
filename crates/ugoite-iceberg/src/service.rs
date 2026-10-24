@@ -7328,7 +7328,7 @@ impl UgoiteService {
         let execution_sql = if let Some(revision) = &saved_revision {
             bound_sql_for_revision(revision, &forms, &relation_scopes, &normalized_sql)?
         } else {
-sql_execution::bind_human_form_names(
+            sql_execution::bind_human_form_names(
                 &normalized_sql,
                 &request.form_binding_guards,
                 binding_base
@@ -7759,7 +7759,7 @@ sql_execution::bind_human_form_names(
             )?;
             bound_sql_for_revision(revision, &forms, &relation_scopes, &normalized_sql)?
         } else {
-sql_execution::bind_human_form_names(
+            sql_execution::bind_human_form_names(
                 &normalized_sql,
                 &request.form_binding_guards,
                 binding_base
