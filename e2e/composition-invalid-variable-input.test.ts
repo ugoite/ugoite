@@ -399,3 +399,93 @@ test("independent Composition results update while another Input is invalid in D
     page.off("request", record);
   }
 });
+
+test("a failed selected evaluation clears successful siblings and repairs together", async ({ page, request }) => {
+  test.setTimeout(120_000);
+  await waitForServers(request);
+  const spaceId = await getDefaultSpaceId(request);
+  const yaml = await completeCompositionGraphYaml(request, spaceId, {
+    name: `Atomic results ${crypto.randomUUID().slice(0, 8)}`,
+    variables: [
+      {
+        id: "amount",
+        kind: "input",
+        value_type: { scalar_type: "integer", nullable: false },
+        required: true,
+        default: { kind: "integer", value: 1 },
+      },
+      ...["echo", "nonnegative"].map((id) => ({
+        id,
+        kind: "query" as const,
+        returns: {
+          kind: "scalar",
+          value_type: { scalar_type: "integer", nullable: false },
+        },
+        query: {
+          kind: "inline_sql",
+          sql: id === "echo"
+            ? "SELECT $amount AS value"
+            : "SELECT $amount AS value WHERE $amount >= 0",
+          arguments: [{ name: "amount", variable: "amount" }],
+          form_bindings: [],
+          schema_fingerprint: "",
+        },
+      })),
+    ],
+    components: [
+      { id: "amount_input", kind: "input", variable: "amount" },
+      { id: "echo_metric", kind: "metric", variable: "echo" },
+      { id: "nonnegative_metric", kind: "metric", variable: "nonnegative" },
+    ],
+    rows: [{
+      id: "content",
+      items: ["amount_input", "echo_metric", "nonnegative_metric"].map(
+        (component) => ({ kind: "component", component }),
+      ),
+    }],
+  });
+  const saved = await saveCompositionGraph(request, spaceId, yaml);
+  const url =
+    `/spaces/${spaceId}/compositions/${saved.composition_id}/${saved.revision_id}`;
+  for (const suffix of ["", "/edit"]) {
+    await page.goto(getFrontendUrl(url + suffix), {
+      waitUntil: "domcontentloaded",
+    });
+    const amount = page.getByRole("textbox", { name: "amount", exact: true });
+    const metrics = page.locator(".compositionGraphMetric strong");
+    await expect(metrics).toHaveText(["1", "1"], { timeout: 30_000 });
+    const failed = page.waitForResponse((response) => {
+      if (
+        response.request().method() !== "POST" ||
+        !new URL(response.url()).pathname.endsWith("/compositions/evaluate")
+      ) return false;
+      return response.request().postDataJSON().variables?.amount === -1;
+    });
+    await amount.fill("-1");
+    const result = await (await failed).json();
+    expect(result.ok).toBe(false);
+    expect(result.query_results).toEqual({});
+    expect(result.computed_query_ids.toSorted()).toEqual([
+      "echo",
+      "nonnegative",
+    ]);
+    expect(result.query_diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        variable_id: "echo",
+        code: "evaluation_aborted",
+      }),
+      expect.objectContaining({
+        variable_id: "nonnegative",
+        code: "result_validation_failed",
+      }),
+    ]));
+    await expect(metrics).toHaveCount(0);
+    await expect(
+      page.getByRole("alert").filter({
+        hasText: "This evaluation did not produce a result",
+      }).first(),
+    ).toBeVisible();
+    await amount.fill("2");
+    await expect(metrics).toHaveText(["2", "2"], { timeout: 30_000 });
+  }
+});
