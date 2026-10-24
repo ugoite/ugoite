@@ -57,6 +57,7 @@ export function SqlColumnsEditor(props: SqlColumnsEditorProps) {
     source: string;
     scope: string | undefined;
     element: HTMLElement;
+    activeBefore: Element | null;
   } | undefined;
   let generation = 0;
   let previousScope = props.scope?.();
@@ -93,7 +94,8 @@ export function SqlColumnsEditor(props: SqlColumnsEditorProps) {
       pendingFocus = undefined;
       if (
         focus?.source === source && focus.scope === scope &&
-        globalThis.document.activeElement === globalThis.document.body
+        (globalThis.document.activeElement === globalThis.document.body ||
+          globalThis.document.activeElement === focus.activeBefore)
       ) {
         const target = focus.element.isConnected
           ? focus.element
@@ -260,6 +262,7 @@ export function SqlColumnsEditor(props: SqlColumnsEditorProps) {
     ) return;
     const expectedSource = parsed.source;
     const expectedScope = props.scope?.();
+    const activeBefore = globalThis.document.activeElement;
     const request = ++generation;
     setBusy(true);
     setError(undefined);
@@ -312,27 +315,28 @@ export function SqlColumnsEditor(props: SqlColumnsEditorProps) {
         setRedoHistory(direction === "redo" ? redoHistory().slice(0, -1) : []);
       }
       const active = globalThis.document.activeElement;
-      const focusTarget =
-        active instanceof HTMLElement && active !== globalThis.document.body
-          ? active
-          : opener;
+      const focusTarget = active === activeBefore ||
+          active === globalThis.document.body
+        ? opener ?? (active instanceof HTMLElement ? active : undefined)
+        : undefined;
       pendingFocus = focusTarget
         ? {
           source: result.document.source,
           scope: expectedScope,
           element: focusTarget,
+          activeBefore,
         }
         : undefined;
       props.onSqlChange(result.document.source);
     } catch (cause) {
       if (request === generation) {
+        const code = cause instanceof UgoiteApiError ? cause.code : undefined;
         setError(
           t(
-            cause instanceof UgoiteApiError &&
-              cause.code === "projection_position_conflict"
-                ? "sqlPage.columns.positionConflict"
-                : cause.code === "projection_alias_conflict"
-                  ? "sqlPage.columns.aliasConflict"
+            code === "projection_position_conflict"
+              ? "sqlPage.columns.positionConflict"
+              : code === "projection_alias_conflict"
+              ? "sqlPage.columns.aliasConflict"
               : "sqlPage.structure.documentEditUnavailable",
           ),
         );

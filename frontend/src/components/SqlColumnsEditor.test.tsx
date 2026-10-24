@@ -291,6 +291,55 @@ describe("Columns task view through the actual Rust SQL document", () => {
     );
     expect(button).toHaveFocus();
   });
+  it("restores the clicked action after a Safari-style click that did not focus it", async () => {
+    const source = 'SELECT "field_amount", "field_day" FROM "form_expenses"';
+    const { sql } = setup(source);
+    const actual = await vi.importActual<typeof client>("~/lib/ugoite-client");
+    let finish!: () => void;
+    applyMock.mockImplementationOnce(async (...args) => {
+      const result = await actual.applySqlDocumentSemanticEditTransaction(
+        ...args,
+      );
+      await new Promise<void>((resolve) => finish = resolve);
+      return result;
+    });
+    const button = await screen.findByRole("button", {
+      name: "Move Amount down",
+    });
+    expect(button).not.toHaveFocus();
+    fireEvent.click(button);
+    await waitFor(() => expect(finish).toBeDefined());
+    finish();
+    await waitFor(() => expect(sql()).toContain('SELECT "field_day"'));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Move Amount down" }))
+        .toHaveFocus()
+    );
+  });
+  it("does not steal focus moved elsewhere while an edit is pending", async () => {
+    const source = 'SELECT "field_amount", "field_day" FROM "form_expenses"';
+    const { sql } = setup(source);
+    const actual = await vi.importActual<typeof client>("~/lib/ugoite-client");
+    let finish!: () => void;
+    applyMock.mockImplementationOnce(async (...args) => {
+      const result = await actual.applySqlDocumentSemanticEditTransaction(
+        ...args,
+      );
+      await new Promise<void>((resolve) => finish = resolve);
+      return result;
+    });
+    const button = await screen.findByRole("button", {
+      name: "Move Amount down",
+    });
+    fireEvent.click(button);
+    await waitFor(() => expect(finish).toBeDefined());
+    const undo = screen.getByRole("button", { name: "Undo", exact: true });
+    undo.focus();
+    finish();
+    await waitFor(() => expect(sql()).toContain('SELECT "field_day"'));
+    expect(undo).toHaveFocus();
+    expect(button).not.toHaveFocus();
+  });
   it("rejects a pending edit after host identity changes even with identical SQL", async () => {
     const source = 'SELECT "field_amount", "field_day" FROM "form_expenses"';
     const { sql, setScope } = setup(source);
