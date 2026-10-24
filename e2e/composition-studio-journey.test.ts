@@ -1548,3 +1548,131 @@ test("Composition shared Arguments rename and type editing persist explicit bind
     "SELECT $minimum AS value -- $limit stays in a comment",
   );
 });
+
+test("unnamed mobile Composition keeps Text focus and inserts existing data before naming", async ({ page, request }) => {
+  test.setTimeout(120_000);
+  await waitForServers(request);
+  const spaceId = await getDefaultSpaceId(request);
+  const suffix = crypto.randomUUID().slice(0, 8);
+  const formName = `MobileReceipt${suffix}`;
+  const form = await request.post(getBackendUrl(`/spaces/${spaceId}/forms`), {
+    data: {
+      name: formName,
+      version: 1,
+      template: `# ${formName}\n\n## Name\n`,
+      fields: { Name: { type: "string", required: true } },
+    },
+  });
+  expect([200, 201]).toContain(form.status());
+  const entry = await request.post(
+    getBackendUrl(`/spaces/${spaceId}/entries`),
+    {
+      data: { form: formName, fields: { Name: `Mobile row ${suffix}` } },
+    },
+  );
+  expect(entry.status()).toBe(201);
+  const sqlName = `Mobile scalar ${suffix}`;
+  const sql = await request.post(getBackendUrl(`/spaces/${spaceId}/sql`), {
+    data: {
+      name: sqlName,
+      kind: "user-query",
+      sql: "SELECT 42 AS value",
+      variables: [],
+    },
+  });
+  expect([200, 201]).toContain(sql.status());
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(getFrontendUrl(`/spaces/${spaceId}/compositions/new`), {
+    waitUntil: "domcontentloaded",
+  });
+  const palette = page.getByRole("group", {
+    name: "Add to design",
+    exact: true,
+  });
+  const name = page.getByRole("textbox", { name: "Name", exact: true });
+  const save = page.getByRole("button", { name: "Save", exact: true });
+  await expect(name).toHaveValue("");
+  await palette.getByRole("button", { name: "Text", exact: true }).click();
+  await page.locator(".compositionGraphEmptyText").click();
+  const text = page.getByRole("textbox", { name: "Text", exact: true });
+  const original = await text.elementHandle();
+  expect(original).toBeTruthy();
+  const scale = await page.evaluate(() => window.visualViewport?.scale ?? 1);
+  expect(
+    await text.evaluate((element) =>
+      Number.parseFloat(getComputedStyle(element).fontSize)
+    ),
+  ).toBeGreaterThanOrEqual(16);
+  await text.focus();
+  await text.pressSequentially("Daily report");
+  await expect(text).toHaveValue("Daily report");
+  expect(
+    await original!.evaluate((element) =>
+      element.isConnected && element === document.activeElement
+    ),
+  ).toBe(true);
+  expect(
+    await text.evaluate((element) =>
+      (element as HTMLTextAreaElement).selectionStart
+    ),
+  ).toBe("Daily report".length);
+  expect(await page.evaluate(() => window.visualViewport?.scale ?? 1)).toBe(
+    scale,
+  );
+  await page.getByRole("complementary", { name: "Inspector", exact: true })
+    .getByRole("button", { name: "Close", exact: true }).click();
+  await palette.getByRole("button", { name: "Table", exact: true }).click();
+  const table = page.getByRole("dialog", { name: "Table", exact: true });
+  await table.getByRole("tab", { name: "Forms", exact: true }).click();
+  await table.getByRole("button", { name: formName, exact: true }).click();
+  await expect(table).toHaveCount(0);
+  await expect(
+    page.getByRole("cell", { name: `Mobile row ${suffix}`, exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
+  await palette.getByRole("button", { name: "Metric", exact: true }).click();
+  const metric = page.getByRole("dialog", { name: "Metric", exact: true });
+  await metric.getByRole("tab", { name: "Forms", exact: true }).click();
+  await metric.getByRole("button", { name: formName, exact: true }).click();
+  await metric.getByRole("combobox", { name: "Aggregation", exact: true })
+    .selectOption("count");
+  await metric.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(metric).toHaveCount(0);
+  await expect(page.locator(".compositionGraphMetric strong")).toHaveText(
+    ["1"],
+    { timeout: 30_000 },
+  );
+  await palette.getByRole("button", { name: "Metric", exact: true }).click();
+  await metric.getByRole("tab", { name: "Saved SQL", exact: true }).click();
+  await metric.getByRole("button", { name: sqlName, exact: true }).click();
+  await expect(metric).toHaveCount(0);
+  await expect(page.locator(".compositionGraphMetric strong")).toHaveText([
+    "1",
+    "42",
+  ], { timeout: 30_000 });
+  await expect(name).toHaveValue("");
+  await expect(save).toBeDisabled();
+  expect(
+    await page.evaluate(() =>
+      document.documentElement.scrollWidth <=
+        document.documentElement.clientWidth
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: test.info().outputPath("unnamed-mobile-live-data.png"),
+    fullPage: true,
+  });
+  await name.fill(`Mobile report ${suffix}`);
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(page).toHaveURL(/\/compositions\/[^/]+\/[^/]+$/, {
+    timeout: 30_000,
+  });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByText("Daily report", { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.locator(".compositionGraphMetric strong")).toHaveText([
+    "1",
+    "42",
+  ], { timeout: 30_000 });
+});

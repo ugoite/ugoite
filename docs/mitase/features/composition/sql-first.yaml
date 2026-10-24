@@ -360,3 +360,35 @@ features:
                 criterion: REQ-FE-079#criterion.composition-uses-shared-workspace
                 covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-data-workspace]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "Composition shared Arguments rename and type editing persist explicit bindings" } }
+
+          - id: stable-text-input
+            adapter: typescript
+            path: frontend/src/components/CompositionGraphDesignCanvas.test.tsx
+            selector: { kind: test, name: "keeps the Text editor node, caret and focus while its content changes" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-text-inspector-literal-editing
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-text-inspector]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionGraphDesignCanvas.test.tsx, test: "keeps the Text editor node, caret and focus while its content changes" } }
+          - id: unnamed-data-insertion
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: "inserts existing Form data before the Composition is named without enabling Save" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-insertion-completes-before-edit
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "inserts existing Form data before the Composition is named without enabling Save" } }
+          - id: mobile-unnamed-creation
+            adapter: typescript
+            path: e2e/composition-studio-journey.test.ts
+            selector: { kind: test, name: "unnamed mobile Composition keeps Text focus and inserts existing data before naming" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-insertion-completes-before-edit
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-studio]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "unnamed mobile Composition keeps Text focus and inserts existing data before naming" } }
+              - kind: verifies
+                criterion: REQ-FE-079#criterion.composition-text-inspector-literal-editing
+                covers: [FEAT-COMP-010#binding.sql-first-workspace-implementation/target.composition-text-inspector]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: "unnamed mobile Composition keeps Text focus and inserts existing data before naming" } }

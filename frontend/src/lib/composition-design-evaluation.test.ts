@@ -128,6 +128,17 @@ describe("Composition Design Work evaluation", () => {
     dispose?.();
     vi.useRealTimers();
   });
+  it("evaluates an unnamed authoring draft while preserving its blank save name", async () => {
+    const { state, changeDraft } = setup();
+    const unnamed = draft();
+    unnamed.name = "";
+    changeDraft(unnamed);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(canonicalize.mock.calls.at(-1)?.[0].name.trim()).not.toBe("");
+    expect(unnamed.name).toBe("");
+    expect(state.evaluation()?.ok).toBe(true);
+  });
+
   it("automatically evaluates values and updates only dependent queries without persisting Work", async () => {
     const { state } = setup();
     await vi.advanceTimersByTimeAsync(250);

@@ -1054,6 +1054,51 @@ describe("CompositionStudio graph surface", () => {
     }]);
   });
 
+  it("inserts existing Form data before the Composition is named without enabling Save", async () => {
+    formsMock.mockResolvedValue([{
+      id: "form-id",
+      name: "Receipts",
+      sql_relation: "form_receipts",
+      fields: { Amount: { type: "float", sql_column: "amount" } },
+    }]);
+    previewGraphMock.mockImplementation((_spaceId: string, yaml: string) => {
+      if (!JSON.parse(yaml).name.trim()) {
+        return { ok: false, diagnostics: [{ code: "invalid_composition" }] };
+      }
+      return plannedQuery(yaml, {
+        kind: "table",
+        columns: [{
+          name: "amount",
+          value_type: { scalar_type: "float", nullable: false },
+        }],
+      });
+    });
+    renderStudio(createCompositionGraphDraft(""));
+    fireEvent.click(screen.getByRole("button", { name: "Table", exact: true }));
+    const picker = screen.getByRole("dialog", { name: "Table", exact: true });
+    fireEvent.click(
+      within(picker).getByRole("tab", { name: "Forms", exact: true }),
+    );
+    fireEvent.click(
+      await within(picker).findByRole("button", {
+        name: "Receipts",
+        exact: true,
+      }),
+    );
+    expect(
+      await screen.findByRole("button", {
+        name: "table, receipts_rows",
+        exact: true,
+      }),
+    ).toBeVisible();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("textbox", { name: "Name", exact: true }))
+      .toHaveValue("");
+    expect(screen.getByRole("button", { name: "Save", exact: true }))
+      .toBeDisabled();
+    expect(saveMock).not.toHaveBeenCalled();
+  });
+
   it("uses readable Form labels and SQL columns for explicit aggregates", async () => {
     formsMock.mockResolvedValue([{
       id: "form-id",

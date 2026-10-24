@@ -202,6 +202,60 @@ describe("CompositionGraphDesignCanvas", () => {
       .toBeInTheDocument();
   });
 
+  it("keeps the Text editor node, caret and focus while its content changes", () => {
+    const initial = createCompositionGraphDraft("Draft");
+    initial.components = [{
+      id: "text",
+      kind: "text",
+      content: { kind: "literal", text: "Draft" },
+      style: "body",
+    }];
+    initial.layout.rows[0].items = [{ kind: "component", component: "text" }];
+    const [draft, setDraft] = createSignal(initial);
+    render(() => (
+      <CompositionGraphDesignCanvas
+        draft={draft()}
+        forms={[]}
+        savedSql={[]}
+        provider={provider}
+        session={{
+          session_id: "text",
+          space_id: "space",
+          document_revision: null,
+          principal_generation: "p",
+        }}
+        getPrincipalGeneration={async () => "p"}
+        isSessionCurrent={() => true}
+        onDraftChange={setDraft}
+      />
+    ));
+    fireEvent.click(
+      screen.getByRole("button", { name: "text, Draft", exact: true }),
+    );
+    const editor = screen.getByRole("textbox", {
+      name: "Text",
+      exact: true,
+    }) as HTMLTextAreaElement;
+    editor.focus();
+    for (const value of ["D", "Da", "Daily report", "日報を入力"]) {
+      fireEvent.input(editor, { target: { value } });
+      expect(screen.getByRole("textbox", { name: "Text", exact: true })).toBe(
+        editor,
+      );
+      expect(editor).toHaveFocus();
+      expect(editor).toHaveValue(value);
+    }
+    editor.setSelectionRange(1, 3);
+    fireEvent.input(editor, { target: { value: "日次報告を入力" } });
+    expect(screen.getByRole("textbox", { name: "Text", exact: true })).toBe(
+      editor,
+    );
+    expect(editor).toHaveFocus();
+    expect(draft().components[0]).toMatchObject({
+      content: { text: "日次報告を入力" },
+    });
+  });
+
   it("opens the single typed variable picker for Table and exposes only variable binding in Inspector", () => {
     const draft = createCompositionGraphDraft("Report");
     draft.variables.push({
