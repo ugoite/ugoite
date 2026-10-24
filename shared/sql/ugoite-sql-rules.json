@@ -645,6 +645,7 @@
         }
       ],
       "semantic_operations": [
+        "initialize_select",
         "replace_identifier",
         "replace_literal",
         "replace_binary_operator",

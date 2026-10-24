@@ -48,6 +48,13 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-080#criterion.safe-structured-operations
+          - id: sql-form-picker
+            adapter: typescript
+            path: frontend/src/components/SqlFormPicker.tsx
+            selector: { kind: symbol, name: SqlFormPicker }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.safe-structured-operations
           - id: sql-structure-context
             adapter: typescript
             path: frontend/src/lib/sql.ts
@@ -88,3 +95,47 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-FE-080#criterion.safe-structured-operations
+      - id: form-picker-verification
+        role: verification
+        facet: verification
+        responsibility: Verify direct Form selection against the actual Rust WASM parser and semantic transactions, including source preservation and invalid drafts.
+        targets:
+          - id: empty-form
+            adapter: typescript
+            path: frontend/src/components/SqlFormPicker.test.tsx
+            selector: { kind: test, name: "starts an empty query by choosing a human-labelled Form without a syntax tree" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.safe-structured-operations
+                covers: [FEAT-FE-008#binding.frontend/target.sql-form-picker]
+                runner:
+                  runner: frontend-vitest-file
+                  arguments:
+                    file: src/components/SqlFormPicker.test.tsx
+                    test: "starts an empty query by choosing a human-labelled Form without a syntax tree"
+          - id: preserve-sql
+            adapter: typescript
+            path: frontend/src/components/SqlFormPicker.test.tsx
+            selector: { kind: test, name: "replaces a source while preserving aliases, comments, columns, predicates and ordering" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.safe-structured-operations
+                covers: [FEAT-FE-008#binding.frontend/target.sql-form-picker]
+                runner:
+                  runner: frontend-vitest-file
+                  arguments:
+                    file: src/components/SqlFormPicker.test.tsx
+                    test: "replaces a source while preserving aliases, comments, columns, predicates and ordering"
+          - id: invalid-draft
+            adapter: typescript
+            path: frontend/src/components/SqlFormPicker.test.tsx
+            selector: { kind: test, name: "keeps an invalid draft and opens explicit advanced editing" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.safe-structured-operations
+                covers: [FEAT-FE-008#binding.frontend/target.sql-form-picker]
+                runner:
+                  runner: frontend-vitest-file
+                  arguments:
+                    file: src/components/SqlFormPicker.test.tsx
+                    test: "keeps an invalid draft and opens explicit advanced editing"

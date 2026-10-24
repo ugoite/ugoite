@@ -7,6 +7,7 @@ import {
 } from "solid-js";
 import { IconButton } from "~/components/IconButton";
 import { SqlArgumentDefinitionsEditor } from "~/components/SqlArgumentDefinitionsEditor";
+import { SqlFormPicker } from "~/components/SqlFormPicker";
 import { SqlDocumentTreeEditor } from "~/components/SqlDocumentTreeEditor";
 import { handleDialogKeyDown, useDialogFocus } from "~/components/dialog-focus";
 import type { SQLWorkspaceAction } from "~/components/SQLWorkspace";
@@ -33,6 +34,8 @@ type ToolbarAction = StructureAction | "arguments";
 
 interface SqlStructureToolbarProps {
   sql: () => string;
+  /** Host identity, independent of SQL text, invalidates pending operations. */
+  scope?: () => string;
   contexts: () => readonly SqlStructureAdapterContext[];
   onSqlChange?: (sql: string) => void;
   onVariablesAdded?: (
@@ -190,6 +193,14 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   };
 
   const close = () => setActiveAction(null);
+  let previousScope = props.scope?.();
+  createEffect(() => {
+    const scope = props.scope?.();
+    if (scope !== previousScope) {
+      previousScope = scope;
+      setActiveAction(null);
+    }
+  });
 
   useDialogFocus(() => activeAction() !== null, {
     dialog: () => dialog,
@@ -361,9 +372,24 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                 </Show>
               </Show>
 
-              <Show when={action() !== "arguments"}>
+              <Show when={action() === "form"}>
+                <SqlFormPicker
+                  sql={props.sql}
+                  scope={props.scope}
+                  onSqlChange={(sql) => props.onSqlChange?.(sql)}
+                  disabled={props.disabled}
+                  forms={() =>
+                    formOptions().map((context) => ({
+                      relation: context.parser.relation,
+                      label: context.label ?? context.parser.relation,
+                    }))}
+                  onAdvanced={() => openAction("document", dialogReturnFocus())}
+                />
+              </Show>
+              <Show when={action() !== "arguments" && action() !== "form"}>
                 <SqlDocumentTreeEditor
                   sql={props.sql}
+                  scope={props.scope}
                   onSqlChange={(sql) => props.onSqlChange?.(sql)}
                   disabled={props.disabled}
                   initialNodeKinds={() => targetNodeKinds()}
