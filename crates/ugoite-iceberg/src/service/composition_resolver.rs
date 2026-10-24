@@ -207,6 +207,9 @@ fn attach_portable_query_sql(
 }
 
 impl UgoiteService {
+    // Keep save-specific authorization and publication context explicit at
+    // the resolver boundary so callers cannot silently drop either value.
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn preview_composition_for_save_with_access(
         &self,
         space_id: &str,
@@ -344,6 +347,9 @@ impl UgoiteService {
     }
 
     /// Derive trusted metadata for an inline SQL query variable.
+    // The metadata plan must carry the same access/publication snapshot used
+    // by its caller; bundling these inputs would obscure that invariant.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn derive_inline_sql_query_metadata(
         &self,
         space_id: &str,
@@ -522,6 +528,9 @@ impl UgoiteService {
         }))
     }
 
+    // These are the complete SQL planning inputs, including the pinned
+    // authorization/publication context for the operation.
+    #[allow(clippy::too_many_arguments)]
     async fn plan_sql_query_metadata(
         &self,
         space_id: &str,
@@ -1276,6 +1285,9 @@ impl UgoiteService {
 
     /// Read current query descriptors through the caller's authorization
     /// boundary, shared by saved-revision resolution and draft preview.
+    // Current query resolution carries the selected IDs and the same pinned
+    // access/publication context through each descriptor lookup.
+    #[allow(clippy::too_many_arguments)]
     async fn read_current_queries(
         &self,
         space_id: &str,

@@ -7463,6 +7463,9 @@ impl UgoiteService {
         .await
     }
 
+    // Composition query authorization passes the pinned snapshot alongside
+    // the saved-entry/publication context to prevent a fresh-state fallback.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn query_sql_authorized_for_composition_with_state(
         &self,
         space_id: &str,
@@ -7485,6 +7488,9 @@ impl UgoiteService {
         .await
     }
 
+    // These optional context fields represent a single pinned continuation
+    // boundary and remain explicit to avoid mixing fresh and pinned state.
+    #[allow(clippy::too_many_arguments)]
     async fn query_sql_authorized_with_context(
         &self,
         space_id: &str,
@@ -7520,7 +7526,7 @@ impl UgoiteService {
             .or(owned_state.as_ref())
             .expect("authorized SQL execution has authorization state");
         for principal_id in principal_ids {
-            if !effective_actions_for_state(&state, *principal_id, None)?.contains(&Action::Read) {
+            if !effective_actions_for_state(state, *principal_id, None)?.contains(&Action::Read) {
                 return Err(
                     AppError::forbidden("principal is not authorized to read this Space").into(),
                 );
@@ -7531,7 +7537,7 @@ impl UgoiteService {
             space_id,
             &request,
             Some(sql_execution::SqlSourceAuthorization {
-                state: &state,
+                state,
                 principal_ids,
             }),
         )
@@ -7556,7 +7562,7 @@ impl UgoiteService {
         let sql_fingerprint = request
             .sql_fingerprint(&prepared.normalized_sql)
             .map_err(sql_query_contract_error)?;
-        let authorization_fingerprint = sql_query_authorization_fingerprint(&state, principal_ids)?;
+        let authorization_fingerprint = sql_query_authorization_fingerprint(state, principal_ids)?;
         let workspace =
             iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
         let (publication, offset) = match continuation {
@@ -7611,7 +7617,7 @@ impl UgoiteService {
         let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
         if let Some(composition_entry_id) = composition_entry_id {
             let composition_scopes =
-                Self::authorized_form_entry_scopes_for_forms(&state, principal_ids, forms.clone())?;
+                Self::authorized_form_entry_scopes_for_forms(state, principal_ids, forms.clone())?;
             require_composition_entry_read_scope(
                 &composition_scopes,
                 parse_entry_id(composition_entry_id)?,
@@ -7619,7 +7625,7 @@ impl UgoiteService {
             )?;
         }
         let relation_scopes =
-            sql_execution::authorized_relation_scopes(&state, principal_ids, &forms)?;
+            sql_execution::authorized_relation_scopes(state, principal_ids, &forms)?;
         let execution_sql = sql_execution::bind_sql_to_forms(&prepared, &forms, &relation_scopes)?;
         let fetch_limit = request
             .limit
