@@ -49,6 +49,20 @@ test(
       "button",
       { name: formName, exact: true },
     ).click();
+    const sourceSql = await page.getByRole("textbox", {
+      name: "SQL",
+      exact: true,
+    }).innerText();
+    const originalPlan = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/sql/query/plan`),
+      {
+        data: { sql: sourceSql, parameters: {}, parameter_types: {} },
+      },
+    );
+    expect(originalPlan.ok()).toBe(true);
+    const expectedSchema =
+      (await originalPlan.json() as { result_schema: Array<{ name: string }> })
+        .result_schema;
     const opener = page.getByRole("button", { name: "Columns", exact: true });
     for (const width of [320, 375, 390]) {
       await page.setViewportSize({ width, height: 844 });
@@ -82,8 +96,29 @@ test(
       await dialog.getByRole("button", { name: "Choose fields", exact: true })
         .click();
       const fields = dialog.getByRole("list", { name: "Result fields" });
-      await expect(fields.getByRole("listitem")).toHaveCount(5);
-      for (const name of ["Entry ID", "Created at", "Updated at"]) {
+      await expect(fields.getByRole("listitem")).toHaveCount(
+        expectedSchema.length,
+      );
+      const expandedPlan = await request.post(
+        getBackendUrl(`/spaces/${spaceId}/sql/query/plan`),
+        {
+          data: {
+            sql: await page.getByRole("textbox", { name: "SQL", exact: true })
+              .innerText(),
+            parameters: {},
+            parameter_types: {},
+          },
+        },
+      );
+      expect(expandedPlan.ok()).toBe(true);
+      expect((await expandedPlan.json()).result_schema).toEqual(expectedSchema);
+      const labels = await fields.locator(".sql-columns-editor__name")
+        .allTextContents();
+      for (
+        const name of labels.filter((name) =>
+          name !== "Amount" && name !== "Day"
+        )
+      ) {
         const remove = dialog.getByRole("button", {
           name: `Remove ${name}`,
           exact: true,

@@ -1,3 +1,4 @@
+import type { PlannedSqlColumns } from "~/lib/sql-document-columns";
 import { batch, createEffect, createSignal, For, Show } from "solid-js";
 import { CompositionGraphDesignCanvas } from "~/components/CompositionGraphDesignCanvas";
 import { CompositionVariableGraphWorkspace } from "~/components/CompositionVariableGraphWorkspace";
@@ -42,6 +43,7 @@ export interface CompositionGraphStudioProps {
   sqlBodies?: Readonly<Record<string, string>>;
   actionsForQuery?: (variableId: string) => readonly SQLWorkspaceAction[];
   previewForQuery?: (variableId: string) => SQLWorkspacePreview;
+  onPlanColumnsForQuery?: (variableId: string) => Promise<PlannedSqlColumns>;
   onDraftChange: (draft: CompositionGraphDraft) => void;
   onQueryChange?: (variableId: string, sql: string) => void;
   onRunQuery?: (variableId: string) => void;
@@ -415,6 +417,7 @@ export function CompositionGraphStudio(props: CompositionGraphStudioProps) {
           }}
           actionsForQuery={props.actionsForQuery}
           previewForQuery={props.previewForQuery}
+          onPlanColumnsForQuery={props.onPlanColumnsForQuery}
           onQueryChange={props.onQueryChange}
           onRunQuery={props.onRunQuery}
           onNextQuery={props.onNextQuery}

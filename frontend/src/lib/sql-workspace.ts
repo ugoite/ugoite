@@ -9,6 +9,7 @@ import type {
 } from "~/components/SQLWorkspace";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { t } from "~/lib/i18n";
+import type { PlannedSqlColumns } from "~/lib/sql-document-columns";
 import { normalizeSqlVariables, parseSqlVariableDefault } from "~/lib/sql";
 import type {
   SqlQueryPage,
@@ -85,7 +86,10 @@ type QueryRequest = {
 };
 
 type BuiltRequest = { identity: string; request: QueryRequest };
-type PlanState = SQLWorkspacePlanState & { identity: string };
+type PlanState = SQLWorkspacePlanState & {
+  identity: string;
+  columns?: readonly string[];
+};
 
 const abortError = (error: unknown): boolean =>
   !!error && typeof error === "object" &&
@@ -288,7 +292,7 @@ export function createSqlWorkspaceController(
           : {}),
       };
       void sqlApi.plan(options.spaceId(), request, controller.signal).then(
-        () => {
+        (result) => {
           if (
             generation === planGeneration && !controller.signal.aborted &&
             parts.identity === planParts().identity
@@ -297,6 +301,7 @@ export function createSqlWorkspaceController(
               identity: parts.identity,
               status: "success",
               isCurrent: true,
+              columns: result?.result_schema?.map((column) => column.name),
             });
           }
         },
@@ -570,6 +575,34 @@ export function createSqlWorkspaceController(
     planController = undefined;
   });
 
+  const planColumns = async (): Promise<PlannedSqlColumns> => {
+    const parts = planParts();
+    const isCurrent = () => parts.identity === planParts().identity;
+    const cached = planState();
+    if (
+      cached.identity === parts.identity && cached.status === "success" &&
+      cached.columns
+    ) {
+      return { columns: [...cached.columns], isCurrent };
+    }
+    const built = buildRequest(undefined, parts);
+    const result = await sqlApi.plan(options.spaceId(), {
+      sql: built.request.sql,
+      parameters: built.request.parameters,
+      parameter_types: built.request.parameter_types,
+      ...(built.request.saved_sql
+        ? { saved_sql: built.request.saved_sql }
+        : {}),
+    });
+    if (!isCurrent()) {
+      throw new Error(t("sqlPage.structure.documentEditUnavailable"));
+    }
+    return {
+      columns: result.result_schema.map((column) => column.name),
+      isCurrent,
+    };
+  };
+
   return {
     parameterValues,
     onParameterChange: (name: string, rawValue: string) => {
@@ -577,6 +610,7 @@ export function createSqlWorkspaceController(
     },
     preview,
     plan,
+    planColumns,
     run,
     count,
     next,

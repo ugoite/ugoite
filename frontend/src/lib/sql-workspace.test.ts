@@ -79,6 +79,46 @@ describe("SQL workspace planning", () => {
     disposeRoot();
   });
 
+  it("keeps complete authorized field order and rejects stale parameter snapshots for wildcard planning", async () => {
+    vi.useFakeTimers();
+    planMock.mockResolvedValue({
+      result_schema: [
+        { name: "residual", type: "string" },
+        { name: "field_amount", type: "integer" },
+        { name: "_ugoite_id", type: "string" },
+      ],
+    });
+    let controller!: ReturnType<typeof createSqlWorkspaceController>;
+    const dispose = createRoot((dispose) => {
+      controller = createSqlWorkspaceController({
+        spaceId: () => "space",
+        sql: () =>
+          'SELECT * FROM "form_expenses" WHERE field_amount >= $minimum',
+        variables: () => [{ name: "minimum", type: "integer", default: 1 }],
+      });
+      return dispose;
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    const planned = await controller.planColumns();
+    expect(planned.columns).toEqual(["residual", "field_amount", "_ugoite_id"]);
+    expect(planned.isCurrent()).toBe(true);
+    expect(planMock).toHaveBeenCalledOnce();
+    controller.onParameterChange("minimum", "2");
+    expect(planned.isCurrent()).toBe(false);
+    const pending = deferred<
+      { result_schema: Array<{ name: string; type: string }> }
+    >();
+    planMock.mockReturnValueOnce(pending.promise);
+    const changed = controller.planColumns();
+    const rejected = expect(changed).rejects.toThrow();
+    controller.onParameterChange("minimum", "3");
+    pending.resolve({ result_schema: [{ name: "old", type: "string" }] });
+    await rejected;
+    expect(queryMock).not.toHaveBeenCalled();
+    expect(countMock).not.toHaveBeenCalled();
+    dispose();
+  });
+
   it("debounces planning and sends typed nulls for declared arguments", async () => {
     vi.useFakeTimers();
     planMock.mockResolvedValue({ result_schema: [] });

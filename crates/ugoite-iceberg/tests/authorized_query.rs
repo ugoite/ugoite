@@ -4007,7 +4007,7 @@ async fn projection_reorder_keeps_authorized_grouping_and_sort_meaning() -> anyh
         .await?;
     for source in [
         "SELECT field_100 AS title, 1 AS n FROM tasks ORDER BY 1",
-        "SELECT field_100 AS title, COUNT(*) AS n FROM tasks GROUP BY 1 ORDER BY 1",
+        "SELECT field_100 AS title, COUNT(*) AS n FROM tasks GROUP BY (1) ORDER BY 1",
     ] {
         let document = parse_sql_document(source);
         let item = document
