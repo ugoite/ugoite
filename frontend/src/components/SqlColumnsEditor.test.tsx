@@ -55,7 +55,10 @@ const contexts: SqlStructureAdapterContext[] = [{
   columnCapabilities: { field_total: capabilities },
   columnLabels: { field_total: "Total" },
 }];
-function setup(source: string) {
+function setup(
+  source: string,
+  sqlContexts: readonly SqlStructureAdapterContext[] = contexts,
+) {
   const [sql, setSql] = createSignal(source);
   const [scope, setScope] = createSignal("space-a:query-1");
   const advanced = vi.fn();
@@ -63,7 +66,7 @@ function setup(source: string) {
     <SqlColumnsEditor
       sql={sql}
       scope={scope}
-      contexts={() => contexts}
+      contexts={() => sqlContexts}
       onSqlChange={setSql}
       onPlanColumns={async () => ({
         columns: ["field_amount", "field_day"],
@@ -82,6 +85,21 @@ describe("Columns task view through the actual Rust SQL document", () => {
     applyMock.mockImplementation(
       actual.applySqlDocumentSemanticEditTransaction,
     );
+  });
+  it("shows columns for a quoted human Form name through Rust's SQL document", async () => {
+    const humanContext: SqlStructureAdapterContext = {
+      ...contexts[0],
+      identity: "form-a",
+      formId: "form-a",
+      stableRelation: "form_expenses",
+      parser: { ...contexts[0].parser, relation: "Expenses" },
+    };
+    setup('SELECT "field_amount" FROM "Expenses"', [humanContext]);
+    const list = await screen.findByRole("list", { name: "Result fields" });
+    await waitFor(() =>
+      expect(within(list).getAllByRole("listitem")).toHaveLength(1)
+    );
+    expect(within(list).getByRole("listitem")).toHaveTextContent("Amount");
   });
   it("shows human field names, edits output order, removes fields, and undoes without changing other clauses", async () => {
     const source =

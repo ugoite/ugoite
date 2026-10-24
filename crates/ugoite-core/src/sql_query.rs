@@ -27,6 +27,14 @@ pub const MAX_SQL_OUTPUT_COLUMNS: usize = 256;
 pub const MAX_SQL_COLUMN_NAME_BYTES: usize = 16 * 1024;
 pub const MAX_SQL_COLUMN_METADATA_BYTES: usize = 1024 * 1024;
 
+/// Compare-only identity carried when a user selects a Form by its human SQL name.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SqlFormBindingGuard {
+    pub name: String,
+    pub form_id: String,
+}
+
 type HmacSha256 = Hmac<Sha256>;
 
 fn is_false(value: &bool) -> bool {
@@ -57,6 +65,9 @@ pub struct SqlQueryRequest {
     /// stateless page execution contract. `sql` must match that revision.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub saved_sql: Option<SavedSqlRevisionRef>,
+    /// Expected identities for human Form names selected in the SQL picker.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub form_binding_guards: Vec<SqlFormBindingGuard>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -68,6 +79,12 @@ pub struct SavedSqlRevisionRef {
 
 impl SqlQueryRequest {
     pub fn validate(&self) -> Result<(), SqlQueryError> {
+        if self.saved_sql.is_some() && !self.form_binding_guards.is_empty() {
+            return Err(SqlQueryError::Invalid(
+                "Form binding guards cannot be supplied with an exact Saved SQL revision"
+                    .to_string(),
+            ));
+        }
         if (self.saved_sql.is_none() && self.sql.trim().is_empty())
             || self.sql.len() > MAX_SQL_QUERY_BYTES
         {
@@ -80,12 +97,30 @@ impl SqlQueryRequest {
                 "SQL query page limit is out of range".to_string(),
             ));
         }
-        let parameter_bytes = serde_json::to_vec(&(&self.parameters, &self.parameter_types))
-            .map_err(SqlQueryError::Serialize)?
-            .len();
+        let parameter_bytes = if self.form_binding_guards.is_empty() {
+            serde_json::to_vec(&(&self.parameters, &self.parameter_types))
+        } else {
+            serde_json::to_vec(&(
+                &self.parameters,
+                &self.parameter_types,
+                &self.form_binding_guards,
+            ))
+        }
+        .map_err(SqlQueryError::Serialize)?
+        .len();
         if parameter_bytes > MAX_SQL_PARAMETER_BYTES {
             return Err(SqlQueryError::Invalid(
                 "SQL query parameters exceed the configured byte limit".to_string(),
+            ));
+        }
+        let mut guard_names = std::collections::BTreeSet::new();
+        if self.form_binding_guards.iter().any(|guard| {
+            guard.name.trim().is_empty()
+                || guard.form_id.trim().is_empty()
+                || !guard_names.insert(guard.name.clone())
+        }) {
+            return Err(SqlQueryError::Invalid(
+                "SQL Form binding guards are invalid".to_string(),
             ));
         }
         Ok(())
@@ -96,25 +131,47 @@ impl SqlQueryRequest {
     }
 
     pub fn parameter_fingerprint(&self) -> Result<String, SqlQueryError> {
-        let canonical = (&self.parameters, &self.parameter_types);
-        let bytes = serde_json::to_vec(&canonical).map_err(SqlQueryError::Serialize)?;
+        let bytes = if self.form_binding_guards.is_empty() {
+            serde_json::to_vec(&(&self.parameters, &self.parameter_types))
+        } else {
+            serde_json::to_vec(&(
+                &self.parameters,
+                &self.parameter_types,
+                &self.form_binding_guards,
+            ))
+        }
+        .map_err(SqlQueryError::Serialize)?;
         fingerprint(&bytes)
     }
 
     /// Fingerprint every client-held coordinate that distinguishes one page
     /// request, including a continuation token on later pages.
     pub fn execution_fingerprint(&self) -> Result<String, SqlQueryError> {
-        let coordinate = (
-            &self.sql,
-            &self.parameters,
-            &self.parameter_types,
-            self.include_exact_integer_values,
-            self.limit,
-            &self.continuation,
-            self.execution_id,
-            &self.saved_sql,
-        );
-        let bytes = serde_json::to_vec(&coordinate).map_err(SqlQueryError::Serialize)?;
+        let bytes = if self.form_binding_guards.is_empty() {
+            serde_json::to_vec(&(
+                &self.sql,
+                &self.parameters,
+                &self.parameter_types,
+                self.include_exact_integer_values,
+                self.limit,
+                &self.continuation,
+                self.execution_id,
+                &self.saved_sql,
+            ))
+        } else {
+            serde_json::to_vec(&(
+                &self.sql,
+                &self.parameters,
+                &self.parameter_types,
+                self.include_exact_integer_values,
+                self.limit,
+                &self.continuation,
+                self.execution_id,
+                &self.saved_sql,
+                &self.form_binding_guards,
+            ))
+        }
+        .map_err(SqlQueryError::Serialize)?;
         fingerprint(&bytes)
     }
 }
@@ -130,6 +187,8 @@ pub struct SqlQueryCountRequest {
     pub parameter_types: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub saved_sql: Option<SavedSqlRevisionRef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub form_binding_guards: Vec<SqlFormBindingGuard>,
 }
 
 impl SqlQueryCountRequest {
@@ -143,6 +202,7 @@ impl SqlQueryCountRequest {
             continuation: None,
             execution_id: None,
             saved_sql: self.saved_sql.clone(),
+            form_binding_guards: self.form_binding_guards.clone(),
         }
         .validate()
     }
@@ -161,15 +221,35 @@ pub struct SqlQueryPlanRequest {
     pub parameter_types: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub saved_sql: Option<SavedSqlRevisionRef>,
+    /// Expected identities for human Form names selected in the SQL picker.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub form_binding_guards: Vec<SqlFormBindingGuard>,
 }
 
 impl SqlQueryPlanRequest {
     pub fn validate(&self) -> Result<(), SqlQueryError> {
+        if self.saved_sql.is_some() && !self.form_binding_guards.is_empty() {
+            return Err(SqlQueryError::Invalid(
+                "Form binding guards cannot be supplied with an exact Saved SQL revision"
+                    .to_string(),
+            ));
+        }
+        let mut guard_names = std::collections::BTreeSet::new();
+        if self.form_binding_guards.iter().any(|guard| {
+            guard.name.trim().is_empty()
+                || guard.form_id.trim().is_empty()
+                || !guard_names.insert(guard.name.clone())
+        }) {
+            return Err(SqlQueryError::Invalid(
+                "SQL Form binding guards are invalid".to_string(),
+            ));
+        }
         SqlQueryCountRequest {
             sql: self.sql.clone(),
             parameters: self.parameters.clone(),
             parameter_types: self.parameter_types.clone(),
             saved_sql: self.saved_sql.clone(),
+            form_binding_guards: self.form_binding_guards.clone(),
         }
         .validate()
     }
@@ -458,6 +538,7 @@ mod tests {
             parameters: Map::new(),
             parameter_types: BTreeMap::new(),
             saved_sql: None,
+            form_binding_guards: Vec::new(),
         }
         .validate()
         .is_err());
@@ -470,9 +551,48 @@ mod tests {
                 id: "saved-1".to_string(),
                 revision_id: "revision-1".to_string(),
             }),
+            form_binding_guards: Vec::new(),
         }
         .validate()
         .is_ok());
+    }
+
+    #[test]
+    fn form_binding_guards_are_rejected_for_exact_saved_sql_and_fingerprint_pages() {
+        let guard = SqlFormBindingGuard {
+            name: "Expense".into(),
+            form_id: "form-a".into(),
+        };
+        let exact = SqlQueryPlanRequest {
+            sql: String::new(),
+            parameters: Map::new(),
+            parameter_types: BTreeMap::new(),
+            saved_sql: Some(SavedSqlRevisionRef {
+                id: "saved".into(),
+                revision_id: "revision".into(),
+            }),
+            form_binding_guards: vec![guard.clone()],
+        };
+        assert!(exact.validate().is_err());
+
+        let request = |form_id: &str| SqlQueryRequest {
+            sql: "SELECT * FROM \"Expense\"".into(),
+            parameters: Map::new(),
+            parameter_types: BTreeMap::new(),
+            include_exact_integer_values: false,
+            limit: 1,
+            continuation: None,
+            execution_id: None,
+            saved_sql: None,
+            form_binding_guards: vec![SqlFormBindingGuard {
+                name: "Expense".into(),
+                form_id: form_id.into(),
+            }],
+        };
+        assert_ne!(
+            request("form-a").parameter_fingerprint().unwrap(),
+            request("form-b").parameter_fingerprint().unwrap()
+        );
     }
 
     #[test]

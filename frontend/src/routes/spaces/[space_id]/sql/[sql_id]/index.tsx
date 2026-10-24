@@ -36,7 +36,7 @@ import { t } from "~/lib/i18n";
 import { displaySqlName } from "~/lib/sql-metadata";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
-import type { Form, SqlVariable } from "~/lib/types";
+import type { Form, SqlFormBinding, SqlVariable } from "~/lib/types";
 
 export const route = spaceRoute({
   navigation: "search",
@@ -73,6 +73,9 @@ export default function SpaceSqlDetailRoute() {
   const [savedName, setSavedName] = createSignal("");
   const [savedSql, setSavedSql] = createSignal("");
   const [savedVariables, setSavedVariables] = createSignal<SqlVariable[]>([]);
+  const [formBindingGuards, setFormBindingGuards] = createSignal<
+    SqlFormBinding[]
+  >([]);
   const [normalized, setNormalized] = createSignal({
     sql: "",
     variables: [] as SqlVariable[],
@@ -108,6 +111,7 @@ export default function SpaceSqlDetailRoute() {
     setRevisionVariables([...declared]);
     setDefaultDrafts({});
     setRevisionId(current.revision_id);
+    setFormBindingGuards(current.metadata?.formBindings ?? []);
   });
 
   createEffect(() => {
@@ -208,6 +212,7 @@ export default function SpaceSqlDetailRoute() {
     definitionError,
     planParameters: "definition",
     planSavedSql: () => undefined,
+    formBindingGuards,
     savedSql: () => {
       const current = entry();
       if (!current) return undefined;
@@ -366,7 +371,14 @@ export default function SpaceSqlDetailRoute() {
       const result = await sqlApi.update(spaceId(), sqlId(), {
         name,
         kind: "user-query",
-        metadata: name ? undefined : { generatedName: "untitled" },
+        metadata: !name || formBindingGuards().length
+          ? {
+            ...(!name ? { generatedName: "untitled" as const } : {}),
+            ...(formBindingGuards().length
+              ? { formBindings: formBindingGuards() }
+              : {}),
+          }
+          : undefined,
         sql,
         variables: nextVariables.variables,
         parent_revision_id: nextRevisionId,
@@ -604,6 +616,7 @@ export default function SpaceSqlDetailRoute() {
                 <Show when={data().kind === "user-query"}>
                   <SqlStructureToolbar
                     onPlanColumns={workspace.planColumns}
+                    formBindingGuards={formBindingGuards}
                     scope={() =>
                       `saved-sql:${spaceId()}:${sqlId()}:${revisionId() ?? ""}`}
                     sql={sqlInput}
@@ -614,6 +627,15 @@ export default function SpaceSqlDetailRoute() {
                         `saved-sql:${sqlId()}:${revisionId() ?? ""}`,
                       )}
                     onSqlChange={handleSqlChange}
+                    onFormBindingSelected={(selection) => {
+                      setSqlInput(selection.sql);
+                      setFormBindingGuards((current) => [
+                        ...current.filter((item) =>
+                          item.name !== selection.name
+                        ),
+                        { name: selection.name, formId: selection.form_id },
+                      ]);
+                    }}
                     onVariablesAdded={registerCreatedVariables}
                     argumentDefinitions={savedVariables}
                     onArgumentAdded={(variable) => {

@@ -382,6 +382,7 @@ export interface SqlQueryRequest {
   /** Optional nonce used internally to bind a Composition result to its request. */
   execution_id?: string;
   saved_sql?: { id: string; revision_id: string };
+  form_binding_guards?: SqlFormBinding[];
 }
 
 /** A page returned by the stateless SQL read surface. */
@@ -424,6 +425,7 @@ export interface SqlQueryCountRequest {
   parameters?: Record<string, unknown>;
   parameter_types?: Record<string, string>;
   saved_sql?: { id: string; revision_id: string };
+  form_binding_guards?: SqlFormBinding[];
 }
 
 /** Request for authorized SQL planning without reading result rows. */
@@ -432,6 +434,7 @@ export interface SqlQueryPlanRequest {
   parameters: Record<string, unknown>;
   parameter_types: Record<string, string>;
   saved_sql?: { id: string; revision_id: string };
+  form_binding_guards?: SqlFormBinding[];
 }
 
 /** Planned, server-owned portable output schema. */

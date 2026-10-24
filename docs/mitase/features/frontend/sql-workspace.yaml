@@ -83,6 +83,37 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-080#criterion.safe-structured-operations
+      - id: form-name-binding-service
+        role: implementation
+        facet: service
+        responsibility: Resolve human SQL Form names only from current readable Forms, compare submitted identity guards, and preserve exact parent or Composition pins.
+        targets:
+          - id: sql-form-name-binding
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service/sql_execution.rs
+            selector: { kind: symbol, name: bind_human_form_names }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.human-form-name-binding
+          - id: saved-sql-parent-binding
+            adapter: rust
+            path: crates/ugoite-iceberg/src/saved_sql.rs
+            selector: { kind: symbol, name: derive_form_bindings }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.human-form-name-binding
+      - id: form-name-binding-rest-contract
+        role: contract-source
+        facet: api
+        responsibility: Publish additive compare-only Form guard properties on stateless SQL query, plan, and count request schemas.
+        targets:
+          - id: sql-query-guard-contract
+            adapter: declared
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.human-form-name-binding
       - id: rust-structure-capabilities
         role: evidence
         facet: domain
@@ -116,6 +147,8 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-FE-080#criterion.safe-structured-operations
+              - kind: evidences
+                anchor: REQ-FE-080#criterion.human-form-name-binding
       - id: form-picker-verification
         role: verification
         facet: verification
@@ -128,6 +161,14 @@ features:
             claims:
               - kind: verifies
                 criterion: REQ-FE-080#criterion.safe-structured-operations
+                covers: [FEAT-FE-008#binding.frontend/target.sql-form-picker]
+                runner:
+                  runner: frontend-vitest-file
+                  arguments:
+                    file: src/components/SqlFormPicker.test.tsx
+                    test: "starts an empty query by choosing a human-labelled Form without a syntax tree"
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.human-form-name-binding
                 covers: [FEAT-FE-008#binding.frontend/target.sql-form-picker]
                 runner:
                   runner: frontend-vitest-file
@@ -237,3 +278,30 @@ features:
                 criterion: REQ-FE-080#criterion.complete-wildcard-output-schema
                 covers: [FEAT-FE-008#binding.frontend/target.guarded-wildcard-source]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlWildcardExpansion.test.tsx, test: "uses the qualified wildcard's complete planned output order including residual fields" } }
+          - id: human-form-binding-guard
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_preview.rs
+            selector: { kind: test, name: preview_rejects_mismatched_yaml_form_binding_guard_with_or_without_exact_base }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.human-form-name-binding
+                covers: [FEAT-FE-008#binding.form-name-binding-service/target.sql-form-name-binding]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: preview_rejects_mismatched_yaml_form_binding_guard_with_or_without_exact_base } }
+          - id: saved-sql-binding-guard
+            adapter: rust
+            path: crates/ugoite-iceberg/src/saved_sql.rs
+            selector: { kind: test, name: name_field_tests::binding_guards_compare_current_name_while_parent_pins_survive_by_default }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.human-form-name-binding
+                covers: [FEAT-FE-008#binding.form-name-binding-service/target.saved-sql-parent-binding]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: binding_guards_compare_current_name_while_parent_pins_survive_by_default } }
+          - id: sql-form-guard-api-schema
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: openapi_documents_saved_sql_variable_defaults }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.human-form-name-binding
+                covers: [FEAT-FE-008#binding.form-name-binding-rest-contract/target.sql-query-guard-contract]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, test: openapi_documents_saved_sql_variable_defaults } }

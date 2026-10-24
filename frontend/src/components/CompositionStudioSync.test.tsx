@@ -1042,8 +1042,8 @@ describe("CompositionStudio graph surface", () => {
     const authored = JSON.parse(previewGraphMock.mock.calls[0][1]);
     expect(authored.spec.variables[0].query).toMatchObject({
       kind: "inline_sql",
-      sql: 'SELECT * FROM "form_receipts"',
-      form_bindings: [],
+      sql: 'SELECT * FROM "Receipts"',
+      form_bindings: [{ relation: "Receipts", form_id: "form-id" }],
       schema_fingerprint: "",
     });
     expect(authored.spec.components).toHaveLength(1);
@@ -1162,8 +1162,12 @@ describe("CompositionStudio graph surface", () => {
     expect(previewGraphMock).toHaveBeenCalledOnce();
     const authored = JSON.parse(previewGraphMock.mock.calls[0][1]);
     expect(authored.spec.variables[0].query.sql).toBe(
-      'SELECT SUM("field_103") AS value FROM "form_receipts"',
+      'SELECT SUM("field_103") AS value FROM "Receipts"',
     );
+    expect(authored.spec.variables[0].query.form_bindings).toEqual([{
+      relation: "Receipts",
+      form_id: "form-id",
+    }]);
   });
 
   it("drops a Form preview resolved after the authenticated account changes", async () => {

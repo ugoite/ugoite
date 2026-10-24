@@ -57,6 +57,7 @@ interface SqlWorkspaceControllerOptions {
   savedSql?: () => { id: string; revisionId: string } | undefined;
   /** Draft saves resolve current Form names; exact revision previews retain bindings. */
   planSavedSql?: () => { id: string; revisionId: string } | undefined;
+  formBindingGuards?: () => readonly { name: string; formId: string }[];
   /** Definition preflight is independent of transient preview input values. */
   planParameters?: "definition" | "values";
 }
@@ -83,6 +84,7 @@ type QueryRequest = {
   limit: number;
   continuation?: string;
   saved_sql?: { id: string; revision_id: string };
+  form_binding_guards?: { name: string; form_id: string }[];
 };
 
 type BuiltRequest = { identity: string; request: QueryRequest };
@@ -171,6 +173,7 @@ export function createSqlWorkspaceController(
     const values = parameterValues();
     const sql = options.sql().trim();
     const savedSql = options.savedSql?.();
+    const formBindingGuards = options.formBindingGuards?.() ?? [];
     const definitionError = options.definitionError?.();
     const identity = JSON.stringify({
       spaceId: options.spaceId(),
@@ -178,9 +181,18 @@ export function createSqlWorkspaceController(
       variables,
       values,
       savedSql,
+      formBindingGuards,
       definitionError,
     });
-    return { identity, sql, variables, values, savedSql, definitionError };
+    return {
+      identity,
+      sql,
+      variables,
+      values,
+      savedSql,
+      formBindingGuards,
+      definitionError,
+    };
   });
 
   const planParts = createMemo(
@@ -198,6 +210,7 @@ export function createSqlWorkspaceController(
         variables: parts.variables,
         values,
         savedSql,
+        formBindingGuards: parts.formBindingGuards,
         definitionError: parts.definitionError,
       });
       return { ...parts, values, savedSql, identity };
@@ -286,6 +299,9 @@ export function createSqlWorkspaceController(
         parameter_types: built.request.parameter_types,
         ...(built.request.saved_sql
           ? { saved_sql: built.request.saved_sql }
+          : {}),
+        ...(built.request.form_binding_guards?.length
+          ? { form_binding_guards: built.request.form_binding_guards }
           : {}),
       };
       void sqlApi.plan(options.spaceId(), request, controller.signal).then(
@@ -383,6 +399,13 @@ export function createSqlWorkspaceController(
             id: parts.savedSql.id,
             revision_id: parts.savedSql.revisionId,
           },
+        }
+        : {}),
+      ...(!parts.savedSql && parts.formBindingGuards.length
+        ? {
+          form_binding_guards: parts.formBindingGuards.map((
+            { name, formId },
+          ) => ({ name, form_id: formId })),
         }
         : {}),
       ...(continuation ? { continuation } : {}),
@@ -507,6 +530,9 @@ export function createSqlWorkspaceController(
         parameter_types: built.request.parameter_types,
         ...(built.request.saved_sql
           ? { saved_sql: built.request.saved_sql }
+          : {}),
+        ...(built.request.form_binding_guards?.length
+          ? { form_binding_guards: built.request.form_binding_guards }
           : {}),
       }, controller.signal);
       if (

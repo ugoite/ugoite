@@ -790,6 +790,13 @@ export function CompositionVariableGraphWorkspace(
                           onPlanColumns={props.onPlanColumnsForQuery
                             ? () => props.onPlanColumnsForQuery!(query().id)
                             : undefined}
+                          formBindingGuards={() =>
+                            (query().query.kind === "inline_sql"
+                              ? query().query.form_bindings ?? []
+                              : []).map((binding) => ({
+                              name: binding.relation,
+                              formId: binding.form_id,
+                            }))}
                           scope={() => `composition-query:${query().id}`}
                           sql={sql}
                           contexts={structureContexts}

@@ -198,11 +198,23 @@ const STORAGE_CONNECTION_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 fn composition_inline_form_bindings_for_save(
     variable_id: &str,
     sql: &str,
+    submitted_bindings: &[ugoite_domain::composition::VariableGraphFormBinding],
     previous: Option<&ugoite_domain::composition::CompositionDocument>,
     readable_forms: &[FormDefinition],
 ) -> Result<Vec<ugoite_domain::composition::VariableGraphFormBinding>> {
     let references = index::quoted_form_name_references(sql)
         .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
+    let mut guard_names = BTreeSet::new();
+    if submitted_bindings
+        .iter()
+        .any(|binding| !guard_names.insert(binding.relation.as_str()))
+    {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            "SQL Form binding guards are duplicated",
+        )
+        .into());
+    }
     let previous_bindings = previous
         .and_then(|document| {
             document
@@ -223,6 +235,18 @@ fn composition_inline_form_bindings_for_save(
             _ => None,
         })
         .unwrap_or_default();
+    if submitted_bindings.iter().any(|binding| {
+        !references.contains(&binding.relation)
+            && !previous_bindings.iter().any(|previous| {
+                previous.relation == binding.relation && previous.form_id == binding.form_id
+            })
+    }) {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            "SQL Form binding guard does not match a referenced Form name",
+        )
+        .into());
+    }
 
     references
         .into_iter()
@@ -234,7 +258,33 @@ fn composition_inline_form_bindings_for_save(
                 // An unchanged relation in an existing source keeps its stable
                 // identity through Form renames. The later authorized planner
                 // fails closed if that Form is gone or no longer readable.
-                return Ok(binding.clone());
+                let requested = submitted_bindings
+                    .iter()
+                    .find(|item| item.relation == relation);
+                if requested.is_none_or(|requested| requested.form_id == binding.form_id) {
+                    return Ok(binding.clone());
+                }
+                let requested = requested.expect("checked above");
+                let current = readable_forms
+                    .iter()
+                    .find(|form| form.name == relation)
+                    .ok_or_else(|| {
+                        AppError::invalid_input(
+                            ErrorCode::InvalidInput,
+                            "SQL query Form binding is unavailable",
+                        )
+                    })?;
+                if requested.form_id != current.id {
+                    return Err(AppError::invalid_input(
+                        ErrorCode::InvalidInput,
+                        "SQL query Form binding guard does not match the selected Form",
+                    )
+                    .into());
+                }
+                return Ok(ugoite_domain::composition::VariableGraphFormBinding {
+                    relation,
+                    form_id: current.id,
+                });
             }
             let form = readable_forms
                 .iter()
@@ -245,6 +295,17 @@ fn composition_inline_form_bindings_for_save(
                         "SQL query Form binding is unavailable",
                     )
                 })?;
+            if submitted_bindings
+                .iter()
+                .find(|binding| binding.relation == relation)
+                .is_some_and(|binding| binding.form_id != form.id)
+            {
+                return Err(AppError::invalid_input(
+                    ErrorCode::InvalidInput,
+                    "SQL query Form binding guard does not match the selected Form",
+                )
+                .into());
+            }
             Ok(ugoite_domain::composition::VariableGraphFormBinding {
                 relation,
                 form_id: form.id,
@@ -5495,6 +5556,7 @@ impl UgoiteService {
                         let candidate_bindings = composition_inline_form_bindings_for_save(
                             &node.id,
                             sql,
+                            &query.form_bindings,
                             previous_document.as_ref(),
                             &readable_forms,
                         )?;

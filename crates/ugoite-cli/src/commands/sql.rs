@@ -475,6 +475,7 @@ mod export_sink_tests {
         assert_eq!(parameter_types["enabled"], "boolean");
 
         let run_request = SqlQueryRequest {
+            form_binding_guards: Vec::new(),
             sql: String::new(),
             parameters,
             parameter_types,
@@ -835,6 +836,7 @@ pub async fn run(
             let page = query_sql_page(
                 &target,
                 SqlQueryRequest {
+                    form_binding_guards: Vec::new(),
                     sql,
                     parameters,
                     parameter_types,
@@ -860,6 +862,7 @@ pub async fn run(
             let result = query_sql_count(
                 &target,
                 SqlQueryCountRequest {
+                    form_binding_guards: Vec::new(),
                     sql,
                     parameters,
                     parameter_types,
@@ -905,6 +908,7 @@ pub async fn run(
             );
             let mut sink = ExportSink::new(output)?;
             let request = SqlQueryRequest {
+                form_binding_guards: Vec::new(),
                 sql,
                 parameters,
                 parameter_types,
@@ -1007,6 +1011,7 @@ pub async fn run(
             let page = query_sql_page(
                 &target,
                 SqlQueryRequest {
+                    form_binding_guards: Vec::new(),
                     sql: String::new(),
                     parameters,
                     parameter_types,

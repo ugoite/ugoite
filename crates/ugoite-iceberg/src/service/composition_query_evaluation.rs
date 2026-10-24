@@ -1427,6 +1427,7 @@ mod tests {
     fn table_cursor_context_is_scoped_to_the_query_snapshot() {
         let query = resolved_query();
         let request = SqlQueryRequest {
+            form_binding_guards: Vec::new(),
             sql: "SELECT 1".to_owned(),
             limit: 100,
             execution_id: Some(Uuid::from_u128(1)),

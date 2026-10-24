@@ -14301,6 +14301,12 @@
             "type": "string",
             "format": "uuid",
             "description": "Optional caller-generated nonce used internally to bind a Composition SQL result to its request; it is omitted from the public page response."
+          },
+          "form_binding_guards": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SqlFormBindingGuard"
+            }
           }
         },
         "required": [
@@ -14410,6 +14416,12 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "form_binding_guards": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SqlFormBindingGuard"
+            }
           }
         },
         "additionalProperties": false
@@ -14447,6 +14459,12 @@
             "type": "object",
             "additionalProperties": {
               "type": "string"
+            }
+          },
+          "form_binding_guards": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SqlFormBindingGuard"
             }
           }
         },
@@ -16976,6 +16994,22 @@
           "timestamp",
           "json"
         ]
+      },
+      "SqlFormBindingGuard": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "form_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "form_id"
+        ],
+        "additionalProperties": false
       }
     }
   }

@@ -333,6 +333,56 @@ describe("/spaces/:space_id/sql/new", () => {
       .toBeInTheDocument();
   });
 
+  it("carries a selected human Form name and identity guard through plan, run, and save", async () => {
+    render(() => <SpaceQueryCreateRoute />);
+    const editor = await screen.findByRole("textbox", { name: "SQL" });
+    await waitFor(() => expect(editor).toHaveValue("SELECT 1"));
+    fireEvent.click(await screen.findByRole("button", { name: "Form" }));
+    const picker = await screen.findByRole("dialog", { name: "Form" });
+    fireEvent.click(
+      await within(picker).findByRole("button", { name: "Entry" }),
+    );
+
+    const sql = 'SELECT 1 FROM "Entry"';
+    const guard = [{ name: "Entry", form_id: "form-1" }];
+    await waitFor(() =>
+      expect(sqlPlanMock).toHaveBeenLastCalledWith("default", {
+        sql,
+        parameters: {},
+        parameter_types: {},
+        form_binding_guards: guard,
+      }, expect.any(AbortSignal))
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Run Query" }));
+    await waitFor(() =>
+      expect(sqlQueryMock).toHaveBeenCalledWith(
+        "default",
+        expect.objectContaining({
+          sql,
+          form_binding_guards: guard,
+        }),
+        expect.any(AbortSignal),
+      )
+    );
+
+    fireEvent.input(screen.getByLabelText("Query name"), {
+      target: { value: "Entry report" },
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(sqlCreateMock).toHaveBeenCalledWith("default", {
+        name: "Entry report",
+        kind: "user-query",
+        metadata: { formBindings: [{ name: "Entry", formId: "form-1" }] },
+        sql,
+        variables: [],
+      })
+    );
+  });
+
   it("keeps Save disabled while the current authorized plan is pending or rejected", async () => {
     let resolvePlan!: (value: { result_schema: [] }) => void;
     sqlPlanMock.mockImplementationOnce(() =>

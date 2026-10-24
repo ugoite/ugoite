@@ -10,6 +10,7 @@ pub(super) struct PreparedSqlRequest {
     pub(super) normalized_sql: String,
     pub(super) parameter_types: BTreeMap<String, String>,
     pub(super) parameters: HashMap<String, ScalarValue>,
+    pub(super) form_binding_guards: Vec<ugoite_core::sql_query::SqlFormBindingGuard>,
 }
 
 #[derive(Clone, Copy)]
@@ -52,6 +53,7 @@ pub(super) async fn prepare_sql_request(
         normalized_sql,
         parameter_types,
         parameters,
+        form_binding_guards: request.form_binding_guards.clone(),
     })
 }
 
@@ -94,6 +96,63 @@ pub(super) fn bind_sql_to_forms(
         Some(revision) => {
             bound_sql_for_revision(revision, forms, relation_scopes, &prepared.normalized_sql)
         }
-        None => Ok(prepared.normalized_sql.clone()),
+        None => bind_human_form_names(
+            &prepared.normalized_sql,
+            &prepared.form_binding_guards,
+            forms,
+            relation_scopes,
+        ),
     }
+}
+
+pub(super) fn bind_human_form_names(
+    sql: &str,
+    guards: &[ugoite_core::sql_query::SqlFormBindingGuard],
+    forms: &[FormDefinition],
+    relation_scopes: &BTreeMap<String, EntryScope>,
+) -> Result<String> {
+    let aliases = forms
+        .iter()
+        .filter_map(|form| {
+            let stable = sql_relation_name(form.id);
+            relation_scopes
+                .contains_key(&stable)
+                .then(|| (form.name.clone(), stable))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let references = index::quoted_form_name_references(sql)?;
+    for guard in guards {
+        if !references.contains(&guard.name) {
+            return Err(AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "SQL Form binding guard does not match a referenced Form name",
+            )
+            .into());
+        }
+        let Some(form) = forms.iter().find(|form| {
+            form.name == guard.name && relation_scopes.contains_key(&sql_relation_name(form.id))
+        }) else {
+            return Err(AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "SQL query Form binding is unavailable",
+            )
+            .into());
+        };
+        if form.id.to_string() != guard.form_id {
+            return Err(AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "SQL Form binding guard no longer matches the selected Form",
+            )
+            .into());
+        }
+    }
+    let (bound, used) = index::resolve_saved_sql_bindings(sql, &aliases)?;
+    if used.len() != references.len() {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            "SQL query Form binding is unavailable",
+        )
+        .into());
+    }
+    Ok(bound)
 }

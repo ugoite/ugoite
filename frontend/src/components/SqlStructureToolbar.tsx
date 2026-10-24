@@ -13,11 +13,12 @@ import { SqlDocumentTreeEditor } from "~/components/SqlDocumentTreeEditor";
 import { SqlFilterSortEditor } from "~/components/SqlFilterSortEditor";
 import { handleDialogKeyDown, useDialogFocus } from "~/components/dialog-focus";
 import type { SQLWorkspaceAction } from "~/components/SQLWorkspace";
+import { filterSqlStructureContextsByFormGuards } from "~/lib/sql";
 import type { SqlStructureAdapterContext } from "~/lib/sql";
 import type { PlanSqlColumns } from "~/lib/sql-document-columns";
 import type { SqlVariableDefaultDraft } from "~/lib/sql";
 import { t } from "~/lib/i18n";
-import type { SqlVariable } from "~/lib/types";
+import type { SqlFormBinding, SqlVariable } from "~/lib/types";
 import type { SqlDocumentNode } from "~/lib/ugoite-client";
 import type { SqlStructureVariableType } from "~/lib/ugoite-client";
 
@@ -40,8 +41,12 @@ interface SqlStructureToolbarProps {
   /** Host identity, independent of SQL text, invalidates pending operations. */
   scope?: () => string;
   contexts: () => readonly SqlStructureAdapterContext[];
+  formBindingGuards?: () => readonly SqlFormBinding[];
   onPlanColumns?: PlanSqlColumns;
   onSqlChange?: (sql: string) => void;
+  onFormBindingSelected?: (
+    selection: { sql: string; name: string; form_id: string },
+  ) => void;
   onVariablesAdded?: (
     variables: readonly { name: string; type: SqlStructureVariableType }[],
   ) => boolean | void;
@@ -117,6 +122,14 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
     SqlStructureVariableType
   >("string");
   const [error, setError] = createSignal<string>();
+  const schemaContexts = () =>
+    filterSqlStructureContextsByFormGuards(
+      props.contexts(),
+      (props.formBindingGuards?.() ?? []).map(({ name, formId }) => ({
+        name,
+        formId,
+      })),
+    );
   const dialogId = `sql-structure-title-${createUniqueId()}`;
   let dialog: HTMLDivElement | undefined;
 
@@ -398,7 +411,9 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                     formOptions().map((context) => ({
                       relation: context.parser.relation,
                       label: context.label ?? context.parser.relation,
+                      formId: context.formId ?? "",
                     }))}
+                  onSelectedForm={props.onFormBindingSelected}
                   onApplied={close}
                   onAdvanced={() => openAction("document", dialogReturnFocus())}
                 />
@@ -407,7 +422,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                 <SqlColumnsEditor
                   sql={props.sql}
                   scope={props.scope}
-                  contexts={props.contexts}
+                  contexts={schemaContexts}
                   onPlanColumns={props.onPlanColumns}
                   disabled={props.disabled}
                   onSqlChange={(sql) => props.onSqlChange?.(sql)}
@@ -438,7 +453,7 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                   initialNodeKinds={() => targetNodeKinds()}
                   onPlanColumns={props.onPlanColumns}
                   relationOptions={() =>
-                    formOptions().map((context) => ({
+                    schemaContexts().map((context) => ({
                       relation: context.parser.relation,
                       label: context.label ?? context.parser.relation,
                       columns: context.parser.columns.map((column) =>
