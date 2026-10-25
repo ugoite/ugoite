@@ -127,6 +127,29 @@ async fn save_local_composition(
         .await
 }
 
+async fn save_local_composition_with_work(
+    service: &UgoiteService,
+    space_id: &str,
+    document: CompositionDocument,
+    work: ugoite_iceberg::composition::CompositionSaveWork,
+) -> Result<ugoite_iceberg::composition::CompositionSaveResult> {
+    let document = apply_preview_query_descriptors(service, space_id, document).await?;
+    let operation_id = Uuid::now_v7().to_string();
+    service
+        .save_composition_local_with_work(
+            space_id,
+            ugoite_iceberg::composition::CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document,
+            },
+            "preview-test",
+            &operation_id,
+            work,
+        )
+        .await
+}
+
 async fn apply_preview_query_descriptors(
     service: &UgoiteService,
     space_id: &str,
@@ -710,7 +733,16 @@ async fn local_graph_table_pages_keep_query_continuations_across_unrelated_input
         .push(FlowItem::Component {
             component: "unrelated-input-component".to_owned(),
         });
-    let saved = save_local_composition(&service, &space_id, document).await?;
+    let saved = save_local_composition_with_work(
+        &service,
+        &space_id,
+        document,
+        ugoite_iceberg::composition::CompositionSaveWork {
+            variables: BTreeMap::from([("unrelated_input".to_owned(), json!(1))]),
+            unset_variables: Vec::new(),
+        },
+    )
+    .await?;
     let evaluation_id = Uuid::now_v7();
     let requested_queries = ["source".to_owned()];
     let target = || CompositionQueryEvaluationTarget::SavedRevision {
@@ -1133,8 +1165,9 @@ async fn parameterized_saved_sql_placeholder_previews_and_saves_with_server_sche
 
     let document_with_descriptors =
         apply_preview_query_descriptors(&service, &space_id, document.clone()).await?;
+    let authorized_operation_id = Uuid::now_v7().to_string();
     let authorized = service
-        .save_composition_authorized_for_principals(
+        .save_composition_authorized_for_principals_with_work(
             &space_id,
             ugoite_iceberg::composition::CompositionSaveRequest {
                 entry_id: None,
@@ -1143,11 +1176,25 @@ async fn parameterized_saved_sql_placeholder_previews_and_saves_with_server_sche
             },
             "owner",
             &principal_ids,
+            &authorized_operation_id,
+            ugoite_iceberg::composition::CompositionSaveWork {
+                variables: BTreeMap::from([("minimum".to_owned(), json!(7))]),
+                unset_variables: Vec::new(),
+            },
         )
         .await?;
     assert!(authorized.document.has_complete_query_descriptors());
 
-    let saved = save_local_composition(&service, &space_id, document).await?;
+    let saved = save_local_composition_with_work(
+        &service,
+        &space_id,
+        document,
+        ugoite_iceberg::composition::CompositionSaveWork {
+            variables: BTreeMap::from([("minimum".to_owned(), json!(7))]),
+            unset_variables: Vec::new(),
+        },
+    )
+    .await?;
     assert!(saved.document.has_complete_query_descriptors());
     let Some(VariableGraphNode {
         kind: VariableGraphNodeKind::Query { query, .. },
