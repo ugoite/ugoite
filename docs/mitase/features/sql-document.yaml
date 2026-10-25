@@ -54,12 +54,12 @@ features:
       - id: typed-expression-attributes-frontend
         role: implementation
         facet: frontend
-        responsibility: Expose typed SQL Document semantic edits to browser callers through the shared portable WASM protocol client.
+        responsibility: Render node-scoped typed CAST attributes, unary and binary operator controls, and simple-versus-searched CASE operand selection in the SQL document tree editor.
         targets:
           - id: tree-editor-controls
             adapter: typescript
-            path: frontend/src/lib/ugoite-client/protocol.ts
-            selector: { kind: symbol, name: applySqlDocumentSemanticEditTransaction }
+            path: frontend/src/components/SqlDocumentTreeEditor.tsx
+            selector: { kind: symbol, name: SqlDocumentTreeEditor }
             claims:
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
@@ -715,13 +715,40 @@ features:
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: simple_case_operand_edit_executes_in_authorized_query_context } }
           - id: frontend-typed-controls
             adapter: typescript
-            path: frontend/src/lib/ugoite-client/protocol.test.ts
-            selector: { kind: test, name: applies typed SQL Document semantic edits through the Rust protocol }
+            path: frontend/src/components/SqlDocumentTreeEditor.test.tsx
+            selector: { kind: test, name: sends exact DECIMAL precision and negative scale through the typed CAST editor }
             claims:
               - kind: verifies
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
                 covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/ugoite-client/protocol.test.ts, test: applies typed SQL Document semantic edits through the Rust protocol } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.test.tsx, test: sends exact DECIMAL precision and negative scale through the typed CAST editor } }
+          - id: frontend-case-mode-actual-wasm
+            adapter: typescript
+            path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
+            selector: { kind: test, name: switches CASE to a selected operand and back through the CASE mode control }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.typed-expression-attributes
+                covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: switches CASE to a selected operand and back through the CASE mode control } }
+          - id: frontend-not-bitwise-actual-wasm
+            adapter: typescript
+            path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
+            selector: { kind: test, name: authors NOT and bitwise AND from the inspector and restores both with WASM undo }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.typed-expression-attributes
+                covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: authors NOT and bitwise AND from the inspector and restores both with WASM undo } }
+          - id: frontend-existing-not-actual-wasm
+            adapter: typescript
+            path: frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
+            selector: { kind: test, name: edits an existing NOT expression to a unary sign and restores it with WASM undo }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.typed-expression-attributes
+                covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.wasm.test.tsx, test: edits an existing NOT expression to a unary sign and restores it with WASM undo } }
     contracts:
       - id: typed-expression-attributes-portable-contract
         kind: custom
