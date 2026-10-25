@@ -19,6 +19,7 @@ type EvaluationBody = {
     has_more: boolean;
   }>;
   query_diagnostics: Array<{
+    code?: string;
     variable_id: string;
     result_diagnostic?: { result_diagnostic?: { code?: string } };
   }>;
@@ -252,18 +253,22 @@ test.describe("Composition Metric Journey", () => {
     const secondBody = await secondResponse.json() as EvaluationBody;
     expect(secondResponse.ok(), JSON.stringify(secondBody)).toBe(true);
     expect(secondBody.ok).toBe(false);
-    expect(secondBody.query_results.total_value).toBeUndefined();
-    expect(secondBody.query_results.metric_rows.value.rows).toHaveLength(2);
-    expect(JSON.stringify(secondBody.query_results.metric_rows.value.rows))
-      .toContain("Metric-Two");
+    expect(secondBody.query_results).toEqual({});
     expect(secondBody.query_diagnostics).toContainEqual(
       expect.objectContaining({
+        code: "result_validation_failed",
         variable_id: "total_value",
         result_diagnostic: expect.objectContaining({
           result_diagnostic: expect.objectContaining({
             code: "scalar_multiple_rows",
           }),
         }),
+      }),
+    );
+    expect(secondBody.query_diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "evaluation_aborted",
+        variable_id: "metric_rows",
       }),
     );
   });
