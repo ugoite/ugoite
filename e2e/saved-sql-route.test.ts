@@ -167,15 +167,18 @@ test.describe("Saved SQL route", () => {
       await toolbar.getByRole("button", { name: "Form", exact: true })
         .click();
       const dialog = page.getByRole("dialog", { name: "Form" });
-      await dialog.getByRole("combobox", { name: "Form", exact: true })
-        .selectOption(relation);
-      await dialog.getByRole("button", {
-        name: "Add FROM relation",
-        exact: true,
-      }).click();
-      await dialog.getByRole("button", { name: "Apply", exact: true }).click();
-      await dialog.getByRole("button", { name: "Close", exact: true }).last()
-        .click();
+      await expect(dialog.getByRole("tree")).toHaveCount(0);
+      await dialog.getByRole("button", { name: "Entry", exact: true }).click();
+      await expect(page.locator(".ui-sql-editor")).toContainText(
+        `SELECT 1 FROM "${relation}"`,
+      );
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await expect(
+        page.getByRole("group", { name: "SQL", exact: true }).getByRole(
+          "button",
+          { name: "Form", exact: true },
+        ),
+      ).toBeFocused();
 
       await expect(page.locator(".ui-sql-editor")).toContainText(
         `SELECT 1 FROM "${relation}"`,
@@ -463,13 +466,19 @@ test.describe("Saved SQL route", () => {
       });
       await expect(page.locator(".ui-sql-editor")).toContainText("SELECT 1");
       const formDialog = await open("Form");
-      await formDialog.getByRole("combobox", { name: "Form", exact: true })
-        .selectOption(relation);
-      await formDialog.getByRole("button", {
-        name: "Add FROM relation",
-        exact: true,
-      }).click();
-      await applyAndClose(formDialog);
+      await expect(formDialog.getByRole("tree")).toHaveCount(0);
+      await formDialog.getByRole("button", { name: "Entry", exact: true })
+        .click();
+      await expect(page.locator(".ui-sql-editor")).toContainText(
+        `SELECT 1 FROM "${relation}"`,
+      );
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await expect(
+        page.getByRole("group", { name: "SQL", exact: true }).getByRole(
+          "button",
+          { name: "Form", exact: true },
+        ),
+      ).toBeFocused();
       await expect(page.locator(".ui-sql-editor")).toContainText(
         `SELECT 1 FROM "${relation}"`,
       );
@@ -532,17 +541,21 @@ test.describe("Saved SQL route", () => {
         'ORDER BY "_ugoite_id" ASC',
       );
       const replacementDialog = await open("Form");
-      await replacementDialog.getByRole("treeitem", { name: /Table source:/ })
-        .click();
-      await replacementDialog.getByRole("combobox", {
-        name: "Form",
-        exact: true,
-      }).selectOption(alternateRelation);
+      await expect(replacementDialog.getByRole("tree")).toHaveCount(0);
       await replacementDialog.getByRole("button", {
-        name: "Replace relation",
+        name: alternateFormName,
         exact: true,
       }).click();
-      await applyAndClose(replacementDialog);
+      await expect(page.locator(".ui-sql-editor")).toContainText(
+        `FROM "${alternateRelation}"`,
+      );
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await expect(
+        page.getByRole("group", { name: "SQL", exact: true }).getByRole(
+          "button",
+          { name: "Form", exact: true },
+        ),
+      ).toBeFocused();
       await expect(page.locator(".ui-sql-editor")).toContainText(
         `FROM "${alternateRelation}"`,
       );

@@ -673,6 +673,10 @@ export type SqlDocumentJoin = {
 
 export type SqlDocumentSemanticEdit =
   | {
+    kind: "initialize_select";
+    relation: SqlDocumentIdentifier | null;
+  }
+  | {
     kind: "replace_identifier";
     node_id: number;
     expected_kind: SqlDocumentNodeKind;

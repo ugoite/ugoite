@@ -4,6 +4,7 @@ import {
   createMemo,
   createSignal,
   For,
+  onCleanup,
   Show,
   untrack,
 } from "solid-js";
@@ -36,6 +37,7 @@ import { t } from "~/lib/i18n";
 
 interface SqlDocumentTreeEditorProps {
   sql: () => string;
+  scope?: () => string;
   onSqlChange: (sql: string) => void;
   disabled?: () => boolean;
   relationOptions?: () => readonly {
@@ -2024,6 +2026,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
 
   createEffect(() => {
     const source = props.sql();
+    props.scope?.();
     const currentGeneration = ++generation;
     setLoading(true);
     setBusy(false);
@@ -2242,12 +2245,14 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     );
   };
 
-  const apply = async () => {
+  onCleanup(() => {
+    generation++;
+  });
+
+  const applyEdit = async (edit: SqlDocumentSemanticEdit) => {
     const currentDocument = document();
-    const node = selectedNode();
-    if (!currentDocument || !node || !editorCanApply()) return;
-    const edit = currentSemanticEdit();
-    if (!edit) return;
+    if (!currentDocument || props.disabled?.() || busy()) return;
+    const expectedScope = props.scope?.();
     const expectedSource = currentDocument.source;
     const currentGeneration = ++generation;
     setBusy(true);
@@ -2263,7 +2268,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
       );
       if (
         currentGeneration !== generation || props.sql() !== expectedSource ||
-        props.disabled?.()
+        props.scope?.() !== expectedScope || props.disabled?.()
       ) return;
       if (
         result.document.status !== "parsed" ||
@@ -2285,6 +2290,12 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     } finally {
       if (currentGeneration === generation) setBusy(false);
     }
+  };
+
+  const apply = () => {
+    if (!selectedNode() || !editorCanApply()) return;
+    const edit = currentSemanticEdit();
+    if (edit) void applyEdit(edit);
   };
 
   const renderNode = (node: SqlDocumentNode, depth: number): JSX.Element => {
@@ -2359,6 +2370,17 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                 {current().diagnostics[0]?.message ??
                   t("sqlPage.structure.documentDraft")}
               </p>
+            </Show>
+            <Show when={current().status === "empty"}>
+              <button
+                type="button"
+                class="ui-button ui-button-primary"
+                disabled={busy() || props.disabled?.()}
+                onClick={() =>
+                  void applyEdit({ kind: "initialize_select", relation: null })}
+              >
+                {t("sqlPage.structure.startQuery")}
+              </button>
             </Show>
             <div class="sql-document-tree__layout">
               <div

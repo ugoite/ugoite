@@ -616,6 +616,13 @@ pub struct SqlDocumentNodeEditTransaction {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SqlDocumentSemanticEdit {
+    /// Construct the first SELECT in an empty (possibly trivia-only) draft.
+    /// Rust renders the optional relation as one identifier; nonempty invalid
+    /// SQL is never replaced by this operation.
+    InitializeSelect {
+        /// None produces a relation-free SELECT with an editable literal.
+        relation: Option<SqlDocumentIdentifier>,
+    },
     /// Replace an identifier expression with one or more typed identifier
     /// parts. One part emits an identifier expression; multiple parts emit a
     /// compound identifier expression.
@@ -1853,6 +1860,45 @@ pub fn apply_sql_document_semantic_edit_transaction(
     }
 
     let document = parse_sql_document(current_source);
+    if transaction
+        .edits
+        .iter()
+        .any(|edit| matches!(edit, SqlDocumentSemanticEdit::InitializeSelect { .. }))
+    {
+        let [SqlDocumentSemanticEdit::InitializeSelect { relation }] = transaction.edits.as_slice()
+        else {
+            return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+        };
+        if document.status != SqlDocumentStatus::Empty {
+            return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+        }
+        let seed = match relation {
+            Some(relation) => format!(
+                "SELECT * FROM {}",
+                render_identifier_parts(std::slice::from_ref(relation))?
+            ),
+            None => "SELECT 1".to_owned(),
+        };
+        let prefix = if current_source.is_empty() || current_source.ends_with('\n') {
+            ""
+        } else {
+            "\n"
+        };
+        return apply_sql_document_edit_transaction(
+            current_source,
+            &SqlDocumentEditTransaction {
+                expected_source: current_source.to_owned(),
+                edits: vec![SqlDocumentEdit {
+                    range: SqlSourceRange {
+                        start: current_source.len(),
+                        end: current_source.len(),
+                    },
+                    expected_text: String::new(),
+                    replacement: format!("{prefix}{seed}"),
+                }],
+            },
+        );
+    }
     if document.status != SqlDocumentStatus::Parsed {
         match document.status {
             SqlDocumentStatus::TooLarge => return Err(SqlDocumentEditError::SourceTooLarge),
@@ -1866,7 +1912,9 @@ pub fn apply_sql_document_semantic_edit_transaction(
     let mut targeted_nodes = Vec::with_capacity(transaction.edits.len());
     let mut edits = Vec::with_capacity(transaction.edits.len());
     for semantic_edit in &transaction.edits {
-        let (node_id, expected_kind) = semantic_edit.target();
+        let (node_id, expected_kind) = semantic_edit
+            .target()
+            .ok_or(SqlDocumentEditError::InvalidSemanticReplacement)?;
         if targeted_nodes.contains(&node_id) {
             return Err(SqlDocumentEditError::DuplicateNodeTarget);
         }
@@ -2380,6 +2428,9 @@ pub fn apply_sql_document_semantic_edit_transaction(
         }
 
         let (range, replacement) = match semantic_edit {
+            SqlDocumentSemanticEdit::InitializeSelect { .. } => {
+                return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+            }
             SqlDocumentSemanticEdit::ReplaceIdentifier { parts, .. } => {
                 let current_parts = match (&node.kind, node.semantic.as_ref()) {
                     (
@@ -2597,8 +2648,9 @@ pub fn apply_sql_document_semantic_edit_transaction(
 }
 
 impl SqlDocumentSemanticEdit {
-    fn target(&self) -> (u32, SqlDocumentNodeKind) {
+    fn target(&self) -> Option<(u32, SqlDocumentNodeKind)> {
         match self {
+            Self::InitializeSelect { .. } => None,
             Self::ReplaceIdentifier {
                 node_id,
                 expected_kind,
@@ -2894,7 +2946,7 @@ impl SqlDocumentSemanticEdit {
                 node_id,
                 expected_kind,
                 ..
-            } => (*node_id, *expected_kind),
+            } => Some((*node_id, *expected_kind)),
         }
     }
 }
@@ -10509,6 +10561,86 @@ mod tests {
                 },
             ),
             Err(SqlDocumentEditError::DuplicateNodeTarget)
+        );
+    }
+
+    #[test]
+    fn semantic_initialize_select_preserves_empty_draft_trivia_and_has_guarded_undo() {
+        for source in ["", "  ", "-- 日本語", "/* keep */\n"] {
+            for relation in [
+                None,
+                Some(SqlDocumentIdentifier {
+                    value: "Travel \"Costs\"".to_owned(),
+                    quote_style: Some('"'),
+                }),
+            ] {
+                let result = apply_sql_document_semantic_edit_transaction(
+                    source,
+                    &semantic_transaction(
+                        source,
+                        vec![SqlDocumentSemanticEdit::InitializeSelect {
+                            relation: relation.clone(),
+                        }],
+                    ),
+                )
+                .unwrap();
+                assert_eq!(result.document.status, SqlDocumentStatus::Parsed);
+                assert!(result.document.source.starts_with(source));
+                assert!(result.document.source.contains(if relation.is_some() {
+                    r#"SELECT * FROM "Travel ""Costs""""#
+                } else {
+                    "SELECT 1"
+                }));
+                assert_eq!(
+                    apply_sql_document_edit_transaction(&result.document.source, &result.undo)
+                        .unwrap()
+                        .document
+                        .source,
+                    source
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn semantic_initialize_select_rejects_nonempty_invalid_stale_and_mixed_edits() {
+        let initialize = SqlDocumentSemanticEdit::InitializeSelect { relation: None };
+        for source in [
+            "SELECT 1",
+            "SELECT (",
+            "DELETE FROM x",
+            "SELECT 1; SELECT 2",
+        ] {
+            assert_eq!(
+                apply_sql_document_semantic_edit_transaction(
+                    source,
+                    &semantic_transaction(source, vec![initialize.clone()])
+                ),
+                Err(SqlDocumentEditError::InvalidSemanticReplacement)
+            );
+        }
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(
+                " ",
+                &semantic_transaction("", vec![initialize.clone()])
+            ),
+            Err(SqlDocumentEditError::StaleSource)
+        );
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(
+                "",
+                &semantic_transaction("", vec![initialize.clone(), initialize])
+            ),
+            Err(SqlDocumentEditError::InvalidSemanticReplacement)
+        );
+        let mut transaction = semantic_transaction(
+            "",
+            vec![SqlDocumentSemanticEdit::InitializeSelect { relation: None }],
+        );
+        transaction.contract_version += 1;
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction("", &transaction),
+            Err(SqlDocumentEditError::ContractVersionMismatch)
         );
     }
 
