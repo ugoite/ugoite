@@ -209,7 +209,11 @@ async fn draft_preview_resolves_without_publication() -> Result<()> {
         matches!(
             plan.queries[0].request.as_ref(),
             Some(request) if request.sql.contains(&stable_relation)
-                && !request.sql.contains("Composition-Preview")
+                && request.sql.contains("AS \"Composition-Preview\"")
+                && plan.queries[0]
+                    .form_bindings
+                    .iter()
+                    .any(|binding| binding.form_id == form_id)
                 && plan.queries[0].schema_fingerprint.len() == 64
         ),
         "resolved query did not use the stable relation and descriptor: {:?}",
