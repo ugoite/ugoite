@@ -46,8 +46,8 @@ and real-device findings are not inferred from local results.
   and production frontend at `cb9af356d6cece55a969e4cb6ada231dbbd4265b`.
 - Frontend/spec delta based on `d8acd3725` passed **36 tests across 4 files**,
   `mise run fmt:check` (65 files), SQL matrix (6/6), and Mitase. These are
-  focused checks; they do not verify the pending new-feature browser path or
-  full acceptance.
+  focused checks; the later browser results are separate evidence and neither
+  establishes full acceptance.
 - At source `cb9af356d6cece55a969e4cb6ada231dbbd4265b`, the production frontend
   build passed, release WASM tests passed **157/157 across 6 files**, native SQL
   document tests passed **108/108**, authorized CASE and alias execution passed
@@ -163,22 +163,28 @@ individual goal verdicts, not a feature-level pass count.
 
 ## Reproduction index
 
-Commands are root `mise` tasks or the repository's focused lanes; run from the
-repository root. At `6c20da665b47279de58b4a9480b2944475a936c1`,
-`mise run fmt:check`, `mise run lint:rust`, `mise run check:repo`,
-`mise run build:native`, and `mise run build:frontend:production` passed. The
-12-case Chromium selection listed above had 11 passed and 1 failed; a subsequent
-unchanged rerun of the failing test passed 1/1 in 20.8 seconds. A separate
-frontend/spec delta based on `d8acd3725` passed 36 tests across 4 files,
-`mise run fmt:check`, the 6-case SQL matrix, and Mitase. At report source
-`cb9af356d6cece55a969e4cb6ada231dbbd4265b`, the production frontend build,
-release WASM suite (157/157 across 6 files), native SQL Document suite
-(108/108), authorized CASE/alias execution (2/2), SQL matrix (6/6), and
-`mise run fmt:check` (65 files) passed. The 12-case browser, unchanged
-single-case rerun, and the `d8acd3725` focused results are separate evidence and
-are reported above. The changed mobile and translated argument browser journeys
-remain pending. Final native build, Rust clippy, and repository check are
-pending; Mitase currently reports 10 selector/cross-facet contract errors and is
-not passing. `mise run test:older-cli-knowledge-preservation` passed 1/1 using
-the pinned v0.2.1 CLI source SHA `51f469e3f81113e4295b8d579410c538fd36a61c`;
-this single preservation case is not complete B-01 evidence.
+Run from the repository root with Rust 1.95. The evidence above distinguishes
+the baseline, the product snapshot, and later test/spec corrections.
+
+- `mise run fmt:check`, `mise run check:repo`, and `mise run build:frontend`
+  passed. The baseline additionally passed the full `mise run lint:rust` lane.
+- `cargo build -p ugoite-server --locked` passed.
+- `cargo test -p ugoite-domain sql_document::tests --locked` passed 108 tests;
+  `cargo test -p ugoite-iceberg --test authorized_query _edit_executes --locked`
+  passed 2 tests.
+- `cargo clippy -p ugoite-domain -p ugoite-wasm --all-targets -- -D warnings`
+  passed after the CASE struct initialization repair.
+- The focused frontend lane used `deno task --cwd frontend test --run` with the
+  Columns, document tree, actual-WASM tree, filter/sort, Composition graph
+  arguments, and protocol test files; all 157 tests passed.
+- `deno test -A tools/sql_feature_matrix_test.ts` passed 6 tests. Full Mitase
+  passed with 0 errors/0 warnings after the exact evidence and inventory repair;
+  `mitase:quality-gate` reported 0 enforced findings.
+- The focused Chromium lane used `deno task --cwd e2e full` with the isolated
+  owner fixture. The changed mobile authoring case passed at product/test
+  snapshot `cb9af356d6cece55a969e4cb6ada231dbbd4265b`; the final typed-argument
+  test from `1bc747194174d1508091f2bbe13f753a414d9f19` passed separately against
+  that product snapshot. Earlier failed runs remain separate evidence above.
+- `mise run test:older-cli-knowledge-preservation` passed 1/1 using the pinned
+  v0.2.1 CLI source SHA `51f469e3f81113e4295b8d579410c538fd36a61c`. This single
+  preservation case is not complete B-01 evidence.
