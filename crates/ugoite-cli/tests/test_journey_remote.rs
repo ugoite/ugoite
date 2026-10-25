@@ -1758,7 +1758,7 @@ spec:
     let revised_document =
         parse_composition_yaml(&revised_yaml).expect("parse newer Composition revision");
     let latest = service
-        .save_composition_authorized_for_principals(
+        .save_composition_authorized_for_principals_with_work(
             &fixture.space_id,
             CompositionSaveRequest {
                 entry_id: Some(saved.entry_id),
@@ -1767,6 +1767,16 @@ spec:
             },
             &fixture.owner_principal_id.to_string(),
             &[fixture.owner_principal_id],
+            "publish-newer-cli-parity-composition",
+            ugoite_iceberg::composition::CompositionSaveWork {
+                variables: [
+                    ("month_start".to_owned(), json!("2026-01-01")),
+                    ("month_end".to_owned(), json!("2026-02-01")),
+                ]
+                .into_iter()
+                .collect(),
+                unset_variables: Vec::new(),
+            },
         )
         .await
         .expect("publish newer Composition revision");
