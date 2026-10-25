@@ -26,4 +26,21 @@ requirements:
           unchanged and reachable through explicit advanced editing. Every
           successful task edit uses the Rust guarded edit protocol and its
           returned inverse; no JavaScript SQL parser or generator is used.
-        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]
+      - id: typed-filter-argument-transactions
+        kind: behavior
+        statement: >-
+          The task Filter editor can use an existing declared argument only
+          when its type matches the selected field, or create a new named
+          argument with a default parsed for that field type. Standalone
+          argument creation and SQL editing are submitted through one guarded
+          host change; undo and redo restore both together, and stale SQL,
+          scope, or argument metadata rejects the change without partial
+          mutation. A null operator creates no orphan argument.
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]

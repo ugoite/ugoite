@@ -141,6 +141,88 @@ describe("SQL Filter and Sort task editors", () => {
       expectedBindings: [{ name: "minimum", variableId: "min_amount" }],
       resultBindings: [],
     });
+    setArgumentsList([{ name: "later", type: "integer", description: "" }]);
+    fireEvent.click(screen.getByRole("button", { name: "Redo" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+    expect(sql()).toBe('SELECT * FROM "form_expenses"');
+    expect(argumentsList()).toEqual([
+      { name: "later", type: "integer", description: "" },
+    ]);
+  });
+
+  it("creates standalone arguments with the selected column type and default, without creating one for null operators", async () => {
+    const [sql, setSql] = createSignal('SELECT * FROM "form_expenses"');
+    const onArgumentAdded = vi.fn();
+    const standalone = render(() => (
+      <SqlFilterSortEditor
+        action="filter"
+        sql={sql}
+        contexts={() => [context]}
+        argumentDefinitions={() => []}
+        onArgumentAdded={onArgumentAdded}
+        onSqlChange={setSql}
+        onAdvanced={() => {}}
+      />
+    ));
+    const column = await screen.findByRole("combobox", { name: "Column" });
+    await waitFor(() =>
+      expect(column.querySelectorAll("option").length).toBe(2)
+    );
+    fireEvent.change(column, { target: { value: "field_amount" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Filter value" }), {
+      target: { value: "argument" },
+    });
+    fireEvent.input(
+      screen.getByRole("textbox", { name: "New argument name" }),
+      {
+        target: { value: "minimum" },
+      },
+    );
+    fireEvent.input(
+      screen.getByRole("textbox", { name: "Default value (optional)" }),
+      {
+        target: { value: "12" },
+      },
+    );
+    expect(screen.getByText("integer")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Add filter" }));
+    await waitFor(() =>
+      expect(onArgumentAdded).toHaveBeenCalledWith({
+        name: "minimum",
+        type: "integer",
+        description: "",
+        default: 12,
+      })
+    );
+    await waitFor(() => expect(sql()).toContain("$minimum"));
+    standalone.unmount();
+
+    const [nullSql, setNullSql] = createSignal('SELECT * FROM "form_expenses"');
+    const nullAdded = vi.fn();
+    render(() => (
+      <SqlFilterSortEditor
+        action="filter"
+        sql={nullSql}
+        contexts={() => [context]}
+        argumentDefinitions={() => []}
+        onArgumentAdded={nullAdded}
+        onSqlChange={setNullSql}
+        onAdvanced={() => {}}
+      />
+    ));
+    const nullColumn = await screen.findByRole("combobox", { name: "Column" });
+    await waitFor(() =>
+      expect(nullColumn.querySelectorAll("option").length).toBe(2)
+    );
+    fireEvent.change(nullColumn, {
+      target: { value: "field_amount" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "Operator" }), {
+      target: { value: "is_null" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add filter" }));
+    await waitFor(() => expect(nullSql()).toContain("IS NULL"));
+    expect(nullAdded).not.toHaveBeenCalled();
   });
 
   it("keeps a typed filter draft stable while typing and applies it through Rust", async () => {

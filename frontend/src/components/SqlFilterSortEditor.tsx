@@ -141,7 +141,6 @@ export function SqlFilterSortEditor(props: Props) {
   );
   const [argumentName, setArgumentName] = createSignal("");
   const [newArgumentName, setNewArgumentName] = createSignal("");
-  const [newArgumentType, setNewArgumentType] = createSignal("string");
   const [argumentDefault, setArgumentDefault] = createSignal("");
   const [bindingVariableId, setBindingVariableId] = createSignal("");
   const [direction, setDirection] = createSignal<"asc" | "desc">("asc");
@@ -440,7 +439,10 @@ export function SqlFilterSortEditor(props: Props) {
             }
             const argumentType = compatibleScalarVariables().find((variable) =>
               variable.id === bindingVariableId()
-            )?.type ?? newArgumentType();
+            )?.type ?? compatibleValueType();
+            if (!argumentType) {
+              throw new Error(t("sqlPage.structure.documentEnterValue"));
+            }
             const parsedDefault = argumentDefault() !== ""
               ? parseSqlVariableDefault(argumentType, argumentDefault())
               : undefined;
@@ -672,6 +674,7 @@ export function SqlFilterSortEditor(props: Props) {
             onChange={(event) => {
               const fieldName = event.currentTarget.value;
               setColumn(fieldName);
+              setArgumentName("");
               const nextOperator = supportedFilterOperators(fieldName)[0]
                 ?.value;
               if (nextOperator) setOperator(nextOperator);
@@ -788,26 +791,9 @@ export function SqlFilterSortEditor(props: Props) {
                 fallback={
                   <label class="ui-field">
                     <span>Type</span>
-                    <select
-                      class="ui-input"
-                      disabled={busy() || locked()}
-                      value={newArgumentType()}
-                      onChange={(event) =>
-                        setNewArgumentType(event.currentTarget.value)}
-                    >
-                      <For
-                        each={[
-                          "string",
-                          "integer",
-                          "float",
-                          "boolean",
-                          "date",
-                          "timestamp",
-                        ]}
-                      >
-                        {(type) => <option value={type}>{type}</option>}
-                      </For>
-                    </select>
+                    <span class="ui-input" aria-readonly="true">
+                      {compatibleValueType() ?? "Unsupported column type"}
+                    </span>
                   </label>
                 }
               >

@@ -122,6 +122,149 @@ describe("Composition shared SQL argument editing", () => {
     return { draft, setDraft, query, open, validity };
   };
 
+  it("creates a bound filter argument in Composition", async () => {
+    const initial = createCompositionGraphDraft("Report");
+    initial.variables = [
+      {
+        id: "threshold",
+        kind: "constant",
+        value_type: { scalar_type: "integer", nullable: false },
+        value: { kind: "integer", value: 3 },
+      },
+      {
+        id: "rows",
+        kind: "query",
+        returns: { kind: "table", columns: [] },
+        query: {
+          kind: "inline_sql",
+          sql: 'SELECT * FROM "Expenses"',
+          arguments: [],
+        },
+      },
+    ];
+    const [draft, setDraft] = createSignal(initial);
+    const run = vi.fn();
+    const save = vi.fn();
+    const validity = vi.fn();
+    const expenses = {
+      id: "expenses-id",
+      name: "Expenses",
+      version: 1,
+      template: "# Expenses",
+      sql_relation: "form_expenses",
+      fields: {
+        Amount: {
+          type: "integer",
+          required: false,
+          sql_column: "amount",
+          query_capability: {
+            field: { kind: "property", field_id: 1 },
+            name: "amount",
+            field_type: "integer",
+            filterable: true,
+            sortable: true,
+            projectable: true,
+            supported_operators: ["equals", "lt", "lte", "gt", "gte"],
+          },
+        },
+      },
+    };
+    render(() => (
+      <CompositionGraphStudio
+        draft={draft()}
+        forms={[expenses]}
+        sqlForms={[expenses]}
+        savedSql={[]}
+        provider={{ resolveForm: vi.fn(), prepareSavedSql: vi.fn() }}
+        session={{
+          session_id: "editor",
+          space_id: "space",
+          document_revision: null,
+          principal_generation: "principal",
+        }}
+        getPrincipalGeneration={async () => "principal"}
+        isSessionCurrent={() => true}
+        sqlSchema={buildSqlSchema([expenses])}
+        onDraftChange={setDraft}
+        onRunQuery={run}
+        onSave={save}
+        onEditorValidityChange={validity}
+      />
+    ));
+    fireEvent.click(
+      screen.getByRole("tab", { name: "Variables", exact: true }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "rows", exact: true }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Filter", exact: true }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Filter", exact: true });
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("combobox", { name: "Column" }).querySelector(
+          'option[value="amount"]',
+        ),
+      ).not.toBeNull()
+    );
+    fireEvent.change(within(dialog).getByRole("combobox", { name: "Column" }), {
+      target: { value: "amount" },
+    });
+    fireEvent.change(
+      within(dialog).getByRole("combobox", { name: "Filter value" }),
+      {
+        target: { value: "argument" },
+      },
+    );
+    fireEvent.input(
+      within(dialog).getByRole("textbox", { name: "New argument name" }),
+      {
+        target: { value: "minimum" },
+      },
+    );
+    fireEvent.change(
+      within(dialog).getByRole("combobox", { name: "Bind to scalar variable" }),
+      {
+        target: { value: "threshold" },
+      },
+    );
+    const addFilter = within(dialog).getByRole("button", {
+      name: "Add filter",
+    });
+    expect(addFilter).toBeEnabled();
+    fireEvent.click(addFilter);
+    await waitFor(() => expect(within(dialog).queryByRole("alert")).toBeNull());
+    await waitFor(() =>
+      expect(draft().variables.find((node) => node.id === "rows"))
+        .toMatchObject({
+          query: {
+            sql: 'SELECT * FROM "Expenses" WHERE amount = $minimum',
+            arguments: [{ name: "minimum", variable: "threshold" }],
+          },
+        })
+    );
+    await waitFor(() =>
+      expect(validity).toHaveBeenLastCalledWith("rows", true)
+    );
+    fireEvent.click(
+      within(dialog).getAllByRole("button", { name: "Close" })[1],
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Arguments", exact: true }),
+    );
+    expect(await screen.findByRole("button", { name: "Remove minimum" }))
+      .toBeDisabled();
+    expect(screen.getByLabelText(/type for minimum/i)).toHaveValue("integer");
+    const runButton = screen.getByRole("button", {
+      name: "Run Query",
+      exact: true,
+    });
+    expect(runButton).toBeEnabled();
+    fireEvent.click(runButton);
+    expect(run).toHaveBeenCalledWith("rows");
+    fireEvent.click(screen.getByRole("button", { name: "Save", exact: true }));
+    expect(save).toHaveBeenCalledOnce();
+  });
+
   it("renames through Rust while preserving bindings and comment lookalikes", async () => {
     const { query, open } = setup();
     const dialog = await open();
