@@ -1507,8 +1507,13 @@ async fn portable_inline_sql_count_keeps_form_identity_after_rename_and_replacem
         .queries
         .remove(0);
     let sql = query.portable_sql.context("portable SQL uses Form IDs")?;
-    assert!(sql.contains(&sql_relation_name(form_id)));
-    assert!(!sql.contains("\"Composition-Preview\""));
+    assert!(
+        sql.contains(&format!(
+            "{} AS \"Composition-Preview\"",
+            sql_relation_name(form_id)
+        )),
+        "portable SQL should keep the stable Form relation while retaining its readable alias: {sql}"
+    );
     // Exercise the native append-only Form evolution contract; the public
     // name-addressed upsert API is not a Form-rename adapter.
     let workspace = ugoite_iceberg::iceberg_store::native_mutation_workspace(
