@@ -2542,6 +2542,47 @@ mod tests {
     }
 
     #[test]
+    fn projection_alias_semantic_edit_protocol_matches_native() {
+        use ugoite_domain::sql_document::{
+            SqlDocumentIdentifier, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction, SQL_DOCUMENT_CONTRACT_VERSION,
+        };
+        let source = "SELECT amount FROM \"G\"";
+        let document = ugoite_domain::sql_document::parse_sql_document(source);
+        let item = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+            .unwrap();
+        let transaction = SqlDocumentSemanticEditTransaction {
+            contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+            expected_source: source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::SetProjectionAlias {
+                node_id: item.id,
+                expected_kind: SqlDocumentNodeKind::SelectItem,
+                alias: Some(SqlDocumentIdentifier {
+                    value: "gross total".into(),
+                    quote_style: Some('"'),
+                }),
+            }],
+        };
+        let native = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            source,
+            &transaction,
+        )
+        .unwrap();
+        let request = serde_json::json!({"action":"domain.apply_sql_document_semantic_edit_transaction","value":{"current_source":source,"transaction":transaction}});
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"], serde_json::to_value(&native).unwrap());
+        assert_eq!(
+            response["value"]["document"]["source"],
+            "SELECT amount AS \"gross total\" FROM \"G\""
+        );
+    }
+
+    #[test]
     fn sql_document_relation_edit_protocol_matches_native_and_undo() {
         use ugoite_domain::sql_document::{
             SqlDocumentIdentifier, SqlDocumentJoin, SqlDocumentJoinConstraint,

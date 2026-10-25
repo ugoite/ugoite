@@ -6045,6 +6045,13 @@ a.tool {
   overflow-wrap: anywhere;
 }
 
+.sql-columns-editor__alias {
+  flex: 1 1 180px;
+  min-width: min(100%, 180px);
+  min-height: 44px;
+  font-size: 16px;
+}
+
 .sql-columns-editor__row-actions,
 .sql-columns-editor__add,
 .sql-columns-editor__footer {

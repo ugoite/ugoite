@@ -56,6 +56,22 @@ requirements:
           with a stable local diagnostic. Nested query positions remain
           unchanged, and guarded Undo restores every original source byte.
         governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: projection-alias-binding-safety
+        kind: behavior
+        statement: >-
+          The SQL Workspace can add, rename, and remove a SELECT output alias
+          through Rust typed document operations. These edits preserve source
+          outside the alias, including comments. Renaming or removing an alias
+          referenced by ORDER BY, GROUP BY, or HAVING in the same SELECT scope
+          rejects the complete edit with a local diagnostic unless the edit
+          preserves that reference's meaning. Adding or renaming an alias also
+          rejects a same-scope reference capture or duplicate output name when
+          the sibling output name is an explicit alias or a simple identifier.
+          The editor does not claim to resolve generated names for arbitrary
+          output expressions. The
+          same guarded operation and inverse are exposed through the portable
+          WASM protocol.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
       - id: portable-protocol
         kind: behavior
         statement: >-

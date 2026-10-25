@@ -4052,3 +4052,53 @@ async fn projection_reorder_keeps_authorized_grouping_and_sort_meaning() -> anyh
     }
     Ok(())
 }
+
+#[tokio::test]
+async fn projection_alias_edit_executes_with_the_authored_output_name() -> anyhow::Result<()> {
+    use ugoite_domain::sql_document::{
+        apply_sql_document_semantic_edit_transaction, parse_sql_document, SqlDocumentIdentifier,
+        SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
+    };
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(511)),
+        "memory://authorized-projection-alias",
+    )
+    .await?;
+    let tasks = form(512, "Tasks");
+    create_form(&workspace, &tasks).await?;
+    append(&workspace, &tasks, 513, 514, "zeta").await?;
+    let context = workspace
+        .authorized_query_context(policy(&tasks, &[513]))
+        .await?;
+    let source = "SELECT field_100 FROM tasks ORDER BY 1";
+    let document = parse_sql_document(source);
+    let item = document
+        .nodes
+        .iter()
+        .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+        .unwrap();
+    let edited = apply_sql_document_semantic_edit_transaction(
+        source,
+        &SqlDocumentSemanticEditTransaction {
+            contract_version: document.contract_version,
+            expected_source: source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::SetProjectionAlias {
+                node_id: item.id,
+                expected_kind: item.kind,
+                alias: Some(SqlDocumentIdentifier {
+                    value: "task title".into(),
+                    quote_style: Some('"'),
+                }),
+            }],
+        },
+    )?;
+    let rows = context.execute(edited.document.to_sql()).await?;
+    assert_eq!(rows[0].schema().field(0).name(), "task title");
+    let values = rows[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+    assert_eq!(values.iter().flatten().collect::<Vec<_>>(), ["zeta"]);
+    Ok(())
+}

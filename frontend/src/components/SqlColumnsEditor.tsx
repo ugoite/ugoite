@@ -40,6 +40,18 @@ interface SqlColumnsEditorProps {
   onPlanColumns?: PlanSqlColumns;
 }
 
+function projectionAliasEdit(
+  item: SqlDocumentNode,
+  value: string,
+): SqlDocumentSemanticEdit {
+  return {
+    kind: "set_projection_alias",
+    node_id: item.id,
+    expected_kind: "select_item",
+    alias: value ? { value, quote_style: '"' } : null,
+  };
+}
+
 /** A projection view of Rust's document. Identifiers and edits stay typed. */
 export function SqlColumnsEditor(props: SqlColumnsEditorProps) {
   const [document, setDocument] = createSignal<SqlDocument>();
@@ -214,6 +226,10 @@ export function SqlColumnsEditor(props: SqlColumnsEditorProps) {
       : undefined;
   };
   const itemLabel = (item: SqlDocumentNode) => {
+    if (item.semantic?.kind === "projection_alias") {
+      const expression = children(item)[0];
+      if (expression) return sourceSlice(expression);
+    }
     if (item.semantic?.kind === "wildcard" && !item.semantic.has_options) {
       const qualifier = item.semantic.qualifier.at(-1)?.value;
       return qualifier
@@ -393,6 +409,30 @@ export function SqlColumnsEditor(props: SqlColumnsEditorProps) {
                   <span class="sql-columns-editor__name">
                     {itemLabel(item())}
                   </span>
+                  <input
+                    class="ui-input sql-columns-editor__alias"
+                    aria-label={t("sqlPage.columns.outputAlias", {
+                      number: index() + 1,
+                    })}
+                    value={item().semantic?.kind === "projection_alias"
+                      ? item().semantic.alias.value
+                      : ""}
+                    placeholder={t("sqlPage.columns.outputAliasPlaceholder")}
+                    disabled={locked() || item().semantic?.kind === "wildcard"}
+                    onBlur={(event) => {
+                      const current =
+                        item().semantic?.kind === "projection_alias"
+                          ? item().semantic.alias.value
+                          : "";
+                      const value = event.currentTarget.value.trim();
+                      if (value === current) return;
+                      void apply(
+                        [projectionAliasEdit(item(), value)],
+                        undefined,
+                        event.currentTarget,
+                      );
+                    }}
+                  />
                   <Show
                     when={item().semantic?.kind === "wildcard" &&
                       !wildcardQualifier(item())}

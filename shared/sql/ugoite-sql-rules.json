@@ -77,7 +77,7 @@
       "parser_dialect": "GenericDialect",
       "parser_parity_fixture": "shared/sql/sql-document-parser-parity.json",
       "typed_document_contract": {
-        "version": 17,
+        "version": 18,
         "protocol": "SqlDocumentNodeKind",
         "semantic_protocol": "SqlDocumentNodeData",
         "parser_engine": {
@@ -91,6 +91,7 @@
           "other_statement"
         ],
         "semantic_kinds": [
+          "projection_alias",
           "identifier",
           "compound_identifier",
           "literal",
@@ -685,6 +686,7 @@
         "compose_binary_expression",
         "replace_expression_from_node",
         "set_projection_expression",
+        "set_projection_alias",
         "add_projection_expression",
         "add_projection_column",
         "expand_projection_wildcard",
@@ -792,7 +794,7 @@
       "parser_dialect": "GenericDialect",
       "parser_parity_fixture": "shared/sql/sql-document-parser-parity.json",
       "typed_document_contract": {
-        "version": 17,
+        "version": 18,
         "protocol": "SqlDocumentNodeKind",
         "semantic_protocol": "SqlDocumentNodeData",
         "parser_engine": {

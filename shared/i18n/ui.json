@@ -1700,6 +1700,9 @@
     "sqlPage.columns.resultToChange": "Results to edit",
     "sqlPage.columns.resultNumber": "Results {number}",
     "sqlPage.columns.resultFields": "Result fields",
+    "sqlPage.columns.outputAlias": "Output name for result {number}",
+    "sqlPage.columns.aliasLabel": "Output name",
+    "sqlPage.columns.outputAliasPlaceholder": "Output name",
     "sqlPage.columns.chooseFields": "Choose fields",
     "sqlPage.columns.moveUp": "Move {name} up",
     "sqlPage.columns.moveDown": "Move {name} down",
@@ -1707,7 +1710,7 @@
     "sqlPage.columns.addField": "Add a field",
     "sqlPage.columns.undo": "Undo",
     "sqlPage.columns.positionConflict": "This field is referenced by position in sorting or grouping. Choose named fields before changing it.",
-    "sqlPage.columns.aliasConflict": "This projection alias is referenced elsewhere in the query. Change those references before removing it.",
+    "sqlPage.columns.aliasConflict": "This alias edit would change or make an output name ambiguous. Update the related SQL reference first.",
     "sqlPage.columns.redo": "Redo",
     "sqlPage.columns.expansionUnavailable": "The complete field list is unavailable for this query. Advanced editing is available."
   },
@@ -3412,6 +3415,9 @@
     "sqlPage.columns.resultToChange": "編集する結果",
     "sqlPage.columns.resultNumber": "結果 {number}",
     "sqlPage.columns.resultFields": "結果の項目",
+    "sqlPage.columns.outputAlias": "結果 {number} の出力名",
+    "sqlPage.columns.aliasLabel": "出力名",
+    "sqlPage.columns.outputAliasPlaceholder": "出力名",
     "sqlPage.columns.chooseFields": "項目を選ぶ",
     "sqlPage.columns.moveUp": "{name} を上に移動",
     "sqlPage.columns.moveDown": "{name} を下に移動",
@@ -3419,7 +3425,7 @@
     "sqlPage.columns.addField": "項目を追加",
     "sqlPage.columns.undo": "元に戻す",
     "sqlPage.columns.positionConflict": "並べ替えやグループ化が項目の位置を参照しています。先に項目名での指定に変更してください。",
-    "sqlPage.columns.aliasConflict": "この項目の別名が同じクエリ内で参照されています。削除する前に参照先を変更してください。",
+    "sqlPage.columns.aliasConflict": "別名の変更で参照先が変わるか、出力名が重複します。関連する SQL を先に変更してください。",
     "sqlPage.columns.redo": "やり直す",
     "sqlPage.columns.expansionUnavailable": "このクエリの全項目を特定できません。詳細な構造の編集は利用できます。"
   }
