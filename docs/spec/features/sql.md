@@ -24,9 +24,16 @@ authorized plan operation for runtime-admission diagnostics; the parser-only CLI
 command keeps its existing meaning.
 
 New SQL can refer to authorized Forms by their quoted names. Ordinary SQL
-resolves those names in the current read publication. A new Saved SQL revision
-stores the server-derived Form IDs behind those names, and execution of that
-revision keeps those IDs fixed across renames while rechecking authorization.
+resolves those names in the current read publication. A Form selected in the
+SQL picker uses that human name in the SQL text and carries its Form ID as a
+compare-only guard through plan, page, count, and save. Rust independently
+resolves the name from the current readable Form snapshot and rejects a stale
+or mismatched guard; an unguarded first-use manually typed name remains valid.
+Unchanged exact base/revision bindings stay pinned by default. A different guard
+requests a rebind and succeeds only when it matches the currently readable Form.
+A new Saved SQL revision stores the server-derived Form IDs behind those names,
+and execution of that revision keeps those IDs fixed across renames while
+rechecking authorization. Exact Saved SQL revision requests reject draft guards.
 The Browser editor offers Form-name completions and displays saved/current names
 in Saved SQL diagnostics.
 

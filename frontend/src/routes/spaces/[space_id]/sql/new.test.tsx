@@ -22,6 +22,7 @@ const {
   sqlPlanMock,
   parseSqlDocumentMock,
   applySqlDocumentEditTransactionMock,
+  applySqlDocumentSemanticEditTransactionMock,
   renameSqlDocumentParameterMock,
 } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
@@ -32,6 +33,7 @@ const {
   sqlPlanMock: vi.fn(),
   parseSqlDocumentMock: vi.fn(),
   applySqlDocumentEditTransactionMock: vi.fn(),
+  applySqlDocumentSemanticEditTransactionMock: vi.fn(),
   renameSqlDocumentParameterMock: vi.fn(),
 }));
 
@@ -156,6 +158,8 @@ vi.mock("~/lib/ugoite-client", () => ({
   },
   parseSqlDocument: parseSqlDocumentMock,
   applySqlDocumentEditTransaction: applySqlDocumentEditTransactionMock,
+  applySqlDocumentSemanticEditTransaction:
+    applySqlDocumentSemanticEditTransactionMock,
   renameSqlDocumentParameter: renameSqlDocumentParameterMock,
 }));
 
@@ -270,7 +274,13 @@ describe("/spaces/:space_id/sql/new", () => {
         status: "parsed",
         diagnostics: [],
         tokens: [],
-        nodes: [],
+        nodes: [{
+          id: 1,
+          parent: null,
+          kind: "select",
+          semantic: null,
+          range: null,
+        }],
       }),
     );
     applySqlDocumentEditTransactionMock.mockReset().mockImplementation(
@@ -282,6 +292,15 @@ describe("/spaces/:space_id/sql/new", () => {
           source: transaction.edits[0].replacement,
         },
         undo: transaction,
+      }),
+    );
+    applySqlDocumentSemanticEditTransactionMock.mockReset().mockImplementation(
+      async (source: string) => ({
+        document: {
+          status: "parsed",
+          source: `${source} FROM "Entry"`,
+        },
+        undo: { expected_source: source, edits: [] },
       }),
     );
     renameSqlDocumentParameterMock.mockReset().mockImplementation(
@@ -331,6 +350,118 @@ describe("/spaces/:space_id/sql/new", () => {
     fireEvent.click(formAction);
     expect(await screen.findByRole("dialog", { name: "Form" }))
       .toBeInTheDocument();
+  });
+
+  it("carries a selected human Form name and identity guard through plan, run, and save", async () => {
+    render(() => <SpaceQueryCreateRoute />);
+    const editor = await screen.findByRole("textbox", { name: "SQL" });
+    await waitFor(() => expect(editor).toHaveValue("SELECT 1"));
+    fireEvent.click(await screen.findByRole("button", { name: "Form" }));
+    const picker = await screen.findByRole("dialog", { name: "Form" });
+    fireEvent.click(
+      await within(picker).findByRole("button", { name: "Entry" }),
+    );
+
+    const sql = 'SELECT 1 FROM "Entry"';
+    const guard = [{ name: "Entry", form_id: "form-1" }];
+    await waitFor(() =>
+      expect(sqlPlanMock).toHaveBeenLastCalledWith("default", {
+        sql,
+        parameters: {},
+        parameter_types: {},
+        form_binding_guards: guard,
+      }, expect.any(AbortSignal))
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Run Query" }));
+    await waitFor(() =>
+      expect(sqlQueryMock).toHaveBeenCalledWith(
+        "default",
+        expect.objectContaining({
+          sql,
+          form_binding_guards: guard,
+        }),
+        expect.any(AbortSignal),
+      )
+    );
+
+    fireEvent.input(screen.getByLabelText("Query name"), {
+      target: { value: "Entry report" },
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(sqlCreateMock).toHaveBeenCalledWith("default", {
+        name: "Entry report",
+        kind: "user-query",
+        metadata: { formBindings: [{ name: "Entry", formId: "form-1" }] },
+        sql,
+        variables: [],
+      })
+    );
+  });
+
+  it("drops a picker guard after manual SQL removes its relation", async () => {
+    render(() => <SpaceQueryCreateRoute />);
+    const editor = await screen.findByRole("textbox", { name: "SQL" });
+    await waitFor(() => expect(editor).toHaveValue("SELECT 1"));
+    fireEvent.click(await screen.findByRole("button", { name: "Form" }));
+    const picker = await screen.findByRole("dialog", { name: "Form" });
+    fireEvent.click(
+      await within(picker).findByRole("button", { name: "Entry" }),
+    );
+    await waitFor(() => expect(editor).toHaveValue('SELECT 1 FROM "Entry"'));
+
+    fireEvent.input(editor, { target: { value: "SELECT 1" } });
+    await waitFor(() => expect(editor).toHaveValue("SELECT 1"));
+    await waitFor(() =>
+      expect(sqlPlanMock).toHaveBeenLastCalledWith(
+        "default",
+        expect.objectContaining({ sql: "SELECT 1" }),
+        expect.any(AbortSignal),
+      )
+    );
+    expect(sqlPlanMock.mock.lastCall?.[1]).not.toHaveProperty(
+      "form_binding_guards",
+    );
+  });
+
+  it("replaces the first Form pin when the picker changes the relation", async () => {
+    applySqlDocumentSemanticEditTransactionMock.mockReset()
+      .mockImplementationOnce(async () => ({
+        document: { status: "parsed", source: 'SELECT 1 FROM "Entry"' },
+        undo: { expected_source: "SELECT 1", edits: [] },
+      }))
+      .mockImplementationOnce(async () => ({
+        document: { status: "parsed", source: 'SELECT 1 FROM "Review"' },
+        undo: { expected_source: 'SELECT 1 FROM "Entry"', edits: [] },
+      }));
+    render(() => <SpaceQueryCreateRoute />);
+    const editor = await screen.findByRole("textbox", { name: "SQL" });
+    await waitFor(() => expect(editor).toHaveValue("SELECT 1"));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Form" }));
+    fireEvent.click(
+      await within(await screen.findByRole("dialog", { name: "Form" }))
+        .findByRole("button", { name: "Entry" }),
+    );
+    await waitFor(() => expect(editor).toHaveValue('SELECT 1 FROM "Entry"'));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Form" }));
+    fireEvent.click(
+      await within(await screen.findByRole("dialog", { name: "Form" }))
+        .findByRole("button", { name: "Review" }),
+    );
+    await waitFor(() => expect(editor).toHaveValue('SELECT 1 FROM "Review"'));
+    await waitFor(() =>
+      expect(sqlPlanMock).toHaveBeenLastCalledWith("default", {
+        sql: 'SELECT 1 FROM "Review"',
+        parameters: {},
+        parameter_types: {},
+        form_binding_guards: [{ name: "Review", form_id: "review-form" }],
+      }, expect.any(AbortSignal))
+    );
   });
 
   it("keeps Save disabled while the current authorized plan is pending or rejected", async () => {

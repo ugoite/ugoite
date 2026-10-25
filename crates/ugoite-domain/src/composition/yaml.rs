@@ -206,7 +206,7 @@ mod tests {
     }
 
     #[test]
-    fn allows_only_empty_descriptor_pair_in_drafts() {
+    fn allows_guard_only_form_descriptors_in_drafts() {
         let incomplete = GRAPH.replace(
             "        form_bindings:
           - relation: Expense
@@ -217,12 +217,19 @@ mod tests {
         );
         let document = parse_composition_yaml(&incomplete).unwrap();
         assert!(!document.has_complete_query_descriptors());
-        let partial = incomplete.replace(
+        let guarded = incomplete.replace(
             "        form_bindings: []",
             "        form_bindings:\n          - relation: Expense\n            form_id: \"00000000-0000-7000-8000-000000000010\"",
         );
+        let guarded_document = parse_composition_yaml(&guarded).unwrap();
+        assert!(!guarded_document.has_complete_query_descriptors());
+
+        let duplicate_guard = guarded.replace(
+            "        schema_fingerprint: ''",
+            "        form_bindings:\n          - relation: Expense\n            form_id: \"00000000-0000-7000-8000-000000000010\"\n        schema_fingerprint: ''",
+        );
         assert_eq!(
-            parse_composition_yaml(&partial),
+            parse_composition_yaml(&duplicate_guard),
             Err(CompositionDiagnosticCode::InvalidComposition)
         );
     }

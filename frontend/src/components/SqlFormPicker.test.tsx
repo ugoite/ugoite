@@ -13,14 +13,18 @@ vi.mock("~/lib/ugoite-client", async (original) => {
 });
 
 const forms = [
-  { relation: "form_123", label: "Expenses" },
-  { relation: "form_456", label: "Invoices" },
+  { relation: "Expenses", label: "Expenses", formId: "form-123" },
+  { relation: "Invoices", label: "Invoices", formId: "form-456" },
 ];
 function setup(source: string) {
   const [sql, setSql] = createSignal(source);
   const [scope, setScope] = createSignal("query-a");
   const [choices, setChoices] = createSignal(forms);
   const advanced = vi.fn();
+  const selected = vi.fn();
+  selected.mockImplementation((selection: { sql: string }) => {
+    setSql(selection.sql);
+  });
   const view = render(() => (
     <SqlFormPicker
       sql={sql}
@@ -28,9 +32,19 @@ function setup(source: string) {
       forms={choices}
       onSqlChange={setSql}
       onAdvanced={advanced}
+      onSelectedForm={selected}
     />
   ));
-  return { sql, setSql, scope, setScope, setChoices, advanced, ...view };
+  return {
+    sql,
+    setSql,
+    scope,
+    setScope,
+    setChoices,
+    advanced,
+    selected,
+    ...view,
+  };
 }
 
 describe("Form selection through the actual Rust SQL Document", () => {
@@ -42,28 +56,35 @@ describe("Form selection through the actual Rust SQL Document", () => {
   });
 
   it("starts an empty query by choosing a human-labelled Form without a syntax tree", async () => {
-    const { sql } = setup("-- 日本語");
+    const { sql, selected } = setup("-- 日本語");
     const button = await screen.findByRole("button", { name: "Expenses" });
     await waitFor(() => expect(button).toBeEnabled());
     expect(screen.queryByRole("tree")).not.toBeInTheDocument();
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
     fireEvent.click(button);
     await waitFor(() =>
-      expect(sql()).toBe('-- 日本語\nSELECT * FROM "form_123"')
+      expect(sql()).toBe('-- 日本語\nSELECT * FROM "Expenses"')
+    );
+    await waitFor(() =>
+      expect(selected).toHaveBeenCalledWith({
+        sql: '-- 日本語\nSELECT * FROM "Expenses"',
+        name: "Expenses",
+        form_id: "form-123",
+      })
     );
     expect((await client.parseSqlDocument(sql())).status).toBe("parsed");
   });
 
   it("replaces a source while preserving aliases, comments, columns, predicates and ordering", async () => {
     const { sql } = setup(
-      'SELECT e.amount /* keep */ FROM "form_123" AS e WHERE e.amount > 5 ORDER BY e.amount',
+      'SELECT e.amount /* keep */ FROM "Expenses" AS e WHERE e.amount > 5 ORDER BY e.amount',
     );
     const button = await screen.findByRole("button", { name: "Invoices" });
     await waitFor(() => expect(button).toBeEnabled());
     fireEvent.click(button);
     await waitFor(() =>
       expect(sql()).toBe(
-        'SELECT e.amount /* keep */ FROM "form_456" AS e WHERE e.amount > 5 ORDER BY e.amount',
+        'SELECT e.amount /* keep */ FROM "Invoices" AS e WHERE e.amount > 5 ORDER BY e.amount',
       )
     );
   });
@@ -74,13 +95,13 @@ describe("Form selection through the actual Rust SQL Document", () => {
     await waitFor(() => expect(button).toBeEnabled());
     fireEvent.click(button);
     await waitFor(() =>
-      expect(sql()).toBe('SELECT 42 AS answer FROM "form_123"')
+      expect(sql()).toBe('SELECT 42 AS answer FROM "Expenses"')
     );
   });
 
   it("requires an explicit source choice only when there are multiple sources", async () => {
     const { sql } = setup(
-      'SELECT e.amount FROM "form_123" AS e JOIN "form_456" AS i ON e.id = i.id',
+      'SELECT e.amount FROM "Expenses" AS e JOIN "Invoices" AS i ON e.id = i.id',
     );
     const chooser = await screen.findByRole("combobox", {
       name: "Source to change",
@@ -95,7 +116,7 @@ describe("Form selection through the actual Rust SQL Document", () => {
     fireEvent.click(screen.getByRole("button", { name: "Expenses" }));
     await waitFor(() =>
       expect(sql()).toBe(
-        'SELECT e.amount FROM "form_123" AS e JOIN "form_123" AS i ON e.id = i.id',
+        'SELECT e.amount FROM "Expenses" AS e JOIN "Expenses" AS i ON e.id = i.id',
       )
     );
   });

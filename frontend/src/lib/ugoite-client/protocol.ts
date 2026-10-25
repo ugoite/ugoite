@@ -429,8 +429,16 @@ export type SqlDocumentColumnReference = {
 export type SqlDocumentOrderDirection = "asc" | "desc";
 export type SqlDocumentNullsOrder = "first" | "last";
 export type SqlDocumentFilterOperator =
-  | "eq" | "not_eq" | "lt" | "lte" | "gt" | "gte"
-  | "like" | "not_like" | "is_null" | "is_not_null";
+  | "eq"
+  | "not_eq"
+  | "lt"
+  | "lte"
+  | "gt"
+  | "gte"
+  | "like"
+  | "not_like"
+  | "is_null"
+  | "is_not_null";
 
 export type SqlDocumentLiteralKind =
   | "number"
@@ -1118,6 +1126,24 @@ export type SqlDocumentEditErrorCode =
 export const parseSqlDocument = async (sql: string): Promise<SqlDocument> =>
   await invokeProtocol<SqlDocument>({
     action: "domain.parse_sql_document",
+    value: { sql },
+  });
+
+/** Scope-aware quoted Form references from the shared Rust SQL parser. */
+export const collectSqlFormNameReferences = async (
+  sql: string,
+): Promise<string[]> =>
+  await invokeProtocol<string[]>({
+    action: "domain.collect_quoted_form_name_references",
+    value: { sql },
+  });
+
+/** All quoted single-part SQL table relations, including stable legacy names. */
+export const collectSqlFormRelationNames = async (
+  sql: string,
+): Promise<string[]> =>
+  await invokeProtocol<string[]>({
+    action: "domain.collect_quoted_form_relation_names",
     value: { sql },
   });
 

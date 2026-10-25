@@ -45,7 +45,11 @@ export interface CompositionGraphStudioProps {
   previewForQuery?: (variableId: string) => SQLWorkspacePreview;
   onPlanColumnsForQuery?: (variableId: string) => Promise<PlannedSqlColumns>;
   onDraftChange: (draft: CompositionGraphDraft) => void;
-  onQueryChange?: (variableId: string, sql: string) => void;
+  onQueryChange?: (
+    variableId: string,
+    sql: string,
+    formBindings?: Array<{ relation: string; form_id: string }>,
+  ) => void;
   onRunQuery?: (variableId: string) => void;
   onNextQuery?: (variableId: string) => void;
   onPreviousQuery?: (variableId: string) => void;

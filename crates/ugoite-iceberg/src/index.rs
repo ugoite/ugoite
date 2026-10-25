@@ -3032,6 +3032,15 @@ pub(crate) fn quoted_form_name_references(sql: &str) -> Result<BTreeSet<String>>
     crate::query_context::collect_quoted_form_name_references(sql)
 }
 
+/// Include legacy-shaped relation names only when an existing binding or
+/// explicit picker guard disambiguates them as human Form names.
+pub(crate) fn quoted_form_name_references_with_bindings(
+    sql: &str,
+    binding_names: &BTreeSet<String>,
+) -> Result<BTreeSet<String>> {
+    crate::query_context::collect_quoted_form_name_references_with_bindings(sql, binding_names)
+}
+
 pub(crate) fn quoted_form_relation_names(sql: &str) -> Result<BTreeSet<String>> {
     crate::query_context::collect_quoted_form_relation_names(sql)
 }

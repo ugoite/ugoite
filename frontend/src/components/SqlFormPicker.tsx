@@ -22,7 +22,10 @@ interface SqlFormPickerProps {
   scope?: () => string;
   disabled?: () => boolean;
   onSqlChange: (sql: string) => void;
-  forms: () => readonly { relation: string; label: string }[];
+  forms: () => readonly { relation: string; label: string; formId: string }[];
+  onSelectedForm?: (
+    selection: { sql: string; name: string; form_id: string },
+  ) => void;
   onAdvanced: () => void;
   onApplied?: () => void;
 }
@@ -154,7 +157,15 @@ export function SqlFormPicker(props: SqlFormPickerProps) {
       if (result.document.status !== "parsed") {
         throw new Error("invalid result");
       }
-      props.onSqlChange(result.document.source);
+      if (props.onSelectedForm) {
+        props.onSelectedForm({
+          sql: result.document.source,
+          name: form.relation,
+          form_id: form.formId,
+        });
+      } else {
+        props.onSqlChange(result.document.source);
+      }
       props.onApplied?.();
     } catch {
       if (request === generation) {

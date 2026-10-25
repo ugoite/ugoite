@@ -49,7 +49,7 @@
         {
           "path": "crates/ugoite-iceberg/tests/test_composition_preview.rs",
           "kind": "test",
-          "name": "preview_ignores_yaml_form_binding_spoof_with_or_without_exact_base"
+          "name": "preview_rejects_mismatched_yaml_form_binding_guard_with_or_without_exact_base"
         },
         {
           "path": "crates/ugoite-iceberg/tests/test_composition_query_authorization.rs",

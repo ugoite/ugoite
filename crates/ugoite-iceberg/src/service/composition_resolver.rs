@@ -1332,6 +1332,7 @@ impl UgoiteService {
                         preview_inline_form_bindings(
                             &node.id,
                             sql,
+                            &query.form_bindings,
                             previous_document,
                             &readable_forms,
                         )?
@@ -1430,10 +1431,17 @@ impl UgoiteService {
 fn preview_inline_form_bindings(
     variable_id: &str,
     sql: &str,
+    submitted_bindings: &[VariableGraphFormBinding],
     previous_document: Option<&CompositionDocument>,
     readable_forms: &[FormDefinition],
 ) -> Result<Option<Vec<VariableGraphFormBinding>>> {
-    let relations = crate::index::quoted_form_name_references(sql)?;
+    let mut guard_names = BTreeSet::new();
+    if submitted_bindings
+        .iter()
+        .any(|binding| !guard_names.insert(binding.relation.as_str()))
+    {
+        return Ok(None);
+    }
     let previous_bindings = previous_document
         .and_then(|document| {
             document
@@ -1447,16 +1455,50 @@ fn preview_inline_form_bindings(
             _ => None,
         })
         .unwrap_or_default();
+    let binding_names = submitted_bindings
+        .iter()
+        .map(|binding| binding.relation.clone())
+        .chain(
+            previous_bindings
+                .iter()
+                .map(|binding| binding.relation.clone()),
+        )
+        .collect::<BTreeSet<_>>();
+    let relations = crate::index::quoted_form_name_references_with_bindings(sql, &binding_names)?;
+    if submitted_bindings.iter().any(|binding| {
+        !relations.contains(&binding.relation)
+            && !previous_bindings.iter().any(|previous| {
+                previous.relation == binding.relation && previous.form_id == binding.form_id
+            })
+    }) {
+        return Ok(None);
+    }
     let mut bindings = Vec::with_capacity(relations.len());
     for relation in relations {
         if let Some(binding) = previous_bindings
             .iter()
             .find(|binding| binding.relation == relation)
         {
-            if !readable_forms.iter().any(|form| form.id == binding.form_id) {
-                return Ok(None);
+            let requested = submitted_bindings
+                .iter()
+                .find(|item| item.relation == relation);
+            if requested.is_none_or(|requested| requested.form_id == binding.form_id) {
+                if !readable_forms.iter().any(|form| form.id == binding.form_id) {
+                    return Ok(None);
+                }
+                bindings.push(binding.clone());
+            } else {
+                let Some(form) = readable_forms.iter().find(|form| form.name == relation) else {
+                    return Ok(None);
+                };
+                if requested.is_some_and(|requested| requested.form_id != form.id) {
+                    return Ok(None);
+                }
+                bindings.push(VariableGraphFormBinding {
+                    relation,
+                    form_id: form.id,
+                });
             }
-            bindings.push(binding.clone());
             continue;
         }
         let Some(form) = readable_forms
@@ -1465,6 +1507,13 @@ fn preview_inline_form_bindings(
         else {
             return Ok(None);
         };
+        if submitted_bindings
+            .iter()
+            .find(|binding| binding.relation == relation)
+            .is_some_and(|binding| binding.form_id != form.id)
+        {
+            return Ok(None);
+        }
         bindings.push(VariableGraphFormBinding {
             relation,
             form_id: form.id,
@@ -1763,7 +1812,7 @@ mod graph_metadata_tests {
 
         let renamed = form(original_id, "Renamed");
         assert_eq!(
-            preview_inline_form_bindings("rows", sql, Some(&base), &[renamed])
+            preview_inline_form_bindings("rows", sql, &[], Some(&base), &[renamed])
                 .expect("rename resolution"),
             Some(vec![VariableGraphFormBinding {
                 relation: "Original".to_owned(),
@@ -1773,10 +1822,99 @@ mod graph_metadata_tests {
 
         let recreated = form(FormId::from_uuid(Uuid::from_u128(11)), "Original");
         assert_eq!(
-            preview_inline_form_bindings("rows", sql, Some(&base), &[recreated])
+            preview_inline_form_bindings("rows", sql, &[], Some(&base), &[recreated])
                 .expect("recreate resolution"),
             None,
             "a same-name replacement must not receive the exact base binding"
+        );
+    }
+
+    #[test]
+    fn composition_form_guard_is_compare_only_and_allows_explicit_current_reselection() {
+        let original_id = FormId::from_uuid(Uuid::from_u128(10));
+        let replacement_id = FormId::from_uuid(Uuid::from_u128(11));
+        let base = exact_base_with_form_binding(original_id);
+        let sql = "SELECT * FROM \"Original\"";
+        let replacement = form(replacement_id, "Original");
+
+        assert_eq!(
+            preview_inline_form_bindings(
+                "rows",
+                sql,
+                &[VariableGraphFormBinding {
+                    relation: "Original".into(),
+                    form_id: replacement_id
+                }],
+                Some(&base),
+                std::slice::from_ref(&replacement),
+            )
+            .expect("explicit reselect"),
+            Some(vec![VariableGraphFormBinding {
+                relation: "Original".into(),
+                form_id: replacement_id
+            }]),
+        );
+        assert_eq!(
+            preview_inline_form_bindings(
+                "rows",
+                sql,
+                &[VariableGraphFormBinding {
+                    relation: "Original".into(),
+                    form_id: original_id
+                }],
+                Some(&base),
+                std::slice::from_ref(&replacement),
+            )
+            .expect("stale guard"),
+            None,
+        );
+        assert_eq!(
+            preview_inline_form_bindings(
+                "rows",
+                "SELECT 1",
+                &[VariableGraphFormBinding {
+                    relation: "Original".into(),
+                    form_id: original_id,
+                }],
+                Some(&base),
+                std::slice::from_ref(&replacement),
+            )
+            .expect("removed pinned source"),
+            Some(Vec::new()),
+        );
+        assert_eq!(
+            preview_inline_form_bindings("rows", sql, &[], None, &[replacement])
+                .expect("manual first use"),
+            Some(vec![VariableGraphFormBinding {
+                relation: "Original".into(),
+                form_id: replacement_id
+            }]),
+        );
+    }
+
+    #[test]
+    fn explicit_composition_binding_disambiguates_a_legacy_shaped_form_name() {
+        let relation = "form_0123456789abcdef0123456789abcdef";
+        let selected_id = FormId::from_uuid(Uuid::from_u128(12));
+        let selected = form(selected_id, relation);
+        let result = preview_inline_form_bindings(
+            "rows",
+            &format!("SELECT * FROM \"{relation}\""),
+            &[VariableGraphFormBinding {
+                relation: relation.to_owned(),
+                form_id: selected_id,
+            }],
+            None,
+            std::slice::from_ref(&selected),
+        )
+        .expect("explicit Form selection");
+
+        assert_eq!(
+            result,
+            Some(vec![VariableGraphFormBinding {
+                relation: relation.to_owned(),
+                form_id: selected_id,
+            }]),
         );
     }
 
