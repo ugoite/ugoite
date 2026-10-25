@@ -11,11 +11,10 @@ and the original
 [goals and acceptance criteria](https://github.com/ugoite/ugoite/blob/main/docs/architecture/testing/composition-acceptance-2026-10-23.md).
 It does not revise or narrow them. All 30 goal IDs below remain in scope.
 
-This checkpoint was reproduced against the integrated existing-PR head
-`6c20da665b47279de58b4a9480b2944475a936c1`. A separate frontend/spec delta based
-on `d8acd3725` has focused test evidence listed below; it does not change Rust
-or WASM. The follow-up browser wait adjustment in this change is E2E test code
-only and has not been run at its changed test-source head.
+This checkpoint was reproduced against integrated head
+`6c20da665b47279de58b4a9480b2944475a936c1`. This report is updated on
+`cb9af356d6cece55a969e4cb6ada231dbbd4265b`; the mobile wait adjustment and
+translated argument controls have not yet received their pending browser run.
 
 ## Evidence and boundaries
 
@@ -47,6 +46,22 @@ and real-device findings are not inferred from local results.
   `mise run fmt:check` (65 files), SQL matrix (6/6), and Mitase. These are
   focused checks; they do not verify the pending new-feature browser path or
   full acceptance.
+- At source `cb9af356d6cece55a969e4cb6ada231dbbd4265b`, the production frontend
+  build passed, release WASM tests passed **157/157 across 6 files**, native SQL
+  document tests passed **108/108**, authorized CASE and alias execution passed
+  **2/2**, the SQL matrix passed **6/6**, and `mise run fmt:check` checked 65
+  files. These are bounded checks; the pending mobile and translated argument
+  browser journeys remain unverified.
+- PR [#4625](https://github.com/ugoite/ugoite/pull/4625) adds typed CAST,
+  bitwise NOT, and CASE support; its independent review approved the change and
+  its apply-path bugs were resolved. PR
+  [#4626](https://github.com/ugoite/ugoite/pull/4626) adds translated argument
+  controls and a qualified-alias guard. Its new browser journey remains pending,
+  so these changes do not establish end-to-end acceptance yet.
+- The native binary build is compiling Iceberg. Final clippy and
+  `mise run check:repo` are pending. The latest Mitase run on the new delta
+  reported 10 selector and cross-facet contract errors; no Mitase pass is
+  claimed while those findings are being resolved.
 - `strict-save-composition-after-filter-stackfix`: 35 Iceberg library tests and
   21 Composition tests passed, with matching query tests. Strict-save focused
   evidence does not establish every browser cardinality or failure-state branch.
@@ -77,21 +92,22 @@ GUI coverage), [#4590](https://github.com/ugoite/ugoite/issues/4590)
 fixture/session limitation). No real iOS device, VoiceOver/NVDA, or actual 200%
 zoom proof is available; automated WebKit is not device proof.
 
-S-02 remains `未達`. PRs [#4621](https://github.com/ugoite/ugoite/pull/4621) and
+S-02 remains `未達`. PRs [#4621](https://github.com/ugoite/ugoite/pull/4621),
 [#4622](https://github.com/ugoite/ugoite/pull/4622) add independently reviewed
 typed-filter arguments and projection aliases. Rich primitive support is tracked
 separately in [#4623](https://github.com/ugoite/ugoite/issues/4623); its
 implementation and runtime proof are still pending. Remaining GUI evidence gaps
 include aggregate `FILTER` and ordered arguments; grouping sets, `ROLLUP`,
-`CUBE`, and `ALL`; arrays, structs, and access expressions; planner intrinsic
-admission such as `EXTRACT` and `SUBSTRING`; `ILIKE`, `SIMILAR`,
-`IS DISTINCT
-FROM`, and truth predicates; typed date, timestamp, interval, and
-hexadecimal values; semi/anti joins; `LIMIT` expressions; CTE and derived-column
-aliases; and beginner nested filter groups. These gaps are not claims that the
-core executor rejects those constructs; executor admission and GUI reachability
-are separate evidence questions. Source retention alone does not prove GUI
-authoring coverage.
+`CUBE`, and `ALL`; complete authoring and execution evidence for rich primitive
+attributes, arrays, structs, and access expressions; planner intrinsic admission
+such as `EXTRACT` and `SUBSTRING`; `ILIKE`, `SIMILAR`, `IS DISTINCT
+FROM`, and
+truth predicates; typed date, timestamp, interval, and hexadecimal values;
+semi/anti joins; `LIMIT` expressions; CTE and derived-column aliases; and
+beginner nested filter groups. These gaps are not claims that the core executor
+rejects those constructs; executor admission and GUI reachability are separate
+evidence questions. Source retention alone does not prove GUI authoring
+coverage.
 
 ## Goal ledger
 
@@ -100,38 +116,38 @@ means partial implementation or bounded tests exist, but complete acceptance has
 not been established. `未達` records a known missing requirement. These are
 individual goal verdicts, not a feature-level pass count.
 
-| Goal | Verdict | Evidence boundary / known gap                                                                                                                                                                                                                                                                                                     |
-| ---- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| G-01 | 未検証  | Typed graph and selected evaluation have focused checks; complete cross-surface journey remains.                                                                                                                                                                                                                                  |
-| G-02 | 未検証  | Variable-backed displays are covered in focused paths; serializer/history/export corpus remains.                                                                                                                                                                                                                                  |
-| G-03 | 未検証  | Rust owns SQL semantics in tested paths; full admitted-operation corpus remains.                                                                                                                                                                                                                                                  |
-| G-04 | 未検証  | Form binding and explicit aggregation have focused evidence; rename/recreation/schema journeys remain.                                                                                                                                                                                                                            |
-| G-05 | 未検証  | Strict cardinality and explicit bindings have focused evidence; full browser NULL/row/column/type/ACL matrix remains.                                                                                                                                                                                                             |
-| G-06 | 未検証  | Definition/work separation has focused checks; full history/export/no-extra-Knowledge proof remains.                                                                                                                                                                                                                              |
-| S-01 | 未検証  | Shared workspace paths tested; complete three-host grammar corpus remains.                                                                                                                                                                                                                                                        |
-| S-02 | 未達    | Typed-filter arguments and projection aliases have bounded new PR evidence, but complete GUI coverage remains open for the SQL forms listed above, including nested filter groups and rich primitive values; see [#4565](https://github.com/ugoite/ugoite/issues/4565) and [#4623](https://github.com/ugoite/ugoite/issues/4623). |
-| S-03 | 未検証  | Guarded SQL edits have focused checks; alternating edits, invalid drafts, comments, and complex SQL corpus remains.                                                                                                                                                                                                               |
-| S-04 | 未検証  | Actions are present, and empty-SQL construction has implementation coverage; six-operation reachability from every required SQL starting shape has not been proven and remains tracked in [#4613](https://github.com/ugoite/ugoite/issues/4613).                                                                                  |
-| S-05 | 未検証  | Inline argument creation has Studio DOM evidence in [#4621](https://github.com/ugoite/ugoite/pull/4621), and rename/type/recovery have focused checks; the complete typed/default/save/run/Count/page matrix remains unverified.                                                                                                  |
-| S-06 | 未検証  | Plan/run/count/page boundaries have focused checks; integrated browser suite remains incomplete.                                                                                                                                                                                                                                  |
-| D-01 | 未検証  | Two-mode layout has responsive coverage; complete state/ownership inspection remains.                                                                                                                                                                                                                                             |
-| D-02 | 未検証  | Picker and Form paths have focused/browser evidence; complete reference-change paths remain.                                                                                                                                                                                                                                      |
-| D-03 | 未検証  | Shared renderer and selected updates have focused evidence; complete result-state corpus remains.                                                                                                                                                                                                                                 |
-| D-04 | 未検証  | Reordering has focused coverage; full focus and reading-order proof remains.                                                                                                                                                                                                                                                      |
-| D-05 | 未検証  | Direct text/style behavior has focused coverage; complete browser style and variable-text paths remain.                                                                                                                                                                                                                           |
-| D-06 | 未検証  | Shared values are covered in selected paths; complete rebind/delete/reopen evidence remains.                                                                                                                                                                                                                                      |
-| R-01 | 未検証  | Snapshot/authority tests and browser paths exist; complete Studio/Design/runtime authority-change journey remains.                                                                                                                                                                                                                |
-| R-02 | 未検証  | Independent invalid-input branches have bounded evidence; reversed-response, Space-switch, authority, and paging corpus remains.                                                                                                                                                                                                  |
-| R-03 | 未検証  | Strict-save checks cover selected validation paths; complete runtime cardinality and partial-Work boundary is not accepted.                                                                                                                                                                                                       |
-| R-04 | 未検証  | Exact revision and authorization paths have focused checks; copy/restore/history/export preservation remains.                                                                                                                                                                                                                     |
-| U-01 | 未検証  | Some creation and responsive journeys are exercised; holistic review across all states remains.                                                                                                                                                                                                                                   |
-| U-02 | 未検証  | Shared editor and mode ownership have focused review; complete duplicate-owner audit remains.                                                                                                                                                                                                                                     |
-| U-03 | 未検証  | Human-readable names and selection paths exist; generated/empty/unavailable states remain to inspect.                                                                                                                                                                                                                             |
-| U-04 | 未検証  | Automated narrow-width checks exist; real device and 200% zoom evidence remains open in [#4590](https://github.com/ugoite/ugoite/issues/4590).                                                                                                                                                                                    |
-| U-05 | 未検証  | Keyboard/focus paths have focused evidence; VoiceOver/NVDA, themes, and device QA remain open in [#4590](https://github.com/ugoite/ugoite/issues/4590).                                                                                                                                                                           |
-| B-01 | 未検証  | Strict rejection and one older-CLI unrelated-Knowledge preservation case have focused evidence; the general Knowledge raw-history/export corpus remains.                                                                                                                                                                          |
-| B-02 | 未検証  | Rust SQL ownership is covered on selected paths; complete admitted-operation audit remains.                                                                                                                                                                                                                                       |
-| B-03 | 未検証  | Exact revision, descriptor, and authorization checks exist; complete stale/ACL/schema/revision browser corpus remains.                                                                                                                                                                                                            |
+| Goal | Verdict | Evidence boundary / known gap                                                                                                                                                                                                                                                                                                                                                          |
+| ---- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G-01 | 未検証  | Typed graph and selected evaluation have focused checks; complete cross-surface journey remains.                                                                                                                                                                                                                                                                                       |
+| G-02 | 未検証  | Variable-backed displays are covered in focused paths; serializer/history/export corpus remains.                                                                                                                                                                                                                                                                                       |
+| G-03 | 未検証  | Rust owns SQL semantics in tested paths; full admitted-operation corpus remains.                                                                                                                                                                                                                                                                                                       |
+| G-04 | 未検証  | Form binding and explicit aggregation have focused evidence; rename/recreation/schema journeys remain.                                                                                                                                                                                                                                                                                 |
+| G-05 | 未検証  | Strict cardinality and explicit bindings have focused evidence; full browser NULL/row/column/type/ACL matrix remains.                                                                                                                                                                                                                                                                  |
+| G-06 | 未検証  | Definition/work separation has focused checks; full history/export/no-extra-Knowledge proof remains.                                                                                                                                                                                                                                                                                   |
+| S-01 | 未検証  | Shared workspace paths tested; complete three-host grammar corpus remains.                                                                                                                                                                                                                                                                                                             |
+| S-02 | 未達    | Typed-filter arguments, projection aliases, and selected typed expressions have bounded PR evidence, but complete GUI authoring and execution evidence remains open for the SQL forms listed above, including nested filter groups and rich primitive attributes; see [#4565](https://github.com/ugoite/ugoite/issues/4565) and [#4623](https://github.com/ugoite/ugoite/issues/4623). |
+| S-03 | 未検証  | Guarded SQL edits have focused checks; alternating edits, invalid drafts, comments, and complex SQL corpus remains.                                                                                                                                                                                                                                                                    |
+| S-04 | 未検証  | Actions are present, and empty-SQL construction has implementation coverage; six-operation reachability from every required SQL starting shape has not been proven and remains tracked in [#4613](https://github.com/ugoite/ugoite/issues/4613).                                                                                                                                       |
+| S-05 | 未検証  | Inline argument creation has Studio DOM evidence in [#4621](https://github.com/ugoite/ugoite/pull/4621), and rename/type/recovery have focused checks; the complete typed/default/save/run/Count/page matrix remains unverified.                                                                                                                                                       |
+| S-06 | 未検証  | Plan/run/count/page boundaries have focused checks; integrated browser suite remains incomplete.                                                                                                                                                                                                                                                                                       |
+| D-01 | 未検証  | Two-mode layout has responsive coverage; complete state/ownership inspection remains.                                                                                                                                                                                                                                                                                                  |
+| D-02 | 未検証  | Picker and Form paths have focused/browser evidence; complete reference-change paths remain.                                                                                                                                                                                                                                                                                           |
+| D-03 | 未検証  | Shared renderer and selected updates have focused evidence; complete result-state corpus remains.                                                                                                                                                                                                                                                                                      |
+| D-04 | 未検証  | Reordering has focused coverage; full focus and reading-order proof remains.                                                                                                                                                                                                                                                                                                           |
+| D-05 | 未検証  | Direct text/style behavior has focused coverage; complete browser style and variable-text paths remain.                                                                                                                                                                                                                                                                                |
+| D-06 | 未検証  | Shared values are covered in selected paths; complete rebind/delete/reopen evidence remains.                                                                                                                                                                                                                                                                                           |
+| R-01 | 未検証  | Snapshot/authority tests and browser paths exist; complete Studio/Design/runtime authority-change journey remains.                                                                                                                                                                                                                                                                     |
+| R-02 | 未検証  | Independent invalid-input branches have bounded evidence; reversed-response, Space-switch, authority, and paging corpus remains.                                                                                                                                                                                                                                                       |
+| R-03 | 未検証  | Strict-save checks cover selected validation paths; complete runtime cardinality and partial-Work boundary is not accepted.                                                                                                                                                                                                                                                            |
+| R-04 | 未検証  | Exact revision and authorization paths have focused checks; copy/restore/history/export preservation remains.                                                                                                                                                                                                                                                                          |
+| U-01 | 未検証  | Some creation and responsive journeys are exercised; holistic review across all states remains.                                                                                                                                                                                                                                                                                        |
+| U-02 | 未検証  | Shared editor and mode ownership have focused review; complete duplicate-owner audit remains.                                                                                                                                                                                                                                                                                          |
+| U-03 | 未検証  | Human-readable names and selection paths exist; generated/empty/unavailable states remain to inspect.                                                                                                                                                                                                                                                                                  |
+| U-04 | 未検証  | Automated narrow-width checks exist; real device and 200% zoom evidence remains open in [#4590](https://github.com/ugoite/ugoite/issues/4590).                                                                                                                                                                                                                                         |
+| U-05 | 未検証  | Keyboard/focus paths have focused evidence; VoiceOver/NVDA, themes, and device QA remain open in [#4590](https://github.com/ugoite/ugoite/issues/4590).                                                                                                                                                                                                                                |
+| B-01 | 未検証  | Strict rejection and one older-CLI unrelated-Knowledge preservation case have focused evidence; the general Knowledge raw-history/export corpus remains.                                                                                                                                                                                                                               |
+| B-02 | 未検証  | Rust SQL ownership is covered on selected paths; complete admitted-operation audit remains.                                                                                                                                                                                                                                                                                            |
+| B-03 | 未検証  | Exact revision, descriptor, and authorization checks exist; complete stale/ACL/schema/revision browser corpus remains.                                                                                                                                                                                                                                                                 |
 
 ## Reproduction index
 
@@ -142,8 +158,15 @@ repository root. At `6c20da665b47279de58b4a9480b2944475a936c1`,
 12-case Chromium selection listed above had 11 passed and 1 failed; a subsequent
 unchanged rerun of the failing test passed 1/1 in 20.8 seconds. A separate
 frontend/spec delta based on `d8acd3725` passed 36 tests across 4 files,
-`mise run fmt:check`, the 6-case SQL matrix, and Mitase. The changed mobile E2E
-wait remains unverified at this document's source head.
-`mise run test:older-cli-knowledge-preservation` passed 1/1 using the pinned
-v0.2.1 CLI source SHA `51f469e3f81113e4295b8d579410c538fd36a61c`; this single
-preservation case is not complete B-01 evidence.
+`mise run fmt:check`, the 6-case SQL matrix, and Mitase. At report source
+`cb9af356d6cece55a969e4cb6ada231dbbd4265b`, the production frontend build,
+release WASM suite (157/157 across 6 files), native SQL Document suite
+(108/108), authorized CASE/alias execution (2/2), SQL matrix (6/6), and
+`mise run fmt:check` (65 files) passed. The 12-case browser, unchanged
+single-case rerun, and the `d8acd3725` focused results are separate evidence and
+are reported above. The changed mobile and translated argument browser journeys
+remain pending. Final native build, Rust clippy, and repository check are
+pending; Mitase currently reports 10 selector/cross-facet contract errors and is
+not passing. `mise run test:older-cli-knowledge-preservation` passed 1/1 using
+the pinned v0.2.1 CLI source SHA `51f469e3f81113e4295b8d579410c538fd36a61c`;
+this single preservation case is not complete B-01 evidence.
