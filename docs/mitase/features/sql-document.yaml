@@ -27,6 +27,18 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.source-aware-parameter-rename
+      - id: typed-expression-attributes-contract
+        role: contract-source
+        facet: domain
+        responsibility: Define the typed semantic edit requests shared by Rust editing, WASM dispatch, and the browser tree editor.
+        targets:
+          - id: semantic-edit-request
+            adapter: rust
+            path: crates/ugoite-domain/src/sql_document.rs
+            selector: { kind: symbol, name: SqlDocumentSemanticEdit }
+            claims:
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.typed-expression-attributes
       - id: typed-expression-attributes
         role: implementation
         facet: core
@@ -39,27 +51,15 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
-      - id: typed-expression-attributes-wasm
-        role: implementation
-        facet: wasm
-        responsibility: Expose typed expression semantic edits through the portable Rust WASM JSON protocol.
-        targets:
-          - id: semantic-expression-action
-            adapter: rust
-            path: crates/ugoite-wasm/src/lib.rs
-            selector: { kind: symbol, name: invoke_json }
-            claims:
-              - kind: satisfies
-                criterion: REQ-SQL-001#criterion.typed-expression-attributes
       - id: typed-expression-attributes-frontend
         role: implementation
         facet: frontend
-        responsibility: Provide node-scoped CAST target parameter fields and CASE mode selection in the shared SQL document tree editor.
+        responsibility: Expose typed SQL Document semantic edits to browser callers through the shared portable WASM protocol client.
         targets:
           - id: tree-editor-controls
             adapter: typescript
-            path: frontend/src/components/SqlDocumentTreeEditor.tsx
-            selector: { kind: symbol, name: SqlDocumentTreeEditor }
+            path: frontend/src/lib/ugoite-client/protocol.ts
+            selector: { kind: symbol, name: applySqlDocumentSemanticEditTransaction }
             claims:
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
@@ -629,6 +629,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-SQL-001#criterion.projection-position-bindings
+              - kind: satisfies
+                criterion: REQ-SQL-001#criterion.typed-expression-attributes
       - id: projection-position-verification
         role: verification
         facet: verification
@@ -696,11 +698,11 @@ features:
           - id: wasm-parameterized-cast-dispatch
             adapter: rust
             path: crates/ugoite-wasm/src/lib.rs
-            selector: { kind: test, name: sql_document_parameterized_cast_protocol_matches_native }
+            selector: { kind: symbol, name: tests::sql_document_parameterized_cast_protocol_matches_native }
             claims:
               - kind: verifies
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
-                covers: [FEAT-SQL-001#binding.typed-expression-attributes-wasm/target.semantic-expression-action]
+                covers: [FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: sql_document_parameterized_cast_protocol_matches_native } }
           - id: authorized-simple-case-execution
             adapter: rust
@@ -713,14 +715,25 @@ features:
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: simple_case_operand_edit_executes_in_authorized_query_context } }
           - id: frontend-typed-controls
             adapter: typescript
-            path: frontend/src/components/SqlDocumentTreeEditor.test.tsx
-            selector: { kind: test, name: sends a typed CAST target edit through the Rust protocol }
+            path: frontend/src/lib/ugoite-client/protocol.test.ts
+            selector: { kind: test, name: applies typed SQL Document semantic edits through the Rust protocol }
             claims:
               - kind: verifies
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
                 covers: [FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlDocumentTreeEditor.test.tsx, test: sends a typed CAST target edit through the Rust protocol } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/ugoite-client/protocol.test.ts, test: applies typed SQL Document semantic edits through the Rust protocol } }
     contracts:
+      - id: typed-expression-attributes-portable-contract
+        kind: custom
+        source: FEAT-SQL-001#binding.typed-expression-attributes-contract/target.semantic-edit-request
+        participants:
+          - target: FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits
+            role: rust-core
+          - target: FEAT-SQL-001#binding.projection-position-protocol/target.semantic-edit-action
+            role: rust-wasm
+          - target: FEAT-SQL-001#binding.typed-expression-attributes-frontend/target.tree-editor-controls
+            role: browser-editor
+        guarantees: [REQ-SQL-001#criterion.typed-expression-attributes]
       - id: guarded-edit-portable-protocol
         kind: custom
         source: FEAT-SQL-001#binding.sql-document-edit-protocol-contract/target.edit-request
