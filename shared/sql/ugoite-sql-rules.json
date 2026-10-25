@@ -111,8 +111,7 @@
           "order_by_item",
           "select",
           "wildcard",
-          "query_clause_value",
-          "projection_alias"
+          "query_clause_value"
         ],
         "node_kinds": [
           "query_statement",
