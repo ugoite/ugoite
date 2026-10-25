@@ -1084,14 +1084,14 @@ async fn composition_restore_appends_exact_historical_revision_with_receipt() ->
 }
 
 #[tokio::test]
-async fn composition_restore_replays_exact_publication_and_rechecks_authorization()
--> anyhow::Result<()> {
+async fn composition_restore_replays_exact_publication_and_rechecks_authorization(
+) -> anyhow::Result<()> {
     Box::pin(composition_restore_replays_exact_publication_and_rechecks_authorization_scenario())
         .await
 }
 
-async fn composition_restore_replays_exact_publication_and_rechecks_authorization_scenario()
--> anyhow::Result<()> {
+async fn composition_restore_replays_exact_publication_and_rechecks_authorization_scenario(
+) -> anyhow::Result<()> {
     let op = setup_operator()?;
     let service = UgoiteService::from_operator(
         op.clone(),
