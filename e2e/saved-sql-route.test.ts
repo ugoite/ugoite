@@ -170,7 +170,7 @@ test.describe("Saved SQL route", () => {
       await expect(dialog.getByRole("tree")).toHaveCount(0);
       await dialog.getByRole("button", { name: "Entry", exact: true }).click();
       await expect(page.locator(".ui-sql-editor")).toContainText(
-        `SELECT 1 FROM "${relation}"`,
+        'SELECT 1 FROM "Entry"',
       );
       await expect(page.getByRole("dialog")).toHaveCount(0);
       await expect(
@@ -181,7 +181,7 @@ test.describe("Saved SQL route", () => {
       ).toBeFocused();
 
       await expect(page.locator(".ui-sql-editor")).toContainText(
-        `SELECT 1 FROM "${relation}"`,
+        'SELECT 1 FROM "Entry"',
       );
       await expect(page.getByRole("dialog")).toHaveCount(0);
     } finally {
@@ -417,7 +417,6 @@ test.describe("Saved SQL route", () => {
     const alternateFormName = `SQL_Workspace_Alternate_${timestamp}`;
     let savedSqlId: string | undefined;
     await ensureDefaultForm(request, spaceId);
-    const relation = await getDefaultFormRelation(request, spaceId);
     const formResponse = await request.post(
       getBackendUrl(`/spaces/${spaceId}/forms`),
       {
@@ -432,14 +431,6 @@ test.describe("Saved SQL route", () => {
     expect([200, 201], await formResponse.text()).toContain(
       formResponse.status(),
     );
-    const formsResponse = await request.get(
-      getBackendUrl(`/spaces/${spaceId}/forms`),
-    );
-    const forms = await formsResponse.json() as Array<
-      { name: string; sql_relation: string }
-    >;
-    const alternateRelation =
-      forms.find((form) => form.name === alternateFormName)!.sql_relation;
     const entryResponse = await request.post(
       getBackendUrl(`/spaces/${spaceId}/entries`),
       {
@@ -475,7 +466,7 @@ test.describe("Saved SQL route", () => {
       await formDialog.getByRole("button", { name: "Entry", exact: true })
         .click();
       await expect(page.locator(".ui-sql-editor")).toContainText(
-        `SELECT 1 FROM "${relation}"`,
+        'SELECT 1 FROM "Entry"',
       );
       await expect(page.getByRole("dialog")).toHaveCount(0);
       await expect(
@@ -485,7 +476,7 @@ test.describe("Saved SQL route", () => {
         ),
       ).toBeFocused();
       await expect(page.locator(".ui-sql-editor")).toContainText(
-        `SELECT 1 FROM "${relation}"`,
+        'SELECT 1 FROM "Entry"',
       );
       for (
         const action of [
@@ -527,7 +518,7 @@ test.describe("Saved SQL route", () => {
         .last().click();
       const editor = page.getByRole("textbox", { name: "SQL", exact: true });
       await editor.fill(
-        `SELECT COUNT(*) FROM "${relation}" WHERE "_ugoite_id" <> $entry_id GROUP BY "_ugoite_id" ORDER BY "_ugoite_id" DESC LIMIT 9`,
+        `SELECT COUNT(*) FROM "Entry" WHERE "_ugoite_id" <> $entry_id GROUP BY "_ugoite_id" ORDER BY "_ugoite_id" DESC LIMIT 9`,
       );
       const taskFilterDialog = await open("Filter");
       await taskFilterDialog.getByRole("combobox", {
@@ -595,7 +586,7 @@ test.describe("Saved SQL route", () => {
         exact: true,
       }).click();
       await expect(page.locator(".ui-sql-editor")).toContainText(
-        `FROM "${alternateRelation}"`,
+        `FROM "${alternateFormName}"`,
       );
       await expect(page.getByRole("dialog")).toHaveCount(0);
       await expect(
@@ -605,7 +596,7 @@ test.describe("Saved SQL route", () => {
         ),
       ).toBeFocused();
       await expect(page.locator(".ui-sql-editor")).toContainText(
-        `FROM "${alternateRelation}"`,
+        `FROM "${alternateFormName}"`,
       );
       await expect(page.locator(".ui-sql-editor")).toContainText(
         'GROUP BY "_ugoite_id"',
@@ -629,7 +620,7 @@ test.describe("Saved SQL route", () => {
         waitUntil: "domcontentloaded",
       });
       await expect(page.locator(".ui-sql-editor")).toContainText(
-        `FROM "${alternateRelation}"`,
+        `FROM "${alternateFormName}"`,
       );
       await expect(page.locator(".ui-sql-editor")).toContainText(
         'GROUP BY "_ugoite_id"',
