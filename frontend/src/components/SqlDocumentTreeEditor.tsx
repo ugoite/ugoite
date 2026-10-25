@@ -1745,7 +1745,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
       return unarySign() !== unarySignKind(node.semantic.operator);
     }
     if (node.kind === "case_expression" && node.semantic?.kind === "case") {
-      return caseBranchAction() === "add" ||
+      return caseOperandAction() !== "" || caseBranchAction() === "add" ||
         (caseBranchAction() === "remove" && node.semantic.when_count > 1) ||
         caseHasElse() !== node.semantic.has_else;
     }
