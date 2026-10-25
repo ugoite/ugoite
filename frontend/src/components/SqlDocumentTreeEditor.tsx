@@ -23,6 +23,7 @@ import type {
   SqlDocument,
   SqlDocumentAggregateFunction,
   SqlDocumentCastType,
+  SqlDocumentCastTarget,
   SqlDocumentColumnReference,
   SqlDocumentJoinConstraint,
   SqlDocumentJoinOperator,
@@ -142,18 +143,36 @@ const expressionNodeKinds = new Set<SqlDocumentNode["kind"]>([
 const identifierQuoteStyles = [null, '"', "`", "["] as const;
 const castTypes: { kind: SqlDocumentCastType; label: string }[] = [
   { kind: "varchar", label: "VARCHAR" },
+  { kind: "integer", label: "INTEGER" },
   { kind: "boolean", label: "BOOLEAN" },
   { kind: "big_int", label: "BIGINT" },
   { kind: "double", label: "DOUBLE" },
   { kind: "decimal", label: "DECIMAL" },
   { kind: "date", label: "DATE" },
   { kind: "timestamp", label: "TIMESTAMP" },
-  { kind: "json", label: "JSON" },
 ];
 
 const castTypeKind = (targetType: string | null): SqlDocumentCastType | "" =>
-  castTypes.find((item) => item.label === targetType?.trim().toUpperCase())
+  castTypes.find((item) =>
+    item.label === targetType?.trim().toUpperCase().replace(/\(.*/, "")
+  )
     ?.kind ?? "";
+
+const castTargetFrom = (
+  kind: SqlDocumentCastType | "",
+  raw: string | null,
+): SqlDocumentCastTarget | undefined => {
+  if (!kind) return undefined;
+  const parameters = raw?.match(/\((\d+)(?:\s*,\s*(-?\d+))?\)/);
+  const first = parameters ? parameters[1] : null;
+  const second = parameters?.[2] === undefined ? null : parameters[2];
+  return {
+    kind,
+    length: kind === "varchar" ? first : null,
+    precision: kind === "decimal" || kind === "timestamp" ? first : null,
+    scale: kind === "decimal" ? second : null,
+  };
+};
 
 const aggregateFunctionKind = (
   node: SqlDocumentNode,
@@ -198,6 +217,10 @@ const binaryOperators: {
 }[] = [
   { kind: "and", spelling: ["AND"], label: "AND" },
   { kind: "or", spelling: ["OR"], label: "OR" },
+  { kind: "bitwise_and", spelling: ["&"], label: "&" },
+  { kind: "bitwise_or", spelling: ["|"], label: "|" },
+  { kind: "shift_left", spelling: ["<<"], label: "<<" },
+  { kind: "shift_right", spelling: [">>"], label: ">>" },
   { kind: "eq", spelling: ["="], label: "=" },
   { kind: "not_eq", spelling: ["<>", "!="], label: "<>" },
   { kind: "lt", spelling: ["<"], label: "<" },
@@ -227,7 +250,8 @@ const negatablePredicates = new Set([
   "is_distinct_from",
 ]);
 const unarySignKind = (operator: string): SqlDocumentUnarySign | "" =>
-  operator === "+" ? "positive" : operator === "-" ? "negative" : "";
+  operator === "+" ? "positive" : operator === "-" ? "negative" :
+  operator.toUpperCase() === "NOT" ? "not" : "";
 
 const decodeSimpleString = (raw: string | null): string | undefined => {
   if (!raw || raw.length < 2) return undefined;
@@ -343,7 +367,7 @@ function semanticEdit(
   setQuantifier: SqlDocumentSetQuantifier | "",
   setOperationAdd: SetOperationAddAction,
   setOperationKeep: SetOperationKeepAction,
-  castType: SqlDocumentCastType | "",
+  castTarget: SqlDocumentCastTarget | undefined,
   wrapCastType: SqlDocumentCastType | "",
   wrapAggregateFunction: SqlDocumentAggregateFunction | "",
   wrapAggregateDistinct: boolean,
@@ -353,6 +377,8 @@ function semanticEdit(
   unarySign: SqlDocumentUnarySign | "",
   caseBranchAction: CaseBranchAction,
   caseHasElse: boolean,
+  caseOperandAction: "set" | "clear" | "",
+  caseOperandNode: SqlDocumentNode | undefined,
   projectionExpressionNode: SqlDocumentNode | undefined,
   binaryExpressionAction: BinaryExpressionAction,
   binaryExpressionLeftNode: SqlDocumentNode | undefined,
@@ -583,7 +609,7 @@ function semanticEdit(
   if (
     node.kind === "unary_expression" &&
     node.semantic?.kind === "unary_operator" &&
-    ["+", "-"].includes(node.semantic.operator) && unarySign
+    ["+", "-", "NOT"].includes(node.semantic.operator.toUpperCase()) && unarySign
   ) {
     return {
       kind: "replace_unary_sign",
@@ -627,14 +653,12 @@ function semanticEdit(
       quantifier: setQuantifier,
     };
   }
-  if (
-    isEditableCastNode(node) && castType
-  ) {
+  if (isEditableCastNode(node) && castTarget) {
     return {
-      kind: "replace_cast_target_type",
+      kind: "set_parameterized_cast_target",
       node_id: node.id,
       expected_kind: "cast_expression",
-      target_type: castType,
+      target: castTarget,
     };
   }
   if (
@@ -679,6 +703,24 @@ function semanticEdit(
     };
   }
   if (node.kind === "case_expression" && node.semantic?.kind === "case") {
+    if (caseOperandAction === "set" && caseOperandNode) {
+      return {
+        kind: "set_case_operand",
+        node_id: node.id,
+        expected_kind: "case_expression",
+        expression_node_id: caseOperandNode.id,
+        expression_expected_kind: caseOperandNode.kind,
+      };
+    }
+    if (caseOperandAction === "clear") {
+      return {
+        kind: "set_case_operand",
+        node_id: node.id,
+        expected_kind: "case_expression",
+        expression_node_id: null,
+        expression_expected_kind: null,
+      };
+    }
     if (caseBranchAction === "add") {
       return {
         kind: "add_case_branch",
@@ -828,6 +870,9 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
   const [castTargetType, setCastTargetType] = createSignal<
     SqlDocumentCastType | ""
   >("");
+  const [castTargetDraft, setCastTargetDraft] = createSignal<
+    SqlDocumentCastTarget | undefined
+  >();
   const [wrapCastTargetType, setWrapCastTargetType] = createSignal<
     SqlDocumentCastType | ""
   >("");
@@ -854,6 +899,8 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     "",
   );
   const [caseHasElse, setCaseHasElse] = createSignal(false);
+  const [caseOperandAction, setCaseOperandAction] = createSignal<"set" | "clear" | "">("");
+  const [caseOperandNodeId, setCaseOperandNodeId] = createSignal<number>();
   const [addWhereClause, setAddWhereClause] = createSignal(false);
   const [addScalarSubquery, setAddScalarSubquery] = createSignal(false);
   const [predicateTemplate, setPredicateTemplate] = createSignal<
@@ -1383,6 +1430,8 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     nodeById().get(binaryExpressionLeftNodeId() ?? -1);
   const selectedBinaryExpressionRightNode = () =>
     nodeById().get(binaryExpressionRightNodeId() ?? -1);
+  const selectedCaseOperandNode = () =>
+    nodeById().get(caseOperandNodeId() ?? -1);
   const selectHasWhereClause = (node: SqlDocumentNode) =>
     (childrenByParent().get(node.id) ?? []).some((child) =>
       child.kind === "where_clause"
@@ -1640,9 +1689,13 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
       const currentType = node.semantic?.kind === "cast"
         ? castTypeKind(node.semantic.target_type)
         : "";
+      const currentTarget = node.semantic?.kind === "cast"
+        ? castTargetFrom(currentType, node.semantic.target_type)
+        : undefined;
+      const target = castTargetDraft();
       return isEditableCastNode(node) && node.range !== null &&
-        Boolean(castTargetType()) &&
-        castTargetType() !== currentType;
+        Boolean(castTargetType()) && Boolean(target) &&
+        JSON.stringify(target) !== JSON.stringify(currentTarget);
     }
     if (node.kind === "common_table_expression") {
       if (cteAction() === "remove") return node.range !== null;
@@ -1994,7 +2047,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
       setOperationQuantifier(),
       setOperationAdd(),
       setOperationKeep(),
-      castTargetType(),
+      castTargetDraft(),
       wrapCastTargetType(),
       wrapAggregateFunction(),
       wrapAggregateDistinct(),
@@ -2004,6 +2057,8 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
       unarySign(),
       caseBranchAction(),
       caseHasElse(),
+      caseOperandAction(),
+      selectedCaseOperandNode(),
       selectedProjectionExpression(),
       binaryExpressionAction(),
       selectedBinaryExpressionLeftNode(),
@@ -2080,6 +2135,14 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
         ? castTypeKind(node.semantic.target_type)
         : "",
     );
+    setCastTargetDraft(
+      node.semantic?.kind === "cast"
+        ? castTargetFrom(
+          castTypeKind(node.semantic.target_type),
+          node.semantic.target_type,
+        )
+        : undefined,
+    );
     setWrapCastTargetType("");
     setWrapAggregateFunction("");
     setWrapAggregateDistinct(false);
@@ -2101,6 +2164,8 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
         : "",
     );
     setCaseBranchAction("");
+    setCaseOperandAction("");
+    setCaseOperandNodeId(undefined);
     setAddWhereClause(false);
     setPredicateTemplate("");
     setSubqueryPredicateTemplate("");
@@ -2109,6 +2174,9 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     setCaseHasElse(
       node.semantic?.kind === "case" ? node.semantic.has_else : false,
     );
+    if (node.kind === "case_expression" && node.semantic?.kind === "case" && node.semantic.has_operand) {
+      setCaseOperandNodeId((childrenByParent().get(node.id) ?? []).find((child) => isExpressionKind(child.kind))?.id);
+    }
     setProjectionExpressionNodeId(undefined);
     setGroupByExpressionAction("");
     setOrderByExpressionAction("");
@@ -3070,7 +3138,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                     <Show
                       when={node().kind === "unary_expression" &&
                         node().semantic?.kind === "unary_operator" &&
-                        ["+", "-"].includes(node().semantic.operator)}
+                        ["+", "-", "NOT"].includes(node().semantic.operator.toUpperCase())}
                     >
                       <label class="ui-label">
                         {t("sqlPage.structure.documentUnarySign")}
@@ -3086,6 +3154,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                         >
                           <option value="positive">+</option>
                           <option value="negative">−</option>
+                          <option value="not">NOT</option>
                         </select>
                       </label>
                     </Show>
@@ -3236,11 +3305,13 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                           disabled={busy() || props.disabled?.() ||
                             node().range === null}
                           onChange={(event) =>
-                            setCastTargetType(
-                              event.currentTarget.value as
+                            (() => {
+                              const kind = event.currentTarget.value as
                                 | SqlDocumentCastType
-                                | "",
-                            )}
+                                | "";
+                              setCastTargetType(kind);
+                              setCastTargetDraft(castTargetFrom(kind, null));
+                            })()}
                         >
                           <Show when={castTargetType() === ""}>
                             <option value="" disabled>
@@ -3256,6 +3327,33 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                           </For>
                         </select>
                       </label>
+                      <Show when={castTargetType() === "varchar"}>
+                        <label class="ui-label">
+                          {t("sqlPage.structure.documentCastLength")}
+                          <input class="ui-input" type="text" inputmode="numeric" pattern="[0-9]*"
+                            value={castTargetDraft()?.length ?? ""}
+                            disabled={busy() || props.disabled?.() || node().range === null}
+                            onInput={(event) => setCastTargetDraft((target) => target && ({ ...target, length: event.currentTarget.value === "" ? null : event.currentTarget.value }))} />
+                        </label>
+                      </Show>
+                      <Show when={castTargetType() === "decimal" || castTargetType() === "timestamp"}>
+                        <label class="ui-label">
+                          {t("sqlPage.structure.documentCastPrecision")}
+                          <input class="ui-input" type="text" inputmode="numeric" pattern="[0-9]*"
+                            value={castTargetDraft()?.precision ?? ""}
+                            disabled={busy() || props.disabled?.() || node().range === null}
+                            onInput={(event) => setCastTargetDraft((target) => target && ({ ...target, precision: event.currentTarget.value === "" ? null : event.currentTarget.value }))} />
+                        </label>
+                      </Show>
+                      <Show when={castTargetType() === "decimal"}>
+                        <label class="ui-label">
+                          {t("sqlPage.structure.documentCastScale")}
+                          <input class="ui-input" type="text" inputmode="numeric" pattern="-?[0-9]*"
+                            value={castTargetDraft()?.scale ?? ""}
+                            disabled={busy() || props.disabled?.() || node().range === null}
+                            onInput={(event) => setCastTargetDraft((target) => target && ({ ...target, scale: event.currentTarget.value === "" ? null : event.currentTarget.value }))} />
+                        </label>
+                      </Show>
                     </Show>
 
                     <Show
@@ -3584,6 +3682,31 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                         node().semantic?.kind === "case"}
                     >
                       <div class="sql-document-tree__fields">
+                        <label class="ui-label">
+                          {t("sqlPage.structure.documentCaseMode")}
+                          <select
+                            class="ui-input"
+                            value={node().semantic?.kind === "case" && node().semantic.has_operand ? caseOperandNodeId() ?? "" : ""}
+                            disabled={busy() || props.disabled?.() || node().range === null}
+                            onChange={(event) => {
+                              const value = event.currentTarget.value;
+                              if (!value) {
+                                setCaseOperandAction(node().semantic?.kind === "case" && node().semantic.has_operand ? "clear" : "");
+                                return;
+                              }
+                              setCaseOperandNodeId(Number(value));
+                              setCaseOperandAction("set");
+                            }}
+                          >
+                            <option value="">{t("sqlPage.structure.documentSearchedCase")}</option>
+                            <Show when={selectedCaseOperandNode()}>
+                              {(operand) => <option value={operand().id}>{sourceSlice(document()?.source ?? "", operand())}</option>}
+                            </Show>
+                            <For each={queryExpressionCandidates()}>
+                              {(candidate) => <option value={candidate.id}>{sourceSlice(document()?.source ?? "", candidate)}</option>}
+                            </For>
+                          </select>
+                        </label>
                         <span>
                           {t("sqlPage.structure.documentCaseBranches", {
                             count: node().semantic?.kind === "case"

@@ -72,6 +72,20 @@ requirements:
           same guarded operation and inverse are exposed through the portable
           WASM protocol.
         governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: typed-expression-attributes
+        kind: behavior
+        statement: >-
+          The SQL Document editor exposes typed controls for parameterized CAST
+          targets (VARCHAR length, DECIMAL precision and signed scale, and
+          TIMESTAMP precision), Boolean NOT and runtime-admitted bitwise
+          expression operators, and simple-versus-searched CASE operands.
+          Semantic edits retain untouched source bytes and comments, support
+          guarded inverse edits, and preserve incomplete or planner-invalid
+          drafts for correction. The editor does not claim executor admission;
+          planning remains authoritative for physical type and operator
+          validity. Parameter values remain exact decimal strings across the
+          protocol.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
       - id: portable-protocol
         kind: behavior
         statement: >-
