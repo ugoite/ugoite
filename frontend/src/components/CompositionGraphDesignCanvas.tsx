@@ -64,6 +64,76 @@ const isEmptyLiteralText = (
   component.kind === "text" && component.content.kind === "literal" &&
   !component.content.text;
 
+type TextComponent = Extract<
+  CompositionGraphDraft["components"][number],
+  { kind: "text" }
+>;
+
+/** Keep the editor mounted while a live graph update replaces its definition. */
+function CompositionTextInspector(props: {
+  component: () => TextComponent;
+  variables: () => CompositionGraphDraft["variables"];
+  onText: (text: string) => void;
+  onStyle: (style: TextComponent["style"]) => void;
+  onVariable: (id: string) => void;
+}) {
+  const strings = () =>
+    props.variables().filter((node) =>
+      node.kind === "query"
+        ? node.returns.kind === "scalar" &&
+          node.returns.value_type.scalar_type === "string"
+        : node.value_type.scalar_type === "string"
+    );
+  const text = () => {
+    const value = props.component().content;
+    return value.kind === "literal" ? value.text : "";
+  };
+  const variable = () => {
+    const value = props.component().content;
+    return value.kind === "variable" ? value.variable : "";
+  };
+  return (
+    <div class="compositionGraphTextInspector">
+      <Show when={props.component().content.kind === "literal"}>
+        <textarea
+          class="ui-input"
+          aria-label={t("composition.studioText")}
+          value={text()}
+          onInput={(event) => props.onText(event.currentTarget.value)}
+        />
+      </Show>
+      <select
+        class="ui-input"
+        aria-label={t("composition.studioTextStyle")}
+        value={props.component().style}
+        onChange={(event) =>
+          props.onStyle(event.currentTarget.value as TextComponent["style"])}
+      >
+        <For each={["title", "heading", "body", "caption"] as const}>
+          {(style) => (
+            <option value={style}>
+              {t(`composition.studioTextStyle.${style}`)}
+            </option>
+          )}
+        </For>
+      </select>
+      <Show when={strings().length > 0 || variable()}>
+        <select
+          class="ui-input"
+          aria-label={t("composition.studioVariables")}
+          value={variable()}
+          onChange={(event) => props.onVariable(event.currentTarget.value)}
+        >
+          <option value="">{t("composition.studioTextUseLiteral")}</option>
+          <For each={strings()}>
+            {(node) => <option value={node.id}>{node.id}</option>}
+          </For>
+        </select>
+      </Show>
+    </div>
+  );
+}
+
 export function CompositionGraphDesignCanvas(
   props: CompositionGraphDesignCanvasProps,
 ) {
@@ -438,77 +508,13 @@ export function CompositionGraphDesignCanvas(
                   </button>
                 </Show>
                 <Show when={component().kind === "text"}>
-                  {(() => {
-                    const item = component() as Extract<
-                      CompositionGraphDraft["components"][number],
-                      { kind: "text" }
-                    >;
-                    return (
-                      <div class="compositionGraphTextInspector">
-                        <textarea
-                          class="ui-input"
-                          aria-label={t("composition.studioText")}
-                          value={item.content.kind === "literal"
-                            ? item.content.text
-                            : ""}
-                          onInput={(event) =>
-                            updateText(event.currentTarget.value)}
-                        />
-                        <select
-                          class="ui-input"
-                          aria-label={t("composition.studioTextStyle")}
-                          value={item.style}
-                          onChange={(event) =>
-                            updateTextStyle(
-                              event.currentTarget.value as typeof item.style,
-                            )}
-                        >
-                          <For
-                            each={[
-                              "title",
-                              "heading",
-                              "body",
-                              "caption",
-                            ] as const}
-                          >
-                            {(style) => (
-                              <option value={style}>
-                                {t(`composition.studioTextStyle.${style}`)}
-                              </option>
-                            )}
-                          </For>
-                        </select>
-                        <select
-                          class="ui-input"
-                          aria-label={t("composition.studioVariables")}
-                          value={item.content.kind === "variable"
-                            ? item.content.variable
-                            : ""}
-                          onChange={(event) =>
-                            updateTextVariable(event.currentTarget.value)}
-                        >
-                          <option value="">
-                            {t("composition.studioTextUseLiteral")}
-                          </option>
-                          <For
-                            each={props.draft.variables.filter((node) =>
-                              node.kind === "constant" &&
-                                node.value_type.scalar_type === "string" ||
-                              node.kind === "input" &&
-                                node.value_type.scalar_type === "string" ||
-                              node.kind === "query" &&
-                                node.returns.kind === "scalar" &&
-                                node.returns.value_type.scalar_type === "string"
-                            )}
-                          >
-                            {(node) => (
-                              <option value={node.id}>{node.id}</option>
-                            )}
-                          </For>
-                        </select>
-                      </div>
-                    );
-                  })()}
+                  <CompositionTextInspector
+                    component={() => component() as TextComponent}
+                    variables={() => props.draft.variables}
+                    onText={updateText}
+                    onStyle={updateTextStyle}
+                    onVariable={updateTextVariable}
+                  />
                 </Show>
                 <div class="compositionGraphInspectorActions">
                   <IconButton

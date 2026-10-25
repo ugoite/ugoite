@@ -149,6 +149,14 @@ export const compositionGraphDocumentDraft = (
   spec: compositionGraphSpecDraft(draft),
 });
 
+/** Authoring-only identity; never use this document for save/history/export. */
+export const compositionGraphAuthoringDocument = (
+  draft: CompositionGraphDraft,
+): CompositionGraphDocumentDraft => ({
+  ...compositionGraphDocumentDraft(draft),
+  name: draft.name.trim() ? draft.name : "Untitled Composition",
+});
+
 /** Project a Rust-canonical graph document into editor Work, fail-closed. */
 export const compositionGraphDraftFromDocument = (
   value: unknown,
@@ -273,13 +281,6 @@ export interface CompositionBindingProvider {
     revision_id: string;
     component: BindingComponentKind;
     arguments: CompositionQueryArgument[];
-    draft: CompositionGraphDraft;
-  }): Promise<CompositionPreparedSavedSql>;
-  inspectSavedSql?(input: {
-    session: CompositionBindingSession;
-    entry_id: string;
-    revision_id: string;
-    component: BindingComponentKind;
     draft: CompositionGraphDraft;
   }): Promise<CompositionPreparedSavedSql>;
 }

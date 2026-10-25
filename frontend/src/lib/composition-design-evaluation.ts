@@ -9,7 +9,7 @@ import {
   unavailableCompositionQueryIds,
 } from "./composition-evaluation";
 import {
-  compositionGraphDocumentDraft,
+  compositionGraphAuthoringDocument,
   type CompositionGraphDraft,
 } from "./composition-variable-binding";
 import { parseVariableGraphInput } from "./ugoite-client";
@@ -111,7 +111,7 @@ export function createCompositionDesignEvaluation(options: {
       if (!current()) return;
       if (!page) {
         const canonical = (await compositionApi.canonicalizeDocument(
-          compositionGraphDocumentDraft(draft),
+          compositionGraphAuthoringDocument(draft),
         )).canonical_yaml;
         if (!current()) return;
         yaml = canonical;
