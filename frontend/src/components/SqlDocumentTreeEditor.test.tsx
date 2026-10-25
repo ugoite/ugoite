@@ -2474,10 +2474,10 @@ describe("SqlDocumentTreeEditor set operation edits", () => {
       contract_version: 19,
       expected_source: initialSql,
       edits: [{
-        kind: "set_parameterized_cast_target",
+        kind: "replace_cast_target_type",
         node_id: 1,
         expected_kind: "cast_expression",
-        target: { kind: "double", length: null, precision: null, scale: null },
+        target_type: "double",
       }],
     });
     await waitFor(() => expect(sql()).toBe(changedSql));
@@ -2926,10 +2926,10 @@ describe("SqlDocumentTreeEditor set operation edits", () => {
       contract_version: 19,
       expected_source: source,
       edits: [{
-        kind: "set_parameterized_cast_target",
+        kind: "replace_cast_target_type",
         node_id: 1,
         expected_kind: "cast_expression",
-        target: { kind: "double", length: null, precision: null, scale: null },
+        target_type: "double",
       }],
     });
     await waitFor(() => expect(sql()).toBe(changedSql));

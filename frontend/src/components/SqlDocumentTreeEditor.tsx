@@ -654,6 +654,14 @@ function semanticEdit(
     };
   }
   if (isEditableCastNode(node) && castTarget) {
+    if (castTarget.length === null && castTarget.precision === null && castTarget.scale === null) {
+      return {
+        kind: "replace_cast_target_type",
+        node_id: node.id,
+        expected_kind: "cast_expression",
+        target_type: castTarget.kind,
+      };
+    }
     return {
       kind: "set_parameterized_cast_target",
       node_id: node.id,

@@ -24,11 +24,16 @@ unverified and is tracked by
 [#4565](https://github.com/ugoite/ugoite/issues/4565). The requirement is
 unchanged. `coverage_complete: false`, bounded construct coverage and explicit
 evidence gaps describe the current implementation; they must not be converted to
-a completion claim merely because an AST node exists. A source-backed
-`unmodeled_expression` proves source retention, not that the expression's
-semantic fields are editable. Projection aliases have a bounded typed authoring
-operation with fail-closed same-scope reference checks. Complete constructibility
-of the admitted SQL grammar remains unverified.
+a completion claim merely because an AST node exists. Parameterized CAST
+attributes and CASE operand switching are typed, lossless edits; a focused
+simple-CASE edit is exercised through authorized query execution. Boolean NOT
+and bitwise/shift operators have edit and WASM parity evidence, while their
+per-operator authorized runtime results remain unverified. Planner validity for
+type parameters remains authoritative. A source-backed `unmodeled_expression`
+proves source retention, not that the expression's semantic fields are editable.
+Projection aliases have a bounded typed authoring operation with fail-closed
+same-scope reference checks. Complete constructibility of the admitted SQL
+grammar remains unverified.
 
 ## Admission stages
 

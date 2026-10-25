@@ -702,6 +702,15 @@ features:
                 criterion: REQ-SQL-001#criterion.typed-expression-attributes
                 covers: [FEAT-SQL-001#binding.typed-expression-attributes-wasm/target.semantic-expression-action]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: sql_document_parameterized_cast_protocol_matches_native } }
+          - id: authorized-simple-case-execution
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/authorized_query.rs
+            selector: { kind: test, name: simple_case_operand_edit_executes_in_authorized_query_context }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-001#criterion.typed-expression-attributes
+                covers: [FEAT-SQL-001#binding.typed-expression-attributes/target.semantic-expression-edits]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: simple_case_operand_edit_executes_in_authorized_query_context } }
           - id: frontend-typed-controls
             adapter: typescript
             path: frontend/src/components/SqlDocumentTreeEditor.test.tsx

@@ -4102,3 +4102,66 @@ async fn projection_alias_edit_executes_with_the_authored_output_name() -> anyho
     assert_eq!(values.iter().flatten().collect::<Vec<_>>(), ["zeta"]);
     Ok(())
 }
+
+#[tokio::test]
+async fn simple_case_operand_edit_executes_in_authorized_query_context() -> anyhow::Result<()> {
+    use ugoite_domain::sql_document::{
+        apply_sql_document_semantic_edit_transaction, parse_sql_document, SqlDocumentNodeKind,
+        SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
+    };
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(921)),
+        "memory://authorized-simple-case-operand",
+    )
+    .await?;
+    let tasks = form(922, "Tasks");
+    create_form(&workspace, &tasks).await?;
+    append(&workspace, &tasks, 923, 924, "zeta").await?;
+    let context = workspace
+        .authorized_query_context(policy(&tasks, &[923]))
+        .await?;
+
+    let source = "SELECT field_100, CASE WHEN 'zeta' THEN 10 ELSE 0 END FROM tasks";
+    let document = parse_sql_document(source);
+    let case_node = document
+        .nodes
+        .iter()
+        .find(|node| node.kind == SqlDocumentNodeKind::CaseExpression)
+        .expect("the SQL Document exposes the searched CASE");
+    let operand = document
+        .nodes
+        .iter()
+        .find(|node| {
+            node.kind == SqlDocumentNodeKind::IdentifierExpression
+                && node.parent.is_some_and(|parent| {
+                    document.nodes[parent as usize].kind == SqlDocumentNodeKind::SelectItem
+                })
+                && document
+                    .source_slice(node.range.unwrap())
+                    .is_some_and(|source| source.eq_ignore_ascii_case("field_100"))
+        })
+        .expect("the sibling projection provides a same-scope CASE operand");
+    let edited = apply_sql_document_semantic_edit_transaction(
+        source,
+        &SqlDocumentSemanticEditTransaction {
+            contract_version: document.contract_version,
+            expected_source: source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::SetCaseOperand {
+                node_id: case_node.id,
+                expected_kind: case_node.kind,
+                expression_node_id: Some(operand.id),
+                expression_expected_kind: Some(operand.kind),
+            }],
+        },
+    )?;
+    assert!(edited.document.to_sql().contains("CASE field_100 WHEN"));
+    let rows = context.execute(edited.document.to_sql()).await?;
+    assert_eq!(rows.iter().map(|batch| batch.num_rows()).sum::<usize>(), 1);
+    let values = rows[0]
+        .column(1)
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .expect("the CASE expression returns an integer");
+    assert_eq!(values.value(0), 10);
+    Ok(())
+}

@@ -2737,7 +2737,7 @@ mod tests {
             SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
             SQL_DOCUMENT_CONTRACT_VERSION,
         };
-        let source = "SELECT CAST(amount AS DECIMAL)";
+        let source = "SELECT CAST(1 AS DECIMAL)";
         let document = ugoite_domain::sql_document::parse_sql_document(source);
         let cast = document
             .nodes
@@ -2753,7 +2753,7 @@ mod tests {
                 target: SqlDocumentCastTarget {
                     kind: SqlDocumentCastType::Decimal,
                     length: None,
-                    precision: Some("99999999999999999999999999999999999999".to_owned()),
+                    precision: Some("9007199254740993".to_owned()),
                     scale: Some("-4".to_owned()),
                 },
             }],
@@ -2770,7 +2770,7 @@ mod tests {
         assert_eq!(response["value"], serde_json::to_value(&native).unwrap());
         assert_eq!(
             response["value"]["document"]["source"],
-            "SELECT CAST(amount AS DECIMAL(99999999999999999999999999999999999999, -4))"
+            "SELECT CAST(1 AS DECIMAL(9007199254740993, -4))"
         );
     }
 
