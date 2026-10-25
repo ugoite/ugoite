@@ -46,6 +46,8 @@ features:
                 criterion: REQ-SQL-002#criterion.definition-preflight
               - kind: satisfies
                 criterion: REQ-FE-080#criterion.complete-wildcard-output-schema
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.human-form-name-binding
           - id: saved-draft
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/sql/[sql_id]/index.tsx

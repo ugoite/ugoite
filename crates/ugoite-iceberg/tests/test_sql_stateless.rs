@@ -147,6 +147,8 @@ async fn values_query_is_rejected_by_shared_read_only_admission() -> Result<()> 
         .count_sql(
             &space.space_id,
             SqlQueryCountRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 sql: "VALUES (1)".to_string(),
                 parameters: Map::new(),
                 parameter_types: BTreeMap::new(),
@@ -168,6 +170,11 @@ async fn values_query_is_rejected_by_shared_read_only_admission() -> Result<()> 
 #[tokio::test]
 async fn quoted_form_name_resolves_for_page_and_count() -> Result<()> {
     let space = setup_sql_space("memory://sql-stateless-form-name", "sqlformname").await?;
+    let form_id = space
+        .relation
+        .strip_prefix("form_")
+        .context("stable Form relation prefix")?;
+    let form_id = uuid::Uuid::parse_str(form_id)?.to_string();
     let named_sql = format!(
         "WITH task_rows AS (SELECT \"_ugoite_id\" FROM \"{}\") \
          SELECT task_rows.\"_ugoite_id\" FROM task_rows \
@@ -182,12 +189,45 @@ async fn quoted_form_name_resolves_for_page_and_count() -> Result<()> {
         .await
         .unwrap_or_else(|error| panic!("named Form page failed: {error:#}"));
     assert_eq!(page.rows.len(), 5);
+    let guarded_page = space
+        .service
+        .query_sql(
+            &space.space_id,
+            SqlQueryRequest {
+                binding_base: None,
+                form_binding_guards: vec![ugoite_core::sql_query::SqlFormBindingGuard {
+                    name: space.form_name.clone(),
+                    form_id: form_id.clone(),
+                }],
+                ..query_request(named_sql.clone(), 10)
+            },
+        )
+        .await
+        .unwrap_or_else(|error| panic!("guarded Form page failed: {error:#}"));
+    assert_eq!(guarded_page.rows.len(), 5);
+    let stale_page = space
+        .service
+        .query_sql(
+            &space.space_id,
+            SqlQueryRequest {
+                binding_base: None,
+                form_binding_guards: vec![ugoite_core::sql_query::SqlFormBindingGuard {
+                    name: space.form_name.clone(),
+                    form_id: "forged-form-id".to_string(),
+                }],
+                ..query_request(named_sql.clone(), 10)
+            },
+        )
+        .await;
+    assert!(stale_page.is_err(), "stale Form guard must fail closed");
     let count = space
         .service
         .count_sql(
             &space.space_id,
             SqlQueryCountRequest {
-                sql: named_sql,
+                binding_base: None,
+                form_binding_guards: Vec::new(),
+                sql: named_sql.clone(),
                 parameters: Map::new(),
                 parameter_types: BTreeMap::new(),
                 saved_sql: None,
@@ -196,6 +236,24 @@ async fn quoted_form_name_resolves_for_page_and_count() -> Result<()> {
         .await
         .unwrap_or_else(|error| panic!("named Form count failed: {error:#}"));
     assert_eq!(count, 5);
+    let guarded_count = space
+        .service
+        .count_sql(
+            &space.space_id,
+            SqlQueryCountRequest {
+                sql: named_sql.clone(),
+                parameters: Map::new(),
+                parameter_types: BTreeMap::new(),
+                saved_sql: None,
+                binding_base: None,
+                form_binding_guards: vec![ugoite_core::sql_query::SqlFormBindingGuard {
+                    name: space.form_name.clone(),
+                    form_id: form_id.clone(),
+                }],
+            },
+        )
+        .await?;
+    assert_eq!(guarded_count, 5);
 
     let unquoted = format!("SELECT * FROM {}", space.form_name);
     assert!(space
@@ -226,6 +284,8 @@ async fn quoted_form_name_with_digits_hyphen_and_parameter_resolves() -> Result<
         space.form_name, space.priority_column
     );
     let request = SqlQueryRequest {
+        binding_base: None,
+        form_binding_guards: Vec::new(),
         sql,
         parameters: Map::from_iter([("priority".into(), json!(3))]),
         parameter_types: BTreeMap::new(),
@@ -357,6 +417,8 @@ async fn saved_sql_revision_uses_fixed_form_binding_and_continuation_identity() 
         .query_sql(
             &space.space_id,
             SqlQueryRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 sql: String::new(),
                 parameters: Map::new(),
                 parameter_types: BTreeMap::new(),
@@ -407,6 +469,8 @@ async fn saved_sql_revision_uses_fixed_form_binding_and_continuation_identity() 
         .query_sql(
             &space.space_id,
             SqlQueryRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 continuation: Some(next),
                 execution_id: None,
                 ..query_request(String::new(), 2)
@@ -422,6 +486,8 @@ async fn saved_sql_revision_uses_fixed_form_binding_and_continuation_identity() 
         .query_sql(
             &space.space_id,
             SqlQueryRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 continuation: first.next.clone(),
                 execution_id: None,
                 saved_sql: Some(source.clone()),
@@ -436,6 +502,8 @@ async fn saved_sql_revision_uses_fixed_form_binding_and_continuation_identity() 
         .count_sql(
             &space.space_id,
             SqlQueryCountRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 sql: String::new(),
                 parameters: Map::new(),
                 parameter_types: BTreeMap::new(),
@@ -449,6 +517,8 @@ async fn saved_sql_revision_uses_fixed_form_binding_and_continuation_identity() 
         .count_sql(
             &space.space_id,
             SqlQueryCountRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 sql: String::new(),
                 parameters: Map::new(),
                 parameter_types: BTreeMap::new(),
@@ -463,6 +533,8 @@ async fn saved_sql_revision_uses_fixed_form_binding_and_continuation_identity() 
         .query_sql(
             &space.space_id,
             SqlQueryRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 sql: "SELECT 1".into(),
                 saved_sql: Some(source),
                 ..query_request(String::new(), 2)
@@ -472,6 +544,161 @@ async fn saved_sql_revision_uses_fixed_form_binding_and_continuation_identity() 
     assert!(
         mismatched.is_err(),
         "caller SQL cannot replace the selected revision"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn saved_sql_draft_inherits_exact_parent_form_binding_after_rename() -> Result<()> {
+    let space = setup_sql_space("memory://sql-saved-binding-base", "sqlbindingbase").await?;
+    let sql = format!(
+        "SELECT \"_ugoite_id\" FROM \"{}\" ORDER BY \"_ugoite_id\"",
+        space.form_name
+    );
+    let saved = space
+        .service
+        .create_saved_sql(
+            &space.space_id,
+            Some("saved-binding-base"),
+            &SqlPayload {
+                name: Some("Tasks".into()),
+                kind: SqlKind::UserQuery,
+                metadata: None,
+                sql: sql.clone(),
+                variables: json!([]),
+            },
+            "owner",
+        )
+        .await?;
+    let base = SavedSqlRevisionRef {
+        id: "saved-binding-base".into(),
+        revision_id: saved["revision_id"]
+            .as_str()
+            .context("saved revision")?
+            .into(),
+    };
+    let form_id = space
+        .relation
+        .strip_prefix("form_")
+        .context("Form relation")?;
+    let form_id = uuid::Uuid::parse_str(form_id)?.into();
+    let workspace = ugoite_iceberg::iceberg_store::native_mutation_workspace(
+        space.service.operator(),
+        &space.service.workspace_path(&space.space_id),
+    )
+    .await?;
+    let current_form = workspace.load_form(form_id).await?;
+    let rename = ugoite_domain::form::FormChangeSet {
+        form_id,
+        expected_version: Some(current_form.version),
+        changes: vec![ugoite_domain::form::FormChange::RenameForm {
+            name: "Reimbursement".to_owned(),
+        }],
+    };
+    workspace
+        .commit(ugoite_iceberg::publication_context(
+            "sql-binding-rename",
+            "test.form.evolve",
+            &rename,
+        )?)?
+        .evolve_form(&rename)
+        .await?;
+
+    let inherited_guard = ugoite_core::sql_query::SqlFormBindingGuard {
+        name: space.form_name.clone(),
+        form_id: form_id.to_string(),
+    };
+    let draft_request = || SqlQueryRequest {
+        sql: sql.clone(),
+        saved_sql: None,
+        binding_base: Some(base.clone()),
+        form_binding_guards: vec![inherited_guard.clone()],
+        ..query_request(sql.clone(), 10)
+    };
+    let omitted_guard_page = space
+        .service
+        .query_sql(
+            &space.space_id,
+            SqlQueryRequest {
+                form_binding_guards: Vec::new(),
+                ..draft_request()
+            },
+        )
+        .await?;
+    assert_eq!(omitted_guard_page.rows.len(), 5);
+    let page = space
+        .service
+        .query_sql(&space.space_id, draft_request())
+        .await?;
+    assert_eq!(
+        page.rows.len(),
+        5,
+        "same-as-parent guard preserves renamed Form A"
+    );
+    let count = space
+        .service
+        .count_sql(
+            &space.space_id,
+            SqlQueryCountRequest {
+                sql: sql.clone(),
+                saved_sql: None,
+                binding_base: Some(base.clone()),
+                form_binding_guards: vec![inherited_guard.clone()],
+                parameters: Map::new(),
+                parameter_types: BTreeMap::new(),
+            },
+        )
+        .await?;
+    assert_eq!(count, 5);
+
+    space
+        .service
+        .upsert_form(
+            &space.space_id,
+            &json!({
+                "name": "Task",
+                "fields": {
+                    "Status": {"type": "string"},
+                    "Priority": {"type": "long"}
+                }
+            }),
+        )
+        .await?;
+    space
+        .service
+        .create_structured_entry_with_receipt(
+            &space.space_id,
+            "replacement-task",
+            "Task".to_string(),
+            Vec::new(),
+            BTreeMap::from([
+                ("Status".into(), json!("replacement")),
+                ("Priority".into(), json!(9)),
+            ]),
+            BTreeMap::new(),
+            "owner",
+        )
+        .await?;
+    let replacement_id = space.service.get_form(&space.space_id, "Task").await?["id"]
+        .as_str()
+        .context("replacement Form ID")?
+        .to_string();
+    let explicit_reselection = SqlQueryRequest {
+        binding_base: Some(base.clone()),
+        form_binding_guards: vec![ugoite_core::sql_query::SqlFormBindingGuard {
+            name: "Task".into(),
+            form_id: replacement_id,
+        }],
+        ..draft_request()
+    };
+    let replacement_page = space
+        .service
+        .query_sql(&space.space_id, explicit_reselection)
+        .await?;
+    assert_eq!(
+        replacement_page.rows.len(),
+        1,
+        "explicit current-name selection chooses Form B"
     );
     Ok(())
 }
@@ -544,6 +771,8 @@ async fn composition_scalar_probe_reads_at_most_two_rows_from_exact_saved_revisi
         .await?;
 
     let probe = |id: &str, saved: &Value| SqlQueryRequest {
+        binding_base: None,
+        form_binding_guards: Vec::new(),
         sql: String::new(),
         parameters: Map::new(),
         parameter_types: BTreeMap::new(),
@@ -588,6 +817,8 @@ async fn composition_scalar_probe_reads_at_most_two_rows_from_exact_saved_revisi
             .into(),
     };
     let parameterized_request = || SqlQueryRequest {
+        binding_base: None,
+        form_binding_guards: Vec::new(),
         sql: String::new(),
         parameters: Map::from_iter([("minimum".into(), json!(3))]),
         parameter_types: BTreeMap::new(),
@@ -649,6 +880,8 @@ async fn saved_sql_variable_defaults_are_not_implicitly_applied_to_queries() -> 
         .query_sql(
             &space.space_id,
             SqlQueryRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 sql: String::new(),
                 parameters: Map::new(),
                 parameter_types: BTreeMap::new(),
@@ -670,6 +903,8 @@ async fn saved_sql_variable_defaults_are_not_implicitly_applied_to_queries() -> 
         .query_sql(
             &space.space_id,
             SqlQueryRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 sql: String::new(),
                 parameters: Map::from_iter([("minimum".into(), json!(3))]),
                 parameter_types: BTreeMap::from([("minimum".into(), "integer".into())]),
@@ -688,6 +923,8 @@ async fn saved_sql_variable_defaults_are_not_implicitly_applied_to_queries() -> 
         .count_sql(
             &space.space_id,
             SqlQueryCountRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 sql: String::new(),
                 parameters: Map::new(),
                 parameter_types: BTreeMap::new(),
@@ -704,6 +941,8 @@ async fn saved_sql_variable_defaults_are_not_implicitly_applied_to_queries() -> 
         .count_sql(
             &space.space_id,
             SqlQueryCountRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 sql: String::new(),
                 parameters: Map::from_iter([("minimum".into(), json!(3))]),
                 parameter_types: BTreeMap::from([("minimum".into(), "integer".into())]),
@@ -724,6 +963,8 @@ fn base_sql(space: &SqlSpace) -> String {
 
 fn query_request(sql: String, limit: usize) -> SqlQueryRequest {
     SqlQueryRequest {
+        binding_base: None,
+        form_binding_guards: Vec::new(),
         sql,
         parameters: Map::new(),
         parameter_types: BTreeMap::new(),
@@ -1116,6 +1357,8 @@ async fn synthetic_prebinding_revision_reads_and_runs_without_rewrite() -> Resul
         .query_sql(
             &space.space_id,
             SqlQueryRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 sql: String::new(),
                 parameters: Map::from_iter([("minimum".into(), json!(3))]),
                 parameter_types: BTreeMap::new(),
@@ -1137,6 +1380,8 @@ async fn synthetic_prebinding_revision_reads_and_runs_without_rewrite() -> Resul
         .query_sql(
             &space.space_id,
             SqlQueryRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 sql: String::new(),
                 parameters: Map::from_iter([("minimum".into(), json!(3))]),
                 parameter_types: BTreeMap::new(),
@@ -1165,6 +1410,8 @@ async fn synthetic_prebinding_revision_reads_and_runs_without_rewrite() -> Resul
         .count_sql(
             &space.space_id,
             SqlQueryCountRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 sql: String::new(),
                 parameters: Map::from_iter([("minimum".into(), json!(3))]),
                 parameter_types: BTreeMap::new(),
@@ -1181,6 +1428,8 @@ async fn synthetic_prebinding_revision_reads_and_runs_without_rewrite() -> Resul
         .query_sql(
             &space.space_id,
             SqlQueryRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 saved_sql: Some(SavedSqlRevisionRef {
                     id: "synthetic_prebinding_revision".into(),
                     revision_id: "wrong-revision".into(),
@@ -1365,6 +1614,8 @@ async fn synthetic_prebinding_revision_rejections_fail_closed() -> Result<()> {
     entry::append_revision_batch_for_form(operator, &workspace_path, "SQL", &revisions).await?;
 
     let query_saved = |id: &str, revision_id: &str| SqlQueryRequest {
+        binding_base: None,
+        form_binding_guards: Vec::new(),
         sql: String::new(),
         parameters: Map::new(),
         parameter_types: BTreeMap::new(),
@@ -1447,6 +1698,8 @@ async fn stateless_first_page_and_continuation_cover_full_result() -> Result<()>
         .query_sql(
             &space.space_id,
             SqlQueryRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 continuation: Some(continuation),
                 execution_id: None,
                 ..query_request(base_sql(&space), 2)
@@ -1461,6 +1714,8 @@ async fn stateless_first_page_and_continuation_cover_full_result() -> Result<()>
         .query_sql(
             &space.space_id,
             SqlQueryRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 continuation: second.next.clone(),
                 execution_id: None,
                 ..query_request(base_sql(&space), 2)
@@ -1482,6 +1737,8 @@ async fn stateless_explicit_count_matches_full_result() -> Result<()> {
         .count_sql(
             &space.space_id,
             SqlQueryCountRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 sql: base_sql(&space),
                 parameters: Map::new(),
                 parameter_types: BTreeMap::new(),
@@ -1495,6 +1752,8 @@ async fn stateless_explicit_count_matches_full_result() -> Result<()> {
         .count_sql(
             &space.space_id,
             SqlQueryCountRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 sql: format!(
                     "SELECT \"_ugoite_id\" FROM \"{}\" WHERE \"{}\" = 'open'",
                     space.relation, space.status_column
@@ -1529,6 +1788,8 @@ async fn stateless_sql_allows_only_the_read_only_aggregate_policy() -> Result<()
         .count_sql(
             &space.space_id,
             SqlQueryCountRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 sql: aggregate_sql,
                 parameters: Map::new(),
                 parameter_types: BTreeMap::new(),
@@ -1556,6 +1817,8 @@ async fn stateless_sql_allows_only_the_read_only_aggregate_policy() -> Result<()
         .count_sql(
             &space.space_id,
             SqlQueryCountRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 sql: base_sql(&space),
                 parameters: Map::new(),
                 parameter_types: BTreeMap::new(),
@@ -1576,6 +1839,8 @@ async fn stateless_count_preserves_aggregate_result_row_semantics() -> Result<()
             .count_sql(
                 &space.space_id,
                 SqlQueryCountRequest {
+                    binding_base: None,
+                    form_binding_guards: Vec::new(),
                     sql,
                     parameters: Map::new(),
                     parameter_types: BTreeMap::new(),
@@ -1729,6 +1994,8 @@ async fn stateless_parameters_bind_with_types_and_typed_null() -> Result<()> {
         .query_sql(
             &space.space_id,
             SqlQueryRequest {
+            binding_base: None,
+            form_binding_guards: Vec::new(),
                 sql: format!(
                     "SELECT \"_ugoite_id\" FROM \"{}\" WHERE \"{}\" = $status ORDER BY \"_ugoite_id\"",
                     space.relation, space.status_column
@@ -1760,6 +2027,8 @@ async fn stateless_parameters_bind_with_types_and_typed_null() -> Result<()> {
         .query_sql(
             &space.space_id,
             SqlQueryRequest {
+            binding_base: None,
+            form_binding_guards: Vec::new(),
                 sql: format!(
                     "SELECT \"_ugoite_id\" FROM \"{}\" WHERE \"{}\" = $priority ORDER BY \"_ugoite_id\"",
                     space.relation, space.priority_column
@@ -1786,6 +2055,8 @@ async fn stateless_parameters_bind_with_types_and_typed_null() -> Result<()> {
         .query_sql(
             &space.space_id,
             SqlQueryRequest {
+            binding_base: None,
+            form_binding_guards: Vec::new(),
                 sql: format!(
                     "SELECT \"_ugoite_id\" FROM \"{}\" WHERE $probe IS NULL ORDER BY \"_ugoite_id\"",
                     space.relation
@@ -1808,6 +2079,8 @@ async fn stateless_parameters_bind_with_types_and_typed_null() -> Result<()> {
         .query_sql(
             &space.space_id,
             SqlQueryRequest {
+            binding_base: None,
+            form_binding_guards: Vec::new(),
                 sql: format!(
                     "SELECT \"_ugoite_id\" FROM \"{}\" WHERE $probe IS NULL ORDER BY \"_ugoite_id\"",
                     space.relation
@@ -1832,6 +2105,8 @@ async fn stateless_parameters_bind_with_types_and_typed_null() -> Result<()> {
         .query_sql(
             &space.space_id,
             SqlQueryRequest {
+            binding_base: None,
+            form_binding_guards: Vec::new(),
                 sql: format!(
                     "SELECT \"_ugoite_id\" FROM \"{}\" WHERE $probe IS NULL ORDER BY \"_ugoite_id\"",
                     space.relation
@@ -1857,6 +2132,8 @@ async fn stateless_parameters_bind_with_types_and_typed_null() -> Result<()> {
         .query_sql(
             &space.space_id,
             SqlQueryRequest {
+            binding_base: None,
+            form_binding_guards: Vec::new(),
                 sql: format!(
                     "SELECT \"_ugoite_id\" FROM \"{}\" WHERE \"{}\" = $priority ORDER BY \"_ugoite_id\"",
                     space.relation, space.priority_column
@@ -1893,6 +2170,8 @@ async fn stateless_parameters_bind_declared_long_double_and_typed_nulls() -> Res
         .query_sql(
             &space.space_id,
             SqlQueryRequest {
+            binding_base: None,
+            form_binding_guards: Vec::new(),
                 sql: format!(
                     "SELECT \"_ugoite_id\" FROM \"{}\" WHERE \"{}\" = $priority ORDER BY \"_ugoite_id\"",
                     space.relation, space.priority_column
@@ -1926,6 +2205,8 @@ async fn stateless_parameters_bind_declared_long_double_and_typed_nulls() -> Res
             .query_sql(
                 &space.space_id,
                 SqlQueryRequest {
+            binding_base: None,
+            form_binding_guards: Vec::new(),
                     sql: format!(
                         "SELECT \"_ugoite_id\" FROM \"{}\" WHERE $ratio > 2.0 ORDER BY \"_ugoite_id\"",
                         space.relation
@@ -1951,6 +2232,8 @@ async fn stateless_parameters_bind_declared_long_double_and_typed_nulls() -> Res
             .query_sql(
                 &space.space_id,
                 SqlQueryRequest {
+            binding_base: None,
+            form_binding_guards: Vec::new(),
                     sql: format!(
                         "SELECT \"_ugoite_id\" FROM \"{}\" WHERE $probe IS NULL ORDER BY \"_ugoite_id\"",
                         space.relation
@@ -1986,6 +2269,8 @@ async fn stateless_continuation_resets_on_parameter_type_change() -> Result<()> 
         .query_sql(
             &space.space_id,
             SqlQueryRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 sql: null_sql.clone(),
                 parameters: Map::from_iter([("probe".to_string(), Value::Null)]),
                 parameter_types: BTreeMap::from([("probe".to_string(), "string".to_string())]),
@@ -2009,6 +2294,8 @@ async fn stateless_continuation_resets_on_parameter_type_change() -> Result<()> 
         .query_sql(
             &space.space_id,
             SqlQueryRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 sql: null_sql.clone(),
                 parameters: Map::from_iter([("probe".to_string(), Value::Null)]),
                 parameter_types: BTreeMap::from([("probe".to_string(), "string".to_string())]),
@@ -2035,6 +2322,8 @@ async fn stateless_continuation_resets_on_parameter_type_change() -> Result<()> 
         .query_sql(
             &space.space_id,
             SqlQueryRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 sql: null_sql,
                 parameters: Map::from_iter([("probe".to_string(), Value::Null)]),
                 parameter_types: BTreeMap::from([("probe".to_string(), "long".to_string())]),
@@ -2075,6 +2364,8 @@ async fn stateless_continuation_resets_on_context_change() -> Result<()> {
         .query_sql(
             &space.space_id,
             SqlQueryRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 sql: format!(
                     "SELECT \"_ugoite_id\" FROM \"{}\" ORDER BY \"{}\"",
                     space.relation, space.status_column
@@ -2100,6 +2391,8 @@ async fn stateless_continuation_resets_on_context_change() -> Result<()> {
         .query_sql(
             &space.space_id,
             SqlQueryRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 sql: parameterised.clone(),
                 parameters: Map::from_iter([(
                     "status".to_string(),
@@ -2123,6 +2416,8 @@ async fn stateless_continuation_resets_on_context_change() -> Result<()> {
         .query_sql(
             &space.space_id,
             SqlQueryRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 sql: parameterised,
                 parameters: Map::from_iter([(
                     "status".to_string(),
@@ -2154,6 +2449,8 @@ async fn stateless_continuation_resets_on_context_change() -> Result<()> {
         .query_sql(
             &space.space_id,
             SqlQueryRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 continuation: Some(tampered),
                 execution_id: None,
                 ..query_request(base_sql(&space), 2)
@@ -2195,6 +2492,8 @@ async fn stateless_sql_stays_read_only_with_opaque_continuation() -> Result<()> 
             .count_sql(
                 &space.space_id,
                 SqlQueryCountRequest {
+                    binding_base: None,
+                    form_binding_guards: Vec::new(),
                     sql,
                     parameters: Map::new(),
                     parameter_types: BTreeMap::new(),
@@ -2285,6 +2584,8 @@ async fn stateless_continuation_reads_pinned_publication() -> Result<()> {
         .query_sql(
             &space.space_id,
             SqlQueryRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 continuation: Some(continuation),
                 execution_id: None,
                 ..query_request(base_sql(&space), 2)

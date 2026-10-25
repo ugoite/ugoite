@@ -6,6 +6,7 @@ import {
   applySqlDocumentSemanticEditTransaction,
   buildSpreadsheetCsvRequest,
   canonicalizeCompositionDocument,
+  collectSqlFormNameReferences,
   compileVariableGraph,
   compositionFormQuerySql,
   encodeSpreadsheetCsv,
@@ -316,6 +317,21 @@ describe("portable Ugoite API protocol WASM", () => {
       status: "invalid_sql",
       diagnostics: [{ code: "parse_failed" }],
     });
+  });
+
+  it("classifies quoted Form references with Rust CTE scopes", async () => {
+    await expect(
+      collectSqlFormNameReferences(
+        'WITH "Entry" AS (SELECT 1) SELECT * FROM "Entry"',
+      ),
+    ).resolves.toEqual([]);
+    await expect(
+      collectSqlFormNameReferences(
+        'SELECT * FROM (WITH "Entry" AS (SELECT 1) SELECT * FROM "Entry") AS nested JOIN "Entry" AS actual ON TRUE',
+      ),
+    ).resolves.toEqual(["Entry"]);
+    await expect(collectSqlFormNameReferences("SELECT ("))
+      .rejects.toMatchObject({ kind: "domain_validation" });
   });
 
   it("applies typed SQL Document edits atomically and returns a usable undo", async () => {

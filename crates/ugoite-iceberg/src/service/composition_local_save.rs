@@ -165,6 +165,7 @@ impl UgoiteService {
                     let bindings = composition_inline_form_bindings_for_save(
                         &node.id,
                         sql,
+                        &query.form_bindings,
                         previous_document.as_ref(),
                         &forms,
                     )?;

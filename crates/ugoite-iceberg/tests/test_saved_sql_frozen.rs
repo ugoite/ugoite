@@ -210,6 +210,8 @@ async fn prebinding_space_saved_sql_reads_executes_and_reopens_without_mutation(
         .query_sql(
             &expected.space_id,
             SqlQueryRequest {
+                form_binding_guards: Vec::new(),
+                binding_base: None,
                 sql: String::new(),
                 parameters: Map::new(),
                 parameter_types: Default::default(),
@@ -234,6 +236,8 @@ async fn prebinding_space_saved_sql_reads_executes_and_reopens_without_mutation(
         .count_sql(
             &expected.space_id,
             SqlQueryCountRequest {
+                form_binding_guards: Vec::new(),
+                binding_base: None,
                 sql: String::new(),
                 parameters: Map::new(),
                 parameter_types: Default::default(),
@@ -268,6 +272,8 @@ async fn prebinding_space_saved_sql_reads_executes_and_reopens_without_mutation(
         .query_sql(
             &expected.space_id,
             SqlQueryRequest {
+                form_binding_guards: Vec::new(),
+                binding_base: None,
                 sql: String::new(),
                 parameters: Map::new(),
                 parameter_types: Default::default(),

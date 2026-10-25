@@ -389,7 +389,7 @@ describe("Composition shared SQL argument editing", () => {
     fireEvent.click(choice);
     await waitFor(() =>
       expect(draft().variables[0]).toMatchObject({
-        query: { sql: 'SELECT 1 FROM "form_123"' },
+        query: { sql: 'SELECT 1 FROM "Expenses"' },
       })
     );
     await waitFor(() =>

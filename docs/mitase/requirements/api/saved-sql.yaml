@@ -174,6 +174,10 @@ requirements:
                     test: quoted_form_name_resolves_for_page_and_count,
                   },
                 }
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.human-form-name-binding
+                covers: [FEAT-FE-008#binding.form-name-binding-service/target.sql-form-name-binding]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_stateless, test: quoted_form_name_resolves_for_page_and_count } }
           - id: special-name-parameter
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_sql_stateless.rs
@@ -383,4 +387,8 @@ requirements:
                   - FEAT-API-001#binding.core/target.update-sql
                   - FEAT-API-001#binding.sql-service-implementation/target.query-sql
                   - FEAT-API-001#binding.sql-service-implementation/target.count-sql
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: openapi_documents_saved_sql_variable_defaults } }
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.human-form-name-binding
+                covers: [FEAT-FE-008#binding.form-name-binding-api/target.sql-query-guard-schema]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: openapi_documents_saved_sql_variable_defaults } }

@@ -78,7 +78,9 @@ fn is_entry_operation(action: &str) -> bool {
 
 fn sql_document_request_limit(action: &str) -> Option<usize> {
     match action {
-        "domain.parse_sql_document" => Some(MAX_SQL_DOCUMENT_REQUEST_BYTES),
+        "domain.parse_sql_document"
+        | "domain.collect_quoted_form_name_references"
+        | "domain.collect_quoted_form_relation_names" => Some(MAX_SQL_DOCUMENT_REQUEST_BYTES),
         "domain.rename_sql_document_parameter" => Some(MAX_SQL_DOCUMENT_RENAME_REQUEST_BYTES),
         "domain.apply_sql_document_edit_transaction" => Some(MAX_SQL_DOCUMENT_EDIT_REQUEST_BYTES),
         "domain.apply_sql_document_node_edit_transaction" => {
@@ -257,6 +259,12 @@ fn invoke_domain(request: serde_json::Value) -> String {
     match request.get("action").and_then(serde_json::Value::as_str) {
         Some("domain.compile_variable_graph.v1") => return compile_variable_graph_v1(request),
         Some("domain.parse_sql_document") => return invoke_sql_document(request),
+        Some("domain.collect_quoted_form_name_references") => {
+            return invoke_sql_form_name_references(request);
+        }
+        Some("domain.collect_quoted_form_relation_names") => {
+            return invoke_sql_form_relation_names(request);
+        }
         Some("domain.rename_sql_document_parameter") => {
             return invoke_sql_document_parameter_rename(request);
         }
@@ -621,6 +629,70 @@ fn invoke_sql_document(request: serde_json::Value) -> String {
         Err(message) => serde_json::json!({
             "ok": false,
             "error": {"kind": "domain_validation", "message": message},
+        })
+        .to_string(),
+    }
+}
+
+fn invoke_sql_form_name_references(request: serde_json::Value) -> String {
+    let result = (|| -> Result<std::collections::BTreeSet<String>, String> {
+        let payload = request
+            .get("value")
+            .cloned()
+            .ok_or_else(|| "value is required".to_string())?;
+        let sql = payload
+            .get("sql")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| "sql must be a string".to_string())?;
+        ugoite_domain::sql_form_references::collect_quoted_form_name_references(sql)
+    })();
+
+    match result {
+        Ok(references) => {
+            let mut writer = BoundedJsonWriter::new(MAX_SQL_DOCUMENT_RESPONSE_BYTES);
+            if writer.write_all(b"{\"ok\":true,\"value\":").is_err()
+                || serde_json::to_writer(&mut writer, &references).is_err()
+                || writer.write_all(b"}").is_err()
+            {
+                return sql_document_response_too_large();
+            }
+            String::from_utf8(writer.bytes).unwrap_or_else(|_| sql_document_response_too_large())
+        }
+        Err(message) => serde_json::json!({
+            "ok": false,
+            "error": { "kind": "domain_validation", "message": message },
+        })
+        .to_string(),
+    }
+}
+
+fn invoke_sql_form_relation_names(request: serde_json::Value) -> String {
+    let result = (|| -> Result<std::collections::BTreeSet<String>, String> {
+        let payload = request
+            .get("value")
+            .cloned()
+            .ok_or_else(|| "value is required".to_string())?;
+        let sql = payload
+            .get("sql")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| "sql must be a string".to_string())?;
+        ugoite_domain::sql_form_references::collect_quoted_form_relation_names(sql)
+    })();
+
+    match result {
+        Ok(references) => {
+            let mut writer = BoundedJsonWriter::new(MAX_SQL_DOCUMENT_RESPONSE_BYTES);
+            if writer.write_all(b"{\"ok\":true,\"value\":").is_err()
+                || serde_json::to_writer(&mut writer, &references).is_err()
+                || writer.write_all(b"}").is_err()
+            {
+                return sql_document_response_too_large();
+            }
+            String::from_utf8(writer.bytes).unwrap_or_else(|_| sql_document_response_too_large())
+        }
+        Err(message) => serde_json::json!({
+            "ok": false,
+            "error": { "kind": "domain_validation", "message": message },
         })
         .to_string(),
     }
@@ -1320,6 +1392,63 @@ mod tests {
             let native = ugoite_domain::sql_document::parse_sql_document(sql);
             assert_eq!(response["value"], serde_json::to_value(native).unwrap());
         }
+    }
+
+    #[test]
+    fn sql_form_reference_protocol_uses_native_cte_scoped_classifier() {
+        let sql = "SELECT * FROM (WITH \"Entry\" AS (SELECT 1) SELECT * FROM \"Entry\") AS nested JOIN \"Entry\" AS actual ON TRUE";
+        let request = serde_json::json!({
+            "action": "domain.collect_quoted_form_name_references",
+            "value": { "sql": sql },
+        })
+        .to_string();
+        let response: Value = serde_json::from_str(&super::invoke_json(&request)).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"], serde_json::json!(["Entry"]));
+        assert_eq!(
+            response["value"],
+            serde_json::to_value(
+                ugoite_domain::sql_form_references::collect_quoted_form_name_references(sql)
+                    .unwrap(),
+            )
+            .unwrap(),
+        );
+
+        let legacy_relation = "form_0123456789abcdef0123456789abcdef";
+        let relation_sql = format!("SELECT * FROM \"{legacy_relation}\"");
+        let relation_request = serde_json::json!({
+            "action": "domain.collect_quoted_form_relation_names",
+            "value": { "sql": relation_sql },
+        })
+        .to_string();
+        let relation_response: Value =
+            serde_json::from_str(&super::invoke_json(&relation_request)).unwrap();
+        assert_eq!(relation_response["ok"], true, "{relation_response}");
+        assert_eq!(
+            relation_response["value"],
+            serde_json::json!([legacy_relation]),
+        );
+
+        let invalid: Value = serde_json::from_str(&super::invoke_json(
+            &serde_json::json!({
+                "action": "domain.collect_quoted_form_name_references",
+                "value": { "sql": "SELECT (" },
+            })
+            .to_string(),
+        ))
+        .unwrap();
+        assert_eq!(invalid["ok"], false);
+        assert_eq!(invalid["error"]["kind"], "domain_validation");
+
+        let oversized = serde_json::json!({
+            "action": "domain.collect_quoted_form_name_references",
+            "value": { "sql": "x".repeat(super::MAX_SQL_DOCUMENT_REQUEST_BYTES) },
+        })
+        .to_string();
+        assert!(oversized.len() > super::MAX_SQL_DOCUMENT_REQUEST_BYTES);
+        let rejected: Value = serde_json::from_str(&super::invoke_json(&oversized)).unwrap();
+        assert_eq!(rejected["ok"], false);
+        assert_eq!(rejected["error"]["kind"], "input_too_large");
     }
 
     #[test]

@@ -1333,8 +1333,9 @@ async fn saves_reject_forged_complete_query_result_descriptors() -> Result<()> {
 }
 
 #[tokio::test]
-async fn preview_ignores_yaml_form_binding_spoof_with_or_without_exact_base() -> Result<()> {
-    let (service, space_id, document, original_form_id) = setup_preview_space().await?;
+async fn preview_rejects_mismatched_yaml_form_binding_guard_with_or_without_exact_base(
+) -> Result<()> {
+    let (service, space_id, document, _) = setup_preview_space().await?;
     let saved = save_local_composition(&service, &space_id, document).await?;
     let replacement = service
         .upsert_form_result(
@@ -1348,33 +1349,14 @@ async fn preview_ignores_yaml_form_binding_spoof_with_or_without_exact_base() ->
         )
         .await?;
 
-    // Form B has the same result schema, making its forged descriptor
-    // plausible. Draft descriptors are never authoritative: without a base,
-    // the SQL relation resolves by its current Form identity; with a base,
-    // the exact saved Form ID remains pinned.
+    // A mismatched compare-only guard cannot select an unrelated Form, either
+    // with a new draft or with the exact Composition base loaded.
     let mut forged = saved.document.clone();
-    let (expected_returns, expected_schema_fingerprint, expected_form_bindings) =
-        match &saved.document.spec.variables[0].kind {
-            VariableGraphNodeKind::Query { query, returns } => (
-                returns.clone(),
-                query.schema_fingerprint.clone(),
-                query.form_bindings.clone(),
-            ),
-            _ => anyhow::bail!("saved Composition should retain its query variable"),
-        };
-    if let VariableGraphNodeKind::Query { query, returns } = &mut forged.spec.variables[0].kind {
+    if let VariableGraphNodeKind::Query { query, .. } = &mut forged.spec.variables[0].kind {
         query.form_bindings = vec![ugoite_domain::composition::VariableGraphFormBinding {
             relation: "Composition-Preview".to_owned(),
             form_id: replacement.form_id,
         }];
-        query.schema_fingerprint = "0".repeat(64);
-        let VariableGraphResultType::Table { columns } = returns else {
-            anyhow::bail!("saved query should retain its table result intent");
-        };
-        columns[0].value_type = VariableGraphScalarDescriptor {
-            scalar_type: VariableGraphScalarType::Integer,
-            nullable: false,
-        };
     }
     let forged_yaml = canonicalize_composition(&forged)
         .map_err(|code| anyhow::anyhow!(code.as_str()))?
@@ -1383,22 +1365,10 @@ async fn preview_ignores_yaml_form_binding_spoof_with_or_without_exact_base() ->
     let new_preview = service
         .preview_composition_local(&space_id, &forged_yaml, &BTreeMap::new(), &[])
         .await?;
-    let new_plan = new_preview
-        .plan
-        .context("draft should resolve by its current Form relation")?;
-    let expected_relation = sql_relation_name(original_form_id);
-    let spoofed_relation = sql_relation_name(replacement.form_id);
-    assert!(matches!(
-        new_plan.queries[0].request.as_ref(),
-        Some(request) if request.sql.contains(&expected_relation)
-            && !request.sql.contains(&spoofed_relation)
-    ));
-    assert_eq!(new_plan.queries[0].returns, expected_returns);
-    assert_eq!(
-        new_plan.queries[0].schema_fingerprint,
-        expected_schema_fingerprint
+    assert!(
+        new_preview.plan.is_none(),
+        "a forged guard cannot select another Form"
     );
-    assert_eq!(new_plan.queries[0].form_bindings, expected_form_bindings);
 
     let preview = service
         .preview_composition_local_with_base(
@@ -1412,20 +1382,10 @@ async fn preview_ignores_yaml_form_binding_spoof_with_or_without_exact_base() ->
             }),
         )
         .await?;
-    let plan = preview
-        .plan
-        .context("spoofed descriptor should be ignored")?;
-    assert!(matches!(
-        plan.queries[0].request.as_ref(),
-        Some(request) if request.sql.contains(&expected_relation)
-            && !request.sql.contains(&spoofed_relation)
-    ));
-    assert_eq!(plan.queries[0].returns, expected_returns);
-    assert_eq!(
-        plan.queries[0].schema_fingerprint,
-        expected_schema_fingerprint
+    assert!(
+        preview.plan.is_none(),
+        "a base pin cannot be overridden by a mismatched guard"
     );
-    assert_eq!(plan.queries[0].form_bindings, expected_form_bindings);
     Ok(())
 }
 
@@ -1592,6 +1552,8 @@ async fn portable_inline_sql_count_keeps_form_identity_after_rename_and_replacem
         .count_sql(
             &space_id,
             ugoite_core::sql_query::SqlQueryCountRequest {
+                binding_base: None,
+                form_binding_guards: Vec::new(),
                 sql,
                 parameters: Default::default(),
                 parameter_types: Default::default(),
@@ -1680,6 +1642,7 @@ async fn portable_saved_sql_copy_keeps_pinned_revision_and_selected_scalar_colum
         .query_sql(
             &space_id,
             ugoite_core::sql_query::SqlQueryRequest {
+                form_binding_guards: Vec::new(),
                 sql,
                 limit: 2,
                 ..Default::default()

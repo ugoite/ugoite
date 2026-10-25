@@ -16,3 +16,5 @@ sha2 = "0.11"
 sqlparser = { version = "0.63.0", features = ["visitor"] }
 url = "2.5.0"
 uuid = { version = "1.23.2", features = ["serde"] }
+# Match the AST used by DataFusion's SQL parser for shared Form reference scope analysis.
+sqlparser_datafusion = { package = "sqlparser", version = "=0.62.0", features = ["visitor"] }

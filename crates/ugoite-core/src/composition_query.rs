@@ -1104,6 +1104,8 @@ fn compile_validated_query_node_with_deferred_dependencies(
         continuation: None,
         execution_id: Some(execution_id),
         saved_sql,
+        binding_base: None,
+        form_binding_guards: Vec::new(),
     };
     request.validate().map_err(|_| {
         vec![VariableGraphQueryRequestDiagnostic::for_node(

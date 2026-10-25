@@ -283,6 +283,8 @@ async fn historical_saved_sql_revisions_read_run_and_continue_without_space_muta
         .query_sql(
             &expected.space_id,
             SqlQueryRequest {
+                form_binding_guards: Vec::new(),
+                binding_base: None,
                 sql: String::new(),
                 parameters: Map::from_iter([("minimum".into(), json!(1000))]),
                 parameter_types: Default::default(),
@@ -302,6 +304,8 @@ async fn historical_saved_sql_revisions_read_run_and_continue_without_space_muta
         .query_sql(
             &expected.space_id,
             SqlQueryRequest {
+                form_binding_guards: Vec::new(),
+                binding_base: None,
                 sql: String::new(),
                 parameters: Map::from_iter([("minimum".into(), json!(1000))]),
                 parameter_types: Default::default(),
@@ -321,6 +325,8 @@ async fn historical_saved_sql_revisions_read_run_and_continue_without_space_muta
         .count_sql(
             &expected.space_id,
             SqlQueryCountRequest {
+                form_binding_guards: Vec::new(),
+                binding_base: None,
                 sql: String::new(),
                 parameters: Map::from_iter([("minimum".into(), json!(1000))]),
                 parameter_types: Default::default(),
@@ -335,6 +341,8 @@ async fn historical_saved_sql_revisions_read_run_and_continue_without_space_muta
         .query_sql(
             &expected.space_id,
             SqlQueryRequest {
+                form_binding_guards: Vec::new(),
+                binding_base: None,
                 sql: String::new(),
                 parameters: Map::from_iter([("maximum".into(), json!(3000))]),
                 parameter_types: Default::default(),

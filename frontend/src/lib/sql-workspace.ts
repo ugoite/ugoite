@@ -55,8 +55,10 @@ interface SqlWorkspaceControllerOptions {
   /** Invalid declarations remain editable but cannot plan or execute. */
   definitionError?: () => string | undefined;
   savedSql?: () => { id: string; revisionId: string } | undefined;
+  bindingBase?: () => { id: string; revisionId: string } | undefined;
   /** Draft saves resolve current Form names; exact revision previews retain bindings. */
   planSavedSql?: () => { id: string; revisionId: string } | undefined;
+  formBindingGuards?: () => readonly { name: string; formId: string }[];
   /** Definition preflight is independent of transient preview input values. */
   planParameters?: "definition" | "values";
 }
@@ -83,6 +85,8 @@ type QueryRequest = {
   limit: number;
   continuation?: string;
   saved_sql?: { id: string; revision_id: string };
+  binding_base?: { id: string; revision_id: string };
+  form_binding_guards?: { name: string; form_id: string }[];
 };
 
 type BuiltRequest = { identity: string; request: QueryRequest };
@@ -171,6 +175,8 @@ export function createSqlWorkspaceController(
     const values = parameterValues();
     const sql = options.sql().trim();
     const savedSql = options.savedSql?.();
+    const bindingBase = options.bindingBase?.();
+    const formBindingGuards = options.formBindingGuards?.() ?? [];
     const definitionError = options.definitionError?.();
     const identity = JSON.stringify({
       spaceId: options.spaceId(),
@@ -178,9 +184,20 @@ export function createSqlWorkspaceController(
       variables,
       values,
       savedSql,
+      bindingBase,
+      formBindingGuards,
       definitionError,
     });
-    return { identity, sql, variables, values, savedSql, definitionError };
+    return {
+      identity,
+      sql,
+      variables,
+      values,
+      savedSql,
+      bindingBase,
+      formBindingGuards,
+      definitionError,
+    };
   });
 
   const planParts = createMemo(
@@ -192,15 +209,18 @@ export function createSqlWorkspaceController(
       const savedSql = options.planSavedSql
         ? options.planSavedSql()
         : parts.savedSql;
+      const bindingBase = savedSql ? undefined : parts.bindingBase;
       const identity = JSON.stringify({
         spaceId: options.spaceId(),
         sql: parts.sql,
         variables: parts.variables,
         values,
         savedSql,
+        bindingBase,
+        formBindingGuards: parts.formBindingGuards,
         definitionError: parts.definitionError,
       });
-      return { ...parts, values, savedSql, identity };
+      return { ...parts, values, savedSql, bindingBase, identity };
     },
     undefined,
     { equals: (previous, next) => previous.identity === next.identity },
@@ -286,6 +306,12 @@ export function createSqlWorkspaceController(
         parameter_types: built.request.parameter_types,
         ...(built.request.saved_sql
           ? { saved_sql: built.request.saved_sql }
+          : {}),
+        ...(built.request.binding_base
+          ? { binding_base: built.request.binding_base }
+          : {}),
+        ...(built.request.form_binding_guards?.length
+          ? { form_binding_guards: built.request.form_binding_guards }
           : {}),
       };
       void sqlApi.plan(options.spaceId(), request, controller.signal).then(
@@ -382,6 +408,21 @@ export function createSqlWorkspaceController(
           saved_sql: {
             id: parts.savedSql.id,
             revision_id: parts.savedSql.revisionId,
+          },
+        }
+        : {}),
+      ...(!parts.savedSql && parts.formBindingGuards.length
+        ? {
+          form_binding_guards: parts.formBindingGuards.map((
+            { name, formId },
+          ) => ({ name, form_id: formId })),
+        }
+        : {}),
+      ...(!parts.savedSql && parts.bindingBase
+        ? {
+          binding_base: {
+            id: parts.bindingBase.id,
+            revision_id: parts.bindingBase.revisionId,
           },
         }
         : {}),
@@ -508,6 +549,12 @@ export function createSqlWorkspaceController(
         ...(built.request.saved_sql
           ? { saved_sql: built.request.saved_sql }
           : {}),
+        ...(built.request.binding_base
+          ? { binding_base: built.request.binding_base }
+          : {}),
+        ...(built.request.form_binding_guards?.length
+          ? { form_binding_guards: built.request.form_binding_guards }
+          : {}),
       }, controller.signal);
       if (
         generation === countGeneration && !controller.signal.aborted &&
@@ -581,6 +628,12 @@ export function createSqlWorkspaceController(
       parameter_types: built.request.parameter_types,
       ...(built.request.saved_sql
         ? { saved_sql: built.request.saved_sql }
+        : {}),
+      ...(built.request.binding_base
+        ? { binding_base: built.request.binding_base }
+        : {}),
+      ...(built.request.form_binding_guards?.length
+        ? { form_binding_guards: built.request.form_binding_guards }
         : {}),
     });
     if (!isCurrent()) {

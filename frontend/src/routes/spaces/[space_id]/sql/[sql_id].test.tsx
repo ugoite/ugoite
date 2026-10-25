@@ -243,6 +243,9 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
   });
 
   it("REQ-FE-062: keeps Form IDs behind technical details while showing binding status", async () => {
+    const plan = vi.spyOn(sqlApi, "plan").mockResolvedValue({
+      result_schema: [],
+    });
     seedForm("default", {
       id: "form-stable-id",
       name: "RenamedExpense",
@@ -273,6 +276,15 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
         "Saved as Expense; current name is RenamedExpense",
       ),
     ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(plan).toHaveBeenCalledWith("default", {
+        sql: 'SELECT * FROM "Expense"',
+        parameters: {},
+        parameter_types: {},
+        binding_base: { id: "saved-query", revision_id: "rev-1" },
+        form_binding_guards: [{ name: "Expense", form_id: "form-stable-id" }],
+      }, expect.any(AbortSignal))
+    );
     const bindingStatus = screen.getByRole("region", { name: "Bound Forms" });
     expect(within(bindingStatus).queryByText("form-stable-id")).toBeNull();
     expect(within(bindingStatus).queryByRole("definition")).toBeNull();
@@ -486,6 +498,7 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
         sql: "SELECT $value",
         parameters: { value: null },
         parameter_types: { value: "string" },
+        binding_base: { id: "saved-query", revision_id: "rev-1" },
       }, expect.any(AbortSignal))
     );
     await waitFor(() =>

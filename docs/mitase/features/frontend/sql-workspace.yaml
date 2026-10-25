@@ -11,7 +11,7 @@ features:
       - id: frontend
         role: implementation
         facet: frontend
-        responsibility: Keep the shared SQL editing, transient parameter presentation, explicit preview actions, adapter capabilities, and workspace control sizes connected to reusable frontend components.
+        responsibility: Keep the shared SQL editing, guarded Form identity transport, transient parameter presentation, explicit preview actions, adapter capabilities, and workspace control sizes connected to reusable frontend components.
         targets:
           - id: sql-workspace
             adapter: typescript
@@ -55,6 +55,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-080#criterion.safe-structured-operations
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.human-form-name-binding
           - id: sql-columns-editor
             adapter: typescript
             path: frontend/src/components/SqlColumnsEditor.tsx
@@ -83,6 +85,46 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-080#criterion.safe-structured-operations
+      - id: form-name-binding-service
+        role: implementation
+        facet: service
+        responsibility: Resolve human SQL Form names only from current readable Forms, compare submitted identity guards, and preserve exact parent or Composition pins.
+        targets:
+          - id: sql-form-name-binding
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service/sql_execution.rs
+            selector: { kind: symbol, name: bind_human_form_names }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.human-form-name-binding
+          - id: saved-sql-parent-binding
+            adapter: rust
+            path: crates/ugoite-iceberg/src/saved_sql.rs
+            selector: { kind: symbol, name: derive_form_bindings }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.human-form-name-binding
+      - id: form-name-binding-rest-contract
+        role: contract-source
+        facet: api
+        responsibility: Publish additive compare-only Form guard properties on stateless SQL query, plan, and count request schemas.
+        targets:
+          - id: sql-query-guard-contract
+            adapter: declared
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: file }
+      - id: form-name-binding-api
+        role: implementation
+        facet: api
+        responsibility: Expose the guarded human Form-name request contract through the Rust server's published REST interface.
+        targets:
+          - id: sql-query-guard-schema
+            adapter: declared
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.human-form-name-binding
       - id: rust-structure-capabilities
         role: evidence
         facet: domain
@@ -116,6 +158,8 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-FE-080#criterion.safe-structured-operations
+              - kind: evidences
+                anchor: REQ-FE-080#criterion.human-form-name-binding
       - id: form-picker-verification
         role: verification
         facet: verification
@@ -128,6 +172,14 @@ features:
             claims:
               - kind: verifies
                 criterion: REQ-FE-080#criterion.safe-structured-operations
+                covers: [FEAT-FE-008#binding.frontend/target.sql-form-picker]
+                runner:
+                  runner: frontend-vitest-file
+                  arguments:
+                    file: src/components/SqlFormPicker.test.tsx
+                    test: "starts an empty query by choosing a human-labelled Form without a syntax tree"
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.human-form-name-binding
                 covers: [FEAT-FE-008#binding.frontend/target.sql-form-picker]
                 runner:
                   runner: frontend-vitest-file
@@ -237,3 +289,40 @@ features:
                 criterion: REQ-FE-080#criterion.complete-wildcard-output-schema
                 covers: [FEAT-FE-008#binding.frontend/target.guarded-wildcard-source]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlWildcardExpansion.test.tsx, test: "uses the qualified wildcard's complete planned output order including residual fields" } }
+      - id: form-name-binding-verification
+        role: verification
+        facet: verification
+        responsibility: Verify that selected Form identities travel with readable SQL names through the frontend, stateless service, saved SQL revision pins, and published API contract.
+        targets:
+          - id: sql-workspace-controller-identity-guards
+            adapter: typescript
+            path: frontend/src/lib/sql-workspace.test.ts
+            selector: { kind: test, name: "carries the trusted SavedSQL binding base and Form guards through plan, run, and count" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.human-form-name-binding
+                covers: [FEAT-SQL-003#binding.frontend/target.planning-state]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-workspace.test.ts, test: "carries the trusted SavedSQL binding base and Form guards through plan, run, and count" } }
+          - id: saved-sql-parent-binding
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_sql_stateless.rs
+            selector: { kind: test, name: saved_sql_draft_inherits_exact_parent_form_binding_after_rename }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.human-form-name-binding
+                covers: [FEAT-FE-008#binding.form-name-binding-service/target.saved-sql-parent-binding]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_stateless, test: saved_sql_draft_inherits_exact_parent_form_binding_after_rename } }
+    contracts:
+      - id: human-form-name-binding
+        kind: http
+        source: FEAT-FE-008#binding.form-name-binding-rest-contract/target.sql-query-guard-contract
+        participants:
+          - target: FEAT-FE-008#binding.frontend/target.sql-form-picker
+            role: client
+          - target: FEAT-SQL-003#binding.frontend/target.planning-state
+            role: client
+          - target: FEAT-FE-008#binding.form-name-binding-service/target.sql-form-name-binding
+            role: service
+          - target: FEAT-FE-008#binding.form-name-binding-api/target.sql-query-guard-schema
+            role: server-contract
+        guarantees: [REQ-FE-080#criterion.human-form-name-binding]

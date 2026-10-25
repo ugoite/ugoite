@@ -3,6 +3,7 @@ import {
   applySqlVariableDefaultDrafts,
   buildSqlSchema,
   buildSqlStructureContexts,
+  filterSqlStructureContextsByFormGuards,
   mergeSqlStructureVariables,
   normalizeSqlVariables,
   parseSqlVariableDefault,
@@ -147,7 +148,7 @@ describe("sql helpers", () => {
       identity: expect.stringContaining("composition:source-1"),
       label: "Tasks",
       parser: {
-        relation: "form_tasks",
+        relation: "Tasks",
         columns: [
           { name: "_ugoite_id", type: "string" },
           { name: "_ugoite_created_at", type: "timestamp" },
@@ -268,7 +269,7 @@ describe("sql helpers", () => {
     expect(columns).not.toContain("updated_at");
   });
 
-  it("uses the server SQL relation for Form structure contexts", () => {
+  it("uses the human SQL name with stable relation retained separately", () => {
     const form: Form = {
       id: "stable-form-id",
       name: "Renamed Form",
@@ -282,7 +283,8 @@ describe("sql helpers", () => {
 
     expect(formContext).toMatchObject({
       label: "Renamed Form",
-      parser: { relation: "form_00000000000000000000000000000001" },
+      parser: { relation: "Renamed Form" },
+      stableRelation: "form_00000000000000000000000000000001",
     });
     expect(schema.tables).toHaveProperty(
       "form_00000000000000000000000000000001",
@@ -608,6 +610,51 @@ const aggregateForm: Form = {
 };
 
 describe("SQL structure adapter context", () => {
+  it("does not expose a same-name replacement schema while a Form ID is pinned", () => {
+    const base = {
+      id: "form-a",
+      name: "Entry",
+      sql_relation: "form_a",
+      version: 1,
+      template: "",
+      fields: {
+        OldField: {
+          id: 1,
+          type: "string",
+          required: false,
+          label: "Old field",
+          sql_column: "old_field",
+        },
+      },
+    } satisfies Form;
+    const replacement = {
+      ...base,
+      id: "form-b",
+      sql_relation: "form_b",
+      fields: {
+        NewField: {
+          id: 2,
+          type: "string",
+          required: false,
+          label: "New field",
+          sql_column: "new_field",
+        },
+      },
+    } satisfies Form;
+    const pinned = buildSqlStructureContexts([base]);
+    const current = buildSqlStructureContexts([replacement]);
+    const guards = [{ name: "Entry", formId: "form-a" }];
+
+    expect(
+      filterSqlStructureContextsByFormGuards(pinned, guards)
+        .filter((context) => context.parser.relation === "Entry"),
+    ).toHaveLength(1);
+    expect(
+      filterSqlStructureContextsByFormGuards(current, guards)
+        .filter((context) => context.parser.relation === "Entry"),
+    ).toEqual([]);
+  });
+
   it("provides a relation-free context when no Form is selected", () => {
     const [context] = buildSqlStructureContexts([], [], "new-sql");
 
@@ -645,8 +692,8 @@ describe("SQL structure adapter context", () => {
     );
 
     expect(context.columnLabels?.field_untrusted).toBe("Untrusted type");
-    expect(context.parser.relation).toBe(aggregateForm.sql_relation);
-    expect(context.parser.relation).not.toBe("Orders");
+    expect(context.parser.relation).toBe("Orders");
+    expect(context.stableRelation).toBe(aggregateForm.sql_relation);
     expect(context.parser.stable_key).toEqual(["_ugoite_id"]);
     expect(context.columnCapabilities.field_amount.supportedOperators).toEqual([
       "eq",
@@ -774,11 +821,11 @@ describe("SQL structure adapter context", () => {
       undefined,
     ]);
     expect(contexts.map((context) => context.parser.relation)).toEqual([
-      "form_reserved_0",
-      "form_reserved_1",
-      "form_reserved_2",
-      "form_reserved_3",
-      "form_orders",
+      "SQL",
+      "User",
+      "UserGroup",
+      "_ugoite_compositions",
+      "Orders",
       "",
     ]);
     expect(contexts.map((context) => context.relationSelectable)).toEqual([
@@ -805,7 +852,7 @@ describe("SQL structure adapter context", () => {
     expect(updated.identity).not.toBe(current.identity);
   });
 
-  it("keeps the Form-backed SQL relation stable when its display name changes", () => {
+  it("uses the human Form name for SQL while retaining the stable schema identity", () => {
     const renamedForm: Form = {
       ...aggregateForm,
       name: "Archived orders",
@@ -824,11 +871,14 @@ describe("SQL structure adapter context", () => {
     );
     const beforeSchema = buildSqlSchema([aggregateForm]);
     const afterSchema = buildSqlSchema([renamedForm]);
-    expect(after.parser.relation).toBe(before.parser.relation);
+    expect(before.parser.relation).toBe("Orders");
+    expect(after.parser.relation).toBe("Archived orders");
+    expect(after.stableRelation).toBe(before.stableRelation);
     expect(after.label).toBe("Archived orders");
     expect(after.identity).not.toBe(before.identity);
     expect(sameNameNewForm.label).toBe("Orders");
-    expect(sameNameNewForm.parser.relation).not.toBe(before.parser.relation);
+    expect(sameNameNewForm.parser.relation).toBe(before.parser.relation);
+    expect(sameNameNewForm.stableRelation).not.toBe(before.stableRelation);
     expect(sqlSchemaFormLabelsFor(beforeSchema)[aggregateForm.sql_relation!])
       .toBe("Orders");
     expect(sqlSchemaFormLabelsFor(afterSchema)[renamedForm.sql_relation!])
