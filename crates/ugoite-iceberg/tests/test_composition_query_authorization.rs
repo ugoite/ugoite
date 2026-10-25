@@ -334,8 +334,9 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
             },
         },
     };
+    let save_operation_id = Uuid::now_v7().to_string();
     let saved = service
-        .save_composition_authorized_for_principals(
+        .save_composition_authorized_for_principals_with_work(
             &space_id,
             CompositionSaveRequest {
                 entry_id: None,
@@ -344,6 +345,11 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
             },
             &owner.to_string(),
             &[owner],
+            &save_operation_id,
+            ugoite_iceberg::composition::CompositionSaveWork {
+                variables: BTreeMap::from([("minimum".to_string(), json!(0))]),
+                unset_variables: Vec::new(),
+            },
         )
         .await?;
     let query = |component_id: &str, minimum: i64| CompositionMetricQueryRequest {
