@@ -4655,8 +4655,10 @@ fn case_control_tokens(
         .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
     let mut case_depth = 0usize;
     let mut delimiter_depth = 0usize;
-    let mut markers = CaseControlTokens::default();
-    markers.case = Some(start);
+    let mut markers = CaseControlTokens {
+        case: Some(start),
+        ..CaseControlTokens::default()
+    };
 
     for index in start..document.tokens.len() {
         let token = &document.tokens[index];
