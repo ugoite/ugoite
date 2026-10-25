@@ -19,7 +19,7 @@ use sqlparser::tokenizer::{Location, Span, Token, Tokenizer, Whitespace};
 use std::convert::Infallible;
 
 /// Version of the Rust SQL Document view returned to adapters.
-pub const SQL_DOCUMENT_CONTRACT_VERSION: u32 = 17;
+pub const SQL_DOCUMENT_CONTRACT_VERSION: u32 = 18;
 
 /// Bound on source SQL accepted by the editor parser.
 pub const MAX_SQL_DOCUMENT_BYTES: usize = 256 * 1024;
@@ -296,6 +296,8 @@ pub enum SqlDocumentLiteralKind {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SqlDocumentNodeData {
+    /// Output alias declared by one SELECT projection item.
+    ProjectionAlias { alias: SqlDocumentIdentifier },
     /// SELECT-level duplicate handling.
     Select {
         /// Whether plain DISTINCT is active.
@@ -616,6 +618,12 @@ pub struct SqlDocumentNodeEditTransaction {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SqlDocumentSemanticEdit {
+    /// Set or remove the output alias on one exact SELECT projection item.
+    SetProjectionAlias {
+        node_id: u32,
+        expected_kind: SqlDocumentNodeKind,
+        alias: Option<SqlDocumentIdentifier>,
+    },
     /// Add a typed comparison against a column in one SELECT scope. This is
     /// the task-facing constructor used when the document has no predicate node.
     AddFilterComparison {
@@ -1737,7 +1745,7 @@ impl core::fmt::Display for SqlDocumentEditError {
                 "projection edit would change a positional sort or grouping reference"
             }
             Self::ProjectionAliasConflict => {
-                "projection removal would change a same-query alias reference"
+                "projection alias edit would change a same-query binding or create an ambiguous output name"
             }
             Self::DuplicateNodeTarget => {
                 "SQL document edit transaction targets one node more than once"
@@ -1988,6 +1996,23 @@ pub fn apply_sql_document_semantic_edit_transaction(
             .get(node_id as usize)
             .filter(|node| node.id == node_id)
             .ok_or(SqlDocumentEditError::NodeNotFound)?;
+
+        if let SqlDocumentSemanticEdit::SetProjectionAlias { alias, .. } = semantic_edit {
+            if node.kind != expected_kind || node.kind != SqlDocumentNodeKind::SelectItem {
+                return Err(SqlDocumentEditError::NodeKindMismatch);
+            }
+            if alias.is_some() {
+                ensure_unique_projection_alias(
+                    document.nodes.as_slice(),
+                    node,
+                    alias.as_ref(),
+                    &transaction.edits,
+                )?;
+            }
+            let edit = set_projection_alias(&document, node, alias.as_ref())?;
+            edits.push(edit);
+            continue;
+        }
         if node.kind != expected_kind {
             return Err(SqlDocumentEditError::NodeKindMismatch);
         }
@@ -2526,6 +2551,7 @@ pub fn apply_sql_document_semantic_edit_transaction(
         }
 
         let (range, replacement) = match semantic_edit {
+            SqlDocumentSemanticEdit::SetProjectionAlias { .. } => unreachable!("handled above"),
             SqlDocumentSemanticEdit::InitializeSelect { .. } => {
                 return Err(SqlDocumentEditError::InvalidSemanticReplacement);
             }
@@ -2759,6 +2785,11 @@ impl SqlDocumentSemanticEdit {
                 ..
             }
             | Self::AddOrderByColumn {
+                node_id,
+                expected_kind,
+                ..
+            }
+            | Self::SetProjectionAlias {
                 node_id,
                 expected_kind,
                 ..
@@ -6621,9 +6652,28 @@ fn ensure_projection_alias_unreferenced(
     let Some(SelectItem::ExprWithAlias { alias, .. }) = select.projection.first() else {
         return Ok(());
     };
+    ensure_projection_name_unreferenced(
+        document,
+        item,
+        &SqlDocumentIdentifier {
+            value: alias.value.clone(),
+            quote_style: alias.quote_style,
+        },
+    )
+}
+
+fn ensure_projection_name_unreferenced(
+    document: &SqlDocument,
+    item: &SqlDocumentNode,
+    alias: &SqlDocumentIdentifier,
+) -> Result<(), SqlDocumentEditError> {
+    let range = item
+        .range
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
     let item_query = query_ancestor_id(document, item.id);
     let referenced = document.nodes.iter().any(|candidate| {
-        if candidate.id == item.id || candidate.kind != SqlDocumentNodeKind::IdentifierExpression
+        if candidate.id == item.id
+            || candidate.kind != SqlDocumentNodeKind::IdentifierExpression
             || query_ancestor_id(document, candidate.id) != item_query
             || candidate.range.is_some_and(|candidate_range| {
                 range.start <= candidate_range.start && candidate_range.end <= range.end
@@ -6636,7 +6686,7 @@ fn ensure_projection_alias_unreferenced(
             Some(SqlDocumentNodeData::Identifier { value, quote_style })
                 if sql_identifiers_match(
                     &SqlDocumentIdentifier { value: value.clone(), quote_style: *quote_style },
-                    &SqlDocumentIdentifier { value: alias.value.clone(), quote_style: alias.quote_style }
+                    alias
                 )
         )
     });
@@ -6645,6 +6695,195 @@ fn ensure_projection_alias_unreferenced(
     } else {
         Ok(())
     }
+}
+
+fn set_projection_alias(
+    document: &SqlDocument,
+    item: &SqlDocumentNode,
+    alias: Option<&SqlDocumentIdentifier>,
+) -> Result<SqlDocumentEdit, SqlDocumentEditError> {
+    if item.kind != SqlDocumentNodeKind::SelectItem {
+        return Err(SqlDocumentEditError::NodeKindMismatch);
+    }
+    let item_range = item
+        .range
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let old_alias = match item.semantic.as_ref() {
+        Some(SqlDocumentNodeData::ProjectionAlias { alias }) => Some(alias),
+        _ => None,
+    };
+    if old_alias == alias {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
+    if old_alias.is_some() {
+        ensure_projection_alias_unreferenced(document, item)?;
+    }
+    if let Some(new_alias) = alias {
+        ensure_projection_name_unreferenced(document, item, new_alias)?;
+        if document.nodes.iter().any(|candidate| {
+            candidate.id != item.id
+                && candidate.kind == SqlDocumentNodeKind::SelectItem
+                && candidate.parent == item.parent
+                && matches!(&candidate.semantic, Some(SqlDocumentNodeData::ProjectionAlias { alias: existing }) if sql_identifiers_match(existing, new_alias))
+        }) {
+            return Err(SqlDocumentEditError::ProjectionAliasConflict);
+        }
+    }
+    let render =
+        |alias: &SqlDocumentIdentifier| render_identifier_parts(std::slice::from_ref(alias));
+    let token = |identifier: &SqlDocumentIdentifier| -> Option<SqlSourceRange> {
+        let expected = render(identifier).ok()?;
+        document.tokens.iter().rev().find_map(|token| {
+            if token.range.start < item_range.start
+                || token.range.end > item_range.end
+                || !matches!(
+                    token.kind,
+                    SqlDocumentTokenKind::Word | SqlDocumentTokenKind::QuotedIdentifier
+                )
+            {
+                return None;
+            }
+            (document.source_slice(token.range) == Some(expected.as_str())).then_some(token.range)
+        })
+    };
+    if let Some(old) = old_alias {
+        let alias_range = token(old).ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+        if let Some(new) = alias {
+            return Ok(SqlDocumentEdit {
+                range: alias_range,
+                expected_text: document
+                    .source_slice(alias_range)
+                    .unwrap_or_default()
+                    .to_string(),
+                replacement: render(new)?,
+            });
+        }
+        let expression_end = document
+            .nodes
+            .iter()
+            .filter(|candidate| {
+                candidate.parent == Some(item.id) && is_expression_node_kind(candidate.kind)
+            })
+            .filter_map(|candidate| candidate.range.map(|range| range.end))
+            .max()
+            .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+        let as_token = document.tokens.iter().rev().find(|candidate| {
+            candidate.range.start >= expression_end
+                && candidate.range.end <= alias_range.start
+                && document
+                    .source_slice(candidate.range)
+                    .is_some_and(|text| text.eq_ignore_ascii_case("AS"))
+        });
+        let start = as_token.map_or(expression_end, |token| {
+            let has_comment_before_as = document.tokens.iter().any(|candidate| {
+                candidate.kind == SqlDocumentTokenKind::Comment
+                    && candidate.range.start >= expression_end
+                    && candidate.range.end <= token.range.start
+            });
+            if has_comment_before_as {
+                token.range.start
+            } else {
+                expression_end
+            }
+        });
+        let range = SqlSourceRange {
+            start,
+            end: alias_range.end,
+        };
+        if document.tokens.iter().any(|candidate| {
+            candidate.kind == SqlDocumentTokenKind::Comment
+                && candidate.range.start >= range.start
+                && candidate.range.end <= range.end
+        }) {
+            return Err(SqlDocumentEditError::NodeRangeUnavailable);
+        }
+        return Ok(SqlDocumentEdit {
+            range,
+            expected_text: document.source_slice(range).unwrap_or_default().to_string(),
+            replacement: String::new(),
+        });
+    }
+    let Some(new) = alias else {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    };
+    let expression_end = document
+        .nodes
+        .iter()
+        .filter(|node| node.parent == Some(item.id) && is_expression_node_kind(node.kind))
+        .filter_map(|node| node.range.map(|range| range.end))
+        .max()
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let insertion = SqlSourceRange {
+        start: expression_end,
+        end: expression_end,
+    };
+    Ok(SqlDocumentEdit {
+        range: insertion,
+        expected_text: String::new(),
+        replacement: format!(" AS {}", render(new)?),
+    })
+}
+
+fn ensure_unique_projection_alias(
+    nodes: &[SqlDocumentNode],
+    item: &SqlDocumentNode,
+    alias: Option<&SqlDocumentIdentifier>,
+    transaction_edits: &[SqlDocumentSemanticEdit],
+) -> Result<(), SqlDocumentEditError> {
+    let Some(alias) = alias else {
+        return Ok(());
+    };
+    for sibling in nodes.iter().filter(|node| {
+        node.kind == SqlDocumentNodeKind::SelectItem
+            && node.parent == item.parent
+            && node.id != item.id
+    }) {
+        let proposed = transaction_edits.iter().find_map(|edit| match edit {
+            SqlDocumentSemanticEdit::SetProjectionAlias { node_id, alias, .. }
+                if *node_id == sibling.id =>
+            {
+                Some(alias.as_ref())
+            }
+            _ => None,
+        });
+        let existing = match &sibling.semantic {
+            Some(SqlDocumentNodeData::ProjectionAlias { alias }) => Some(alias),
+            _ => None,
+        };
+        let duplicate_alias = if let Some(proposed) = proposed {
+            proposed.is_some_and(|other| sql_identifiers_match(other, alias))
+        } else if let Some(existing) = existing {
+            sql_identifiers_match(existing, alias)
+        } else {
+            unaliased_projection_output_name_matches(nodes, sibling, alias)
+        };
+        if duplicate_alias {
+            return Err(SqlDocumentEditError::ProjectionAliasConflict);
+        }
+    }
+    Ok(())
+}
+
+fn unaliased_projection_output_name_matches(
+    nodes: &[SqlDocumentNode],
+    item: &SqlDocumentNode,
+    alias: &SqlDocumentIdentifier,
+) -> bool {
+    nodes
+        .iter()
+        .find(|node| {
+            node.parent == Some(item.id) && node.kind == SqlDocumentNodeKind::IdentifierExpression
+        })
+        .and_then(|node| match &node.semantic {
+            Some(SqlDocumentNodeData::Identifier { value, quote_style }) => {
+                Some(SqlDocumentIdentifier {
+                    value: value.clone(),
+                    quote_style: *quote_style,
+                })
+            }
+            _ => None,
+        })
+        .is_some_and(|output_name| sql_identifiers_match(&output_name, alias))
 }
 
 fn remove_projection_item(
@@ -10007,7 +10246,17 @@ impl NodeCollector<'_> {
                     .or_else(|| {
                         SqlSourceRange::from_span(self.source, self.source_map, item.span())
                     }),
-                semantic: wildcard_node_data(item),
+                semantic: match item {
+                    SelectItem::ExprWithAlias { alias, .. } => {
+                        Some(SqlDocumentNodeData::ProjectionAlias {
+                            alias: SqlDocumentIdentifier {
+                                value: alias.value.clone(),
+                                quote_style: alias.quote_style,
+                            },
+                        })
+                    }
+                    _ => wildcard_node_data(item),
+                },
             });
         }
     }
@@ -15058,6 +15307,199 @@ mod tests {
         let restored = apply_sql_document_edit_transaction(&edited.document.source, &edited.undo)
             .expect("the CASE wrapper has an exact inverse");
         assert_eq!(restored.document.source, source);
+    }
+
+    #[test]
+    fn projection_alias_edits_are_typed_guarded_and_preserve_bindings() {
+        for clause in [
+            "ORDER BY total",
+            "GROUP BY total",
+            "GROUP BY amount HAVING total > 1",
+        ] {
+            let source = format!("SELECT amount AS total FROM \"G\" {clause}");
+            let document = parse_sql_document(&source);
+            let item = document
+                .nodes
+                .iter()
+                .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+                .unwrap();
+            assert!(matches!(
+                item.semantic,
+                Some(SqlDocumentNodeData::ProjectionAlias { .. })
+            ));
+            let conflict = SqlDocumentSemanticEdit::SetProjectionAlias {
+                node_id: item.id,
+                expected_kind: SqlDocumentNodeKind::SelectItem,
+                alias: Some(SqlDocumentIdentifier {
+                    value: "renamed".into(),
+                    quote_style: Some('"'),
+                }),
+            };
+            assert_eq!(
+                apply_sql_document_semantic_edit_transaction(
+                    &source,
+                    &semantic_transaction(&source, vec![conflict])
+                ),
+                Err(SqlDocumentEditError::ProjectionAliasConflict),
+                "{clause}"
+            );
+        }
+
+        let capture_source = "SELECT amount FROM \"G\" ORDER BY total";
+        let capture_document = parse_sql_document(capture_source);
+        let item = capture_document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+            .unwrap();
+        let capture = SqlDocumentSemanticEdit::SetProjectionAlias {
+            node_id: item.id,
+            expected_kind: SqlDocumentNodeKind::SelectItem,
+            alias: Some(SqlDocumentIdentifier {
+                value: "total".into(),
+                quote_style: Some('"'),
+            }),
+        };
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(
+                capture_source,
+                &semantic_transaction(capture_source, vec![capture])
+            ),
+            Err(SqlDocumentEditError::ProjectionAliasConflict)
+        );
+
+        let duplicate_source = "SELECT amount, other FROM \"G\"";
+        let duplicate_document = parse_sql_document(duplicate_source);
+        let items = duplicate_document
+            .nodes
+            .iter()
+            .filter(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+            .collect::<Vec<_>>();
+        let duplicate = |node_id| SqlDocumentSemanticEdit::SetProjectionAlias {
+            node_id,
+            expected_kind: SqlDocumentNodeKind::SelectItem,
+            alias: Some(SqlDocumentIdentifier {
+                value: "total".into(),
+                quote_style: Some('"'),
+            }),
+        };
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(
+                duplicate_source,
+                &semantic_transaction(
+                    duplicate_source,
+                    vec![duplicate(items[0].id), duplicate(items[1].id)]
+                )
+            ),
+            Err(SqlDocumentEditError::ProjectionAliasConflict)
+        );
+        let implicit_name_conflict = SqlDocumentSemanticEdit::SetProjectionAlias {
+            node_id: items[0].id,
+            expected_kind: SqlDocumentNodeKind::SelectItem,
+            alias: Some(SqlDocumentIdentifier {
+                value: "other".into(),
+                quote_style: Some('"'),
+            }),
+        };
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(
+                duplicate_source,
+                &semantic_transaction(duplicate_source, vec![implicit_name_conflict])
+            ),
+            Err(SqlDocumentEditError::ProjectionAliasConflict)
+        );
+
+        let nested_source =
+            "SELECT amount AS total FROM \"G\" WHERE EXISTS (SELECT total FROM \"G\")";
+        let nested_document = parse_sql_document(nested_source);
+        let outer = nested_document
+            .nodes
+            .iter()
+            .filter(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+            .min_by_key(|node| node.range.unwrap().start)
+            .unwrap();
+        let nested_edit = SqlDocumentSemanticEdit::SetProjectionAlias {
+            node_id: outer.id,
+            expected_kind: SqlDocumentNodeKind::SelectItem,
+            alias: Some(SqlDocumentIdentifier {
+                value: "renamed".into(),
+                quote_style: Some('"'),
+            }),
+        };
+        let renamed = apply_sql_document_semantic_edit_transaction(
+            nested_source,
+            &semantic_transaction(nested_source, vec![nested_edit]),
+        )
+        .expect("nested query identifiers belong to their own scope");
+        assert!(renamed.document.source.contains("SELECT total FROM \"G\")"));
+
+        let source = "SELECT amount /* keep */ FROM \"G\" -- tail";
+        let document = parse_sql_document(source);
+        let item = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+            .unwrap();
+        let edit = SqlDocumentSemanticEdit::SetProjectionAlias {
+            node_id: item.id,
+            expected_kind: SqlDocumentNodeKind::SelectItem,
+            alias: Some(SqlDocumentIdentifier {
+                value: "display total".into(),
+                quote_style: Some('"'),
+            }),
+        };
+        let result = apply_sql_document_semantic_edit_transaction(
+            source,
+            &semantic_transaction(source, vec![edit]),
+        )
+        .unwrap();
+        assert_eq!(
+            result.document.source,
+            "SELECT amount AS \"display total\" /* keep */ FROM \"G\" -- tail"
+        );
+        let edited = parse_sql_document(&result.document.source);
+        let item = edited
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+            .unwrap();
+        let rename = SqlDocumentSemanticEdit::SetProjectionAlias {
+            node_id: item.id,
+            expected_kind: SqlDocumentNodeKind::SelectItem,
+            alias: Some(SqlDocumentIdentifier {
+                value: "gross".into(),
+                quote_style: None,
+            }),
+        };
+        let renamed = apply_sql_document_semantic_edit_transaction(
+            &result.document.source,
+            &semantic_transaction(&result.document.source, vec![rename]),
+        )
+        .unwrap();
+        assert_eq!(
+            renamed.document.source,
+            "SELECT amount AS gross /* keep */ FROM \"G\" -- tail"
+        );
+        let edited = parse_sql_document(&renamed.document.source);
+        let item = edited
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+            .unwrap();
+        let remove = SqlDocumentSemanticEdit::SetProjectionAlias {
+            node_id: item.id,
+            expected_kind: SqlDocumentNodeKind::SelectItem,
+            alias: None,
+        };
+        let removed = apply_sql_document_semantic_edit_transaction(
+            &renamed.document.source,
+            &semantic_transaction(&renamed.document.source, vec![remove]),
+        )
+        .unwrap();
+        assert_eq!(removed.document.source, source);
+        let undone =
+            apply_sql_document_edit_transaction(&result.document.source, &result.undo).unwrap();
+        assert_eq!(undone.document.source, source);
     }
 
     #[test]

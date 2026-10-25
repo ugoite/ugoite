@@ -4140,6 +4140,34 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                     </Show>
 
                     <Show when={node().kind === "select_item"}>
+                      <label class="ui-field sql-document-tree__fields">
+                        <span>{t("sqlPage.columns.aliasLabel")}</span>
+                        <input
+                          class="ui-input sql-columns-editor__alias"
+                          value={node().semantic?.kind === "projection_alias"
+                            ? node().semantic.alias.value
+                            : ""}
+                          placeholder={t(
+                            "sqlPage.columns.outputAliasPlaceholder",
+                          )}
+                          disabled={busy() || props.disabled?.() ||
+                            node().semantic?.kind === "wildcard"}
+                          onBlur={(event) => {
+                            const current =
+                              node().semantic?.kind === "projection_alias"
+                                ? node().semantic.alias.value
+                                : "";
+                            const value = event.currentTarget.value.trim();
+                            if (current === value) return;
+                            void applyEdit({
+                              kind: "set_projection_alias",
+                              node_id: node().id,
+                              expected_kind: "select_item",
+                              alias: value ? { value, quote_style: '"' } : null,
+                            });
+                          }}
+                        />
+                      </label>
                       <Show when={node().semantic?.kind === "wildcard"}>
                         <IconButton
                           icon="columns"

@@ -26,8 +26,9 @@ unchanged. `coverage_complete: false`, bounded construct coverage and explicit
 evidence gaps describe the current implementation; they must not be converted to
 a completion claim merely because an AST node exists. A source-backed
 `unmodeled_expression` proves source retention, not that the expression's
-semantic fields are editable. Projection aliases are preserved by expression
-edits; complete binding-aware alias authoring remains a gap.
+semantic fields are editable. Projection aliases have a bounded typed authoring
+operation with fail-closed same-scope reference checks. Complete constructibility
+of the admitted SQL grammar remains unverified.
 
 ## Admission stages
 
@@ -59,7 +60,7 @@ runtime and source parser can depend on different sqlparser versions.
 ## Structured operations
 
 The active tree exposes typed operations for relations and repeated joins,
-projection expressions and Form columns, wildcard expansion, predicates,
+projection expressions, output aliases and Form columns, wildcard expansion, predicates,
 grouping keys, HAVING, ordering keys, DISTINCT, LIMIT/OFFSET, aggregate
 wrappers, registered function arguments, casts, CASE branches, CTEs, set
 operations and subquery seeds. Operations address exact parsed node IDs and

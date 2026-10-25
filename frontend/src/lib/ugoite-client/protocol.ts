@@ -450,6 +450,7 @@ export type SqlDocumentLiteralKind =
 
 /** Parser-derived syntax metadata; this is not an execution or type contract. */
 export type SqlDocumentNodeData =
+  | { kind: "projection_alias"; alias: SqlDocumentIdentifier }
   | { kind: "select"; distinct: boolean; distinct_on: boolean }
   | {
     kind: "wildcard";
@@ -688,6 +689,12 @@ export type SqlDocumentJoin = {
 };
 
 export type SqlDocumentSemanticEdit =
+  | {
+    kind: "set_projection_alias";
+    node_id: number;
+    expected_kind: "select_item";
+    alias: SqlDocumentIdentifier | null;
+  }
   | {
     kind: "add_filter_comparison";
     node_id: number;

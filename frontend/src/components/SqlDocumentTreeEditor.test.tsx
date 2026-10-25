@@ -1517,6 +1517,37 @@ describe("SqlDocumentTreeEditor set operation edits", () => {
     expect(nodes[1]).toHaveFocus();
   });
 
+  it("sends selected projection aliases through the typed document operation", async () => {
+    const source = 'SELECT amount, amount + 1 FROM "G"';
+    parseDocumentMock.mockImplementation(async (sql: string) =>
+      makeProjectionDocument(sql)
+    );
+    applySemanticEditMock.mockResolvedValue({
+      document: makeProjectionDocument(source),
+      undo: { contract_version: 14, expected_source: source, edits: [] },
+    });
+    const [sql] = createSignal(source);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={vi.fn()} />);
+    await screen.findAllByRole("treeitem");
+    fireEvent.click(document.querySelector('[data-sql-document-node="2"]')!);
+    const alias = screen.getByLabelText("Output name");
+    fireEvent.change(alias, { target: { value: "Gross total" } });
+    fireEvent.blur(alias);
+    await waitFor(() =>
+      expect(applySemanticEditMock).toHaveBeenCalledWith(
+        source,
+        expect.objectContaining({
+          edits: [expect.objectContaining({
+            kind: "set_projection_alias",
+            node_id: 2,
+            expected_kind: "select_item",
+            alias: { value: "Gross total", quote_style: '"' },
+          })],
+        }),
+      )
+    );
+  });
+
   it("composes a projection from two typed expressions through the Rust protocol", async () => {
     const initialSql = `SELECT field_100, 'x' FROM "G"`;
     const changedSql = `SELECT (field_100\n) || ('x'\n), 'x' FROM "G"`;

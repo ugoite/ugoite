@@ -274,6 +274,20 @@ describe("Columns task view through the actual Rust SQL document", () => {
     fireEvent.click(screen.getByRole("button", { name: "Undo", exact: true }));
     await waitFor(() => expect(sql()).toBe(source));
   });
+  it("authors quoted output aliases and keeps SQL outside the alias intact", async () => {
+    const source = 'SELECT "field_amount" /* note */ FROM "form_expenses"';
+    const { sql } = setup(source);
+    const alias = await screen.findByRole("textbox", {
+      name: "Output name for result 1",
+    });
+    fireEvent.change(alias, { target: { value: "Gross total" } });
+    fireEvent.blur(alias);
+    await waitFor(() =>
+      expect(sql()).toBe(
+        'SELECT "field_amount" AS "Gross total" /* note */ FROM "form_expenses"',
+      )
+    );
+  });
   it("keeps focus inside the editor after a focused field is removed", async () => {
     const { sql } = setup(
       'SELECT "field_amount", "field_day" FROM "form_expenses"',
