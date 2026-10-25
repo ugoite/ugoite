@@ -516,7 +516,29 @@ test.describe("Saved SQL route", () => {
       await editor.fill(
         `SELECT COUNT(*) FROM "${relation}" WHERE "_ugoite_id" <> $entry_id GROUP BY "_ugoite_id" ORDER BY "_ugoite_id" DESC LIMIT 9`,
       );
-      const filterDialog = await open("Filter");
+      const taskFilterDialog = await open("Filter");
+      await taskFilterDialog.getByRole("combobox", {
+        name: "Column",
+        exact: true,
+      }).selectOption("_ugoite_id");
+      await taskFilterDialog.getByRole("combobox", {
+        name: "Operator",
+        exact: true,
+      }).selectOption("not_eq");
+      await taskFilterDialog.getByRole("textbox", {
+        name: "Value",
+        exact: true,
+      }).fill("no-match");
+      await taskFilterDialog.getByRole("button", {
+        name: "Add filter",
+        exact: true,
+      }).click();
+      await expect(page.locator(".ui-sql-editor")).toContainText("no-match");
+      await taskFilterDialog.getByRole("button", {
+        name: "Close",
+        exact: true,
+      }).last().click();
+      const filterDialog = await open("Structure");
       await filterDialog.getByRole("treeitem", {
         name: /Binary expression: "_ugoite_id" <> \$entry_id/,
       }).click();
@@ -531,12 +553,16 @@ test.describe("Saved SQL route", () => {
         '"_ugoite_id" = $entry_id',
       );
       const sortDialog = await open("Sort");
-      await sortDialog.getByRole("treeitem", {
-        name: /Order key:.*_ugoite_id/,
-      }).click();
-      await sortDialog.getByRole("combobox", { name: "Direction", exact: true })
+      const firstSort = sortDialog.getByRole("group", { name: "Sort 1" });
+      await firstSort.getByRole("combobox", { name: "Direction", exact: true })
         .selectOption("asc");
-      await applyAndClose(sortDialog);
+      await firstSort.getByRole("button", { name: "Apply sort", exact: true })
+        .click();
+      await expect(page.locator(".ui-sql-editor")).toContainText(
+        'ORDER BY "_ugoite_id" ASC',
+      );
+      await sortDialog.getByRole("button", { name: "Close", exact: true })
+        .click();
       await expect(page.locator(".ui-sql-editor")).toContainText(
         'ORDER BY "_ugoite_id" ASC',
       );
