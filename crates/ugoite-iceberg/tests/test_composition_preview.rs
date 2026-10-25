@@ -224,7 +224,7 @@ async fn graph_evaluation_commits_no_selected_results_when_one_query_fails() -> 
         ),
         (
             "empty_value",
-            "SELECT \"field_100\" AS value FROM \"Composition-Preview\" WHERE 1 = 0",
+            "SELECT \"field_100\" AS value FROM \"Composition-Preview\" WHERE \"field_100\" = 'row-0'",
             VariableGraphScalarType::String,
             true,
         ),
@@ -262,6 +262,12 @@ async fn graph_evaluation_commits_no_selected_results_when_one_query_fails() -> 
     }
 
     let saved = save_local_composition(&service, &space_id, document).await?;
+    // The strict save preflight validates every query against the current
+    // Publication. Change only the source rows afterward to exercise the
+    // runtime all-or-nothing result contract when one query no longer matches.
+    service
+        .delete_entry(&space_id, "composition-preview-00", "preview-test")
+        .await?;
     let response = service
         .evaluate_composition_graph_local(
             &space_id,
@@ -329,7 +335,7 @@ async fn graph_evaluation_commits_no_selected_results_when_one_query_fails() -> 
             .get("row_count")
             .map(|result| &result.result),
         Some(VariableGraphValidatedResult::Scalar {
-            value: VariableGraphLiteral::Integer(3)
+            value: VariableGraphLiteral::Integer(2)
         })
     ));
     Ok(())
@@ -1662,7 +1668,24 @@ async fn authorized_saved_and_draft_query_selection_isolates_unrelated_missing_a
         .push(FlowItem::Component {
             component: "other-input".to_owned(),
         });
-    let saved = save_local_composition(&service, &space_id, document).await?;
+    let document = apply_preview_query_descriptors(&service, &space_id, document).await?;
+    let operation_id = Uuid::now_v7().to_string();
+    let saved = service
+        .save_composition_local_with_work(
+            &space_id,
+            ugoite_iceberg::composition::CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document,
+            },
+            "preview-test",
+            &operation_id,
+            ugoite_iceberg::composition::CompositionSaveWork {
+                variables: BTreeMap::from([("other".to_owned(), json!(7))]),
+                unset_variables: Vec::new(),
+            },
+        )
+        .await?;
     let yaml = canonicalize_composition(&saved.document)
         .map_err(|code| anyhow::anyhow!(code.as_str()))?
         .yaml;
