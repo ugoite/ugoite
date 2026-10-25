@@ -177,6 +177,7 @@ struct PublicationAttempt {
     expected_head_etag: Option<String>,
     expected_generation: Option<u64>,
     expected_head_checksum: Option<String>,
+    expected_exact_head_checksum: Option<String>,
     expected_previous_publication: Option<String>,
 }
 
@@ -198,6 +199,7 @@ impl PublicationAttempt {
                     expected_head_checksum: has_content_publication
                         .then(|| content_head_checksum(&head))
                         .transpose()?,
+                    expected_exact_head_checksum: Some(head_checksum(&head)?),
                     expected_previous_publication: head.publication_location.clone(),
                     expected_head: Some(head),
                     expected_head_etag: exact.etag,
@@ -209,6 +211,7 @@ impl PublicationAttempt {
                 expected_head_etag: None,
                 expected_generation: None,
                 expected_head_checksum: None,
+                expected_exact_head_checksum: None,
                 expected_previous_publication: None,
             }),
         }
@@ -236,6 +239,11 @@ pub struct SpaceCatalog {
     runtime: Runtime,
     publication: PublicationContext,
     mutation_claimed: Arc<AtomicBool>,
+    /// An unregistered Form table staged solely for the atomic first
+    /// Composition save path. Its first Iceberg snapshot and its Catalog
+    /// registration are published together by `update_table`.
+    staged_new_table: Arc<std::sync::Mutex<Option<iceberg::table::Table>>>,
+    staged_new_table_claimed: Arc<AtomicBool>,
     #[cfg(debug_assertions)]
     publication_gate: Option<Arc<crate::TestPublicationGate>>,
     /// When present, every read and mutation on this catalog is evaluated
@@ -306,6 +314,8 @@ impl SpaceCatalog {
             runtime: Runtime::current(),
             publication: PublicationContext::generated(),
             mutation_claimed: Arc::new(AtomicBool::new(false)),
+            staged_new_table: Arc::new(std::sync::Mutex::new(None)),
+            staged_new_table_claimed: Arc::new(AtomicBool::new(false)),
             #[cfg(debug_assertions)]
             publication_gate: crate::current_test_publication_gate(),
             bound_attempt: None,
@@ -636,6 +646,8 @@ impl SpaceCatalog {
             runtime: self.runtime.clone(),
             publication: PublicationContext::generated(),
             mutation_claimed: Arc::new(AtomicBool::new(false)),
+            staged_new_table: Arc::new(std::sync::Mutex::new(None)),
+            staged_new_table_claimed: Arc::new(AtomicBool::new(false)),
             #[cfg(debug_assertions)]
             publication_gate: crate::current_test_publication_gate(),
             bound_attempt: None,
@@ -651,6 +663,116 @@ impl SpaceCatalog {
             exact,
         )?));
         Ok(self)
+    }
+
+    pub(crate) fn bound_exact_head_checksum(&self) -> Result<Option<String>> {
+        let attempt = self.bound_attempt.as_ref().ok_or_else(|| {
+            Error::new(
+                ErrorKind::Unexpected,
+                "exact Catalog Head proof requires a bound attempt",
+            )
+        })?;
+        Ok(attempt.expected_exact_head_checksum.clone())
+    }
+
+    pub(crate) async fn bound_publication(&self) -> Result<Option<PublicationRef>> {
+        let attempt = self.bound_attempt.as_ref().ok_or_else(|| {
+            Error::new(
+                ErrorKind::Unexpected,
+                "publication read requires a bound attempt",
+            )
+        })?;
+        let Some(head) = attempt.expected_head.as_ref() else {
+            return Ok(None);
+        };
+        if head.publication_location.is_none() {
+            return Ok(None);
+        }
+        self.validate_pin_references(head).await?;
+        self.publication_ref_for_head(head).await.map(Some)
+    }
+
+    /// Build an unregistered table for the Composition first-save path. The
+    /// returned standard Iceberg table can receive its initial snapshot via
+    /// `Transaction::commit`; `update_table` then registers that final table
+    /// with one Catalog Head compare-and-swap.
+    pub(crate) async fn stage_composition_registry_table(
+        &self,
+        creation: TableCreation,
+        form: &ugoite_domain::form::FormDefinition,
+        expected_properties: &HashMap<String, String>,
+    ) -> Result<iceberg::table::Table> {
+        self.ensure_authoritative_mutation_contract()
+            .map_err(storage_error)?;
+        if self.bound_attempt.is_none() {
+            return Err(Error::new(
+                ErrorKind::DataInvalid,
+                "Composition Registry initialization requires an exact bound Head",
+            ));
+        }
+        crate::composition::validate_composition_registry_form(form)
+            .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))?;
+        let expected_form_id =
+            FormId::from(Uuid::new_v5(&self.space_id.as_uuid(), form.name.as_bytes()));
+        if form.id != expected_form_id {
+            return Err(Error::new(
+                ErrorKind::DataInvalid,
+                "staged Composition Registry has an unexpected deterministic Form ID",
+            ));
+        }
+        let ident = TableIdent::new(self.namespace.clone(), creation.name.clone());
+        if creation.name != crate::physical_form_name(form.id)
+            || creation.schema != crate::form_schema(form).map_err(storage_error)?
+            || &creation.properties != expected_properties
+        {
+            return Err(Error::new(
+                ErrorKind::DataInvalid,
+                "staged table does not match the reserved Composition Registry Form",
+            ));
+        }
+        let attempt = self.publication_attempt().await?;
+        if attempt
+            .expected_head
+            .as_ref()
+            .is_some_and(|head| head.tables.contains_key(&Self::table_key(&ident)))
+            || self
+                .staged_new_table_claimed
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
+        {
+            return Err(Error::new(
+                ErrorKind::DataInvalid,
+                "a new table is already registered or staged for this attempt",
+            ));
+        }
+        if creation.location.is_none() {
+            return Err(Error::new(
+                ErrorKind::DataInvalid,
+                "Ugoite requires an explicit Iceberg table location",
+            ));
+        }
+        let requested_schema = creation.schema.clone();
+        let mut metadata_builder = TableMetadataBuilder::from_table_creation(creation)?;
+        if requested_schema.calc_min_compatible_format() == FormatVersion::V3 {
+            metadata_builder = metadata_builder.upgrade_format_version(FormatVersion::V3)?;
+        }
+        let metadata =
+            preserve_schema_field_ids(metadata_builder.build()?.metadata, requested_schema)?;
+        let metadata_location = MetadataLocation::try_new_with_metadata(&metadata)?;
+        metadata.write_to(&self.file_io, &metadata_location).await?;
+        let table = iceberg::table::Table::builder()
+            .identifier(ident)
+            .metadata(metadata)
+            .metadata_location(metadata_location.to_string())
+            .file_io(self.file_io.clone())
+            .runtime(self.runtime.clone())
+            .build()?;
+        *self
+            .staged_new_table
+            .lock()
+            .map_err(|_| Error::new(ErrorKind::Unexpected, "staged table lock is poisoned"))? =
+            Some(table.clone());
+        Ok(table)
     }
 
     async fn publication_attempt(&self) -> Result<PublicationAttempt> {
@@ -3644,11 +3766,28 @@ impl Catalog for SpaceCatalog {
 
     async fn load_table(&self, table: &TableIdent) -> Result<iceberg::table::Table> {
         if let Some(attempt) = &self.bound_attempt {
-            let head = attempt
-                .expected_head
-                .as_ref()
-                .ok_or_else(|| Error::new(ErrorKind::DataInvalid, "Catalog Head is missing"))?;
-            self.load_head_table(table, head).await
+            let head = attempt.expected_head.as_ref();
+            if !head.is_some_and(|head| head.tables.contains_key(&Self::table_key(table))) {
+                if let Some(staged) = self
+                    .staged_new_table
+                    .lock()
+                    .map_err(|_| {
+                        Error::new(ErrorKind::Unexpected, "staged table lock is poisoned")
+                    })?
+                    .as_ref()
+                    .filter(|staged| staged.identifier() == table)
+                    .cloned()
+                {
+                    return Ok(staged);
+                }
+            }
+            match head {
+                Some(head) => self.load_head_table(table, head).await,
+                None => Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "Catalog Head is missing",
+                )),
+            }
         } else {
             self.load_live_table(table).await
         }
@@ -3700,11 +3839,26 @@ impl Catalog for SpaceCatalog {
         };
         let table = commit.identifier().clone();
         let attempt = self.publication_attempt().await?;
-        let head = attempt
-            .expected_head
-            .as_ref()
-            .ok_or_else(|| Error::new(ErrorKind::DataInvalid, "Catalog Head is missing"))?;
-        let base = self.load_head_table(&table, head).await?;
+        let head = attempt.expected_head.as_ref();
+        let staged_creation = self
+            .staged_new_table
+            .lock()
+            .map_err(|_| Error::new(ErrorKind::Unexpected, "staged table lock is poisoned"))?
+            .clone()
+            .filter(|candidate| candidate.identifier() == &table);
+        let is_creation =
+            !head.is_some_and(|head| head.tables.contains_key(&Self::table_key(&table)));
+        let base = if is_creation {
+            staged_creation.ok_or_else(|| {
+                Error::new(
+                    ErrorKind::DataInvalid,
+                    "Catalog table is missing and no Composition Registry initialization is staged",
+                )
+            })?
+        } else {
+            self.load_head_table(&table, head.expect("existing table requires a Head"))
+                .await?
+        };
         let base_metadata_location = base.metadata_location_result()?.to_string();
         let base_snapshot_id = base.metadata().current_snapshot_id();
         let base_schema_id = base.metadata().current_schema_id();
@@ -3717,21 +3871,27 @@ impl Catalog for SpaceCatalog {
                 &MetadataLocation::from_str(&new_metadata_location)?,
             )
             .await?;
-        let mut next = head.next_generation();
+        let mut next = head.map_or_else(
+            || CatalogHead::genesis(self.space_id, &self.namespace),
+            CatalogHead::next_generation,
+        );
         next.tables.insert(
             Self::table_key(&table),
             TableReference::from_table(&staged, self.logical_space_uid)?,
         );
+        if is_creation {
+            next.form_registry_generation += 1;
+        }
         let publication = self
             .publish_new_head(
                 &attempt,
                 next,
                 PublicationUpdate {
                     affected_table: TableCoordinates::from(&table),
-                    base_metadata_location: Some(base_metadata_location),
+                    base_metadata_location: (!is_creation).then_some(base_metadata_location),
                     new_metadata_location,
                     base_snapshot_id,
-                    base_schema_id: Some(base_schema_id),
+                    base_schema_id: (!is_creation).then_some(base_schema_id),
                     new_snapshot_id: staged.metadata().current_snapshot_id(),
                     new_schema_id: staged.metadata().current_schema_id(),
                 },
@@ -4230,6 +4390,24 @@ mod tests {
     use opendal::Operator;
     use tempfile::tempdir;
     use ugoite_storage::operator_from_uri;
+
+    #[test]
+    fn exact_head_checksum_includes_authorization_only_genesis_state() -> AnyResult<()> {
+        let space_id = SpaceId::from(Uuid::now_v7());
+        let namespace = NamespaceIdent::from_vec(vec!["test".to_owned()])?;
+        let mut head = CatalogHead::genesis(space_id, &namespace);
+        let content_checksum = content_head_checksum(&head)?;
+        let missing_authorization_head = head_checksum(&head)?;
+        head.authorization_snapshot = Some(AuthorizationSnapshotReference {
+            revision: 1,
+            location: "auth/revision-1.json".to_owned(),
+            checksum: checksum(b"authorization snapshot"),
+        });
+        let authorization_genesis_checksum = head_checksum(&head)?;
+        assert_ne!(missing_authorization_head, authorization_genesis_checksum);
+        assert_eq!(content_checksum, content_head_checksum(&head)?);
+        Ok(())
+    }
 
     fn logical_test_location(space_id: SpaceId, key: &str) -> String {
         crate::logical_storage::logical_uri(

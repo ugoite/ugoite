@@ -99,7 +99,7 @@ pub async fn handle(
                 -32700,
                 "Parse error",
                 Value::Null,
-            )
+            );
         }
     };
     let raw: Value = match serde_json::from_slice(&body) {
@@ -111,7 +111,7 @@ pub async fn handle(
                 -32700,
                 "Parse error",
                 Value::Null,
-            )
+            );
         }
     };
     let parsed: RpcRequest = match serde_json::from_value(raw) {
@@ -123,7 +123,7 @@ pub async fn handle(
                 -32600,
                 "Invalid Request",
                 Value::Null,
-            )
+            );
         }
     };
     if parsed.jsonrpc != "2.0"
@@ -523,9 +523,13 @@ fn mcp_subject_for_claims(claims: &AccessTokenClaims, account_id: Uuid) -> Authe
 fn auth_error(state: &AppState, scheme: &str) -> Response {
     let issuer = state.identity.public_origin().trim_end_matches('/');
     let challenge = if scheme == "dpop" {
-        format!("DPoP realm=\"ugoite\",resource_metadata=\"{issuer}/.well-known/oauth-protected-resource\",algs=\"ES256\"")
+        format!(
+            "DPoP realm=\"ugoite\",resource_metadata=\"{issuer}/.well-known/oauth-protected-resource\",algs=\"ES256\""
+        )
     } else {
-        format!("Bearer realm=\"ugoite\",resource_metadata=\"{issuer}/.well-known/oauth-protected-resource\"")
+        format!(
+            "Bearer realm=\"ugoite\",resource_metadata=\"{issuer}/.well-known/oauth-protected-resource\""
+        )
     };
     json_http_with_header(
         StatusCode::UNAUTHORIZED,
@@ -670,9 +674,13 @@ fn insufficient_scope(state: &AppState, scheme: &str, actions: &[&str]) -> Respo
     let issuer = state.identity.public_origin().trim_end_matches('/');
     let scope = actions.to_vec().join(" ");
     let challenge = if scheme == "dpop" {
-        format!("DPoP error=\"insufficient_scope\",scope=\"{scope}\",realm=\"ugoite\",resource_metadata=\"{issuer}/.well-known/oauth-protected-resource\",algs=\"ES256\"")
+        format!(
+            "DPoP error=\"insufficient_scope\",scope=\"{scope}\",realm=\"ugoite\",resource_metadata=\"{issuer}/.well-known/oauth-protected-resource\",algs=\"ES256\""
+        )
     } else {
-        format!("Bearer error=\"insufficient_scope\",scope=\"{scope}\",realm=\"ugoite\",resource_metadata=\"{issuer}/.well-known/oauth-protected-resource\"")
+        format!(
+            "Bearer error=\"insufficient_scope\",scope=\"{scope}\",realm=\"ugoite\",resource_metadata=\"{issuer}/.well-known/oauth-protected-resource\""
+        )
     };
     json_http_with_header(
         StatusCode::FORBIDDEN,

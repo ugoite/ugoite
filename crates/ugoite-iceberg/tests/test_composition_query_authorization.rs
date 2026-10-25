@@ -90,7 +90,7 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
     let all_null_column =
         ugoite_domain::form::sql_column_name(ugoite_domain::id::FieldId::new(102)?);
     for (id, amount) in [
-        ("metric-entry-01", json!(9_007_199_254_740_993_i64)),
+        ("metric-entry-01", json!(100)),
         ("metric-entry-02", json!(1)),
         ("metric-entry-null", Value::Null),
     ] {
@@ -195,16 +195,24 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
             "Metric empty rows",
             "total",
             CompositionResultFieldType::Integer,
-            format!("SELECT \"{amount_column}\" AS total FROM \"{form_name}\" WHERE \"{amount_column}\" < 0"),
-            json!([]),
+            format!("SELECT \"{amount_column}\" AS total FROM \"{form_name}\" WHERE \"{amount_column}\" = {{{{minimum}}}}"),
+            json!([{
+                "name": "minimum",
+                "type": "integer",
+                "description": "Selected amount"
+            }]),
         ),
         (
             "multiple_rows_sql",
             "Metric multiple rows",
             "total",
             CompositionResultFieldType::Integer,
-            format!("SELECT \"{amount_column}\" AS total FROM \"{form_name}\" ORDER BY \"{amount_column}\""),
-            json!([]),
+            format!("SELECT \"{amount_column}\" AS total FROM \"{form_name}\" WHERE \"{amount_column}\" >= {{{{minimum}}}} ORDER BY \"{amount_column}\""),
+            json!([{
+                "name": "minimum",
+                "type": "integer",
+                "description": "Selected amount"
+            }]),
         ),
         (
             "decimal_sql",
@@ -242,7 +250,7 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
     let query_variable = |id: &str, column: &str, result_type| {
         let sql = saved_sqls.get(id).unwrap();
         let nullable = !matches!(id, "row_count_sql" | "value_count_sql" | "empty_count_sql");
-        let arguments = if id == "parameter_sql" {
+        let arguments = if matches!(id, "parameter_sql" | "empty_rows_sql" | "multiple_rows_sql") {
             vec![VariableGraphArgumentBinding {
                 name: "minimum".to_string(),
                 variable: "minimum".to_string(),
@@ -334,8 +342,9 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
             },
         },
     };
+    let save_operation_id = Uuid::now_v7().to_string();
     let saved = service
-        .save_composition_authorized_for_principals(
+        .save_composition_authorized_for_principals_with_work(
             &space_id,
             CompositionSaveRequest {
                 entry_id: None,
@@ -344,6 +353,11 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
             },
             &owner.to_string(),
             &[owner],
+            &save_operation_id,
+            ugoite_iceberg::composition::CompositionSaveWork {
+                variables: BTreeMap::from([("minimum".to_string(), json!(100))]),
+                unset_variables: Vec::new(),
+            },
         )
         .await?;
     let query = |component_id: &str, minimum: i64| CompositionMetricQueryRequest {
@@ -375,10 +389,10 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
     for (component_id, expected_value) in [
         ("row_count", json!("3")),
         ("value_count", json!("2")),
-        ("total", json!("9007199254740994")),
-        ("average", json!(4_503_599_627_370_497_f64)),
+        ("total", json!("101")),
+        ("average", json!(50.5)),
         ("minimum", json!("1")),
-        ("maximum", json!("9007199254740993")),
+        ("maximum", json!("100")),
         ("null_total", Value::Null),
         ("empty_count", json!("0")),
         ("empty_total", Value::Null),
@@ -400,7 +414,7 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
         .result
         .context("decimal SQL column should produce a scalar")?;
     assert_eq!(decimal.result_type, CompositionResultFieldType::Decimal);
-    assert_eq!(decimal.value, json!("9007199254740994.0000"));
+    assert_eq!(decimal.value, json!("101.0000"));
 
     let parameterized_response = service
         .query_composition_metric_local(&space_id, query("parameter_value", 9_007_199_254_740_991))
@@ -420,9 +434,9 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
         .context("changing a Saved SQL parameter should select a different scalar")?;
     assert_eq!(changed_parameter.value, json!("1"));
 
-    for component_id in ["no_rows", "multiple_rows"] {
+    for (component_id, minimum) in [("no_rows", 99), ("multiple_rows", 1)] {
         let response = service
-            .query_composition_metric_local(&space_id, query(component_id, 0))
+            .query_composition_metric_local(&space_id, query(component_id, minimum))
             .await?;
         assert!(!response.ok, "{component_id} must not return a prefix row");
         assert!(response.result.is_none());
@@ -443,7 +457,7 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
             form_name.to_string(),
             Vec::new(),
             BTreeMap::from([
-                ("amount".to_string(), json!(2)),
+                ("amount".to_string(), json!(9_007_199_254_740_993_i64)),
                 ("all_null".to_string(), Value::Null),
             ]),
             BTreeMap::new(),
@@ -461,7 +475,13 @@ async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
         .await?
         .result
         .context("the selected SUM column should reflect the new Entry")?;
-    assert_eq!(updated_total.value, json!("9007199254740996"));
+    assert_eq!(updated_total.value, json!("9007199254741094"));
+    let updated_maximum = service
+        .query_composition_metric_local(&space_id, query("maximum", 0))
+        .await?
+        .result
+        .context("the selected MAX column should retain its exact large integer")?;
+    assert_eq!(updated_maximum.value, json!("9007199254740993"));
     Ok(())
 }
 

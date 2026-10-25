@@ -123,6 +123,93 @@ async fn composition_save_persists_canonical_carrier_and_receipt() -> anyhow::Re
 }
 
 #[tokio::test]
+async fn strict_first_save_rejects_head_change_after_preflight_without_registry(
+) -> anyhow::Result<()> {
+    let _gate_test_guard = TEST_VALIDATION_GATE_TEST_LOCK.lock().await;
+    let service = UgoiteService::new_without_background_refresh(format!(
+        "memory://composition-strict-first-save-head-race-{}",
+        Uuid::now_v7()
+    ))?;
+    let owner = Uuid::now_v7();
+    let space_id = service
+        .create_space_for_principal("composition-strict-first-save-head-race", owner, "Owner")
+        .await?
+        .to_string();
+    let operation_id = "strict-first-save-head-race";
+    let entry_name = format!("ugoite:composition.save:v1:{space_id}:{operation_id}:entry");
+    let entry_id = Uuid::new_v5(&Uuid::NAMESPACE_URL, entry_name.as_bytes()).to_string();
+    let gate = ugoite_iceberg::TestValidationGate::new_for_entry_id(entry_id);
+    ugoite_iceberg::install_test_validation_gate(gate.clone());
+    let save_service = service.clone();
+    let save_space_id = space_id.clone();
+    let save = tokio::spawn(async move {
+        save_service
+            .save_composition_local_with_operation_id(
+                &save_space_id,
+                composition::CompositionSaveRequest {
+                    entry_id: None,
+                    base_revision_id: None,
+                    document: parse_composition_yaml(SQL_FIRST_COMPOSITION)
+                        .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?,
+                },
+                "strict-race-test",
+                operation_id,
+            )
+            .await
+    });
+    if let Err(error) = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        gate.wait_until_entered(),
+    )
+    .await
+    {
+        ugoite_iceberg::clear_test_validation_gate();
+        gate.release();
+        save.abort();
+        let _ = save.await;
+        return Err(error.into());
+    }
+
+    common::seed_preexisting_form(
+        service.operator(),
+        &service.workspace_path(&space_id),
+        &json!({
+            "id": Uuid::now_v7().to_string(),
+            "name": "Strict Save Race Source",
+            "version": 1,
+            "fields": {"value": {"id": 100, "type": "string", "required": false}},
+            "allow_extra_attributes": "deny",
+        }),
+    )
+    .await?;
+    gate.release();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(10), save)
+        .await
+        .context("strict save did not leave its validation gate")??;
+    ugoite_iceberg::clear_test_validation_gate();
+    assert!(
+        result.is_err(),
+        "strict save refreshed its stale Head proof"
+    );
+    let forms = iceberg_store::native_workspace_read_only(
+        service.operator(),
+        &service.workspace_path(&space_id),
+    )
+    .await?
+    .list_forms()
+    .await?;
+    assert!(forms
+        .iter()
+        .any(|form| form.name == "Strict Save Race Source"));
+    assert!(forms.iter().all(|form| {
+        !form
+            .name
+            .eq_ignore_ascii_case(composition::COMPOSITION_REGISTRY_FORM_NAME)
+    }));
+    Ok(())
+}
+
+#[tokio::test]
 async fn composition_save_replays_the_original_create_and_update_after_response_loss(
 ) -> anyhow::Result<()> {
     let op = setup_operator()?;
@@ -998,6 +1085,12 @@ async fn composition_restore_appends_exact_historical_revision_with_receipt() ->
 
 #[tokio::test]
 async fn composition_restore_replays_exact_publication_and_rechecks_authorization(
+) -> anyhow::Result<()> {
+    Box::pin(composition_restore_replays_exact_publication_and_rechecks_authorization_scenario())
+        .await
+}
+
+async fn composition_restore_replays_exact_publication_and_rechecks_authorization_scenario(
 ) -> anyhow::Result<()> {
     let op = setup_operator()?;
     let service = UgoiteService::from_operator(
@@ -2008,6 +2101,112 @@ spec:
         )
         .await?;
     assert!(resolution.plan.is_some(), "{:?}", resolution.diagnostics);
+    Ok(())
+}
+
+#[tokio::test]
+async fn local_composition_retry_recovers_receipt_after_source_cardinality_changes(
+) -> anyhow::Result<()> {
+    let service = UgoiteService::new_without_background_refresh(format!(
+        "memory://composition-save-source-change-retry-{}",
+        Uuid::now_v7()
+    ))?;
+    let owner = Uuid::now_v7();
+    let space_id = service
+        .create_space_for_principal("composition-save-source-change-retry", owner, "Owner")
+        .await?
+        .to_string();
+    let form_name = "CompositionRetrySource";
+    service
+        .upsert_form_result(
+            &space_id,
+            &json!({
+                "name": form_name,
+                "fields": {
+                    "amount": {"id": 203, "type": "integer", "required": false}
+                }
+            }),
+        )
+        .await?;
+    service
+        .create_structured_entry_with_receipt(
+            &space_id,
+            "source-change-retry-first-entry",
+            form_name.to_string(),
+            Vec::new(),
+            BTreeMap::from([("amount".to_string(), json!(1))]),
+            BTreeMap::new(),
+            &owner.to_string(),
+        )
+        .await?;
+    let yaml = format!(
+        r#"format: ugoite.composition
+format_version: 1
+kind: dashboard
+name: Retry source snapshot
+spec:
+  variables:
+    - id: amount
+      kind: query
+      returns:
+        kind: scalar
+        value_type:
+          scalar_type: integer
+          nullable: true
+      query:
+        kind: inline_sql
+        sql: SELECT "field_203" AS amount FROM "{form_name}"
+        arguments: []
+        form_bindings: []
+        schema_fingerprint: ''
+  components:
+    - id: amount_metric
+      kind: metric
+      variable: amount
+  layout:
+    kind: flow
+    rows:
+      - id: main
+        items:
+          - kind: component
+            component: amount_metric
+"#
+    );
+    let request = composition::CompositionSaveRequest {
+        entry_id: None,
+        base_revision_id: None,
+        document: parse_composition_yaml(&yaml)
+            .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?,
+    };
+    let first = service
+        .save_composition_local_with_operation_id(
+            &space_id,
+            request.clone(),
+            &owner.to_string(),
+            "source-change-retry-1",
+        )
+        .await?;
+
+    service
+        .create_structured_entry_with_receipt(
+            &space_id,
+            "source-change-retry-second-entry",
+            form_name.to_string(),
+            Vec::new(),
+            BTreeMap::from([("amount".to_string(), json!(2))]),
+            BTreeMap::new(),
+            &owner.to_string(),
+        )
+        .await?;
+    let replay = service
+        .save_composition_local_with_operation_id(
+            &space_id,
+            request,
+            &owner.to_string(),
+            "source-change-retry-1",
+        )
+        .await?;
+    assert_eq!(replay, first);
     Ok(())
 }
 

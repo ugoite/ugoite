@@ -35,6 +35,7 @@ use super::{
     sql_query_authorization_fingerprint, sql_query_contract_error, validate_storage_id, Authorizer,
     PublicationRef, UgoiteService,
 };
+use crate::authorization::AuthorizationState;
 use crate::iceberg_store;
 
 /// Stored revision or unsaved draft evaluated by the graph executor.
@@ -94,6 +95,343 @@ pub struct CompositionQueryEvaluationResponse {
 }
 
 impl UgoiteService {
+    pub(super) async fn preflight_composition_save_authorized(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        yaml: &str,
+        variables: &BTreeMap<String, Value>,
+        unset_variables: &[String],
+        authorization_state: &AuthorizationState,
+    ) -> Result<crate::ExactCatalogHeadProof> {
+        self.preflight_composition_save_with_access(
+            space_id,
+            Some(principal_ids),
+            yaml,
+            variables,
+            unset_variables,
+            Some(authorization_state),
+        )
+        .await
+    }
+
+    pub(super) async fn preflight_composition_save_local(
+        &self,
+        space_id: &str,
+        yaml: &str,
+        variables: &BTreeMap<String, Value>,
+        unset_variables: &[String],
+    ) -> Result<crate::ExactCatalogHeadProof> {
+        self.preflight_composition_save_with_access(
+            space_id,
+            None,
+            yaml,
+            variables,
+            unset_variables,
+            None,
+        )
+        .await
+    }
+
+    async fn preflight_composition_save_with_access(
+        &self,
+        space_id: &str,
+        principal_ids: Option<&[Uuid]>,
+        yaml: &str,
+        variables: &BTreeMap<String, Value>,
+        unset_variables: &[String],
+        authorization_state: Option<&AuthorizationState>,
+    ) -> Result<crate::ExactCatalogHeadProof> {
+        let workspace = iceberg_store::native_workspace_read_only(
+            &self.operator,
+            &self.workspace_path(space_id),
+        )
+        .await?;
+        let (bound_workspace, proof) = workspace.bind_exact_catalog_head().await?;
+        let publication = bound_workspace.bound_publication().await?;
+        if publication.is_none() {
+            self.preflight_unpublished_composition_queries(
+                space_id,
+                principal_ids,
+                yaml,
+                variables,
+                unset_variables,
+                authorization_state,
+                &bound_workspace,
+            )
+            .await?;
+            return Ok(proof);
+        }
+        let response = self
+            .evaluate_composition_graph(
+                space_id,
+                principal_ids,
+                CompositionQueryEvaluationTarget::Draft {
+                    yaml: yaml.to_owned(),
+                },
+                Uuid::new_v4(),
+                None,
+                None,
+                variables,
+                unset_variables,
+                None,
+                None,
+                authorization_state,
+                publication,
+            )
+            .await?;
+        let plan = response.plan.as_ref();
+        if !response.ok
+            || plan.is_none()
+            || response.query_results.len() != plan.map_or(0, |plan| plan.queries.len())
+            || response.computed_query_ids.len() != plan.map_or(0, |plan| plan.queries.len())
+        {
+            let detail = response
+                .diagnostics
+                .iter()
+                .map(|diagnostic| format!("{:?} at {:?}", diagnostic.code, diagnostic.variable_id))
+                .chain(response.query_diagnostics.iter().map(|diagnostic| {
+                    format!("{:?} at {}", diagnostic.code, diagnostic.variable_id)
+                }))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                format!("Composition save preflight failed: {detail}"),
+            )
+            .into());
+        }
+        let plan = response.plan.as_ref().expect("validated preflight plan");
+        Self::ensure_declared_query_returns_match(yaml, &plan.queries)?;
+        Ok(proof)
+    }
+
+    // This boundary threads one complete save-evaluation context into the
+    // resolver without reconstructing authorization or Work state.
+    #[allow(clippy::too_many_arguments)]
+    async fn preflight_unpublished_composition_queries(
+        &self,
+        space_id: &str,
+        principal_ids: Option<&[Uuid]>,
+        yaml: &str,
+        variables: &BTreeMap<String, Value>,
+        unset_variables: &[String],
+        authorization_state: Option<&AuthorizationState>,
+        workspace: &crate::IcebergWorkspace,
+    ) -> Result<()> {
+        let preview = self
+            .preview_composition_for_save_with_access(
+                space_id,
+                yaml,
+                variables,
+                unset_variables,
+                principal_ids,
+                authorization_state,
+                None,
+            )
+            .await?;
+        if !preview.diagnostics.is_empty() || preview.plan.is_none() {
+            let detail = preview
+                .diagnostics
+                .iter()
+                .map(|diagnostic| format!("{:?} at {:?}", diagnostic.code, diagnostic.variable_id))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                format!("Composition save preflight failed: {detail}"),
+            )
+            .into());
+        }
+        let plan = preview.plan.expect("checked Composition preview plan");
+        Self::ensure_declared_query_returns_match(yaml, &plan.queries)?;
+        let definitions = preview
+            .variable_definitions
+            .ok_or_else(|| anyhow!("Composition preview did not return variable definitions"))?;
+        let mut graph = VariableGraph {
+            variables: definitions,
+        };
+        apply_resolved_query_descriptors(&mut graph, &plan.queries)?;
+        remove_explicitly_unset_input_defaults(&mut graph, unset_variables);
+        for node in &graph.variables {
+            let VariableGraphNodeKind::Query { query, .. } = &node.kind else {
+                continue;
+            };
+            let ugoite_domain::composition::VariableGraphQueryDefinition::InlineSql { sql } =
+                &query.definition
+            else {
+                return Err(AppError::invalid_input(
+                    ErrorCode::InvalidInput,
+                    format!("Query {} requires a published Space snapshot", node.id),
+                )
+                .into());
+            };
+            if !crate::index::quoted_form_name_references(sql)?.is_empty()
+                || !crate::index::quoted_form_relation_names(sql)?.is_empty()
+            {
+                return Err(AppError::invalid_input(
+                    ErrorCode::InvalidInput,
+                    format!("Query {} requires a published Form snapshot", node.id),
+                )
+                .into());
+            }
+        }
+        let input_values = plan
+            .variable_values
+            .iter()
+            .filter_map(|(id, value)| {
+                graph
+                    .variables
+                    .iter()
+                    .find(|node| node.id == *id)
+                    .is_some_and(|node| matches!(node.kind, VariableGraphNodeKind::Input { .. }))
+                    .then_some((id.clone(), value.clone()))
+            })
+            .collect::<BTreeMap<_, _>>();
+        let evaluation_id = Uuid::new_v4();
+        let mut evaluation = VariableGraphQueryEvaluation::new_for_queries(
+            &graph,
+            evaluation_id,
+            &input_values,
+            None,
+        )
+        .map_err(|diagnostics| {
+            AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                format!("Composition query planning failed: {diagnostics:?}"),
+            )
+        })?;
+        let context = workspace
+            .authorized_query_context(ugoite_core::query::AuthorizedQueryPolicy {
+                forms: BTreeMap::new(),
+                checkpoint: None,
+                limits: ugoite_core::query::QueryLimits {
+                    max_memory_bytes: crate::index::SQL_MAX_MEMORY_BYTES,
+                    max_rows: crate::index::SQL_MAX_OUTPUT_ROWS,
+                    timeout: std::time::Duration::from_secs(30),
+                    max_concurrency: 1,
+                    function_policy: ugoite_core::query::SqlFunctionPolicy::ReadOnlyAggregateV1,
+                },
+            })
+            .await?;
+        for variable_id in evaluation.selected_query_ids().to_vec() {
+            let request = evaluation
+                .compile_page_request(&variable_id, None)
+                .map_err(|diagnostics| {
+                    AppError::invalid_input(
+                        ErrorCode::InvalidInput,
+                        format!("Query {variable_id} request is invalid: {diagnostics:?}"),
+                    )
+                })?;
+            let prepared = super::sql_execution::prepare_sql_request(
+                self,
+                space_id,
+                &request,
+                match (principal_ids, authorization_state) {
+                    (Some(principal_ids), Some(state)) => {
+                        Some(super::sql_execution::SqlSourceAuthorization {
+                            state,
+                            principal_ids,
+                        })
+                    }
+                    _ => None,
+                },
+            )
+            .await?;
+            let result_schema = context
+                .stateless_result_schema(&prepared.normalized_sql, prepared.parameters.clone())
+                .await?;
+            let stateless_page = context
+                .execute_stateless_page(
+                    &prepared.normalized_sql,
+                    prepared.parameters,
+                    0,
+                    request.limit.saturating_add(1),
+                )
+                .await?;
+            let (mut rows, mut exact_integer_rows) =
+                crate::index::serialize_stateless_sql_page_for_validation(
+                    &stateless_page,
+                    request.include_exact_integer_values,
+                )?;
+            let has_more = rows.len() > request.limit;
+            rows.truncate(request.limit);
+            if let Some(exact_rows) = exact_integer_rows.as_mut() {
+                exact_rows.truncate(request.limit);
+            }
+            let page = SqlQueryPage {
+                columns: stateless_page.columns,
+                rows,
+                has_more,
+                next: has_more.then(|| "strict-save-more".to_owned()),
+                execution_id: request.execution_id,
+                request_fingerprint: Some(
+                    request
+                        .execution_fingerprint()
+                        .map_err(sql_query_contract_error)?,
+                ),
+                result_schema: Some(result_schema),
+                exact_integer_rows,
+            };
+            evaluation
+                .accept_page(&variable_id, &request, &page)
+                .map_err(|diagnostics| {
+                    AppError::invalid_input(
+                        ErrorCode::InvalidInput,
+                        format!("Query {variable_id} result is invalid: {diagnostics:?}"),
+                    )
+                })?;
+        }
+        Ok(())
+    }
+
+    fn ensure_declared_query_returns_match(
+        yaml: &str,
+        queries: &[ResolvedQueryRequest],
+    ) -> Result<()> {
+        let document = ugoite_domain::composition::parse_composition_yaml(yaml)
+            .map_err(|diagnostic| anyhow!(diagnostic.as_str()))?;
+        let declared = document
+            .spec
+            .variables
+            .iter()
+            .filter_map(|node| match &node.kind {
+                VariableGraphNodeKind::Query { returns, .. } => Some((node.id.as_str(), returns)),
+                _ => None,
+            })
+            .collect::<BTreeMap<_, _>>();
+        if queries.len() != declared.len() {
+            return Err(AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "Composition save preflight did not resolve every declared query",
+            )
+            .into());
+        }
+        for query in queries {
+            let Some(expected) = declared.get(query.variable_id.as_str()) else {
+                return Err(AppError::invalid_input(
+                    ErrorCode::InvalidInput,
+                    format!(
+                        "Composition save preflight resolved unknown query {}",
+                        query.variable_id
+                    ),
+                )
+                .into());
+            };
+            if **expected != query.returns {
+                return Err(AppError::invalid_input(
+                    ErrorCode::InvalidInput,
+                    format!(
+                        "Composition query {} return descriptor does not match its resolved SQL schema",
+                        query.variable_id
+                    ),
+                )
+                .into());
+            }
+        }
+        Ok(())
+    }
+
     /// Resolve and execute the selected query variables and their transitive
     /// query dependencies once in dependency order. Results and input values
     /// are request-scoped; no Entry or intermediate SQL result is written to
@@ -123,6 +461,8 @@ impl UgoiteService {
             unset_variables,
             requested_queries,
             page,
+            None,
+            None,
         )
         .await
     }
@@ -155,6 +495,8 @@ impl UgoiteService {
             unset_variables,
             requested_queries,
             page,
+            None,
+            None,
         )
         .await
     }
@@ -172,6 +514,8 @@ impl UgoiteService {
         unset_variables: &[String],
         requested_queries: Option<&[String]>,
         page: Option<CompositionQueryEvaluationPage>,
+        authorization_state: Option<&AuthorizationState>,
+        pinned_publication_override: Option<PublicationRef>,
     ) -> Result<CompositionQueryEvaluationResponse> {
         if evaluation_id.is_nil() {
             return Err(AppError::invalid_input(
@@ -217,7 +561,8 @@ impl UgoiteService {
         };
         let pinned_publication = decoded_cursor
             .as_ref()
-            .map(|cursor| cursor.publication.clone());
+            .map(|cursor| cursor.publication.clone())
+            .or(pinned_publication_override);
         let base_acl_entry = match &target {
             CompositionQueryEvaluationTarget::SavedRevision { composition_id, .. } => {
                 Some(composition_id.clone())
@@ -233,6 +578,7 @@ impl UgoiteService {
                 principal_ids,
                 base_acl_entry.as_deref(),
                 pinned_publication.as_ref(),
+                authorization_state,
             )
             .await?;
 
@@ -318,6 +664,8 @@ impl UgoiteService {
                                 base,
                                 requested_queries,
                                 allow_unset_inputs: false,
+                                authorization_state,
+                                publication_override: Some(&publication),
                             },
                         )
                         .await?
@@ -365,6 +713,7 @@ impl UgoiteService {
             base_acl_entry.as_deref(),
             &authorization_fingerprint,
             &publication,
+            authorization_state,
         )
         .await?;
 
@@ -525,14 +874,26 @@ impl UgoiteService {
             let page_result = if matches!(query.returns, VariableGraphResultType::Scalar { .. }) {
                 let probe = match principal_ids {
                     Some(principal_ids) => {
-                        self.probe_composition_sql_scalar_authorized_at_publication(
-                            space_id,
-                            principal_ids,
-                            composition_entry_id.as_deref(),
-                            request.clone(),
-                            &publication,
-                        )
-                        .await?
+                        if let Some(state) = authorization_state {
+                            self.probe_composition_sql_scalar_authorized_at_publication_with_state(
+                                space_id,
+                                principal_ids,
+                                composition_entry_id.as_deref(),
+                                request.clone(),
+                                &publication,
+                                state,
+                            )
+                            .await?
+                        } else {
+                            self.probe_composition_sql_scalar_authorized_at_publication(
+                                space_id,
+                                principal_ids,
+                                composition_entry_id.as_deref(),
+                                request.clone(),
+                                &publication,
+                            )
+                            .await?
+                        }
                     }
                     None => {
                         self.probe_composition_sql_scalar_local_at_publication(
@@ -560,15 +921,28 @@ impl UgoiteService {
             } else {
                 match principal_ids {
                     Some(principal_ids) => {
-                        self.query_sql_authorized_for_composition(
-                            space_id,
-                            principal_ids,
-                            request.clone(),
-                            composition_entry_id.as_deref(),
-                            &publication,
-                            &query_context,
-                        )
-                        .await?
+                        if let Some(state) = authorization_state {
+                            self.query_sql_authorized_for_composition_with_state(
+                                space_id,
+                                principal_ids,
+                                request.clone(),
+                                composition_entry_id.as_deref(),
+                                &publication,
+                                &query_context,
+                                state,
+                            )
+                            .await?
+                        } else {
+                            self.query_sql_authorized_for_composition(
+                                space_id,
+                                principal_ids,
+                                request.clone(),
+                                composition_entry_id.as_deref(),
+                                &publication,
+                                &query_context,
+                            )
+                            .await?
+                        }
                     }
                     None => {
                         self.query_sql_local_for_composition(
@@ -621,6 +995,7 @@ impl UgoiteService {
                 principal_ids,
                 base_acl_entry.as_deref(),
                 Some(&publication),
+                authorization_state,
             )
             .await?;
         ensure_authorization_fingerprint_unchanged(
@@ -665,6 +1040,7 @@ impl UgoiteService {
         principal_ids: Option<&[Uuid]>,
         composition_entry_id: Option<&str>,
         pinned_publication: Option<&PublicationRef>,
+        authorization_state: Option<&AuthorizationState>,
     ) -> Result<(String, PublicationRef)> {
         match principal_ids {
             Some(principal_ids) => {
@@ -673,6 +1049,7 @@ impl UgoiteService {
                     principal_ids,
                     composition_entry_id,
                     pinned_publication,
+                    authorization_state,
                 )
                 .await
             }
@@ -710,14 +1087,21 @@ impl UgoiteService {
         principal_ids: &[Uuid],
         composition_entry_id: Option<&str>,
         pinned_publication: Option<&PublicationRef>,
+        authorization_state: Option<&AuthorizationState>,
     ) -> Result<(String, PublicationRef)> {
         require_nonempty_authorized_principals(principal_ids)?;
         self.validate_complete_space(space_id).await?;
-        let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
-            .acquire_state_lease(space_id)
-            .await?;
+        let owned_state;
+        let state = if let Some(state) = authorization_state {
+            state
+        } else {
+            owned_state = Authorizer::new(self.operator.clone())
+                .state(space_id)
+                .await?;
+            &owned_state
+        };
         for principal_id in principal_ids {
-            if !effective_actions_for_state(&state, *principal_id, None)?.contains(&Action::Read) {
+            if !effective_actions_for_state(state, *principal_id, None)?.contains(&Action::Read) {
                 return Err(
                     AppError::forbidden("principal is not authorized to read this Space").into(),
                 );
@@ -735,15 +1119,14 @@ impl UgoiteService {
         let checkpoint = workspace.resolve_publication(&publication).await?;
         if let Some(composition_entry_id) = composition_entry_id {
             let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
-            let scopes =
-                Self::authorized_form_entry_scopes_for_forms(&state, principal_ids, forms)?;
+            let scopes = Self::authorized_form_entry_scopes_for_forms(state, principal_ids, forms)?;
             super::require_composition_entry_read_scope(
                 &scopes,
                 super::parse_entry_id(composition_entry_id)?,
                 composition_entry_id,
             )?;
         }
-        let authorization_fingerprint = sql_query_authorization_fingerprint(&state, principal_ids)?;
+        let authorization_fingerprint = sql_query_authorization_fingerprint(state, principal_ids)?;
         Ok((authorization_fingerprint, publication))
     }
 
@@ -754,9 +1137,16 @@ impl UgoiteService {
         composition_entry_id: Option<&str>,
         expected_authorization_fingerprint: &str,
         expected_publication: &PublicationRef,
+        authorization_state: Option<&AuthorizationState>,
     ) -> Result<()> {
         let (current_authorization_fingerprint, current_publication) = self
-            .capture_graph_snapshot(space_id, principal_ids, composition_entry_id, None)
+            .capture_graph_snapshot(
+                space_id,
+                principal_ids,
+                composition_entry_id,
+                None,
+                authorization_state,
+            )
             .await?;
         ensure_graph_snapshot_unchanged(
             expected_authorization_fingerprint,
@@ -788,6 +1178,7 @@ impl UgoiteService {
                 principal_ids,
                 composition_entry_id,
                 Some(publication),
+                None,
             )
             .await?;
         ensure_authorization_fingerprint_unchanged(
@@ -1208,7 +1599,7 @@ mod tests {
             .await?
             .to_string();
         let (current_authorization_fingerprint, publication) = service
-            .capture_authorized_graph_snapshot(&space_id, &[principal], None, None)
+            .capture_authorized_graph_snapshot(&space_id, &[principal], None, None, None)
             .await?;
         let stale_authorization_fingerprint = format!("stale-{current_authorization_fingerprint}");
         let diagnostic = VariableGraphQueryEvaluationDiagnostic {

@@ -124,6 +124,34 @@ describe("Composition Design Work evaluation", () => {
         : { status: "valid", value: Number(raw) }
     );
   });
+
+  it("returns only committed typed values and blocks pending or invalid raw input", async () => {
+    const { state } = setup();
+    expect(state.saveSnapshot()).toEqual({
+      variables: {},
+      unset_variables: [],
+    });
+    let finish!: (value: unknown) => void;
+    parse.mockImplementationOnce(() =>
+      new Promise((resolve) => finish = resolve)
+    );
+    state.onInput("minimum", "2");
+    expect(state.saveSnapshot()).toBeUndefined();
+    finish({ status: "valid", value: 2 });
+    await vi.waitFor(() =>
+      expect(state.saveSnapshot()).toEqual({
+        variables: { minimum: 2 },
+        unset_variables: [],
+      })
+    );
+    const frozen = state.saveSnapshot();
+    state.onInput("minimum", "bad");
+    expect(state.saveSnapshot()).toBeUndefined();
+    expect(frozen).toEqual({
+      variables: { minimum: 2 },
+      unset_variables: [],
+    });
+  });
   afterEach(() => {
     dispose?.();
     vi.useRealTimers();

@@ -11,6 +11,9 @@ export interface PendingCompositionSaveAttempt {
   saveTarget: CompositionSaveTarget;
   name: string;
   yaml: string;
+  /** Frozen typed Work paired with yaml for uncertain-outcome retries. */
+  variables?: Record<string, unknown>;
+  unset_variables?: string[];
   idempotencyKey: string;
 }
 

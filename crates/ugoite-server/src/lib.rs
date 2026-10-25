@@ -11132,8 +11132,11 @@ async fn list_compositions(
     Ok(Json(composition_raw_list_page_response(page)))
 }
 
-const COMPOSITION_SAVE_MAX_REQUEST_BYTES: usize =
-    ugoite_domain::composition::MAX_COMPOSITION_YAML_BYTES * 6 + 1024;
+// Work may consume 1 MiB and YAML may expand sixfold when JSON-escaped.
+// The small extra allowance covers the request envelope and target IDs.
+const COMPOSITION_SAVE_MAX_REQUEST_BYTES: usize = ugoite_api_client::MAX_COMPOSITION_SAVE_WORK_BYTES
+    + ugoite_domain::composition::MAX_COMPOSITION_YAML_BYTES * 6
+    + 4096;
 
 async fn save_composition(
     State(state): State<AppState>,
@@ -11206,6 +11209,33 @@ async fn save_composition(
                 }),
             )
         })?;
+    let work = ugoite_iceberg::composition::CompositionSaveWork {
+        variables: request.variables,
+        unset_variables: request.unset_variables,
+    };
+    if work
+        .variables
+        .len()
+        .saturating_add(work.unset_variables.len())
+        > ugoite_api_client::MAX_COMPOSITION_SAVE_WORK_ITEMS
+    {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            json!({"code":"INVALID_INPUT","message":"Composition save input Work exceeds the supported variable count"}),
+        ));
+    }
+    let work_bytes = serde_json::to_vec(&work).map_err(|error| {
+        ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            json!({"code":"INVALID_INPUT","message":error.to_string()}),
+        )
+    })?;
+    if work_bytes.len() > ugoite_api_client::MAX_COMPOSITION_SAVE_WORK_BYTES {
+        return Err(ApiError::new(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            json!({"code":"REQUEST_TOO_LARGE","message":"Composition save input Work exceeds the 1 MiB limit"}),
+        ));
+    }
     let operation_id = required_composition_command_id(&headers, "composition-save")?;
 
     let action = if entry_id.is_some() {
@@ -11228,7 +11258,7 @@ async fn save_composition(
         resource,
         |principal_id, principals| async move {
             service
-                .save_composition_authorized_for_principals_with_operation_id(
+                .save_composition_authorized_for_principals_with_work(
                     &space_id_for_write,
                     ugoite_iceberg::composition::CompositionSaveRequest {
                         entry_id,
@@ -11238,6 +11268,7 @@ async fn save_composition(
                     &principal_id.to_string(),
                     &principals,
                     &operation_id,
+                    work,
                 )
                 .await
                 .map_err(ApiError::from_core)
@@ -16067,9 +16098,10 @@ spec:
         use ugoite_domain::composition::{
             CompositionComponent, CompositionDocument, CompositionFormat, CompositionKind,
             CompositionMetricPresentation, CompositionSpec, DashboardFlowLayout, FlowItem,
-            FlowLayoutKind, FlowRow, VariableGraphColumn, VariableGraphNode, VariableGraphNodeKind,
-            VariableGraphQuery, VariableGraphQueryDefinition, VariableGraphResultType,
-            VariableGraphScalarDescriptor, VariableGraphScalarType,
+            FlowLayoutKind, FlowRow, VariableGraphArgumentBinding, VariableGraphColumn,
+            VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind, VariableGraphQuery,
+            VariableGraphQueryDefinition, VariableGraphResultType, VariableGraphScalarDescriptor,
+            VariableGraphScalarType,
         };
 
         let state = AppState::new_for_tests(format!(
@@ -16093,6 +16125,17 @@ spec:
             kind: CompositionKind::Dashboard,
             spec: CompositionSpec {
                 variables: vec![
+                    VariableGraphNode {
+                        id: "include_empty".to_string(),
+                        kind: VariableGraphNodeKind::Input {
+                            value_type: VariableGraphScalarDescriptor {
+                                scalar_type: VariableGraphScalarType::Boolean,
+                                nullable: false,
+                            },
+                            required: true,
+                            default: Some(VariableGraphLiteral::Boolean(true)),
+                        },
+                    },
                     VariableGraphNode {
                         id: "total_query".to_string(),
                         kind: VariableGraphNodeKind::Query {
@@ -16146,10 +16189,13 @@ spec:
                             },
                             query: VariableGraphQuery {
                                 definition: VariableGraphQueryDefinition::InlineSql {
-                                    sql: "SELECT CAST(1 AS BIGINT) AS value WHERE 1 = 0"
+                                    sql: "SELECT CAST(1 AS BIGINT) AS value WHERE $include_empty"
                                         .to_string(),
                                 },
-                                arguments: Vec::new(),
+                                arguments: vec![VariableGraphArgumentBinding {
+                                    name: "include_empty".to_string(),
+                                    variable: "include_empty".to_string(),
+                                }],
                                 form_bindings: Vec::new(),
                                 schema_fingerprint: String::new(),
                             },
@@ -16174,6 +16220,10 @@ spec:
                         variable: "empty_query".to_string(),
                         presentation: None,
                     },
+                    CompositionComponent::Input {
+                        id: "include_empty_input".to_string(),
+                        variable: "include_empty".to_string(),
+                    },
                 ],
                 layout: DashboardFlowLayout {
                     kind: FlowLayoutKind::Flow,
@@ -16188,6 +16238,9 @@ spec:
                             },
                             FlowItem::Component {
                                 component: "empty_metric".to_string(),
+                            },
+                            FlowItem::Component {
+                                component: "include_empty_input".to_string(),
                             },
                         ],
                     }],
@@ -16222,7 +16275,8 @@ spec:
                         "composition_id": saved.entry_id.to_string(),
                         "revision_id": saved.revision_id.to_string()
                     },
-                    "requested_queries": ["total_query", "rows_query", "empty_query"]
+                    "requested_queries": ["total_query", "rows_query", "empty_query"],
+                    "variables": {"include_empty": false}
                 })
                 .to_string(),
             ))?;

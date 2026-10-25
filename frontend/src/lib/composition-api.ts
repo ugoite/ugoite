@@ -80,6 +80,8 @@ export interface CompositionRestoreResponse {
 export interface CompositionSaveOptions {
   compositionId?: string;
   baseRevisionId?: string;
+  variables?: Record<string, unknown>;
+  unset_variables?: string[];
 }
 
 /** Authorized graph query metadata returned by the existing preview operation. */
@@ -264,6 +266,10 @@ export const compositionApi = {
         ...(opts?.baseRevisionId === undefined
           ? {}
           : { base_revision_id: opts.baseRevisionId }),
+        ...(opts?.variables === undefined ? {} : { variables: opts.variables }),
+        ...(opts?.unset_variables === undefined
+          ? {}
+          : { unset_variables: opts.unset_variables }),
       },
       { signal },
     );
