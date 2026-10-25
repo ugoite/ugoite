@@ -2,8 +2,6 @@
 title: Composition / SQL Workspace acceptance checkpoint — 2026-10-25
 ---
 
-# Acceptance checkpoint: Composition / SQL Workspace
-
 **Overall: 未達 (not complete). `coverage_complete`: false.** This checkpoint
 supplements the
 [2026-10-24 revalidation](https://github.com/ugoite/ugoite/blob/main/docs/architecture/testing/composition-acceptance-2026-10-24.md)
