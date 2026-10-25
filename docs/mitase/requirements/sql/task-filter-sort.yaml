@@ -1,0 +1,29 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: sql
+category: Task-oriented SQL Filter and Sort editing
+requirements:
+  - id: REQ-SQL-003
+    title: Task-oriented SQL Filter and Sort editing
+    description: Provide bounded direct controls for common filters and sort keys while retaining Rust as the authority for SQL source edits.
+    priority: high
+    status: implemented
+    criteria:
+      - id: bounded-task-editing
+        kind: behavior
+        statement: >-
+          For a single SELECT over one named Form relation, the task editor
+          offers only authorized Form fields and constructs new comparisons
+          from a closed operator set and typed literal values, and constructs
+          ordered column keys with direction and null placement. A simple
+          table alias is used as the qualifier, and identifiers requiring
+          quoting are rendered as quoted identifiers. Adding a comparison to
+          an existing predicate preserves its meaning by grouping the prior
+          predicate before AND. Existing sort keys can change direction or
+          null placement, be removed, and be reordered. CTEs, joins, derived
+          relations, nested or ambiguous scopes do not receive these bounded
+          controls. Existing unsupported or complex predicate source remains
+          unchanged and reachable through explicit advanced editing. Every
+          successful task edit uses the Rust guarded edit protocol and its
+          returned inverse; no JavaScript SQL parser or generator is used.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]

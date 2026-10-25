@@ -307,6 +307,7 @@ test.describe("Saved SQL route", () => {
             type: "string",
             name: "entry_id",
             description: "Select matching rows.",
+            default: "no-match",
           }],
         },
       },
@@ -325,7 +326,11 @@ test.describe("Saved SQL route", () => {
       await expect(filterAction).toBeEnabled();
       await filterAction.click();
 
-      const dialog = page.getByRole("dialog", { name: "Filter" });
+      const filterDialog = page.getByRole("dialog", { name: "Filter" });
+      await filterDialog.getByRole("button", {
+        name: /Advanced structure/,
+      }).click();
+      const dialog = page.getByRole("dialog", { name: "SQL tree" });
       const leaves = dialog.getByRole("treeitem", {
         name: /Binary expression: "_ugoite_id" = \$entry_id$/,
       });
@@ -507,6 +512,14 @@ test.describe("Saved SQL route", () => {
         name: "Add argument",
         exact: true,
       }).click();
+      await argumentsDialog.getByRole("checkbox", {
+        name: "Default for entry_id",
+        exact: true,
+      }).check();
+      await argumentsDialog.getByRole("textbox", {
+        name: "Default for entry_id",
+        exact: true,
+      }).fill(entryId);
       await expect(
         argumentsDialog.getByText("Argument is not referenced in SQL."),
       ).toBeVisible();
@@ -516,9 +529,36 @@ test.describe("Saved SQL route", () => {
       await editor.fill(
         `SELECT COUNT(*) FROM "${relation}" WHERE "_ugoite_id" <> $entry_id GROUP BY "_ugoite_id" ORDER BY "_ugoite_id" DESC LIMIT 9`,
       );
-      const filterDialog = await open("Filter");
+      const taskFilterDialog = await open("Filter");
+      await taskFilterDialog.getByRole("combobox", {
+        name: "Column",
+        exact: true,
+      }).selectOption("_ugoite_id");
+      await taskFilterDialog.getByRole("combobox", {
+        name: "Operator",
+        exact: true,
+      }).selectOption("eq");
+      await taskFilterDialog.getByRole("textbox", {
+        name: "Value",
+        exact: true,
+      }).fill(entryId);
+      await taskFilterDialog.getByRole("button", {
+        name: "Add filter",
+        exact: true,
+      }).click();
+      await expect(page.locator(".ui-sql-editor")).toContainText(entryId);
+      await taskFilterDialog.getByRole("button", {
+        name: "Close",
+        exact: true,
+      }).last().click();
+      await page.getByRole("group", { name: "SQL", exact: true })
+        .getByRole("button", { name: "Structure", exact: true }).click();
+      await page.getByRole("button", { name: "SQL tree", exact: true })
+        .click();
+      const filterDialog = page.getByRole("dialog", { name: "SQL tree" });
       await filterDialog.getByRole("treeitem", {
-        name: /Binary expression: "_ugoite_id" <> \$entry_id/,
+        name:
+          /^Binary expression Binary expression: "_ugoite_id" <> \$entry_id$/,
       }).click();
       const operator = filterDialog.getByRole("combobox", {
         name: "Operator",
@@ -531,12 +571,20 @@ test.describe("Saved SQL route", () => {
         '"_ugoite_id" = $entry_id',
       );
       const sortDialog = await open("Sort");
-      await sortDialog.getByRole("treeitem", {
-        name: /Order key:.*_ugoite_id/,
-      }).click();
-      await sortDialog.getByRole("combobox", { name: "Direction", exact: true })
+      const firstSort = sortDialog.getByRole("group", { name: "Sort 1" });
+      await firstSort.getByRole("combobox", { name: "Direction", exact: true })
         .selectOption("asc");
-      await applyAndClose(sortDialog);
+      await firstSort.getByRole("button", {
+        name: "Apply sort changes",
+        exact: true,
+      }).click();
+      await expect(page.locator(".ui-sql-editor")).toContainText(
+        'ORDER BY "_ugoite_id" ASC',
+      );
+      await sortDialog.locator("footer").getByRole("button", {
+        name: "Close",
+        exact: true,
+      }).click();
       await expect(page.locator(".ui-sql-editor")).toContainText(
         'ORDER BY "_ugoite_id" ASC',
       );
@@ -564,11 +612,16 @@ test.describe("Saved SQL route", () => {
       );
       await expect(page.locator(".ui-sql-editor")).toContainText("LIMIT 9");
       await page.getByLabel("Query name").fill(queryName);
+      const saveButton = page.getByRole("button", {
+        name: "Save",
+        exact: true,
+      });
+      await expect(saveButton).toBeEnabled();
       const created = page.waitForResponse((response) =>
         response.request().method() === "POST" &&
         new URL(response.url()).pathname === `/api/spaces/${spaceId}/sql`
       );
-      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await saveButton.click();
       const response = await created;
       expect([200, 201], await response.text()).toContain(response.status());
       savedSqlId = (await response.json() as { id: string }).id;
