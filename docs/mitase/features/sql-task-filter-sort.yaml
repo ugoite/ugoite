@@ -48,6 +48,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-SQL-003#criterion.bounded-task-editing
+              - kind: satisfies
+                criterion: REQ-SQL-003#criterion.typed-filter-argument-transactions
       - id: wasm-protocol
         role: implementation
         facet: wasm
@@ -94,6 +96,22 @@ features:
                   arguments:
                     file: src/components/SqlFilterSortEditor.test.tsx
                     test: keeps a typed filter draft stable while typing and applies it through Rust
+          - id: filter-argument-standalone
+            adapter: typescript
+            path: frontend/src/components/SqlFilterSortEditor.test.tsx
+            selector:
+              kind: test
+              name: creates standalone arguments with the selected column type and default, without creating one for null operators
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-003#criterion.typed-filter-argument-transactions
+                covers:
+                  - FEAT-SQL-004#binding.frontend-editor/target.task-editor
+                runner:
+                  runner: frontend-vitest-file
+                  arguments:
+                    file: src/components/SqlFilterSortEditor.test.tsx
+                    test: creates standalone arguments with the selected column type and default, without creating one for null operators
           - id: wasm-protocol-parity
             adapter: rust
             path: crates/ugoite-wasm/src/lib.rs

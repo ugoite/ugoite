@@ -1,6 +1,13 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import type { Diagnostic } from "@codemirror/lint";
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import {
+  batch,
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Show,
+} from "solid-js";
 import { BackLink } from "~/components/BackLink";
 import { ButtonSpinner } from "~/components/ButtonSpinner";
 import { SQLWorkspace, SQLWorkspaceActionBar } from "~/components/SQLWorkspace";
@@ -355,6 +362,22 @@ export default function SpaceQueryCreateRoute() {
           }}
           onVariablesAdded={registerCreatedVariables}
           argumentDefinitions={argumentDefinitions}
+          onFilterEdit={(change) => {
+            if (
+              change.expectedScope !== `new-sql:${spaceId()}` ||
+              sqlInput() !== change.expectedSql
+            ) return false;
+            const current = argumentDefinitions();
+            if (
+              JSON.stringify(current) !==
+                JSON.stringify(change.expectedArguments ?? current)
+            ) return false;
+            batch(() => {
+              setArgumentDefinitions([...(change.resultArguments ?? current)]);
+              setSqlInput(change.resultSql);
+            });
+            return true;
+          }}
           onArgumentAdded={(variable) => {
             if (
               argumentDefinitions().some((item) => item.name === variable.name)

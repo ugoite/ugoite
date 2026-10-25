@@ -51,6 +51,20 @@ interface SqlStructureToolbarProps {
     variables: readonly { name: string; type: SqlStructureVariableType }[],
   ) => boolean | void;
   argumentDefinitions?: () => readonly SqlVariable[];
+  scalarVariables?: readonly { id: string; name: string; type: string }[];
+  argumentBindings?: () => readonly { name: string; variableId: string }[];
+  reservedVariableNames?: () => readonly string[];
+  onFilterEdit?: (change: {
+    expectedSql: string;
+    expectedScope: string | undefined;
+    resultSql: string;
+    createdArgument?: SqlVariable;
+    binding?: { name: string; variableId: string };
+    expectedBindings?: readonly { name: string; variableId: string }[];
+    resultBindings?: readonly { name: string; variableId: string }[];
+    expectedArguments?: readonly SqlVariable[];
+    resultArguments?: readonly SqlVariable[];
+  }) => boolean | void;
   onArgumentAdded?: (variable: SqlVariable) => boolean | void;
   onArgumentUpdated?: (
     oldName: string,
@@ -444,6 +458,12 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                   disabled={props.disabled}
                   onSqlChange={(sql) => props.onSqlChange?.(sql)}
                   onAdvanced={() => openAction("document", dialogReturnFocus())}
+                  argumentDefinitions={props.argumentDefinitions}
+                  onArgumentAdded={props.onArgumentAdded}
+                  scalarVariables={props.scalarVariables}
+                  argumentBindings={props.argumentBindings}
+                  reservedVariableNames={props.reservedVariableNames}
+                  onFilterEdit={props.onFilterEdit}
                 />
               </Show>
               <Show
