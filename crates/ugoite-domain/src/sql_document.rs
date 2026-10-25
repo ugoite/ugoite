@@ -7131,7 +7131,12 @@ fn unaliased_projection_output_name_matches(
     nodes
         .iter()
         .find(|node| {
-            node.parent == Some(item.id) && node.kind == SqlDocumentNodeKind::IdentifierExpression
+            node.parent == Some(item.id)
+                && matches!(
+                    node.kind,
+                    SqlDocumentNodeKind::IdentifierExpression
+                        | SqlDocumentNodeKind::CompoundIdentifierExpression
+                )
         })
         .and_then(|node| match &node.semantic {
             Some(SqlDocumentNodeData::Identifier { value, quote_style }) => {
@@ -7140,6 +7145,7 @@ fn unaliased_projection_output_name_matches(
                     quote_style: *quote_style,
                 })
             }
+            Some(SqlDocumentNodeData::CompoundIdentifier { parts }) => parts.last().cloned(),
             _ => None,
         })
         .is_some_and(|output_name| sql_identifiers_match(&output_name, alias))
@@ -15884,6 +15890,30 @@ mod tests {
             apply_sql_document_semantic_edit_transaction(
                 duplicate_source,
                 &semantic_transaction(duplicate_source, vec![implicit_name_conflict])
+            ),
+            Err(SqlDocumentEditError::ProjectionAliasConflict)
+        );
+
+        let qualified_source = "SELECT q.amount, q.other FROM \"G\" q";
+        let qualified_document = parse_sql_document(qualified_source);
+        let qualified_first = qualified_document
+            .nodes
+            .iter()
+            .filter(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+            .min_by_key(|node| node.range.unwrap().start)
+            .unwrap();
+        let qualified_conflict = SqlDocumentSemanticEdit::SetProjectionAlias {
+            node_id: qualified_first.id,
+            expected_kind: SqlDocumentNodeKind::SelectItem,
+            alias: Some(SqlDocumentIdentifier {
+                value: "other".into(),
+                quote_style: Some('\"'),
+            }),
+        };
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(
+                qualified_source,
+                &semantic_transaction(qualified_source, vec![qualified_conflict])
             ),
             Err(SqlDocumentEditError::ProjectionAliasConflict)
         );

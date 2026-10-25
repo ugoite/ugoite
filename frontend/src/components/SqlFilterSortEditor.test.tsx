@@ -108,9 +108,10 @@ describe("SQL Filter and Sort task editors", () => {
       expect(filterColumn.querySelectorAll("option").length).toBe(2)
     );
     fireEvent.change(filterColumn, { target: { value: "field_amount" } });
-    fireEvent.change(screen.getByRole("combobox", { name: "Filter value" }), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Value source" }), {
       target: { value: "argument" },
     });
+    expect(screen.queryByRole("combobox", { name: "Value type" })).toBeNull();
     fireEvent.input(
       screen.getByRole("textbox", { name: "New argument name" }),
       {
@@ -169,7 +170,7 @@ describe("SQL Filter and Sort task editors", () => {
       expect(column.querySelectorAll("option").length).toBe(2)
     );
     fireEvent.change(column, { target: { value: "field_amount" } });
-    fireEvent.change(screen.getByRole("combobox", { name: "Filter value" }), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Value source" }), {
       target: { value: "argument" },
     });
     fireEvent.input(

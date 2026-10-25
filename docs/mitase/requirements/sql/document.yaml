@@ -66,7 +66,9 @@ requirements:
           rejects the complete edit with a local diagnostic unless the edit
           preserves that reference's meaning. Adding or renaming an alias also
           rejects a same-scope reference capture or duplicate output name when
-          the sibling output name is an explicit alias or a simple identifier.
+          the sibling output name is an explicit alias or a simple unqualified
+          or qualified column reference, using the final identifier part for
+          qualified names.
           The editor does not claim to resolve generated names for arbitrary
           output expressions. The
           same guarded operation and inverse are exposed through the portable
