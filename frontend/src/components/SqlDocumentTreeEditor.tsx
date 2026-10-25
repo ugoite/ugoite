@@ -1740,7 +1740,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     if (
       node.kind === "unary_expression" &&
       node.semantic?.kind === "unary_operator" &&
-      ["+", "-"].includes(node.semantic.operator)
+      unarySignKind(node.semantic.operator) !== ""
     ) {
       return unarySign() !== unarySignKind(node.semantic.operator);
     }

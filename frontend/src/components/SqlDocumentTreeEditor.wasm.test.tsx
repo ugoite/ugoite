@@ -38,6 +38,38 @@ describe("SqlDocumentTreeEditor actual WASM interactions", () => {
     await waitFor(() => expect(sql()).toContain("CASE  WHEN amount = 1"));
   });
 
+  it("edits an existing NOT expression to a unary sign and restores it with WASM undo", async () => {
+    const initial = "SELECT NOT TRUE";
+    const document = await parseSqlDocument(initial);
+    const unary = document.nodes.find((node) => node.kind === "unary_expression")!;
+    const edit: SqlDocumentSemanticEditTransaction = {
+      contract_version: document.contract_version,
+      expected_source: initial,
+      edits: [{
+        kind: "replace_unary_sign",
+        node_id: unary.id,
+        expected_kind: "unary_expression",
+        sign: "negative",
+      }],
+    };
+    const result = await applySqlDocumentSemanticEditTransaction(initial, edit);
+    const [sql, setSql] = createSignal(initial);
+    render(() => <SqlDocumentTreeEditor sql={sql} onSqlChange={setSql} />);
+    fireEvent.click(
+      await screen.findByRole("treeitem", { name: /Unary expression/ }),
+    );
+    fireEvent.change(screen.getByLabelText("Unary sign"), {
+      target: { value: "negative" },
+    });
+    expect(screen.getByRole("button", { name: "Apply" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(sql()).toBe(result.document.source));
+    expect(sql()).toContain("- TRUE");
+
+    const restored = await applySqlDocumentEditTransaction(sql(), result.undo);
+    expect(restored.document.source).toBe(initial);
+  });
+
   it("authors NOT and bitwise AND from the inspector and restores both with WASM undo", async () => {
     const initial = "SELECT - TRUE, 5 + 3";
     const original = await parseSqlDocument(initial);
