@@ -281,7 +281,7 @@ describe("portable Ugoite API protocol WASM", () => {
     const sourceBytes = new TextEncoder().encode(sql);
 
     expect(document).toMatchObject({
-      contract_version: 17,
+      contract_version: 18,
       source: sql,
       status: "parsed",
     });

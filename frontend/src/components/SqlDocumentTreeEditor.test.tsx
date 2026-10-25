@@ -1309,7 +1309,7 @@ const makeOrderByItemsDocument = (source: string): SqlDocument => {
     );
   }
   return {
-    contract_version: 17,
+    contract_version: 18,
     source,
     status: "parsed",
     diagnostics: [],
@@ -1356,7 +1356,7 @@ const makeQueryClauseDocument = (source: string): SqlDocument => {
     });
   }
   return {
-    contract_version: 17,
+    contract_version: 18,
     source,
     status: "parsed",
     diagnostics: [],
@@ -1374,7 +1374,7 @@ const makeAggregateDocument = (source: string): SqlDocument => {
   const argumentStart = source.indexOf("amount", open);
   const hasArgument = argumentStart >= 0 && argumentStart < close;
   return {
-    contract_version: 17,
+    contract_version: 18,
     source,
     status: "parsed",
     diagnostics: [],
@@ -3267,7 +3267,7 @@ describe("SqlDocumentTreeEditor set operation edits", () => {
     );
     applySemanticEditMock.mockResolvedValue({
       document: makeOrderByItemsDocument(changedSql),
-      undo: { contract_version: 17, expected_source: changedSql, edits: [] },
+      undo: { contract_version: 18, expected_source: changedSql, edits: [] },
     });
     const [sql, setSql] = createSignal(initialSql);
 
@@ -3288,7 +3288,7 @@ describe("SqlDocumentTreeEditor set operation edits", () => {
       expect(applySemanticEditMock).toHaveBeenCalledWith(
         initialSql,
         {
-          contract_version: 17,
+          contract_version: 18,
           expected_source: initialSql,
           edits: [{
             kind: "set_order_by_options",
@@ -3312,7 +3312,7 @@ describe("SqlDocumentTreeEditor set operation edits", () => {
     );
     applySemanticEditMock.mockResolvedValue({
       document: makeOrderByItemsDocument(changedSql),
-      undo: { contract_version: 17, expected_source: changedSql, edits: [] },
+      undo: { contract_version: 18, expected_source: changedSql, edits: [] },
     });
     const [sql, setSql] = createSignal(initialSql);
 
@@ -3331,7 +3331,7 @@ describe("SqlDocumentTreeEditor set operation edits", () => {
       expect(applySemanticEditMock).toHaveBeenCalledWith(
         initialSql,
         {
-          contract_version: 17,
+          contract_version: 18,
           expected_source: initialSql,
           edits: [{
             kind: "set_order_by_expression",
@@ -3354,7 +3354,7 @@ describe("SqlDocumentTreeEditor set operation edits", () => {
     );
     applySemanticEditMock.mockResolvedValue({
       document: makeOrderByItemsDocument(movedSql),
-      undo: { contract_version: 17, expected_source: movedSql, edits: [] },
+      undo: { contract_version: 18, expected_source: movedSql, edits: [] },
     });
     const [sql, setSql] = createSignal(initialSql);
 
@@ -3372,7 +3372,7 @@ describe("SqlDocumentTreeEditor set operation edits", () => {
       expect(applySemanticEditMock).toHaveBeenCalledWith(
         initialSql,
         {
-          contract_version: 17,
+          contract_version: 18,
           expected_source: initialSql,
           edits: [{
             kind: "move_order_by_item",
@@ -3394,7 +3394,7 @@ describe("SqlDocumentTreeEditor set operation edits", () => {
     );
     applySemanticEditMock.mockResolvedValue({
       document: makeOrderByItemsDocument(changedSql),
-      undo: { contract_version: 17, expected_source: changedSql, edits: [] },
+      undo: { contract_version: 18, expected_source: changedSql, edits: [] },
     });
     const [sql, setSql] = createSignal(initialSql);
 
@@ -3410,7 +3410,7 @@ describe("SqlDocumentTreeEditor set operation edits", () => {
       expect(applySemanticEditMock).toHaveBeenCalledWith(
         initialSql,
         {
-          contract_version: 17,
+          contract_version: 18,
           expected_source: initialSql,
           edits: [{
             kind: "remove_order_by_item",
@@ -3431,7 +3431,7 @@ describe("SqlDocumentTreeEditor set operation edits", () => {
     );
     applySemanticEditMock.mockResolvedValue({
       document: makeQueryClauseDocument(changedSql),
-      undo: { contract_version: 17, expected_source: changedSql, edits: [] },
+      undo: { contract_version: 18, expected_source: changedSql, edits: [] },
     });
     const [sql, setSql] = createSignal(initialSql);
 
@@ -3450,7 +3450,7 @@ describe("SqlDocumentTreeEditor set operation edits", () => {
       expect(applySemanticEditMock).toHaveBeenCalledWith(
         initialSql,
         {
-          contract_version: 17,
+          contract_version: 18,
           expected_source: initialSql,
           edits: [{
             kind: "set_limit_value",
@@ -3472,7 +3472,7 @@ describe("SqlDocumentTreeEditor set operation edits", () => {
     );
     applySemanticEditMock.mockResolvedValue({
       document: makeQueryClauseDocument(changedSql),
-      undo: { contract_version: 17, expected_source: changedSql, edits: [] },
+      undo: { contract_version: 18, expected_source: changedSql, edits: [] },
     });
     const [sql, setSql] = createSignal(initialSql);
 
@@ -3491,7 +3491,7 @@ describe("SqlDocumentTreeEditor set operation edits", () => {
       expect(applySemanticEditMock).toHaveBeenCalledWith(
         initialSql,
         {
-          contract_version: 17,
+          contract_version: 18,
           expected_source: initialSql,
           edits: [{
             kind: "set_offset_value",
@@ -3513,7 +3513,7 @@ describe("SqlDocumentTreeEditor set operation edits", () => {
     );
     applySemanticEditMock.mockResolvedValue({
       document: makeQueryClauseDocument(changedSql),
-      undo: { contract_version: 17, expected_source: changedSql, edits: [] },
+      undo: { contract_version: 18, expected_source: changedSql, edits: [] },
     });
     const [sql, setSql] = createSignal(initialSql);
 
@@ -3529,7 +3529,7 @@ describe("SqlDocumentTreeEditor set operation edits", () => {
       expect(applySemanticEditMock).toHaveBeenCalledWith(
         initialSql,
         {
-          contract_version: 17,
+          contract_version: 18,
           expected_source: initialSql,
           edits: [{
             kind: "remove_limit",
@@ -3550,7 +3550,7 @@ describe("SqlDocumentTreeEditor set operation edits", () => {
     );
     applySemanticEditMock.mockResolvedValue({
       document: makeQueryClauseDocument(changedSql),
-      undo: { contract_version: 17, expected_source: changedSql, edits: [] },
+      undo: { contract_version: 18, expected_source: changedSql, edits: [] },
     });
     const [sql, setSql] = createSignal(initialSql);
 
@@ -3566,7 +3566,7 @@ describe("SqlDocumentTreeEditor set operation edits", () => {
       expect(applySemanticEditMock).toHaveBeenCalledWith(
         initialSql,
         {
-          contract_version: 17,
+          contract_version: 18,
           expected_source: initialSql,
           edits: [{
             kind: "remove_offset",
@@ -3587,7 +3587,7 @@ describe("SqlDocumentTreeEditor set operation edits", () => {
     );
     applySemanticEditMock.mockResolvedValue({
       document: makeAggregateDocument(sumSql),
-      undo: { contract_version: 17, expected_source: sumSql, edits: [] },
+      undo: { contract_version: 18, expected_source: sumSql, edits: [] },
     });
     const [sql, setSql] = createSignal(initialSql);
 
@@ -3608,7 +3608,7 @@ describe("SqlDocumentTreeEditor set operation edits", () => {
       expect(applySemanticEditMock).toHaveBeenCalledWith(
         initialSql,
         {
-          contract_version: 17,
+          contract_version: 18,
           expected_source: initialSql,
           edits: [{
             kind: "set_aggregate_function",
@@ -3630,7 +3630,7 @@ describe("SqlDocumentTreeEditor set operation edits", () => {
     );
     applySemanticEditMock.mockResolvedValue({
       document: makeAggregateDocument(changedSql),
-      undo: { contract_version: 17, expected_source: changedSql, edits: [] },
+      undo: { contract_version: 18, expected_source: changedSql, edits: [] },
     });
     const [sql, setSql] = createSignal(initialSql);
 
@@ -3646,7 +3646,7 @@ describe("SqlDocumentTreeEditor set operation edits", () => {
       expect(applySemanticEditMock).toHaveBeenCalledWith(
         initialSql,
         {
-          contract_version: 17,
+          contract_version: 18,
           expected_source: initialSql,
           edits: [{
             kind: "set_aggregate_distinct",
@@ -3668,7 +3668,7 @@ describe("SqlDocumentTreeEditor set operation edits", () => {
     );
     applySemanticEditMock.mockResolvedValue({
       document: makeQueryDocument(changedSql),
-      undo: { contract_version: 17, expected_source: changedSql, edits: [] },
+      undo: { contract_version: 18, expected_source: changedSql, edits: [] },
     });
     const [sql, setSql] = createSignal(initialSql);
 
@@ -3684,7 +3684,7 @@ describe("SqlDocumentTreeEditor set operation edits", () => {
       expect(applySemanticEditMock).toHaveBeenCalledWith(
         initialSql,
         {
-          contract_version: 17,
+          contract_version: 18,
           expected_source: initialSql,
           edits: [{
             kind: "remove_aggregate",
