@@ -922,6 +922,87 @@ export function CompositionVariableGraphWorkspace(
                               ...entry,
                               description: "",
                             }))}
+                          scalarVariables={props.draft.variables.flatMap(
+                            (node) => {
+                              const type = node.kind === "query"
+                                ? node.returns.kind === "scalar"
+                                  ? node.returns.value_type.scalar_type
+                                  : undefined
+                                : node.value_type.scalar_type;
+                              return type && type !== "json" &&
+                                  type !== "decimal"
+                                ? [{ id: node.id, name: node.id, type }]
+                                : [];
+                            },
+                          )}
+                          argumentBindings={() =>
+                            query().query.arguments.map((argument) => ({
+                              name: argument.name,
+                              variableId: argument.variable,
+                            }))}
+                          onFilterEdit={(change) => {
+                            const current = props.draft.variables.find((node) =>
+                              node.id === query().id
+                            );
+                            if (
+                              change.expectedScope !==
+                                `composition-query:${query().id}` ||
+                              sql() !== change.expectedSql ||
+                              current?.kind !== "query" ||
+                              current.query.kind !== "inline_sql"
+                            ) return false;
+                            const currentBindings = current.query.arguments.map(
+                              (argument) => ({
+                                name: argument.name,
+                                variableId: argument.variable,
+                              }),
+                            );
+                            if (
+                              JSON.stringify(currentBindings) !==
+                                JSON.stringify(
+                                  change.expectedBindings ?? currentBindings,
+                                )
+                            ) return false;
+                            const currentArguments = declarations().map((
+                              entry,
+                            ) => ({
+                              ...entry,
+                              description: "",
+                            }));
+                            if (
+                              JSON.stringify(currentArguments) !==
+                                JSON.stringify(
+                                  change.expectedArguments ?? currentArguments,
+                                )
+                            ) return false;
+                            const argumentsNext =
+                              (change.resultBindings ?? currentBindings).map((
+                                binding,
+                              ) => ({
+                                name: binding.name,
+                                variable: binding.variableId,
+                              }));
+                            if (
+                              change.resultArguments &&
+                              change.resultArguments.length !==
+                                argumentsNext.length
+                            ) return false;
+                            const next: CompositionVariableNode = {
+                              ...current,
+                              query: {
+                                ...current.query,
+                                sql: change.resultSql,
+                                arguments: argumentsNext,
+                              },
+                            };
+                            props.onDraftChange({
+                              ...props.draft,
+                              variables: props.draft.variables.map((node) =>
+                                node.id === current.id ? next : node
+                              ),
+                            });
+                            return true;
+                          }}
                           argumentDefaultsEnabled={false}
                           onArgumentAdded={(argument) =>
                             props.onVariablesAdded?.(query().id, [{

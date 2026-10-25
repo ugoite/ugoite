@@ -1,5 +1,6 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import {
+  batch,
   createEffect,
   createMemo,
   createSignal,
@@ -670,6 +671,28 @@ export default function SpaceSqlDetailRoute() {
                     }}
                     onVariablesAdded={registerCreatedVariables}
                     argumentDefinitions={savedVariables}
+                    onFilterEdit={(change) => {
+                      if (
+                        change.expectedScope !==
+                          `saved-sql:${spaceId()}:${sqlId()}:${
+                            revisionId() ?? ""
+                          }` ||
+                        sqlInput() !== change.expectedSql ||
+                        data().kind !== "user-query"
+                      ) return false;
+                      const current = savedVariables();
+                      if (
+                        JSON.stringify(current) !==
+                          JSON.stringify(change.expectedArguments ?? current)
+                      ) return false;
+                      batch(() => {
+                        setSavedVariables([
+                          ...(change.resultArguments ?? current),
+                        ]);
+                        setSqlInput(change.resultSql);
+                      });
+                      return true;
+                    }}
                     onArgumentAdded={(variable) => {
                       if (
                         savedVariables().some((item) =>

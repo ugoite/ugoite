@@ -20,6 +20,8 @@ import {
 } from "~/lib/ugoite-client";
 import { t } from "~/lib/i18n";
 import { IconButton } from "~/components/IconButton";
+import type { SqlVariable } from "~/lib/types";
+import { parseSqlVariableDefault } from "~/lib/sql";
 
 interface Props {
   action: "filter" | "sort";
@@ -29,6 +31,22 @@ interface Props {
   contexts: () => readonly SqlStructureAdapterContext[];
   onSqlChange: (sql: string) => void;
   onAdvanced: () => void;
+  argumentDefinitions?: () => readonly SqlVariable[];
+  onArgumentAdded?: (variable: SqlVariable) => boolean | void;
+  scalarVariables?: readonly { id: string; name: string; type: string }[];
+  argumentBindings?: () => readonly { name: string; variableId: string }[];
+  reservedVariableNames?: () => readonly string[];
+  onFilterEdit?: (change: {
+    expectedSql: string;
+    expectedScope: string | undefined;
+    resultSql: string;
+    createdArgument?: SqlVariable;
+    binding?: { name: string; variableId: string };
+    expectedBindings?: readonly { name: string; variableId: string }[];
+    resultBindings?: readonly { name: string; variableId: string }[];
+    expectedArguments?: readonly SqlVariable[];
+    resultArguments?: readonly SqlVariable[];
+  }) => boolean | void;
 }
 type SortItem = {
   id: number;
@@ -103,6 +121,13 @@ const operators: {
   { value: "is_not_null", label: "IS NOT NULL", valueInput: false },
 ];
 type ValueKind = "string" | "number" | "boolean";
+type FilterHistoryEntry = {
+  transaction: SqlDocumentEditTransaction;
+  beforeBindings: readonly { name: string; variableId: string }[];
+  afterBindings: readonly { name: string; variableId: string }[];
+  beforeArguments: readonly SqlVariable[];
+  afterArguments: readonly SqlVariable[];
+};
 
 /** Task-oriented controls construct only typed operations; Rust owns SQL text. */
 export function SqlFilterSortEditor(props: Props) {
@@ -111,6 +136,14 @@ export function SqlFilterSortEditor(props: Props) {
   const [operator, setOperator] = createSignal<SqlDocumentFilterOperator>("eq");
   const [valueKind, setValueKind] = createSignal<ValueKind>("string");
   const [value, setValue] = createSignal("");
+  const [valueSource, setValueSource] = createSignal<"literal" | "argument">(
+    "literal",
+  );
+  const [argumentName, setArgumentName] = createSignal("");
+  const [newArgumentName, setNewArgumentName] = createSignal("");
+  const [newArgumentType, setNewArgumentType] = createSignal("string");
+  const [argumentDefault, setArgumentDefault] = createSignal("");
+  const [bindingVariableId, setBindingVariableId] = createSignal("");
   const [direction, setDirection] = createSignal<"asc" | "desc">("asc");
   const [nulls, setNulls] = createSignal<"" | "first" | "last">("");
   const [busy, setBusy] = createSignal(false);
@@ -119,10 +152,8 @@ export function SqlFilterSortEditor(props: Props) {
   const [sortDrafts, setSortDrafts] = createSignal<Record<number, SortDraft>>(
     {},
   );
-  const [history, setHistory] = createSignal<SqlDocumentEditTransaction[]>([]);
-  const [redoHistory, setRedoHistory] = createSignal<
-    SqlDocumentEditTransaction[]
-  >([]);
+  const [history, setHistory] = createSignal<FilterHistoryEntry[]>([]);
+  const [redoHistory, setRedoHistory] = createSignal<FilterHistoryEntry[]>([]);
   const [parsedScope, setParsedScope] = createSignal<RootScope | null>(null);
   let generation = 0;
   onCleanup(() => generation++);
@@ -143,6 +174,34 @@ export function SqlFilterSortEditor(props: Props) {
     columns().filter((item) =>
       selected()?.columnCapabilities[item.name]?.sortable === true
     );
+  const compatibleValueType = (fieldName = column()) => {
+    const raw = columns().find((item) => item.name === fieldName)?.type
+      ?.toLowerCase();
+    if (!raw) return undefined;
+    if (["string", "text", "varchar", "char"].includes(raw)) return "string";
+    if (["int", "integer", "bigint", "smallint"].includes(raw)) {
+      return "integer";
+    }
+    if (["float", "double", "real"].includes(raw)) return "float";
+    if (["bool", "boolean"].includes(raw)) return "boolean";
+    if (raw === "date") return "date";
+    if (["timestamp", "datetime"].includes(raw)) return "timestamp";
+    return undefined;
+  };
+  const compatibleScalarVariables = () => {
+    const type = compatibleValueType();
+    return type
+      ? (props.scalarVariables ?? []).filter((item) => item.type === type)
+      : [];
+  };
+  const compatibleArguments = () => {
+    const type = compatibleValueType();
+    return type
+      ? (props.argumentDefinitions?.() ?? []).filter((item) =>
+        item.type === type
+      )
+      : [];
+  };
   const supportedFilterOperators = (fieldName = column()) => {
     const capability = selected()?.columnCapabilities[fieldName];
     if (!capability?.filterable) return [];
@@ -179,8 +238,8 @@ export function SqlFilterSortEditor(props: Props) {
       setHistory([]);
       setRedoHistory([]);
     } else if (
-      untrack(history).at(-1)?.expected_source !== source &&
-      untrack(redoHistory).at(-1)?.expected_source !== source
+      untrack(history).at(-1)?.transaction.expected_source !== source &&
+      untrack(redoHistory).at(-1)?.transaction.expected_source !== source
     ) {
       setHistory([]);
       setRedoHistory([]);
@@ -282,7 +341,13 @@ export function SqlFilterSortEditor(props: Props) {
         edits: [edit],
       });
       if (!requestIsCurrent(request, source, scope)) return;
-      setHistory([...history(), result.undo].slice(-32));
+      setHistory([...history(), {
+        transaction: result.undo,
+        beforeBindings: props.argumentBindings?.() ?? [],
+        afterBindings: props.argumentBindings?.() ?? [],
+        beforeArguments: props.argumentDefinitions?.() ?? [],
+        afterArguments: props.argumentDefinitions?.() ?? [],
+      }].slice(-32));
       setRedoHistory([]);
       props.onSqlChange(result.document.source);
     } catch (cause) {
@@ -334,12 +399,72 @@ export function SqlFilterSortEditor(props: Props) {
       if (props.action === "sort" && !capability?.sortable) {
         throw new Error(t("sqlPage.structure.documentNoOperationTarget"));
       }
+      if (
+        props.scalarVariables && valueSource() === "argument" &&
+        !argumentName() && !bindingVariableId()
+      ) {
+        throw new Error(t("sqlPage.structure.documentEnterValue"));
+      }
       let literal: SqlDocumentSemanticLiteral | null = null;
+      let createdArgument: SqlVariable | undefined;
+      const priorBindings = props.argumentBindings?.() ?? [];
+      let nextBindings = priorBindings;
+      const priorArguments = props.argumentDefinitions?.() ?? [];
+      let nextArguments = priorArguments;
       if (props.action === "filter" && currentOperator().valueInput) {
-        if (valueKind() !== "string" && !value()) {
+        if (valueSource() === "argument") {
+          const existing = compatibleArguments().find((item) =>
+            item.name === argumentName()
+          );
+          if (existing) {
+            literal = { kind: "named_parameter", name: existing.name };
+          } else {
+            const name = newArgumentName().trim();
+            if (
+              !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(name) ||
+              (props.argumentDefinitions?.() ?? []).some((item) =>
+                item.name === name
+              ) ||
+              (props.reservedVariableNames?.() ?? []).includes(name) ||
+              (!props.onFilterEdit && !props.onArgumentAdded)
+            ) {
+              throw new Error(t("sqlPage.structure.documentEnterValue"));
+            }
+            if (
+              props.scalarVariables &&
+              !compatibleScalarVariables().some((item) =>
+                item.id === bindingVariableId()
+              )
+            ) {
+              throw new Error(t("sqlPage.structure.documentEnterValue"));
+            }
+            const argumentType = compatibleScalarVariables().find((variable) =>
+              variable.id === bindingVariableId()
+            )?.type ?? newArgumentType();
+            const parsedDefault = argumentDefault() !== ""
+              ? parseSqlVariableDefault(argumentType, argumentDefault())
+              : undefined;
+            if (argumentDefault() !== "" && !parsedDefault?.valid) {
+              throw new Error(t("sqlPage.structure.documentEnterValue"));
+            }
+            createdArgument = {
+              name,
+              type: argumentType,
+              description: "",
+              ...(parsedDefault?.valid ? { default: parsedDefault.value } : {}),
+            };
+            nextArguments = [...priorArguments, createdArgument];
+            if (bindingVariableId()) {
+              nextBindings = [...priorBindings, {
+                name,
+                variableId: bindingVariableId(),
+              }];
+            }
+            literal = { kind: "named_parameter", name };
+          }
+        } else if (valueKind() !== "string" && !value()) {
           throw new Error(t("sqlPage.structure.documentEnterValue"));
-        }
-        if (valueKind() === "number") {
+        } else if (valueKind() === "number") {
           literal = { kind: "number", value: value() };
         } else if (valueKind() === "boolean") {
           literal = { kind: "boolean", value: value() === "true" };
@@ -383,10 +508,46 @@ export function SqlFilterSortEditor(props: Props) {
         expected_source: source,
         edits: [edit],
       });
-      if (!requestIsCurrent(request, source, scope)) return;
-      setHistory([...history(), result.undo].slice(-32));
+      if (!requestIsCurrent(request, source, scope)) {
+        return;
+      }
+      if (createdArgument && !props.onFilterEdit && !props.onArgumentAdded) {
+        throw new Error(t("sqlPage.structure.editFailed"));
+      }
+      if (props.onFilterEdit) {
+        const accepted = props.onFilterEdit({
+          expectedSql: source,
+          expectedScope: scope,
+          resultSql: result.document.source,
+          createdArgument,
+          binding: createdArgument && bindingVariableId()
+            ? { name: createdArgument.name, variableId: bindingVariableId() }
+            : undefined,
+          expectedBindings: priorBindings,
+          resultBindings: nextBindings,
+          expectedArguments: priorArguments,
+          resultArguments: nextArguments,
+        });
+        if (accepted === false) {
+          throw new Error(t("sqlPage.structure.editFailed"));
+        }
+      } else if (createdArgument) {
+        if (props.onArgumentAdded?.(createdArgument) === false) {
+          throw new Error(t("sqlPage.structure.editFailed"));
+        }
+        props.onSqlChange(result.document.source);
+      }
+      setHistory([...history(), {
+        transaction: result.undo,
+        beforeBindings: priorBindings,
+        afterBindings: nextBindings,
+        beforeArguments: priorArguments,
+        afterArguments: nextArguments,
+      }].slice(-32));
       setRedoHistory([]);
-      props.onSqlChange(result.document.source);
+      if (!props.onFilterEdit && !createdArgument) {
+        props.onSqlChange(result.document.source);
+      }
     } catch (cause) {
       if (requestIsCurrent(request, source, scope)) {
         setError(
@@ -404,23 +565,70 @@ export function SqlFilterSortEditor(props: Props) {
     const source = props.sql();
     const scope = props.scope?.();
     const request = generation;
-    const transaction = (direction === "undo" ? history() : redoHistory()).at(
-      -1,
-    );
-    if (!transaction || transaction.expected_source !== source) return;
+    const entry = (direction === "undo" ? history() : redoHistory()).at(-1);
+    if (!entry || entry.transaction.expected_source !== source) return;
     setBusy(true);
     setError(undefined);
     try {
-      const result = await applySqlDocumentEditTransaction(source, transaction);
+      const result = await applySqlDocumentEditTransaction(
+        source,
+        entry.transaction,
+      );
       if (!requestIsCurrent(request, source, scope)) return;
+      const expectedBindings = direction === "undo"
+        ? entry.afterBindings
+        : entry.beforeBindings;
+      const resultBindings = direction === "undo"
+        ? entry.beforeBindings
+        : entry.afterBindings;
+      const expectedArguments = direction === "undo"
+        ? entry.afterArguments
+        : entry.beforeArguments;
+      const resultArguments = direction === "undo"
+        ? entry.beforeArguments
+        : entry.afterArguments;
+      if (props.onFilterEdit) {
+        const currentBindings = props.argumentBindings?.() ?? [];
+        if (
+          JSON.stringify(currentBindings) !== JSON.stringify(expectedBindings)
+        ) {
+          setError(t("sqlPage.structure.editFailed"));
+          return;
+        }
+        const currentArguments = props.argumentDefinitions?.() ?? [];
+        if (
+          JSON.stringify(currentArguments) !== JSON.stringify(expectedArguments)
+        ) {
+          setError(t("sqlPage.structure.editFailed"));
+          return;
+        }
+        const accepted = props.onFilterEdit({
+          expectedSql: source,
+          expectedScope: scope,
+          resultSql: result.document.source,
+          expectedBindings,
+          resultBindings,
+          expectedArguments,
+          resultArguments,
+        });
+        if (accepted === false) {
+          setError(t("sqlPage.structure.editFailed"));
+          return;
+        }
+      } else {
+        props.onSqlChange(result.document.source);
+      }
       if (direction === "undo") {
         setHistory(history().slice(0, -1));
-        setRedoHistory([...redoHistory(), result.undo].slice(-32));
+        setRedoHistory(
+          [...redoHistory(), { ...entry, transaction: result.undo }].slice(-32),
+        );
       } else {
         setRedoHistory(redoHistory().slice(0, -1));
-        setHistory([...history(), result.undo].slice(-32));
+        setHistory(
+          [...history(), { ...entry, transaction: result.undo }].slice(-32),
+        );
       }
-      props.onSqlChange(result.document.source);
     } catch (cause) {
       if (requestIsCurrent(request, source, scope)) {
         setError(
@@ -496,31 +704,147 @@ export function SqlFilterSortEditor(props: Props) {
           </select>
         </label>
         <Show when={currentOperator().valueInput}>
-          <label class="ui-field">
-            <span>{t("sqlPage.structure.value")}</span>
-            <Show
-              when={valueKind() === "boolean"}
-              fallback={
-                <input
-                  class="ui-input"
-                  disabled={busy() || locked()}
-                  value={value()}
-                  onInput={(event) => setValue(event.currentTarget.value)}
-                />
-              }
-            >
+          <Show when={props.argumentDefinitions}>
+            <label class="ui-field">
+              <span>Filter value</span>
               <select
                 class="ui-input"
                 disabled={busy() || locked()}
-                value={value()}
-                onChange={(event) => setValue(event.currentTarget.value)}
+                value={valueSource()}
+                onChange={(event) =>
+                  setValueSource(
+                    event.currentTarget.value as "literal" | "argument",
+                  )}
               >
-                <option value="" />
-                <option value="true">TRUE</option>
-                <option value="false">FALSE</option>
+                <option value="literal">Literal</option>
+                <option value="argument">SQL argument</option>
               </select>
+            </label>
+          </Show>
+          <Show
+            when={valueSource() === "argument"}
+            fallback={
+              <label class="ui-field">
+                <span>{t("sqlPage.structure.value")}</span>
+                <Show
+                  when={valueKind() === "boolean"}
+                  fallback={
+                    <input
+                      class="ui-input"
+                      disabled={busy() || locked()}
+                      value={value()}
+                      onInput={(event) => setValue(event.currentTarget.value)}
+                    />
+                  }
+                >
+                  <select
+                    class="ui-input"
+                    disabled={busy() || locked()}
+                    value={value()}
+                    onChange={(event) => setValue(event.currentTarget.value)}
+                  >
+                    <option value="" />
+                    <option value="true">TRUE</option>
+                    <option value="false">FALSE</option>
+                  </select>
+                </Show>
+              </label>
+            }
+          >
+            <Show when={compatibleArguments().length > 0}>
+              <label class="ui-field">
+                <span>Declared argument</span>
+                <select
+                  class="ui-input"
+                  disabled={busy() || locked()}
+                  value={argumentName()}
+                  onChange={(event) =>
+                    setArgumentName(event.currentTarget.value)}
+                >
+                  <option value="" />
+                  <For each={compatibleArguments()}>
+                    {(item) => (
+                      <option value={item.name}>
+                        {item.name} ({item.type})
+                      </option>
+                    )}
+                  </For>
+                </select>
+              </label>
             </Show>
-          </label>
+            <Show when={!argumentName()}>
+              <label class="ui-field">
+                <span>New argument name</span>
+                <input
+                  class="ui-input"
+                  disabled={busy() || locked()}
+                  value={newArgumentName()}
+                  onInput={(event) =>
+                    setNewArgumentName(event.currentTarget.value)}
+                />
+              </label>
+              <Show
+                when={props.scalarVariables}
+                fallback={
+                  <label class="ui-field">
+                    <span>Type</span>
+                    <select
+                      class="ui-input"
+                      disabled={busy() || locked()}
+                      value={newArgumentType()}
+                      onChange={(event) =>
+                        setNewArgumentType(event.currentTarget.value)}
+                    >
+                      <For
+                        each={[
+                          "string",
+                          "integer",
+                          "float",
+                          "boolean",
+                          "date",
+                          "timestamp",
+                        ]}
+                      >
+                        {(type) => <option value={type}>{type}</option>}
+                      </For>
+                    </select>
+                  </label>
+                }
+              >
+                <label class="ui-field">
+                  <span>Bind to scalar variable</span>
+                  <select
+                    class="ui-input"
+                    disabled={busy() || locked()}
+                    value={bindingVariableId()}
+                    onChange={(event) =>
+                      setBindingVariableId(event.currentTarget.value)}
+                  >
+                    <option value="" />
+                    <For each={compatibleScalarVariables()}>
+                      {(variable) => (
+                        <option value={variable.id}>
+                          {variable.name} ({variable.type})
+                        </option>
+                      )}
+                    </For>
+                  </select>
+                </label>
+              </Show>
+              <Show when={!props.scalarVariables}>
+                <label class="ui-field">
+                  <span>Default value (optional)</span>
+                  <input
+                    class="ui-input"
+                    disabled={busy() || locked()}
+                    value={argumentDefault()}
+                    onInput={(event) =>
+                      setArgumentDefault(event.currentTarget.value)}
+                  />
+                </label>
+              </Show>
+            </Show>
+          </Show>
           <label class="ui-field">
             <span>{t("sqlPage.structure.documentValueKind")}</span>
             <select
@@ -743,7 +1067,7 @@ export function SqlFilterSortEditor(props: Props) {
           type="button"
           class="ui-button ui-button-secondary"
           disabled={busy() || locked() ||
-            history().at(-1)?.expected_source !== props.sql()}
+            history().at(-1)?.transaction.expected_source !== props.sql()}
           onClick={() => void applyHistory("undo")}
         >
           {t("sqlPage.columns.undo")}
@@ -752,7 +1076,7 @@ export function SqlFilterSortEditor(props: Props) {
           type="button"
           class="ui-button ui-button-secondary"
           disabled={busy() || locked() ||
-            redoHistory().at(-1)?.expected_source !== props.sql()}
+            redoHistory().at(-1)?.transaction.expected_source !== props.sql()}
           onClick={() => void applyHistory("redo")}
         >
           {t("sqlPage.columns.redo")}

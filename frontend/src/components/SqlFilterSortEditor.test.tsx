@@ -43,6 +43,106 @@ function deferred<T>() {
 }
 
 describe("SQL Filter and Sort task editors", () => {
+  it("constructs a named filter argument and explicit binding in the host commit", async () => {
+    const [sql, setSql] = createSignal('SELECT * FROM "form_expenses"');
+    const [bindings, setBindings] = createSignal<
+      readonly { name: string; variableId: string }[]
+    >([]);
+    const [argumentsList, setArgumentsList] = createSignal<
+      readonly { name: string; type: string; description: string }[]
+    >([]);
+    const onFilterEdit = vi.fn((change: {
+      resultSql: string;
+      expectedSql: string;
+      createdArgument?: { name: string; type: string };
+      binding?: { name: string; variableId: string };
+      expectedBindings?: readonly { name: string; variableId: string }[];
+      resultBindings?: readonly { name: string; variableId: string }[];
+      expectedArguments?: readonly {
+        name: string;
+        type: string;
+        description: string;
+      }[];
+      resultArguments?: readonly {
+        name: string;
+        type: string;
+        description: string;
+      }[];
+    }) => {
+      if (change.expectedSql !== sql()) return false;
+      if (
+        JSON.stringify(change.expectedBindings ?? bindings()) !==
+          JSON.stringify(bindings())
+      ) return false;
+      if (
+        JSON.stringify(change.expectedArguments ?? argumentsList()) !==
+          JSON.stringify(argumentsList())
+      ) return false;
+      setSql(change.resultSql);
+      if (change.resultBindings) setBindings(change.resultBindings);
+      if (change.resultArguments) setArgumentsList(change.resultArguments);
+      return true;
+    });
+    render(() => (
+      <SqlFilterSortEditor
+        action="filter"
+        sql={sql}
+        scope={() => "composition-query:query-a"}
+        contexts={() => [context]}
+        argumentDefinitions={argumentsList}
+        scalarVariables={[{
+          id: "min_amount",
+          name: "Minimum amount",
+          type: "integer",
+        }]}
+        argumentBindings={bindings}
+        onFilterEdit={onFilterEdit}
+        onSqlChange={setSql}
+        onAdvanced={() => {}}
+      />
+    ));
+    const filterColumn = await screen.findByRole("combobox", {
+      name: "Column",
+    });
+    await waitFor(() =>
+      expect(filterColumn.querySelectorAll("option").length).toBe(2)
+    );
+    fireEvent.change(filterColumn, { target: { value: "field_amount" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Filter value" }), {
+      target: { value: "argument" },
+    });
+    fireEvent.input(
+      screen.getByRole("textbox", { name: "New argument name" }),
+      {
+        target: { value: "minimum" },
+      },
+    );
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Bind to scalar variable" }),
+      {
+        target: { value: "min_amount" },
+      },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add filter" }));
+    await waitFor(() => expect(onFilterEdit).toHaveBeenCalled());
+    expect(onFilterEdit.mock.calls[0][0]).toMatchObject({
+      expectedSql: 'SELECT * FROM "form_expenses"',
+      expectedScope: "composition-query:query-a",
+      createdArgument: { name: "minimum", type: "integer" },
+      binding: { name: "minimum", variableId: "min_amount" },
+      expectedBindings: [],
+      resultBindings: [{ name: "minimum", variableId: "min_amount" }],
+    });
+    expect(sql()).toContain("field_amount = $minimum");
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await waitFor(() => expect(sql()).toBe('SELECT * FROM "form_expenses"'));
+    expect(onFilterEdit).toHaveBeenCalledTimes(2);
+    expect(onFilterEdit.mock.calls[1][0]).toMatchObject({
+      expectedBindings: [{ name: "minimum", variableId: "min_amount" }],
+      resultBindings: [],
+    });
+  });
+
   it("keeps a typed filter draft stable while typing and applies it through Rust", async () => {
     const [sql, setSql] = createSignal('SELECT * FROM "form_expenses"');
     render(() => (
