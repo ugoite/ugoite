@@ -12,11 +12,10 @@ and the original
 It does not revise or narrow them. All 30 goal IDs below remain in scope.
 
 This checkpoint was reproduced against the integrated existing-PR head
-`6c20da665b47279de58b4a9480b2944475a936c1`. A separate parent-owned
-frontend/spec delta at `d8acd3725` has focused test evidence listed below; it
-does not change Rust or WASM. The follow-up browser wait adjustment in this
-change is E2E test code only and has not been run at its changed test-source
-head. Existing public PRs are outside this checkpoint's write scope.
+`6c20da665b47279de58b4a9480b2944475a936c1`. A separate frontend/spec delta based
+on `d8acd3725` has focused test evidence listed below; it does not change Rust
+or WASM. The follow-up browser wait adjustment in this change is E2E test code
+only and has not been run at its changed test-source head.
 
 ## Evidence and boundaries
 
@@ -25,33 +24,29 @@ builds. Exact commits and commands below identify reproduced lanes; hosted CI
 and real-device findings are not inferred from local results.
 
 - Native build and production frontend build passed with source SHA
-  `6c20da665b47279de58b4a9480b2944475a936c1`; logs are
-  `/tmp/ugoite-comp-followup-20261025/baseline-native-build.log` and
-  `baseline-production-build.log`.
+  `6c20da665b47279de58b4a9480b2944475a936c1`.
 - Root gates reproduced at `6c20da6`: `mise run fmt:check` passed (Deno checked
   65 files); `mise run lint:rust` passed
   (`cargo clippy --workspace --all-targets --all-features -- -D warnings`);
   `mise run check:repo` passed, including Mitase with 0 errors/0 warnings and
-  the quality gate with 0 enforced findings. Exact command outputs are
-  summarized in
-  `/tmp/ugoite-comp-completion-20261024/followup-gates-handoff-20261025.md`.
+  the quality gate with 0 enforced findings.
 - The 12-case Chromium selection at product/test source SHA `6c20da6` had **11
   passed and 1 failed**. The failure was the 5-second default wait for the Saved
   SQL Metric dialog to close in “unnamed mobile Composition keeps Text focus and
   inserts existing data before naming”; the value assertion already had a
-  30-second wait. Log and JUnit are
-  `/tmp/ugoite-comp-followup-20261025/baseline-chromium-browser.log` and
-  `baseline-chromium-junit.xml`.
+  30-second wait. The command was the 12-case Chromium selection of
+  `sql-columns-editor.test.ts`, `composition-studio-journey.test.ts`, and
+  `composition-invalid-variable-input.test.ts`.
 - An unchanged single-case rerun at `6c20da6` passed **1/1 in 20.8 seconds**. It
   also passed the 16px text focus, FormTable and Metric, Saved SQL Metric, save,
   and reopen assertions. This establishes a flaky bounded wait at that source
   head, not a deterministic fix or complete browser acceptance. The current
   follow-up extends only the dialog-closure assertion to 30 seconds; its changed
   test-source head still needs execution.
-- Parent-owned frontend/spec delta `d8acd3725` passed **36 tests across 4
-  files**, `mise run fmt:check` (65 files), SQL matrix (6/6), and Mitase. These
-  are exact-head focused checks; they do not verify the pending new-feature
-  browser path or full acceptance.
+- Frontend/spec delta based on `d8acd3725` passed **36 tests across 4 files**,
+  `mise run fmt:check` (65 files), SQL matrix (6/6), and Mitase. These are
+  focused checks; they do not verify the pending new-feature browser path or
+  full acceptance.
 - `strict-save-composition-after-filter-stackfix`: 35 Iceberg library tests and
   21 Composition tests passed, with matching query tests. Strict-save focused
   evidence does not establish every browser cardinality or failure-state branch.
@@ -62,6 +57,11 @@ and real-device findings are not inferred from local results.
 - Earlier typed API, CLI, and native/WASM parity lanes passed 47 API tests, 1
   CLI test, and the recorded parity check. These do not substitute for
   end-to-end coverage.
+- `mise run test:older-cli-knowledge-preservation` passed 1/1 using the
+  integrity-verified v0.2.1 CLI from source
+  `51f469e3f81113e4295b8d579410c538fd36a61c`. It proves that this older CLI
+  updates unrelated Knowledge without rewriting a Composition; it does not
+  establish the full raw-history and export preservation corpus.
 - Earlier focused Rust, frontend, and WASM evidence remains bounded to the named
   paths in the previous checkpoint and the original acceptance reports. It does
   not substitute for the full acceptance matrices below. Failed runs remain
@@ -77,8 +77,7 @@ GUI coverage), [#4590](https://github.com/ugoite/ugoite/issues/4590)
 fixture/session limitation). No real iOS device, VoiceOver/NVDA, or actual 200%
 zoom proof is available; automated WebKit is not device proof.
 
-S-02 remains `未達`. Published PRs
-[#4621](https://github.com/ugoite/ugoite/pull/4621) and
+S-02 remains `未達`. PRs [#4621](https://github.com/ugoite/ugoite/pull/4621) and
 [#4622](https://github.com/ugoite/ugoite/pull/4622) add independently reviewed
 typed-filter arguments and projection aliases. Rich primitive support is tracked
 separately in [#4623](https://github.com/ugoite/ugoite/issues/4623); its
@@ -112,8 +111,8 @@ individual goal verdicts, not a feature-level pass count.
 | S-01 | 未検証  | Shared workspace paths tested; complete three-host grammar corpus remains.                                                                                                                                                                                                                                                        |
 | S-02 | 未達    | Typed-filter arguments and projection aliases have bounded new PR evidence, but complete GUI coverage remains open for the SQL forms listed above, including nested filter groups and rich primitive values; see [#4565](https://github.com/ugoite/ugoite/issues/4565) and [#4623](https://github.com/ugoite/ugoite/issues/4623). |
 | S-03 | 未検証  | Guarded SQL edits have focused checks; alternating edits, invalid drafts, comments, and complex SQL corpus remains.                                                                                                                                                                                                               |
-| S-04 | 未達    | Actions are present, and empty-SQL construction has implementation coverage; complete six-operation reachability from every required SQL starting shape remains unproven and tracked in [#4613](https://github.com/ugoite/ugoite/issues/4613).                                                                                    |
-| S-05 | 未達    | Argument rename/type/recovery is repaired in focused tests; inline argument creation and complete typed/default/save/run/Count/page evidence remain.                                                                                                                                                                              |
+| S-04 | 未検証  | Actions are present, and empty-SQL construction has implementation coverage; six-operation reachability from every required SQL starting shape has not been proven and remains tracked in [#4613](https://github.com/ugoite/ugoite/issues/4613).                                                                                  |
+| S-05 | 未検証  | Inline argument creation has Studio DOM evidence in [#4621](https://github.com/ugoite/ugoite/pull/4621), and rename/type/recovery have focused checks; the complete typed/default/save/run/Count/page matrix remains unverified.                                                                                                  |
 | S-06 | 未検証  | Plan/run/count/page boundaries have focused checks; integrated browser suite remains incomplete.                                                                                                                                                                                                                                  |
 | D-01 | 未検証  | Two-mode layout has responsive coverage; complete state/ownership inspection remains.                                                                                                                                                                                                                                             |
 | D-02 | 未検証  | Picker and Form paths have focused/browser evidence; complete reference-change paths remain.                                                                                                                                                                                                                                      |
@@ -130,22 +129,21 @@ individual goal verdicts, not a feature-level pass count.
 | U-03 | 未検証  | Human-readable names and selection paths exist; generated/empty/unavailable states remain to inspect.                                                                                                                                                                                                                             |
 | U-04 | 未検証  | Automated narrow-width checks exist; real device and 200% zoom evidence remains open in [#4590](https://github.com/ugoite/ugoite/issues/4590).                                                                                                                                                                                    |
 | U-05 | 未検証  | Keyboard/focus paths have focused evidence; VoiceOver/NVDA, themes, and device QA remain open in [#4590](https://github.com/ugoite/ugoite/issues/4590).                                                                                                                                                                           |
-| B-01 | 未検証  | Strict rejection has focused native evidence; general Knowledge history/export preservation gate remains.                                                                                                                                                                                                                         |
+| B-01 | 未検証  | Strict rejection and one older-CLI unrelated-Knowledge preservation case have focused evidence; the general Knowledge raw-history/export corpus remains.                                                                                                                                                                          |
 | B-02 | 未検証  | Rust SQL ownership is covered on selected paths; complete admitted-operation audit remains.                                                                                                                                                                                                                                       |
 | B-03 | 未検証  | Exact revision, descriptor, and authorization checks exist; complete stale/ACL/schema/revision browser corpus remains.                                                                                                                                                                                                            |
 
 ## Reproduction index
 
 Commands are root `mise` tasks or the repository's focused lanes; run from the
-repository root. At `6c20da6`, the reproduced root gates were
-`mise run fmt:check`, `mise run lint:rust`, and `mise run check:repo`, all
-passing. Native/production build, 12-case browser, and unchanged single-case
-reproduction logs are under `/tmp/ugoite-comp-followup-20261025/`. Parent-owned
-delta `d8acd3725` logs are `filter-integrated-format.log`,
-`filter-integrated-matrix.log`, `filter-integrated-mitase.log`, and
-`filter-integrated-tests.log` in the same directory. The 12-case browser
-selection was `sql-columns-editor.test.ts`,
-`composition-studio-journey.test.ts`, and
-`composition-invalid-variable-input.test.ts`; its failure and the later
-single-case pass are recorded above. The focused CLI Knowledge-preservation gate
-is still running as of this report and is not counted as passed.
+repository root. At `6c20da665b47279de58b4a9480b2944475a936c1`,
+`mise run fmt:check`, `mise run lint:rust`, `mise run check:repo`,
+`mise run build:native`, and `mise run build:frontend:production` passed. The
+12-case Chromium selection listed above had 11 passed and 1 failed; a subsequent
+unchanged rerun of the failing test passed 1/1 in 20.8 seconds. A separate
+frontend/spec delta based on `d8acd3725` passed 36 tests across 4 files,
+`mise run fmt:check`, the 6-case SQL matrix, and Mitase. The changed mobile E2E
+wait remains unverified at this document's source head.
+`mise run test:older-cli-knowledge-preservation` passed 1/1 using the pinned
+v0.2.1 CLI source SHA `51f469e3f81113e4295b8d579410c538fd36a61c`; this single
+preservation case is not complete B-01 evidence.
