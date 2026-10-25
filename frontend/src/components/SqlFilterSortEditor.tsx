@@ -419,15 +419,18 @@ export function SqlFilterSortEditor(props: Props) {
             literal = { kind: "named_parameter", name: existing.name };
           } else {
             const name = newArgumentName().trim();
+            if (!/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(name)) {
+              throw new Error(t("sqlPage.structure.argumentNameInvalid"));
+            }
             if (
-              !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(name) ||
               (props.argumentDefinitions?.() ?? []).some((item) =>
                 item.name === name
-              ) ||
-              (props.reservedVariableNames?.() ?? []).includes(name) ||
-              (!props.onFilterEdit && !props.onArgumentAdded)
+              ) || (props.reservedVariableNames?.() ?? []).includes(name)
             ) {
-              throw new Error(t("sqlPage.structure.documentEnterValue"));
+              throw new Error(t("sqlPage.structure.argumentNameTaken"));
+            }
+            if (!props.onFilterEdit && !props.onArgumentAdded) {
+              throw new Error(t("sqlPage.structure.filterArgumentInvalid"));
             }
             if (
               props.scalarVariables &&
@@ -435,19 +438,23 @@ export function SqlFilterSortEditor(props: Props) {
                 item.id === bindingVariableId()
               )
             ) {
-              throw new Error(t("sqlPage.structure.documentEnterValue"));
+              throw new Error(t("sqlPage.structure.filterArgumentInvalid"));
             }
             const argumentType = compatibleScalarVariables().find((variable) =>
               variable.id === bindingVariableId()
             )?.type ?? compatibleValueType();
             if (!argumentType) {
-              throw new Error(t("sqlPage.structure.documentEnterValue"));
+              throw new Error(
+                t("sqlPage.structure.filterArgumentTypeUnsupported"),
+              );
             }
             const parsedDefault = argumentDefault() !== ""
               ? parseSqlVariableDefault(argumentType, argumentDefault())
               : undefined;
             if (argumentDefault() !== "" && !parsedDefault?.valid) {
-              throw new Error(t("sqlPage.structure.documentEnterValue"));
+              throw new Error(
+                t("sqlPage.structure.filterArgumentDefaultInvalid"),
+              );
             }
             createdArgument = {
               name,
@@ -709,7 +716,7 @@ export function SqlFilterSortEditor(props: Props) {
         <Show when={currentOperator().valueInput}>
           <Show when={props.argumentDefinitions}>
             <label class="ui-field">
-              <span>Filter value</span>
+              <span>{t("sqlPage.structure.filterValueSource")}</span>
               <select
                 class="ui-input"
                 disabled={busy() || locked()}
@@ -719,8 +726,12 @@ export function SqlFilterSortEditor(props: Props) {
                     event.currentTarget.value as "literal" | "argument",
                   )}
               >
-                <option value="literal">Literal</option>
-                <option value="argument">SQL argument</option>
+                <option value="literal">
+                  {t("sqlPage.structure.filterValueFixed")}
+                </option>
+                <option value="argument">
+                  {t("sqlPage.structure.filterValueArgument")}
+                </option>
               </select>
             </label>
           </Show>
@@ -756,7 +767,7 @@ export function SqlFilterSortEditor(props: Props) {
           >
             <Show when={compatibleArguments().length > 0}>
               <label class="ui-field">
-                <span>Declared argument</span>
+                <span>{t("sqlPage.structure.filterDeclaredArgument")}</span>
                 <select
                   class="ui-input"
                   disabled={busy() || locked()}
@@ -777,7 +788,7 @@ export function SqlFilterSortEditor(props: Props) {
             </Show>
             <Show when={!argumentName()}>
               <label class="ui-field">
-                <span>New argument name</span>
+                <span>{t("sqlPage.structure.filterNewArgumentName")}</span>
                 <input
                   class="ui-input"
                   disabled={busy() || locked()}
@@ -790,15 +801,16 @@ export function SqlFilterSortEditor(props: Props) {
                 when={props.scalarVariables}
                 fallback={
                   <label class="ui-field">
-                    <span>Type</span>
+                    <span>{t("sqlPage.structure.argumentType")}</span>
                     <span class="ui-input" aria-readonly="true">
-                      {compatibleValueType() ?? "Unsupported column type"}
+                      {compatibleValueType() ??
+                        t("sqlPage.structure.filterArgumentTypeUnsupported")}
                     </span>
                   </label>
                 }
               >
                 <label class="ui-field">
-                  <span>Bind to scalar variable</span>
+                  <span>{t("sqlPage.structure.filterBindToVariable")}</span>
                   <select
                     class="ui-input"
                     disabled={busy() || locked()}
@@ -819,7 +831,7 @@ export function SqlFilterSortEditor(props: Props) {
               </Show>
               <Show when={!props.scalarVariables}>
                 <label class="ui-field">
-                  <span>Default value (optional)</span>
+                  <span>{t("sqlPage.structure.filterDefaultOptional")}</span>
                   <input
                     class="ui-input"
                     disabled={busy() || locked()}
@@ -831,26 +843,28 @@ export function SqlFilterSortEditor(props: Props) {
               </Show>
             </Show>
           </Show>
-          <label class="ui-field">
-            <span>{t("sqlPage.structure.documentValueKind")}</span>
-            <select
-              class="ui-input"
-              disabled={busy() || locked()}
-              value={valueKind()}
-              onChange={(event) =>
-                setValueKind(event.currentTarget.value as ValueKind)}
-            >
-              <option value="string">
-                {t("sqlPage.structure.documentString")}
-              </option>
-              <option value="number">
-                {t("sqlPage.structure.documentNumber")}
-              </option>
-              <option value="boolean">
-                {t("sqlPage.structure.literal.boolean")}
-              </option>
-            </select>
-          </label>
+          <Show when={valueSource() === "literal"}>
+            <label class="ui-field">
+              <span>{t("sqlPage.structure.documentValueKind")}</span>
+              <select
+                class="ui-input"
+                disabled={busy() || locked()}
+                value={valueKind()}
+                onChange={(event) =>
+                  setValueKind(event.currentTarget.value as ValueKind)}
+              >
+                <option value="string">
+                  {t("sqlPage.structure.documentString")}
+                </option>
+                <option value="number">
+                  {t("sqlPage.structure.documentNumber")}
+                </option>
+                <option value="boolean">
+                  {t("sqlPage.structure.literal.boolean")}
+                </option>
+              </select>
+            </label>
+          </Show>
         </Show>
       </Show>
       <Show when={props.action === "sort"}>

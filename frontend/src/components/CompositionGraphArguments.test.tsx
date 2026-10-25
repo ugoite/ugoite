@@ -210,7 +210,7 @@ describe("Composition shared SQL argument editing", () => {
       target: { value: "amount" },
     });
     fireEvent.change(
-      within(dialog).getByRole("combobox", { name: "Filter value" }),
+      within(dialog).getByRole("combobox", { name: "Value source" }),
       {
         target: { value: "argument" },
       },
