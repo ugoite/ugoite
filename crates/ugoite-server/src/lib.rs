@@ -16098,9 +16098,10 @@ spec:
         use ugoite_domain::composition::{
             CompositionComponent, CompositionDocument, CompositionFormat, CompositionKind,
             CompositionMetricPresentation, CompositionSpec, DashboardFlowLayout, FlowItem,
-            FlowLayoutKind, FlowRow, VariableGraphColumn, VariableGraphNode, VariableGraphNodeKind,
-            VariableGraphQuery, VariableGraphQueryDefinition, VariableGraphResultType,
-            VariableGraphScalarDescriptor, VariableGraphScalarType,
+            FlowLayoutKind, FlowRow, VariableGraphArgumentBinding, VariableGraphColumn,
+            VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind, VariableGraphQuery,
+            VariableGraphQueryDefinition, VariableGraphResultType, VariableGraphScalarDescriptor,
+            VariableGraphScalarType,
         };
 
         let state = AppState::new_for_tests(format!(
@@ -16124,6 +16125,17 @@ spec:
             kind: CompositionKind::Dashboard,
             spec: CompositionSpec {
                 variables: vec![
+                    VariableGraphNode {
+                        id: "include_empty".to_string(),
+                        kind: VariableGraphNodeKind::Input {
+                            value_type: VariableGraphScalarDescriptor {
+                                scalar_type: VariableGraphScalarType::Boolean,
+                                nullable: false,
+                            },
+                            required: true,
+                            default: Some(VariableGraphLiteral::Boolean(true)),
+                        },
+                    },
                     VariableGraphNode {
                         id: "total_query".to_string(),
                         kind: VariableGraphNodeKind::Query {
@@ -16177,10 +16189,14 @@ spec:
                             },
                             query: VariableGraphQuery {
                                 definition: VariableGraphQueryDefinition::InlineSql {
-                                    sql: "SELECT CAST(1 AS BIGINT) AS value WHERE 1 = 0"
-                                        .to_string(),
+                                    sql:
+                                        "SELECT CAST(1 AS BIGINT) AS value WHERE {{include_empty}}"
+                                            .to_string(),
                                 },
-                                arguments: Vec::new(),
+                                arguments: vec![VariableGraphArgumentBinding {
+                                    name: "include_empty".to_string(),
+                                    variable: "include_empty".to_string(),
+                                }],
                                 form_bindings: Vec::new(),
                                 schema_fingerprint: String::new(),
                             },
@@ -16205,6 +16221,10 @@ spec:
                         variable: "empty_query".to_string(),
                         presentation: None,
                     },
+                    CompositionComponent::Input {
+                        id: "include_empty_input".to_string(),
+                        variable: "include_empty".to_string(),
+                    },
                 ],
                 layout: DashboardFlowLayout {
                     kind: FlowLayoutKind::Flow,
@@ -16219,6 +16239,9 @@ spec:
                             },
                             FlowItem::Component {
                                 component: "empty_metric".to_string(),
+                            },
+                            FlowItem::Component {
+                                component: "include_empty_input".to_string(),
                             },
                         ],
                     }],
@@ -16253,7 +16276,8 @@ spec:
                         "composition_id": saved.entry_id.to_string(),
                         "revision_id": saved.revision_id.to_string()
                     },
-                    "requested_queries": ["total_query", "rows_query", "empty_query"]
+                    "requested_queries": ["total_query", "rows_query", "empty_query"],
+                    "variables": {"include_empty": false}
                 })
                 .to_string(),
             ))?;
