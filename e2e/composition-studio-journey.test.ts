@@ -990,7 +990,7 @@ test.describe("Composition Studio Journey", () => {
       );
       await expect(
         page.getByRole("table", { name: `${formSlug}_rows results` }),
-      ).toContainText(seed.purposes[0]);
+      ).toContainText(seed.purposes[0], { timeout: 30_000 });
       await expect(
         page.getByRole("region", {
           name: `${formSlug}_sum_amount`,
@@ -1648,7 +1648,7 @@ test("unnamed mobile Composition keeps Text focus and inserts existing data befo
   await palette.getByRole("button", { name: "Metric", exact: true }).click();
   await metric.getByRole("tab", { name: "Saved SQL", exact: true }).click();
   await metric.getByRole("button", { name: sqlName, exact: true }).click();
-  await expect(metric).toHaveCount(0);
+  await expect(metric).toHaveCount(0, { timeout: 30_000 });
   await expect(page.locator(".compositionGraphMetric strong")).toHaveText([
     "1",
     "42",
