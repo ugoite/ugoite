@@ -267,6 +267,11 @@ inventory:
         - frontend/src/components/SQLWorkspace.tsx
         - frontend/src/components/SQLWorkspace.test.tsx
         - frontend/src/components/SqlFormPicker.tsx
+        - frontend/src/components/SqlColumnsEditor.tsx
+        - frontend/src/lib/sql-document-columns.ts
+        - frontend/src/components/SqlWildcardExpansion.test.tsx
+        - frontend/src/components/SqlColumnsEditor.test.tsx
+        - e2e/sql-columns-editor.test.ts
         - frontend/src/components/SqlFormPicker.test.tsx
         - frontend/src/components/SqlStructureToolbar.tsx
         - frontend/src/components/SqlStructureToolbar.test.tsx

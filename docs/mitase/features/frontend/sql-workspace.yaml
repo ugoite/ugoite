@@ -55,6 +55,27 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-080#criterion.safe-structured-operations
+          - id: sql-columns-editor
+            adapter: typescript
+            path: frontend/src/components/SqlColumnsEditor.tsx
+            selector: { kind: symbol, name: SqlColumnsEditor }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.task-oriented-result-fields
+          - id: composition-columns-schema
+            adapter: typescript
+            path: frontend/src/components/CompositionStudio.tsx
+            selector: { kind: symbol, name: CompositionStudio }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.complete-wildcard-output-schema
+          - id: guarded-wildcard-source
+            adapter: typescript
+            path: frontend/src/lib/sql-document-columns.ts
+            selector: { kind: symbol, name: wildcardProjectionQualifier }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-080#criterion.complete-wildcard-output-schema
           - id: sql-structure-context
             adapter: typescript
             path: frontend/src/lib/sql.ts
@@ -139,3 +160,80 @@ features:
                   arguments:
                     file: src/components/SqlFormPicker.test.tsx
                     test: "keeps an invalid draft and opens explicit advanced editing"
+      - id: columns-task-verification
+        role: verification
+        facet: verification
+        responsibility: Verify field selection and order against actual Rust WASM and across the shared browser hosts.
+        targets:
+          - id: field-order-undo
+            adapter: typescript
+            path: frontend/src/components/SqlColumnsEditor.test.tsx
+            selector: { kind: test, name: "shows human field names, edits output order, removes fields, and undoes without changing other clauses" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.task-oriented-result-fields
+                covers: [FEAT-FE-008#binding.frontend/target.sql-columns-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlColumnsEditor.test.tsx, test: "shows human field names, edits output order, removes fields, and undoes without changing other clauses" } }
+          - id: qualified-wildcard
+            adapter: typescript
+            path: frontend/src/components/SqlColumnsEditor.test.tsx
+            selector: { kind: test, name: "expands only the qualified wildcard's Form, preserving joins and their aliases" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.task-oriented-result-fields
+                covers: [FEAT-FE-008#binding.frontend/target.sql-columns-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlColumnsEditor.test.tsx, test: "expands only the qualified wildcard's Form, preserving joins and their aliases" } }
+          - id: field-focus
+            adapter: typescript
+            path: frontend/src/components/SqlColumnsEditor.test.tsx
+            selector: { kind: test, name: "keeps the same field's focused control through a pending reorder" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.task-oriented-result-fields
+                covers: [FEAT-FE-008#binding.frontend/target.sql-columns-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlColumnsEditor.test.tsx, test: "keeps the same field's focused control through a pending reorder" } }
+          - id: host-isolation
+            adapter: typescript
+            path: frontend/src/components/SqlColumnsEditor.test.tsx
+            selector: { kind: test, name: "rejects a pending edit after host identity changes even with identical SQL" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.task-oriented-result-fields
+                covers: [FEAT-FE-008#binding.frontend/target.sql-columns-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlColumnsEditor.test.tsx, test: "rejects a pending edit after host identity changes even with identical SQL" } }
+          - id: shared-browser-columns
+            adapter: typescript
+            path: e2e/sql-columns-editor.test.ts
+            selector: { kind: test, name: SQL Columns edits human-labelled fields and preserves focus at narrow widths }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.task-oriented-result-fields
+                covers: [FEAT-FE-008#binding.frontend/target.sql-columns-editor]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/sql-columns-editor.test.ts, test: SQL Columns edits human-labelled fields and preserves focus at narrow widths } }
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.complete-wildcard-output-schema
+                covers: [FEAT-FE-008#binding.frontend/target.composition-columns-schema]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/sql-columns-editor.test.ts, test: SQL Columns edits human-labelled fields and preserves focus at narrow widths } }
+      - id: wildcard-schema-verification
+        role: verification
+        facet: verification
+        responsibility: Verify complete planned output and stale parameter rejection, plus both editor paths and all shared browser hosts.
+        targets:
+          - id: complete-plan-order
+            adapter: typescript
+            path: frontend/src/lib/sql-workspace.test.ts
+            selector: { kind: test, name: replans wildcard output against current authorization and rejects stale parameter snapshots }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.complete-wildcard-output-schema
+                covers: [FEAT-SQL-003#binding.frontend/target.planning-state]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-workspace.test.ts, test: replans wildcard output against current authorization and rejects stale parameter snapshots } }
+          - id: guarded-qualified-output
+            adapter: typescript
+            path: frontend/src/components/SqlWildcardExpansion.test.tsx
+            selector: { kind: test, name: "uses the qualified wildcard's complete planned output order including residual fields" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-080#criterion.complete-wildcard-output-schema
+                covers: [FEAT-FE-008#binding.frontend/target.guarded-wildcard-source]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlWildcardExpansion.test.tsx, test: "uses the qualified wildcard's complete planned output order including residual fields" } }

@@ -1691,7 +1691,22 @@
     "sqlPage.structure.availableForms": "Available Forms",
     "sqlPage.structure.fixSqlBeforeForm": "Complete the SQL before choosing a Form.",
     "sqlPage.structure.advancedStructure": "Advanced structure…",
-    "composition.evaluationAborted": "Another query failed. This evaluation did not produce a result."
+    "composition.evaluationAborted": "Another query failed. This evaluation did not produce a result.",
+    "sqlPage.columns.allFields": "All fields",
+    "sqlPage.columns.fixSql": "Complete the SQL before choosing result fields.",
+    "sqlPage.columns.resultToChange": "Results to edit",
+    "sqlPage.columns.resultNumber": "Results {number}",
+    "sqlPage.columns.resultFields": "Result fields",
+    "sqlPage.columns.chooseFields": "Choose fields",
+    "sqlPage.columns.moveUp": "Move {name} up",
+    "sqlPage.columns.moveDown": "Move {name} down",
+    "sqlPage.columns.remove": "Remove {name}",
+    "sqlPage.columns.addField": "Add a field",
+    "sqlPage.columns.undo": "Undo",
+    "sqlPage.columns.positionConflict": "This field is referenced by position in sorting or grouping. Choose named fields before changing it.",
+    "sqlPage.columns.aliasConflict": "This projection alias is referenced elsewhere in the query. Change those references before removing it.",
+    "sqlPage.columns.redo": "Redo",
+    "sqlPage.columns.expansionUnavailable": "The complete field list is unavailable for this query. Advanced editing is available."
   },
   "ja": {
     "nav.home": "ホーム",
@@ -3385,6 +3400,21 @@
     "sqlPage.structure.availableForms": "選択できるフォーム",
     "sqlPage.structure.fixSqlBeforeForm": "フォームを選ぶ前に SQL を修正してください。",
     "sqlPage.structure.advancedStructure": "詳細な構造を編集…",
-    "composition.evaluationAborted": "別のクエリが失敗したため、この評価の結果を確定できません。"
+    "composition.evaluationAborted": "別のクエリが失敗したため、この評価の結果を確定できません。",
+    "sqlPage.columns.allFields": "すべての項目",
+    "sqlPage.columns.fixSql": "項目を選ぶには、SQL を完成させてください。",
+    "sqlPage.columns.resultToChange": "編集する結果",
+    "sqlPage.columns.resultNumber": "結果 {number}",
+    "sqlPage.columns.resultFields": "結果の項目",
+    "sqlPage.columns.chooseFields": "項目を選ぶ",
+    "sqlPage.columns.moveUp": "{name} を上に移動",
+    "sqlPage.columns.moveDown": "{name} を下に移動",
+    "sqlPage.columns.remove": "{name} を削除",
+    "sqlPage.columns.addField": "項目を追加",
+    "sqlPage.columns.undo": "元に戻す",
+    "sqlPage.columns.positionConflict": "並べ替えやグループ化が項目の位置を参照しています。先に項目名での指定に変更してください。",
+    "sqlPage.columns.aliasConflict": "この項目の別名が同じクエリ内で参照されています。削除する前に参照先を変更してください。",
+    "sqlPage.columns.redo": "やり直す",
+    "sqlPage.columns.expansionUnavailable": "このクエリの全項目を特定できません。詳細な構造の編集は利用できます。"
   }
 }

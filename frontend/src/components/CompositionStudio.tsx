@@ -1205,6 +1205,26 @@ export function CompositionStudio(props: CompositionStudioProps) {
               status: "idle",
               isCurrent: false,
             }}
+          onPlanColumnsForQuery={async (variableId) => {
+            const currentDraft = draft();
+            const currentSession = session();
+            const currentSpace = props.spaceId;
+            const response = await previewCandidate(currentDraft);
+            const query = response.plan?.queries.find((query) =>
+              query.variable_id === variableId
+            );
+            if (!response.ok || !query) {
+              throw new Error(
+                t("composition.queryFailed"),
+              );
+            }
+            return {
+              columns: query.result_columns.map((column) => column.name),
+              isCurrent: () =>
+                draft() === currentDraft && props.spaceId === currentSpace &&
+                isSessionCurrent(currentSession),
+            };
+          }}
           onRunQuery={(variableId) => void runQuery(variableId)}
           onPreviousQuery={previousQueryPage}
           onCountQuery={(variableId) => void countQuery(variableId)}

@@ -780,6 +780,12 @@ fn sql_document_edit_error(error: ugoite_domain::sql_document::SqlDocumentEditEr
         ugoite_domain::sql_document::SqlDocumentEditError::InvalidSemanticReplacement => {
             "invalid_semantic_replacement"
         }
+        ugoite_domain::sql_document::SqlDocumentEditError::ProjectionPositionConflict => {
+            "projection_position_conflict"
+        }
+        ugoite_domain::sql_document::SqlDocumentEditError::ProjectionAliasConflict => {
+            "projection_alias_conflict"
+        }
         ugoite_domain::sql_document::SqlDocumentEditError::DuplicateNodeTarget => {
             "duplicate_node_target"
         }
@@ -4452,6 +4458,38 @@ mod tests {
             response["value"]["document"]["source"],
             "SELECT 2, 1 FROM \"G\""
         );
+    }
+
+    #[test]
+    fn sql_document_projection_alias_removal_conflict_is_exposed_to_wasm() {
+        use ugoite_domain::sql_document::{
+            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
+            SQL_DOCUMENT_CONTRACT_VERSION,
+        };
+        let source =
+            "SELECT 'fixed' AS field_100, field_100 AS actual FROM tasks ORDER BY field_100";
+        let document = ugoite_domain::sql_document::parse_sql_document(source);
+        let item = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::SelectItem)
+            .unwrap();
+        let transaction = SqlDocumentSemanticEditTransaction {
+            contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+            expected_source: source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::RemoveProjectionItem {
+                node_id: item.id,
+                expected_kind: SqlDocumentNodeKind::SelectItem,
+            }],
+        };
+        let request = serde_json::json!({
+            "action": "domain.apply_sql_document_semantic_edit_transaction",
+            "value": { "current_source": source, "transaction": transaction },
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+        assert_eq!(response["ok"], false, "{response}");
+        assert_eq!(response["error"]["code"], "projection_alias_conflict");
     }
 
     #[test]

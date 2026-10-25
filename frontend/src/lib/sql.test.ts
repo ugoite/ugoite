@@ -644,6 +644,7 @@ describe("SQL structure adapter context", () => {
       "composition:inline-1",
     );
 
+    expect(context.columnLabels?.field_untrusted).toBe("Untrusted type");
     expect(context.parser.relation).toBe(aggregateForm.sql_relation);
     expect(context.parser.relation).not.toBe("Orders");
     expect(context.parser.stable_key).toEqual(["_ugoite_id"]);

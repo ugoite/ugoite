@@ -7,11 +7,13 @@ import {
 } from "solid-js";
 import { IconButton } from "~/components/IconButton";
 import { SqlArgumentDefinitionsEditor } from "~/components/SqlArgumentDefinitionsEditor";
+import { SqlColumnsEditor } from "~/components/SqlColumnsEditor";
 import { SqlFormPicker } from "~/components/SqlFormPicker";
 import { SqlDocumentTreeEditor } from "~/components/SqlDocumentTreeEditor";
 import { handleDialogKeyDown, useDialogFocus } from "~/components/dialog-focus";
 import type { SQLWorkspaceAction } from "~/components/SQLWorkspace";
 import type { SqlStructureAdapterContext } from "~/lib/sql";
+import type { PlanSqlColumns } from "~/lib/sql-document-columns";
 import type { SqlVariableDefaultDraft } from "~/lib/sql";
 import { t } from "~/lib/i18n";
 import type { SqlVariable } from "~/lib/types";
@@ -37,6 +39,7 @@ interface SqlStructureToolbarProps {
   /** Host identity, independent of SQL text, invalidates pending operations. */
   scope?: () => string;
   contexts: () => readonly SqlStructureAdapterContext[];
+  onPlanColumns?: PlanSqlColumns;
   onSqlChange?: (sql: string) => void;
   onVariablesAdded?: (
     variables: readonly { name: string; type: SqlStructureVariableType }[],
@@ -399,13 +402,28 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                   onAdvanced={() => openAction("document", dialogReturnFocus())}
                 />
               </Show>
-              <Show when={action() !== "arguments" && action() !== "form"}>
+              <Show when={action() === "columns"}>
+                <SqlColumnsEditor
+                  sql={props.sql}
+                  scope={props.scope}
+                  contexts={props.contexts}
+                  onPlanColumns={props.onPlanColumns}
+                  disabled={props.disabled}
+                  onSqlChange={(sql) => props.onSqlChange?.(sql)}
+                  onAdvanced={() => openAction("document", dialogReturnFocus())}
+                />
+              </Show>
+              <Show
+                when={action() !== "arguments" && action() !== "form" &&
+                  action() !== "columns"}
+              >
                 <SqlDocumentTreeEditor
                   sql={props.sql}
                   scope={props.scope}
                   onSqlChange={(sql) => props.onSqlChange?.(sql)}
                   disabled={props.disabled}
                   initialNodeKinds={() => targetNodeKinds()}
+                  onPlanColumns={props.onPlanColumns}
                   relationOptions={() =>
                     formOptions().map((context) => ({
                       relation: context.parser.relation,

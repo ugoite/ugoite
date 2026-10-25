@@ -1,3 +1,9 @@
+import {
+  type PlannedSqlColumns,
+  type PlanSqlColumns,
+  usablePlannedColumnNames,
+  wildcardProjectionQualifier,
+} from "~/lib/sql-document-columns";
 import type { JSX } from "solid-js";
 import {
   createEffect,
@@ -40,6 +46,7 @@ interface SqlDocumentTreeEditorProps {
   scope?: () => string;
   onSqlChange: (sql: string) => void;
   disabled?: () => boolean;
+  onPlanColumns?: PlanSqlColumns;
   relationOptions?: () => readonly {
     relation: string;
     label: string;
@@ -1027,6 +1034,9 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     return undefined;
   };
   const relationBindingsForQuery = (node: SqlDocumentNode) => {
+    if (
+      document()?.nodes.some((item) => item.kind === "common_table_expression")
+    ) return [];
     const scopeId = queryScopeId(node);
     if (scopeId === undefined) return [];
     return (document()?.nodes ?? []).flatMap((factor) => {
@@ -1076,23 +1086,15 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
       item.id === `${relationIndex}:${columnIndex}`
     );
   };
-  const wildcardColumns = (
-    item: SqlDocumentNode,
-  ): SqlDocumentColumnReference[] => {
-    if (item.semantic?.kind !== "wildcard") return [];
-    const bindings = relationBindingsForQuery(item);
-    const qualifier = item.semantic.qualifier?.value;
-    const selected = qualifier
-      ? bindings.filter(({ option, qualifier: actual }) =>
-        actual?.value === qualifier || option.relation === qualifier
+  const wildcardQualifier = (item: SqlDocumentNode) => {
+    const parsed = document();
+    return parsed && props.onPlanColumns
+      ? wildcardProjectionQualifier(
+        parsed,
+        item,
+        (props.relationOptions?.() ?? []).map((option) => option.relation),
       )
-      : bindings;
-    return selected.flatMap(({ option, qualifier: actual }) =>
-      (option.columns ?? []).map((column) => ({
-        ...(actual ? { qualifier: { ...actual } } : {}),
-        column: { value: column, quote_style: '"' },
-      }))
-    );
+      : undefined;
   };
   const functionArgumentCandidates = () => {
     const currentDocument = document();
@@ -1462,7 +1464,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     if (!node || props.disabled?.() || busy()) return false;
     if (node.kind === "select_item" && expandWildcard()) {
       return node.semantic?.kind === "wildcard" && node.range !== null &&
-        wildcardColumns(node).length > 0;
+        !!wildcardQualifier(node);
     }
     if (node.kind === "select_list" && addProjectionColumn()) {
       return node.range !== null && Boolean(selectedColumnChoice());
@@ -1740,13 +1742,12 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     const node = selectedNode();
     if (!node) return undefined;
     if (node.kind === "select_item" && expandWildcard()) {
-      const columns = wildcardColumns(node);
-      if (columns.length > 0) {
+      if (wildcardQualifier(node)) {
         return {
           kind: "expand_projection_wildcard",
           node_id: node.id,
           expected_kind: "select_item",
-          columns,
+          columns: [],
         };
       }
     }
@@ -2258,6 +2259,32 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
     setBusy(true);
     setError(undefined);
     try {
+      let columnPlan: PlannedSqlColumns | undefined;
+      if (edit.kind === "expand_projection_wildcard") {
+        const item = currentDocument.nodes.find((node) =>
+          node.id === edit.node_id
+        );
+        const qualifier = item && wildcardQualifier(item);
+        if (!qualifier || !props.onPlanColumns) {
+          throw new Error("unavailable wildcard schema");
+        }
+        columnPlan = await props.onPlanColumns();
+        if (
+          !(await columnPlan.isCurrent()) ||
+          !usablePlannedColumnNames(columnPlan.columns)
+        ) throw new Error("stale or ambiguous wildcard schema");
+        if (
+          currentGeneration !== generation || props.sql() !== expectedSource ||
+          props.scope?.() !== expectedScope || props.disabled?.()
+        ) return;
+        edit = {
+          ...edit,
+          columns: columnPlan.columns.map((name) => ({
+            qualifier,
+            column: { value: name, quote_style: '"' },
+          })),
+        };
+      }
       const result = await applySqlDocumentSemanticEditTransaction(
         expectedSource,
         {
@@ -2266,6 +2293,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
           edits: [edit],
         },
       );
+      if (columnPlan && !(await columnPlan.isCurrent())) return;
       if (
         currentGeneration !== generation || props.sql() !== expectedSource ||
         props.scope?.() !== expectedScope || props.disabled?.()
@@ -4117,7 +4145,7 @@ export function SqlDocumentTreeEditor(props: SqlDocumentTreeEditorProps) {
                           icon="columns"
                           label={t("sqlPage.structure.documentExpandWildcard")}
                           disabled={busy() || props.disabled?.() ||
-                            wildcardColumns(node()).length === 0}
+                            !wildcardQualifier(node())}
                           onClick={() => setExpandWildcard(true)}
                         />
                       </Show>
