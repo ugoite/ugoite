@@ -16189,9 +16189,8 @@ spec:
                             },
                             query: VariableGraphQuery {
                                 definition: VariableGraphQueryDefinition::InlineSql {
-                                    sql:
-                                        "SELECT CAST(1 AS BIGINT) AS value WHERE {{include_empty}}"
-                                            .to_string(),
+                                    sql: "SELECT CAST(1 AS BIGINT) AS value WHERE $include_empty"
+                                        .to_string(),
                                 },
                                 arguments: vec![VariableGraphArgumentBinding {
                                     name: "include_empty".to_string(),
