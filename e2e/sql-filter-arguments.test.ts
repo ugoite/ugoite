@@ -51,11 +51,17 @@ test("SQL filter argument creation preserves typed declarations through undo, ru
   await columns.getByRole("button", { name: "Choose fields", exact: true })
     .click();
   const fields = columns.getByRole("list", { name: "Result fields" });
+  await expect(fields.getByText("Amount", { exact: true })).toBeVisible();
   const fieldNames = await fields.locator(".sql-columns-editor__name")
     .allTextContents();
   for (const name of fieldNames.filter((name) => name !== "Amount")) {
-    await columns.getByRole("button", { name: `Remove ${name}`, exact: true })
-      .click();
+    const remove = columns.getByRole("button", {
+      name: `Remove ${name}`,
+      exact: true,
+    });
+    await expect(remove).not.toHaveAttribute("aria-disabled", "true");
+    await remove.click();
+    await expect(remove).toHaveCount(0);
   }
   await expect(fields.getByRole("listitem")).toHaveText([/Amount/]);
   const outputAlias = columns.getByRole("textbox", {
@@ -98,7 +104,9 @@ test("SQL filter argument creation preserves typed declarations through undo, ru
 
   await page.getByRole("button", { name: "Arguments", exact: true }).click();
   const args = page.getByRole("dialog", { name: "Arguments", exact: true });
-  await expect(args.getByLabel("Type for minimum", { exact: true }))
+  await expect(
+    args.getByRole("combobox", { name: "Type for minimum", exact: true }),
+  )
     .toHaveValue("integer");
   await expect(args.getByRole("textbox", { name: "Default for minimum" }))
     .toHaveValue("10");
@@ -151,7 +159,12 @@ test("SQL filter argument creation preserves typed declarations through undo, ru
     name: "Arguments",
     exact: true,
   });
-  await expect(reopenedArgs.getByLabel("Type for minimum", { exact: true }))
+  await expect(
+    reopenedArgs.getByRole("combobox", {
+      name: "Type for minimum",
+      exact: true,
+    }),
+  )
     .toHaveValue("integer");
   await expect(
     reopenedArgs.getByRole("textbox", { name: "Default for minimum" }),
