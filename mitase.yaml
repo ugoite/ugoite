@@ -268,6 +268,9 @@ inventory:
         - frontend/src/components/SQLWorkspace.test.tsx
         - frontend/src/components/SqlFormPicker.tsx
         - frontend/src/components/SqlColumnsEditor.tsx
+        - frontend/src/components/SqlDocumentTreeEditor.tsx
+        - frontend/src/components/SqlDocumentTreeEditor.test.tsx
+        - frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
         - frontend/src/components/SqlFilterSortEditor.tsx
         - frontend/src/components/SqlFilterSortEditor.test.tsx
         - frontend/src/lib/sql-document-columns.ts

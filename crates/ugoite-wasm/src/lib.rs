@@ -2731,6 +2731,50 @@ mod tests {
     }
 
     #[test]
+    fn sql_document_parameterized_cast_protocol_matches_native() {
+        use ugoite_domain::sql_document::{
+            SqlDocumentCastTarget, SqlDocumentCastType, SqlDocumentNodeKind,
+            SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
+            SQL_DOCUMENT_CONTRACT_VERSION,
+        };
+        let source = "SELECT CAST(1 AS DECIMAL)";
+        let document = ugoite_domain::sql_document::parse_sql_document(source);
+        let cast = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::CastExpression)
+            .unwrap();
+        let transaction = SqlDocumentSemanticEditTransaction {
+            contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+            expected_source: source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::SetParameterizedCastTarget {
+                node_id: cast.id,
+                expected_kind: SqlDocumentNodeKind::CastExpression,
+                target: SqlDocumentCastTarget {
+                    kind: SqlDocumentCastType::Decimal,
+                    length: None,
+                    precision: Some("9007199254740993".to_owned()),
+                    scale: Some("-4".to_owned()),
+                },
+            }],
+        };
+        let native = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            source,
+            &transaction,
+        )
+        .unwrap();
+        let request = serde_json::json!({"action":"domain.apply_sql_document_semantic_edit_transaction","value":{"current_source":source,"transaction":transaction}});
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"], serde_json::to_value(&native).unwrap());
+        assert_eq!(
+            response["value"]["document"]["source"],
+            "SELECT CAST(1 AS DECIMAL(9007199254740993, -4))"
+        );
+    }
+
+    #[test]
     fn sql_document_cte_rename_semantic_edit_protocol_matches_native() {
         use ugoite_domain::sql_document::{
             SqlDocumentIdentifier, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
@@ -2934,7 +2978,7 @@ mod tests {
             edits: vec![SqlDocumentSemanticEdit::ReplaceUnarySign {
                 node_id: unary.id,
                 expected_kind: SqlDocumentNodeKind::UnaryExpression,
-                sign: SqlDocumentUnarySign::Positive,
+                sign: SqlDocumentUnarySign::Not,
             }],
         };
         let native = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
@@ -2955,8 +2999,50 @@ mod tests {
         assert_eq!(response["value"], serde_json::to_value(&native).unwrap());
         assert_eq!(
             response["value"]["document"]["source"],
-            "SELECT + /* keep */ amount"
+            "SELECT NOT /* keep */ amount"
         );
+    }
+
+    #[test]
+    fn sql_document_bitwise_operator_semantic_edit_protocol_matches_native() {
+        use ugoite_domain::sql_document::{
+            SqlDocumentBinaryOperator, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction, SQL_DOCUMENT_CONTRACT_VERSION,
+        };
+        let source = "SELECT 5 + 1";
+        let document = ugoite_domain::sql_document::parse_sql_document(source);
+        let binary = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::BinaryExpression)
+            .unwrap();
+        for (operator, expected) in [
+            (SqlDocumentBinaryOperator::BitwiseAnd, "SELECT 5 & 1"),
+            (SqlDocumentBinaryOperator::BitwiseOr, "SELECT 5 | 1"),
+            (SqlDocumentBinaryOperator::ShiftLeft, "SELECT 5 << 1"),
+            (SqlDocumentBinaryOperator::ShiftRight, "SELECT 5 >> 1"),
+        ] {
+            let transaction = SqlDocumentSemanticEditTransaction {
+                contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+                expected_source: source.to_owned(),
+                edits: vec![SqlDocumentSemanticEdit::ReplaceBinaryOperator {
+                    node_id: binary.id,
+                    expected_kind: SqlDocumentNodeKind::BinaryExpression,
+                    operator,
+                }],
+            };
+            let native = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+                source,
+                &transaction,
+            )
+            .unwrap();
+            let request = serde_json::json!({"action":"domain.apply_sql_document_semantic_edit_transaction","value":{"current_source":source,"transaction":transaction}});
+            let response: Value =
+                serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+            assert_eq!(response["ok"], true, "{response}");
+            assert_eq!(response["value"], serde_json::to_value(&native).unwrap());
+            assert_eq!(response["value"]["document"]["source"], expected);
+        }
     }
 
     #[test]
@@ -3477,6 +3563,56 @@ mod tests {
         assert_eq!(
             response["value"]["document"]["source"],
             "SELECT CASE WHEN amount > 0 THEN 1 WHEN TRUE THEN NULL ELSE 0 END"
+        );
+    }
+
+    #[test]
+    fn sql_document_case_operand_semantic_edit_protocol_matches_native() {
+        use ugoite_domain::sql_document::{
+            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
+            SQL_DOCUMENT_CONTRACT_VERSION,
+        };
+        let source = "SELECT amount, CASE WHEN amount = 1 THEN 2 END";
+        let document = ugoite_domain::sql_document::parse_sql_document(source);
+        let case_node = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::CaseExpression)
+            .unwrap();
+        let expression = document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::IdentifierExpression
+                    && node.range.and_then(|range| document.source_slice(range)) == Some("amount")
+                    && node
+                        .range
+                        .is_some_and(|range| range.start < case_node.range.unwrap().start)
+            })
+            .unwrap();
+        let transaction = SqlDocumentSemanticEditTransaction {
+            contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+            expected_source: source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::SetCaseOperand {
+                node_id: case_node.id,
+                expected_kind: SqlDocumentNodeKind::CaseExpression,
+                expression_node_id: Some(expression.id),
+                expression_expected_kind: Some(expression.kind),
+            }],
+        };
+        let native = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            source,
+            &transaction,
+        )
+        .unwrap();
+        let request = serde_json::json!({"action":"domain.apply_sql_document_semantic_edit_transaction","value":{"current_source":source,"transaction":transaction}});
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"], serde_json::to_value(&native).unwrap());
+        assert_eq!(
+            response["value"]["document"]["source"],
+            "SELECT amount, CASE amount WHEN amount = 1 THEN 2 END"
         );
     }
 

@@ -19,7 +19,7 @@ use sqlparser::tokenizer::{Location, Span, Token, Tokenizer, Whitespace};
 use std::convert::Infallible;
 
 /// Version of the Rust SQL Document view returned to adapters.
-pub const SQL_DOCUMENT_CONTRACT_VERSION: u32 = 18;
+pub const SQL_DOCUMENT_CONTRACT_VERSION: u32 = 19;
 
 /// Bound on source SQL accepted by the editor parser.
 pub const MAX_SQL_DOCUMENT_BYTES: usize = 256 * 1024;
@@ -750,6 +750,12 @@ pub enum SqlDocumentSemanticEdit {
         /// Portable target type chosen from the closed SQL GUI type set.
         target_type: SqlDocumentCastType,
     },
+    /// Set a CAST target with exact, typed SQL type parameters.
+    SetParameterizedCastTarget {
+        node_id: u32,
+        expected_kind: SqlDocumentNodeKind,
+        target: SqlDocumentCastTarget,
+    },
     /// Wrap an existing typed expression with a Rust-rendered CAST node.
     WrapExpressionInCast {
         /// Expression node to wrap.
@@ -946,6 +952,15 @@ pub enum SqlDocumentSemanticEdit {
         expected_kind: SqlDocumentNodeKind,
         /// Whether the expression should have an ELSE branch.
         has_else: bool,
+    },
+    /// Choose an expression as a simple CASE operand, or clear it to switch
+    /// back to searched CASE. The selected expression must come from the same
+    /// query scope and must not be inside the CASE being changed.
+    SetCaseOperand {
+        node_id: u32,
+        expected_kind: SqlDocumentNodeKind,
+        expression_node_id: Option<u32>,
+        expression_expected_kind: Option<SqlDocumentNodeKind>,
     },
     /// Add a `WHERE TRUE` seed to a SELECT that does not have a WHERE clause.
     /// The boolean expression is a typed tree node and can be replaced or
@@ -1260,6 +1275,7 @@ pub enum SqlDocumentSemanticEdit {
 pub enum SqlDocumentUnarySign {
     Positive,
     Negative,
+    Not,
 }
 
 impl SqlDocumentUnarySign {
@@ -1267,6 +1283,7 @@ impl SqlDocumentUnarySign {
         match self {
             Self::Positive => "+",
             Self::Negative => "-",
+            Self::Not => "NOT",
         }
     }
 }
@@ -1515,6 +1532,7 @@ pub struct SqlDocumentJoin {
 #[serde(rename_all = "snake_case")]
 pub enum SqlDocumentCastType {
     Varchar,
+    Integer,
     Boolean,
     BigInt,
     Double,
@@ -1522,6 +1540,90 @@ pub enum SqlDocumentCastType {
     Date,
     Timestamp,
     Json,
+}
+
+/// A portable CAST type and its optional numeric parameters. Precision and
+/// length are unsigned SQL integers; scale is signed because admitted SQL
+/// dialects may use negative decimal scales.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SqlDocumentCastTarget {
+    pub kind: SqlDocumentCastType,
+    pub length: Option<String>,
+    pub precision: Option<String>,
+    pub scale: Option<String>,
+}
+
+impl SqlDocumentCastTarget {
+    fn sql_spelling(&self) -> Result<String, SqlDocumentEditError> {
+        let base = self.kind.sql_spelling();
+        let parameters = match self.kind {
+            SqlDocumentCastType::Decimal => {
+                match (self.precision.as_deref(), self.scale.as_deref()) {
+                    (None, None) => None,
+                    (Some(precision), scale) if valid_sql_integer(precision, false) => {
+                        Some(match scale {
+                            Some(scale) if valid_sql_integer(scale, true) => {
+                                format!("{precision}, {scale}")
+                            }
+                            Some(_) => {
+                                return Err(SqlDocumentEditError::InvalidSemanticReplacement)
+                            }
+                            None => precision.to_owned(),
+                        })
+                    }
+                    (Some(_), _) | (None, Some(_)) => {
+                        return Err(SqlDocumentEditError::InvalidSemanticReplacement)
+                    }
+                }
+            }
+            SqlDocumentCastType::Varchar => {
+                if self.scale.is_some() || self.precision.is_some() {
+                    return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+                }
+                self.length
+                    .as_deref()
+                    .filter(|length| valid_sql_integer(length, false))
+                    .map(str::to_owned)
+            }
+            SqlDocumentCastType::Timestamp => {
+                if self.scale.is_some() || self.length.is_some() {
+                    return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+                }
+                self.precision
+                    .as_deref()
+                    .filter(|precision| valid_sql_integer(precision, false))
+                    .map(str::to_owned)
+            }
+            _ => {
+                if self.length.is_some() || self.precision.is_some() || self.scale.is_some() {
+                    return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+                }
+                None
+            }
+        };
+        if self.kind == SqlDocumentCastType::Decimal && self.length.is_some() {
+            return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+        }
+        if (self.kind == SqlDocumentCastType::Varchar
+            && self.length.is_some()
+            && parameters.is_none())
+            || (self.kind == SqlDocumentCastType::Timestamp
+                && self.precision.is_some()
+                && parameters.is_none())
+        {
+            return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+        }
+        Ok(parameters.map_or_else(
+            || base.to_owned(),
+            |parameters| format!("{base}({parameters})"),
+        ))
+    }
+}
+
+fn valid_sql_integer(value: &str, signed: bool) -> bool {
+    let digits = value.strip_prefix('-').filter(|_| signed).unwrap_or(value);
+    !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 /// Closed aggregate set rendered by the syntax-tree editor.
@@ -1551,6 +1653,7 @@ impl SqlDocumentCastType {
     fn sql_spelling(self) -> &'static str {
         match self {
             Self::Varchar => "VARCHAR",
+            Self::Integer => "INTEGER",
             Self::Boolean => "BOOLEAN",
             Self::BigInt => "BIGINT",
             Self::Double => "DOUBLE",
@@ -1621,6 +1724,14 @@ pub enum SqlDocumentBinaryOperator {
     And,
     /// Boolean disjunction (`OR`).
     Or,
+    /// Bitwise conjunction (`&`).
+    BitwiseAnd,
+    /// Bitwise disjunction (`|`).
+    BitwiseOr,
+    /// Left shift (`<<`).
+    ShiftLeft,
+    /// Right shift (`>>`).
+    ShiftRight,
     /// Equality (`=`).
     Eq,
     /// Inequality (`<>`).
@@ -2112,6 +2223,30 @@ pub fn apply_sql_document_semantic_edit_transaction(
         }
         if let SqlDocumentSemanticEdit::SetCaseElse { has_else, .. } = semantic_edit {
             edits.push(set_case_else(&document, node, *has_else)?);
+            continue;
+        }
+        if let SqlDocumentSemanticEdit::SetCaseOperand {
+            expression_node_id,
+            expression_expected_kind,
+            ..
+        } = semantic_edit
+        {
+            let expression = match (expression_node_id, expression_expected_kind) {
+                (Some(id), Some(kind)) => {
+                    let expression = document
+                        .nodes
+                        .get(*id as usize)
+                        .filter(|candidate| candidate.id == *id)
+                        .ok_or(SqlDocumentEditError::NodeNotFound)?;
+                    if expression.kind != *kind {
+                        return Err(SqlDocumentEditError::NodeKindMismatch);
+                    }
+                    Some(expression)
+                }
+                (None, None) => None,
+                _ => return Err(SqlDocumentEditError::InvalidSemanticReplacement),
+            };
+            edits.push(set_case_operand(&document, node, expression)?);
             continue;
         }
         if matches!(
@@ -2641,7 +2776,7 @@ pub fn apply_sql_document_semantic_edit_transaction(
                 else {
                     return Err(SqlDocumentEditError::InvalidSemanticReplacement);
                 };
-                if !matches!(operator.as_str(), "+" | "-") {
+                if !matches!(operator.as_str(), "+" | "-" | "NOT") {
                     return Err(SqlDocumentEditError::InvalidSemanticReplacement);
                 }
                 (
@@ -2673,6 +2808,25 @@ pub fn apply_sql_document_semantic_edit_transaction(
                 };
                 (range, target_type.sql_spelling().to_owned())
             }
+            SqlDocumentSemanticEdit::SetParameterizedCastTarget { target, .. } => {
+                let Some(SqlDocumentNodeData::Cast {
+                    cast_kind,
+                    target_type: Some(current_target_type),
+                }) = node.semantic.as_ref()
+                else {
+                    return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+                };
+                let Some(range) =
+                    cast_target_type_source_range(&document, node, cast_kind, current_target_type)
+                else {
+                    return Err(if node.range.is_some() {
+                        SqlDocumentEditError::InvalidSemanticReplacement
+                    } else {
+                        SqlDocumentEditError::NodeRangeUnavailable
+                    });
+                };
+                (range, target.sql_spelling()?)
+            }
             SqlDocumentSemanticEdit::WrapExpressionInCast { .. } => {
                 unreachable!("CAST wrapper edits are expanded before single-node edits")
             }
@@ -2703,6 +2857,7 @@ pub fn apply_sql_document_semantic_edit_transaction(
             SqlDocumentSemanticEdit::AddCaseBranch { .. }
             | SqlDocumentSemanticEdit::RemoveCaseBranch { .. }
             | SqlDocumentSemanticEdit::SetCaseElse { .. }
+            | SqlDocumentSemanticEdit::SetCaseOperand { .. }
             | SqlDocumentSemanticEdit::AddWhereClause { .. }
             | SqlDocumentSemanticEdit::SetFilterPredicate { .. }
             | SqlDocumentSemanticEdit::RemoveFilterClause { .. }
@@ -2843,6 +2998,11 @@ impl SqlDocumentSemanticEdit {
                 expected_kind,
                 ..
             }
+            | Self::SetParameterizedCastTarget {
+                node_id,
+                expected_kind,
+                ..
+            }
             | Self::WrapExpressionInCast {
                 node_id,
                 expected_kind,
@@ -2942,6 +3102,11 @@ impl SqlDocumentSemanticEdit {
                 expected_kind,
             }
             | Self::SetCaseElse {
+                node_id,
+                expected_kind,
+                ..
+            }
+            | Self::SetCaseOperand {
                 node_id,
                 expected_kind,
                 ..
@@ -3099,6 +3264,10 @@ impl SqlDocumentBinaryOperator {
         match self {
             Self::And => "AND",
             Self::Or => "OR",
+            Self::BitwiseAnd => "&",
+            Self::BitwiseOr => "|",
+            Self::ShiftLeft => "<<",
+            Self::ShiftRight => ">>",
             Self::Eq => "=",
             Self::NotEq => "<>",
             Self::Lt => "<",
@@ -3424,7 +3593,7 @@ fn unary_sign_token_range(
     if node.kind != SqlDocumentNodeKind::UnaryExpression
         || !matches!(
             node.semantic,
-            Some(SqlDocumentNodeData::UnaryOperator { ref operator }) if matches!(operator.as_str(), "+" | "-")
+            Some(SqlDocumentNodeData::UnaryOperator { ref operator }) if matches!(operator.as_str(), "+" | "-" | "NOT")
         )
     {
         return Err(SqlDocumentEditError::InvalidSemanticReplacement);
@@ -3452,10 +3621,13 @@ fn unary_sign_token_range(
     .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
     let operator_token = &document.tokens[operator_index];
     if operator_token.range.end > operand.start
-        || operator_token.kind != SqlDocumentTokenKind::Operator
+        || !matches!(
+            operator_token.kind,
+            SqlDocumentTokenKind::Operator | SqlDocumentTokenKind::Word
+        )
         || !matches!(
             token_text(&document.source, operator_token),
-            Some("+" | "-")
+            Some("+" | "-" | "NOT")
         )
     {
         return Err(SqlDocumentEditError::NodeRangeUnavailable);
@@ -3467,7 +3639,9 @@ fn unary_sign_token_range(
     else {
         return Err(SqlDocumentEditError::InvalidSemanticReplacement);
     };
-    if token_text(&document.source, operator_token) != Some(expected.as_str()) {
+    if !token_text(&document.source, operator_token)
+        .is_some_and(|actual| actual.eq_ignore_ascii_case(expected))
+    {
         return Err(SqlDocumentEditError::NodeRangeUnavailable);
     }
     Ok(operator_token.range)
@@ -4455,6 +4629,7 @@ fn remove_query_clause_value(
 
 #[derive(Default)]
 struct CaseControlTokens {
+    case: Option<usize>,
     when: Vec<usize>,
     else_token: Option<usize>,
     end: Option<usize>,
@@ -4480,7 +4655,10 @@ fn case_control_tokens(
         .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
     let mut case_depth = 0usize;
     let mut delimiter_depth = 0usize;
-    let mut markers = CaseControlTokens::default();
+    let mut markers = CaseControlTokens {
+        case: Some(start),
+        ..CaseControlTokens::default()
+    };
 
     for index in start..document.tokens.len() {
         let token = &document.tokens[index];
@@ -4550,6 +4728,87 @@ fn case_metadata(node: &SqlDocumentNode) -> Result<(bool, usize, bool), SqlDocum
         }
         _ => Err(SqlDocumentEditError::InvalidSemanticReplacement),
     }
+}
+
+fn set_case_operand(
+    document: &SqlDocument,
+    node: &SqlDocumentNode,
+    expression: Option<&SqlDocumentNode>,
+) -> Result<SqlDocumentEdit, SqlDocumentEditError> {
+    let (has_operand, when_count, has_else) = case_metadata(node)?;
+    if when_count == 0 || when_count > 32 || (!has_operand && expression.is_none()) {
+        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+    }
+    let children = direct_expression_children(document, node);
+    let expected_children = usize::from(has_operand) + when_count * 2 + usize::from(has_else);
+    if children.len() != expected_children {
+        return Err(SqlDocumentEditError::NodeRangeUnavailable);
+    }
+    if let Some(expression) = expression {
+        let query_id = query_ancestor_id(document, node.id)
+            .ok_or(SqlDocumentEditError::InvalidSemanticReplacement)?;
+        if query_ancestor_id(document, expression.id) != Some(query_id) {
+            return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+        }
+        let mut ancestor = Some(expression.id);
+        while let Some(id) = ancestor {
+            if id == node.id {
+                return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+            }
+            ancestor = document
+                .nodes
+                .get(id as usize)
+                .and_then(|candidate| candidate.parent);
+        }
+        let range = expression
+            .range
+            .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+        let source = document
+            .source_slice(range)
+            .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+        if source.trim().is_empty() {
+            return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+        }
+        if has_operand {
+            let current = children
+                .first()
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+            let range = current
+                .range
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+            if range_has_comment(document, range) {
+                return Err(SqlDocumentEditError::NodeRangeUnavailable);
+            }
+            let expected_text = document
+                .source_slice(range)
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+            return Ok(SqlDocumentEdit {
+                range,
+                expected_text: expected_text.to_owned(),
+                replacement: source.to_owned(),
+            });
+        } else {
+            let control = case_control_tokens(document, node)?;
+            let case_token = control
+                .case
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+            return source_insertion(
+                document,
+                document.tokens[case_token].range.end,
+                format!(" {source}"),
+            );
+        }
+    }
+    let operand = children
+        .first()
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    let range = operand
+        .range
+        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    if range_has_comment(document, range) {
+        return Err(SqlDocumentEditError::NodeRangeUnavailable);
+    }
+    source_removal(document, range)
 }
 
 fn source_insertion(
@@ -11899,8 +12158,8 @@ mod tests {
     }
 
     #[test]
-    fn semantic_unary_sign_edit_rejects_non_arithmetic_unary_operators() {
-        let source = "SELECT NOT TRUE";
+    fn semantic_unary_sign_edit_constructs_boolean_not_and_supports_undo() {
+        let source = "SELECT - TRUE";
         let document = parse_sql_document(source);
         let unary = document
             .nodes
@@ -11910,27 +12169,63 @@ mod tests {
                     && matches!(
                         node.semantic,
                         Some(SqlDocumentNodeData::UnaryOperator { ref operator })
-                            if operator.eq_ignore_ascii_case("NOT")
+                            if operator == "-"
                     )
             })
-            .expect("the parser exposes the logical unary operator");
+            .expect("the parser exposes the unary expression");
 
-        let result = apply_sql_document_semantic_edit_transaction(
+        let changed = apply_sql_document_semantic_edit_transaction(
             source,
             &semantic_transaction(
                 source,
                 vec![SqlDocumentSemanticEdit::ReplaceUnarySign {
                     node_id: unary.id,
                     expected_kind: SqlDocumentNodeKind::UnaryExpression,
-                    sign: SqlDocumentUnarySign::Positive,
+                    sign: SqlDocumentUnarySign::Not,
                 }],
             ),
-        );
-        assert_eq!(
-            result,
-            Err(SqlDocumentEditError::InvalidSemanticReplacement),
-            "logical NOT must not be reinterpreted as arithmetic sign"
-        );
+        )
+        .expect("the typed operation constructs boolean NOT");
+        assert_eq!(changed.document.to_sql(), "SELECT NOT TRUE");
+        let undone = apply_sql_document_edit_transaction(&changed.document.source, &changed.undo)
+            .expect("the unary operation has a guarded inverse");
+        assert_eq!(undone.document.to_sql(), source);
+    }
+
+    #[test]
+    fn semantic_bitwise_and_shift_operators_are_constructible_and_undoable() {
+        let source = "SELECT 5 + 1";
+        for (operator, expected) in [
+            (SqlDocumentBinaryOperator::BitwiseAnd, "SELECT 5 & 1"),
+            (SqlDocumentBinaryOperator::BitwiseOr, "SELECT 5 | 1"),
+            (SqlDocumentBinaryOperator::ShiftLeft, "SELECT 5 << 1"),
+            (SqlDocumentBinaryOperator::ShiftRight, "SELECT 5 >> 1"),
+        ] {
+            let document = parse_sql_document(source);
+            let binary = document
+                .nodes
+                .iter()
+                .find(|node| node.kind == SqlDocumentNodeKind::BinaryExpression)
+                .expect("the arithmetic expression has a typed binary node");
+            let changed = apply_sql_document_semantic_edit_transaction(
+                source,
+                &semantic_transaction(
+                    source,
+                    vec![SqlDocumentSemanticEdit::ReplaceBinaryOperator {
+                        node_id: binary.id,
+                        expected_kind: SqlDocumentNodeKind::BinaryExpression,
+                        operator,
+                    }],
+                ),
+            )
+            .expect("the runtime-admitted operator is emitted through a typed operation");
+            assert_eq!(changed.document.status, SqlDocumentStatus::Parsed);
+            assert_eq!(changed.document.to_sql(), expected);
+            let undone =
+                apply_sql_document_edit_transaction(&changed.document.source, &changed.undo)
+                    .expect("the operator edit has a guarded inverse");
+            assert_eq!(undone.document.to_sql(), source);
+        }
     }
 
     #[test]
@@ -12550,6 +12845,77 @@ mod tests {
         let undone = apply_sql_document_edit_transaction(&changed.document.source, &changed.undo)
             .expect("the semantic edit returns a guarded undo transaction");
         assert_eq!(undone.document.to_sql().as_bytes(), source.as_bytes());
+    }
+
+    #[test]
+    fn semantic_parameterized_cast_edits_keep_exact_numeric_parameters_and_undo() {
+        for (source, target, expected) in [
+            (
+                "SELECT CAST(1 AS DECIMAL)",
+                SqlDocumentCastTarget {
+                    kind: SqlDocumentCastType::Decimal,
+                    precision: Some("40".into()),
+                    scale: Some("-4".into()),
+                    length: None,
+                },
+                "SELECT CAST(1 AS DECIMAL(40, -4))",
+            ),
+            (
+                "SELECT CAST(1 AS VARCHAR)",
+                SqlDocumentCastTarget {
+                    kind: SqlDocumentCastType::Varchar,
+                    precision: None,
+                    scale: None,
+                    length: Some("2".into()),
+                },
+                "SELECT CAST(1 AS VARCHAR(2))",
+            ),
+            (
+                "SELECT CAST(1 AS TIMESTAMP)",
+                SqlDocumentCastTarget {
+                    kind: SqlDocumentCastType::Timestamp,
+                    precision: Some("3".into()),
+                    scale: None,
+                    length: None,
+                },
+                "SELECT CAST(1 AS TIMESTAMP(3))",
+            ),
+            (
+                "SELECT CAST(1 AS BIGINT)",
+                SqlDocumentCastTarget {
+                    kind: SqlDocumentCastType::Integer,
+                    precision: None,
+                    scale: None,
+                    length: None,
+                },
+                "SELECT CAST(1 AS INTEGER)",
+            ),
+        ] {
+            let document = parse_sql_document(source);
+            let cast = document
+                .nodes
+                .iter()
+                .find(|node| node.kind == SqlDocumentNodeKind::CastExpression)
+                .unwrap();
+            let changed = apply_sql_document_semantic_edit_transaction(
+                source,
+                &semantic_transaction(
+                    source,
+                    vec![SqlDocumentSemanticEdit::SetParameterizedCastTarget {
+                        node_id: cast.id,
+                        expected_kind: SqlDocumentNodeKind::CastExpression,
+                        target,
+                    }],
+                ),
+            )
+            .expect("the target type and numeric parameters are typed values");
+            assert_eq!(changed.document.source, expected);
+            assert_eq!(changed.document.status, SqlDocumentStatus::Parsed);
+            let undone =
+                apply_sql_document_edit_transaction(&changed.document.source, &changed.undo)
+                    .unwrap();
+            assert_eq!(undone.document.source, source);
+        }
     }
 
     #[test]
@@ -13300,6 +13666,119 @@ mod tests {
         assert_eq!(
             simple_added.document.source,
             "SELECT CASE a WHEN 1 THEN 'one' WHEN NULL THEN NULL END"
+        );
+    }
+
+    #[test]
+    fn semantic_case_operand_can_be_added_replaced_and_cleared_losslessly() {
+        let searched = "SELECT amount, other, CASE WHEN amount = 1 THEN 2 ELSE 3 END";
+        let document = parse_sql_document(searched);
+        let case_node = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::CaseExpression)
+            .unwrap();
+        let operand = document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::IdentifierExpression
+                    && node.range.and_then(|range| document.source_slice(range)) == Some("amount")
+            })
+            .unwrap();
+        let simple = apply_sql_document_semantic_edit_transaction(
+            searched,
+            &semantic_transaction(
+                searched,
+                vec![SqlDocumentSemanticEdit::SetCaseOperand {
+                    node_id: case_node.id,
+                    expected_kind: SqlDocumentNodeKind::CaseExpression,
+                    expression_node_id: Some(operand.id),
+                    expression_expected_kind: Some(operand.kind),
+                }],
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            simple.document.source,
+            "SELECT amount, other, CASE amount WHEN amount = 1 THEN 2 ELSE 3 END"
+        );
+        assert_eq!(simple.document.status, SqlDocumentStatus::Parsed);
+
+        let simple_case = simple
+            .document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::CaseExpression)
+            .unwrap();
+        let selected_operand = simple
+            .document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.parent == Some(simple_case.id)
+                    && node.kind == SqlDocumentNodeKind::IdentifierExpression
+                    && node
+                        .range
+                        .and_then(|range| simple.document.source_slice(range))
+                        == Some("amount")
+            })
+            .unwrap();
+        let other = simple
+            .document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::IdentifierExpression
+                    && node
+                        .range
+                        .and_then(|range| simple.document.source_slice(range))
+                        == Some("other")
+                    && node.id != selected_operand.id
+            })
+            .unwrap();
+        let edited = apply_sql_document_semantic_edit_transaction(
+            &simple.document.source,
+            &semantic_transaction(
+                &simple.document.source,
+                vec![SqlDocumentSemanticEdit::SetCaseOperand {
+                    node_id: simple_case.id,
+                    expected_kind: SqlDocumentNodeKind::CaseExpression,
+                    expression_node_id: Some(other.id),
+                    expression_expected_kind: Some(other.kind),
+                }],
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            edited.document.source,
+            "SELECT amount, other, CASE other WHEN amount = 1 THEN 2 ELSE 3 END"
+        );
+
+        let cleared = apply_sql_document_semantic_edit_transaction(
+            &edited.document.source,
+            &semantic_transaction(
+                &edited.document.source,
+                vec![SqlDocumentSemanticEdit::SetCaseOperand {
+                    node_id: simple_case.id,
+                    expected_kind: SqlDocumentNodeKind::CaseExpression,
+                    expression_node_id: None,
+                    expression_expected_kind: None,
+                }],
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            cleared.document.source,
+            "SELECT amount, other, CASE  WHEN amount = 1 THEN 2 ELSE 3 END"
+        );
+        assert_eq!(cleared.document.status, SqlDocumentStatus::Parsed);
+        assert_eq!(
+            apply_sql_document_edit_transaction(&cleared.document.source, &cleared.undo)
+                .unwrap()
+                .document
+                .source,
+            edited.document.source
         );
     }
 

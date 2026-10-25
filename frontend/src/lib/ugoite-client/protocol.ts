@@ -593,6 +593,10 @@ export type SqlDocumentSemanticLiteral =
 export type SqlDocumentSemanticBinaryOperator =
   | "and"
   | "or"
+  | "bitwise_and"
+  | "bitwise_or"
+  | "shift_left"
+  | "shift_right"
   | "eq"
   | "not_eq"
   | "lt"
@@ -615,7 +619,7 @@ export type SqlDocumentSetQuantifier =
   | "all_by_name"
   | "distinct_by_name";
 export type SqlDocumentSetOperand = "left" | "right";
-export type SqlDocumentUnarySign = "positive" | "negative";
+export type SqlDocumentUnarySign = "positive" | "negative" | "not";
 export type SqlDocumentSubqueryPredicateTemplate = "in" | "not_in";
 export type SqlDocumentPredicateTemplate =
   | "in"
@@ -628,6 +632,7 @@ export type SqlDocumentPredicateTemplate =
   | "is_not_null";
 export type SqlDocumentCastType =
   | "varchar"
+  | "integer"
   | "boolean"
   | "big_int"
   | "double"
@@ -635,6 +640,12 @@ export type SqlDocumentCastType =
   | "date"
   | "timestamp"
   | "json";
+export type SqlDocumentCastTarget = {
+  kind: SqlDocumentCastType;
+  length: string | null;
+  precision: string | null;
+  scale: string | null;
+};
 export type SqlDocumentAggregateFunction =
   | "count"
   | "sum"
@@ -778,6 +789,12 @@ export type SqlDocumentSemanticEdit =
     target_type: SqlDocumentCastType;
   }
   | {
+    kind: "set_parameterized_cast_target";
+    node_id: number;
+    expected_kind: "cast_expression";
+    target: SqlDocumentCastTarget;
+  }
+  | {
     kind: "wrap_expression_in_cast";
     node_id: number;
     expected_kind: SqlDocumentNodeKind;
@@ -873,6 +890,13 @@ export type SqlDocumentSemanticEdit =
     node_id: number;
     expected_kind: "case_expression";
     has_else: boolean;
+  }
+  | {
+    kind: "set_case_operand";
+    node_id: number;
+    expected_kind: "case_expression";
+    expression_node_id: number | null;
+    expression_expected_kind: SqlDocumentNodeKind | null;
   }
   | {
     kind: "add_where_clause";

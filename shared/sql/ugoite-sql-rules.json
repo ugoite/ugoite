@@ -77,7 +77,7 @@
       "parser_dialect": "GenericDialect",
       "parser_parity_fixture": "shared/sql/sql-document-parser-parity.json",
       "typed_document_contract": {
-        "version": 18,
+        "version": 19,
         "protocol": "SqlDocumentNodeKind",
         "semantic_protocol": "SqlDocumentNodeData",
         "parser_engine": {
@@ -657,6 +657,7 @@
         "swap_set_operation_operands",
         "replace_set_operation_operand",
         "replace_cast_target_type",
+        "set_parameterized_cast_target",
         "wrap_expression_in_cast",
         "wrap_expression_in_aggregate",
         "set_aggregate_function",
@@ -679,6 +680,7 @@
         "add_case_branch",
         "remove_case_branch",
         "set_case_else",
+        "set_case_operand",
         "add_filter_comparison",
         "add_where_clause",
         "set_filter_predicate",
@@ -718,7 +720,8 @@
       "coverage_complete": false,
       "verification_gaps": [
         "Full constructibility and editability of all runtime-admitted AST variants remains tracked by #4565.",
-        "Source-backed unmodeled expressions do not imply structured editing coverage."
+        "Source-backed unmodeled expressions do not imply structured editing coverage.",
+        "Parameterized CAST attributes and CASE operands are typed editable controls; simple CASE has one authorized execution fixture. Boolean NOT and bitwise/shifts have semantic edit and WASM parity tests but lack per-operator authorized runtime results. Planner validity for authored type parameters remains authoritative."
       ],
       "source_parser": {
         "crate": "sqlparser",
