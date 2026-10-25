@@ -40,6 +40,12 @@ Adding a component closes the picker and leaves the canvas visible; it does not 
 
 At runtime, each Input component presents its variable name with an accessible name and an input control at least 44px high. Repeated controls follow component order during keyboard navigation and fit a 390px viewport without page-level horizontal overflow.
 
+When a selected evaluation fails, every selected result and page is cleared.
+The failed query retains its local cause; successful siblings announce that the
+evaluation produced no result instead of remaining in Loading. An unselected
+result survives only while its Publication and authorization identity match.
+Repairing the input recomputes and publishes the affected closure together.
+
 A successful Table result with zero rows retains its column headings and announces the shared SQL empty-result status. It does not retain previous rows or display a loading message.
 
 The picker has one modal focus owner. Full rows select candidates; Escape closes the picker and restores focus. Controls expose accessible names, visible focus, and at least 44px targets. The picker and drawer fit 320px layouts without horizontal page overflow or a second navigation surface over the canvas.

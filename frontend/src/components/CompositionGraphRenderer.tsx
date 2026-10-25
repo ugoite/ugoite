@@ -70,7 +70,9 @@ const queryError = (
   if (!query) return undefined;
   const code = query?.result_diagnostic?.result_diagnostic?.code ??
     query?.result_diagnostic?.code ?? query?.code;
-  const key = code === "scalar_no_rows"
+  const key = code === "evaluation_aborted"
+    ? "composition.evaluationAborted"
+    : code === "scalar_no_rows"
     ? "composition.diagnostic.metric_scalar_no_rows"
     : code === "scalar_multiple_rows"
     ? "composition.diagnostic.metric_scalar_multiple_rows"
