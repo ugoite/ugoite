@@ -12,9 +12,10 @@ and the original
 It does not revise or narrow them. All 30 goal IDs below remain in scope.
 
 This checkpoint was reproduced against integrated head
-`6c20da665b47279de58b4a9480b2944475a936c1`. This report is updated on
-`cb9af356d6cece55a969e4cb6ada231dbbd4265b`; the mobile wait adjustment and
-translated argument controls have not yet received their pending browser run.
+`6c20da665b47279de58b4a9480b2944475a936c1`. The latest product snapshot
+exercised below is `cb9af356d6cece55a969e4cb6ada231dbbd4265b`. Final focused
+browser runs below exercise the mobile wait adjustment and translated argument
+controls.
 
 ## Evidence and boundaries
 
@@ -40,8 +41,9 @@ and real-device findings are not inferred from local results.
   also passed the 16px text focus, FormTable and Metric, Saved SQL Metric, save,
   and reopen assertions. This establishes a flaky bounded wait at that source
   head, not a deterministic fix or complete browser acceptance. The current
-  follow-up extends only the dialog-closure assertion to 30 seconds; its changed
-  test-source head still needs execution.
+  follow-up extends only the dialog-closure assertion to 30 seconds. The changed
+  case subsequently passed in 26.4 seconds against the newly built native server
+  and production frontend at `cb9af356d6cece55a969e4cb6ada231dbbd4265b`.
 - Frontend/spec delta based on `d8acd3725` passed **36 tests across 4 files**,
   `mise run fmt:check` (65 files), SQL matrix (6/6), and Mitase. These are
   focused checks; they do not verify the pending new-feature browser path or
@@ -50,18 +52,27 @@ and real-device findings are not inferred from local results.
   build passed, release WASM tests passed **157/157 across 6 files**, native SQL
   document tests passed **108/108**, authorized CASE and alias execution passed
   **2/2**, the SQL matrix passed **6/6**, and `mise run fmt:check` checked 65
-  files. These are bounded checks; the pending mobile and translated argument
-  browser journeys remain unverified.
+  files. These are bounded checks rather than complete acceptance.
 - PR [#4625](https://github.com/ugoite/ugoite/pull/4625) adds typed CAST,
-  bitwise NOT, and CASE support; its independent review approved the change and
-  its apply-path bugs were resolved. PR
+  Boolean NOT, binary bitwise/shift operators, and CASE support; its independent
+  review approved the change and its apply-path bugs were resolved. PR
   [#4626](https://github.com/ugoite/ugoite/pull/4626) adds translated argument
-  controls and a qualified-alias guard. Its new browser journey remains pending,
-  so these changes do not establish end-to-end acceptance yet.
-- The native binary build is compiling Iceberg. Final clippy and
-  `mise run check:repo` are pending. The latest Mitase run on the new delta
-  reported 10 selector and cross-facet contract errors; no Mitase pass is
-  claimed while those findings are being resolved.
+  controls and a qualified-alias guard. Its browser journey passed 1/1 in 3.6
+  seconds after correcting test readiness and role locators. It creates an
+  output alias and an integer argument with default 10, verifies Undo/Redo,
+  executes against value 11, and saves/reopens both SQL and declarations.
+  Product source is `cb9af356d6cece55a969e4cb6ada231dbbd4265b`; the final test
+  is in `1bc747194174d1508091f2bbe13f753a414d9f19`.
+- The final native binary build and `mise run check:repo` passed. Owning-crate
+  Clippy passed with
+  `cargo clippy -p ugoite-domain -p ugoite-wasm --all-targets
+  -- -D warnings`.
+  Initial selector/contract errors were corrected by collecting the actual
+  editor/test files and linking exact UI verification; full Mitase then passed
+  with 0 errors/0 warnings and the quality gate had 0 enforced findings. The
+  final D head is `de339d77ad20408d0bd1afc1e4529b21dcb7e4fa`; its last source
+  adjustment only initializes the CASE token struct directly to satisfy Clippy.
+  Hosted CI remains a separate gate.
 - `strict-save-composition-after-filter-stackfix`: 35 Iceberg library tests and
   21 Composition tests passed, with matching query tests. Strict-save focused
   evidence does not establish every browser cardinality or failure-state branch.
@@ -95,19 +106,20 @@ zoom proof is available; automated WebKit is not device proof.
 S-02 remains `未達`. PRs [#4621](https://github.com/ugoite/ugoite/pull/4621),
 [#4622](https://github.com/ugoite/ugoite/pull/4622) add independently reviewed
 typed-filter arguments and projection aliases. Rich primitive support is tracked
-separately in [#4623](https://github.com/ugoite/ugoite/issues/4623); its
-implementation and runtime proof are still pending. Remaining GUI evidence gaps
-include aggregate `FILTER` and ordered arguments; grouping sets, `ROLLUP`,
-`CUBE`, and `ALL`; complete authoring and execution evidence for rich primitive
-attributes, arrays, structs, and access expressions; planner intrinsic admission
-such as `EXTRACT` and `SUBSTRING`; `ILIKE`, `SIMILAR`, `IS DISTINCT
-FROM`, and
-truth predicates; typed date, timestamp, interval, and hexadecimal values;
-semi/anti joins; `LIMIT` expressions; CTE and derived-column aliases; and
-beginner nested filter groups. These gaps are not claims that the core executor
-rejects those constructs; executor admission and GUI reachability are separate
-evidence questions. Source retention alone does not prove GUI authoring
-coverage.
+separately in [#4623](https://github.com/ugoite/ugoite/issues/4623) and
+[#4625](https://github.com/ugoite/ugoite/pull/4625); bounded authoring and CASE
+execution evidence now exists, while per-operator execution proof remains
+incomplete. Remaining GUI evidence gaps include aggregate `FILTER` and ordered
+arguments; grouping sets, `ROLLUP`, `CUBE`, and `ALL`; complete authoring and
+execution evidence for rich primitive attributes, arrays, structs, and access
+expressions; planner intrinsic admission such as `EXTRACT` and `SUBSTRING`;
+`ILIKE`, `SIMILAR`, `IS DISTINCT
+FROM`, and truth predicates; typed date,
+timestamp, interval, and hexadecimal values; semi/anti joins; `LIMIT`
+expressions; CTE and derived-column aliases; and beginner nested filter groups.
+These gaps are not claims that the core executor rejects those constructs;
+executor admission and GUI reachability are separate evidence questions. Source
+retention alone does not prove GUI authoring coverage.
 
 ## Goal ledger
 
