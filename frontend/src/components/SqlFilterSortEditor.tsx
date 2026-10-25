@@ -43,7 +43,7 @@ type RootScope = {
   queryId: number;
   selectId: number;
   relation: string;
-  qualifier: { value: string; quote_style: string | null };
+  qualifier?: { value: string; quote_style: string | null };
 };
 
 function rootScope(nodes: readonly SqlDocumentNode[]): RootScope | null {
@@ -70,7 +70,7 @@ function rootScope(nodes: readonly SqlDocumentNode[]): RootScope | null {
     queryId: queries[0].id,
     selectId: selects[0].id,
     relation,
-    qualifier: factor.alias ?? parts.at(-1) ?? { value: "", quote_style: null },
+    qualifier: factor.alias,
   };
 }
 

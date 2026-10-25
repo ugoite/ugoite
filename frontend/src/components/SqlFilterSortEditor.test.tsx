@@ -75,7 +75,7 @@ describe("SQL Filter and Sort task editors", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add filter" }));
     await waitFor(() =>
       expect(sql()).toBe(
-        'SELECT * FROM "form_expenses" WHERE "form_expenses".field_amount >= 9007199254740993',
+        'SELECT * FROM "form_expenses" WHERE field_amount >= 9007199254740993',
       )
     );
     fireEvent.click(screen.getByRole("button", { name: "Undo" }));
@@ -83,7 +83,7 @@ describe("SQL Filter and Sort task editors", () => {
     fireEvent.click(screen.getByRole("button", { name: "Redo" }));
     await waitFor(() =>
       expect(sql()).toBe(
-        'SELECT * FROM "form_expenses" WHERE "form_expenses".field_amount >= 9007199254740993',
+        'SELECT * FROM "form_expenses" WHERE field_amount >= 9007199254740993',
       )
     );
   });
@@ -115,7 +115,7 @@ describe("SQL Filter and Sort task editors", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add sort" }));
     await waitFor(() =>
       expect(sql()).toBe(
-        'SELECT * FROM "form_expenses" ORDER BY "form_expenses".field_amount DESC NULLS LAST',
+        'SELECT * FROM "form_expenses" ORDER BY field_amount DESC NULLS LAST',
       )
     );
   });
