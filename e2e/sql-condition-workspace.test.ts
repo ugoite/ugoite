@@ -157,6 +157,17 @@ test("REQ-SQL-003 @smoke: edits nested Filter conditions, runs, and reopens the 
   })
     .click();
   await expect(filterGroups).toHaveCount(2);
+  const createdNestedGroup = filterGroups.nth(1);
+  await expect(createdNestedGroup).toContainText("Any condition");
+  const createdStatusRows = createdNestedGroup.getByRole("group", {
+    name: "Status",
+    exact: true,
+  });
+  await expect(createdStatusRows).toHaveCount(2);
+  await expect(createdStatusRows.first()).toContainText("open");
+  await expect(createdStatusRows.last()).toContainText("blocked");
+  await expect(createdNestedGroup.getByRole("textbox", { name: "Value" }))
+    .toHaveCount(0);
 
   await filter.locator("footer").getByRole("button", { name: "Close" })
     .click();
@@ -200,6 +211,9 @@ test("REQ-SQL-003 @smoke: edits nested Filter conditions, runs, and reopens the 
     .click();
   await editFilter.getByRole("button", { name: "Apply changes", exact: true })
     .click();
+  await expect(statusRows.nth(1)).toContainText("closed");
+  await expect(statusRows.nth(1).getByRole("textbox", { name: "Value" }))
+    .toHaveCount(0);
   await editFilter.locator("footer").getByRole("button", { name: "Close" })
     .click();
   expect(await runQueryAndReadFixtureNames(page, spaceId)).toEqual(["A", "C"]);
