@@ -1,9 +1,10 @@
 import {
+  type Accessor,
   createEffect,
-  createMemo,
   createSignal,
   For,
   onCleanup,
+  type Setter,
   Show,
   untrack,
 } from "solid-js";
@@ -40,6 +41,7 @@ type Props = {
   scalarVariables?: readonly { id: string; name: string; type: string }[];
   argumentBindings?: () => readonly Binding[];
   reservedVariableNames?: () => readonly string[];
+  historyState?: SqlConditionWorkspaceHistoryState;
   onFilterEdit?: (change: {
     expectedSql: string;
     expectedScope: string | undefined;
@@ -59,6 +61,13 @@ type History = {
   beforeArguments: readonly SqlVariable[];
   afterArguments: readonly SqlVariable[];
 };
+export type SqlConditionWorkspaceHistoryEntry = History;
+export type SqlConditionWorkspaceHistoryState = {
+  history: Accessor<History[]>;
+  setHistory: Setter<History[]>;
+  redo: Accessor<History[]>;
+  setRedo: Setter<History[]>;
+};
 type LeafDraft = {
   column: string;
   operator: SqlDocumentFilterOperator;
@@ -69,13 +78,13 @@ type LeafDraft = {
 };
 type GroupTarget = { parentNodeId: number | null; queryNodeId: number };
 
-function queryAncestor(
+function selectAncestor(
   nodes: readonly { id: number; parent: number | null; kind: string }[],
   nodeId: number,
 ) {
   let current = nodes.find((node) => node.id === nodeId);
   while (current) {
-    if (current.kind === "query") return current.id;
+    if (current.kind === "select") return current.id;
     current = nodes.find((node) => node.id === current?.parent);
   }
   return undefined;
@@ -141,6 +150,10 @@ export function SqlConditionWorkspace(props: Props) {
   const [qualifierByQuery, setQualifierByQuery] = createSignal<
     Record<number, SqlDocumentIdentifier | null>
   >({});
+  const [relationsByQuery, setRelationsByQuery] = createSignal<
+    Record<number, readonly string[]>
+  >({});
+  const [supportedSelectId, setSupportedSelectId] = createSignal<number>();
   const [drafts, setDrafts] = createSignal<Record<number, LeafDraft>>({});
   const [groupDrafts, setGroupDrafts] = createSignal<
     Record<number, "and" | "or">
@@ -176,13 +189,21 @@ export function SqlConditionWorkspace(props: Props) {
   const [groupSecondArgument, setGroupSecondArgument] = createSignal("");
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string>();
-  const [history, setHistory] = createSignal<History[]>([]);
-  const [redo, setRedo] = createSignal<History[]>([]);
+  const [localHistory, setLocalHistory] = createSignal<History[]>([]);
+  const [localRedo, setLocalRedo] = createSignal<History[]>([]);
+  const history = props.historyState?.history ?? localHistory;
+  const setHistory = props.historyState?.setHistory ?? setLocalHistory;
+  const redo = props.historyState?.redo ?? localRedo;
+  const setRedo = props.historyState?.setRedo ?? setLocalRedo;
   let generation = 0;
+  let lastConditionFocusKey: string | undefined;
+  let pendingConditionFocusKey: string | undefined;
   onCleanup(() => {
     generation++;
   });
   let priorScope = props.scope?.();
+  let priorSource = props.sql();
+  let nextInternalSource: string | undefined;
   const locked = () => props.disabled?.() === true;
   const current = (
     request: number,
@@ -195,10 +216,23 @@ export function SqlConditionWorkspace(props: Props) {
   createEffect(() => {
     const source = props.sql();
     const scope = props.scope?.();
+    if (source !== priorSource) {
+      const internal = source === nextInternalSource;
+      nextInternalSource = undefined;
+      if (!internal) {
+        setDrafts({});
+        setGroupDrafts({});
+        setGroupTarget(null);
+      }
+      priorSource = source;
+    }
     if (scope !== priorScope) {
       priorScope = scope;
       setHistory([]);
       setRedo([]);
+      setDrafts({});
+      setGroupDrafts({});
+      setGroupTarget(null);
     } else if (
       untrack(history).at(-1)?.undo.expected_source !== source &&
       untrack(redo).at(-1)?.undo.expected_source !== source
@@ -225,21 +259,52 @@ export function SqlConditionWorkspace(props: Props) {
       const selectIds: Record<number, number> = {};
       for (const node of document.nodes) {
         if (node.kind === "select") {
-          const queryId = queryAncestor(document.nodes, node.id);
-          if (queryId !== undefined) selectIds[queryId] = node.id;
+          selectIds[node.id] = node.id;
         }
       }
       setSelectIdsByQuery(selectIds);
       const qualifiers: Record<number, SqlDocumentIdentifier | null> = {};
+      const relations: Record<number, string[]> = {};
       for (const node of document.nodes) {
         if (
           node.kind === "table_factor" && node.semantic?.kind === "table_factor"
         ) {
-          const queryId = queryAncestor(document.nodes, node.id);
-          if (queryId !== undefined) qualifiers[queryId] = node.semantic.alias;
+          const selectId = selectAncestor(document.nodes, node.id);
+          if (selectId !== undefined) {
+            qualifiers[selectId] = node.semantic.alias;
+          }
+        }
+        if (node.kind === "relation" && node.semantic?.kind === "relation") {
+          const selectId = selectAncestor(document.nodes, node.id);
+          if (selectId !== undefined) {
+            const names = node.semantic.name.map((part) => part.value);
+            const name = names.join(".");
+            if (name) {
+              relations[selectId] = [...(relations[selectId] ?? []), name];
+            }
+          }
         }
       }
       setQualifierByQuery(qualifiers);
+      setRelationsByQuery(relations);
+      const selects = document.nodes.filter((node) => node.kind === "select");
+      const factors = document.nodes.filter((node) =>
+        node.kind === "table_factor"
+      );
+      const queryCount = document.nodes.filter((node) =>
+        node.kind === "query"
+      ).length;
+      const singleSelectId = selects.length === 1 ? selects[0].id : undefined;
+      const singleSelectRelations = singleSelectId === undefined
+        ? []
+        : relations[singleSelectId] ?? [];
+      setSupportedSelectId(
+        queryCount === 1 && selects.length === 1 && factors.length === 1 &&
+          !document.nodes.some((node) => node.kind === "with_clause") &&
+          singleSelectRelations.length === 1
+          ? singleSelectId
+          : undefined,
+      );
       const ids = new Set<number>();
       const visit = (node: SqlDocumentConditionNode | null) => {
         if (!node) return;
@@ -257,6 +322,15 @@ export function SqlConditionWorkspace(props: Props) {
           Object.entries(old).filter(([id]) => ids.has(Number(id))),
         )
       );
+      const focusKey = pendingConditionFocusKey;
+      pendingConditionFocusKey = undefined;
+      if (focusKey) {
+        setTimeout(() => {
+          globalThis.document?.querySelector<HTMLElement>(
+            `[data-condition-focus="${focusKey}"]`,
+          )?.focus();
+        });
+      }
     }).catch((cause) => {
       if (active && props.sql() === source && props.scope?.() === scope) {
         setError(
@@ -267,25 +341,30 @@ export function SqlConditionWorkspace(props: Props) {
       }
     });
   });
-  const eligible = createMemo(() => {
-    const documentScope = conditions()[0];
-    const source = props.sql();
-    return documentScope
-      ? props.contexts().filter((context) =>
-        source.includes(`\"${context.parser.relation}\"`) ||
-        source.includes(context.parser.relation)
-      )
-      : [];
-  });
-  const context = () => eligible()[0] ?? props.contexts()[0];
-  const columns = () => context()?.parser.columns ?? [];
-  const filterColumns = () =>
-    columns().filter((item) =>
-      context()?.columnCapabilities[item.name]?.filterable === true
+  const contextFor = (scope: SqlDocumentConditionScope) => {
+    if (scope.query_node_id !== supportedSelectId()) return undefined;
+    const relationNames = [
+      ...new Set(relationsByQuery()[scope.query_node_id] ?? []),
+    ];
+    if (relationNames.length !== 1) return undefined;
+    const parts = relationNames[0].split(".");
+    const basename = parts.at(-1);
+    const matches = props.contexts().filter((candidate) =>
+      candidate.parser.relation === relationNames[0] ||
+      candidate.stableRelation === relationNames[0] ||
+      (parts.length === 1 && candidate.parser.relation === basename)
     );
-  const operatorOptions = (name: string) => {
+    return matches.length === 1 ? matches[0] : undefined;
+  };
+  const columns = (scope: SqlDocumentConditionScope) =>
+    contextFor(scope)?.parser.columns ?? [];
+  const filterColumns = (scope: SqlDocumentConditionScope) =>
+    columns(scope).filter((item) =>
+      contextFor(scope)?.columnCapabilities[item.name]?.filterable === true
+    );
+  const operatorOptions = (name: string, scope: SqlDocumentConditionScope) => {
     const supported = new Set(
-      context()?.columnCapabilities[name]?.supportedOperators ?? [],
+      contextFor(scope)?.columnCapabilities[name]?.supportedOperators ?? [],
     );
     const mapping: Record<SqlDocumentFilterOperator, string> = {
       eq: "eq",
@@ -301,8 +380,8 @@ export function SqlConditionWorkspace(props: Props) {
     };
     return supportedOperators.filter((item) => supported.has(mapping[item]));
   };
-  const typeFor = (name: string) => {
-    const raw = columns().find((column) => column.name === name)?.type
+  const typeFor = (name: string, scope: SqlDocumentConditionScope) => {
+    const raw = columns(scope).find((column) => column.name === name)?.type
       ?.toLowerCase();
     if (["string", "text", "varchar", "char"].includes(raw ?? "")) {
       return "string";
@@ -316,23 +395,31 @@ export function SqlConditionWorkspace(props: Props) {
     if (["timestamp", "datetime"].includes(raw ?? "")) return "timestamp";
     return undefined;
   };
-  const argumentsFor = (column: string) =>
+  const argumentsFor = (column: string, scope: SqlDocumentConditionScope) =>
     (props.argumentDefinitions?.() ?? []).filter((item) =>
-      item.type === typeFor(column)
+      item.type === typeFor(column, scope)
     );
-  const scalarsFor = (column: string) =>
+  const scalarsFor = (column: string, scope: SqlDocumentConditionScope) =>
     (props.scalarVariables ?? []).filter((item) =>
-      item.type === typeFor(column)
+      item.type === typeFor(column, scope)
     );
-  const isValidDraft = (draft: LeafDraft, canCreateArgument: boolean) => {
-    if (!filterColumns().some((item) => item.name === draft.column)) {
+  const isValidDraft = (
+    draft: LeafDraft,
+    canCreateArgument: boolean,
+    scope: SqlDocumentConditionScope,
+  ) => {
+    if (!filterColumns(scope).some((item) => item.name === draft.column)) {
       return false;
     }
-    if (!operatorOptions(draft.column).includes(draft.operator)) return false;
+    if (!operatorOptions(draft.column, scope).includes(draft.operator)) {
+      return false;
+    }
     if (!valueInputOperators.has(draft.operator)) return true;
     if (draft.source === "argument") {
       if (
-        argumentsFor(draft.column).some((item) => item.name === draft.argument)
+        argumentsFor(draft.column, scope).some((item) =>
+          item.name === draft.argument
+        )
       ) return true;
       if (!canCreateArgument) return false;
       const name = newArgumentName().trim();
@@ -344,12 +431,14 @@ export function SqlConditionWorkspace(props: Props) {
       ) return false;
       if (
         props.scalarVariables &&
-        !scalarsFor(draft.column).some((item) => item.id === newBinding())
+        !scalarsFor(draft.column, scope).some((item) =>
+          item.id === newBinding()
+        )
       ) return false;
       if (
         newArgumentDefault() &&
         !parseSqlVariableDefault(
-          typeFor(draft.column) ?? "",
+          typeFor(draft.column, scope) ?? "",
           newArgumentDefault(),
         ).valid
       ) return false;
@@ -366,6 +455,9 @@ export function SqlConditionWorkspace(props: Props) {
     if (draft.valueKind === "null") return true;
     return true;
   };
+  const isRevokedDraft = (draft: LeafDraft, scope: SqlDocumentConditionScope) =>
+    columns(scope).some((item) => item.name === draft.column) &&
+    contextFor(scope)?.columnCapabilities[draft.column]?.filterable !== true;
   const draftFor = (
     node: Extract<SqlDocumentConditionNode, { kind: "comparison" }>,
   ): LeafDraft => {
@@ -401,6 +493,7 @@ export function SqlConditionWorkspace(props: Props) {
   const makeCondition = (
     draft: LeafDraft,
     addArgument: boolean,
+    scope: SqlDocumentConditionScope,
     qualifier: SqlDocumentIdentifier | null = null,
   ): {
     condition: SqlDocumentFilterCondition;
@@ -409,13 +502,13 @@ export function SqlConditionWorkspace(props: Props) {
     nextArgs: readonly SqlVariable[];
     nextBindings: readonly Binding[];
   } => {
-    const selectedColumn = filterColumns().find((item) =>
+    const selectedColumn = filterColumns(scope).find((item) =>
       item.name === draft.column
     );
     if (!selectedColumn) {
       throw new Error(t("sqlPage.structure.documentChooseColumn"));
     }
-    if (!operatorOptions(draft.column).includes(draft.operator)) {
+    if (!operatorOptions(draft.column, scope).includes(draft.operator)) {
       throw new Error(t("sqlPage.structure.documentNoOperationTarget"));
     }
     const priorArgs = props.argumentDefinitions?.() ?? [];
@@ -425,7 +518,7 @@ export function SqlConditionWorkspace(props: Props) {
     let binding: Binding | undefined;
     if (valueInputOperators.has(draft.operator)) {
       if (draft.source === "argument") {
-        const existing = argumentsFor(draft.column).find((item) =>
+        const existing = argumentsFor(draft.column, scope).find((item) =>
           item.name === draft.argument
         );
         if (existing) {
@@ -437,9 +530,9 @@ export function SqlConditionWorkspace(props: Props) {
             priorArgs.some((item) => item.name === name) ||
             (props.reservedVariableNames?.() ?? []).includes(name)
           ) throw new Error(t("sqlPage.structure.argumentNameInvalid"));
-          const type = scalarsFor(draft.column).find((item) =>
+          const type = scalarsFor(draft.column, scope).find((item) =>
             item.id === newBinding()
-          )?.type ?? typeFor(draft.column);
+          )?.type ?? typeFor(draft.column, scope);
           if (!type) {
             throw new Error(
               t("sqlPage.structure.filterArgumentTypeUnsupported"),
@@ -460,7 +553,9 @@ export function SqlConditionWorkspace(props: Props) {
             ...(parsedDefault?.valid ? { default: parsedDefault.value } : {}),
           };
           literal = { kind: "named_parameter", name };
-          if (newBinding()) binding = { name, variableId: newBinding() };
+          if (newBinding()) {
+            binding = { name, variableId: newBinding() };
+          }
         } else throw new Error(t("sqlPage.structure.documentChooseColumn"));
       } else if (draft.valueKind === "number") {
         if (!draft.value.trim()) {
@@ -505,6 +600,7 @@ export function SqlConditionWorkspace(props: Props) {
     binding?: Binding,
     nextArgs?: readonly SqlVariable[],
     nextBindings?: readonly Binding[],
+    restoreFocusKey?: string,
   ) => {
     if (busy() || locked()) return;
     const source = props.sql();
@@ -520,10 +616,10 @@ export function SqlConditionWorkspace(props: Props) {
       ? document.activeElement.dataset.conditionFocus
       : undefined;
     try {
-      const document = await parseSqlDocument(source);
+      const parsedDocument = await parseSqlDocument(source);
       if (!current(request, source, scope)) return;
       const result = await applySqlDocumentSemanticEditTransaction(source, {
-        contract_version: document.contract_version,
+        contract_version: parsedDocument.contract_version,
         expected_source: source,
         edits,
       });
@@ -531,6 +627,7 @@ export function SqlConditionWorkspace(props: Props) {
       if (created && !props.onFilterEdit && !props.onArgumentAdded) {
         throw new Error(t("sqlPage.structure.filterArgumentInvalid"));
       }
+      nextInternalSource = result.document.source;
       if (props.onFilterEdit) {
         const accepted = props.onFilterEdit({
           expectedSql: source,
@@ -544,10 +641,12 @@ export function SqlConditionWorkspace(props: Props) {
           resultArguments: nextArgs ?? beforeArgs,
         });
         if (accepted === false) {
+          nextInternalSource = undefined;
           throw new Error(t("sqlPage.structure.editFailed"));
         }
       } else {
         if (created && props.onArgumentAdded?.(created) === false) {
+          nextInternalSource = undefined;
           throw new Error(t("sqlPage.structure.editFailed"));
         }
         props.onSqlChange(result.document.source);
@@ -562,13 +661,11 @@ export function SqlConditionWorkspace(props: Props) {
         }].slice(-32),
       );
       setRedo([]);
-      if (focusKey) {
-        setTimeout(() => {
-          document.querySelector<HTMLElement>(
-            `[data-condition-focus="${focusKey}"]`,
-          )?.focus();
-        });
-      }
+      const targetFocusKey = focusKey ?? lastConditionFocusKey ??
+        restoreFocusKey;
+      // Applying drafts clears their local controls after this async call. Let
+      // that caller restore focus after the controls have been reconciled.
+      pendingConditionFocusKey = restoreFocusKey ? undefined : targetFocusKey;
     } catch (cause) {
       if (current(request, source, scope)) {
         setError(
@@ -584,12 +681,15 @@ export function SqlConditionWorkspace(props: Props) {
 
   const applyDrafts = async () => {
     const edits: SqlDocumentSemanticEdit[] = [];
+    let restoreFocusKey: string | undefined;
     for (const scope of conditions()) {
       const visit = (node: SqlDocumentConditionNode | null): void => {
         if (!node) return;
         if (isGroup(node)) {
           const operator = groupDrafts()[node.node_id];
           if (operator && operator !== node.operator) {
+            restoreFocusKey ??= lastConditionFocusKey ??
+              `${node.node_id}:group-operator`;
             edits.push({
               kind: "set_filter_group_operator",
               node_id: node.node_id,
@@ -600,9 +700,11 @@ export function SqlConditionWorkspace(props: Props) {
           }
           node.children.forEach(visit);
         } else if (isComparison(node) && drafts()[node.node_id]) {
+          restoreFocusKey ??= lastConditionFocusKey ?? `${node.node_id}:column`;
           const built = makeCondition(
             draftFor(node),
             false,
+            scope,
             node.column.qualifier ?? null,
           );
           edits.push({
@@ -616,9 +718,23 @@ export function SqlConditionWorkspace(props: Props) {
       visit(scope.expression);
     }
     if (edits.length) {
-      await commit(edits);
+      await commit(
+        edits,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        restoreFocusKey,
+      );
       setDrafts({});
       setGroupDrafts({});
+      if (restoreFocusKey) {
+        setTimeout(() => {
+          globalThis.document?.querySelector<HTMLElement>(
+            `[data-condition-focus="${restoreFocusKey}"]`,
+          )?.focus();
+        });
+      }
     }
   };
 
@@ -638,6 +754,7 @@ export function SqlConditionWorkspace(props: Props) {
       const built = makeCondition(
         draft,
         newValueSource() === "argument" && !newArgument(),
+        scope,
         qualifierByQuery()[scope.query_node_id] ?? null,
       );
       const targetKind: SqlDocumentNodeKind = parentNodeId === null
@@ -704,6 +821,7 @@ export function SqlConditionWorkspace(props: Props) {
       const first = makeCondition(
         draft,
         newValueSource() === "argument" && !newArgument(),
+        scope,
         qualifierByQuery()[scope.query_node_id] ?? null,
       );
       const second = makeCondition(
@@ -716,6 +834,7 @@ export function SqlConditionWorkspace(props: Props) {
           argument: groupSecondArgument(),
         },
         false,
+        scope,
         qualifierByQuery()[scope.query_node_id] ?? null,
       );
       const edit: SqlDocumentSemanticEdit = {
@@ -810,7 +929,11 @@ export function SqlConditionWorkspace(props: Props) {
     }
   };
 
-  const renderCondition = (node: SqlDocumentConditionNode, depth = 0) => {
+  const renderCondition = (
+    node: SqlDocumentConditionNode,
+    scope: SqlDocumentConditionScope,
+    depth = 0,
+  ) => {
     if (isGroup(node)) {
       return (
         <div
@@ -842,7 +965,7 @@ export function SqlConditionWorkspace(props: Props) {
               type="button"
               class="ui-button ui-button-secondary"
               disabled={busy() || locked()}
-              onClick={() => openGroupComposer(conditions()[0], node.node_id)}
+              onClick={() => openGroupComposer(scope, node.node_id)}
             >
               {t("sqlPage.structure.addFilterGroup")}
             </button>
@@ -854,9 +977,11 @@ export function SqlConditionWorkspace(props: Props) {
             />
           </div>
           <For each={node.children}>
-            {(child) => renderCondition(child, depth + 1)}
+            {(child) => renderCondition(child, scope, depth + 1)}
           </For>
-          <AddRow parentNodeId={node.node_id} scope={conditions()[0]} />
+          <Show when={depth > 0 && contextFor(scope)}>
+            <AddRow parentNodeId={node.node_id} scope={scope} />
+          </Show>
         </div>
       );
     }
@@ -864,8 +989,9 @@ export function SqlConditionWorkspace(props: Props) {
       const draft = () => draftFor(node);
       const setDraft = (patch: Partial<LeafDraft>) =>
         setDrafts({ ...drafts(), [node.node_id]: { ...draft(), ...patch } });
-      const label = context()?.columnLabels[node.column.column.value] ??
-        node.column.column.value;
+      const label =
+        contextFor(scope)?.columnLabels?.[node.column.column.value] ??
+          node.column.column.value;
       return (
         <div class="sql-condition-row" role="group" aria-label={label}>
           <label class="ui-field">
@@ -879,15 +1005,17 @@ export function SqlConditionWorkspace(props: Props) {
               onChange={(event) =>
                 setDraft({
                   column: event.currentTarget.value,
-                  operator: operatorOptions(event.currentTarget.value)[0] ??
-                    "eq",
+                  operator:
+                    operatorOptions(event.currentTarget.value, scope)[0] ??
+                      "eq",
                   argument: "",
                 })}
             >
-              <For each={filterColumns()}>
+              <For each={filterColumns(scope)}>
                 {(column) => (
                   <option value={column.name}>
-                    {context()?.columnLabels[column.name] ?? column.name}
+                    {contextFor(scope)?.columnLabels?.[column.name] ??
+                      column.name}
                   </option>
                 )}
               </For>
@@ -901,13 +1029,15 @@ export function SqlConditionWorkspace(props: Props) {
               aria-label={t("sqlPage.structure.operator")}
               value={draft().operator}
               disabled={busy() || locked()}
-              onChange={(event) =>
+              onChange={(event) => {
+                lastConditionFocusKey = `${node.node_id}:operator`;
                 setDraft({
                   operator: event.currentTarget
                     .value as SqlDocumentFilterOperator,
-                })}
+                });
+              }}
             >
-              <For each={operatorOptions(draft().column)}>
+              <For each={operatorOptions(draft().column, scope)}>
                 {(operator) => (
                   <option value={operator}>{operatorName(operator)}</option>
                 )}
@@ -1031,7 +1161,7 @@ export function SqlConditionWorkspace(props: Props) {
                   <option value="">
                     {t("sqlPage.structure.filterChooseArgument")}
                   </option>
-                  <For each={argumentsFor(draft().column)}>
+                  <For each={argumentsFor(draft().column, scope)}>
                     {(argument) => (
                       <option value={argument.name}>
                         {argument.name} ({argument.type})
@@ -1084,23 +1214,27 @@ export function SqlConditionWorkspace(props: Props) {
           onChange={(event) => {
             const name = event.currentTarget.value;
             setNewColumn(name);
-            setNewOperator(operatorOptions(name)[0] ?? "eq");
-            setNewValueKind(
-              typeFor(name) === "boolean"
-                ? "boolean"
-                : typeFor(name) === "integer" || typeFor(name) === "float"
-                ? "number"
-                : "string",
+            setNewOperator(operatorOptions(name, p.scope)[0] ?? "eq");
+            const kind = typeFor(name, p.scope) === "boolean"
+              ? "boolean"
+              : typeFor(name, p.scope) === "integer" ||
+                  typeFor(name, p.scope) === "float"
+              ? "number"
+              : "string";
+            setNewValueKind(kind);
+            setNewValue(
+              kind === "number" ? "0" : kind === "boolean" ? "true" : "",
             );
           }}
         >
           <option value="">
             {t("sqlPage.structure.documentChooseColumn")}
           </option>
-          <For each={filterColumns()}>
+          <For each={filterColumns(p.scope)}>
             {(column) => (
               <option value={column.name}>
-                {context()?.columnLabels[column.name] ?? column.name}
+                {contextFor(p.scope)?.columnLabels?.[column.name] ??
+                  column.name}
               </option>
             )}
           </For>
@@ -1118,7 +1252,7 @@ export function SqlConditionWorkspace(props: Props) {
               event.currentTarget.value as SqlDocumentFilterOperator,
             )}
         >
-          <For each={operatorOptions(newColumn())}>
+          <For each={operatorOptions(newColumn(), p.scope)}>
             {(operator) => (
               <option value={operator}>{operatorName(operator)}</option>
             )}
@@ -1225,7 +1359,7 @@ export function SqlConditionWorkspace(props: Props) {
               <option value="">
                 {t("sqlPage.structure.filterNewArgumentName")}
               </option>
-              <For each={argumentsFor(newColumn())}>
+              <For each={argumentsFor(newColumn(), p.scope)}>
                 {(item) => (
                   <option value={item.name}>{item.name} ({item.type})</option>
                 )}
@@ -1233,6 +1367,7 @@ export function SqlConditionWorkspace(props: Props) {
             </select>
           </label>
           <Show when={!newArgument()}>
+            <span class="ui-text-muted">{typeFor(newColumn(), p.scope)}</span>
             <label class="ui-field">
               <span>{t("sqlPage.structure.filterNewArgumentName")}</span>
               <input
@@ -1257,7 +1392,7 @@ export function SqlConditionWorkspace(props: Props) {
                   <option value="">
                     {t("sqlPage.structure.filterNoBinding")}
                   </option>
-                  <For each={scalarsFor(newColumn())}>
+                  <For each={scalarsFor(newColumn(), p.scope)}>
                     {(item) => (
                       <option value={item.id}>{item.name} ({item.type})</option>
                     )}
@@ -1284,14 +1419,25 @@ export function SqlConditionWorkspace(props: Props) {
         type="button"
         class="ui-button ui-button-primary"
         disabled={busy() || locked() ||
-          !isValidDraft({
+          (!isValidDraft(
+            {
+              column: newColumn(),
+              operator: newOperator(),
+              source: newValueSource(),
+              value: newValue(),
+              valueKind: newValueKind(),
+              argument: newArgument(),
+            },
+            true,
+            p.scope,
+          ) && !isRevokedDraft({
             column: newColumn(),
             operator: newOperator(),
             source: newValueSource(),
             value: newValue(),
             valueKind: newValueKind(),
             argument: newArgument(),
-          }, true)}
+          }, p.scope))}
         onClick={() => void addCondition(p.parentNodeId, p.scope)}
       >
         {t("sqlPage.structure.addFilter")}
@@ -1308,12 +1454,12 @@ export function SqlConditionWorkspace(props: Props) {
         when={groupTarget()?.parentNodeId === p.parentNodeId &&
           groupTarget()?.queryNodeId === p.scope.query_node_id}
       >
-        <GroupComposer />
+        <GroupComposer scope={p.scope} />
       </Show>
     </div>
   );
 
-  const GroupComposer = () => (
+  const GroupComposer = (p: { scope: SqlDocumentConditionScope }) => (
     <div
       class="sql-condition-group-composer"
       role="group"
@@ -1345,11 +1491,12 @@ export function SqlConditionWorkspace(props: Props) {
           onChange={(event) => {
             const name = event.currentTarget.value;
             setGroupSecondColumn(name);
-            setGroupSecondOperator(operatorOptions(name)[0] ?? "eq");
+            setGroupSecondOperator(operatorOptions(name, p.scope)[0] ?? "eq");
             setGroupSecondValueKind(
-              typeFor(name) === "boolean"
+              typeFor(name, p.scope) === "boolean"
                 ? "boolean"
-                : typeFor(name) === "integer" || typeFor(name) === "float"
+                : typeFor(name, p.scope) === "integer" ||
+                    typeFor(name, p.scope) === "float"
                 ? "number"
                 : "string",
             );
@@ -1359,10 +1506,11 @@ export function SqlConditionWorkspace(props: Props) {
           <option value="">
             {t("sqlPage.structure.documentChooseColumn")}
           </option>
-          <For each={filterColumns()}>
+          <For each={filterColumns(p.scope)}>
             {(column) => (
               <option value={column.name}>
-                {context()?.columnLabels[column.name] ?? column.name}
+                {contextFor(p.scope)?.columnLabels?.[column.name] ??
+                  column.name}
               </option>
             )}
           </For>
@@ -1380,7 +1528,7 @@ export function SqlConditionWorkspace(props: Props) {
               event.currentTarget.value as SqlDocumentFilterOperator,
             )}
         >
-          <For each={operatorOptions(groupSecondColumn())}>
+          <For each={operatorOptions(groupSecondColumn(), p.scope)}>
             {(operator) => (
               <option value={operator}>{operatorName(operator)}</option>
             )}
@@ -1487,7 +1635,7 @@ export function SqlConditionWorkspace(props: Props) {
               <option value="">
                 {t("sqlPage.structure.filterChooseArgument")}
               </option>
-              <For each={argumentsFor(groupSecondColumn())}>
+              <For each={argumentsFor(groupSecondColumn(), p.scope)}>
                 {(argument) => (
                   <option value={argument.name}>
                     {argument.name} ({argument.type})
@@ -1502,21 +1650,43 @@ export function SqlConditionWorkspace(props: Props) {
         type="button"
         class="ui-button ui-button-primary"
         disabled={busy() || locked() ||
-          !isValidDraft({
+          (!isValidDraft(
+            {
+              column: newColumn(),
+              operator: newOperator(),
+              source: newValueSource(),
+              value: newValue(),
+              valueKind: newValueKind(),
+              argument: newArgument(),
+            },
+            true,
+            p.scope,
+          ) && !isRevokedDraft({
             column: newColumn(),
             operator: newOperator(),
             source: newValueSource(),
             value: newValue(),
             valueKind: newValueKind(),
             argument: newArgument(),
-          }, true) || !isValidDraft({
+          }, p.scope)) || (!isValidDraft(
+            {
+              column: groupSecondColumn(),
+              operator: groupSecondOperator(),
+              source: groupSecondSource(),
+              value: groupSecondValue(),
+              valueKind: groupSecondValueKind(),
+              argument: groupSecondArgument(),
+            },
+            false,
+            p.scope,
+          ) && !isRevokedDraft({
             column: groupSecondColumn(),
             operator: groupSecondOperator(),
             source: groupSecondSource(),
             value: groupSecondValue(),
             valueKind: groupSecondValueKind(),
             argument: groupSecondArgument(),
-          }, false)}
+          }, p.scope))}
         onClick={() => void createGroup()}
       >
         {t("sqlPage.structure.createFilterGroup")}
@@ -1536,6 +1706,12 @@ export function SqlConditionWorkspace(props: Props) {
     <div
       class="sql-filter-sort-editor sql-condition-workspace"
       aria-busy={busy() || undefined}
+      onFocusIn={(event) => {
+        const target = event.target;
+        if (target instanceof HTMLElement && target.dataset.conditionFocus) {
+          lastConditionFocusKey = target.dataset.conditionFocus;
+        }
+      }}
     >
       <For each={conditions()}>
         {(scope) => (
@@ -1544,12 +1720,28 @@ export function SqlConditionWorkspace(props: Props) {
             aria-label={t("sqlPage.structure.filters")}
           >
             <Show
-              when={scope.expression}
-              fallback={<p>{t("sqlPage.structure.noFilters")}</p>}
+              when={contextFor(scope)}
+              fallback={
+                <div>
+                  <p role="status">
+                    {t("sqlPage.structure.documentNoOperationTarget")}
+                  </p>
+                  <button
+                    type="button"
+                    class="ui-button ui-button-secondary"
+                    onClick={props.onAdvanced}
+                  >
+                    {t("sqlPage.structure.advancedStructure")}
+                  </button>
+                </div>
+              }
             >
-              {(expression) => renderCondition(expression())}
-            </Show>
-            <Show when={!scope.expression}>
+              <Show
+                when={scope.expression}
+                fallback={<p>{t("sqlPage.structure.noFilters")}</p>}
+              >
+                {(expression) => renderCondition(expression(), scope)}
+              </Show>
               <AddRow parentNodeId={null} scope={scope} />
             </Show>
           </section>

@@ -22,7 +22,10 @@ import { t } from "~/lib/i18n";
 import { IconButton } from "~/components/IconButton";
 import type { SqlVariable } from "~/lib/types";
 import { parseSqlVariableDefault } from "~/lib/sql";
-import { SqlConditionWorkspace } from "~/components/SqlConditionWorkspace";
+import {
+  SqlConditionWorkspace,
+  type SqlConditionWorkspaceHistoryState,
+} from "~/components/SqlConditionWorkspace";
 
 interface Props {
   action: "filter" | "sort";
@@ -48,6 +51,7 @@ interface Props {
     expectedArguments?: readonly SqlVariable[];
     resultArguments?: readonly SqlVariable[];
   }) => boolean | void;
+  historyState?: SqlConditionWorkspaceHistoryState;
 }
 type SortItem = {
   id: number;
@@ -1123,6 +1127,7 @@ export function SqlFilterSortEditor(props: Props) {
         scalarVariables={props.scalarVariables}
         argumentBindings={props.argumentBindings}
         reservedVariableNames={props.reservedVariableNames}
+        historyState={props.historyState}
         onFilterEdit={props.onFilterEdit}
       />
     </Show>

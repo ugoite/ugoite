@@ -11,6 +11,7 @@ import { SqlColumnsEditor } from "~/components/SqlColumnsEditor";
 import { SqlFormPicker } from "~/components/SqlFormPicker";
 import { SqlDocumentTreeEditor } from "~/components/SqlDocumentTreeEditor";
 import { SqlFilterSortEditor } from "~/components/SqlFilterSortEditor";
+import type { SqlConditionWorkspaceHistoryEntry } from "~/components/SqlConditionWorkspace";
 import { handleDialogKeyDown, useDialogFocus } from "~/components/dialog-focus";
 import type { SQLWorkspaceAction } from "~/components/SQLWorkspace";
 import { filterSqlStructureContextsByFormGuards } from "~/lib/sql";
@@ -123,6 +124,12 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
   const [activeAction, setActiveAction] = createSignal<ToolbarAction | null>(
     null,
   );
+  const [conditionHistory, setConditionHistory] = createSignal<
+    SqlConditionWorkspaceHistoryEntry[]
+  >([]);
+  const [conditionRedo, setConditionRedo] = createSignal<
+    SqlConditionWorkspaceHistoryEntry[]
+  >([]);
   const [targetNodeKinds, setTargetNodeKinds] = createSignal<
     readonly SqlDocumentNode["kind"][]
   >([]);
@@ -462,6 +469,12 @@ export function SqlStructureToolbar(props: SqlStructureToolbarProps) {
                   argumentBindings={props.argumentBindings}
                   reservedVariableNames={props.reservedVariableNames}
                   onFilterEdit={props.onFilterEdit}
+                  historyState={{
+                    history: conditionHistory,
+                    setHistory: setConditionHistory,
+                    redo: conditionRedo,
+                    setRedo: setConditionRedo,
+                  }}
                 />
               </Show>
               <Show

@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { createSignal } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import {
   fireEvent,
   render,
@@ -11,6 +11,7 @@ import * as client from "~/lib/ugoite-client";
 import { describe, expect, it, vi } from "vitest";
 import type { SqlStructureAdapterContext } from "~/lib/sql";
 import { SqlFilterSortEditor } from "./SqlFilterSortEditor";
+import type { SqlConditionWorkspaceHistoryEntry } from "./SqlConditionWorkspace";
 
 const context: SqlStructureAdapterContext = {
   identity: "expenses",
@@ -394,13 +395,100 @@ describe("SQL Filter and Sort task editors", () => {
       { name: "unused", type: "string", description: "keep this declaration" },
     ]);
     expect(edit.mock.calls[0][0].resultArguments).toEqual(argumentsList());
-    const restoredOperator =
-      (await screen.findAllByRole("group", { name: "Amount" }))[0];
     await waitFor(() =>
       expect(document.activeElement).toBe(
-        within(restoredOperator).getByRole("combobox", { name: "Operator" }),
+        document.querySelector('[data-condition-focus="7:operator"]'),
       )
     );
+  });
+
+  it("discards an existing-condition draft when SQL changes externally", async () => {
+    const [sql, setSql] = createSignal(
+      'SELECT * FROM "form_expenses" WHERE field_amount >= 4',
+    );
+    render(() => (
+      <SqlFilterSortEditor
+        action="filter"
+        sql={sql}
+        contexts={() => [context]}
+        onSqlChange={setSql}
+        onAdvanced={() => {}}
+      />
+    ));
+    const value = await screen.findByRole("textbox", { name: "Value" });
+    expect(value).toHaveValue("4");
+    fireEvent.input(value, { target: { value: "99" } });
+    expect(screen.getByRole("button", { name: "Apply changes" }))
+      .toBeInTheDocument();
+    setSql('SELECT * FROM "form_expenses" WHERE field_amount >= 7');
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Value" })).toHaveValue("7")
+    );
+    expect(screen.queryByRole("button", { name: "Apply changes" })).toBeNull();
+  });
+
+  it("keeps multiple SELECT scopes on Advanced instead of offering cross-scope filters", async () => {
+    const [sql] = createSignal(
+      'SELECT field_amount FROM "form_expenses" WHERE field_amount > 1 UNION SELECT field_amount FROM "form_expenses" WHERE field_amount > 2',
+    );
+    render(() => (
+      <SqlFilterSortEditor
+        action="filter"
+        sql={sql}
+        contexts={() => [context]}
+        onSqlChange={() => {}}
+        onAdvanced={() => {}}
+      />
+    ));
+    await screen.findByRole("button", { name: "Advanced structure…" });
+    expect(screen.queryByRole("button", { name: "Add filter" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add group" })).toBeNull();
+  });
+
+  it("retains filter undo history when the workspace unmounts and reopens", async () => {
+    const [sql, setSql] = createSignal('SELECT * FROM "form_expenses"');
+    const [visible, setVisible] = createSignal(true);
+    const [history, setHistory] = createSignal<
+      SqlConditionWorkspaceHistoryEntry[]
+    >([]);
+    const [redo, setRedo] = createSignal<SqlConditionWorkspaceHistoryEntry[]>(
+      [],
+    );
+    render(() => (
+      <Show when={visible()}>
+        <SqlFilterSortEditor
+          action="filter"
+          sql={sql}
+          scope={() => "saved-query:query-a"}
+          contexts={() => [context]}
+          onSqlChange={setSql}
+          onAdvanced={() => {}}
+          historyState={{ history, setHistory, redo, setRedo }}
+        />
+      </Show>
+    ));
+    fireEvent.change(
+      await screen.findByRole("combobox", { name: "Column for new filter" }),
+      {
+        target: { value: "field_amount" },
+      },
+    );
+    fireEvent.input(
+      screen.getByRole("textbox", { name: "Value for new filter" }),
+      {
+        target: { value: "12" },
+      },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add filter" }));
+    await waitFor(() => expect(sql()).toContain("WHERE"));
+    expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled();
+    setVisible(false);
+    setVisible(true);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled()
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await waitFor(() => expect(sql()).toBe('SELECT * FROM "form_expenses"'));
   });
 
   it("creates an Any group only after both inline conditions are valid", async () => {
@@ -710,8 +798,9 @@ describe("SQL Filter and Sort task editors", () => {
     await waitFor(() =>
       expect(screen.queryByRole("option", { name: "field_amount" })).toBeNull()
     );
-    fireEvent.click(screen.getByRole("button", { name: "Add filter" }));
-    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add filter" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Advanced structure…" }))
+      .toBeInTheDocument();
     expect(sql()).toBe("SELECT * FROM tenant_a.Form");
   });
 
