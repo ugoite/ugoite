@@ -273,6 +273,7 @@ inventory:
         - frontend/src/components/SqlDocumentTreeEditor.test.tsx
         - frontend/src/components/SqlDocumentTreeEditor.wasm.test.tsx
         - frontend/src/components/SqlFilterSortEditor.tsx
+        - frontend/src/components/SqlConditionWorkspace.tsx
         - frontend/src/components/SqlFilterSortEditor.test.tsx
         - frontend/src/lib/sql-document-columns.ts
         - frontend/src/components/SqlWildcardExpansion.test.tsx

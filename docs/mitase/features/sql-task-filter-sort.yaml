@@ -202,7 +202,7 @@ features:
                     test: sql_document_filter_condition_protocol_matches_native_view_edit_and_undo
           - id: condition-browser-workspace
             adapter: typescript
-            path: frontend/src/components/SqlConditionWorkspace.test.tsx
+            path: frontend/src/components/SqlFilterSortEditor.test.tsx
             selector: { kind: test, name: shows editable existing conditions and preserves every argument on a leaf edit }
             claims:
               - kind: verifies
@@ -211,11 +211,11 @@ features:
                 runner:
                   runner: frontend-vitest-file
                   arguments:
-                    file: src/components/SqlConditionWorkspace.test.tsx
+                    file: src/components/SqlFilterSortEditor.test.tsx
                     test: shows editable existing conditions and preserves every argument on a leaf edit
           - id: condition-group-composer
             adapter: typescript
-            path: frontend/src/components/SqlConditionWorkspace.test.tsx
+            path: frontend/src/components/SqlFilterSortEditor.test.tsx
             selector: { kind: test, name: creates an Any group only after both inline conditions are valid }
             claims:
               - kind: verifies
@@ -224,7 +224,7 @@ features:
                 runner:
                   runner: frontend-vitest-file
                   arguments:
-                    file: src/components/SqlConditionWorkspace.test.tsx
+                    file: src/components/SqlFilterSortEditor.test.tsx
                     test: creates an Any group only after both inline conditions are valid
           - id: condition-browser-journey
             adapter: typescript
