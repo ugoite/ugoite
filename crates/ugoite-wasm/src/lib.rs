@@ -2664,6 +2664,96 @@ mod tests {
     }
 
     #[test]
+    fn sql_document_signed_numeric_filter_literals_match_native_and_preserve_unknown_forms() {
+        use ugoite_domain::sql_document::{
+            SqlDocumentColumnReference, SqlDocumentFilterCondition, SqlDocumentFilterOperator,
+            SqlDocumentIdentifier, SqlDocumentNodeKind, SqlDocumentSemanticEdit,
+            SqlDocumentSemanticEditTransaction, SqlDocumentSemanticLiteral,
+            SQL_DOCUMENT_CONTRACT_VERSION,
+        };
+
+        let source = "SELECT * FROM G WHERE amount >= -92233720368547758081234567890";
+        let parsed = ugoite_domain::sql_document::parse_sql_document(source);
+        let parse_request = serde_json::json!({
+            "action": "domain.parse_sql_document",
+            "value": { "sql": source },
+        });
+        let parse_response: Value =
+            serde_json::from_str(&super::invoke_json(&parse_request.to_string())).unwrap();
+        assert_eq!(parse_response["ok"], true, "{parse_response}");
+        assert_eq!(
+            parse_response["value"],
+            serde_json::to_value(&parsed).unwrap()
+        );
+        assert!(format!("{parsed:?}").contains("-92233720368547758081234567890"));
+
+        let unsupported = "SELECT * FROM G WHERE amount = 0xFF";
+        let unsupported_request = serde_json::json!({
+            "action": "domain.parse_sql_document",
+            "value": { "sql": unsupported },
+        });
+        let unsupported_response: Value =
+            serde_json::from_str(&super::invoke_json(&unsupported_request.to_string())).unwrap();
+        assert_eq!(unsupported_response["ok"], true, "{unsupported_response}");
+        assert_eq!(
+            unsupported_response["value"]["conditions"][0]["expression"]["kind"],
+            "advanced"
+        );
+
+        let base = "SELECT * FROM G WHERE active = TRUE";
+        let base_doc = ugoite_domain::sql_document::parse_sql_document(base);
+        let select = base_doc
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::Select)
+            .unwrap();
+        let value = "-922337203685477580812345678901234567890";
+        let transaction = SqlDocumentSemanticEditTransaction {
+            contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+            expected_source: base.into(),
+            edits: vec![SqlDocumentSemanticEdit::InsertFilterCondition {
+                node_id: select.id,
+                expected_kind: SqlDocumentNodeKind::Select,
+                condition: SqlDocumentFilterCondition::Comparison {
+                    column: SqlDocumentColumnReference {
+                        qualifier: None,
+                        column: SqlDocumentIdentifier {
+                            value: "amount".into(),
+                            quote_style: None,
+                        },
+                    },
+                    operator: SqlDocumentFilterOperator::Gte,
+                    value: Some(SqlDocumentSemanticLiteral::Number {
+                        value: value.into(),
+                    }),
+                },
+            }],
+        };
+        let native = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            base,
+            &transaction,
+        )
+        .unwrap();
+        let request = serde_json::json!({
+            "action": "domain.apply_sql_document_semantic_edit_transaction",
+            "value": { "current_source": base, "transaction": transaction },
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"], serde_json::to_value(&native).unwrap());
+        assert!(native.document.source.contains(value));
+        let undo = serde_json::json!({
+            "action": "domain.apply_sql_document_edit_transaction",
+            "value": { "current_source": native.document.source, "transaction": native.undo },
+        });
+        let undo_response: Value =
+            serde_json::from_str(&super::invoke_json(&undo.to_string())).unwrap();
+        assert_eq!(undo_response["ok"], true, "{undo_response}");
+        assert_eq!(undo_response["value"]["document"]["source"], base);
+    }
+
+    #[test]
     fn projection_alias_semantic_edit_protocol_matches_native() {
         use ugoite_domain::sql_document::{
             SqlDocumentIdentifier, SqlDocumentNodeKind, SqlDocumentSemanticEdit,

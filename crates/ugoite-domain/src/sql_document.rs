@@ -3537,7 +3537,10 @@ fn valid_sql_number_literal(value: &str) -> bool {
         return false;
     }
 
-    let mut index = 0;
+    let mut index = usize::from(matches!(bytes.first(), Some(b'+' | b'-')));
+    if index == bytes.len() {
+        return false;
+    }
     let integer_start = index;
     while bytes.get(index).is_some_and(u8::is_ascii_digit) {
         index += 1;
@@ -9462,7 +9465,7 @@ fn condition_node_from_document_at_depth(
         {
             if let (Some(column), Some(value)) = (
                 column_reference_from_node(column_node),
-                literal_from_node(value_node),
+                literal_from_node(document, value_node),
             ) {
                 return Some(SqlDocumentConditionNode::Comparison {
                     node_id: node.id,
@@ -9501,12 +9504,30 @@ fn column_reference_from_node(node: &SqlDocumentNode) -> Option<SqlDocumentColum
     }
 }
 
-fn literal_from_node(node: &SqlDocumentNode) -> Option<SqlDocumentSemanticLiteral> {
+fn literal_from_node(
+    document: &SqlDocument,
+    node: &SqlDocumentNode,
+) -> Option<SqlDocumentSemanticLiteral> {
+    if let Some(SqlDocumentNodeData::UnaryOperator { operator }) = node.semantic.as_ref() {
+        if !matches!(operator.as_str(), "+" | "-") {
+            return None;
+        }
+        let operand = document.nodes.iter().find(|candidate| {
+            candidate.parent == Some(node.id) && is_expression_node_kind(candidate.kind)
+        })?;
+        let SqlDocumentSemanticLiteral::Number { value } = literal_from_node(document, operand)?
+        else {
+            return None;
+        };
+        let value = format!("{operator}{value}");
+        return valid_sql_number_literal(&value)
+            .then_some(SqlDocumentSemanticLiteral::Number { value });
+    }
     match node.semantic.as_ref()? {
         SqlDocumentNodeData::Literal {
             literal_kind: SqlDocumentLiteralKind::Number,
             raw: Some(value),
-        } => Some(SqlDocumentSemanticLiteral::Number {
+        } if valid_sql_number_literal(value) => Some(SqlDocumentSemanticLiteral::Number {
             value: value.clone(),
         }),
         SqlDocumentNodeData::Literal {
@@ -18535,6 +18556,25 @@ mod tests {
             render_filter_condition(&malformed),
             Err(SqlDocumentEditError::InvalidSemanticReplacement)
         );
+        for value in ["-1 OR TRUE", "+1 OR TRUE", "++1"] {
+            let malformed = SqlDocumentFilterCondition::Comparison {
+                column: SqlDocumentColumnReference {
+                    qualifier: None,
+                    column: SqlDocumentIdentifier {
+                        value: "a".into(),
+                        quote_style: None,
+                    },
+                },
+                operator: SqlDocumentFilterOperator::Eq,
+                value: Some(SqlDocumentSemanticLiteral::Number {
+                    value: value.into(),
+                }),
+            };
+            assert_eq!(
+                render_filter_condition(&malformed),
+                Err(SqlDocumentEditError::InvalidSemanticReplacement)
+            );
+        }
         let escaped = SqlDocumentFilterCondition::Comparison {
             column: SqlDocumentColumnReference {
                 qualifier: None,
@@ -18587,5 +18627,98 @@ mod tests {
             ),
             Err(SqlDocumentEditError::InvalidSemanticReplacement)
         );
+    }
+
+    #[test]
+    fn signed_numeric_filter_literals_roundtrip_and_unknown_spellings_stay_advanced() {
+        let source =
+            "SELECT * FROM G WHERE amount >= -92233720368547758081234567890 AND ratio < +1.25E-3";
+        let document = parse_sql_document(source);
+        let SqlDocumentConditionNode::Group { children, .. } =
+            document.conditions[0].expression.as_ref().unwrap()
+        else {
+            panic!("expected numeric comparisons to be modeled");
+        };
+        assert!(matches!(
+            &children[0],
+            SqlDocumentConditionNode::Comparison {
+                value: Some(SqlDocumentSemanticLiteral::Number { value }),
+                ..
+            } if value == "-92233720368547758081234567890"
+        ));
+        assert!(matches!(
+            &children[1],
+            SqlDocumentConditionNode::Comparison {
+                value: Some(SqlDocumentSemanticLiteral::Number { value }),
+                ..
+            } if value == "+1.25E-3"
+        ));
+
+        let base = "SELECT * FROM G WHERE active = TRUE";
+        let base_doc = parse_sql_document(base);
+        let select = base_doc
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::Select)
+            .unwrap();
+        let huge = "-922337203685477580812345678901234567890";
+        let inserted = apply_sql_document_semantic_edit_transaction(
+            base,
+            &SqlDocumentSemanticEditTransaction {
+                contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+                expected_source: base.into(),
+                edits: vec![SqlDocumentSemanticEdit::InsertFilterCondition {
+                    node_id: select.id,
+                    expected_kind: SqlDocumentNodeKind::Select,
+                    condition: SqlDocumentFilterCondition::Comparison {
+                        column: SqlDocumentColumnReference {
+                            qualifier: None,
+                            column: SqlDocumentIdentifier {
+                                value: "amount".into(),
+                                quote_style: None,
+                            },
+                        },
+                        operator: SqlDocumentFilterOperator::Gte,
+                        value: Some(SqlDocumentSemanticLiteral::Number { value: huge.into() }),
+                    },
+                }],
+            },
+        )
+        .expect("signed arbitrary-precision numeric literal is safe and renderable");
+        assert!(inserted.document.source.contains(huge));
+        let roundtrip = parse_sql_document(&inserted.document.source);
+        assert!(roundtrip.conditions[0]
+            .expression
+            .as_ref()
+            .is_some_and(|expr| condition_tree_contains_number(expr, huge)));
+        let undone =
+            apply_sql_document_edit_transaction(&inserted.document.source, &inserted.undo).unwrap();
+        assert_eq!(undone.document.source, base);
+
+        for spelling in ["0xFF"] {
+            let unsupported = format!("SELECT * FROM G WHERE amount = {spelling}");
+            let parsed = parse_sql_document(&unsupported);
+            assert_eq!(parsed.status, SqlDocumentStatus::Parsed, "{spelling}");
+            assert!(matches!(
+                parsed.conditions[0].expression,
+                Some(SqlDocumentConditionNode::Advanced { .. })
+            ), "unsupported numeric spelling must remain an exact-source advanced predicate: {spelling}");
+        }
+    }
+
+    fn condition_tree_contains_number(
+        condition: &SqlDocumentConditionNode,
+        expected: &str,
+    ) -> bool {
+        match condition {
+            SqlDocumentConditionNode::Group { children, .. } => children
+                .iter()
+                .any(|child| condition_tree_contains_number(child, expected)),
+            SqlDocumentConditionNode::Comparison { value, .. } => matches!(
+                value,
+                Some(SqlDocumentSemanticLiteral::Number { value }) if value == expected
+            ),
+            SqlDocumentConditionNode::Advanced { .. } => false,
+        }
     }
 }
