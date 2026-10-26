@@ -760,12 +760,22 @@ export function SqlConditionWorkspace(props: Props) {
       const targetKind: SqlDocumentNodeKind = parentNodeId === null
         ? "select"
         : nodeKindsById()[parentNodeId] ?? "binary_expression";
-      const edit: SqlDocumentSemanticEdit = {
-        kind: "insert_filter_condition",
-        node_id: parentNodeId ?? selectIdsByQuery()[scope.query_node_id],
-        expected_kind: targetKind,
-        condition: built.condition,
-      };
+      const edit: SqlDocumentSemanticEdit =
+        parentNodeId === null && built.condition.kind === "comparison"
+          ? {
+            kind: "add_filter_comparison",
+            node_id: selectIdsByQuery()[scope.query_node_id],
+            expected_kind: "select",
+            column: built.condition.column,
+            operator: built.condition.operator,
+            literal: built.condition.value,
+          }
+          : {
+            kind: "insert_filter_condition",
+            node_id: parentNodeId ?? selectIdsByQuery()[scope.query_node_id],
+            expected_kind: targetKind,
+            condition: built.condition,
+          };
       await commit(
         [edit],
         built.created,

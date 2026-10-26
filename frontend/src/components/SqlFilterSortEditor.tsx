@@ -13,15 +13,11 @@ import {
   applySqlDocumentSemanticEditTransaction,
   parseSqlDocument,
   type SqlDocumentEditTransaction,
-  type SqlDocumentFilterOperator,
   type SqlDocumentNode,
   type SqlDocumentSemanticEdit,
-  type SqlDocumentSemanticLiteral,
 } from "~/lib/ugoite-client";
 import { t } from "~/lib/i18n";
 import { IconButton } from "~/components/IconButton";
-import type { SqlVariable } from "~/lib/types";
-import { parseSqlVariableDefault } from "~/lib/sql";
 import {
   SqlConditionWorkspace,
   type SqlConditionWorkspaceHistoryState,
@@ -64,7 +60,6 @@ type SortItem = {
 type SortDraft = { direction: "asc" | "desc"; nulls: "first" | "last" | null };
 type RootScope = {
   queryId: number;
-  selectId: number;
   relation: string;
   qualifier?: { value: string; quote_style: string | null };
 };
@@ -91,7 +86,6 @@ function rootScope(nodes: readonly SqlDocumentNode[]): RootScope | null {
   const factor = factors[0].semantic;
   return {
     queryId: queries[0].id,
-    selectId: selects[0].id,
     relation,
     qualifier: factor.alias,
   };
@@ -109,24 +103,7 @@ function queryAncestor(
   return undefined;
 }
 
-const operators: {
-  value: SqlDocumentFilterOperator;
-  label: string;
-  valueInput: boolean;
-}[] = [
-  { value: "eq", label: "=", valueInput: true },
-  { value: "not_eq", label: "≠", valueInput: true },
-  { value: "lt", label: "<", valueInput: true },
-  { value: "lte", label: "≤", valueInput: true },
-  { value: "gt", label: ">", valueInput: true },
-  { value: "gte", label: "≥", valueInput: true },
-  { value: "like", label: "LIKE", valueInput: true },
-  { value: "not_like", label: "NOT LIKE", valueInput: true },
-  { value: "is_null", label: "IS NULL", valueInput: false },
-  { value: "is_not_null", label: "IS NOT NULL", valueInput: false },
-];
-type ValueKind = "string" | "number" | "boolean";
-type FilterHistoryEntry = {
+type SortHistoryEntry = {
   transaction: SqlDocumentEditTransaction;
   beforeBindings: readonly { name: string; variableId: string }[];
   afterBindings: readonly { name: string; variableId: string }[];
@@ -138,16 +115,6 @@ type FilterHistoryEntry = {
 function SqlFilterSortEditorCore(props: Props) {
   const [contextIndex, setContextIndex] = createSignal(0);
   const [column, setColumn] = createSignal("");
-  const [operator, setOperator] = createSignal<SqlDocumentFilterOperator>("eq");
-  const [valueKind, setValueKind] = createSignal<ValueKind>("string");
-  const [value, setValue] = createSignal("");
-  const [valueSource, setValueSource] = createSignal<"literal" | "argument">(
-    "literal",
-  );
-  const [argumentName, setArgumentName] = createSignal("");
-  const [newArgumentName, setNewArgumentName] = createSignal("");
-  const [argumentDefault, setArgumentDefault] = createSignal("");
-  const [bindingVariableId, setBindingVariableId] = createSignal("");
   const [direction, setDirection] = createSignal<"asc" | "desc">("asc");
   const [nulls, setNulls] = createSignal<"" | "first" | "last">("");
   const [busy, setBusy] = createSignal(false);
@@ -156,8 +123,8 @@ function SqlFilterSortEditorCore(props: Props) {
   const [sortDrafts, setSortDrafts] = createSignal<Record<number, SortDraft>>(
     {},
   );
-  const [history, setHistory] = createSignal<FilterHistoryEntry[]>([]);
-  const [redoHistory, setRedoHistory] = createSignal<FilterHistoryEntry[]>([]);
+  const [history, setHistory] = createSignal<SortHistoryEntry[]>([]);
+  const [redoHistory, setRedoHistory] = createSignal<SortHistoryEntry[]>([]);
   const [parsedScope, setParsedScope] = createSignal<RootScope | null>(null);
   let generation = 0;
   onCleanup(() => generation++);
@@ -170,62 +137,10 @@ function SqlFilterSortEditorCore(props: Props) {
   });
   const selected = createMemo(() => eligibleContexts()[contextIndex()]);
   const columns = () => selected()?.parser.columns ?? [];
-  const filterColumns = () =>
-    columns().filter((item) =>
-      selected()?.columnCapabilities[item.name]?.filterable === true
-    );
   const sortColumns = () =>
     columns().filter((item) =>
       selected()?.columnCapabilities[item.name]?.sortable === true
     );
-  const compatibleValueType = (fieldName = column()) => {
-    const raw = columns().find((item) => item.name === fieldName)?.type
-      ?.toLowerCase();
-    if (!raw) return undefined;
-    if (["string", "text", "varchar", "char"].includes(raw)) return "string";
-    if (["int", "integer", "bigint", "smallint"].includes(raw)) {
-      return "integer";
-    }
-    if (["float", "double", "real"].includes(raw)) return "float";
-    if (["bool", "boolean"].includes(raw)) return "boolean";
-    if (raw === "date") return "date";
-    if (["timestamp", "datetime"].includes(raw)) return "timestamp";
-    return undefined;
-  };
-  const compatibleScalarVariables = () => {
-    const type = compatibleValueType();
-    return type
-      ? (props.scalarVariables ?? []).filter((item) => item.type === type)
-      : [];
-  };
-  const compatibleArguments = () => {
-    const type = compatibleValueType();
-    return type
-      ? (props.argumentDefinitions?.() ?? []).filter((item) =>
-        item.type === type
-      )
-      : [];
-  };
-  const supportedFilterOperators = (fieldName = column()) => {
-    const capability = selected()?.columnCapabilities[fieldName];
-    if (!capability?.filterable) return [];
-    const supported = new Set(capability.supportedOperators);
-    const mapping: Partial<Record<SqlDocumentFilterOperator, string>> = {
-      eq: "eq",
-      not_eq: "not_eq",
-      lt: "lt",
-      lte: "lt_eq",
-      gt: "gt",
-      gte: "gt_eq",
-      like: "like",
-      not_like: "not_like",
-      is_null: "is_null",
-      is_not_null: "is_not_null",
-    };
-    return operators.filter((item) => supported.has(mapping[item.value] ?? ""));
-  };
-  const currentOperator = () =>
-    operators.find((item) => item.value === operator()) ?? operators[0];
   const locked = () => props.disabled?.() === true;
   const requestIsCurrent = (
     request: number,
@@ -366,7 +281,7 @@ function SqlFilterSortEditorCore(props: Props) {
       if (request === generation) setBusy(false);
     }
   };
-  const submit = async () => {
+  const submitSort = async () => {
     if (busy() || locked()) return;
     const source = props.sql();
     const scope = props.scope?.();
@@ -382,141 +297,32 @@ function SqlFilterSortEditorCore(props: Props) {
         !resolved || !activeContext ||
         !eligibleContexts().includes(activeContext) ||
         activeContext.parser.relation !== resolved.relation
-      ) {
-        throw new Error(t("sqlPage.structure.documentNoOperationTarget"));
-      }
-      const targetId = props.action === "filter"
-        ? resolved.selectId
-        : resolved.queryId;
-      const target = document.nodes.find((node) => node.id === targetId);
+      ) throw new Error(t("sqlPage.structure.documentNoOperationTarget"));
+      const target = document.nodes.find((node) =>
+        node.id === resolved.queryId
+      );
       if (!target || !column()) {
         throw new Error(t("sqlPage.structure.documentChooseColumn"));
       }
-      const capability = activeContext.columnCapabilities[column()];
-      if (
-        props.action === "filter" &&
-        (!capability?.filterable ||
-          !supportedFilterOperators().some((item) => item.value === operator()))
-      ) {
+      if (!activeContext.columnCapabilities[column()]?.sortable) {
         throw new Error(t("sqlPage.structure.documentNoOperationTarget"));
       }
-      if (props.action === "sort" && !capability?.sortable) {
-        throw new Error(t("sqlPage.structure.documentNoOperationTarget"));
-      }
-      if (
-        props.scalarVariables && valueSource() === "argument" &&
-        !argumentName() && !bindingVariableId()
-      ) {
-        throw new Error(t("sqlPage.structure.documentEnterValue"));
-      }
-      let literal: SqlDocumentSemanticLiteral | null = null;
-      let createdArgument: SqlVariable | undefined;
-      const priorBindings = props.argumentBindings?.() ?? [];
-      let nextBindings = priorBindings;
-      const priorArguments = props.argumentDefinitions?.() ?? [];
-      let nextArguments = priorArguments;
-      if (props.action === "filter" && currentOperator().valueInput) {
-        if (valueSource() === "argument") {
-          const existing = compatibleArguments().find((item) =>
-            item.name === argumentName()
-          );
-          if (existing) {
-            literal = { kind: "named_parameter", name: existing.name };
-          } else {
-            const name = newArgumentName().trim();
-            if (!/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(name)) {
-              throw new Error(t("sqlPage.structure.argumentNameInvalid"));
-            }
-            if (
-              (props.argumentDefinitions?.() ?? []).some((item) =>
-                item.name === name
-              ) || (props.reservedVariableNames?.() ?? []).includes(name)
-            ) {
-              throw new Error(t("sqlPage.structure.argumentNameTaken"));
-            }
-            if (!props.onFilterEdit && !props.onArgumentAdded) {
-              throw new Error(t("sqlPage.structure.filterArgumentInvalid"));
-            }
-            if (
-              props.scalarVariables &&
-              !compatibleScalarVariables().some((item) =>
-                item.id === bindingVariableId()
-              )
-            ) {
-              throw new Error(t("sqlPage.structure.filterArgumentInvalid"));
-            }
-            const argumentType = compatibleScalarVariables().find((variable) =>
-              variable.id === bindingVariableId()
-            )?.type ?? compatibleValueType();
-            if (!argumentType) {
-              throw new Error(
-                t("sqlPage.structure.filterArgumentTypeUnsupported"),
-              );
-            }
-            const parsedDefault = argumentDefault() !== ""
-              ? parseSqlVariableDefault(argumentType, argumentDefault())
-              : undefined;
-            if (argumentDefault() !== "" && !parsedDefault?.valid) {
-              throw new Error(
-                t("sqlPage.structure.filterArgumentDefaultInvalid"),
-              );
-            }
-            createdArgument = {
-              name,
-              type: argumentType,
-              description: "",
-              ...(parsedDefault?.valid ? { default: parsedDefault.value } : {}),
-            };
-            nextArguments = [...priorArguments, createdArgument];
-            if (bindingVariableId()) {
-              nextBindings = [...priorBindings, {
-                name,
-                variableId: bindingVariableId(),
-              }];
-            }
-            literal = { kind: "named_parameter", name };
-          }
-        } else if (valueKind() !== "string" && !value()) {
-          throw new Error(t("sqlPage.structure.documentEnterValue"));
-        } else if (valueKind() === "number") {
-          literal = { kind: "number", value: value() };
-        } else if (valueKind() === "boolean") {
-          literal = { kind: "boolean", value: value() === "true" };
-        } else literal = { kind: "string", value: value() };
-      }
-      const edit: SqlDocumentSemanticEdit = props.action === "filter"
-        ? {
-          kind: "add_filter_comparison",
-          node_id: target.id,
-          expected_kind: "select",
+      const edit: SqlDocumentSemanticEdit = {
+        kind: "add_order_by_column",
+        node_id: target.id,
+        expected_kind: "query",
+        column: {
+          qualifier: resolved.qualifier,
           column: {
-            qualifier: resolved.qualifier,
-            column: {
-              value: column(),
-              quote_style: /^[A-Za-z_][A-Za-z0-9_$]*$/.test(column())
-                ? null
-                : '"',
-            },
+            value: column(),
+            quote_style: /^[A-Za-z_][A-Za-z0-9_$]*$/.test(column())
+              ? null
+              : '"',
           },
-          operator: operator(),
-          literal,
-        }
-        : {
-          kind: "add_order_by_column",
-          node_id: target.id,
-          expected_kind: "query",
-          column: {
-            qualifier: resolved.qualifier,
-            column: {
-              value: column(),
-              quote_style: /^[A-Za-z_][A-Za-z0-9_$]*$/.test(column())
-                ? null
-                : '"',
-            },
-          },
-          direction: direction(),
-          nulls_order: nulls() || null,
-        };
+        },
+        direction: direction(),
+        nulls_order: nulls() || null,
+      };
       const result = await applySqlDocumentSemanticEditTransaction(source, {
         contract_version: document.contract_version,
         expected_source: source,
@@ -525,43 +331,15 @@ function SqlFilterSortEditorCore(props: Props) {
       if (!requestIsCurrent(request, source, scope)) {
         return;
       }
-      if (createdArgument && !props.onFilterEdit && !props.onArgumentAdded) {
-        throw new Error(t("sqlPage.structure.editFailed"));
-      }
-      if (props.onFilterEdit) {
-        const accepted = props.onFilterEdit({
-          expectedSql: source,
-          expectedScope: scope,
-          resultSql: result.document.source,
-          createdArgument,
-          binding: createdArgument && bindingVariableId()
-            ? { name: createdArgument.name, variableId: bindingVariableId() }
-            : undefined,
-          expectedBindings: priorBindings,
-          resultBindings: nextBindings,
-          expectedArguments: priorArguments,
-          resultArguments: nextArguments,
-        });
-        if (accepted === false) {
-          throw new Error(t("sqlPage.structure.editFailed"));
-        }
-      } else if (createdArgument) {
-        if (props.onArgumentAdded?.(createdArgument) === false) {
-          throw new Error(t("sqlPage.structure.editFailed"));
-        }
-        props.onSqlChange(result.document.source);
-      }
       setHistory([...history(), {
         transaction: result.undo,
-        beforeBindings: priorBindings,
-        afterBindings: nextBindings,
-        beforeArguments: priorArguments,
-        afterArguments: nextArguments,
+        beforeBindings: props.argumentBindings?.() ?? [],
+        afterBindings: props.argumentBindings?.() ?? [],
+        beforeArguments: props.argumentDefinitions?.() ?? [],
+        afterArguments: props.argumentDefinitions?.() ?? [],
       }].slice(-32));
       setRedoHistory([]);
-      if (!props.onFilterEdit && !createdArgument) {
-        props.onSqlChange(result.document.source);
-      }
+      props.onSqlChange(result.document.source);
     } catch (cause) {
       if (requestIsCurrent(request, source, scope)) {
         setError(
@@ -601,21 +379,13 @@ function SqlFilterSortEditorCore(props: Props) {
       const resultArguments = direction === "undo"
         ? entry.beforeArguments
         : entry.afterArguments;
+      if (
+        JSON.stringify(props.argumentBindings?.() ?? []) !==
+          JSON.stringify(expectedBindings) ||
+        JSON.stringify(props.argumentDefinitions?.() ?? []) !==
+          JSON.stringify(expectedArguments)
+      ) throw new Error(t("sqlPage.structure.editFailed"));
       if (props.onFilterEdit) {
-        const currentBindings = props.argumentBindings?.() ?? [];
-        if (
-          JSON.stringify(currentBindings) !== JSON.stringify(expectedBindings)
-        ) {
-          setError(t("sqlPage.structure.editFailed"));
-          return;
-        }
-        const currentArguments = props.argumentDefinitions?.() ?? [];
-        if (
-          JSON.stringify(currentArguments) !== JSON.stringify(expectedArguments)
-        ) {
-          setError(t("sqlPage.structure.editFailed"));
-          return;
-        }
         const accepted = props.onFilterEdit({
           expectedSql: source,
           expectedScope: scope,
@@ -626,12 +396,9 @@ function SqlFilterSortEditorCore(props: Props) {
           resultArguments,
         });
         if (accepted === false) {
-          setError(t("sqlPage.structure.editFailed"));
-          return;
+          throw new Error(t("sqlPage.structure.editFailed"));
         }
-      } else {
-        props.onSqlChange(result.document.source);
-      }
+      } else props.onSqlChange(result.document.source);
       if (direction === "undo") {
         setHistory(history().slice(0, -1));
         setRedoHistory(
@@ -675,202 +442,6 @@ function SqlFilterSortEditorCore(props: Props) {
             </For>
           </select>
         </label>
-      </Show>
-      <Show when={props.action === "filter"}>
-        <label class="ui-field">
-          <span>{t("sqlPage.structure.column")}</span>
-          <select
-            class="ui-input"
-            disabled={busy() || locked()}
-            value={column()}
-            onChange={(event) => {
-              const fieldName = event.currentTarget.value;
-              setColumn(fieldName);
-              setArgumentName("");
-              const nextOperator = supportedFilterOperators(fieldName)[0]
-                ?.value;
-              if (nextOperator) setOperator(nextOperator);
-            }}
-          >
-            <option value="" />
-            <For each={filterColumns()}>
-              {(item) => (
-                <option value={item.name}>
-                  {selected()?.columnLabels[item.name] ?? item.name}
-                </option>
-              )}
-            </For>
-          </select>
-        </label>
-        <label class="ui-field">
-          <span>{t("sqlPage.structure.operator")}</span>
-          <select
-            class="ui-input"
-            disabled={busy() || locked()}
-            value={operator()}
-            onChange={(event) =>
-              setOperator(
-                event.currentTarget.value as SqlDocumentFilterOperator,
-              )}
-          >
-            <For each={supportedFilterOperators()}>
-              {(item) => <option value={item.value}>{item.label}</option>}
-            </For>
-          </select>
-        </label>
-        <Show when={currentOperator().valueInput}>
-          <Show when={props.argumentDefinitions}>
-            <label class="ui-field">
-              <span>{t("sqlPage.structure.filterValueSource")}</span>
-              <select
-                class="ui-input"
-                disabled={busy() || locked()}
-                value={valueSource()}
-                onChange={(event) =>
-                  setValueSource(
-                    event.currentTarget.value as "literal" | "argument",
-                  )}
-              >
-                <option value="literal">
-                  {t("sqlPage.structure.filterValueFixed")}
-                </option>
-                <option value="argument">
-                  {t("sqlPage.structure.filterValueArgument")}
-                </option>
-              </select>
-            </label>
-          </Show>
-          <Show
-            when={valueSource() === "argument"}
-            fallback={
-              <label class="ui-field">
-                <span>{t("sqlPage.structure.value")}</span>
-                <Show
-                  when={valueKind() === "boolean"}
-                  fallback={
-                    <input
-                      class="ui-input"
-                      disabled={busy() || locked()}
-                      value={value()}
-                      onInput={(event) => setValue(event.currentTarget.value)}
-                    />
-                  }
-                >
-                  <select
-                    class="ui-input"
-                    disabled={busy() || locked()}
-                    value={value()}
-                    onChange={(event) => setValue(event.currentTarget.value)}
-                  >
-                    <option value="" />
-                    <option value="true">TRUE</option>
-                    <option value="false">FALSE</option>
-                  </select>
-                </Show>
-              </label>
-            }
-          >
-            <Show when={compatibleArguments().length > 0}>
-              <label class="ui-field">
-                <span>{t("sqlPage.structure.filterDeclaredArgument")}</span>
-                <select
-                  class="ui-input"
-                  disabled={busy() || locked()}
-                  value={argumentName()}
-                  onChange={(event) =>
-                    setArgumentName(event.currentTarget.value)}
-                >
-                  <option value="" />
-                  <For each={compatibleArguments()}>
-                    {(item) => (
-                      <option value={item.name}>
-                        {item.name} ({item.type})
-                      </option>
-                    )}
-                  </For>
-                </select>
-              </label>
-            </Show>
-            <Show when={!argumentName()}>
-              <label class="ui-field">
-                <span>{t("sqlPage.structure.filterNewArgumentName")}</span>
-                <input
-                  class="ui-input"
-                  disabled={busy() || locked()}
-                  value={newArgumentName()}
-                  onInput={(event) =>
-                    setNewArgumentName(event.currentTarget.value)}
-                />
-              </label>
-              <Show
-                when={props.scalarVariables}
-                fallback={
-                  <label class="ui-field">
-                    <span>{t("sqlPage.structure.argumentType")}</span>
-                    <span class="ui-input" aria-readonly="true">
-                      {compatibleValueType() ??
-                        t("sqlPage.structure.filterArgumentTypeUnsupported")}
-                    </span>
-                  </label>
-                }
-              >
-                <label class="ui-field">
-                  <span>{t("sqlPage.structure.filterBindToVariable")}</span>
-                  <select
-                    class="ui-input"
-                    disabled={busy() || locked()}
-                    value={bindingVariableId()}
-                    onChange={(event) =>
-                      setBindingVariableId(event.currentTarget.value)}
-                  >
-                    <option value="" />
-                    <For each={compatibleScalarVariables()}>
-                      {(variable) => (
-                        <option value={variable.id}>
-                          {variable.name} ({variable.type})
-                        </option>
-                      )}
-                    </For>
-                  </select>
-                </label>
-              </Show>
-              <Show when={!props.scalarVariables}>
-                <label class="ui-field">
-                  <span>{t("sqlPage.structure.filterDefaultOptional")}</span>
-                  <input
-                    class="ui-input"
-                    disabled={busy() || locked()}
-                    value={argumentDefault()}
-                    onInput={(event) =>
-                      setArgumentDefault(event.currentTarget.value)}
-                  />
-                </label>
-              </Show>
-            </Show>
-          </Show>
-          <Show when={valueSource() === "literal"}>
-            <label class="ui-field">
-              <span>{t("sqlPage.structure.documentValueKind")}</span>
-              <select
-                class="ui-input"
-                disabled={busy() || locked()}
-                value={valueKind()}
-                onChange={(event) =>
-                  setValueKind(event.currentTarget.value as ValueKind)}
-              >
-                <option value="string">
-                  {t("sqlPage.structure.documentString")}
-                </option>
-                <option value="number">
-                  {t("sqlPage.structure.documentNumber")}
-                </option>
-                <option value="boolean">
-                  {t("sqlPage.structure.literal.boolean")}
-                </option>
-              </select>
-            </label>
-          </Show>
-        </Show>
       </Show>
       <Show when={props.action === "sort"}>
         <For each={sortItems()}>
@@ -1090,12 +661,10 @@ function SqlFilterSortEditorCore(props: Props) {
       <button
         type="button"
         class="ui-button ui-button-primary"
-        onClick={submit}
+        onClick={submitSort}
         disabled={busy() || locked()}
       >
-        {props.action === "filter"
-          ? t("sqlPage.structure.addFilter")
-          : t("sqlPage.structure.addSort")}
+        {t("sqlPage.structure.addSort")}
       </button>
       <button
         type="button"
