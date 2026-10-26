@@ -19143,6 +19143,61 @@ mod tests {
     }
 
     #[test]
+    fn appending_group_before_trailing_line_comment_keeps_comment_after_condition() {
+        let source = "SELECT * FROM G WHERE (field_100 >= $minimum AND field_101 IS NOT NULL\n-- condition journey comment\n)";
+        let document = parse_sql_document(source);
+        let SqlDocumentConditionNode::Group { node_id, .. } =
+            document.conditions[0].expression.as_ref().unwrap()
+        else {
+            panic!("existing WHERE predicate is an AND group");
+        };
+        let condition = SqlDocumentFilterCondition::Group {
+            operator: SqlDocumentConditionGroupOperator::Or,
+            children: ["open", "blocked"]
+                .into_iter()
+                .map(|value| SqlDocumentFilterCondition::Comparison {
+                    column: SqlDocumentColumnReference {
+                        qualifier: None,
+                        column: SqlDocumentIdentifier {
+                            value: "field_102".into(),
+                            quote_style: None,
+                        },
+                    },
+                    operator: SqlDocumentFilterOperator::Eq,
+                    value: Some(SqlDocumentSemanticLiteral::String {
+                        value: value.into(),
+                    }),
+                })
+                .collect(),
+        };
+        let result = apply_sql_document_semantic_edit_transaction(
+            source,
+            &SqlDocumentSemanticEditTransaction {
+                contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+                expected_source: source.into(),
+                edits: vec![SqlDocumentSemanticEdit::InsertFilterCondition {
+                    node_id: *node_id,
+                    expected_kind: SqlDocumentNodeKind::BinaryExpression,
+                    condition,
+                }],
+            },
+        )
+        .expect("append to the group while retaining its line comment");
+        assert_eq!(result.document.status, SqlDocumentStatus::Parsed);
+        let source = &result.document.source;
+        let comment = source.find("-- condition journey comment").unwrap();
+        let appended = source.find("field_102 = 'open'").unwrap();
+        assert!(
+            appended < comment,
+            "appended predicate must precede comment: {source}"
+        );
+        assert!(source
+            .contains("field_101 IS NOT NULL AND ((field_102 = 'open' OR field_102 = 'blocked'))"));
+        let restored = apply_sql_document_edit_transaction(source, &result.undo).unwrap();
+        assert_eq!(restored.document.source, document.source);
+    }
+
+    #[test]
     fn signed_numeric_filter_literals_roundtrip_and_unknown_spellings_stay_advanced() {
         let source =
             "SELECT * FROM G WHERE amount >= -92233720368547758081234567890 AND ratio < +1.25E-3";
