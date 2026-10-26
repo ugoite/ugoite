@@ -1088,13 +1088,9 @@ impl AuthorizedQueryContext {
         limit: usize,
         max_bytes: Option<usize>,
     ) -> Result<Vec<arrow_array::RecordBatch>> {
-        tokio::time::timeout(self.limits.timeout, async {
-            let _permit = self
-                .permits
-                .clone()
-                .acquire_owned()
-                .await
-                .map_err(AuthorizedQueryError::resource_limit)?;
+        let deadline = tokio::time::Instant::now() + self.limits.timeout;
+        let _permit = self.acquire_query_permit(deadline).await?;
+        tokio::time::timeout_at(deadline, async {
             let plan = self
                 .context
                 .state()
@@ -1196,16 +1192,12 @@ impl AuthorizedQueryContext {
         sql: &str,
         max_bytes: usize,
     ) -> Result<Vec<arrow_array::RecordBatch>> {
-        tokio::time::timeout(self.limits.timeout, async {
-            let _permit = self
-                .permits
-                .clone()
-                .acquire_owned()
-                .await
-                .map_err(AuthorizedQueryError::resource_limit)?;
-            self.execute_with_permit_and_byte_limit(sql, HashMap::new(), Some(max_bytes))
-                .await
-        })
+        let deadline = tokio::time::Instant::now() + self.limits.timeout;
+        let _permit = self.acquire_query_permit(deadline).await?;
+        tokio::time::timeout_at(
+            deadline,
+            self.execute_with_permit_and_byte_limit(sql, HashMap::new(), Some(max_bytes)),
+        )
         .await
         .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
     }
@@ -1218,17 +1210,11 @@ impl AuthorizedQueryContext {
         sql: &str,
         parameters: HashMap<String, datafusion::scalar::ScalarValue>,
     ) -> Result<Vec<arrow_array::RecordBatch>> {
-        tokio::time::timeout(self.limits.timeout, async {
-            let _permit = self
-                .permits
-                .clone()
-                .acquire_owned()
-                .await
-                .map_err(AuthorizedQueryError::resource_limit)?;
-            self.execute_with_permit(sql, parameters).await
-        })
-        .await
-        .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
+        let deadline = tokio::time::Instant::now() + self.limits.timeout;
+        let _permit = self.acquire_query_permit(deadline).await?;
+        tokio::time::timeout_at(deadline, self.execute_with_permit(sql, parameters))
+            .await
+            .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
     }
 
     /// Executes one stateless SQL page without computing a total count. The
@@ -1241,16 +1227,12 @@ impl AuthorizedQueryContext {
         offset: usize,
         limit: usize,
     ) -> Result<StatelessSqlPage> {
-        tokio::time::timeout(self.limits.timeout, async {
-            let _permit = self
-                .permits
-                .clone()
-                .acquire_owned()
-                .await
-                .map_err(AuthorizedQueryError::resource_limit)?;
-            self.execute_stateless_page_with_permit(sql, parameters, offset, limit)
-                .await
-        })
+        let deadline = tokio::time::Instant::now() + self.limits.timeout;
+        let _permit = self.acquire_query_permit(deadline).await?;
+        tokio::time::timeout_at(
+            deadline,
+            self.execute_stateless_page_with_permit(sql, parameters, offset, limit),
+        )
         .await
         .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
     }
@@ -1262,16 +1244,12 @@ impl AuthorizedQueryContext {
         sql: &str,
         parameters: HashMap<String, datafusion::scalar::ScalarValue>,
     ) -> Result<Vec<SqlResultColumn>> {
-        tokio::time::timeout(self.limits.timeout, async {
-            let _permit = self
-                .permits
-                .clone()
-                .acquire_owned()
-                .await
-                .map_err(AuthorizedQueryError::resource_limit)?;
-            self.stateless_result_schema_with_permit(sql, parameters)
-                .await
-        })
+        let deadline = tokio::time::Instant::now() + self.limits.timeout;
+        let _permit = self.acquire_query_permit(deadline).await?;
+        tokio::time::timeout_at(
+            deadline,
+            self.stateless_result_schema_with_permit(sql, parameters),
+        )
         .await
         .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
     }
@@ -1284,18 +1262,26 @@ impl AuthorizedQueryContext {
         sql: &str,
         parameters: HashMap<String, datafusion::scalar::ScalarValue>,
     ) -> Result<u64> {
-        tokio::time::timeout(self.limits.timeout, async {
-            let _permit = self
-                .permits
-                .clone()
-                .acquire_owned()
-                .await
-                .map_err(AuthorizedQueryError::resource_limit)?;
-            self.execute_stateless_count_with_permit(sql, parameters)
-                .await
-        })
+        let deadline = tokio::time::Instant::now() + self.limits.timeout;
+        let _permit = self.acquire_query_permit(deadline).await?;
+        tokio::time::timeout_at(
+            deadline,
+            self.execute_stateless_count_with_permit(sql, parameters),
+        )
         .await
         .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
+    }
+
+    async fn acquire_query_permit(
+        &self,
+        deadline: tokio::time::Instant,
+    ) -> Result<tokio::sync::OwnedSemaphorePermit> {
+        Ok(
+            tokio::time::timeout_at(deadline, self.permits.clone().acquire_owned())
+                .await
+                .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
+                .map_err(AuthorizedQueryError::resource_limit)?,
+        )
     }
 
     #[cfg(debug_assertions)]
