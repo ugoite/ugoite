@@ -509,7 +509,7 @@ describe("SQL Filter and Sort task editors", () => {
     expect(screen.queryByRole("button", { name: "Add group" })).toBeNull();
   });
 
-  it("retains filter undo history when the workspace unmounts and reopens", async () => {
+  it("retains filter history and restores focus across undo and redo", async () => {
     const [sql, setSql] = createSignal('SELECT * FROM "form_expenses"');
     const [visible, setVisible] = createSignal(true);
     const [history, setHistory] = createSignal<
@@ -553,6 +553,15 @@ describe("SQL Filter and Sort task editors", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Undo" }));
     await waitFor(() => expect(sql()).toBe('SELECT * FROM "form_expenses"'));
+    const redoButton = screen.getByRole("button", { name: "Redo" });
+    await waitFor(() => expect(document.activeElement).toBe(redoButton));
+    fireEvent.click(redoButton);
+    await waitFor(() => expect(sql()).toContain("WHERE"));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("button", { name: "Undo" }),
+      )
+    );
   });
 
   it("creates an Any group only after both inline conditions are valid", async () => {

@@ -935,6 +935,7 @@ export function SqlConditionWorkspace(props: Props) {
     const request = generation;
     const entry = (direction === "undo" ? history() : redo()).at(-1);
     if (!entry || entry.undo.expected_source !== source) return;
+    let restoreHistoryFocus = false;
     setBusy(true);
     setError(undefined);
     try {
@@ -981,6 +982,7 @@ export function SqlConditionWorkspace(props: Props) {
       }
       setDrafts({});
       setGroupDrafts({});
+      restoreHistoryFocus = true;
     } catch (cause) {
       if (current(request, source, scope)) {
         setError(
@@ -991,6 +993,15 @@ export function SqlConditionWorkspace(props: Props) {
       }
     } finally {
       if (request === generation) setBusy(false);
+      if (restoreHistoryFocus && request === generation) {
+        const focusDirection = direction === "undo" ? "redo" : "undo";
+        setTimeout(() => {
+          const button = globalThis.document?.querySelector<HTMLButtonElement>(
+            `[data-condition-history-focus="${focusDirection}"]`,
+          );
+          if (button && !button.disabled) button.focus();
+        });
+      }
     }
   };
 
@@ -1985,6 +1996,7 @@ export function SqlConditionWorkspace(props: Props) {
         <button
           type="button"
           class="ui-button ui-button-secondary"
+          data-condition-history-focus="undo"
           disabled={busy() || locked() ||
             history().at(-1)?.undo.expected_source !== props.sql()}
           onClick={() => void applyHistory("undo")}
@@ -1994,6 +2006,7 @@ export function SqlConditionWorkspace(props: Props) {
         <button
           type="button"
           class="ui-button ui-button-secondary"
+          data-condition-history-focus="redo"
           disabled={busy() || locked() ||
             redo().at(-1)?.undo.expected_source !== props.sql()}
           onClick={() => void applyHistory("redo")}
