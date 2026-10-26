@@ -156,6 +156,26 @@ test("REQ-SQL-003 @smoke: edits nested Filter conditions, runs, and reopens the 
     exact: true,
   })
     .click();
+  await expect(filters.getByRole("textbox", { name: "Value" }))
+    .toHaveCount(0);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.screenshot({
+    path: test.info().outputPath("sql-filters-nested-desktop.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileOverflow = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(mobileOverflow.scrollWidth).toBeLessThanOrEqual(
+    mobileOverflow.clientWidth + 1,
+  );
+  await page.screenshot({
+    path: test.info().outputPath("sql-filters-nested-390px.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 1280, height: 900 });
   await expect(filterGroups).toHaveCount(2);
   const createdNestedGroup = filterGroups.nth(1);
   await expect(
