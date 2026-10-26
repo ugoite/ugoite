@@ -5969,6 +5969,21 @@ a.tool {
   min-width: min(100%, 140px);
 }
 
+.sql-condition-row__summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.sql-condition-row__summary > span {
+  flex: 1 1 180px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .sql-condition-group__heading .ui-input,
 .sql-condition-row .ui-input,
 .sql-condition-row .ui-button,

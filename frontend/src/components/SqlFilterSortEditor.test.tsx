@@ -381,6 +381,9 @@ describe("SQL Filter and Sort task editors", () => {
     ));
     const rows = await screen.findAllByRole("group", { name: "Amount" });
     expect(rows).toHaveLength(2);
+    fireEvent.click(
+      within(rows[0]).getByRole("button", { name: "Edit condition" }),
+    );
     const operator = within(rows[0]).getByRole("combobox", {
       name: "Operator",
     });
@@ -396,6 +399,9 @@ describe("SQL Filter and Sort task editors", () => {
       { name: "unused", type: "string", description: "keep this declaration" },
     ]);
     expect(edit.mock.calls[0][0].resultArguments).toEqual(argumentsList());
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Add condition" }).at(-1)!,
+    );
     setContexts([structuredClone(editableContext)]);
     setArgumentsList(argumentsList().map((argument) => ({ ...argument })));
     await waitFor(() => {
@@ -432,12 +438,22 @@ describe("SQL Filter and Sort task editors", () => {
         onAdvanced={() => {}}
       />
     ));
+    fireEvent.click(
+      await screen.findAllByRole("button", { name: "Edit condition" }).then(
+        (buttons) => buttons[0],
+      ),
+    );
     const value = await screen.findByRole("textbox", { name: "Value" });
     expect(value).toHaveValue("4");
     fireEvent.input(value, { target: { value: "99" } });
     expect(screen.getByRole("button", { name: "Apply changes" }))
       .toBeInTheDocument();
     setSql('SELECT * FROM "form_expenses" WHERE field_amount >= 7');
+    fireEvent.click(
+      await screen.findAllByRole("button", { name: "Edit condition" }).then(
+        (buttons) => buttons[0],
+      ),
+    );
     await waitFor(() =>
       expect(screen.getByRole("textbox", { name: "Value" })).toHaveValue("7")
     );
@@ -577,6 +593,49 @@ describe("SQL Filter and Sort task editors", () => {
     expect(connector).toHaveValue("or");
   });
 
+  it("opens a nested group composer from an existing root group", async () => {
+    const statusContext: SqlStructureAdapterContext = {
+      ...context,
+      parser: {
+        ...context.parser,
+        columns: [{ name: "status", type: "string" }],
+      },
+      columnCapabilities: {
+        status: {
+          ...context.columnCapabilities.field_amount!,
+          supportedOperators: ["eq", "is_null", "is_not_null"],
+        },
+      },
+      columnLabels: { status: "Status" },
+    };
+    const [sql, setSql] = createSignal(
+      `SELECT * FROM "form_expenses" WHERE status = 'open' AND status = 'blocked'`,
+    );
+    render(() => (
+      <SqlFilterSortEditor
+        action="filter"
+        sql={sql}
+        contexts={() => [statusContext]}
+        onSqlChange={setSql}
+        onAdvanced={() => {}}
+      />
+    ));
+    const rootGroup = await screen.findByRole("group", {
+      name: "Filter group",
+    });
+    fireEvent.click(
+      within(rootGroup).getByRole("button", { name: "Add group" }),
+    );
+    expect(
+      await screen.findByRole("group", { name: "New filter group" }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Cancel", exact: true }),
+    );
+    expect(screen.queryByRole("group", { name: "New filter group" }))
+      .toBeNull();
+  });
+
   it("adds ordered fields through the shared task editor", async () => {
     const [sql, setSql] = createSignal('SELECT * FROM "form_expenses"');
     render(() => (
@@ -681,6 +740,11 @@ describe("SQL Filter and Sort task editors", () => {
         onAdvanced={() => {}}
       />
     ));
+    fireEvent.click(
+      await screen.findAllByRole("button", { name: "Add condition" }).then(
+        (buttons) => buttons.at(-1)!,
+      ),
+    );
     const columnSelect = await screen.findByRole("combobox", {
       name: "Column for new filter",
     });
