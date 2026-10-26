@@ -20,7 +20,7 @@ type SqlStructureAggregateFunction =
   | "min"
   | "max";
 
-type SqlStructureFilterOperator =
+export type SqlStructureFilterOperator =
   | "eq"
   | "not_eq"
   | "lt"

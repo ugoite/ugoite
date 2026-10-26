@@ -8,7 +8,10 @@ import {
   Show,
   untrack,
 } from "solid-js";
-import type { SqlStructureAdapterContext } from "~/lib/sql";
+import type {
+  SqlStructureAdapterContext,
+  SqlStructureFilterOperator,
+} from "~/lib/sql";
 import {
   applySqlDocumentEditTransaction,
   applySqlDocumentSemanticEditTransaction,
@@ -103,19 +106,19 @@ const supportedOperators: readonly SqlDocumentFilterOperator[] = [
   "is_not_null",
 ];
 const operatorName = (operator: SqlDocumentFilterOperator) => {
-  const keys: Record<SqlDocumentFilterOperator, string> = {
-    eq: "eq",
-    not_eq: "not_eq",
-    lt: "lt",
-    lte: "lt_eq",
-    gt: "gt",
-    gte: "gt_eq",
-    like: "like",
-    not_like: "not_like",
-    is_null: "is_null",
-    is_not_null: "is_not_null",
+  const labels: Record<SqlDocumentFilterOperator, () => string> = {
+    eq: () => t("sqlPage.structure.operator.eq"),
+    not_eq: () => t("sqlPage.structure.operator.not_eq"),
+    lt: () => t("sqlPage.structure.operator.lt"),
+    lte: () => t("sqlPage.structure.operator.lt_eq"),
+    gt: () => t("sqlPage.structure.operator.gt"),
+    gte: () => t("sqlPage.structure.operator.gt_eq"),
+    like: () => t("sqlPage.structure.operator.like"),
+    not_like: () => t("sqlPage.structure.operator.not_like"),
+    is_null: () => t("sqlPage.structure.operator.is_null"),
+    is_not_null: () => t("sqlPage.structure.operator.is_not_null"),
   };
-  return t(`sqlPage.structure.operator.${keys[operator]}`);
+  return labels[operator]();
 };
 const valueInputOperators = new Set<SqlDocumentFilterOperator>([
   "eq",
@@ -363,10 +366,13 @@ export function SqlConditionWorkspace(props: Props) {
       contextFor(scope)?.columnCapabilities[item.name]?.filterable === true
     );
   const operatorOptions = (name: string, scope: SqlDocumentConditionScope) => {
-    const supported = new Set(
+    const supported = new Set<SqlStructureFilterOperator>(
       contextFor(scope)?.columnCapabilities[name]?.supportedOperators ?? [],
     );
-    const mapping: Record<SqlDocumentFilterOperator, string> = {
+    const mapping: Record<
+      SqlDocumentFilterOperator,
+      SqlStructureFilterOperator
+    > = {
       eq: "eq",
       not_eq: "not_eq",
       lt: "lt",

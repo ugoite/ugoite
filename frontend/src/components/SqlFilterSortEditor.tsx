@@ -13,6 +13,7 @@ import {
   applySqlDocumentSemanticEditTransaction,
   parseSqlDocument,
   type SqlDocumentEditTransaction,
+  type SqlDocumentIdentifier,
   type SqlDocumentNode,
   type SqlDocumentSemanticEdit,
 } from "~/lib/ugoite-client";
@@ -62,7 +63,7 @@ type SortDraft = { direction: "asc" | "desc"; nulls: "first" | "last" | null };
 type RootScope = {
   queryId: number;
   relation: string;
-  qualifier?: { value: string; quote_style: string | null };
+  qualifier?: SqlDocumentIdentifier | null;
 };
 
 function rootScope(nodes: readonly SqlDocumentNode[]): RootScope | null {
@@ -600,7 +601,7 @@ function SqlFilterSortEditorCore(props: Props) {
             <For each={sortColumns()}>
               {(item) => (
                 <option value={item.name}>
-                  {selected()?.columnLabels[item.name] ?? item.name}
+                  {selected()?.columnLabels?.[item.name] ?? item.name}
                 </option>
               )}
             </For>
