@@ -283,7 +283,11 @@ test("REQ-SQL-003 @smoke: edits nested Filter conditions, runs, and reopens the 
     name: "Status",
     exact: true,
   }).last();
+  const rootAddCondition = undoDialog.getByRole("region", {
+    name: "Filters",
+  }).getByRole("button", { name: "Add condition", exact: true }).last();
   await removable.getByRole("button", { name: "Remove filter" }).click();
+  await expect(rootAddCondition).toBeFocused();
   await undoDialog.locator("footer").getByRole("button", { name: "Close" })
     .click();
   expect(await runQueryAndReadFixtureNames(page, spaceId)).toEqual(["A"]);
