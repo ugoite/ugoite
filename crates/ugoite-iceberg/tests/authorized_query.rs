@@ -3761,6 +3761,61 @@ async fn typed_sql_document_filter_group_and_aggregate_edits_execute_authorized_
         .authorized_query_context(aggregate_policy(&tasks, &[972, 973, 974]))
         .await?;
 
+    let generated_source = "SELECT field_101 FROM tasks";
+    let generated_document = ugoite_domain::sql_document::parse_sql_document(generated_source);
+    let select = generated_document
+        .nodes
+        .iter()
+        .find(|node| node.kind == ugoite_domain::sql_document::SqlDocumentNodeKind::Select)
+        .unwrap();
+    let generated = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+        generated_source,
+        &ugoite_domain::sql_document::SqlDocumentSemanticEditTransaction {
+            contract_version: generated_document.contract_version,
+            expected_source: generated_source.to_owned(),
+            edits: vec![
+                ugoite_domain::sql_document::SqlDocumentSemanticEdit::InsertFilterCondition {
+                    node_id: select.id,
+                    expected_kind: select.kind,
+                    condition:
+                        ugoite_domain::sql_document::SqlDocumentFilterCondition::Comparison {
+                            column: ugoite_domain::sql_document::SqlDocumentColumnReference {
+                                qualifier: None,
+                                column: ugoite_domain::sql_document::SqlDocumentIdentifier {
+                                    value: "field_101".into(),
+                                    quote_style: None,
+                                },
+                            },
+                            operator: ugoite_domain::sql_document::SqlDocumentFilterOperator::Gte,
+                            value: Some(
+                                ugoite_domain::sql_document::SqlDocumentSemanticLiteral::Number {
+                                    value: "20".into(),
+                                },
+                            ),
+                        },
+                },
+            ],
+        },
+    )?
+    .document;
+    let generated_result = context.execute(generated.to_sql()).await?;
+    assert_eq!(
+        generated_result
+            .iter()
+            .map(|batch| batch.num_rows())
+            .sum::<usize>(),
+        1
+    );
+    assert_eq!(
+        generated_result[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap()
+            .value(0),
+        20
+    );
+
     let apply = |source: &str, edit: ugoite_domain::sql_document::SqlDocumentSemanticEdit| {
         let document = ugoite_domain::sql_document::parse_sql_document(source);
         ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(

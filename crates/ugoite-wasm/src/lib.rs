@@ -2542,6 +2542,128 @@ mod tests {
     }
 
     #[test]
+    fn sql_document_filter_condition_protocol_matches_native_view_edit_and_undo() {
+        use ugoite_domain::sql_document::{
+            SqlDocumentColumnReference, SqlDocumentConditionGroupOperator,
+            SqlDocumentFilterCondition, SqlDocumentFilterOperator, SqlDocumentIdentifier,
+            SqlDocumentNodeKind, SqlDocumentSemanticEdit, SqlDocumentSemanticEditTransaction,
+            SqlDocumentSemanticLiteral, SQL_DOCUMENT_CONTRACT_VERSION,
+        };
+
+        let source = "SELECT * FROM \"G\" WHERE age >= 18 AND name = 'Ada'";
+        let document = ugoite_domain::sql_document::parse_sql_document(source);
+        assert!(matches!(
+            document.conditions[0].expression,
+            Some(ugoite_domain::sql_document::SqlDocumentConditionNode::Group { .. })
+        ));
+        let select = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::Select)
+            .unwrap();
+        let transaction = SqlDocumentSemanticEditTransaction {
+            contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+            expected_source: source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::InsertFilterCondition {
+                node_id: select.id,
+                expected_kind: SqlDocumentNodeKind::Select,
+                condition: SqlDocumentFilterCondition::Group {
+                    operator: SqlDocumentConditionGroupOperator::Or,
+                    children: vec![
+                        SqlDocumentFilterCondition::Comparison {
+                            column: SqlDocumentColumnReference {
+                                qualifier: None,
+                                column: SqlDocumentIdentifier {
+                                    value: "score".into(),
+                                    quote_style: None,
+                                },
+                            },
+                            operator: SqlDocumentFilterOperator::Gte,
+                            value: Some(SqlDocumentSemanticLiteral::Number { value: "10".into() }),
+                        },
+                        SqlDocumentFilterCondition::Comparison {
+                            column: SqlDocumentColumnReference {
+                                qualifier: None,
+                                column: SqlDocumentIdentifier {
+                                    value: "active".into(),
+                                    quote_style: None,
+                                },
+                            },
+                            operator: SqlDocumentFilterOperator::Eq,
+                            value: Some(SqlDocumentSemanticLiteral::Boolean { value: true }),
+                        },
+                    ],
+                },
+            }],
+        };
+        let native = ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+            source,
+            &transaction,
+        )
+        .unwrap();
+        let request = serde_json::json!({ "action": "domain.apply_sql_document_semantic_edit_transaction", "value": { "current_source": source, "transaction": transaction } });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["value"], serde_json::to_value(&native).unwrap());
+        assert!(native
+            .document
+            .source
+            .contains("AND ((score >= 10 OR active = TRUE))"));
+        let undo_request = serde_json::json!({ "action": "domain.apply_sql_document_edit_transaction", "value": { "current_source": native.document.source, "transaction": native.undo } });
+        let undo_response: Value =
+            serde_json::from_str(&super::invoke_json(&undo_request.to_string())).unwrap();
+        assert_eq!(undo_response["ok"], true, "{undo_response}");
+        assert_eq!(undo_response["value"]["document"]["source"], source);
+
+        let projection_source = "SELECT amount + 1 FROM \"G\" WHERE active = TRUE";
+        let projection_document =
+            ugoite_domain::sql_document::parse_sql_document(projection_source);
+        let projection_expression = projection_document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::BinaryExpression
+                    && projection_document.source_slice(node.range.unwrap()) == Some("amount + 1")
+            })
+            .unwrap();
+        let invalid_transaction = SqlDocumentSemanticEditTransaction {
+            contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+            expected_source: projection_source.to_owned(),
+            edits: vec![SqlDocumentSemanticEdit::UpdateFilterCondition {
+                node_id: projection_expression.id,
+                expected_kind: SqlDocumentNodeKind::BinaryExpression,
+                condition: SqlDocumentFilterCondition::Comparison {
+                    column: SqlDocumentColumnReference {
+                        qualifier: None,
+                        column: SqlDocumentIdentifier {
+                            value: "amount".into(),
+                            quote_style: None,
+                        },
+                    },
+                    operator: SqlDocumentFilterOperator::Gte,
+                    value: Some(SqlDocumentSemanticLiteral::Number { value: "10".into() }),
+                },
+            }],
+        };
+        assert_eq!(
+            ugoite_domain::sql_document::apply_sql_document_semantic_edit_transaction(
+                projection_source,
+                &invalid_transaction
+            ),
+            Err(ugoite_domain::sql_document::SqlDocumentEditError::InvalidSemanticReplacement)
+        );
+        let invalid_request = serde_json::json!({ "action": "domain.apply_sql_document_semantic_edit_transaction", "value": { "current_source": projection_source, "transaction": invalid_transaction } });
+        let invalid_response: Value =
+            serde_json::from_str(&super::invoke_json(&invalid_request.to_string())).unwrap();
+        assert_eq!(invalid_response["ok"], false);
+        assert_eq!(
+            invalid_response["error"]["code"],
+            "invalid_semantic_replacement"
+        );
+    }
+
+    #[test]
     fn projection_alias_semantic_edit_protocol_matches_native() {
         use ugoite_domain::sql_document::{
             SqlDocumentIdentifier, SqlDocumentNodeKind, SqlDocumentSemanticEdit,

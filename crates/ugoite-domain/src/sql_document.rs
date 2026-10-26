@@ -19,7 +19,7 @@ use sqlparser::tokenizer::{Location, Span, Token, Tokenizer, Whitespace};
 use std::convert::Infallible;
 
 /// Version of the Rust SQL Document view returned to adapters.
-pub const SQL_DOCUMENT_CONTRACT_VERSION: u32 = 19;
+pub const SQL_DOCUMENT_CONTRACT_VERSION: u32 = 20;
 
 /// Bound on source SQL accepted by the editor parser.
 pub const MAX_SQL_DOCUMENT_BYTES: usize = 256 * 1024;
@@ -545,6 +545,65 @@ pub struct SqlDocument {
     pub tokens: Vec<SqlDocumentToken>,
     /// Query syntax nodes with source ranges and parent links.
     pub nodes: Vec<SqlDocumentNode>,
+    /// Rust-derived condition editor projection for each SELECT scope.
+    pub conditions: Vec<SqlDocumentConditionScope>,
+}
+
+/// Read-only condition projection derived from the parser tree; SQL remains authoritative.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SqlDocumentConditionScope {
+    pub query_node_id: u32,
+    pub where_clause_node_id: Option<u32>,
+    pub expression: Option<SqlDocumentConditionNode>,
+}
+
+/// A supported condition or an exact-source advanced predicate leaf.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum SqlDocumentConditionNode {
+    Group {
+        node_id: u32,
+        operator: SqlDocumentConditionGroupOperator,
+        children: Vec<SqlDocumentConditionNode>,
+    },
+    Comparison {
+        node_id: u32,
+        column_node_id: u32,
+        column: SqlDocumentColumnReference,
+        operator: SqlDocumentFilterOperator,
+        value: Option<SqlDocumentSemanticLiteral>,
+    },
+    Advanced {
+        node_id: u32,
+        sql: String,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SqlDocumentConditionGroupOperator {
+    And,
+    Or,
+}
+
+/// Typed condition supplied to SQL Document semantic edit operations.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum SqlDocumentFilterCondition {
+    Group {
+        operator: SqlDocumentConditionGroupOperator,
+        children: Vec<SqlDocumentFilterCondition>,
+    },
+    Comparison {
+        column: SqlDocumentColumnReference,
+        operator: SqlDocumentFilterOperator,
+        value: Option<SqlDocumentSemanticLiteral>,
+    },
+    CopyNode {
+        node_id: u32,
+        expected_kind: SqlDocumentNodeKind,
+    },
 }
 
 impl SqlDocument {
@@ -618,6 +677,29 @@ pub struct SqlDocumentNodeEditTransaction {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SqlDocumentSemanticEdit {
+    /// Add a typed condition to a SELECT (or append it to an existing predicate group).
+    InsertFilterCondition {
+        node_id: u32,
+        expected_kind: SqlDocumentNodeKind,
+        condition: SqlDocumentFilterCondition,
+    },
+    /// Replace a supported condition or exact-source advanced predicate.
+    UpdateFilterCondition {
+        node_id: u32,
+        expected_kind: SqlDocumentNodeKind,
+        condition: SqlDocumentFilterCondition,
+    },
+    /// Remove a predicate node while retaining the rest of its boolean group.
+    RemoveFilterCondition {
+        node_id: u32,
+        expected_kind: SqlDocumentNodeKind,
+    },
+    /// Change an AND/OR group connector without changing its children.
+    SetFilterGroupOperator {
+        node_id: u32,
+        expected_kind: SqlDocumentNodeKind,
+        operator: SqlDocumentConditionGroupOperator,
+    },
     /// Set or remove the output alias on one exact SELECT projection item.
     SetProjectionAlias {
         node_id: u32,
@@ -2127,6 +2209,11 @@ pub fn apply_sql_document_semantic_edit_transaction(
         if node.kind != expected_kind {
             return Err(SqlDocumentEditError::NodeKindMismatch);
         }
+        validate_filter_condition_target(&document, node, semantic_edit)?;
+        if let Some(edit) = condition_semantic_edit(&document, node, semantic_edit)? {
+            edits.push(edit);
+            continue;
+        }
 
         if let SqlDocumentSemanticEdit::AddSetOperationOperand {
             operator,
@@ -2691,6 +2778,10 @@ pub fn apply_sql_document_semantic_edit_transaction(
                 return Err(SqlDocumentEditError::InvalidSemanticReplacement);
             }
             SqlDocumentSemanticEdit::AddFilterComparison { .. }
+            | SqlDocumentSemanticEdit::InsertFilterCondition { .. }
+            | SqlDocumentSemanticEdit::UpdateFilterCondition { .. }
+            | SqlDocumentSemanticEdit::RemoveFilterCondition { .. }
+            | SqlDocumentSemanticEdit::SetFilterGroupOperator { .. }
             | SqlDocumentSemanticEdit::AddOrderByColumn { .. } => {
                 return Err(SqlDocumentEditError::InvalidSemanticReplacement);
             }
@@ -2940,6 +3031,25 @@ impl SqlDocumentSemanticEdit {
                 ..
             }
             | Self::AddOrderByColumn {
+                node_id,
+                expected_kind,
+                ..
+            }
+            | Self::InsertFilterCondition {
+                node_id,
+                expected_kind,
+                ..
+            }
+            | Self::UpdateFilterCondition {
+                node_id,
+                expected_kind,
+                ..
+            }
+            | Self::RemoveFilterCondition {
+                node_id,
+                expected_kind,
+            }
+            | Self::SetFilterGroupOperator {
                 node_id,
                 expected_kind,
                 ..
@@ -4112,6 +4222,440 @@ fn add_filter_comparison(
         .replacement
         .replace("WHERE TRUE", &format!("WHERE {condition}"));
     Ok(edit)
+}
+
+fn validate_filter_condition_target(
+    document: &SqlDocument,
+    node: &SqlDocumentNode,
+    edit: &SqlDocumentSemanticEdit,
+) -> Result<(), SqlDocumentEditError> {
+    let membership = document.conditions.iter().find_map(|scope| {
+        scope
+            .expression
+            .as_ref()
+            .filter(|root| condition_tree_contains(root, node.id))
+            .map(|root| (scope, root))
+    });
+    match edit {
+        SqlDocumentSemanticEdit::InsertFilterCondition { .. } => {
+            let valid = match node.kind {
+                SqlDocumentNodeKind::Select => true,
+                SqlDocumentNodeKind::WhereClause => document
+                    .conditions
+                    .iter()
+                    .any(|scope| scope.where_clause_node_id == Some(node.id)),
+                _ => membership.is_some(),
+            };
+            if valid {
+                Ok(())
+            } else {
+                Err(SqlDocumentEditError::InvalidSemanticReplacement)
+            }
+        }
+        SqlDocumentSemanticEdit::UpdateFilterCondition { condition, .. } => {
+            if membership.is_none() {
+                return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+            }
+            if let SqlDocumentFilterCondition::CopyNode {
+                node_id,
+                expected_kind,
+            } = condition
+            {
+                let source = document
+                    .nodes
+                    .get(*node_id as usize)
+                    .filter(|candidate| {
+                        candidate.id == *node_id
+                            && candidate.kind == *expected_kind
+                            && is_expression_node_kind(candidate.kind)
+                    })
+                    .ok_or(SqlDocumentEditError::NodeNotFound)?;
+                let source_in_conditions = document.conditions.iter().any(|scope| {
+                    scope
+                        .expression
+                        .as_ref()
+                        .is_some_and(|root| condition_tree_contains(root, source.id))
+                });
+                if !source_in_conditions
+                    || query_ancestor_id(document, source.id)
+                        != query_ancestor_id(document, node.id)
+                {
+                    return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+                }
+            }
+            Ok(())
+        }
+        SqlDocumentSemanticEdit::RemoveFilterCondition { .. } => membership
+            .map(|_| ())
+            .ok_or(SqlDocumentEditError::InvalidSemanticReplacement),
+        SqlDocumentSemanticEdit::SetFilterGroupOperator { .. } => {
+            match membership.map(|(_, node)| node) {
+                Some(SqlDocumentConditionNode::Group { .. }) => Ok(()),
+                _ => Err(SqlDocumentEditError::InvalidSemanticReplacement),
+            }
+        }
+        _ => Ok(()),
+    }
+}
+
+fn condition_tree_contains(condition: &SqlDocumentConditionNode, node_id: u32) -> bool {
+    match condition {
+        SqlDocumentConditionNode::Group {
+            node_id: current,
+            children,
+            ..
+        } => {
+            *current == node_id
+                || children
+                    .iter()
+                    .any(|child| condition_tree_contains(child, node_id))
+        }
+        SqlDocumentConditionNode::Comparison {
+            node_id: current, ..
+        }
+        | SqlDocumentConditionNode::Advanced {
+            node_id: current, ..
+        } => *current == node_id,
+    }
+}
+
+fn condition_semantic_edit(
+    document: &SqlDocument,
+    node: &SqlDocumentNode,
+    edit: &SqlDocumentSemanticEdit,
+) -> Result<Option<SqlDocumentEdit>, SqlDocumentEditError> {
+    match edit {
+        SqlDocumentSemanticEdit::InsertFilterCondition { condition, .. } => {
+            let sql = render_filter_condition(condition)?;
+            if node.kind == SqlDocumentNodeKind::Select {
+                let where_clause = document.nodes.iter().find(|candidate| {
+                    candidate.parent == Some(node.id)
+                        && candidate.kind == SqlDocumentNodeKind::WhereClause
+                });
+                if where_clause.is_none() {
+                    let mut edit = add_where_clause(document, node)?;
+                    edit.replacement = edit
+                        .replacement
+                        .replace("WHERE TRUE", &format!("WHERE {sql}"));
+                    return Ok(Some(edit));
+                }
+                return condition_semantic_edit(
+                    document,
+                    where_clause.unwrap(),
+                    &SqlDocumentSemanticEdit::InsertFilterCondition {
+                        node_id: where_clause.unwrap().id,
+                        expected_kind: SqlDocumentNodeKind::WhereClause,
+                        condition: condition.clone(),
+                    },
+                );
+            }
+            if !matches!(
+                node.kind,
+                SqlDocumentNodeKind::BinaryExpression | SqlDocumentNodeKind::WhereClause
+            ) {
+                return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+            }
+            let range = node
+                .range
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+            if range_has_comment(document, range) {
+                return Err(SqlDocumentEditError::NodeRangeUnavailable);
+            }
+            let old = document
+                .source_slice(range)
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+            let replacement = if node.kind == SqlDocumentNodeKind::WhereClause {
+                let where_pos = old
+                    .to_ascii_uppercase()
+                    .find("WHERE")
+                    .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?
+                    + 5;
+                let predicate = old[where_pos..].trim();
+                let connector = document
+                    .nodes
+                    .iter()
+                    .find(|candidate| {
+                        candidate.parent == Some(node.id) && is_expression_node_kind(candidate.kind)
+                    })
+                    .and_then(|root| match root.semantic.as_ref() {
+                        Some(SqlDocumentNodeData::BinaryOperator { operator })
+                            if operator.eq_ignore_ascii_case("OR") =>
+                        {
+                            Some("OR")
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or("AND");
+                format!("{} ({predicate}) {connector} ({sql})", &old[..where_pos])
+            } else {
+                let connector = match node.semantic.as_ref() {
+                    Some(SqlDocumentNodeData::BinaryOperator { operator })
+                        if operator.eq_ignore_ascii_case("OR") =>
+                    {
+                        "OR"
+                    }
+                    _ => "AND",
+                };
+                format!("({old}) {connector} ({sql})")
+            };
+            Ok(Some(SqlDocumentEdit {
+                range,
+                expected_text: old.to_owned(),
+                replacement,
+            }))
+        }
+        SqlDocumentSemanticEdit::UpdateFilterCondition { condition, .. } => {
+            let range = node
+                .range
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+            if range_has_comment(document, range) {
+                return Err(SqlDocumentEditError::NodeRangeUnavailable);
+            }
+            let old = document
+                .source_slice(range)
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+            let replacement = match condition {
+                SqlDocumentFilterCondition::CopyNode {
+                    node_id,
+                    expected_kind,
+                } => {
+                    let source = document
+                        .nodes
+                        .get(*node_id as usize)
+                        .filter(|candidate| {
+                            candidate.id == *node_id && candidate.kind == *expected_kind
+                        })
+                        .ok_or(SqlDocumentEditError::NodeNotFound)?;
+                    if query_ancestor_id(document, source.id)
+                        != query_ancestor_id(document, node.id)
+                    {
+                        return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+                    }
+                    let source_range = source
+                        .range
+                        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+                    if range_has_comment(document, source_range) {
+                        return Err(SqlDocumentEditError::NodeRangeUnavailable);
+                    }
+                    document
+                        .source_slice(source_range)
+                        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?
+                        .to_owned()
+                }
+                _ => render_filter_condition(condition)?,
+            };
+            Ok(Some(SqlDocumentEdit {
+                range,
+                expected_text: old.to_owned(),
+                replacement,
+            }))
+        }
+        SqlDocumentSemanticEdit::RemoveFilterCondition { .. } => {
+            if node.kind == SqlDocumentNodeKind::WhereClause {
+                return remove_filter_clause(document, node).map(Some);
+            }
+            let parent = node
+                .parent
+                .and_then(|id| document.nodes.get(id as usize))
+                .ok_or(SqlDocumentEditError::NodeNotFound)?;
+            if parent.kind == SqlDocumentNodeKind::WhereClause {
+                return remove_filter_clause(document, parent).map(Some);
+            }
+            let (container, removed_id) = if parent.kind == SqlDocumentNodeKind::NestedExpression {
+                let container = parent
+                    .parent
+                    .and_then(|id| document.nodes.get(id as usize))
+                    .ok_or(SqlDocumentEditError::NodeNotFound)?;
+                (container, parent.id)
+            } else {
+                (parent, node.id)
+            };
+            if !matches!(container.kind, SqlDocumentNodeKind::BinaryExpression) {
+                return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+            }
+            let mut range = container
+                .range
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+            if removed_id != node.id {
+                if let Some(open_index) = document
+                    .tokens
+                    .iter()
+                    .enumerate()
+                    .rev()
+                    .find(|(_, token)| {
+                        token.range.end <= range.start
+                            && !matches!(
+                                token.kind,
+                                SqlDocumentTokenKind::Trivia | SqlDocumentTokenKind::Comment
+                            )
+                    })
+                    .map(|(index, _)| index)
+                {
+                    if token_text(&document.source, &document.tokens[open_index]) == Some("(") {
+                        if let Some(close_index) =
+                            matching_close_paren(&document.source, &document.tokens, open_index)
+                        {
+                            if document.tokens[close_index].range.end <= range.end {
+                                range.start = document.tokens[open_index].range.start;
+                            }
+                        }
+                    }
+                }
+            }
+            if range_has_comment(document, range) {
+                return Err(SqlDocumentEditError::NodeRangeUnavailable);
+            }
+            let siblings: Vec<_> = document
+                .nodes
+                .iter()
+                .filter(|candidate| {
+                    candidate.parent == Some(container.id)
+                        && is_expression_node_kind(candidate.kind)
+                        && candidate.id != removed_id
+                })
+                .collect();
+            if siblings.is_empty() {
+                return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+            }
+            let operator = match container.semantic.as_ref() {
+                Some(SqlDocumentNodeData::BinaryOperator { operator })
+                    if operator.eq_ignore_ascii_case("AND")
+                        || operator.eq_ignore_ascii_case("OR") =>
+                {
+                    operator.to_ascii_uppercase()
+                }
+                _ => return Err(SqlDocumentEditError::InvalidSemanticReplacement),
+            };
+            let replacement = siblings
+                .iter()
+                .map(|child| {
+                    child
+                        .range
+                        .and_then(|range| document.source_slice(range))
+                        .map(str::to_owned)
+                        .ok_or(SqlDocumentEditError::NodeRangeUnavailable)
+                })
+                .collect::<Result<Vec<_>, _>>()?
+                .join(&format!(" {operator} "));
+            let old = document
+                .source_slice(range)
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+            Ok(Some(SqlDocumentEdit {
+                range,
+                expected_text: old.to_owned(),
+                replacement,
+            }))
+        }
+        SqlDocumentSemanticEdit::SetFilterGroupOperator { operator, .. } => {
+            if node.kind != SqlDocumentNodeKind::BinaryExpression {
+                return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+            }
+            let Some(SqlDocumentNodeData::BinaryOperator { operator: current }) =
+                node.semantic.as_ref()
+            else {
+                return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+            };
+            if !current.eq_ignore_ascii_case("AND") && !current.eq_ignore_ascii_case("OR") {
+                return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+            }
+            let mut operands: Vec<_> = document
+                .nodes
+                .iter()
+                .filter(|candidate| {
+                    candidate.parent == Some(node.id) && is_expression_node_kind(candidate.kind)
+                })
+                .filter_map(|candidate| candidate.range)
+                .collect();
+            operands.sort_by_key(|range| range.start);
+            if operands.len() != 2 {
+                return Err(SqlDocumentEditError::NodeRangeUnavailable);
+            }
+            let candidates: Vec<_> = document
+                .tokens
+                .iter()
+                .filter(|token| {
+                    token.range.start >= operands[0].end
+                        && token.range.end <= operands[1].start
+                        && matches!(
+                            token.kind,
+                            SqlDocumentTokenKind::Operator | SqlDocumentTokenKind::Word
+                        )
+                        && token_text(&document.source, token)
+                            .is_some_and(|text| binary_operator_token_matches(current, text))
+                })
+                .collect();
+            if candidates.len() != 1 {
+                return Err(SqlDocumentEditError::NodeRangeUnavailable);
+            }
+            let range = candidates[0].range;
+            let expected_text = document
+                .source_slice(range)
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+            let replacement = match operator {
+                SqlDocumentConditionGroupOperator::And => "AND",
+                SqlDocumentConditionGroupOperator::Or => "OR",
+            };
+            Ok(Some(SqlDocumentEdit {
+                range,
+                expected_text: expected_text.to_owned(),
+                replacement: replacement.to_owned(),
+            }))
+        }
+        _ => Ok(None),
+    }
+}
+
+fn render_filter_condition(
+    condition: &SqlDocumentFilterCondition,
+) -> Result<String, SqlDocumentEditError> {
+    render_filter_condition_at_depth(condition, 0)
+}
+
+fn render_filter_condition_at_depth(
+    condition: &SqlDocumentFilterCondition,
+    depth: usize,
+) -> Result<String, SqlDocumentEditError> {
+    if depth >= 32 {
+        return Err(SqlDocumentEditError::SourceTooComplex);
+    }
+    match condition {
+        SqlDocumentFilterCondition::Comparison {
+            column,
+            operator,
+            value,
+        } => {
+            if operator.needs_value() != value.is_some() {
+                return Err(SqlDocumentEditError::InvalidSemanticReplacement);
+            }
+            let column = render_column_reference(column)?;
+            match value {
+                Some(value) => Ok(format!(
+                    "{column} {} {}",
+                    operator.sql_spelling(),
+                    render_semantic_literal(value)?.0
+                )),
+                None => Ok(format!("{column} {}", operator.sql_spelling())),
+            }
+        }
+        SqlDocumentFilterCondition::Group { operator, children } if !children.is_empty() => {
+            let joiner = match operator {
+                SqlDocumentConditionGroupOperator::And => " AND ",
+                SqlDocumentConditionGroupOperator::Or => " OR ",
+            };
+            Ok(format!(
+                "({})",
+                children
+                    .iter()
+                    .map(|child| render_filter_condition_at_depth(child, depth + 1))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .join(joiner)
+            ))
+        }
+        SqlDocumentFilterCondition::CopyNode { .. } => {
+            Err(SqlDocumentEditError::InvalidSemanticReplacement)
+        }
+        _ => Err(SqlDocumentEditError::InvalidSemanticReplacement),
+    }
 }
 
 fn add_order_by_column(
@@ -8646,6 +9190,7 @@ pub fn parse_sql_document(source: &str) -> SqlDocument {
         diagnostics: Vec::new(),
         tokens: Vec::new(),
         nodes: Vec::new(),
+        conditions: Vec::new(),
     };
 
     if source.len() > MAX_SQL_DOCUMENT_BYTES {
@@ -8741,7 +9286,212 @@ pub fn parse_sql_document(source: &str) -> SqlDocument {
         },
     }
 
+    document.conditions = derive_sql_document_conditions(&document);
     document
+}
+
+fn derive_sql_document_conditions(document: &SqlDocument) -> Vec<SqlDocumentConditionScope> {
+    document
+        .nodes
+        .iter()
+        .filter(|node| node.kind == SqlDocumentNodeKind::Select)
+        .map(|select| {
+            let clause = document.nodes.iter().find(|node| {
+                node.parent == Some(select.id) && node.kind == SqlDocumentNodeKind::WhereClause
+            });
+            let expression = clause
+                .and_then(|clause| {
+                    document.nodes.iter().find(|node| {
+                        node.parent == Some(clause.id) && is_expression_node_kind(node.kind)
+                    })
+                })
+                .and_then(|root| condition_node_from_document(document, root));
+            SqlDocumentConditionScope {
+                query_node_id: select.id,
+                where_clause_node_id: clause.map(|clause| clause.id),
+                expression,
+            }
+        })
+        .collect()
+}
+
+fn condition_node_from_document(
+    document: &SqlDocument,
+    node: &SqlDocumentNode,
+) -> Option<SqlDocumentConditionNode> {
+    condition_node_from_document_at_depth(document, node, 0)
+}
+
+fn condition_node_from_document_at_depth(
+    document: &SqlDocument,
+    node: &SqlDocumentNode,
+    depth: usize,
+) -> Option<SqlDocumentConditionNode> {
+    let raw = || {
+        node.range
+            .and_then(|range| document.source_slice(range))
+            .map(str::to_owned)
+            .unwrap_or_default()
+    };
+    let children: Vec<_> = document
+        .nodes
+        .iter()
+        .filter(|candidate| {
+            candidate.parent == Some(node.id) && is_expression_node_kind(candidate.kind)
+        })
+        .collect();
+    if depth >= 32 {
+        return Some(SqlDocumentConditionNode::Advanced {
+            node_id: node.id,
+            sql: raw(),
+        });
+    }
+    if node.kind == SqlDocumentNodeKind::NestedExpression {
+        if let [child] = children.as_slice() {
+            if let Some(condition) =
+                condition_node_from_document_at_depth(document, child, depth + 1)
+            {
+                return Some(condition);
+            }
+        }
+    }
+    if let Some(SqlDocumentNodeData::Predicate { operator, negated }) = node.semantic.as_ref() {
+        if operator == "is_null" {
+            if let [column_node] = children.as_slice() {
+                if let Some(column) = column_reference_from_node(column_node) {
+                    return Some(SqlDocumentConditionNode::Comparison {
+                        node_id: node.id,
+                        column_node_id: column_node.id,
+                        column,
+                        operator: if *negated {
+                            SqlDocumentFilterOperator::IsNotNull
+                        } else {
+                            SqlDocumentFilterOperator::IsNull
+                        },
+                        value: None,
+                    });
+                }
+            }
+        }
+    }
+    if let Some(SqlDocumentNodeData::BinaryOperator { operator }) = node.semantic.as_ref() {
+        if operator.eq_ignore_ascii_case("AND") || operator.eq_ignore_ascii_case("OR") {
+            let children: Vec<_> = children
+                .iter()
+                .copied()
+                .filter_map(|child| {
+                    condition_node_from_document_at_depth(document, child, depth + 1)
+                })
+                .collect();
+            if children.len() >= 2 {
+                return Some(SqlDocumentConditionNode::Group {
+                    node_id: node.id,
+                    operator: if operator.eq_ignore_ascii_case("AND") {
+                        SqlDocumentConditionGroupOperator::And
+                    } else {
+                        SqlDocumentConditionGroupOperator::Or
+                    },
+                    children,
+                });
+            }
+        }
+        let filter_operator = match operator.as_str() {
+            "=" => Some(SqlDocumentFilterOperator::Eq),
+            "<>" | "!=" => Some(SqlDocumentFilterOperator::NotEq),
+            "<" => Some(SqlDocumentFilterOperator::Lt),
+            "<=" => Some(SqlDocumentFilterOperator::Lte),
+            ">" => Some(SqlDocumentFilterOperator::Gt),
+            ">=" => Some(SqlDocumentFilterOperator::Gte),
+            "LIKE" => Some(SqlDocumentFilterOperator::Like),
+            "NOT LIKE" => Some(SqlDocumentFilterOperator::NotLike),
+            _ => None,
+        };
+        if let (Some(operator), [column_node, value_node]) = (filter_operator, children.as_slice())
+        {
+            if let (Some(column), Some(value)) = (
+                column_reference_from_node(column_node),
+                literal_from_node(value_node),
+            ) {
+                return Some(SqlDocumentConditionNode::Comparison {
+                    node_id: node.id,
+                    column_node_id: column_node.id,
+                    column,
+                    operator,
+                    value: Some(value),
+                });
+            }
+        }
+    }
+    Some(SqlDocumentConditionNode::Advanced {
+        node_id: node.id,
+        sql: raw(),
+    })
+}
+
+fn column_reference_from_node(node: &SqlDocumentNode) -> Option<SqlDocumentColumnReference> {
+    match node.semantic.as_ref()? {
+        SqlDocumentNodeData::Identifier { value, quote_style } => {
+            Some(SqlDocumentColumnReference {
+                qualifier: None,
+                column: SqlDocumentIdentifier {
+                    value: value.clone(),
+                    quote_style: *quote_style,
+                },
+            })
+        }
+        SqlDocumentNodeData::CompoundIdentifier { parts } if parts.len() == 2 => {
+            Some(SqlDocumentColumnReference {
+                qualifier: Some(parts[0].clone()),
+                column: parts[1].clone(),
+            })
+        }
+        _ => None,
+    }
+}
+
+fn literal_from_node(node: &SqlDocumentNode) -> Option<SqlDocumentSemanticLiteral> {
+    match node.semantic.as_ref()? {
+        SqlDocumentNodeData::Literal {
+            literal_kind: SqlDocumentLiteralKind::Number,
+            raw: Some(value),
+        } => Some(SqlDocumentSemanticLiteral::Number {
+            value: value.clone(),
+        }),
+        SqlDocumentNodeData::Literal {
+            literal_kind: SqlDocumentLiteralKind::String,
+            raw: Some(value),
+        } => Some(SqlDocumentSemanticLiteral::String {
+            value: parse_sql_string_value(value)?,
+        }),
+        SqlDocumentNodeData::Literal {
+            literal_kind: SqlDocumentLiteralKind::Boolean,
+            raw: Some(value),
+        } => Some(SqlDocumentSemanticLiteral::Boolean {
+            value: value.eq_ignore_ascii_case("true"),
+        }),
+        SqlDocumentNodeData::Literal {
+            literal_kind: SqlDocumentLiteralKind::Null,
+            ..
+        } => Some(SqlDocumentSemanticLiteral::Null),
+        SqlDocumentNodeData::Literal {
+            literal_kind: SqlDocumentLiteralKind::Placeholder,
+            raw: Some(value),
+        } if value.starts_with('$') && valid_sql_parameter_name(&value[1..]) => {
+            Some(SqlDocumentSemanticLiteral::NamedParameter {
+                name: value[1..].to_owned(),
+            })
+        }
+        _ => None,
+    }
+}
+
+fn parse_sql_string_value(source: &str) -> Option<String> {
+    let trimmed = source.trim();
+    if trimmed.len() >= 2 && trimmed.starts_with('\'') && trimmed.ends_with('\'') {
+        Some(trimmed[1..trimmed.len() - 1].replace("''", "'"))
+    } else {
+        None
+    }
 }
 
 fn parser_error_message(error: ParserError) -> String {
@@ -17400,5 +18150,193 @@ mod tests {
             [Statement::Query(query)] => query.to_string(),
             _ => panic!("expected one query"),
         }
+    }
+
+    #[test]
+    fn condition_view_and_typed_mutations_preserve_sql_authority_and_undo() {
+        let source = "SELECT * FROM \"G\" WHERE (age >= 18 AND name = 'Ada') OR score < 2";
+        let document = parse_sql_document(source);
+        let scope = document.conditions.first().expect("select condition scope");
+        let SqlDocumentConditionNode::Group {
+            operator, children, ..
+        } = scope.expression.as_ref().unwrap()
+        else {
+            panic!("OR group");
+        };
+        assert_eq!(*operator, SqlDocumentConditionGroupOperator::Or);
+        assert_eq!(children.len(), 2);
+        assert!(matches!(
+            children[0],
+            SqlDocumentConditionNode::Group {
+                operator: SqlDocumentConditionGroupOperator::And,
+                ..
+            }
+        ));
+        assert!(matches!(
+            children[1],
+            SqlDocumentConditionNode::Comparison {
+                operator: SqlDocumentFilterOperator::Lt,
+                ..
+            }
+        ));
+        let null_document = parse_sql_document("SELECT * FROM \"G\" WHERE active IS NULL");
+        assert!(matches!(
+            null_document.conditions[0].expression,
+            Some(SqlDocumentConditionNode::Comparison {
+                operator: SqlDocumentFilterOperator::IsNull,
+                ..
+            })
+        ));
+        let SqlDocumentConditionNode::Group {
+            node_id: nested_group,
+            ..
+        } = &children[0]
+        else {
+            panic!("nested group");
+        };
+        let removed = apply_sql_document_semantic_edit_transaction(
+            source,
+            &SqlDocumentSemanticEditTransaction {
+                contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+                expected_source: source.to_owned(),
+                edits: vec![SqlDocumentSemanticEdit::RemoveFilterCondition {
+                    node_id: *nested_group,
+                    expected_kind: SqlDocumentNodeKind::BinaryExpression,
+                }],
+            },
+        )
+        .unwrap();
+        assert!(removed.document.source.contains("score < 2"));
+        assert!(!removed.document.source.contains("age >= 18"));
+
+        let select = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::Select)
+            .unwrap();
+        let condition = SqlDocumentFilterCondition::Comparison {
+            column: SqlDocumentColumnReference {
+                qualifier: None,
+                column: SqlDocumentIdentifier {
+                    value: "score".into(),
+                    quote_style: None,
+                },
+            },
+            operator: SqlDocumentFilterOperator::Gte,
+            value: Some(SqlDocumentSemanticLiteral::Number { value: "10".into() }),
+        };
+        let inserted = apply_sql_document_semantic_edit_transaction(
+            source,
+            &SqlDocumentSemanticEditTransaction {
+                contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+                expected_source: source.into(),
+                edits: vec![SqlDocumentSemanticEdit::InsertFilterCondition {
+                    node_id: select.id,
+                    expected_kind: SqlDocumentNodeKind::Select,
+                    condition,
+                }],
+            },
+        )
+        .unwrap();
+        assert!(inserted.document.source.contains("OR (score >= 10)"));
+        let restored =
+            apply_sql_document_edit_transaction(&inserted.document.source, &inserted.undo).unwrap();
+        assert_eq!(restored.document.source, source);
+
+        let refreshed = parse_sql_document(&inserted.document.source);
+        let scope = refreshed.conditions.first().unwrap();
+        let SqlDocumentConditionNode::Group { node_id, .. } = scope.expression.as_ref().unwrap()
+        else {
+            panic!("composed group");
+        };
+        let changed = apply_sql_document_semantic_edit_transaction(
+            &inserted.document.source,
+            &SqlDocumentSemanticEditTransaction {
+                contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+                expected_source: inserted.document.source.clone(),
+                edits: vec![SqlDocumentSemanticEdit::SetFilterGroupOperator {
+                    node_id: *node_id,
+                    expected_kind: SqlDocumentNodeKind::BinaryExpression,
+                    operator: SqlDocumentConditionGroupOperator::And,
+                }],
+            },
+        )
+        .unwrap();
+        assert!(changed.document.source.contains(") AND (score >= 10)"));
+    }
+
+    #[test]
+    fn condition_mutations_reject_stale_sources_and_comment_loss() {
+        let source = "SELECT * FROM \"G\" WHERE age /* keep */ > 18";
+        let document = parse_sql_document(source);
+        let select = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::Select)
+            .unwrap();
+        let condition = SqlDocumentFilterCondition::Comparison {
+            column: SqlDocumentColumnReference {
+                qualifier: None,
+                column: SqlDocumentIdentifier {
+                    value: "age".into(),
+                    quote_style: None,
+                },
+            },
+            operator: SqlDocumentFilterOperator::Gt,
+            value: Some(SqlDocumentSemanticLiteral::Number { value: "20".into() }),
+        };
+        let transaction = SqlDocumentSemanticEditTransaction {
+            contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+            expected_source: source.into(),
+            edits: vec![SqlDocumentSemanticEdit::InsertFilterCondition {
+                node_id: select.id,
+                expected_kind: SqlDocumentNodeKind::Select,
+                condition,
+            }],
+        };
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction("SELECT 1", &transaction),
+            Err(SqlDocumentEditError::StaleSource)
+        );
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(source, &transaction),
+            Err(SqlDocumentEditError::NodeRangeUnavailable)
+        );
+
+        let projected = "SELECT amount + 1 FROM \"G\" WHERE active = TRUE";
+        let projected_document = parse_sql_document(projected);
+        let arithmetic = projected_document
+            .nodes
+            .iter()
+            .find(|node| {
+                node.kind == SqlDocumentNodeKind::BinaryExpression
+                    && projected_document.source_slice(node.range.unwrap()) == Some("amount + 1")
+            })
+            .unwrap();
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(
+                projected,
+                &SqlDocumentSemanticEditTransaction {
+                    contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+                    expected_source: projected.to_owned(),
+                    edits: vec![SqlDocumentSemanticEdit::UpdateFilterCondition {
+                        node_id: arithmetic.id,
+                        expected_kind: arithmetic.kind,
+                        condition: SqlDocumentFilterCondition::Comparison {
+                            column: SqlDocumentColumnReference {
+                                qualifier: None,
+                                column: SqlDocumentIdentifier {
+                                    value: "amount".into(),
+                                    quote_style: None
+                                }
+                            },
+                            operator: SqlDocumentFilterOperator::Gt,
+                            value: Some(SqlDocumentSemanticLiteral::Number { value: "2".into() }),
+                        }
+                    }],
+                }
+            ),
+            Err(SqlDocumentEditError::InvalidSemanticReplacement)
+        );
     }
 }

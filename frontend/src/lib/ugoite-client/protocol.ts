@@ -553,6 +553,19 @@ export type SqlDocument = {
   diagnostics: SqlDocumentDiagnostic[];
   tokens: SqlDocumentToken[];
   nodes: SqlDocumentNode[];
+  /** Rust-derived editing projection. SQL source remains authoritative. */
+  conditions: SqlDocumentConditionScope[];
+};
+
+export type SqlDocumentConditionGroupOperator = "and" | "or";
+export type SqlDocumentConditionNode =
+  | { kind: "group"; node_id: number; operator: SqlDocumentConditionGroupOperator; children: SqlDocumentConditionNode[] }
+  | { kind: "comparison"; node_id: number; column_node_id: number; column: SqlDocumentColumnReference; operator: SqlDocumentFilterOperator; value: SqlDocumentSemanticLiteral | null }
+  | { kind: "advanced"; node_id: number; sql: string };
+export type SqlDocumentConditionScope = {
+  query_node_id: number;
+  where_clause_node_id: number | null;
+  expression: SqlDocumentConditionNode | null;
 };
 
 export type SqlDocumentEdit = {
@@ -589,6 +602,11 @@ export type SqlDocumentSemanticLiteral =
   | { kind: "boolean"; value: boolean }
   | { kind: "null" }
   | { kind: "named_parameter"; name: string };
+
+export type SqlDocumentFilterCondition =
+  | { kind: "group"; operator: SqlDocumentConditionGroupOperator; children: SqlDocumentFilterCondition[] }
+  | { kind: "comparison"; column: SqlDocumentColumnReference; operator: SqlDocumentFilterOperator; value: SqlDocumentSemanticLiteral | null }
+  | { kind: "copy_node"; node_id: number; expected_kind: SqlDocumentNodeKind };
 
 export type SqlDocumentSemanticBinaryOperator =
   | "and"
@@ -700,6 +718,10 @@ export type SqlDocumentJoin = {
 };
 
 export type SqlDocumentSemanticEdit =
+  | { kind: "insert_filter_condition"; node_id: number; expected_kind: SqlDocumentNodeKind; condition: SqlDocumentFilterCondition }
+  | { kind: "update_filter_condition"; node_id: number; expected_kind: SqlDocumentNodeKind; condition: SqlDocumentFilterCondition }
+  | { kind: "remove_filter_condition"; node_id: number; expected_kind: SqlDocumentNodeKind }
+  | { kind: "set_filter_group_operator"; node_id: number; expected_kind: SqlDocumentNodeKind; operator: SqlDocumentConditionGroupOperator }
   | {
     kind: "set_projection_alias";
     node_id: number;

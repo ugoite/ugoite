@@ -66,7 +66,9 @@ runtime and source parser can depend on different sqlparser versions.
 
 The active tree exposes typed operations for relations and repeated joins,
 projection expressions, output aliases and Form columns, wildcard expansion, predicates,
-grouping keys, HAVING, ordering keys, DISTINCT, LIMIT/OFFSET, aggregate
+grouping keys, nested AND/OR filter conditions with column comparisons,
+literal or named-parameter values, NULL checks, and explicit source-backed
+advanced predicate leaves, HAVING, ordering keys, DISTINCT, LIMIT/OFFSET, aggregate
 wrappers, registered function arguments, casts, CASE branches, CTEs, set
 operations and subquery seeds. Operations address exact parsed node IDs and
 expected kinds. They operate only against the guarded source and contract
