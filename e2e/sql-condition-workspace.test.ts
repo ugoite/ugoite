@@ -79,8 +79,9 @@ test("REQ-SQL-003 @smoke: edits nested Filter conditions, runs, and reopens the 
 
   await page.getByRole("button", { name: "Columns", exact: true }).click();
   const columns = page.getByRole("dialog", { name: "Columns", exact: true });
-  await columns.getByRole("button", { name: "Choose fields", exact: true })
-    .click();
+  await columns.getByRole("combobox", { name: "Add a field", exact: true })
+    .selectOption({ label: "Name" });
+  await columns.getByRole("button", { name: "Add", exact: true }).click();
   await expect(columns.getByRole("list", { name: "Result fields" }))
     .toContainText("Name");
   await columns.locator("footer").getByRole("button", { name: "Close" })
