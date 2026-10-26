@@ -206,8 +206,12 @@ test("REQ-SQL-003 @smoke: edits nested Filter conditions, runs, and reopens the 
 
   const sourceSql = await sqlEditor.innerText();
   expect(sourceSql.trimEnd()).toMatch(/\)$/);
+  await sqlEditor.fill(sourceSql.trimEnd());
+  await sqlEditor.press("End");
+  await sqlEditor.press("Enter");
   const commentedSql = `${sourceSql.trimEnd()}\n-- condition journey comment`;
-  await sqlEditor.fill(commentedSql);
+  await expect(sqlEditor).toHaveText(`${sourceSql.trimEnd()}\n`);
+  await sqlEditor.pressSequentially("-- condition journey comment");
   await expect(sqlEditor).toHaveText(commentedSql);
 
   expect(await runQueryAndReadFixtureNames(page, spaceId)).toEqual(["A", "B"]);
