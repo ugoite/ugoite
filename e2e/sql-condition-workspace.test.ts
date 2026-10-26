@@ -124,11 +124,11 @@ test("REQ-SQL-003 @smoke: edits nested Filter conditions, runs, and reopens the 
   await expect(filterGroups).toHaveCount(1);
 
   const rootGroup = filterGroups.first();
-  await rootGroup.getByRole("combobox", { name: "Column for new filter" })
+  await filters.getByRole("combobox", { name: "Column for new filter" })
     .selectOption({ label: "Status" });
-  await rootGroup.getByRole("combobox", { name: "Operator for new filter" })
+  await filters.getByRole("combobox", { name: "Operator for new filter" })
     .selectOption("eq");
-  await rootGroup.getByRole("textbox", { name: "Value for new filter" })
+  await filters.getByRole("textbox", { name: "Value for new filter" })
     .fill("open");
   await rootGroup.getByRole("button", { name: "Add group", exact: true })
     .click();
