@@ -460,6 +460,37 @@ describe("SQL Filter and Sort task editors", () => {
     expect(screen.queryByRole("button", { name: "Apply changes" })).toBeNull();
   });
 
+  it("moves focus into and back out of a compact condition editor", async () => {
+    const [sql, setSql] = createSignal(
+      'SELECT * FROM "form_expenses" WHERE field_amount >= 4',
+    );
+    render(() => (
+      <SqlFilterSortEditor
+        action="filter"
+        sql={sql}
+        contexts={() => [context]}
+        onSqlChange={setSql}
+        onAdvanced={() => {}}
+      />
+    ));
+    const row = await screen.findByRole("group", { name: "Amount" });
+    const editButton = within(row).getByRole("button", {
+      name: "Edit condition",
+    });
+    fireEvent.click(editButton);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        within(row).getByRole("combobox", { name: "Column" }),
+      )
+    );
+    fireEvent.click(within(row).getByRole("button", { name: "Done" }));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        within(row).getByRole("button", { name: "Edit condition" }),
+      )
+    );
+  });
+
   it("keeps multiple SELECT scopes on Advanced instead of offering cross-scope filters", async () => {
     const [sql] = createSignal(
       'SELECT field_amount FROM "form_expenses" WHERE field_amount > 1 UNION SELECT field_amount FROM "form_expenses" WHERE field_amount > 2',
@@ -623,12 +654,19 @@ describe("SQL Filter and Sort task editors", () => {
     const rootGroup = await screen.findByRole("group", {
       name: "Filter group",
     });
+    fireEvent.click(screen.getByRole("button", { name: "Add condition" }));
+    expect(
+      screen.getByRole("combobox", { name: "Column for new filter" }),
+    ).toBeInTheDocument();
     fireEvent.click(
       within(rootGroup).getByRole("button", { name: "Add group" }),
     );
     expect(
       await screen.findByRole("group", { name: "New filter group" }),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: "Column for new filter" }),
+    ).toBeNull();
     fireEvent.click(
       screen.getByRole("button", { name: "Cancel", exact: true }),
     );

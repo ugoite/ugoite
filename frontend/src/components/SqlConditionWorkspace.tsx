@@ -1084,8 +1084,16 @@ export function SqlConditionWorkspace(props: Props) {
                 <button
                   type="button"
                   class="ui-button ui-button-secondary"
+                  data-condition-focus={`${node.node_id}:edit`}
                   disabled={busy() || locked()}
-                  onClick={() => setEditingNodeId(node.node_id)}
+                  onClick={() => {
+                    setEditingNodeId(node.node_id);
+                    setTimeout(() => {
+                      globalThis.document?.querySelector<HTMLElement>(
+                        `[data-condition-focus="${node.node_id}:column"]`,
+                      )?.focus();
+                    });
+                  }}
                 >
                   {t("sqlPage.structure.editCondition")}
                 </button>
@@ -1290,8 +1298,16 @@ export function SqlConditionWorkspace(props: Props) {
             <button
               type="button"
               class="ui-button ui-button-secondary"
+              data-condition-focus={`${node.node_id}:edit`}
               disabled={busy() || locked()}
-              onClick={() => setEditingNodeId(null)}
+              onClick={() => {
+                setEditingNodeId(null);
+                setTimeout(() => {
+                  globalThis.document?.querySelector<HTMLElement>(
+                    `[data-condition-focus="${node.node_id}:edit"]`,
+                  )?.focus();
+                });
+              }}
             >
               {t("sqlPage.structure.doneEditingCondition")}
             </button>
@@ -1324,7 +1340,9 @@ export function SqlConditionWorkspace(props: Props) {
     const target = () => addTarget();
     const expanded = () =>
       target()?.parentNodeId === p.parentNodeId &&
-      target()?.queryNodeId === p.scope.query_node_id;
+      target()?.queryNodeId === p.scope.query_node_id &&
+      !(groupTarget()?.parentNodeId === p.parentNodeId &&
+        groupTarget()?.queryNodeId === p.scope.query_node_id);
     return (
       <div class="sql-condition-row sql-condition-row--add">
         <Show
@@ -1628,13 +1646,13 @@ export function SqlConditionWorkspace(props: Props) {
           >
             {t("sqlPage.structure.cancelCondition")}
           </button>
-          <Show
-            when={p.parentNodeId === null &&
-              groupTarget()?.parentNodeId === p.parentNodeId &&
-              groupTarget()?.queryNodeId === p.scope.query_node_id}
-          >
-            <GroupComposer scope={p.scope} />
-          </Show>
+        </Show>
+        <Show
+          when={p.parentNodeId === null &&
+            groupTarget()?.parentNodeId === p.parentNodeId &&
+            groupTarget()?.queryNodeId === p.scope.query_node_id}
+        >
+          <GroupComposer scope={p.scope} />
         </Show>
       </div>
     );
