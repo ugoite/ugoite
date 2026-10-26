@@ -115,19 +115,29 @@ test("Composition inline SQL filters preserve scalar bindings through nested gro
   });
   await filterButton.click();
   const filter = page.getByRole("dialog", { name: "Filter", exact: true });
+  const filters = filter.getByRole("region", { name: "Filters", exact: true });
   const amountRow = filter.getByRole("group", { name: "Amount", exact: true });
+  await amountRow.getByRole("button", {
+    name: "Edit condition",
+    exact: true,
+  }).click();
   await amountRow.getByRole("combobox", { name: "Operator" }).selectOption(
     "gt",
   );
+  await amountRow.getByRole("button", { name: "Done", exact: true }).click();
   await filter.getByRole("button", { name: "Apply changes", exact: true })
     .click();
   await expect(page.locator(".cm-content")).toContainText("> $minimum");
+  await expect(amountRow).toContainText("minimum argument");
+  await expect(amountRow.getByRole("textbox", { name: "Value" }))
+    .toHaveCount(0);
 
-  await filter.getByRole("combobox", { name: "Column for new filter" })
+  await filters.getByRole("button", { name: "Add condition", exact: true })
+    .click();
+  await filters.getByRole("combobox", { name: "Column for new filter" })
     .selectOption({ label: "Amount" });
-  await filter.getByRole("textbox", { name: "Value for new filter" }).fill(
-    "15",
-  );
+  await filters.getByRole("textbox", { name: "Value for new filter" })
+    .fill("15");
   await filter.getByRole("button", { name: "Add group", exact: true }).click();
   const groupComposer = filter.getByRole("group", { name: "New filter group" });
   await groupComposer.getByRole("combobox", { name: "Filter group operator" })
@@ -144,13 +154,21 @@ test("Composition inline SQL filters preserve scalar bindings through nested gro
   await expect.poll(() =>
     filter.evaluate((dialog) => dialog.contains(document.activeElement))
   ).toBe(true);
-  for (
-    const column of await filter.getByRole("combobox", { name: "Column" }).all()
-  ) {
-    await expect(column).toHaveValue(amountColumn!);
-  }
-  await expect(filter.getByRole("combobox", { name: "Declared argument" }))
-    .toHaveValue("minimum");
+  const amountConditions = filters.getByRole("group", {
+    name: "Amount",
+    exact: true,
+  });
+  await expect(amountConditions).toHaveCount(3);
+  await expect(amountConditions.first()).toContainText("minimum argument");
+  await expect(amountConditions.nth(1)).toContainText("15");
+  await expect(amountConditions.last()).toContainText("5");
+  await expect(filters.getByRole("textbox", { name: "Value" }))
+    .toHaveCount(0);
+  await expect(
+    filters.getByRole("group", { name: "Filter group" })
+      .getByRole("combobox", { name: "Filter group operator" }),
+  )
+    .toHaveValue("or");
   await expect(page.locator(".cm-content")).toContainText("OR");
   await expect(page.locator(".cm-content")).toContainText("$minimum");
   await expect(minimumBinding).toHaveValue("minimum");
@@ -168,7 +186,7 @@ test("Composition inline SQL filters preserve scalar bindings through nested gro
   await expect(minimumBinding).toHaveValue("minimum");
   await page.keyboard.press("Escape");
 
-  await page.getByRole("button", { name: "Run query", exact: true }).click();
+  await page.getByRole("button", { name: "Run Query", exact: true }).click();
   const results = page.getByRole("table", {
     name: "rows results",
     exact: true,
