@@ -16,6 +16,7 @@ import {
   completeCompositionGraphYaml,
   saveCompositionGraph,
 } from "./lib/composition-graph.ts";
+import { parse as parseYaml } from "yaml";
 
 type StudioSeedState = {
   spaceId: string;
@@ -1023,6 +1024,155 @@ test.describe("Composition Studio Journey", () => {
         `variable: ${formSlug}_sum_amount`,
       );
       expect(components).not.toMatch(/\b(?:form_id|source_id|source):/);
+    } finally {
+      await ownerContext.close();
+    }
+  });
+
+  test("Composition Studio adds a no-entry Form table beside an existing query and reopens it", async ({ browser, context, request }) => {
+    test.setTimeout(120_000);
+    const spaceId = await createSpace(request);
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const formName = `EmptyRecords${suffix}`;
+    const sqlName = `Existing composition query ${suffix}`;
+    const compositionName = `Form table composition ${suffix}`;
+    const formResponse = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/forms`),
+      {
+        data: {
+          name: formName,
+          version: 1,
+          template: `# ${formName}\n\n## Name\n\n## Quantity\n`,
+          fields: {
+            Name: { type: "string", required: true },
+            Quantity: { type: "integer", required: true },
+          },
+        },
+      },
+    );
+    expect([200, 201]).toContain(formResponse.status());
+    const formsResponse = await request.get(
+      getBackendUrl(`/spaces/${spaceId}/forms`),
+    );
+    expect(formsResponse.ok()).toBe(true);
+    const forms = await formsResponse.json() as Array<{
+      id?: string;
+      name?: string;
+      sql_relation?: string;
+      fields?: Record<string, { sql_column?: string }>;
+    }>;
+    const form = forms.find((candidate) => candidate.name === formName);
+    expect(form?.id).toBeTruthy();
+    expect(form?.sql_relation).toBeTruthy();
+    expect(form?.fields?.Name?.sql_column).toBeTruthy();
+    expect(form?.fields?.Quantity?.sql_column).toBeTruthy();
+    const formSlug = formName.normalize("NFKD").toLowerCase()
+      .replace(/\p{M}/gu, "").replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+    const queryResponse = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/sql`),
+      {
+        data: {
+          name: sqlName,
+          kind: "user-query",
+          sql: `SELECT * FROM ${sqlIdentifier(form!.sql_relation!)}`,
+        },
+      },
+    );
+    expect([200, 201]).toContain(queryResponse.status());
+
+    const ownerContext = await openOwnerContext(
+      browser,
+      await context.storageState(),
+    );
+    try {
+      const page = await ownerContext.newPage();
+      await page.goto(
+        getFrontendUrl(`/spaces/${spaceId}/compositions/new`),
+        { waitUntil: "domcontentloaded" },
+      );
+      const palette = page.getByRole("group", { name: "Add to design" });
+
+      await palette.getByRole("button", { name: "Table", exact: true })
+        .click();
+      const tablePicker = page.getByRole("dialog", {
+        name: "Table",
+        exact: true,
+      });
+      await tablePicker.getByRole("tab", { name: "Saved SQL", exact: true })
+        .click();
+      await expect(tablePicker.getByRole("button", {
+        name: sqlName,
+        exact: true,
+      })).toBeVisible();
+      await tablePicker.getByRole("tab", { name: "Forms", exact: true })
+        .click();
+      await tablePicker.getByRole("button", { name: formName, exact: true })
+        .click();
+      await expect(tablePicker).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Save", exact: true }))
+        .toBeDisabled();
+      const designTable = page.getByRole("table", {
+        name: `${formSlug}_rows results`,
+      });
+      await expect(designTable).toBeVisible({ timeout: 30_000 });
+      await expect(designTable.locator("tbody tr")).toHaveCount(0);
+
+      await page.getByRole("tablist", { name: "Studio mode" })
+        .getByRole("tab", { name: "Variables", exact: true }).click();
+      await page.getByRole("button", { name: `${formSlug}_rows`, exact: true })
+        .click();
+      await page.getByRole("button", { name: "Run Query", exact: true })
+        .click();
+      await expect(page.getByRole("table").locator("tbody tr")).toHaveCount(0, {
+        timeout: 30_000,
+      });
+      await page.getByRole("tablist", { name: "Studio mode" })
+        .getByRole("tab", { name: "Design", exact: true }).click();
+      await page.getByLabel("Name", { exact: true }).fill(compositionName);
+
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(page).toHaveURL(
+        new RegExp(`/spaces/${spaceId}/compositions/[^/]+/[^/]+$`),
+        { timeout: 30_000 },
+      );
+      const saved = revisionFromUrl(page.url());
+      const revisionResponse = await request.get(
+        getBackendUrl(
+          `/spaces/${spaceId}/compositions/${saved.compositionId}/history/${saved.revisionId}`,
+        ),
+      );
+      expect(revisionResponse.ok()).toBe(true);
+      const revision = await revisionResponse.json() as StudioRawRevision;
+      const savedSpec = parseYaml(String(revision.fields["spec"])) as {
+        spec?: {
+          variables?: Array<{
+            id?: string;
+            query?: {
+              kind?: string;
+              sql?: string;
+              form_bindings?: Array<{ relation: string; form_id: string }>;
+            };
+          }>;
+        };
+      };
+      const savedFormQuery = savedSpec.spec?.variables?.find((variable) =>
+        variable.id === `${formSlug}_rows` &&
+        variable.query?.kind === "inline_sql"
+      )?.query;
+      expect(savedFormQuery).toBeDefined();
+      expect(savedFormQuery?.sql).toBe(
+        `SELECT * FROM ${sqlIdentifier(formName)}`,
+      );
+      expect(savedFormQuery?.form_bindings).toEqual([{
+        relation: formName,
+        form_id: form!.id!,
+      }]);
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await expect(page.getByRole("table", {
+        name: `${formSlug}_rows results`,
+      })).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByRole("table").locator("tbody tr")).toHaveCount(0);
     } finally {
       await ownerContext.close();
     }

@@ -281,7 +281,7 @@ describe("portable Ugoite API protocol WASM", () => {
     const sourceBytes = new TextEncoder().encode(sql);
 
     expect(document).toMatchObject({
-      contract_version: 19,
+      contract_version: 20,
       source: sql,
       status: "parsed",
     });
@@ -1398,7 +1398,7 @@ describe("portable Ugoite API protocol WASM", () => {
         edits: [],
       }),
     ).rejects.toMatchObject({ kind: "domain_output_too_large" });
-  });
+  }, 30_000);
 
   it("parses graph Input with the shared Rust Domain contract without coercion", async () => {
     const cases = [

@@ -1088,12 +1088,9 @@ impl AuthorizedQueryContext {
         limit: usize,
         max_bytes: Option<usize>,
     ) -> Result<Vec<arrow_array::RecordBatch>> {
-        let _permit = self
-            .permits
-            .clone()
-            .try_acquire_owned()
-            .map_err(AuthorizedQueryError::resource_limit)?;
-        tokio::time::timeout(self.limits.timeout, async {
+        let deadline = tokio::time::Instant::now() + self.limits.timeout;
+        let _permit = self.acquire_query_permit(deadline).await?;
+        tokio::time::timeout_at(deadline, async {
             let plan = self
                 .context
                 .state()
@@ -1195,13 +1192,10 @@ impl AuthorizedQueryContext {
         sql: &str,
         max_bytes: usize,
     ) -> Result<Vec<arrow_array::RecordBatch>> {
-        let _permit = self
-            .permits
-            .clone()
-            .try_acquire_owned()
-            .map_err(AuthorizedQueryError::resource_limit)?;
-        tokio::time::timeout(
-            self.limits.timeout,
+        let deadline = tokio::time::Instant::now() + self.limits.timeout;
+        let _permit = self.acquire_query_permit(deadline).await?;
+        tokio::time::timeout_at(
+            deadline,
             self.execute_with_permit_and_byte_limit(sql, HashMap::new(), Some(max_bytes)),
         )
         .await
@@ -1216,17 +1210,11 @@ impl AuthorizedQueryContext {
         sql: &str,
         parameters: HashMap<String, datafusion::scalar::ScalarValue>,
     ) -> Result<Vec<arrow_array::RecordBatch>> {
-        let _permit = self
-            .permits
-            .clone()
-            .try_acquire_owned()
-            .map_err(AuthorizedQueryError::resource_limit)?;
-        tokio::time::timeout(
-            self.limits.timeout,
-            self.execute_with_permit(sql, parameters),
-        )
-        .await
-        .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
+        let deadline = tokio::time::Instant::now() + self.limits.timeout;
+        let _permit = self.acquire_query_permit(deadline).await?;
+        tokio::time::timeout_at(deadline, self.execute_with_permit(sql, parameters))
+            .await
+            .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
     }
 
     /// Executes one stateless SQL page without computing a total count. The
@@ -1239,13 +1227,10 @@ impl AuthorizedQueryContext {
         offset: usize,
         limit: usize,
     ) -> Result<StatelessSqlPage> {
-        let _permit = self
-            .permits
-            .clone()
-            .try_acquire_owned()
-            .map_err(AuthorizedQueryError::resource_limit)?;
-        tokio::time::timeout(
-            self.limits.timeout,
+        let deadline = tokio::time::Instant::now() + self.limits.timeout;
+        let _permit = self.acquire_query_permit(deadline).await?;
+        tokio::time::timeout_at(
+            deadline,
             self.execute_stateless_page_with_permit(sql, parameters, offset, limit),
         )
         .await
@@ -1259,13 +1244,10 @@ impl AuthorizedQueryContext {
         sql: &str,
         parameters: HashMap<String, datafusion::scalar::ScalarValue>,
     ) -> Result<Vec<SqlResultColumn>> {
-        let _permit = self
-            .permits
-            .clone()
-            .try_acquire_owned()
-            .map_err(AuthorizedQueryError::resource_limit)?;
-        tokio::time::timeout(
-            self.limits.timeout,
+        let deadline = tokio::time::Instant::now() + self.limits.timeout;
+        let _permit = self.acquire_query_permit(deadline).await?;
+        tokio::time::timeout_at(
+            deadline,
             self.stateless_result_schema_with_permit(sql, parameters),
         )
         .await
@@ -1280,17 +1262,26 @@ impl AuthorizedQueryContext {
         sql: &str,
         parameters: HashMap<String, datafusion::scalar::ScalarValue>,
     ) -> Result<u64> {
-        let _permit = self
-            .permits
-            .clone()
-            .try_acquire_owned()
-            .map_err(AuthorizedQueryError::resource_limit)?;
-        tokio::time::timeout(
-            self.limits.timeout,
+        let deadline = tokio::time::Instant::now() + self.limits.timeout;
+        let _permit = self.acquire_query_permit(deadline).await?;
+        tokio::time::timeout_at(
+            deadline,
             self.execute_stateless_count_with_permit(sql, parameters),
         )
         .await
         .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
+    }
+
+    async fn acquire_query_permit(
+        &self,
+        deadline: tokio::time::Instant,
+    ) -> Result<tokio::sync::OwnedSemaphorePermit> {
+        Ok(
+            tokio::time::timeout_at(deadline, self.permits.clone().acquire_owned())
+                .await
+                .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
+                .map_err(AuthorizedQueryError::resource_limit)?,
+        )
     }
 
     #[cfg(debug_assertions)]
@@ -2164,6 +2155,84 @@ mod cancellation_tests {
             !query_active.load(Ordering::SeqCst),
             "query active guard leaked"
         );
+    }
+}
+
+#[cfg(test)]
+mod query_permit_queue_tests {
+    use super::{bounded_session_context, AuthorizedQueryContext, AuthorizedQueryError};
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::sync::Arc;
+    use std::time::Duration;
+    use tokio::sync::{Mutex, Semaphore};
+    use ugoite_core::query::{QueryLimits, SqlFunctionPolicy};
+
+    fn make_context(timeout: Duration) -> AuthorizedQueryContext {
+        let limits = QueryLimits {
+            max_memory_bytes: 64 * 1024 * 1024,
+            max_rows: 100,
+            timeout,
+            max_concurrency: 1,
+            function_policy: SqlFunctionPolicy::new(&[], &[], &[]),
+        };
+        AuthorizedQueryContext {
+            context: bounded_session_context(&limits).unwrap(),
+            limits,
+            permits: Arc::new(Semaphore::new(1)),
+            authorized_relations: BTreeSet::new(),
+            form_name_aliases: BTreeMap::new(),
+            authorized_scans: BTreeSet::new(),
+            duplicate_head_checks: Vec::new(),
+            duplicate_head_checks_validated: Arc::new(Mutex::new(BTreeSet::new())),
+        }
+    }
+
+    #[tokio::test]
+    async fn queued_queries_share_timeout_and_cancelled_waiters_do_not_leak() {
+        let context = Arc::new(make_context(Duration::from_secs(5)));
+
+        let permit = context.permits.clone().acquire_owned().await.unwrap();
+        let queued_context = context.clone();
+        let queued = tokio::spawn(async move { queued_context.execute("SELECT 1").await });
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        assert!(!queued.is_finished(), "query should wait for the permit");
+        drop(permit);
+        queued
+            .await
+            .unwrap()
+            .expect("released permit should run query");
+
+        let permit = context.permits.clone().acquire_owned().await.unwrap();
+        let waiting_context = context.clone();
+        let waiting = tokio::spawn(async move { waiting_context.execute("SELECT 1").await });
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        waiting.abort();
+        assert!(waiting.await.unwrap_err().is_cancelled());
+        drop(permit);
+        context
+            .execute("SELECT 1")
+            .await
+            .expect("cancelled waiter must release queue");
+
+        let timed_context = Arc::new(make_context(Duration::from_millis(100)));
+        let permit = timed_context.permits.clone().acquire_owned().await.unwrap();
+        let timed_query_context = timed_context.clone();
+        let timed = tokio::spawn(async move { timed_query_context.execute("SELECT 1").await });
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_millis(200), timed)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap_err()
+                .downcast_ref::<AuthorizedQueryError>(),
+            Some(AuthorizedQueryError::QueryTimedOut)
+        ));
+        drop(permit);
+        let _permit = timed_context
+            .permits
+            .clone()
+            .try_acquire_owned()
+            .expect("timed-out waiter must release queue");
     }
 }
 

@@ -44,3 +44,20 @@ requirements:
           POL-000#rule.foundation-precedence,
           POL-004#rule.governance,
         ]
+      - id: condition-group-editing
+        kind: behavior
+        statement: >-
+          For a single SELECT over one named Form relation, the task Filter
+          editor presents supported existing comparisons as editable conditions
+          inside their AND/OR groups. Users can change a group's connector,
+          edit or remove a comparison, and add or remove nested groups without
+          changing the meaning of conditions outside the edited group.
+          Unsupported predicate expressions remain available through explicit
+          advanced editing and are not silently rewritten. Condition changes,
+          including any declared argument and scalar binding they create or
+          update, apply as one guarded Rust edit transaction whose inverse
+          restores the entire prior state.
+        governed_by: [
+          POL-000#rule.foundation-precedence,
+          POL-004#rule.governance,
+        ]

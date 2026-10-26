@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { createSignal } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import {
   fireEvent,
   render,
@@ -11,6 +11,7 @@ import * as client from "~/lib/ugoite-client";
 import { describe, expect, it, vi } from "vitest";
 import type { SqlStructureAdapterContext } from "~/lib/sql";
 import { SqlFilterSortEditor } from "./SqlFilterSortEditor";
+import type { SqlConditionWorkspaceHistoryEntry } from "./SqlConditionWorkspace";
 
 const context: SqlStructureAdapterContext = {
   identity: "expenses",
@@ -43,6 +44,29 @@ function deferred<T>() {
 }
 
 describe("SQL Filter and Sort task editors", () => {
+  it("switches reactively between filter and sort editors", async () => {
+    const [action, setAction] = createSignal<"filter" | "sort">("sort");
+    render(() => (
+      <SqlFilterSortEditor
+        action={action()}
+        sql={() => 'SELECT * FROM "form_expenses"'}
+        scope={() => "composition-query:query-a"}
+        contexts={() => [context]}
+        onSqlChange={() => {}}
+        onAdvanced={() => {}}
+      />
+    ));
+    expect(document.querySelector(".sql-condition-workspace")).toBeNull();
+    setAction("filter");
+    await waitFor(() =>
+      expect(document.querySelector(".sql-condition-workspace")).not.toBeNull()
+    );
+    setAction("sort");
+    await waitFor(() =>
+      expect(document.querySelector(".sql-condition-workspace")).toBeNull()
+    );
+  });
+
   it("constructs a named filter argument and explicit binding in the host commit", async () => {
     const [sql, setSql] = createSignal('SELECT * FROM "form_expenses"');
     const [bindings, setBindings] = createSignal<
@@ -102,7 +126,7 @@ describe("SQL Filter and Sort task editors", () => {
       />
     ));
     const filterColumn = await screen.findByRole("combobox", {
-      name: "Column",
+      name: "Column for new filter",
     });
     await waitFor(() =>
       expect(filterColumn.querySelectorAll("option").length).toBe(2)
@@ -165,7 +189,9 @@ describe("SQL Filter and Sort task editors", () => {
         onAdvanced={() => {}}
       />
     ));
-    const column = await screen.findByRole("combobox", { name: "Column" });
+    const column = await screen.findByRole("combobox", {
+      name: "Column for new filter",
+    });
     await waitFor(() =>
       expect(column.querySelectorAll("option").length).toBe(2)
     );
@@ -211,16 +237,21 @@ describe("SQL Filter and Sort task editors", () => {
         onAdvanced={() => {}}
       />
     ));
-    const nullColumn = await screen.findByRole("combobox", { name: "Column" });
+    const nullColumn = await screen.findByRole("combobox", {
+      name: "Column for new filter",
+    });
     await waitFor(() =>
       expect(nullColumn.querySelectorAll("option").length).toBe(2)
     );
     fireEvent.change(nullColumn, {
       target: { value: "field_amount" },
     });
-    fireEvent.change(screen.getByRole("combobox", { name: "Operator" }), {
-      target: { value: "is_null" },
-    });
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Operator for new filter" }),
+      {
+        target: { value: "is_null" },
+      },
+    );
     fireEvent.click(screen.getByRole("button", { name: "Add filter" }));
     await waitFor(() => expect(nullSql()).toContain("IS NULL"));
     expect(nullAdded).not.toHaveBeenCalled();
@@ -238,7 +269,7 @@ describe("SQL Filter and Sort task editors", () => {
       />
     ));
     const filterColumn = await screen.findByRole("combobox", {
-      name: "Column",
+      name: "Column for new filter",
     });
     await waitFor(() =>
       expect(filterColumn.querySelectorAll("option").length).toBe(2)
@@ -246,15 +277,17 @@ describe("SQL Filter and Sort task editors", () => {
     fireEvent.change(filterColumn, {
       target: { value: "field_amount" },
     });
-    fireEvent.change(screen.getByRole("combobox", { name: "Operator" }), {
-      target: { value: "gte" },
-    });
-    const value = screen.getByRole("textbox", { name: "Value" });
-    fireEvent.change(screen.getByRole("combobox", { name: "Value type" }), {
-      target: { value: "number" },
-    });
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Operator for new filter" }),
+      {
+        target: { value: "gte" },
+      },
+    );
+    const value = screen.getByRole("textbox", { name: "Value for new filter" });
     fireEvent.input(value, { target: { value: "9007199254740993" } });
-    expect(screen.getByRole("textbox", { name: "Value" })).toBe(value);
+    expect(screen.getByRole("textbox", { name: "Value for new filter" })).toBe(
+      value,
+    );
     fireEvent.click(screen.getByRole("button", { name: "Add filter" }));
     await waitFor(() =>
       expect(sql()).toBe(
@@ -269,6 +302,675 @@ describe("SQL Filter and Sort task editors", () => {
         'SELECT * FROM "form_expenses" WHERE field_amount >= 9007199254740993',
       )
     );
+  });
+
+  it("shows editable existing conditions and preserves every argument on a leaf edit", async () => {
+    const [sql, setSql] = createSignal(
+      'SELECT * FROM "form_expenses" WHERE field_amount >= $minimum AND field_amount <= $maximum',
+    );
+    const [argumentsList, setArgumentsList] = createSignal<
+      readonly { name: string; type: string; description: string }[]
+    >([
+      { name: "minimum", type: "integer", description: "lower bound" },
+      { name: "maximum", type: "integer", description: "upper bound" },
+      { name: "unused", type: "string", description: "keep this declaration" },
+    ]);
+    const [bindings, setBindings] = createSignal<
+      readonly { name: string; variableId: string }[]
+    >([]);
+    const edit = vi.fn((change: {
+      expectedSql: string;
+      expectedArguments?: readonly {
+        name: string;
+        type: string;
+        description: string;
+      }[];
+      resultArguments?: readonly {
+        name: string;
+        type: string;
+        description: string;
+      }[];
+      resultSql: string;
+      expectedBindings?: readonly { name: string; variableId: string }[];
+      resultBindings?: readonly { name: string; variableId: string }[];
+    }) => {
+      if (change.expectedSql !== sql()) return false;
+      if (
+        JSON.stringify(change.expectedArguments ?? argumentsList()) !==
+          JSON.stringify(argumentsList())
+      ) return false;
+      if (
+        JSON.stringify(change.expectedBindings ?? bindings()) !==
+          JSON.stringify(bindings())
+      ) return false;
+      setSql(change.resultSql);
+      if (change.resultArguments) setArgumentsList(change.resultArguments);
+      if (change.resultBindings) setBindings(change.resultBindings);
+      return true;
+    });
+    const editableContext: SqlStructureAdapterContext = {
+      ...context,
+      columnCapabilities: {
+        ...context.columnCapabilities,
+        field_amount: {
+          ...context.columnCapabilities.field_amount!,
+          supportedOperators: [
+            "eq",
+            "gt",
+            "gt_eq",
+            "lt_eq",
+            "is_null",
+            "is_not_null",
+          ],
+        },
+      },
+    };
+    const [contexts, setContexts] = createSignal([editableContext]);
+    render(() => (
+      <SqlFilterSortEditor
+        action="filter"
+        sql={sql}
+        scope={() => "saved-query:query-a"}
+        contexts={contexts}
+        argumentDefinitions={argumentsList}
+        argumentBindings={bindings}
+        onFilterEdit={edit}
+        onSqlChange={setSql}
+        onAdvanced={() => {}}
+      />
+    ));
+    const rows = await screen.findAllByRole("group", { name: "Amount" });
+    expect(rows).toHaveLength(2);
+    fireEvent.click(
+      within(rows[0]).getByRole("button", { name: "Edit condition" }),
+    );
+    const operator = within(rows[0]).getByRole("combobox", {
+      name: "Operator",
+    });
+    fireEvent.change(operator, { target: { value: "gt" } });
+    expect(operator).toHaveValue("gt");
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    await waitFor(() => expect(edit).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(sql()).toContain("field_amount > $minimum"));
+    expect(sql()).toContain("field_amount <= $maximum");
+    expect(argumentsList()).toEqual([
+      { name: "minimum", type: "integer", description: "lower bound" },
+      { name: "maximum", type: "integer", description: "upper bound" },
+      { name: "unused", type: "string", description: "keep this declaration" },
+    ]);
+    expect(edit.mock.calls[0][0].resultArguments).toEqual(argumentsList());
+    const currentRows = screen.getAllByRole("group", { name: "Amount" });
+    expect(currentRows[0].textContent).toContain("minimum argument");
+    fireEvent.click(
+      within(currentRows[0]).getByRole("button", {
+        name: "Edit condition",
+      }),
+    );
+    await waitFor(() => {
+      const refreshedRows = screen.getAllByRole("group", { name: "Amount" });
+      expect(
+        within(refreshedRows[0]).getByRole("combobox", { name: "Column" }),
+      ).toHaveValue("field_amount");
+      expect(
+        within(refreshedRows[0]).getByRole("combobox", {
+          name: "Declared argument",
+        }),
+      ).toHaveValue("minimum");
+    });
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Add condition" }).at(-1)!,
+    );
+    setContexts([structuredClone(editableContext)]);
+    setArgumentsList(argumentsList().map((argument) => ({ ...argument })));
+    await waitFor(() => {
+      const refreshedRows = screen.getAllByRole("group", { name: "Amount" });
+      expect(
+        within(refreshedRows[0]).getByRole("combobox", { name: "Column" }),
+      ).toHaveValue("field_amount");
+      expect(
+        within(refreshedRows[0]).getByRole("combobox", {
+          name: "Declared argument",
+        }),
+      ).toHaveValue("minimum");
+      expect(
+        screen.getByRole("combobox", { name: "Column for new filter" }),
+      ).toHaveValue("");
+    });
+  });
+
+  it("summarizes null operators without an empty literal value", async () => {
+    const [sql] = createSignal(
+      'SELECT * FROM "form_expenses" WHERE field_amount IS NOT NULL',
+    );
+    render(() => (
+      <SqlFilterSortEditor
+        action="filter"
+        sql={sql}
+        contexts={() => [context]}
+        onSqlChange={() => {}}
+        onAdvanced={() => {}}
+      />
+    ));
+    const row = await screen.findByRole("group", { name: "Amount" });
+    expect(row.textContent).toContain("Has a value");
+    expect(row.textContent).not.toContain("“”");
+  });
+
+  it("discards an existing-condition draft when SQL changes externally", async () => {
+    const [sql, setSql] = createSignal(
+      'SELECT * FROM "form_expenses" WHERE field_amount >= 4',
+    );
+    render(() => (
+      <SqlFilterSortEditor
+        action="filter"
+        sql={sql}
+        contexts={() => [context]}
+        onSqlChange={setSql}
+        onAdvanced={() => {}}
+      />
+    ));
+    fireEvent.click(
+      await screen.findAllByRole("button", { name: "Edit condition" }).then(
+        (buttons) => buttons[0],
+      ),
+    );
+    const value = await screen.findByRole("textbox", { name: "Value" });
+    expect(value).toHaveValue("4");
+    fireEvent.input(value, { target: { value: "99" } });
+    expect(screen.getByRole("button", { name: "Apply changes" }))
+      .toBeInTheDocument();
+    setSql('SELECT * FROM "form_expenses" WHERE field_amount >= 7');
+    fireEvent.click(
+      await screen.findAllByRole("button", { name: "Edit condition" }).then(
+        (buttons) => buttons[0],
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Value" })).toHaveValue("7")
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Apply changes" })).toBeNull()
+    );
+  });
+
+  it("discards pending leaf drafts when removing a condition changes parser IDs", async () => {
+    const source =
+      'SELECT * FROM "form_expenses" WHERE field_amount >= 4 AND field_amount <= 8';
+    const [sql, setSql] = createSignal(source);
+    render(() => (
+      <SqlFilterSortEditor
+        action="filter"
+        sql={sql}
+        contexts={() => [context]}
+        onSqlChange={setSql}
+        onAdvanced={() => {}}
+      />
+    ));
+    const rows = await screen.findAllByRole("group", { name: "Amount" });
+    fireEvent.click(
+      within(rows[1]).getByRole("button", {
+        name: "Edit condition",
+      }),
+    );
+    fireEvent.input(screen.getByRole("textbox", { name: "Value" }), {
+      target: { value: "88" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(screen.getByRole("button", { name: "Apply changes" }))
+      .toBeInTheDocument();
+
+    fireEvent.click(
+      within(rows[0]).getByRole("button", {
+        name: "Remove filter",
+      }),
+    );
+    await waitFor(() => expect(sql()).toContain("field_amount <= 8"));
+    expect(sql()).not.toContain("88");
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Apply changes" })).toBeNull()
+    );
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        document.querySelector('[data-condition-focus="add-filter:2:root"]'),
+      )
+    );
+  });
+
+  it.each(["source", "scope"] as const)(
+    "cancels deferred focus when the %s changes",
+    async (change) => {
+      const descriptor = Object.getOwnPropertyDescriptor(
+        globalThis,
+        "requestAnimationFrame",
+      );
+      const frames: FrameRequestCallback[] = [];
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: (callback: FrameRequestCallback) => {
+          frames.push(callback);
+          return frames.length;
+        },
+      });
+      try {
+        const [sql, setSql] = createSignal(
+          'SELECT * FROM "form_expenses" WHERE field_amount >= 4 AND field_amount <= 8',
+        );
+        const [scope, setScope] = createSignal("query:one");
+        render(() => (
+          <SqlFilterSortEditor
+            action="filter"
+            sql={sql}
+            scope={scope}
+            contexts={() => [context]}
+            onSqlChange={setSql}
+            onAdvanced={() => {}}
+          />
+        ));
+        const rows = await screen.findAllByRole("group", { name: "Amount" });
+        fireEvent.click(
+          within(rows[0]).getByRole("button", { name: "Remove filter" }),
+        );
+        await waitFor(() => expect(sql()).toContain("field_amount <= 8"));
+        await waitFor(() => expect(frames.length).toBeGreaterThan(0));
+
+        if (change === "source") {
+          setSql('SELECT * FROM "form_expenses" WHERE field_amount >= 12');
+        } else {
+          setScope("query:two");
+        }
+        await waitFor(() =>
+          expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled()
+        );
+        await waitFor(() =>
+          expect(screen.getAllByRole("group", { name: "Amount" })).toHaveLength(
+            1,
+          )
+        );
+        const editButton = screen.getByRole("button", {
+          name: "Edit condition",
+        });
+        editButton.focus();
+        while (frames.length) {
+          for (const frame of frames.splice(0)) frame(0);
+        }
+        expect(document.activeElement).toBe(editButton);
+      } finally {
+        if (descriptor) {
+          Object.defineProperty(
+            globalThis,
+            "requestAnimationFrame",
+            descriptor,
+          );
+        } else {
+          Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+        }
+      }
+    },
+  );
+
+  it("keeps pending edits when applying a rejected condition transaction", async () => {
+    const [sql, setSql] = createSignal(
+      'SELECT * FROM "form_expenses" WHERE field_amount >= 4',
+    );
+    const rejectEdit = vi.fn(() => false);
+    render(() => (
+      <SqlFilterSortEditor
+        action="filter"
+        sql={sql}
+        contexts={() => [context]}
+        onSqlChange={setSql}
+        onFilterEdit={rejectEdit}
+        onAdvanced={() => {}}
+      />
+    ));
+    const row = await screen.findByRole("group", { name: "Amount" });
+    fireEvent.click(
+      within(row).getByRole("button", {
+        name: "Edit condition",
+      }),
+    );
+    fireEvent.input(screen.getByRole("textbox", { name: "Value" }), {
+      target: { value: "9" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    await waitFor(() => expect(rejectEdit).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Apply changes" }))
+        .toBeEnabled()
+    );
+    expect(screen.getByRole("textbox", { name: "Value" })).toHaveValue("9");
+    expect(screen.getByRole("button", { name: "Apply changes" }))
+      .toBeInTheDocument();
+    expect(sql()).toBe('SELECT * FROM "form_expenses" WHERE field_amount >= 4');
+  });
+
+  it("moves focus into and back out of a compact condition editor", async () => {
+    const [sql, setSql] = createSignal(
+      'SELECT * FROM "form_expenses" WHERE field_amount >= 4',
+    );
+    render(() => (
+      <SqlFilterSortEditor
+        action="filter"
+        sql={sql}
+        contexts={() => [context]}
+        onSqlChange={setSql}
+        onAdvanced={() => {}}
+      />
+    ));
+    const row = await screen.findByRole("group", { name: "Amount" });
+    const editButton = within(row).getByRole("button", {
+      name: "Edit condition",
+    });
+    fireEvent.click(editButton);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        within(row).getByRole("combobox", { name: "Column" }),
+      )
+    );
+    fireEvent.click(within(row).getByRole("button", { name: "Done" }));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        within(row).getByRole("button", { name: "Edit condition" }),
+      )
+    );
+  });
+
+  it("keeps multiple SELECT scopes on Advanced instead of offering cross-scope filters", async () => {
+    const [sql] = createSignal(
+      'SELECT field_amount FROM "form_expenses" WHERE field_amount > 1 UNION SELECT field_amount FROM "form_expenses" WHERE field_amount > 2',
+    );
+    render(() => (
+      <SqlFilterSortEditor
+        action="filter"
+        sql={sql}
+        contexts={() => [context]}
+        onSqlChange={() => {}}
+        onAdvanced={() => {}}
+      />
+    ));
+    await screen.findByRole("button", { name: "Advanced structure…" });
+    expect(screen.queryByRole("button", { name: "Add filter" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add group" })).toBeNull();
+    expect(
+      screen.getAllByRole("button", { name: "Advanced structure…" }),
+    ).toHaveLength(1);
+  });
+
+  it("retains filter history and restores focus across undo and redo", async () => {
+    const [sql, setSql] = createSignal('SELECT * FROM "form_expenses"');
+    const [visible, setVisible] = createSignal(true);
+    const [history, setHistory] = createSignal<
+      SqlConditionWorkspaceHistoryEntry[]
+    >([]);
+    const [redo, setRedo] = createSignal<SqlConditionWorkspaceHistoryEntry[]>(
+      [],
+    );
+    render(() => (
+      <Show when={visible()}>
+        <SqlFilterSortEditor
+          action="filter"
+          sql={sql}
+          scope={() => "saved-query:query-a"}
+          contexts={() => [context]}
+          onSqlChange={setSql}
+          onAdvanced={() => {}}
+          historyState={{ history, setHistory, redo, setRedo }}
+        />
+      </Show>
+    ));
+    fireEvent.change(
+      await screen.findByRole("combobox", { name: "Column for new filter" }),
+      {
+        target: { value: "field_amount" },
+      },
+    );
+    fireEvent.input(
+      screen.getByRole("textbox", { name: "Value for new filter" }),
+      {
+        target: { value: "12" },
+      },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add filter" }));
+    await waitFor(() => expect(sql()).toContain("WHERE"));
+    expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled();
+    setVisible(false);
+    setVisible(true);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled()
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await waitFor(() => expect(sql()).toBe('SELECT * FROM "form_expenses"'));
+    const redoButton = screen.getByRole("button", { name: "Redo" });
+    await waitFor(() => expect(document.activeElement).toBe(redoButton));
+    fireEvent.click(redoButton);
+    await waitFor(() => expect(sql()).toContain("WHERE"));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("button", { name: "Undo" }),
+      )
+    );
+  });
+
+  it("creates an Any group only after both inline conditions are valid", async () => {
+    const statusContext: SqlStructureAdapterContext = {
+      ...context,
+      parser: {
+        ...context.parser,
+        columns: [{ name: "status", type: "string" }],
+      },
+      columnCapabilities: {
+        status: {
+          ...context.columnCapabilities.field_amount!,
+          supportedOperators: ["eq", "not_eq", "is_null", "is_not_null"],
+        },
+      },
+      columnLabels: { status: "Status" },
+    };
+    const [sql, setSql] = createSignal('SELECT * FROM "form_expenses"');
+    render(() => (
+      <SqlFilterSortEditor
+        action="filter"
+        sql={sql}
+        contexts={() => [statusContext]}
+        onSqlChange={setSql}
+        onAdvanced={() => {}}
+      />
+    ));
+    fireEvent.change(
+      await screen.findByRole("combobox", { name: "Column for new filter" }),
+      { target: { value: "status" } },
+    );
+    fireEvent.input(
+      screen.getByRole("textbox", { name: "Value for new filter" }),
+      { target: { value: "open" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add group" }));
+    const composer = await screen.findByRole("group", {
+      name: "New filter group",
+    });
+    expect(within(composer).getByRole("button", { name: "Create group" }))
+      .toBeDisabled();
+    fireEvent.change(
+      within(composer).getByRole("combobox", { name: "Filter group operator" }),
+      { target: { value: "or" } },
+    );
+    fireEvent.change(
+      within(composer).getByRole("combobox", {
+        name: "Column for second condition",
+      }),
+      { target: { value: "status" } },
+    );
+    fireEvent.input(
+      within(composer).getByRole("textbox", {
+        name: "Value for second condition",
+      }),
+      { target: { value: "blocked" } },
+    );
+    expect(within(composer).getByRole("button", { name: "Create group" }))
+      .toBeEnabled();
+    fireEvent.click(
+      within(composer).getByRole("button", { name: "Create group" }),
+    );
+    await waitFor(() =>
+      expect(sql()).toMatch(/status\s*=\s*'open'.*OR.*status\s*=\s*'blocked'/i)
+    );
+    const connector = await screen.findByRole("combobox", {
+      name: "Filter group operator",
+    });
+    expect(connector).toHaveValue("or");
+  });
+
+  it("opens a nested group composer from an existing root group", async () => {
+    const statusContext: SqlStructureAdapterContext = {
+      ...context,
+      parser: {
+        ...context.parser,
+        columns: [{ name: "status", type: "string" }],
+      },
+      columnCapabilities: {
+        status: {
+          ...context.columnCapabilities.field_amount!,
+          supportedOperators: ["eq", "is_null", "is_not_null"],
+        },
+      },
+      columnLabels: { status: "Status" },
+    };
+    const [sql, setSql] = createSignal(
+      `SELECT * FROM "form_expenses" WHERE status = 'open' AND status = 'blocked'`,
+    );
+    render(() => (
+      <SqlFilterSortEditor
+        action="filter"
+        sql={sql}
+        contexts={() => [statusContext]}
+        onSqlChange={setSql}
+        onAdvanced={() => {}}
+      />
+    ));
+    const rootGroup = await screen.findByRole("group", {
+      name: "Filter group",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add condition" }));
+    expect(
+      screen.getByRole("combobox", { name: "Column for new filter" }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      within(rootGroup).getByRole("button", { name: "Add group" }),
+    );
+    expect(
+      await screen.findByRole("group", { name: "New filter group" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: "Column for new filter" }),
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Cancel", exact: true }),
+    );
+    expect(screen.queryByRole("group", { name: "New filter group" }))
+      .toBeNull();
+  });
+
+  it("keeps the nested connector after undo and redo reuse condition IDs", async () => {
+    const statusContext: SqlStructureAdapterContext = {
+      ...context,
+      parser: {
+        ...context.parser,
+        columns: [{ name: "status", type: "string" }],
+      },
+      columnCapabilities: {
+        status: {
+          ...context.columnCapabilities.field_amount!,
+          supportedOperators: ["eq", "is_null", "is_not_null"],
+        },
+      },
+      columnLabels: { status: "Status" },
+    };
+    const [sql, setSql] = createSignal('SELECT * FROM "form_expenses"');
+    render(() => (
+      <SqlFilterSortEditor
+        action="filter"
+        sql={sql}
+        contexts={() => [statusContext]}
+        onSqlChange={setSql}
+        onAdvanced={() => {}}
+      />
+    ));
+    fireEvent.change(
+      await screen.findByRole("combobox", { name: "Column for new filter" }),
+      { target: { value: "status" } },
+    );
+    fireEvent.input(
+      screen.getByRole("textbox", { name: "Value for new filter" }),
+      { target: { value: "open" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add group" }));
+    const rootComposer = await screen.findByRole("group", {
+      name: "New filter group",
+    });
+    fireEvent.change(
+      within(rootComposer).getByRole("combobox", {
+        name: "Column for second condition",
+      }),
+      { target: { value: "status" } },
+    );
+    fireEvent.input(
+      within(rootComposer).getByRole("textbox", {
+        name: "Value for second condition",
+      }),
+      { target: { value: "blocked" } },
+    );
+    fireEvent.click(
+      within(rootComposer).getByRole("button", { name: "Create group" }),
+    );
+    await waitFor(() => expect(sql()).toContain("status"));
+    fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
+    await waitFor(() => expect(sql()).toBe('SELECT * FROM "form_expenses"'));
+    fireEvent.click(screen.getByRole("button", { name: "Redo" }));
+    await waitFor(() => expect(sql()).toContain("blocked"));
+
+    const rootGroup = await screen.findByRole("group", {
+      name: "Filter group",
+    });
+    fireEvent.click(
+      within(rootGroup).getByRole("button", { name: "Add group" }),
+    );
+    const nestedComposer = await screen.findByRole("group", {
+      name: "New filter group",
+    });
+    fireEvent.change(
+      within(nestedComposer).getByRole("combobox", {
+        name: "Filter group operator",
+      }),
+      { target: { value: "or" } },
+    );
+    expect(
+      within(nestedComposer).getByRole("combobox", {
+        name: "Filter group operator",
+      }),
+    ).toHaveValue("or");
+    fireEvent.change(
+      within(nestedComposer).getByRole("combobox", {
+        name: "Column for second condition",
+      }),
+      { target: { value: "status" } },
+    );
+    fireEvent.input(
+      within(nestedComposer).getByRole("textbox", {
+        name: "Value for second condition",
+      }),
+      { target: { value: "pending" } },
+    );
+    fireEvent.click(
+      within(nestedComposer).getByRole("button", { name: "Create group" }),
+    );
+    await waitFor(() => expect(sql()).toMatch(/status.*OR.*status/i));
+    await waitFor(() => {
+      const connectors = screen.getAllByRole("combobox", {
+        name: "Filter group operator",
+      });
+      expect(connectors[0]).toHaveValue("and");
+      expect(connectors.at(-1)).toHaveValue("or");
+    });
   });
 
   it("adds ordered fields through the shared task editor", async () => {
@@ -375,17 +1077,25 @@ describe("SQL Filter and Sort task editors", () => {
         onAdvanced={() => {}}
       />
     ));
+    fireEvent.click(
+      await screen.findAllByRole("button", { name: "Add condition" }).then(
+        (buttons) => buttons.at(-1)!,
+      ),
+    );
     const columnSelect = await screen.findByRole("combobox", {
-      name: "Column",
+      name: "Column for new filter",
     });
     await waitFor(() =>
       expect(columnSelect.querySelectorAll("option").length).toBe(2)
     );
     expect(screen.queryByRole("option", { name: "field_amount" })).toBeNull();
     fireEvent.change(columnSelect, { target: { value: "display value" } });
-    fireEvent.input(screen.getByRole("textbox", { name: "Value" }), {
-      target: { value: "closed" },
-    });
+    fireEvent.input(
+      screen.getByRole("textbox", { name: "Value for new filter" }),
+      {
+        target: { value: "closed" },
+      },
+    );
     fireEvent.click(screen.getByRole("button", { name: "Add filter" }));
     await waitFor(() =>
       expect(sql()).toContain(
@@ -428,14 +1138,16 @@ describe("SQL Filter and Sort task editors", () => {
       />
     ));
     const filterColumn = await screen.findByRole("combobox", {
-      name: "Column",
+      name: "Column for new filter",
     });
     await waitFor(() =>
       expect(filterColumn.querySelectorAll("option").length).toBe(2)
     );
     expect(screen.queryByRole("option", { name: "secret" })).toBeNull();
     fireEvent.change(filterColumn, { target: { value: "field_amount" } });
-    const filterOperators = screen.getByRole("combobox", { name: "Operator" });
+    const filterOperators = screen.getByRole("combobox", {
+      name: "Operator for new filter",
+    });
     await waitFor(() =>
       expect(filterOperators.querySelectorAll("option").length).toBe(1)
     );
@@ -476,7 +1188,9 @@ describe("SQL Filter and Sort task editors", () => {
         onAdvanced={() => {}}
       />
     ));
-    const column = await screen.findByRole("combobox", { name: "Column" });
+    const column = await screen.findByRole("combobox", {
+      name: "Column for new filter",
+    });
     fireEvent.change(column, { target: { value: "field_amount" } });
     setAllowed(false);
     fireEvent.click(screen.getByRole("button", { name: "Add filter" }));
@@ -502,9 +1216,30 @@ describe("SQL Filter and Sort task editors", () => {
     await waitFor(() =>
       expect(screen.queryByRole("option", { name: "field_amount" })).toBeNull()
     );
-    fireEvent.click(screen.getByRole("button", { name: "Add filter" }));
-    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add filter" })).toBeNull();
+    expect(
+      screen.getAllByRole("button", { name: "Advanced structure…" }),
+    ).toHaveLength(1);
     expect(sql()).toBe("SELECT * FROM tenant_a.Form");
+  });
+
+  it("keeps one Advanced action when a predicate needs SQL editing", async () => {
+    const [sql] = createSignal(
+      "SELECT * FROM \"form_expenses\" WHERE LOWER(field_amount) = 'five'",
+    );
+    render(() => (
+      <SqlFilterSortEditor
+        action="filter"
+        sql={sql}
+        contexts={() => [context]}
+        onSqlChange={() => {}}
+        onAdvanced={() => {}}
+      />
+    ));
+    await screen.findByRole("group", { name: "Advanced condition" });
+    expect(
+      screen.getAllByRole("button", { name: "Advanced structure…" }),
+    ).toHaveLength(1);
   });
 
   it.each(["submit", "sort edit", "undo"] as const)(
@@ -530,7 +1265,9 @@ describe("SQL Filter and Sort task editors", () => {
       ));
 
       if (path === "undo") {
-        const column = await screen.findByRole("combobox", { name: "Column" });
+        const column = await screen.findByRole("combobox", {
+          name: path === "sort edit" ? "Column" : "Column for new filter",
+        });
         await waitFor(() =>
           expect(column.querySelectorAll("option").length).toBeGreaterThan(1)
         );
@@ -574,7 +1311,7 @@ describe("SQL Filter and Sort task editors", () => {
           );
         } else {
           const column = await screen.findByRole("combobox", {
-            name: "Column",
+            name: "Column for new filter",
           });
           await waitFor(() =>
             expect(column.querySelectorAll("option").length).toBeGreaterThan(1)

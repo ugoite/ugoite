@@ -63,6 +63,15 @@ Edits, Undo, and Redo use exact-source, host-scoped Rust transactions; a moved
 field retains its focused control. Positional sorting and grouping obey
 `REQ-SQL-001#criterion.projection-position-bindings`.
 
+Filter presents supported comparisons already present in a simple Form query
+as editable conditions in their existing AND/OR groups. Users can change a
+group connector, edit or remove a comparison, and add or remove nested groups
+while keeping unrelated predicate meaning intact. A predicate the condition
+editor cannot safely represent remains available through Advanced structure;
+the editor does not silently discard or regenerate it. New declared arguments
+created from a condition are applied with that condition in one guarded Rust
+transaction, so Undo and Redo restore SQL and argument metadata together.
+
 The argument action is available with no arguments declared. SQL placeholders
 are paired with explicit, typed declarations; unused, undefined, duplicated,
 or incompatible arguments produce local lint errors. Text inside string

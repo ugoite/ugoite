@@ -15,10 +15,10 @@ use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::composition::{
     canonicalize_composition, CompositionComponent, CompositionDiagnosticCode, CompositionDocument,
     CompositionFormat, CompositionKind, CompositionSpec, DashboardFlowLayout, FlowItem,
-    FlowLayoutKind, FlowRow, VariableGraphArgumentBinding, VariableGraphLiteral, VariableGraphNode,
-    VariableGraphNodeKind, VariableGraphQuery, VariableGraphQueryDefinition,
-    VariableGraphResultType, VariableGraphScalarDescriptor, VariableGraphScalarType,
-    VariableGraphValidatedResult,
+    FlowLayoutKind, FlowRow, VariableGraphArgumentBinding, VariableGraphFormBinding,
+    VariableGraphLiteral, VariableGraphNode, VariableGraphNodeKind, VariableGraphQuery,
+    VariableGraphQueryDefinition, VariableGraphResultType, VariableGraphScalarDescriptor,
+    VariableGraphScalarType, VariableGraphValidatedResult,
 };
 use ugoite_domain::form::{sql_column_name, sql_relation_name};
 use ugoite_domain::id::{EntryId, FieldId, FormId, RevisionId};
@@ -106,6 +106,136 @@ async fn setup_preview_space() -> Result<(UgoiteService, String, CompositionDocu
         },
     };
     Ok((service, space_id, document, form.form_id))
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_empty_form_preview_and_draft_evaluation_keep_form_snapshot_consistent(
+) -> Result<()> {
+    let op = common::setup_operator()?;
+    let service = UgoiteService::from_operator(
+        op,
+        format!("memory://composition-empty-form-race-{}", Uuid::now_v7()),
+    );
+    let owner = Uuid::from_u128(3_434_002);
+    let space_id = service
+        .create_space_for_principal("composition-empty-form-race", owner, "Owner")
+        .await?
+        .to_string();
+    let form_name = format!("Empty-Records-{}", Uuid::now_v7().simple());
+    let form = service
+        .upsert_form_result(
+            &space_id,
+            &json!({
+                "name": form_name,
+                "fields": {
+                    "Name": {"id": 100, "type": "string", "required": true},
+                    "Quantity": {"id": 101, "type": "integer", "required": true}
+                }
+            }),
+        )
+        .await?;
+    let variable_id = "empty_rows";
+    let document = CompositionDocument {
+        format: CompositionFormat::UgoiteComposition,
+        format_version: 1,
+        kind: CompositionKind::Dashboard,
+        name: "Empty Form table".to_owned(),
+        spec: CompositionSpec {
+            variables: vec![VariableGraphNode {
+                id: variable_id.to_owned(),
+                kind: VariableGraphNodeKind::Query {
+                    returns: VariableGraphResultType::Table {
+                        columns: Vec::new(),
+                    },
+                    query: VariableGraphQuery {
+                        definition: VariableGraphQueryDefinition::InlineSql {
+                            sql: format!("SELECT * FROM \"{form_name}\""),
+                        },
+                        arguments: Vec::new(),
+                        form_bindings: vec![VariableGraphFormBinding {
+                            relation: form_name.clone(),
+                            form_id: form.form_id,
+                        }],
+                        schema_fingerprint: String::new(),
+                    },
+                },
+            }],
+            components: vec![CompositionComponent::Table {
+                id: "table".to_owned(),
+                variable: variable_id.to_owned(),
+            }],
+            layout: DashboardFlowLayout {
+                kind: FlowLayoutKind::Flow,
+                rows: vec![FlowRow {
+                    id: "main".to_owned(),
+                    items: vec![FlowItem::Component {
+                        component: "table".to_owned(),
+                    }],
+                }],
+            },
+        },
+    };
+    let yaml = canonicalize_composition(&document)
+        .map_err(|code| anyhow::anyhow!(code.as_str()))?
+        .yaml;
+
+    // Save starts a metadata preview while the designer may still evaluate
+    // the empty Form table. Stress the same snapshot-sensitive service paths
+    // together and retain full anyhow chains when either call fails.
+    for iteration in 0..24 {
+        let service = service.clone();
+        let space_id = space_id.clone();
+        let yaml = yaml.clone();
+        let preview_service = service.clone();
+        let preview_space = space_id.clone();
+        let preview_yaml = yaml.clone();
+        let preview_principals = vec![owner];
+        let preview_task = tokio::spawn(async move {
+            preview_service
+                .preview_composition_authorized_for_principals(
+                    &preview_space,
+                    &preview_yaml,
+                    &BTreeMap::new(),
+                    &[],
+                    &preview_principals,
+                )
+                .await
+                .map_err(|error| anyhow::anyhow!("preview round {iteration} failed: {error:#}"))
+        });
+        let evaluation_task = tokio::spawn(async move {
+            let principals = vec![owner];
+            service
+                .evaluate_composition_graph_authorized_for_principals(
+                    &space_id,
+                    &principals,
+                    CompositionQueryEvaluationTarget::Draft { yaml },
+                    Uuid::now_v7(),
+                    None,
+                    None,
+                    &BTreeMap::new(),
+                    &[],
+                    Some(&[variable_id.to_owned()]),
+                    None,
+                )
+                .await
+                .map_err(|error| anyhow::anyhow!("evaluation round {iteration} failed: {error:#}"))
+        });
+        let preview = preview_task.await??;
+        let evaluation = evaluation_task.await??;
+        assert!(
+            preview.plan.is_some(),
+            "empty Form table draft should preview"
+        );
+        assert!(
+            evaluation.ok,
+            "empty Form table should evaluate: {evaluation:?}"
+        );
+        assert!(evaluation
+            .query_results
+            .get(variable_id)
+            .is_some_and(|result| matches!(result.result, VariableGraphValidatedResult::Table { ref rows, .. } if rows.is_empty())));
+    }
+    Ok(())
 }
 
 async fn save_local_composition(

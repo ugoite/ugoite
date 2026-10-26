@@ -39,6 +39,11 @@
           "path": "e2e/composition-studio-journey.test.ts",
           "kind": "test",
           "name": "Form bindings create variable-backed displays with explicit aggregation"
+        },
+        {
+          "path": "e2e/composition-studio-journey.test.ts",
+          "kind": "test",
+          "name": "Composition Studio adds a no-entry Form table beside an existing query and reopens it"
         }
       ]
     },
