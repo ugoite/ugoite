@@ -309,6 +309,8 @@ export function SqlConditionWorkspace(props: Props) {
     }
     if (["float", "double", "real"].includes(raw ?? "")) return "float";
     if (["bool", "boolean"].includes(raw ?? "")) return "boolean";
+    if (raw === "date") return "date";
+    if (["timestamp", "datetime"].includes(raw ?? "")) return "timestamp";
     return undefined;
   };
   const argumentsFor = (column: string) =>
@@ -319,6 +321,47 @@ export function SqlConditionWorkspace(props: Props) {
     (props.scalarVariables ?? []).filter((item) =>
       item.type === typeFor(column)
     );
+  const isValidDraft = (draft: LeafDraft, canCreateArgument: boolean) => {
+    if (!filterColumns().some((item) => item.name === draft.column)) {
+      return false;
+    }
+    if (!operatorOptions(draft.column).includes(draft.operator)) return false;
+    if (!valueInputOperators.has(draft.operator)) return true;
+    if (draft.source === "argument") {
+      if (
+        argumentsFor(draft.column).some((item) => item.name === draft.argument)
+      ) return true;
+      if (!canCreateArgument) return false;
+      const name = newArgumentName().trim();
+      if (!/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(name)) return false;
+      if (
+        (props.argumentDefinitions?.() ?? []).some((item) =>
+          item.name === name
+        ) || (props.reservedVariableNames?.() ?? []).includes(name)
+      ) return false;
+      if (
+        props.scalarVariables &&
+        !scalarsFor(draft.column).some((item) => item.id === newBinding())
+      ) return false;
+      if (
+        newArgumentDefault() &&
+        !parseSqlVariableDefault(
+          typeFor(draft.column) ?? "",
+          newArgumentDefault(),
+        ).valid
+      ) return false;
+      return true;
+    }
+    if (draft.valueKind === "number") {
+      return /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(
+        draft.value.trim(),
+      );
+    }
+    if (draft.valueKind === "boolean") {
+      return draft.value === "true" || draft.value === "false";
+    }
+    return true;
+  };
   const draftFor = (
     node: Extract<SqlDocumentConditionNode, { kind: "comparison" }>,
   ): LeafDraft => {
@@ -515,7 +558,7 @@ export function SqlConditionWorkspace(props: Props) {
       if (focusKey) {
         setTimeout(() => {
           document.querySelector<HTMLElement>(
-            `[data-condition-focus="${CSS.escape(focusKey)}"]`,
+            `[data-condition-focus="${focusKey}"]`,
           )?.focus();
         });
       }
@@ -1170,7 +1213,15 @@ export function SqlConditionWorkspace(props: Props) {
       <button
         type="button"
         class="ui-button ui-button-primary"
-        disabled={busy() || locked() || !newColumn()}
+        disabled={busy() || locked() ||
+          !isValidDraft({
+            column: newColumn(),
+            operator: newOperator(),
+            source: newValueSource(),
+            value: newValue(),
+            valueKind: newValueKind(),
+            argument: newArgument(),
+          }, true)}
         onClick={() => void addCondition(p.parentNodeId, p.scope)}
       >
         {t("sqlPage.structure.addFilter")}
@@ -1380,7 +1431,22 @@ export function SqlConditionWorkspace(props: Props) {
       <button
         type="button"
         class="ui-button ui-button-primary"
-        disabled={busy() || locked() || !newColumn() || !groupSecondColumn()}
+        disabled={busy() || locked() ||
+          !isValidDraft({
+            column: newColumn(),
+            operator: newOperator(),
+            source: newValueSource(),
+            value: newValue(),
+            valueKind: newValueKind(),
+            argument: newArgument(),
+          }, true) || !isValidDraft({
+            column: groupSecondColumn(),
+            operator: groupSecondOperator(),
+            source: groupSecondSource(),
+            value: groupSecondValue(),
+            valueKind: groupSecondValueKind(),
+            argument: groupSecondArgument(),
+          }, false)}
         onClick={() => void createGroup()}
       >
         {t("sqlPage.structure.createFilterGroup")}
