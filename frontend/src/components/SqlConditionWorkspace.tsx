@@ -1426,14 +1426,6 @@ export function SqlConditionWorkspace(props: Props) {
       >
         <span>{t("sqlPage.structure.advancedCondition")}</span>
         <code>{node.sql}</code>
-        <button
-          type="button"
-          class="ui-button ui-button-secondary"
-          disabled={busy() || locked()}
-          onClick={props.onAdvanced}
-        >
-          {t("sqlPage.structure.advancedStructure")}
-        </button>
       </div>
     );
   };
@@ -2033,13 +2025,6 @@ export function SqlConditionWorkspace(props: Props) {
                   <p role="status">
                     {t("sqlPage.structure.documentNoOperationTarget")}
                   </p>
-                  <button
-                    type="button"
-                    class="ui-button ui-button-secondary"
-                    onClick={props.onAdvanced}
-                  >
-                    {t("sqlPage.structure.advancedStructure")}
-                  </button>
                 </div>
               }
             >

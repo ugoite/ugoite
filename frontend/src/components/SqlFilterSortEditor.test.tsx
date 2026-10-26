@@ -691,6 +691,9 @@ describe("SQL Filter and Sort task editors", () => {
     await screen.findByRole("button", { name: "Advanced structure…" });
     expect(screen.queryByRole("button", { name: "Add filter" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Add group" })).toBeNull();
+    expect(
+      screen.getAllByRole("button", { name: "Advanced structure…" }),
+    ).toHaveLength(1);
   });
 
   it("retains filter history and restores focus across undo and redo", async () => {
@@ -1214,9 +1217,29 @@ describe("SQL Filter and Sort task editors", () => {
       expect(screen.queryByRole("option", { name: "field_amount" })).toBeNull()
     );
     expect(screen.queryByRole("button", { name: "Add filter" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Advanced structure…" }))
-      .toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", { name: "Advanced structure…" }),
+    ).toHaveLength(1);
     expect(sql()).toBe("SELECT * FROM tenant_a.Form");
+  });
+
+  it("keeps one Advanced action when a predicate needs SQL editing", async () => {
+    const [sql] = createSignal(
+      "SELECT * FROM \"form_expenses\" WHERE LOWER(field_amount) = 'five'",
+    );
+    render(() => (
+      <SqlFilterSortEditor
+        action="filter"
+        sql={sql}
+        contexts={() => [context]}
+        onSqlChange={() => {}}
+        onAdvanced={() => {}}
+      />
+    ));
+    await screen.findByRole("group", { name: "Advanced condition" });
+    expect(
+      screen.getAllByRole("button", { name: "Advanced structure…" }),
+    ).toHaveLength(1);
   });
 
   it.each(["submit", "sort edit", "undo"] as const)(
