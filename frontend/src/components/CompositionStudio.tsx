@@ -793,7 +793,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
         throw new Error("Aggregate field unavailable");
       }
       const { sql } = await compositionFormQuerySql(
-        form.name,
+        form.relation,
         component === "table"
           ? undefined
           : aggregate!.kind === "count"
@@ -827,7 +827,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
       const candidate = draftQuery("inline_sql", { sql }, [], returns);
       candidate.kind === "query" &&
         (candidate.query.form_bindings = [{
-          relation: form.name,
+          relation: form.relation,
           form_id: form.id,
         }]);
       const uniqueId = (base: string) => {
