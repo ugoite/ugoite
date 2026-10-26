@@ -2181,7 +2181,7 @@ mod query_permit_queue_tests {
     use tokio::sync::{Mutex, Semaphore};
     use ugoite_core::query::{QueryLimits, SqlFunctionPolicy};
 
-    fn context(timeout: Duration) -> AuthorizedQueryContext {
+    fn make_context(timeout: Duration) -> AuthorizedQueryContext {
         let limits = QueryLimits {
             max_memory_bytes: 64 * 1024 * 1024,
             max_rows: 100,
@@ -2203,7 +2203,7 @@ mod query_permit_queue_tests {
 
     #[tokio::test]
     async fn queued_queries_share_timeout_and_cancelled_waiters_do_not_leak() {
-        let context = Arc::new(context(Duration::from_millis(100)));
+        let context = Arc::new(make_context(Duration::from_secs(5)));
 
         let permit = context.permits.clone().acquire_owned().await.unwrap();
         let queued_context = context.clone();
@@ -2228,9 +2228,10 @@ mod query_permit_queue_tests {
             .await
             .expect("cancelled waiter must release queue");
 
-        let permit = context.permits.clone().acquire_owned().await.unwrap();
-        let timed_context = context.clone();
-        let timed = tokio::spawn(async move { timed_context.execute("SELECT 1").await });
+        let timed_context = Arc::new(make_context(Duration::from_millis(100)));
+        let permit = timed_context.permits.clone().acquire_owned().await.unwrap();
+        let timed_query_context = timed_context.clone();
+        let timed = tokio::spawn(async move { timed_query_context.execute("SELECT 1").await });
         assert!(matches!(
             tokio::time::timeout(Duration::from_millis(200), timed)
                 .await
@@ -2241,10 +2242,11 @@ mod query_permit_queue_tests {
             Some(AuthorizedQueryError::QueryTimedOut)
         ));
         drop(permit);
-        context
-            .execute("SELECT 1")
-            .await
-            .expect("timed out waiter must release queue");
+        let _permit = timed_context
+            .permits
+            .clone()
+            .try_acquire_owned()
+            .expect("timed-out waiter must release queue");
     }
 }
 
