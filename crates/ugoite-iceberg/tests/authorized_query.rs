@@ -3684,30 +3684,14 @@ async fn context_releases_concurrency_permits_after_errors() -> anyhow::Result<(
             .await?,
     );
     assert!(context.execute("SELECT count(*) FROM tasks").await.is_err());
-    assert!(context.execute("SELECT * FROM tasks").await.is_ok());
-
-    for entry in 54..63 {
-        append(&workspace, &tasks, entry, entry + 100, "many").await?;
-    }
-    let mut busy_policy = policy(&tasks, &(52..63).collect::<Vec<_>>());
-    busy_policy.limits.timeout = Duration::from_millis(50);
-    busy_policy.limits.function_policy = SqlFunctionPolicy::new(&[], &["count"], &[]);
-    let busy = std::sync::Arc::new(workspace.authorized_query_context(busy_policy).await?);
-    let running = busy.clone();
-    let task = tokio::spawn(async move {
-        running
-            .execute(
-                "SELECT count(*) FROM tasks a CROSS JOIN tasks b CROSS JOIN tasks c CROSS JOIN tasks d CROSS JOIN tasks e CROSS JOIN tasks f CROSS JOIN tasks g CROSS JOIN tasks h",
-            )
-            .await
-    });
-    tokio::task::yield_now().await;
-    let second = busy.execute("SELECT * FROM tasks").await;
-    let _ = task.await?;
-    assert!(
-        second.is_err(),
-        "the second concurrent query must fail closed"
-    );
+    // The deterministic held-permit test in query_context::query_permit_queue_tests
+    // covers bounded waiting, cancellation, and deadline expiry; this service
+    // test verifies that an execution error releases its permit.
+    let batches = context
+        .execute("SELECT * FROM tasks")
+        .await
+        .expect("a failed query must release its concurrency permit");
+    assert_eq!(batches.iter().map(|batch| batch.num_rows()).sum::<usize>(), 1);
     Ok(())
 }
 
