@@ -64,7 +64,7 @@ type LeafDraft = {
   operator: SqlDocumentFilterOperator;
   source: "literal" | "argument";
   value: string;
-  valueKind: "string" | "number" | "boolean";
+  valueKind: "string" | "number" | "boolean" | "null";
   argument: string;
 };
 type GroupTarget = { parentNodeId: number | null; queryNodeId: number };
@@ -214,7 +214,9 @@ export function SqlConditionWorkspace(props: Props) {
       if (!active || props.sql() !== source || props.scope?.() !== scope) {
         return;
       }
-      const view = document.conditions;
+      // Keep the editor usable while an older generated WASM bundle is loaded;
+      // the typed protocol always supplies this field.
+      const view = document.conditions ?? [];
       setConditions(view);
       setNodeKindsById(
         Object.fromEntries(document.nodes.map((node) => [node.id, node.kind])),
@@ -360,6 +362,7 @@ export function SqlConditionWorkspace(props: Props) {
     if (draft.valueKind === "boolean") {
       return draft.value === "true" || draft.value === "false";
     }
+    if (draft.valueKind === "null") return true;
     return true;
   };
   const draftFor = (
@@ -376,6 +379,8 @@ export function SqlConditionWorkspace(props: Props) {
       ? "number"
       : rawValue?.kind === "boolean"
       ? "boolean"
+      : rawValue?.kind === "null"
+      ? "null"
       : "string";
     return {
       column: col,
@@ -466,7 +471,8 @@ export function SqlConditionWorkspace(props: Props) {
           throw new Error(t("sqlPage.structure.documentEnterValue"));
         }
         literal = { kind: "boolean", value: draft.value === "true" };
-      } else literal = { kind: "string", value: draft.value };
+      } else if (draft.valueKind === "null") literal = { kind: "null" };
+      else literal = { kind: "string", value: draft.value };
     }
     const columnRef = {
       ...(qualifier ? { qualifier } : {}),
@@ -935,17 +941,80 @@ export function SqlConditionWorkspace(props: Props) {
             <Show
               when={draft().source === "argument"}
               fallback={
-                <label class="ui-field">
-                  <span>{t("sqlPage.structure.value")}</span>
-                  <input
-                    class="ui-input"
-                    aria-label={t("sqlPage.structure.value")}
-                    value={draft().value}
-                    disabled={busy() || locked()}
-                    onInput={(event) =>
-                      setDraft({ value: event.currentTarget.value })}
-                  />
-                </label>
+                <>
+                  <label class="ui-field">
+                    <span>{t("sqlPage.structure.documentValueKind")}</span>
+                    <select
+                      class="ui-input"
+                      data-condition-focus={`${node.node_id}:value-kind`}
+                      aria-label={t("sqlPage.structure.documentValueKind")}
+                      value={draft().valueKind}
+                      disabled={busy() || locked()}
+                      onChange={(event) =>
+                        setDraft({
+                          valueKind: event.currentTarget
+                            .value as LeafDraft["valueKind"],
+                          value: event.currentTarget.value === "null"
+                            ? ""
+                            : draft().value,
+                        })}
+                    >
+                      <option value="string">
+                        {t("sqlPage.structure.documentString")}
+                      </option>
+                      <option value="number">
+                        {t("sqlPage.structure.documentNumber")}
+                      </option>
+                      <option value="boolean">
+                        {t("sqlPage.structure.literal.boolean")}
+                      </option>
+                      <option value="null">NULL</option>
+                    </select>
+                  </label>
+                  <label class="ui-field">
+                    <span>{t("sqlPage.structure.value")}</span>
+                    <Show
+                      when={draft().valueKind === "boolean" ||
+                        draft().valueKind === "null"}
+                      fallback={
+                        <input
+                          class="ui-input"
+                          data-condition-focus={`${node.node_id}:value`}
+                          aria-label={t("sqlPage.structure.value")}
+                          value={draft().value}
+                          disabled={busy() || locked()}
+                          onInput={(event) =>
+                            setDraft({ value: event.currentTarget.value })}
+                        />
+                      }
+                    >
+                      <select
+                        class="ui-input"
+                        data-condition-focus={`${node.node_id}:value`}
+                        aria-label={t("sqlPage.structure.value")}
+                        value={draft().valueKind === "null"
+                          ? "null"
+                          : draft().value}
+                        disabled={busy() || locked()}
+                        onChange={(event) =>
+                          setDraft({
+                            value: event.currentTarget.value === "null"
+                              ? ""
+                              : event.currentTarget.value,
+                          })}
+                      >
+                        <option value="">
+                          {t("sqlPage.structure.documentChooseValue")}
+                        </option>
+                        <option value="true">TRUE</option>
+                        <option value="false">FALSE</option>
+                        <Show when={draft().valueKind === "null"}>
+                          <option value="null">NULL</option>
+                        </Show>
+                      </select>
+                    </Show>
+                  </label>
+                </>
               }
             >
               <label class="ui-field">
