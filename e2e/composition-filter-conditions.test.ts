@@ -141,6 +141,9 @@ test("Composition inline SQL filters preserve scalar bindings through nested gro
     .fill("5");
   await groupComposer.getByRole("button", { name: "Create group", exact: true })
     .click();
+  await expect.poll(() =>
+    filter.evaluate((dialog) => dialog.contains(document.activeElement))
+  ).toBe(true);
   await expect(page.locator(".cm-content")).toContainText("OR");
   await expect(page.locator(".cm-content")).toContainText("$minimum");
   await expect(minimumBinding).toHaveValue("minimum");

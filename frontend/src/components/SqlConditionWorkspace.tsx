@@ -873,6 +873,14 @@ export function SqlConditionWorkspace(props: Props) {
         first.nextBindings,
       );
       setGroupTarget(null);
+      const focusKey = `add-filter:${scope.query_node_id}:${
+        target.parentNodeId ?? "root"
+      }`;
+      setTimeout(() => {
+        globalThis.document?.querySelector<HTMLElement>(
+          `[data-condition-focus="${focusKey}"]`,
+        )?.focus();
+      });
     } catch (cause) {
       setError(
         cause instanceof Error
@@ -1224,6 +1232,9 @@ export function SqlConditionWorkspace(props: Props) {
         <span>{t("sqlPage.structure.column")}</span>
         <select
           class="ui-input"
+          data-condition-focus={`add-filter:${p.scope.query_node_id}:${
+            p.parentNodeId ?? "root"
+          }`}
           aria-label={t("sqlPage.structure.addFilterColumn")}
           value={newColumn()}
           disabled={busy() || locked()}
