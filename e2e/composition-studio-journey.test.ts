@@ -1032,7 +1032,7 @@ test.describe("Composition Studio Journey", () => {
     test.setTimeout(120_000);
     const spaceId = await createSpace(request);
     const suffix = crypto.randomUUID().slice(0, 8);
-    const formName = `Empty Records ${suffix} 名称`;
+    const formName = `EmptyRecords${suffix}`;
     const sqlName = `Existing composition query ${suffix}`;
     const compositionName = `Form table composition ${suffix}`;
     const formResponse = await request.post(
