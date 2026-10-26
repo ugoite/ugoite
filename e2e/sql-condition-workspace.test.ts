@@ -272,8 +272,9 @@ test("REQ-SQL-003 @smoke: edits nested Filter conditions, runs, and reopens the 
   await connectorDialog.locator("footer").getByRole("button", { name: "Close" })
     .click();
   expect(await runQueryAndReadFixtureNames(page, spaceId)).toEqual([]);
-  await expect(results).not.toContainText("A", { timeout: 30_000 });
-  await expect(results).not.toContainText("C");
+  await expect(results).toHaveCount(0);
+  await expect(page.getByText("The query returned no rows.", { exact: true }))
+    .toBeVisible();
 
   await page.getByRole("button", { name: "Filter", exact: true }).click();
   const undoDialog = page.getByRole("dialog", { name: "Filter", exact: true });
