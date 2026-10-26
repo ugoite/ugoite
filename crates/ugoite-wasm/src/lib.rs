@@ -2550,7 +2550,7 @@ mod tests {
             SqlDocumentSemanticLiteral, SQL_DOCUMENT_CONTRACT_VERSION,
         };
 
-        let source = "SELECT * FROM \"G\" WHERE age >= 18 AND name = 'Ada'";
+        let source = "SELECT * FROM \"G\" WHERE age >= 18 AND name IS NOT NULL";
         let document = ugoite_domain::sql_document::parse_sql_document(source);
         assert!(matches!(
             document.conditions[0].expression,
@@ -2606,6 +2606,10 @@ mod tests {
             serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
         assert_eq!(response["ok"], true, "{response}");
         assert_eq!(response["value"], serde_json::to_value(&native).unwrap());
+        assert!(native
+            .document
+            .source
+            .contains("age >= 18 AND name IS NOT NULL"));
         assert!(native
             .document
             .source
