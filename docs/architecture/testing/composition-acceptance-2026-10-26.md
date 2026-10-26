@@ -36,7 +36,7 @@ the permit is occupied. The concurrency limit is unchanged.
   Document WASM protocol tests: 52 passed. Focused authorized execution, Form
   identity, permit timeout/cancellation, and concurrent empty-Form preview and
   evaluation regressions also passed.
-- Related frontend tests: 205 passed across nine files against the release WASM
+- Related frontend tests: 206 passed across nine files against the release WASM
   adapter. This includes pending-draft safety, failed Apply recovery, focus,
   existing-condition editing, and atomic argument/binding changes.
 - The no-entry Form Table creation, save, and reopen browser journey passed five
@@ -59,6 +59,13 @@ the permit is occupied. The concurrency limit is unchanged.
   corrections to its CodeMirror newline, empty-result, and argument-diagnostic
   assertions. Its corrected focused rerun passed before the final 16/16 run.
   These results establish the named paths, not the full acceptance matrix.
+- Screenshot review then removed redundant Advanced actions from unsupported
+  states. The final production frontend at
+  `31b4de19b1b1a4821477eabae3742a29bf6814a4` passed the 206 related frontend
+  tests and a focused SQL browser rerun (1/1 in 7.7 seconds). That rerun also
+  positively verifies editable Name/Status conditions after reopening saved SQL;
+  its 390px screenshot shows one Advanced action. This final render change does
+  not alter condition mutations or bindings.
 - The production frontend build at `56c163da868068457b41f0534f9a4bd4fff3a8af`
   and native server build at `dfaa7d0a874909ffc7dc2e8f1ca29069906b49f2` passed.
   Later native changes add tests only. Owning-crate Clippy, formatting, Deno
