@@ -4277,8 +4277,8 @@ fn validate_filter_condition_target(
                         .is_some_and(|root| condition_tree_contains(root, source.id))
                 });
                 if !source_in_conditions
-                    || query_ancestor_id(document, source.id)
-                        != query_ancestor_id(document, node.id)
+                    || condition_scope_owner_id(document, source.id)
+                        != condition_scope_owner_id(document, node.id)
                 {
                     return Err(SqlDocumentEditError::InvalidSemanticReplacement);
                 }
@@ -4317,6 +4317,21 @@ fn condition_tree_contains(condition: &SqlDocumentConditionNode, node_id: u32) -
             node_id: current, ..
         } => *current == node_id,
     }
+}
+
+fn condition_scope_owner_id(document: &SqlDocument, node_id: u32) -> Option<u32> {
+    document.conditions.iter().find_map(|scope| {
+        scope
+            .expression
+            .as_ref()
+            .filter(|root| condition_tree_contains(root, node_id))?;
+        let where_id = scope.where_clause_node_id?;
+        document
+            .nodes
+            .get(where_id as usize)
+            .filter(|clause| clause.id == where_id)
+            .and_then(|clause| clause.parent)
+    })
 }
 
 fn condition_semantic_edit(
@@ -4371,22 +4386,9 @@ fn condition_semantic_edit(
                     .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?
                     + 5;
                 let predicate = old[where_pos..].trim();
-                let connector = document
-                    .nodes
-                    .iter()
-                    .find(|candidate| {
-                        candidate.parent == Some(node.id) && is_expression_node_kind(candidate.kind)
-                    })
-                    .and_then(|root| match root.semantic.as_ref() {
-                        Some(SqlDocumentNodeData::BinaryOperator { operator })
-                            if operator.eq_ignore_ascii_case("OR") =>
-                        {
-                            Some("OR")
-                        }
-                        _ => None,
-                    })
-                    .unwrap_or("AND");
-                format!("{} ({predicate}) {connector} ({sql})", &old[..where_pos])
+                // A root-level addition must narrow the whole existing
+                // predicate, regardless of its internal AND/OR structure.
+                format!("{} ({predicate}) AND ({sql})", &old[..where_pos])
             } else {
                 let connector = match node.semantic.as_ref() {
                     Some(SqlDocumentNodeData::BinaryOperator { operator })
@@ -4426,8 +4428,8 @@ fn condition_semantic_edit(
                             candidate.id == *node_id && candidate.kind == *expected_kind
                         })
                         .ok_or(SqlDocumentEditError::NodeNotFound)?;
-                    if query_ancestor_id(document, source.id)
-                        != query_ancestor_id(document, node.id)
+                    if condition_scope_owner_id(document, source.id)
+                        != condition_scope_owner_id(document, node.id)
                     {
                         return Err(SqlDocumentEditError::InvalidSemanticReplacement);
                     }
@@ -4453,6 +4455,22 @@ fn condition_semantic_edit(
         SqlDocumentSemanticEdit::RemoveFilterCondition { .. } => {
             if node.kind == SqlDocumentNodeKind::WhereClause {
                 return remove_filter_clause(document, node).map(Some);
+            }
+            if let Some(scope) = document.conditions.iter().find(|scope| {
+                scope.expression.as_ref().is_some_and(|root| match root {
+                    SqlDocumentConditionNode::Group { node_id, .. }
+                    | SqlDocumentConditionNode::Comparison { node_id, .. }
+                    | SqlDocumentConditionNode::Advanced { node_id, .. } => *node_id == node.id,
+                })
+            }) {
+                if let Some(where_id) = scope.where_clause_node_id {
+                    let clause = document
+                        .nodes
+                        .get(where_id as usize)
+                        .filter(|candidate| candidate.id == where_id)
+                        .ok_or(SqlDocumentEditError::NodeNotFound)?;
+                    return remove_filter_clause(document, clause).map(Some);
+                }
             }
             let parent = node
                 .parent
@@ -4778,9 +4796,43 @@ fn remove_clause_node(
     {
         return Err(SqlDocumentEditError::InvalidSemanticReplacement);
     }
-    let range = clause
+    let mut range = clause
         .range
         .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+    // The parser may attach enclosing predicate parentheses outside the
+    // WHERE/HAVING clause range. Removing the clause must consume those
+    // matching closers too, or it leaves an invalid dangling `))`.
+    loop {
+        let trailing = document
+            .tokens
+            .iter()
+            .position(|token| token.range.start >= range.end);
+        let Some(trailing) = trailing else { break };
+        let close = document.tokens[trailing..]
+            .iter()
+            .position(|token| !matches!(token.kind, SqlDocumentTokenKind::Trivia))
+            .map(|offset| trailing + offset);
+        let Some(close) = close else { break };
+        if token_text(&document.source, &document.tokens[close]) != Some(")") {
+            break;
+        }
+        let matching_open =
+            document.tokens[..close]
+                .iter()
+                .enumerate()
+                .rev()
+                .find_map(|(index, token)| {
+                    (token.range.start >= range.start
+                        && token_text(&document.source, token) == Some("(")
+                        && matching_close_paren(&document.source, &document.tokens, index)
+                            == Some(close))
+                    .then_some(token.range.start)
+                });
+        if matching_open.is_none() {
+            break;
+        }
+        range.end = document.tokens[close].range.end;
+    }
     if range_has_comment(document, range) {
         return Err(SqlDocumentEditError::NodeRangeUnavailable);
     }
@@ -18238,7 +18290,7 @@ mod tests {
             },
         )
         .unwrap();
-        assert!(inserted.document.source.contains("OR (score >= 10)"));
+        assert!(inserted.document.source.contains("AND (score >= 10)"));
         let restored =
             apply_sql_document_edit_transaction(&inserted.document.source, &inserted.undo).unwrap();
         assert_eq!(restored.document.source, source);
@@ -18333,6 +18385,203 @@ mod tests {
                             operator: SqlDocumentFilterOperator::Gt,
                             value: Some(SqlDocumentSemanticLiteral::Number { value: "2".into() }),
                         }
+                    }],
+                }
+            ),
+            Err(SqlDocumentEditError::InvalidSemanticReplacement)
+        );
+    }
+
+    #[test]
+    fn condition_edge_cases_preserve_scope_and_validate_literals() {
+        fn remove(
+            source: &str,
+            id: u32,
+            kind: SqlDocumentNodeKind,
+        ) -> Result<SqlDocumentEditResult, SqlDocumentEditError> {
+            apply_sql_document_semantic_edit_transaction(
+                source,
+                &SqlDocumentSemanticEditTransaction {
+                    contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+                    expected_source: source.to_owned(),
+                    edits: vec![SqlDocumentSemanticEdit::RemoveFilterCondition {
+                        node_id: id,
+                        expected_kind: kind,
+                    }],
+                },
+            )
+        }
+
+        let root_source = "SELECT * FROM G WHERE ((a = 1))";
+        let root_doc = parse_sql_document(root_source);
+        let root = root_doc.conditions[0].expression.as_ref().unwrap();
+        let root_id = match root {
+            SqlDocumentConditionNode::Comparison { node_id, .. }
+            | SqlDocumentConditionNode::Group { node_id, .. }
+            | SqlDocumentConditionNode::Advanced { node_id, .. } => *node_id,
+        };
+        let root_kind = root_doc.nodes[root_id as usize].kind;
+        let removed_root = remove(root_source, root_id, root_kind);
+        assert!(
+            removed_root.is_ok(),
+            "root predicate removal should remove WHERE: {removed_root:?}"
+        );
+        let removed_root = removed_root.unwrap();
+        assert!(!removed_root
+            .document
+            .source
+            .to_ascii_uppercase()
+            .contains("WHERE"));
+
+        let nested_source = "SELECT * FROM G WHERE (a = 1 AND (b = 2 OR c = 3)) AND d = 4";
+        let nested_doc = parse_sql_document(nested_source);
+        let SqlDocumentConditionNode::Group { children, .. } =
+            nested_doc.conditions[0].expression.as_ref().unwrap()
+        else {
+            panic!("root AND group")
+        };
+        let SqlDocumentConditionNode::Group {
+            node_id: nested_id, ..
+        } = &children[0]
+        else {
+            panic!("nested group")
+        };
+        let nested_kind = nested_doc.nodes[*nested_id as usize].kind;
+        let nested_removed = remove(nested_source, *nested_id, nested_kind).unwrap();
+        assert!(nested_removed.document.source.contains("d = 4"));
+        assert!(!nested_removed.document.source.contains("b = 2"));
+        assert!(!nested_removed.document.source.contains("c = 3"));
+
+        let duplicate = SqlDocumentFilterCondition::Group {
+            operator: SqlDocumentConditionGroupOperator::And,
+            children: vec!["x".to_owned(), "x".to_owned()]
+                .into_iter()
+                .map(|_| SqlDocumentFilterCondition::Comparison {
+                    column: SqlDocumentColumnReference {
+                        qualifier: None,
+                        column: SqlDocumentIdentifier {
+                            value: "a".into(),
+                            quote_style: None,
+                        },
+                    },
+                    operator: SqlDocumentFilterOperator::Eq,
+                    value: Some(SqlDocumentSemanticLiteral::Number { value: "1".into() }),
+                })
+                .collect(),
+        };
+        let base = "SELECT * FROM G WHERE a = 1";
+        let base_doc = parse_sql_document(base);
+        let select = base_doc
+            .nodes
+            .iter()
+            .find(|n| n.kind == SqlDocumentNodeKind::Select)
+            .unwrap();
+        let inserted = apply_sql_document_semantic_edit_transaction(
+            base,
+            &SqlDocumentSemanticEditTransaction {
+                contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+                expected_source: base.into(),
+                edits: vec![SqlDocumentSemanticEdit::InsertFilterCondition {
+                    node_id: select.id,
+                    expected_kind: SqlDocumentNodeKind::Select,
+                    condition: duplicate.clone(),
+                }],
+            },
+        )
+        .unwrap();
+        assert_eq!(inserted.document.source.matches("a = 1").count(), 3);
+        let empty = SqlDocumentFilterCondition::Group {
+            operator: SqlDocumentConditionGroupOperator::And,
+            children: vec![],
+        };
+        let one = SqlDocumentFilterCondition::Group {
+            operator: SqlDocumentConditionGroupOperator::And,
+            children: vec![duplicate],
+        };
+        for (condition, expected_success) in [(empty, false), (one, true)] {
+            let attempt = apply_sql_document_semantic_edit_transaction(
+                base,
+                &SqlDocumentSemanticEditTransaction {
+                    contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+                    expected_source: base.into(),
+                    edits: vec![SqlDocumentSemanticEdit::InsertFilterCondition {
+                        node_id: select.id,
+                        expected_kind: SqlDocumentNodeKind::Select,
+                        condition,
+                    }],
+                },
+            );
+            assert_eq!(
+                attempt.is_ok(),
+                expected_success,
+                "empty groups are rejected; one-child groups remain constructible"
+            );
+        }
+
+        let malformed = SqlDocumentFilterCondition::Comparison {
+            column: SqlDocumentColumnReference {
+                qualifier: None,
+                column: SqlDocumentIdentifier {
+                    value: "a".into(),
+                    quote_style: None,
+                },
+            },
+            operator: SqlDocumentFilterOperator::Eq,
+            value: Some(SqlDocumentSemanticLiteral::Number {
+                value: "1 OR TRUE".into(),
+            }),
+        };
+        assert_eq!(
+            render_filter_condition(&malformed),
+            Err(SqlDocumentEditError::InvalidSemanticReplacement)
+        );
+        let escaped = SqlDocumentFilterCondition::Comparison {
+            column: SqlDocumentColumnReference {
+                qualifier: None,
+                column: SqlDocumentIdentifier {
+                    value: "a".into(),
+                    quote_style: None,
+                },
+            },
+            operator: SqlDocumentFilterOperator::Eq,
+            value: Some(SqlDocumentSemanticLiteral::String {
+                value: "x' OR TRUE --".into(),
+            }),
+        };
+        assert_eq!(
+            render_filter_condition(&escaped).unwrap(),
+            "a = 'x'' OR TRUE --'"
+        );
+
+        let union_source = "SELECT * FROM G WHERE a = 1 UNION SELECT * FROM G WHERE b = 2";
+        let union_doc = parse_sql_document(union_source);
+        let comparisons: Vec<_> = union_doc
+            .conditions
+            .iter()
+            .filter_map(|scope| scope.expression.as_ref())
+            .filter_map(|expression| match expression {
+                SqlDocumentConditionNode::Comparison { node_id, .. } => Some(*node_id),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(comparisons.len(), 2);
+        assert_ne!(
+            condition_scope_owner_id(&union_doc, comparisons[0]),
+            condition_scope_owner_id(&union_doc, comparisons[1])
+        );
+        assert_eq!(
+            apply_sql_document_semantic_edit_transaction(
+                union_source,
+                &SqlDocumentSemanticEditTransaction {
+                    contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+                    expected_source: union_source.into(),
+                    edits: vec![SqlDocumentSemanticEdit::UpdateFilterCondition {
+                        node_id: comparisons[0],
+                        expected_kind: SqlDocumentNodeKind::BinaryExpression,
+                        condition: SqlDocumentFilterCondition::CopyNode {
+                            node_id: comparisons[1],
+                            expected_kind: SqlDocumentNodeKind::BinaryExpression,
+                        },
                     }],
                 }
             ),
