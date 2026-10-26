@@ -158,7 +158,11 @@ test("REQ-SQL-003 @smoke: edits nested Filter conditions, runs, and reopens the 
     .click();
   await expect(filterGroups).toHaveCount(2);
   const createdNestedGroup = filterGroups.nth(1);
-  await expect(createdNestedGroup).toContainText("Any condition");
+  await expect(
+    createdNestedGroup.getByRole("combobox", {
+      name: "Filter group operator",
+    }),
+  ).toHaveValue("or");
   const createdStatusRows = createdNestedGroup.getByRole("group", {
     name: "Status",
     exact: true,
