@@ -18695,7 +18695,8 @@ mod tests {
             apply_sql_document_edit_transaction(&inserted.document.source, &inserted.undo).unwrap();
         assert_eq!(undone.document.source, base);
 
-        for spelling in ["0xFF"] {
+        {
+            let spelling = "0xFF";
             let unsupported = format!("SELECT * FROM G WHERE amount = {spelling}");
             let parsed = parse_sql_document(&unsupported);
             assert_eq!(parsed.status, SqlDocumentStatus::Parsed, "{spelling}");
