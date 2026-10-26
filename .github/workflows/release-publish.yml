@@ -39,7 +39,7 @@ jobs:
           github-token: ${{ github.token }}
           path: target/artifacts
 
-      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
         with:
           install: true
           cache: false
@@ -83,7 +83,7 @@ jobs:
           test "$run_status" = "completed"
           test "$run_conclusion" = "success"
 
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -127,7 +127,7 @@ jobs:
           github-token: ${{ github.token }}
           path: target/artifacts
 
-      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
         with:
           install: true
           cache: false
@@ -138,7 +138,7 @@ jobs:
           registry-url: https://npm.pkg.github.com
           scope: '@ugoite'
 
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -196,7 +196,7 @@ jobs:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
 
-      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
         with:
           install: true
           cache: false
@@ -207,7 +207,7 @@ jobs:
           registry-url: https://npm.pkg.github.com
           scope: '@ugoite'
 
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -247,7 +247,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
         with:
           install: true
           cache: false
@@ -299,7 +299,7 @@ jobs:
           github-token: ${{ github.token }}
           path: target/artifacts
 
-      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
         with:
           install: true
           cache: false
@@ -310,7 +310,7 @@ jobs:
           registry-url: https://npm.pkg.github.com
           scope: '@ugoite'
 
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
