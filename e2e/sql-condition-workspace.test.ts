@@ -377,6 +377,17 @@ test("REQ-SQL-003 @smoke: edits nested Filter conditions, runs, and reopens the 
     name: "Filter",
     exact: true,
   });
+  const reopenedConditions = reopenedFilter.getByRole("region", {
+    name: "Filters",
+    exact: true,
+  });
+  await expect(reopenedConditions).not.toContainText(
+    "This SQL condition cannot be edited with these controls.",
+  );
+  await expect(reopenedConditions.getByRole("group", {
+    name: "Filter group",
+  }).first()).toContainText("Name");
+  await expect(reopenedConditions).toContainText("Status");
   for (const width of [320, 375, 390]) {
     await page.setViewportSize({ width, height: 844 });
     const dimensions = await reopenedFilter.evaluate((dialog) => {
