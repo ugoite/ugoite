@@ -39,7 +39,7 @@ features:
           - id: condition-tree-transactions
             adapter: rust
             path: crates/ugoite-domain/src/sql_document.rs
-            selector: { kind: symbol, name: apply_sql_document_semantic_edit_transaction }
+            selector: { kind: symbol, name: condition_semantic_edit }
             claims:
               - kind: satisfies
                 criterion: REQ-SQL-003#criterion.condition-group-editing
