@@ -139,11 +139,20 @@ const isComparison = (
 ): node is Extract<SqlDocumentConditionNode, { kind: "comparison" }> =>
   node.kind === "comparison";
 
+const scheduleNextFrame = (callback: () => void) => {
+  if (typeof globalThis.requestAnimationFrame === "function") {
+    globalThis.requestAnimationFrame(() => callback());
+  } else {
+    setTimeout(callback, 0);
+  }
+};
+
 /** Beginner-facing editor for the parser-derived WHERE condition tree. */
 export function SqlConditionWorkspace(props: Props) {
   const [conditions, setConditions] = createSignal<
     readonly SqlDocumentConditionScope[]
   >([]);
+  const [parsedSource, setParsedSource] = createSignal<string>();
   const [selectIdsByQuery, setSelectIdsByQuery] = createSignal<
     Record<number, number>
   >({});
@@ -201,12 +210,14 @@ export function SqlConditionWorkspace(props: Props) {
   const redo = props.historyState?.redo ?? localRedo;
   const setRedo = props.historyState?.setRedo ?? setLocalRedo;
   let generation = 0;
+  let focusSchedule = 0;
   let lastConditionFocusKey: string | undefined;
   const [pendingConditionFocusKey, setPendingConditionFocusKey] = createSignal<
     string | undefined
   >();
   onCleanup(() => {
     generation++;
+    focusSchedule++;
   });
   let priorScope = props.scope?.();
   let priorSource = props.sql();
@@ -353,6 +364,7 @@ export function SqlConditionWorkspace(props: Props) {
           Object.entries(old).filter(([id]) => ids.has(Number(id))),
         )
       );
+      setParsedSource(source);
     }).catch((cause) => {
       if (active && props.sql() === source && props.scope?.() === scope) {
         setError(
@@ -366,13 +378,33 @@ export function SqlConditionWorkspace(props: Props) {
   createEffect(() => {
     const focusKey = pendingConditionFocusKey();
     if (!focusKey || busy() || locked()) return;
-    conditions();
-    const target = globalThis.document?.querySelector<HTMLElement>(
-      `[data-condition-focus="${focusKey}"]`,
-    );
-    if (!target || target.matches(":disabled")) return;
-    setPendingConditionFocusKey(undefined);
-    target.focus();
+    const source = props.sql();
+    const scope = props.scope?.();
+    if (parsedSource() !== source) return;
+    const schedule = ++focusSchedule;
+    let attempts = 0;
+    const tryFocus = () => {
+      if (
+        schedule !== focusSchedule || focusKey !== pendingConditionFocusKey() ||
+        generation !== requestGeneration || props.sql() !== source ||
+        props.scope?.() !== scope || busy() || locked() ||
+        parsedSource() !== source
+      ) return;
+      const target = globalThis.document?.querySelector<HTMLElement>(
+        `[data-condition-focus="${focusKey}"]`,
+      );
+      if (!target?.isConnected) {
+        if (attempts++ < 3) scheduleNextFrame(tryFocus);
+        return;
+      }
+      if (target.matches(":disabled")) return;
+      target.focus();
+      if (globalThis.document?.activeElement === target) {
+        setPendingConditionFocusKey(undefined);
+      }
+    };
+    const requestGeneration = generation;
+    scheduleNextFrame(tryFocus);
   });
   const contextFor = (scope: SqlDocumentConditionScope) => {
     if (scope.query_node_id !== supportedSelectId()) return undefined;
