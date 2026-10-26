@@ -327,7 +327,9 @@ test("REQ-SQL-003 @smoke: edits nested Filter conditions, runs, and reopens the 
     name: "Arguments",
     exact: true,
   });
-  await expect(unusedArguments.getByRole("alert")).toContainText(/unused/i);
+  await expect(unusedArguments.getByRole("alert")).toContainText(
+    "Argument is not referenced in SQL.",
+  );
   await unusedArguments.getByRole("button", {
     name: /Remove.*minimum/,
   }).click();
