@@ -238,6 +238,8 @@ export function SqlConditionWorkspace(props: Props) {
       const internal = source === nextInternalSource;
       nextInternalSource = undefined;
       if (!internal) {
+        focusSchedule++;
+        setPendingConditionFocusKey(undefined);
         setDrafts({});
         setGroupDrafts({});
         setGroupTarget(null);
@@ -248,6 +250,8 @@ export function SqlConditionWorkspace(props: Props) {
     }
     if (scope !== priorScope) {
       priorScope = scope;
+      focusSchedule++;
+      setPendingConditionFocusKey(undefined);
       setHistory([]);
       setRedo([]);
       setDrafts({});

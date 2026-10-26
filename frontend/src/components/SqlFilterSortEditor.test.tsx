@@ -536,6 +536,78 @@ describe("SQL Filter and Sort task editors", () => {
     );
   });
 
+  it.each(["source", "scope"] as const)(
+    "cancels deferred focus when the %s changes",
+    async (change) => {
+      const descriptor = Object.getOwnPropertyDescriptor(
+        globalThis,
+        "requestAnimationFrame",
+      );
+      const frames: FrameRequestCallback[] = [];
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: (callback: FrameRequestCallback) => {
+          frames.push(callback);
+          return frames.length;
+        },
+      });
+      try {
+        const [sql, setSql] = createSignal(
+          'SELECT * FROM "form_expenses" WHERE field_amount >= 4 AND field_amount <= 8',
+        );
+        const [scope, setScope] = createSignal("query:one");
+        render(() => (
+          <SqlFilterSortEditor
+            action="filter"
+            sql={sql}
+            scope={scope}
+            contexts={() => [context]}
+            onSqlChange={setSql}
+            onAdvanced={() => {}}
+          />
+        ));
+        const rows = await screen.findAllByRole("group", { name: "Amount" });
+        fireEvent.click(
+          within(rows[0]).getByRole("button", { name: "Remove filter" }),
+        );
+        await waitFor(() => expect(sql()).toContain("field_amount <= 8"));
+        await waitFor(() => expect(frames.length).toBeGreaterThan(0));
+
+        if (change === "source") {
+          setSql('SELECT * FROM "form_expenses" WHERE field_amount >= 12');
+        } else {
+          setScope("query:two");
+        }
+        await waitFor(() =>
+          expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled()
+        );
+        await waitFor(() =>
+          expect(screen.getAllByRole("group", { name: "Amount" })).toHaveLength(
+            1,
+          )
+        );
+        const editButton = screen.getByRole("button", {
+          name: "Edit condition",
+        });
+        editButton.focus();
+        while (frames.length) {
+          for (const frame of frames.splice(0)) frame(0);
+        }
+        expect(document.activeElement).toBe(editButton);
+      } finally {
+        if (descriptor) {
+          Object.defineProperty(
+            globalThis,
+            "requestAnimationFrame",
+            descriptor,
+          );
+        } else {
+          Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+        }
+      }
+    },
+  );
+
   it("keeps pending edits when applying a rejected condition transaction", async () => {
     const [sql, setSql] = createSignal(
       'SELECT * FROM "form_expenses" WHERE field_amount >= 4',
