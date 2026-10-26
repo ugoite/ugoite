@@ -674,6 +674,109 @@ describe("SQL Filter and Sort task editors", () => {
       .toBeNull();
   });
 
+  it("keeps the nested connector after undo and redo reuse condition IDs", async () => {
+    const statusContext: SqlStructureAdapterContext = {
+      ...context,
+      parser: {
+        ...context.parser,
+        columns: [{ name: "status", type: "string" }],
+      },
+      columnCapabilities: {
+        status: {
+          ...context.columnCapabilities.field_amount!,
+          supportedOperators: ["eq", "is_null", "is_not_null"],
+        },
+      },
+      columnLabels: { status: "Status" },
+    };
+    const [sql, setSql] = createSignal('SELECT * FROM "form_expenses"');
+    render(() => (
+      <SqlFilterSortEditor
+        action="filter"
+        sql={sql}
+        contexts={() => [statusContext]}
+        onSqlChange={setSql}
+        onAdvanced={() => {}}
+      />
+    ));
+    fireEvent.change(
+      await screen.findByRole("combobox", { name: "Column for new filter" }),
+      { target: { value: "status" } },
+    );
+    fireEvent.input(
+      screen.getByRole("textbox", { name: "Value for new filter" }),
+      { target: { value: "open" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add group" }));
+    const rootComposer = await screen.findByRole("group", {
+      name: "New filter group",
+    });
+    fireEvent.change(
+      within(rootComposer).getByRole("combobox", {
+        name: "Column for second condition",
+      }),
+      { target: { value: "status" } },
+    );
+    fireEvent.input(
+      within(rootComposer).getByRole("textbox", {
+        name: "Value for second condition",
+      }),
+      { target: { value: "blocked" } },
+    );
+    fireEvent.click(
+      within(rootComposer).getByRole("button", { name: "Create group" }),
+    );
+    await waitFor(() => expect(sql()).toContain("status"));
+    fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
+    await waitFor(() => expect(sql()).toBe('SELECT * FROM "form_expenses"'));
+    fireEvent.click(screen.getByRole("button", { name: "Redo" }));
+    await waitFor(() => expect(sql()).toContain("blocked"));
+
+    const rootGroup = await screen.findByRole("group", {
+      name: "Filter group",
+    });
+    fireEvent.click(
+      within(rootGroup).getByRole("button", { name: "Add group" }),
+    );
+    const nestedComposer = await screen.findByRole("group", {
+      name: "New filter group",
+    });
+    fireEvent.change(
+      within(nestedComposer).getByRole("combobox", {
+        name: "Filter group operator",
+      }),
+      { target: { value: "or" } },
+    );
+    expect(
+      within(nestedComposer).getByRole("combobox", {
+        name: "Filter group operator",
+      }),
+    ).toHaveValue("or");
+    fireEvent.change(
+      within(nestedComposer).getByRole("combobox", {
+        name: "Column for second condition",
+      }),
+      { target: { value: "status" } },
+    );
+    fireEvent.input(
+      within(nestedComposer).getByRole("textbox", {
+        name: "Value for second condition",
+      }),
+      { target: { value: "pending" } },
+    );
+    fireEvent.click(
+      within(nestedComposer).getByRole("button", { name: "Create group" }),
+    );
+    await waitFor(() => expect(sql()).toMatch(/status.*OR.*status/i));
+    await waitFor(() => {
+      const connectors = screen.getAllByRole("combobox", {
+        name: "Filter group operator",
+      });
+      expect(connectors[0]).toHaveValue("and");
+      expect(connectors.at(-1)).toHaveValue("or");
+    });
+  });
+
   it("adds ordered fields through the shared task editor", async () => {
     const [sql, setSql] = createSignal('SELECT * FROM "form_expenses"');
     render(() => (

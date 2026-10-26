@@ -239,6 +239,7 @@ export function SqlConditionWorkspace(props: Props) {
       setRedo([]);
       setDrafts({});
       setGroupDrafts({});
+      setGroupDrafts({});
       setGroupTarget(null);
       setAddTarget(null);
       setEditingNodeId(null);
@@ -978,6 +979,8 @@ export function SqlConditionWorkspace(props: Props) {
         setRedo(redo().slice(0, -1));
         setHistory([...history(), nextEntry].slice(-32));
       }
+      setDrafts({});
+      setGroupDrafts({});
     } catch (cause) {
       if (current(request, source, scope)) {
         setError(
@@ -1019,8 +1022,20 @@ export function SqlConditionWorkspace(props: Props) {
                     [node.node_id]: event.currentTarget.value as "and" | "or",
                   })}
               >
-                <option value="and">{t("sqlPage.structure.filterAll")}</option>
-                <option value="or">{t("sqlPage.structure.filterAny")}</option>
+                <option
+                  value="and"
+                  selected={(groupDrafts()[node.node_id] ?? node.operator) ===
+                    "and"}
+                >
+                  {t("sqlPage.structure.filterAll")}
+                </option>
+                <option
+                  value="or"
+                  selected={(groupDrafts()[node.node_id] ?? node.operator) ===
+                    "or"}
+                >
+                  {t("sqlPage.structure.filterAny")}
+                </option>
               </select>
             </label>
             <button
