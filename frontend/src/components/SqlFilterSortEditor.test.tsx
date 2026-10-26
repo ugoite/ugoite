@@ -365,12 +365,13 @@ describe("SQL Filter and Sort task editors", () => {
         },
       },
     };
+    const [contexts, setContexts] = createSignal([editableContext]);
     render(() => (
       <SqlFilterSortEditor
         action="filter"
         sql={sql}
         scope={() => "saved-query:query-a"}
-        contexts={() => [editableContext]}
+        contexts={contexts}
         argumentDefinitions={argumentsList}
         argumentBindings={bindings}
         onFilterEdit={edit}
@@ -395,6 +396,22 @@ describe("SQL Filter and Sort task editors", () => {
       { name: "unused", type: "string", description: "keep this declaration" },
     ]);
     expect(edit.mock.calls[0][0].resultArguments).toEqual(argumentsList());
+    setContexts([structuredClone(editableContext)]);
+    setArgumentsList(argumentsList().map((argument) => ({ ...argument })));
+    await waitFor(() => {
+      const refreshedRows = screen.getAllByRole("group", { name: "Amount" });
+      expect(
+        within(refreshedRows[0]).getByRole("combobox", { name: "Column" }),
+      ).toHaveValue("field_amount");
+      expect(
+        within(refreshedRows[0]).getByRole("combobox", {
+          name: "Declared argument",
+        }),
+      ).toHaveValue("minimum");
+      expect(
+        screen.getByRole("combobox", { name: "Column for new filter" }),
+      ).toHaveValue("");
+    });
     await waitFor(() =>
       expect(document.activeElement).toBe(
         document.querySelector('[data-condition-focus="7:operator"]'),

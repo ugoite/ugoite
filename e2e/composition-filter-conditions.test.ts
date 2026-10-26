@@ -144,6 +144,13 @@ test("Composition inline SQL filters preserve scalar bindings through nested gro
   await expect.poll(() =>
     filter.evaluate((dialog) => dialog.contains(document.activeElement))
   ).toBe(true);
+  for (
+    const column of await filter.getByRole("combobox", { name: "Column" }).all()
+  ) {
+    await expect(column).toHaveValue(amountColumn!);
+  }
+  await expect(filter.getByRole("combobox", { name: "Declared argument" }))
+    .toHaveValue("minimum");
   await expect(page.locator(".cm-content")).toContainText("OR");
   await expect(page.locator(".cm-content")).toContainText("$minimum");
   await expect(minimumBinding).toHaveValue("minimum");

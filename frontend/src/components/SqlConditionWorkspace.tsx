@@ -1037,7 +1037,10 @@ export function SqlConditionWorkspace(props: Props) {
             >
               <For each={filterColumns(scope)}>
                 {(column) => (
-                  <option value={column.name}>
+                  <option
+                    value={column.name}
+                    selected={column.name === draft().column}
+                  >
                     {contextFor(scope)?.columnLabels?.[column.name] ??
                       column.name}
                   </option>
@@ -1187,7 +1190,10 @@ export function SqlConditionWorkspace(props: Props) {
                   </option>
                   <For each={argumentsFor(draft().column, scope)}>
                     {(argument) => (
-                      <option value={argument.name}>
+                      <option
+                        value={argument.name}
+                        selected={argument.name === draft().argument}
+                      >
                         {argument.name} ({argument.type})
                       </option>
                     )}
@@ -1259,7 +1265,10 @@ export function SqlConditionWorkspace(props: Props) {
           </option>
           <For each={filterColumns(p.scope)}>
             {(column) => (
-              <option value={column.name}>
+              <option
+                value={column.name}
+                selected={column.name === newColumn()}
+              >
                 {contextFor(p.scope)?.columnLabels?.[column.name] ??
                   column.name}
               </option>
@@ -1388,7 +1397,12 @@ export function SqlConditionWorkspace(props: Props) {
               </option>
               <For each={argumentsFor(newColumn(), p.scope)}>
                 {(item) => (
-                  <option value={item.name}>{item.name} ({item.type})</option>
+                  <option
+                    value={item.name}
+                    selected={item.name === newArgument()}
+                  >
+                    {item.name} ({item.type})
+                  </option>
                 )}
               </For>
             </select>
@@ -1535,7 +1549,10 @@ export function SqlConditionWorkspace(props: Props) {
           </option>
           <For each={filterColumns(p.scope)}>
             {(column) => (
-              <option value={column.name}>
+              <option
+                value={column.name}
+                selected={column.name === groupSecondColumn()}
+              >
                 {contextFor(p.scope)?.columnLabels?.[column.name] ??
                   column.name}
               </option>
@@ -1664,7 +1681,10 @@ export function SqlConditionWorkspace(props: Props) {
               </option>
               <For each={argumentsFor(groupSecondColumn(), p.scope)}>
                 {(argument) => (
-                  <option value={argument.name}>
+                  <option
+                    value={argument.name}
+                    selected={argument.name === groupSecondArgument()}
+                  >
                     {argument.name} ({argument.type})
                   </option>
                 )}
