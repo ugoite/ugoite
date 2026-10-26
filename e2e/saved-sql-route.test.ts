@@ -521,16 +521,24 @@ test.describe("Saved SQL route", () => {
         `SELECT COUNT(*) FROM "Entry" WHERE "_ugoite_id" <> $entry_id GROUP BY "_ugoite_id" ORDER BY "_ugoite_id" DESC LIMIT 9`,
       );
       const taskFilterDialog = await open("Filter");
-      await taskFilterDialog.getByRole("combobox", {
-        name: "Column",
+      const filterRegion = taskFilterDialog.getByRole("region", {
+        name: "Filters",
+        exact: true,
+      });
+      await filterRegion.getByRole("button", {
+        name: "Add condition",
+        exact: true,
+      }).click();
+      await filterRegion.getByRole("combobox", {
+        name: "Column for new filter",
         exact: true,
       }).selectOption("_ugoite_id");
       await taskFilterDialog.getByRole("combobox", {
-        name: "Operator",
+        name: "Operator for new filter",
         exact: true,
       }).selectOption("eq");
       await taskFilterDialog.getByRole("textbox", {
-        name: "Value",
+        name: "Value for new filter",
         exact: true,
       }).fill(entryId);
       await taskFilterDialog.getByRole("button", {
