@@ -33,6 +33,7 @@ async function runQueryAndReadFixtureNames(
 
 test("REQ-SQL-003 @smoke: edits nested Filter conditions, runs, and reopens the saved query", async ({ page, request }) => {
   test.setTimeout(120_000);
+  page.setDefaultTimeout(15_000);
   await waitForServers(request);
   const spaceId = await getDefaultSpaceId(request);
   const formName = `ConditionJourney${crypto.randomUUID().slice(0, 8)}`;
@@ -234,8 +235,6 @@ test("REQ-SQL-003 @smoke: edits nested Filter conditions, runs, and reopens the 
     exact: true,
   }).last();
   await removable.getByRole("button", { name: "Remove filter" }).click();
-  await undoDialog.getByRole("button", { name: "Apply changes", exact: true })
-    .click();
   await undoDialog.locator("footer").getByRole("button", { name: "Close" })
     .click();
   expect(await runQueryAndReadFixtureNames(page, spaceId)).toEqual(["A"]);
@@ -257,10 +256,6 @@ test("REQ-SQL-003 @smoke: edits nested Filter conditions, runs, and reopens the 
     { name: "Amount", exact: true },
   );
   await threshold.getByRole("button", { name: "Remove filter" }).click();
-  await removeThresholdDialog.getByRole("button", {
-    name: "Apply changes",
-    exact: true,
-  }).click();
   await removeThresholdDialog.locator("footer").getByRole("button", {
     name: "Close",
   }).click();
