@@ -204,10 +204,11 @@ test("REQ-SQL-003 @smoke: edits nested Filter conditions, runs, and reopens the 
   await sort.getByRole("button", { name: "Add sort", exact: true }).click();
   await sort.locator("footer").getByRole("button", { name: "Close" }).click();
 
-  await sqlEditor.click();
-  await sqlEditor.press("ControlOrMeta+End");
-  await sqlEditor.pressSequentially("\n-- condition journey comment");
-  await expect(sqlEditor).toContainText("-- condition journey comment");
+  const sourceSql = await sqlEditor.innerText();
+  expect(sourceSql.trimEnd()).toMatch(/\)$/);
+  const commentedSql = `${sourceSql.trimEnd()}\n-- condition journey comment`;
+  await sqlEditor.fill(commentedSql);
+  await expect(sqlEditor).toHaveText(commentedSql);
 
   expect(await runQueryAndReadFixtureNames(page, spaceId)).toEqual(["A", "B"]);
   const results = page.getByRole("table");
