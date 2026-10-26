@@ -18,6 +18,7 @@ import {
 } from "~/lib/ugoite-client";
 import { t } from "~/lib/i18n";
 import { IconButton } from "~/components/IconButton";
+import type { SqlVariable } from "~/lib/types";
 import {
   SqlConditionWorkspace,
   type SqlConditionWorkspaceHistoryState,
