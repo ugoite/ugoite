@@ -16,6 +16,7 @@ import {
   completeCompositionGraphYaml,
   saveCompositionGraph,
 } from "./lib/composition-graph.ts";
+import { parse as parseYaml } from "jsr:@std/yaml@1";
 
 type StudioSeedState = {
   spaceId: string;
@@ -1143,12 +1144,30 @@ test.describe("Composition Studio Journey", () => {
       );
       expect(revisionResponse.ok()).toBe(true);
       const revision = await revisionResponse.json() as StudioRawRevision;
-      expect(String(revision.fields["spec"])).toContain(
+      const savedSpec = parseYaml(String(revision.fields["spec"])) as {
+        spec?: {
+          variables?: Array<{
+            id?: string;
+            query?: {
+              kind?: string;
+              sql?: string;
+              form_bindings?: Array<{ relation: string; form_id: string }>;
+            };
+          }>;
+        };
+      };
+      const savedFormQuery = savedSpec.spec?.variables?.find((variable) =>
+        variable.id === `${formSlug}_rows` &&
+        variable.query?.kind === "inline_sql"
+      )?.query;
+      expect(savedFormQuery).toBeDefined();
+      expect(savedFormQuery?.sql).toBe(
         `SELECT * FROM ${sqlIdentifier(formName)}`,
       );
-      expect(String(revision.fields["spec"])).toContain(
-        `relation: ${JSON.stringify(formName)}`,
-      );
+      expect(savedFormQuery?.form_bindings).toEqual([{
+        relation: formName,
+        form_id: form!.id!,
+      }]);
       await page.reload({ waitUntil: "domcontentloaded" });
       await expect(page.getByRole("table", {
         name: `${formSlug}_rows results`,
