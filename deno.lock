@@ -9240,7 +9240,8 @@
       },
       "e2e": {
         "dependencies": [
-          "npm:@playwright/test@^1.60.0"
+          "npm:@playwright/test@^1.60.0",
+          "npm:yaml@^2.9.0"
         ]
       },
       "frontend": {
