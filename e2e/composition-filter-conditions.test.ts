@@ -165,7 +165,7 @@ test("Composition inline SQL filters preserve scalar bindings through nested gro
   await expect(filters.getByRole("textbox", { name: "Value" }))
     .toHaveCount(0);
   await expect(
-    filters.getByRole("group", { name: "Filter group" })
+    filters.getByRole("group", { name: "Filter group" }).last()
       .getByRole("combobox", { name: "Filter group operator" }),
   )
     .toHaveValue("or");
