@@ -4693,8 +4693,8 @@ fn condition_semantic_edit(
             let mut replacement = String::with_capacity(expected_text.len());
             let mut cursor = 0;
             for operator_range in operator_ranges {
-                let start = (operator_range.start - range.start) as usize;
-                let end = (operator_range.end - range.start) as usize;
+                let start = operator_range.start - range.start;
+                let end = operator_range.end - range.start;
                 if start < cursor || end > expected_text.len() {
                     return Err(SqlDocumentEditError::NodeRangeUnavailable);
                 }
@@ -9814,6 +9814,20 @@ struct QueryStructureCollector<'a> {
 }
 
 impl QueryStructureCollector<'_> {
+    fn expression_node_range(&self, parent: u32, expression: &Expr) -> Option<SqlSourceRange> {
+        let span = SqlSourceRange::from_span(self.source, self.source_map, expression.span())?;
+        self.nodes[..self.original_node_count]
+            .iter()
+            .filter(|node| {
+                node.parent == Some(parent)
+                    && node.kind == expression_kind(expression)
+                    && node.range.is_some_and(|range| range.start == span.start)
+            })
+            .filter_map(|node| node.range)
+            .max_by_key(|range| range.end)
+            .or(Some(span))
+    }
+
     fn add_node(
         &mut self,
         kind: SqlDocumentNodeKind,
@@ -10337,7 +10351,7 @@ impl QueryStructureCollector<'_> {
         let from_end = from_range.map(|range| range.end).or(projection_end);
 
         if let Some(selection) = &select.selection {
-            if let Some(predicate_range) = self.span_range(selection) {
+            if let Some(predicate_range) = self.expression_node_range(select_id, selection) {
                 if let Some(keyword) = self.keyword_phrase(
                     &["WHERE"],
                     from_end.unwrap_or(0),
@@ -10363,7 +10377,10 @@ impl QueryStructureCollector<'_> {
         let mut previous_clause_end = select
             .selection
             .as_ref()
-            .and_then(|expression| self.span_range(expression).map(|range| range.end))
+            .and_then(|expression| {
+                self.expression_node_range(select_id, expression)
+                    .map(|range| range.end)
+            })
             .or(from_end)
             .or(projection_end)
             .unwrap_or(0);
@@ -10459,7 +10476,7 @@ impl QueryStructureCollector<'_> {
         }
 
         if let Some(having) = &select.having {
-            if let Some(predicate_range) = self.span_range(having) {
+            if let Some(predicate_range) = self.expression_node_range(select_id, having) {
                 if let Some(keyword) = self.keyword_phrase(
                     &["HAVING"],
                     previous_clause_end,
@@ -11404,6 +11421,29 @@ impl NodeCollector<'_> {
             ),
         };
 
+        let range = match (expression, range) {
+            (
+                Expr::IsNull(_)
+                | Expr::IsNotNull(_)
+                | Expr::IsTrue(_)
+                | Expr::IsNotTrue(_)
+                | Expr::IsFalse(_)
+                | Expr::IsNotFalse(_)
+                | Expr::IsUnknown(_)
+                | Expr::IsNotUnknown(_),
+                Some(range),
+            ) => extend_is_postfix_range(self.source, self.tokens, range).or(Some(range)),
+            (Expr::IsDistinctFrom(_, right) | Expr::IsNotDistinctFrom(_, right), Some(range)) => {
+                Some(SqlSourceRange {
+                    start: range.start,
+                    end: self
+                        .expression_range(right)
+                        .map_or(range.end, |right_range| range.end.max(right_range.end)),
+                })
+            }
+            (_, range) => range,
+        };
+
         if is_cast_node && range.is_some_and(|range| has_comment_within_range(self.tokens, range)) {
             // Typed node edits replace an entire expression range. With the
             // current edit protocol there is no target-only edit operation, so
@@ -11683,6 +11723,33 @@ fn skip_trivia_tokens(tokens: &[SqlDocumentToken], mut index: usize) -> usize {
     index
 }
 
+fn extend_is_postfix_range(
+    source: &str,
+    tokens: &[SqlDocumentToken],
+    mut range: SqlSourceRange,
+) -> Option<SqlSourceRange> {
+    let mut index = tokens
+        .iter()
+        .position(|token| token.range.start >= range.end)?;
+    index = skip_trivia_tokens(tokens, index);
+    if !token_is_keyword_at(source, tokens, index, "IS") {
+        return None;
+    }
+    index = skip_trivia_tokens(tokens, index + 1);
+    if token_is_keyword_at(source, tokens, index, "NOT") {
+        index = skip_trivia_tokens(tokens, index + 1);
+    }
+    if ["NULL", "TRUE", "FALSE", "UNKNOWN"]
+        .iter()
+        .any(|keyword| token_is_keyword_at(source, tokens, index, keyword))
+    {
+        range.end = tokens.get(index)?.range.end;
+        Some(range)
+    } else {
+        None
+    }
+}
+
 fn skip_balanced_tokens(source: &str, tokens: &[SqlDocumentToken], start: usize) -> Option<usize> {
     let mut depth = 0_usize;
     for (index, token) in tokens.iter().enumerate().skip(start) {
@@ -11845,6 +11912,22 @@ impl Visitor for NodeCollector<'_> {
     }
 
     fn post_visit_expr(&mut self, _expression: &Expr) -> ControlFlow<Self::Break> {
+        if let Some(node_id) = self.parents.last().copied() {
+            let child_end = self
+                .nodes
+                .iter()
+                .filter(|node| node.parent == Some(node_id))
+                .filter_map(|node| node.range.map(|range| range.end))
+                .max();
+            if let (Some(child_end), Some(range)) = (
+                child_end,
+                self.nodes
+                    .get_mut(node_id as usize)
+                    .and_then(|node| node.range.as_mut()),
+            ) {
+                range.end = range.end.max(child_end);
+            }
+        }
         self.pop();
         ControlFlow::Continue(())
     }
@@ -18645,12 +18728,10 @@ mod tests {
             "SELECT * FROM G WHERE (status = 'open' AND status = 'blocked') AND status = 'pending'";
         let explicit_group_changed =
             change_root_connector(explicit_group_source, SqlDocumentConditionGroupOperator::Or);
-        assert!(
-            explicit_group_changed
-                .document
-                .source
-                .contains("status = 'open' AND status = 'blocked'")
-        );
+        assert!(explicit_group_changed
+            .document
+            .source
+            .contains("status = 'open' AND status = 'blocked'"));
         let explicit_view = parse_sql_document(&explicit_group_changed.document.source);
         let SqlDocumentConditionNode::Group { children, .. } =
             explicit_view.conditions[0].expression.as_ref().unwrap()
@@ -18961,6 +19042,104 @@ mod tests {
             ),
             Err(SqlDocumentEditError::InvalidSemanticReplacement)
         );
+    }
+
+    #[test]
+    fn postfix_predicate_spans_include_operator_during_group_append_and_undo() {
+        for postfix in [
+            "IS NULL",
+            "IS NOT NULL",
+            "IS TRUE",
+            "IS NOT TRUE",
+            "IS FALSE",
+            "IS NOT FALSE",
+            "IS UNKNOWN",
+            "IS NOT UNKNOWN",
+            "IS DISTINCT FROM 'x'",
+            "IS NOT DISTINCT FROM 'x'",
+        ] {
+            let sql = format!("SELECT * FROM G WHERE active {postfix}");
+            let parsed = parse_sql_document(&sql);
+            assert_eq!(parsed.status, SqlDocumentStatus::Parsed, "{postfix}");
+            let predicate = parsed
+                .nodes
+                .iter()
+                .find(|node| {
+                    node.kind == SqlDocumentNodeKind::PredicateExpression
+                        && matches!(node.semantic, Some(SqlDocumentNodeData::Predicate { .. }))
+                })
+                .expect("IS postfix predicate node");
+            assert_eq!(
+                parsed.source_slice(predicate.range.unwrap()),
+                Some(format!("active {postfix}").as_str()),
+                "predicate span includes {postfix}"
+            );
+        }
+
+        let source = "SELECT 1, field_101 FROM \"Records\" WHERE (field_100 >= $minimum AND field_101 IS NOT NULL)";
+        let document = parse_sql_document(source);
+        let where_clause = document
+            .nodes
+            .iter()
+            .find(|node| node.kind == SqlDocumentNodeKind::WhereClause)
+            .unwrap();
+        assert!(document
+            .source_slice(where_clause.range.unwrap())
+            .unwrap()
+            .ends_with("field_101 IS NOT NULL"));
+        let SqlDocumentConditionNode::Group {
+            node_id, children, ..
+        } = document.conditions[0].expression.as_ref().unwrap()
+        else {
+            panic!("existing WHERE predicate is an AND group");
+        };
+        assert!(matches!(
+            children[1],
+            SqlDocumentConditionNode::Comparison {
+                operator: SqlDocumentFilterOperator::IsNotNull,
+                ..
+            }
+        ));
+        let append = SqlDocumentFilterCondition::Group {
+            operator: SqlDocumentConditionGroupOperator::Or,
+            children: ["open", "blocked"]
+                .into_iter()
+                .map(|value| SqlDocumentFilterCondition::Comparison {
+                    column: SqlDocumentColumnReference {
+                        qualifier: None,
+                        column: SqlDocumentIdentifier {
+                            value: "field_102".into(),
+                            quote_style: None,
+                        },
+                    },
+                    operator: SqlDocumentFilterOperator::Eq,
+                    value: Some(SqlDocumentSemanticLiteral::String {
+                        value: value.into(),
+                    }),
+                })
+                .collect(),
+        };
+        let result = apply_sql_document_semantic_edit_transaction(
+            source,
+            &SqlDocumentSemanticEditTransaction {
+                contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+                expected_source: source.into(),
+                edits: vec![SqlDocumentSemanticEdit::InsertFilterCondition {
+                    node_id: *node_id,
+                    expected_kind: SqlDocumentNodeKind::BinaryExpression,
+                    condition: append,
+                }],
+            },
+        )
+        .expect("append to the existing logical group");
+        assert!(result.document.source.contains("field_101 IS NOT NULL"));
+        assert!(result
+            .document
+            .source
+            .contains("field_101 IS NOT NULL AND ((field_102 = 'open' OR field_102 = 'blocked'))"));
+        let restored =
+            apply_sql_document_edit_transaction(&result.document.source, &result.undo).unwrap();
+        assert_eq!(restored.document.source, source);
     }
 
     #[test]
