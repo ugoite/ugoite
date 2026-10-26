@@ -239,6 +239,19 @@ features:
                   arguments:
                     file: e2e/sql-condition-workspace.test.ts
                     test: "REQ-SQL-003 @smoke: edits nested Filter conditions, runs, and reopens the saved query"
+          - id: condition-composition-journey
+            adapter: typescript
+            path: e2e/composition-filter-conditions.test.ts
+            selector: { kind: test, name: "Composition inline SQL filters preserve scalar bindings through nested groups, history, and save" }
+            claims:
+              - kind: verifies
+                criterion: REQ-SQL-003#criterion.condition-group-editing
+                covers: [FEAT-SQL-004#binding.condition-workspace/target.condition-tree-editor]
+                runner:
+                  runner: e2e-playwright
+                  arguments:
+                    file: e2e/composition-filter-conditions.test.ts
+                    test: "Composition inline SQL filters preserve scalar bindings through nested groups, history, and save"
           - id: condition-authorized-execution
             adapter: rust
             path: crates/ugoite-iceberg/tests/authorized_query.rs
