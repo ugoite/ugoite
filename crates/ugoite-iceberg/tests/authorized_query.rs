@@ -3691,7 +3691,10 @@ async fn context_releases_concurrency_permits_after_errors() -> anyhow::Result<(
         .execute("SELECT * FROM tasks")
         .await
         .expect("a failed query must release its concurrency permit");
-    assert_eq!(batches.iter().map(|batch| batch.num_rows()).sum::<usize>(), 1);
+    assert_eq!(
+        batches.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+        1
+    );
     Ok(())
 }
 
