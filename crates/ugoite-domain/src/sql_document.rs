@@ -4337,6 +4337,87 @@ fn condition_scope_owner_id(document: &SqlDocument, node_id: u32) -> Option<u32>
     })
 }
 
+fn logical_operator(node: &SqlDocumentNode) -> Option<&str> {
+    match node.semantic.as_ref() {
+        Some(SqlDocumentNodeData::BinaryOperator { operator })
+            if operator.eq_ignore_ascii_case("AND") || operator.eq_ignore_ascii_case("OR") =>
+        {
+            Some(operator)
+        }
+        _ => None,
+    }
+}
+
+fn binary_operator_range(
+    document: &SqlDocument,
+    node: &SqlDocumentNode,
+    operator: &str,
+) -> Result<SqlSourceRange, SqlDocumentEditError> {
+    let mut operands: Vec<_> = document
+        .nodes
+        .iter()
+        .filter(|candidate| {
+            candidate.parent == Some(node.id) && is_expression_node_kind(candidate.kind)
+        })
+        .filter_map(|candidate| candidate.range)
+        .collect();
+    operands.sort_by_key(|range| range.start);
+    if operands.len() != 2 {
+        return Err(SqlDocumentEditError::NodeRangeUnavailable);
+    }
+    let candidates: Vec<_> = document
+        .tokens
+        .iter()
+        .filter(|token| {
+            token.range.start >= operands[0].end
+                && token.range.end <= operands[1].start
+                && matches!(
+                    token.kind,
+                    SqlDocumentTokenKind::Operator | SqlDocumentTokenKind::Word
+                )
+                && token_text(&document.source, token)
+                    .is_some_and(|text| binary_operator_token_matches(operator, text))
+        })
+        .collect();
+    if candidates.len() != 1 {
+        return Err(SqlDocumentEditError::NodeRangeUnavailable);
+    }
+    Ok(candidates[0].range)
+}
+
+fn collect_same_connector_ranges(
+    document: &SqlDocument,
+    node: &SqlDocumentNode,
+    connector: &str,
+    ranges: &mut Vec<SqlSourceRange>,
+    root: bool,
+    depth: usize,
+) -> Result<(), SqlDocumentEditError> {
+    if depth >= 32 {
+        return Err(SqlDocumentEditError::SourceTooComplex);
+    }
+    let Some(operator) = logical_operator(node) else {
+        return Ok(());
+    };
+    if !root && !operator.eq_ignore_ascii_case(connector) {
+        return Ok(());
+    }
+    if operator.eq_ignore_ascii_case(connector) {
+        ranges.push(binary_operator_range(document, node, connector)?);
+    }
+    for child in document.nodes.iter().filter(|candidate| {
+        candidate.parent == Some(node.id) && is_expression_node_kind(candidate.kind)
+    }) {
+        if child.kind == SqlDocumentNodeKind::BinaryExpression
+            && logical_operator(child)
+                .is_some_and(|child_operator| child_operator.eq_ignore_ascii_case(connector))
+        {
+            collect_same_connector_ranges(document, child, connector, ranges, false, depth + 1)?;
+        }
+    }
+    Ok(())
+}
+
 fn condition_semantic_edit(
     document: &SqlDocument,
     node: &SqlDocumentNode,
@@ -4393,15 +4474,29 @@ fn condition_semantic_edit(
                 // predicate, regardless of its internal AND/OR structure.
                 format!("{} ({predicate}) AND ({sql})", &old[..where_pos])
             } else {
-                let connector = match node.semantic.as_ref() {
+                let logical_connector = match node.semantic.as_ref() {
+                    Some(SqlDocumentNodeData::BinaryOperator { operator })
+                        if operator.eq_ignore_ascii_case("AND") =>
+                    {
+                        Some("AND")
+                    }
                     Some(SqlDocumentNodeData::BinaryOperator { operator })
                         if operator.eq_ignore_ascii_case("OR") =>
                     {
-                        "OR"
+                        Some("OR")
                     }
-                    _ => "AND",
+                    _ => None,
                 };
-                format!("({old}) {connector} ({sql})")
+                match logical_connector {
+                    // The appended connector matches this node's existing
+                    // logical operator, so adding another outer grouping here
+                    // would preserve meaning while needlessly changing the
+                    // visible condition tree (AND inside AND, for example).
+                    Some(connector) => format!("{old} {connector} ({sql})"),
+                    // Comparisons and advanced expressions need an explicit
+                    // boundary before the default AND is added.
+                    None => format!("({old}) AND ({sql})"),
+                }
             };
             Ok(Some(SqlDocumentEdit {
                 range,
@@ -4579,47 +4674,39 @@ fn condition_semantic_edit(
             if !current.eq_ignore_ascii_case("AND") && !current.eq_ignore_ascii_case("OR") {
                 return Err(SqlDocumentEditError::InvalidSemanticReplacement);
             }
-            let mut operands: Vec<_> = document
-                .nodes
-                .iter()
-                .filter(|candidate| {
-                    candidate.parent == Some(node.id) && is_expression_node_kind(candidate.kind)
-                })
-                .filter_map(|candidate| candidate.range)
-                .collect();
-            operands.sort_by_key(|range| range.start);
-            if operands.len() != 2 {
-                return Err(SqlDocumentEditError::NodeRangeUnavailable);
-            }
-            let candidates: Vec<_> = document
-                .tokens
-                .iter()
-                .filter(|token| {
-                    token.range.start >= operands[0].end
-                        && token.range.end <= operands[1].start
-                        && matches!(
-                            token.kind,
-                            SqlDocumentTokenKind::Operator | SqlDocumentTokenKind::Word
-                        )
-                        && token_text(&document.source, token)
-                            .is_some_and(|text| binary_operator_token_matches(current, text))
-                })
-                .collect();
-            if candidates.len() != 1 {
-                return Err(SqlDocumentEditError::NodeRangeUnavailable);
-            }
-            let range = candidates[0].range;
-            let expected_text = document
-                .source_slice(range)
-                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
-            let replacement = match operator {
+            let connector = match operator {
                 SqlDocumentConditionGroupOperator::And => "AND",
                 SqlDocumentConditionGroupOperator::Or => "OR",
             };
+            let range = node
+                .range
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+            let expected_text = document
+                .source_slice(range)
+                .ok_or(SqlDocumentEditError::NodeRangeUnavailable)?;
+            let mut operator_ranges = Vec::new();
+            collect_same_connector_ranges(document, node, current, &mut operator_ranges, true, 0)?;
+            if operator_ranges.is_empty() {
+                return Err(SqlDocumentEditError::NodeRangeUnavailable);
+            }
+            operator_ranges.sort_by_key(|operator_range| operator_range.start);
+            let mut replacement = String::with_capacity(expected_text.len());
+            let mut cursor = 0;
+            for operator_range in operator_ranges {
+                let start = (operator_range.start - range.start) as usize;
+                let end = (operator_range.end - range.start) as usize;
+                if start < cursor || end > expected_text.len() {
+                    return Err(SqlDocumentEditError::NodeRangeUnavailable);
+                }
+                replacement.push_str(&expected_text[cursor..start]);
+                replacement.push_str(connector);
+                cursor = end;
+            }
+            replacement.push_str(&expected_text[cursor..]);
             Ok(Some(SqlDocumentEdit {
                 range,
                 expected_text: expected_text.to_owned(),
-                replacement: replacement.to_owned(),
+                replacement,
             }))
         }
         _ => Ok(None),
@@ -9431,22 +9518,36 @@ fn condition_node_from_document_at_depth(
     }
     if let Some(SqlDocumentNodeData::BinaryOperator { operator }) = node.semantic.as_ref() {
         if operator.eq_ignore_ascii_case("AND") || operator.eq_ignore_ascii_case("OR") {
-            let children: Vec<_> = children
-                .iter()
-                .copied()
-                .filter_map(|child| {
+            let group_operator = if operator.eq_ignore_ascii_case("AND") {
+                SqlDocumentConditionGroupOperator::And
+            } else {
+                SqlDocumentConditionGroupOperator::Or
+            };
+            let mut condition_children = Vec::new();
+            for child in children.iter().copied() {
+                let Some(condition) =
                     condition_node_from_document_at_depth(document, child, depth + 1)
-                })
-                .collect();
-            if children.len() >= 2 {
+                else {
+                    continue;
+                };
+                match condition {
+                    SqlDocumentConditionNode::Group {
+                        operator: child_operator,
+                        children,
+                        ..
+                    } if child.kind == SqlDocumentNodeKind::BinaryExpression
+                        && child_operator == group_operator =>
+                    {
+                        condition_children.extend(children);
+                    }
+                    _ => condition_children.push(condition),
+                }
+            }
+            if condition_children.len() >= 2 {
                 return Some(SqlDocumentConditionNode::Group {
                     node_id: node.id,
-                    operator: if operator.eq_ignore_ascii_case("AND") {
-                        SqlDocumentConditionGroupOperator::And
-                    } else {
-                        SqlDocumentConditionGroupOperator::Or
-                    },
-                    children,
+                    operator: group_operator,
+                    children: condition_children,
                 });
             }
         }
@@ -18336,6 +18437,239 @@ mod tests {
         )
         .unwrap();
         assert!(changed.document.source.contains(") AND (score >= 10)"));
+    }
+
+    #[test]
+    fn inserting_group_flattens_matching_logical_connector_without_extra_group() {
+        fn text_condition(value: &str) -> SqlDocumentFilterCondition {
+            SqlDocumentFilterCondition::Comparison {
+                column: SqlDocumentColumnReference {
+                    qualifier: None,
+                    column: SqlDocumentIdentifier {
+                        value: "status".into(),
+                        quote_style: None,
+                    },
+                },
+                operator: SqlDocumentFilterOperator::Eq,
+                value: Some(SqlDocumentSemanticLiteral::String {
+                    value: value.into(),
+                }),
+            }
+        }
+
+        fn insert_group(
+            source: &str,
+            operator: SqlDocumentConditionGroupOperator,
+        ) -> SqlDocumentEditResult {
+            let document = parse_sql_document(source);
+            let root = document.conditions[0]
+                .expression
+                .as_ref()
+                .expect("condition root");
+            let SqlDocumentConditionNode::Group { node_id, .. } = root else {
+                panic!("logical root group");
+            };
+            apply_sql_document_semantic_edit_transaction(
+                source,
+                &SqlDocumentSemanticEditTransaction {
+                    contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+                    expected_source: source.into(),
+                    edits: vec![SqlDocumentSemanticEdit::InsertFilterCondition {
+                        node_id: *node_id,
+                        expected_kind: SqlDocumentNodeKind::BinaryExpression,
+                        condition: SqlDocumentFilterCondition::Group {
+                            operator,
+                            children: vec![text_condition("pending"), text_condition("closed")],
+                        },
+                    }],
+                },
+            )
+            .unwrap()
+        }
+
+        fn assert_appended_group(
+            source: &str,
+            expected_root: SqlDocumentConditionGroupOperator,
+            expected_child: SqlDocumentConditionGroupOperator,
+        ) {
+            fn count_condition_groups(node: &SqlDocumentConditionNode) -> usize {
+                match node {
+                    SqlDocumentConditionNode::Group { children, .. } => {
+                        1 + children.iter().map(count_condition_groups).sum::<usize>()
+                    }
+                    SqlDocumentConditionNode::Comparison { .. }
+                    | SqlDocumentConditionNode::Advanced { .. } => 0,
+                }
+            }
+            let parsed = parse_sql_document(source);
+            let SqlDocumentConditionNode::Group {
+                operator, children, ..
+            } = parsed.conditions[0].expression.as_ref().unwrap()
+            else {
+                panic!("expected root logical group");
+            };
+            assert_eq!(*operator, expected_root);
+            assert_eq!(children.len(), 3, "source: {source}");
+            assert!(matches!(
+                children[0],
+                SqlDocumentConditionNode::Comparison { .. }
+            ));
+            assert!(matches!(
+                children[1],
+                SqlDocumentConditionNode::Comparison { .. }
+            ));
+            assert!(matches!(
+                children[2],
+                SqlDocumentConditionNode::Group { operator, .. }
+                    if operator == expected_child
+            ));
+            assert_eq!(
+                count_condition_groups(parsed.conditions[0].expression.as_ref().unwrap()),
+                2,
+                "the resulting tree contains only the root and inserted group"
+            );
+        }
+
+        let and_source = "SELECT * FROM G WHERE status = 'open' AND status = 'blocked'";
+        let and_result = insert_group(and_source, SqlDocumentConditionGroupOperator::Or);
+        assert_appended_group(
+            &and_result.document.source,
+            SqlDocumentConditionGroupOperator::And,
+            SqlDocumentConditionGroupOperator::Or,
+        );
+        let and_restored =
+            apply_sql_document_edit_transaction(&and_result.document.source, &and_result.undo)
+                .unwrap();
+        assert_eq!(and_restored.document.source, and_source);
+
+        let and_inserted = parse_sql_document(&and_result.document.source);
+        let SqlDocumentConditionNode::Group { node_id, .. } =
+            and_inserted.conditions[0].expression.as_ref().unwrap()
+        else {
+            panic!("inserted AND root group");
+        };
+        let changed_connector = apply_sql_document_semantic_edit_transaction(
+            &and_result.document.source,
+            &SqlDocumentSemanticEditTransaction {
+                contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+                expected_source: and_result.document.source.clone(),
+                edits: vec![SqlDocumentSemanticEdit::SetFilterGroupOperator {
+                    node_id: *node_id,
+                    expected_kind: SqlDocumentNodeKind::BinaryExpression,
+                    operator: SqlDocumentConditionGroupOperator::Or,
+                }],
+            },
+        )
+        .unwrap();
+        assert!(!changed_connector.document.source.contains(" AND "));
+        let changed_view = parse_sql_document(&changed_connector.document.source);
+        let SqlDocumentConditionNode::Group {
+            operator, children, ..
+        } = changed_view.conditions[0].expression.as_ref().unwrap()
+        else {
+            panic!("changed OR root group");
+        };
+        assert_eq!(*operator, SqlDocumentConditionGroupOperator::Or);
+        assert_eq!(children.len(), 3);
+        assert!(matches!(
+            children[2],
+            SqlDocumentConditionNode::Group {
+                operator: SqlDocumentConditionGroupOperator::Or,
+                ..
+            }
+        ));
+        let changed_restored = apply_sql_document_edit_transaction(
+            &changed_connector.document.source,
+            &changed_connector.undo,
+        )
+        .unwrap();
+        assert_eq!(changed_restored.document.source, and_result.document.source);
+
+        let or_source = "SELECT * FROM G WHERE status = 'open' OR status = 'blocked'";
+        let or_result = insert_group(or_source, SqlDocumentConditionGroupOperator::And);
+        assert_appended_group(
+            &or_result.document.source,
+            SqlDocumentConditionGroupOperator::Or,
+            SqlDocumentConditionGroupOperator::And,
+        );
+        let or_restored =
+            apply_sql_document_edit_transaction(&or_result.document.source, &or_result.undo)
+                .unwrap();
+        assert_eq!(or_restored.document.source, or_source);
+
+        fn change_root_connector(
+            source: &str,
+            operator: SqlDocumentConditionGroupOperator,
+        ) -> SqlDocumentEditResult {
+            let document = parse_sql_document(source);
+            let SqlDocumentConditionNode::Group { node_id, .. } =
+                document.conditions[0].expression.as_ref().unwrap()
+            else {
+                panic!("logical root group");
+            };
+            apply_sql_document_semantic_edit_transaction(
+                source,
+                &SqlDocumentSemanticEditTransaction {
+                    contract_version: SQL_DOCUMENT_CONTRACT_VERSION,
+                    expected_source: source.into(),
+                    edits: vec![SqlDocumentSemanticEdit::SetFilterGroupOperator {
+                        node_id: *node_id,
+                        expected_kind: SqlDocumentNodeKind::BinaryExpression,
+                        operator,
+                    }],
+                },
+            )
+            .unwrap()
+        }
+
+        let chain_source =
+            "SELECT * FROM G WHERE status = 'open' AND status = 'blocked' AND status = 'pending'";
+        let chain = parse_sql_document(chain_source);
+        let SqlDocumentConditionNode::Group { children, .. } =
+            chain.conditions[0].expression.as_ref().unwrap()
+        else {
+            panic!("logical root group");
+        };
+        assert_eq!(children.len(), 3);
+        let chain_changed =
+            change_root_connector(chain_source, SqlDocumentConditionGroupOperator::Or);
+        assert!(!chain_changed.document.source.contains(" AND "));
+        let chain_restored = apply_sql_document_edit_transaction(
+            &chain_changed.document.source,
+            &chain_changed.undo,
+        )
+        .unwrap();
+        assert_eq!(chain_restored.document.source, chain_source);
+
+        let explicit_group_source =
+            "SELECT * FROM G WHERE (status = 'open' AND status = 'blocked') AND status = 'pending'";
+        let explicit_group_changed =
+            change_root_connector(explicit_group_source, SqlDocumentConditionGroupOperator::Or);
+        assert!(
+            explicit_group_changed
+                .document
+                .source
+                .contains("status = 'open' AND status = 'blocked'")
+        );
+        let explicit_view = parse_sql_document(&explicit_group_changed.document.source);
+        let SqlDocumentConditionNode::Group { children, .. } =
+            explicit_view.conditions[0].expression.as_ref().unwrap()
+        else {
+            panic!("changed OR root group");
+        };
+        assert!(matches!(
+            children[0],
+            SqlDocumentConditionNode::Group {
+                operator: SqlDocumentConditionGroupOperator::And,
+                ..
+            }
+        ));
+        let explicit_restored = apply_sql_document_edit_transaction(
+            &explicit_group_changed.document.source,
+            &explicit_group_changed.undo,
+        )
+        .unwrap();
+        assert_eq!(explicit_restored.document.source, explicit_group_source);
     }
 
     #[test]
